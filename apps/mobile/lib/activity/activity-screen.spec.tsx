@@ -207,6 +207,8 @@ const standing = vi.hoisted(() => ({
 /** The nudge card (#4781): what the server sent, and what the card did. */
 const nudge = vi.hoisted(() => ({
   ask: false,
+  /** The chapter's nudges switch with the member's `ai:use` (`useAiSurfaces`). */
+  nudges: false,
   data: null as null | Record<string, unknown>,
   enabled: undefined as boolean | undefined,
   dismiss: vi.fn(),
@@ -215,7 +217,12 @@ const nudge = vi.hoisted(() => ({
   setEnabled: vi.fn(),
 }));
 vi.mock("@/lib/ai/availability", () => ({
-  useAiSurfaces: () => ({ ask: nudge.ask, ready: true, available: true }),
+  useAiSurfaces: () => ({
+    ask: nudge.ask,
+    nudges: nudge.nudges,
+    ready: true,
+    available: true,
+  }),
 }));
 vi.mock("@/components/ask/ask-sheet", () => ({ AskSheet: () => null }));
 
@@ -444,6 +451,7 @@ describe("Activity screen (#3897)", () => {
     writes.fix.mockReset();
     writes.writeBlockedReason = null;
     nudge.ask = false;
+    nudge.nudges = false;
     nudge.data = null;
     nudge.enabled = undefined;
     nudge.dismiss.mockReset();
@@ -995,15 +1003,25 @@ describe("Activity screen (#3897)", () => {
           node.props.testID === "activity-nudge-card",
       );
 
-    it("is not asked for, and not drawn, for a member without Ask", () => {
+    it("is not asked for, and not drawn, where the chapter has nudges off", () => {
+      nudge.ask = true;
       nudge.data = CARD;
       const tree = render();
       expect(nudge.enabled).toBe(false);
       expect(cards(tree)).toHaveLength(0);
     });
 
+    it("is drawn where nudges are on and Ask is off (2026-11-17)", () => {
+      nudge.nudges = true;
+      nudge.data = CARD;
+      const tree = render();
+      expect(nudge.enabled).toBe(true);
+      expect(cards(tree)).toHaveLength(1);
+    });
+
     it("draws nothing when the server sends no card", () => {
       nudge.ask = true;
+      nudge.nudges = true;
       const tree = render();
       expect(nudge.enabled).toBe(true);
       expect(cards(tree)).toHaveLength(0);
@@ -1011,6 +1029,7 @@ describe("Activity screen (#3897)", () => {
 
     it("draws the one card, and records that it was seen", () => {
       nudge.ask = true;
+      nudge.nudges = true;
       nudge.data = CARD;
       const tree = render();
       expect(cards(tree)).toHaveLength(1);
@@ -1020,6 +1039,7 @@ describe("Activity screen (#3897)", () => {
 
     it("goes to the task board for a task the page does not hold", () => {
       nudge.ask = true;
+      nudge.nudges = true;
       nudge.data = CARD;
       const push = vi.mocked(useRouter().push);
       push.mockClear();
@@ -1032,6 +1052,7 @@ describe("Activity screen (#3897)", () => {
 
     it("closes with the reason the member gave", () => {
       nudge.ask = true;
+      nudge.nudges = true;
       nudge.data = { ...CARD, kind: "task_praise", start_here: null };
       const tree = render();
       act(() => {
@@ -1042,6 +1063,7 @@ describe("Activity screen (#3897)", () => {
 
     it("is not asked for while the chapter has Tasks off", () => {
       nudge.ask = true;
+      nudge.nudges = true;
       chapter.data = { enabled_modules: { tasks: false } };
       render();
       expect(nudge.enabled).toBe(false);

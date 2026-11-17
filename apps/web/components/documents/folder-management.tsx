@@ -252,31 +252,34 @@ export function useFolderManagement({
     whatever `nextSortOrder` returned at the time. Two folders sharing a value
     make a swap a no-op, so the row would never move. Writing indices converges
     the list to 0..n-1 on first use and is idempotent afterwards — and the
-    `sort_order === index` guard keeps the common case at exactly two PATCHes.
+    `sort_order === index` guard keeps the common case at exactly two PATCHes,
+    because a move trades the two folders' places in the arrangement rather
+    than shifting the ones between them (#5337: in a tree the folder beside
+    one can be a synced Drive folder with hundreds below it in the list).
   */
-  async function handleMoveFolder(folderId: string, direction: -1 | 1) {
+  async function handleMoveFolder(folderId: string, pastId: string) {
     /*
-      A folder moves within its own tier (#3934): pinned folders among the
-      pinned, the rest among the rest, since the rail always draws the pinned
-      ones first. The whole arrangement is then written as pinned-then-rest,
-      so `sort_order` and what everyone sees stay one order.
+      A folder moves past the one beside it in the rail (#3934, #5337): the
+      rail picks `pastId` from the folder's own level of the tree and its own
+      tier, pinned among the pinned and the rest among the rest, since the
+      rail draws the arrangement pinned first. On a flat list that is the
+      next folder up or down. The two trade places, and the arrangement is
+      written as pinned-then-rest, so `sort_order` and what everyone sees
+      stay one order; the tree draws each folder's children in that order,
+      so nothing else at that level moves.
     */
     const { pinned, rest } = splitPinned(folders);
-    const group = pinned.some((folder) => folder.id === folderId)
-      ? pinned
-      : rest;
-    const index = group.findIndex((folder) => folder.id === folderId);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= group.length) return;
-    const moved = group[index];
-    if (!moved) return;
-    const regrouped = [...group];
-    regrouped.splice(index, 1);
-    regrouped.splice(target, 0, moved);
-    const reordered =
-      group === pinned ? [...regrouped, ...rest] : [...pinned, ...regrouped];
+    const arrangement = [...pinned, ...rest];
+    const from = arrangement.findIndex((folder) => folder.id === folderId);
+    const to = arrangement.findIndex((folder) => folder.id === pastId);
+    const moved = arrangement[from];
+    const past = arrangement[to];
+    if (from < 0 || to < 0 || from === to || !moved || !past) return;
+    const ordered = [...arrangement];
+    ordered[from] = past;
+    ordered[to] = moved;
 
-    const changed = reordered
+    const changed = ordered
       .map((folder, position) => ({ folder, position }))
       .filter(({ folder, position }) => folder.sort_order !== position);
     if (changed.length === 0) return;
@@ -374,7 +377,7 @@ export function FolderDialog({
               ? "This folder comes from Google Drive: rename or delete it there. Who can see it reaches every file inside, and stays when Drive renames it."
               : folderDraft.id
                 ? "Renaming re-files every document in it. Who can see it reaches every file inside."
-                : "Folders are flat and one level deep. Create it now, then file documents into it on upload."}
+                : "Create it now, then file documents into it on upload. A name like “Rush / Flyers” shows inside Rush."}
           </DialogDescription>
         </DialogHeader>
         <form

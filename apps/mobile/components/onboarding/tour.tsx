@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCurrentUser } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { floatingTabBarTop } from "@/lib/floating-chrome";
+import { floatingTabBarTop, setBarFolded } from "@/lib/floating-chrome";
 import {
   ONBOARDING_TOUR_FINISHED_EVENT,
   TOUR_DONE_LABEL,
@@ -150,6 +150,9 @@ export function TourHost({ children }: { children: ReactNode }) {
     let live = true;
     void (async () => {
       if (!(await isTourDue(userId))) return;
+      // The You stop is on the tab bar: open it if a scroll folded it
+      // (#4904), before the delay that lets it settle.
+      setBarFolded(false);
       await new Promise((resolve) => setTimeout(resolve, START_DELAY_MS));
       if (!live) return;
       const origin = (await measure(rootRef.current)) ?? {

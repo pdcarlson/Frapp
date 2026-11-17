@@ -112,6 +112,9 @@ export const reactNativeStub = {
   },
   Keyboard: {
     dismiss: vi.fn(),
+    // Ask's opening steps its crest down while the keyboard is up (#4904).
+    addListener: vi.fn(() => ({ remove: vi.fn() })),
+    isVisible: vi.fn(() => false),
   },
 };
 

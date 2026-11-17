@@ -9,7 +9,10 @@ export const AI_CONSENT_REPOSITORY = 'AI_CONSENT_REPOSITORY';
 export type ChapterAiSettingsPatch = Partial<
   Pick<
     ChapterAiSettings,
-    'ask_enabled' | 'meeting_notes_enabled' | 'chat_source_enabled'
+    | 'ask_enabled'
+    | 'meeting_notes_enabled'
+    | 'chat_source_enabled'
+    | 'nudges_enabled'
   >
 >;
 
@@ -26,11 +29,15 @@ export interface IAiConsentRepository {
    * Writes the given switches for the chapter, creating its row on the
    * first change, and returns the row as stored.
    */
+  /**
+   * `updatedBy` and `now` are null only when a failed audit puts back a row
+   * nobody had changed, so it still reads as never changed (#5294).
+   */
   saveChapterSettings(
     chapterId: string,
     patch: ChapterAiSettingsPatch,
-    updatedBy: string,
-    now: Date,
+    updatedBy: string | null,
+    now: Date | null,
   ): Promise<ChapterAiSettings>;
 
   /**

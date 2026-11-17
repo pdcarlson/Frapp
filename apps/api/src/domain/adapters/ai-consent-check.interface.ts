@@ -7,7 +7,7 @@ export type AiConsentDecision =
   | {
       allowed: false;
       /**
-       * `chapter_off`: the president has not turned this family on.
+       * `chapter_off`: the president has turned this family off.
        * `member_declined`: the acting member has not said yes on the sheet,
        * which includes never having answered.
        */

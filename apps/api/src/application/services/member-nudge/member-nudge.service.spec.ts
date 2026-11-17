@@ -124,6 +124,8 @@ function setup(options: { tasks?: Task[]; showing?: MemberNudge | null } = {}) {
   const listeners: ((userId: string) => Promise<void>)[] = [];
   const consent = {
     check: jest.fn().mockResolvedValue({ allowed: true }),
+    // Ask's switch: whether words others wrote on the task may be sent.
+    chapterSwitchOn: jest.fn().mockResolvedValue(true),
     onConsentWithdrawn: jest.fn((listener) => listeners.push(listener)),
   };
   const gateway = {
@@ -170,6 +172,28 @@ describe('MemberNudgeService.current', () => {
         expires_at: '2026-11-17T00:00:00.000Z',
       }),
     );
+  });
+
+  it('sends the description only where the chapter has Ask on (2026-11-17)', async () => {
+    const described = [
+      task({ description: 'Call Hotel Ithaca first, ask for Dana' }),
+    ];
+    const on = setup({ tasks: described });
+    await on.service.current(INPUT, NOW);
+    expect(
+      on.gateway.generateObject.mock.calls[0][1].messages[0].content,
+    ).toContain('Hotel Ithaca');
+
+    const off = setup({ tasks: described });
+    off.consent.chapterSwitchOn.mockResolvedValue(false);
+    await off.service.current(INPUT, NOW);
+    expect(off.consent.chapterSwitchOn).toHaveBeenCalledWith(
+      'chapter-1',
+      'ask',
+    );
+    expect(
+      off.gateway.generateObject.mock.calls[0][1].messages[0].content,
+    ).not.toContain('Hotel Ithaca');
   });
 
   it("gives the model the member's first name and never anyone else's", async () => {

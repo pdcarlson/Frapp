@@ -173,6 +173,17 @@ describe('AiModule', () => {
           { chapterId: 'c', actingUserId: 'u' },
         );
 
+    // A chapter's switches start on (#5294): this one's president turned
+    // them all off.
+    consentRows.settings = {
+      chapter_id: 'c',
+      ask_enabled: false,
+      meeting_notes_enabled: false,
+      chat_source_enabled: false,
+      nudges_enabled: false,
+      updated_by: 'p',
+      updated_at: '2026-11-12T00:00:00.000Z',
+    };
     await expect(ask()).resolves.toEqual({
       status: 'unavailable',
       reason: 'consent',
@@ -184,6 +195,7 @@ describe('AiModule', () => {
       ask_enabled: true,
       meeting_notes_enabled: false,
       chat_source_enabled: false,
+      nudges_enabled: true,
       updated_by: 'p',
       updated_at: '2026-11-12T00:00:00.000Z',
     };
@@ -203,6 +215,7 @@ describe('AiModule', () => {
       ask_enabled: true,
       meeting_notes_enabled: false,
       chat_source_enabled: false,
+      nudges_enabled: true,
       updated_by: 'p',
       updated_at: '2026-11-12T00:00:00.000Z',
     };

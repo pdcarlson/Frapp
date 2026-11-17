@@ -13,21 +13,18 @@ import { describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { FrappThemeProvider } from "@/lib/theme";
 import { FrappCrest } from "@/components/frapp-crest";
-import { ChatComposer, type ChatComposerProps } from "./chat-composer";
+import {
+  ChatComposer,
+  type ChatComposerProps,
+  type ComposerContext,
+} from "./chat-composer";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 
 /**
@@ -750,9 +747,9 @@ describe("ChatComposer clears the box on send", () => {
       canSend: true,
       placeholder: "Message",
     };
-    const node = (value: string) => (
+    const node = (value: string, context?: ComposerContext) => (
       <FrappThemeProvider>
-        <ChatComposer {...props} value={value} />
+        <ChatComposer {...props} value={value} context={context} />
       </FrappThemeProvider>
     );
     let tree!: ReactTestRenderer;
@@ -765,7 +762,8 @@ describe("ChatComposer clears the box on send", () => {
       });
     });
     const input = () => tree.root.findByType("TextInput" as never);
-    const rerender = (value: string) => act(() => tree.update(node(value)));
+    const rerender = (value: string, context?: ComposerContext) =>
+      act(() => tree.update(node(value, context)));
     // The tap, then the send empties the draft, as the screen's does.
     act(() => byLabel(tree, "Send message")!.props.onPress());
     rerender("");
@@ -860,7 +858,7 @@ describe("ChatComposer clears the box on send", () => {
     vi.useFakeTimers();
     try {
       const { props, type } = sendFrom("hello");
-      act(() => vi.advanceTimersByTime(1500));
+      act(() => vi.advanceTimersByTime(3500));
       type("hello");
       expect(props.onChangeText).toHaveBeenLastCalledWith("hello");
     } finally {
@@ -868,14 +866,142 @@ describe("ChatComposer clears the box on send", () => {
     }
   });
 
-  it("clears the field again a frame later, and once more after a busy thread catches up", () => {
+  it("clears the field again a frame later, and on through the next three seconds", () => {
     vi.useFakeTimers();
     try {
       const { clear } = sendFrom("hello");
       act(() => vi.advanceTimersByTime(20));
       expect(clear).toHaveBeenCalledTimes(1);
       act(() => vi.advanceTimersByTime(300));
-      expect(clear).toHaveBeenCalledTimes(2);
+      expect(clear).toHaveBeenCalledTimes(3);
+      act(() => vi.advanceTimersByTime(3000));
+      expect(clear).toHaveBeenCalledTimes(6);
+      act(() => vi.advanceTimersByTime(5000));
+      expect(clear).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Paul, 2026-11-17: "So we wouldn't need to do thsy" went out, and seconds
+  // later the box held "So we wouldn't need to do that", iOS having committed
+  // its pending correction once the clear landed.
+  it("turns away the autocorrected copy iOS puts back after the first retries", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, clear, type } = sendFrom("So we wouldn't need to do thsy");
+      act(() => vi.advanceTimersByTime(2000));
+      const before = clear.mock.calls.length;
+      type("So we wouldn't need to do that");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+      // And clears again behind it, in case the field drops the resend.
+      act(() => vi.advanceTimersByTime(20));
+      expect(clear.mock.calls.length).toBeGreaterThan(before);
+      // The next message still starts cleanly.
+      type("O");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("O");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a prediction tapped into the empty box, even one that opens the sent message", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("Thanks all");
+      type("Thanks ");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("Thanks ");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away a one-word copy, corrected or with a trailing space", () => {
+    vi.useFakeTimers();
+    try {
+      const typo = sendFrom("thnaks");
+      act(() => vi.advanceTimersByTime(1500));
+      typo.type("Thanks");
+      expect(typo.props.onChangeText).not.toHaveBeenCalled();
+
+      const spaced = sendFrom("Thanks ");
+      spaced.type("Thanks ");
+      expect(spaced.props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away a copy where autocorrect changed an earlier word", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("There going to be lat");
+      type("Their going to be late");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a short first word or a dictated next message after a short send", () => {
+    vi.useFakeTimers();
+    try {
+      const prediction = sendFrom("Ok thanks");
+      prediction.type("Ok ");
+      expect(prediction.props.onChangeText).toHaveBeenLastCalledWith("Ok ");
+
+      const dictated = sendFrom("Sounds good");
+      dictated.type("Sounds great, see you then");
+      expect(dictated.props.onChangeText).toHaveBeenLastCalledWith(
+        "Sounds great, see you then",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts the clear retries over after turning a copy away", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear, type } = sendFrom("So we wouldn't need to do thsy");
+      act(() => vi.advanceTimersByTime(1600));
+      const before = clear.mock.calls.length;
+      type("So we wouldn't need to do that");
+      // A frame, then 100 and 300ms from the copy, not from the send.
+      act(() => vi.advanceTimersByTime(320));
+      expect(clear.mock.calls.length - before).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes every change to an edit opened just after a send", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type, rerender } = sendFrom(
+        "So we wouldn't need to do thsy ",
+      );
+      rerender("So we wouldn't need to do thsy", {
+        kind: "edit",
+        title: "Editing message",
+        preview: null,
+        onCancel: vi.fn(),
+      });
+      type("So we wouldn't need to do that");
+      expect(props.onChangeText).toHaveBeenLastCalledWith(
+        "So we wouldn't need to do that",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the next message when it only shares the first letters of the last one", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("Sounds good to me");
+      type("Sou");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("Sou");
     } finally {
       vi.useRealTimers();
     }

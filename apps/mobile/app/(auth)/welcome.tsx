@@ -354,7 +354,6 @@ export default function Welcome() {
               <View style={styles.channels}>
                 <MeetFrappAiBody
                   providers={ai.providers}
-                  forChapter={ai.forChapter}
                   error={ai.error}
                 />
               </View>

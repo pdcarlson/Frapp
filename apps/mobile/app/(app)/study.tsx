@@ -1212,7 +1212,6 @@ export default function StudyScreen() {
         onSelect={(zoneId) => {
           pickedByHandRef.current = true;
           setSelectedZoneId(zoneId);
-          zoneSheetRef.current?.dismiss();
         }}
       />
 

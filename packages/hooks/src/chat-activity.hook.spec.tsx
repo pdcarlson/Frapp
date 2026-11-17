@@ -4,9 +4,8 @@
  * the claimed channel in the foreground, and goes quiet once unmounted (#3698).
  * The rules it applies are `chat-activity.spec.ts`'s.
  */
-import type { ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   CHAT_ACTIVITY_COALESCE_MS,
@@ -14,12 +13,7 @@ import {
   useChatActivityHandler,
 } from "./chat-activity";
 import { CHANNEL_UNREAD_COUNTS_KEY } from "./use-chat";
-import { useFrappClient } from "./use-frapp-client";
-
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: vi.fn(),
-}));
+import { createHookWrapper } from "./test-utils";
 
 const VIEWER = "viewer-1";
 const OTHER = "member-2";
@@ -34,9 +28,6 @@ describe("useChatActivityHandler (#3698)", () => {
     vi.useFakeTimers();
     queryClient = new QueryClient();
     post = vi.fn(async () => ({ data: {}, error: undefined }));
-    vi.mocked(useFrappClient).mockReturnValue({
-      POST: post,
-    } as unknown as ReturnType<typeof useFrappClient>);
     foreground = true;
     release = null;
   });
@@ -48,9 +39,7 @@ describe("useChatActivityHandler (#3698)", () => {
   });
 
   function render() {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    );
+    const wrapper = createHookWrapper({ client: { POST: post }, queryClient });
     return renderHook(() => useChatActivityHandler(VIEWER, () => foreground), {
       wrapper,
     });

@@ -1,29 +1,17 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   WHATS_NEW_ACCOUNT_WAIT_MS,
   useAccountWhatsNewSeen,
   useRecordWhatsNewSeen,
   whatsNewSeenQueryKey,
 } from "./whats-new-seen";
+import { createHookWrapper } from "./test-utils";
 
 const wrapperFor = (queryClient: QueryClient, client: unknown) => {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as ReturnType<typeof import("@repo/api-sdk").createFrappClient>
-      }
-      chapterId={null}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({ client, queryClient, displayName: "Wrapper" });
 };
 
 describe("What's new on the account (#4043)", () => {

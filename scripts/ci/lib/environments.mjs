@@ -247,9 +247,10 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
         `(got ${JSON.stringify(deploySource)}).`,
     );
   }
-  // Only staging's deploy builds an image so far. Production set to `image`
-  // would pass every check before the apply and fail at its Render step after
-  // its migrations ran; the deploy reads this before anything is applied.
+  // Only staging's deploy pushes an image to `apiImage` so far; production's
+  // builds one for Cloud Run alone. Production set to `image` would pass every
+  // check before the apply and fail at its Render step after its migrations
+  // ran; the deploy reads this before anything is applied.
   if (name === "production" && deploySource === "image") {
     throw new Error(
       `${source}: "production".renderDeploySource is image, but the deploy builds an API image ` +
@@ -263,13 +264,6 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
   const cloudRun = cloudRunIds(parsed.environments[name].cloudRun, name, source);
   if (apiHost === "cloud-run" && !cloudRun.gcpProjectId) {
     throw new Error(`${source}: "${name}".apiHost is cloud-run, but it has no cloudRun block.`);
-  }
-  // Production's deploy has no Cloud Run step yet: it would pass every check
-  // before the apply and then deploy nothing after its migrations ran (#5228).
-  if (name === "production" && apiHost === "cloud-run") {
-    throw new Error(
-      `${source}: "production".apiHost is cloud-run, but only staging's deploy ships to Cloud Run so far (#5228).`,
-    );
   }
   // Two environments in one project would let a staging deploy replace
   // production's service.

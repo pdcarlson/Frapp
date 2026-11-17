@@ -12268,7 +12268,7 @@
     },
     "/v1/ai/settings": {
       "get": {
-        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.",
+        "description": "Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. All on until the president turns one off; `updated_at` is null until then. `can_change` says whether the caller is the president, who alone may change them.",
         "operationId": "AiChapterSettingsController_getSettings_v1",
         "parameters": [],
         "responses": {
@@ -20245,6 +20245,43 @@
           }
         ],
         "summary": "The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meeting-recorder": {
+      "get": {
+        "operationId": "MeetingRecorderController_get_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecorderAvailabilityDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist",
         "tags": [
           "Meetings"
         ]
@@ -29686,6 +29723,10 @@
             "type": "boolean",
             "description": "Messages in chapter channels, from members who said yes, are a source."
           },
+          "nudges": {
+            "type": "boolean",
+            "description": "Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes."
+          },
           "updated_at": {
             "type": "string",
             "format": "date-time",
@@ -29701,6 +29742,7 @@
           "ask",
           "meeting_notes",
           "chat_source",
+          "nudges",
           "updated_at",
           "can_change"
         ]
@@ -29715,6 +29757,9 @@
             "type": "boolean"
           },
           "chat_source": {
+            "type": "boolean"
+          },
+          "nudges": {
             "type": "boolean"
           }
         }
@@ -35703,6 +35748,10 @@
             "type": "number",
             "description": "Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files"
           },
+          "folders_left_out": {
+            "type": "number",
+            "description": "The top-most folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. They and any folders inside them, and their files, are not in Documents; folders inside them are not counted."
+          },
           "syncing": {
             "type": "boolean",
             "description": "Whether a sync is due or running now"
@@ -35724,6 +35773,7 @@
           "last_synced_at",
           "synced_count",
           "skipped_count",
+          "folders_left_out",
           "syncing",
           "who_can_see"
         ]
@@ -35970,6 +36020,38 @@
         },
         "required": [
           "upload_id"
+        ]
+      },
+      "MeetingRecorderAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "False when this server has no transcription provider set up, so a recording can’t be written out."
+          },
+          "blocked": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet."
+          },
+          "max_bytes": {
+            "type": "number",
+            "description": "The largest file this server takes, in bytes."
+          },
+          "max_seconds": {
+            "type": "number",
+            "description": "The longest recording this server takes, in seconds."
+          }
+        },
+        "required": [
+          "available",
+          "blocked",
+          "max_bytes",
+          "max_seconds"
         ]
       },
       "BootstrapDto": {

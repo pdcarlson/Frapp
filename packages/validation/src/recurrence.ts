@@ -897,8 +897,11 @@ export function describeRepeatPattern(
   start: Date | string,
   options: { timeZone?: string; monthDay?: number | null } = {},
 ): string | null {
-  const parsed = parseRepeatRule(rule);
-  if (!parsed || parsed.legacy) return null;
+  // A repeating task's rule may have no end (#5119); the pattern reads the
+  // same either way.
+  const parsed: Omit<RepeatRule, "end"> | null =
+    parseRepeatRule(rule) ?? parseTaskRepeatRule(rule);
+  if (!parsed || ("legacy" in parsed && parsed.legacy)) return null;
   const startMs = new Date(start).getTime();
   // How many days the reader's calendar is ahead of the rule's at the first
   // meeting: -1, 0 or 1.

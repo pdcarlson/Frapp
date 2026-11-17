@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { fetchAllPages } from '../supabase.utils';
 import type {
   ChapterAiSettings,
   UserAiConsent,
@@ -12,7 +13,7 @@ import type {
 } from '#domain/repositories/ai-consent.repository.interface';
 
 const SETTINGS_SELECT =
-  'chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, updated_by, updated_at';
+  'chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, nudges_enabled, updated_by, updated_at';
 const CONSENT_SELECT = 'user_id, sheet_version, accepted, answered_at';
 const ID_BATCH = 200;
 
@@ -45,28 +46,35 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
   async listChapterIdsWithSwitchOn(
     column: keyof ChapterAiSettingsPatch,
   ): Promise<string[]> {
-    const { data, error } = await this.supabase
-      .from('chapter_ai_settings')
-      .select('chapter_id')
-      .eq(column, true)
-      .order('chapter_id');
-    if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).map((row) => row.chapter_id);
+    // Paged: every chapter has a row since #5294, all on by default, so
+    // this lists most chapters, and one read stops at the project's max rows.
+    const rows = await fetchAllPages<{ chapter_id: string }>(
+      (from, to) =>
+        this.supabase
+          .from('chapter_ai_settings')
+          .select('chapter_id')
+          .eq(column, true)
+          .order('chapter_id')
+          .range(from, to),
+      { pageSize: 500 },
+    );
+    return rows.map((row) => row.chapter_id);
   }
 
   async saveChapterSettings(
     chapterId: string,
     patch: ChapterAiSettingsPatch,
-    updatedBy: string,
-    now: Date,
+    updatedBy: string | null,
+    now: Date | null,
   ): Promise<ChapterAiSettings> {
     // `chapter_id` last, so nothing spread from the patch can point the
     // upsert at another chapter's row. A column the patch leaves out keeps
-    // its stored value on update, and its default (off) on the first write.
+    // its stored value on update, and its column default (on, #5294) on the
+    // first write.
     const row: TablesInsert<'chapter_ai_settings'> = {
       ...patch,
       updated_by: updatedBy,
-      updated_at: now.toISOString(),
+      updated_at: now ? now.toISOString() : null,
       chapter_id: chapterId,
     };
     const { data, error } = await this.supabase

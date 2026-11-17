@@ -30,7 +30,14 @@ import {
   useUploadTaskPhotos,
   type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
-import type { TaskProofKind } from "@repo/validation";
+import {
+  noTaskRepeatDraft,
+  taskRepeatRuleOf,
+  type RepeatDraft,
+  type TaskProofKind,
+} from "@repo/validation";
+import { RepeatOptions } from "@/components/shared/repeat-options";
+import { firstDueOf } from "@/components/tasks/task-repeat";
 
 /** What `POST /v1/tasks` takes from the board. */
 export type TaskDraft = {
@@ -47,6 +54,8 @@ export type TaskDraft = {
   reference_photo_paths?: string[];
   /** What Mark done needs (#4635). */
   proof_kind?: TaskProofKind;
+  /** Repeat on this rule (#5119); the task is the series' first copy. */
+  recurrence_rule?: string;
 };
 
 type Member = { user_id?: string | null; display_name?: string | null };
@@ -58,10 +67,13 @@ const EMPTY = {
   due_date: "",
   point_reward: "",
   subtasks: [] as string[],
+  repeat: noTaskRepeatDraft() as RepeatDraft,
   ...EMPTY_TASK_PHOTO_DRAFT,
 };
 
 type Missing = {
+  /** Why the Repeat pick can't be saved (#5119). */
+  repeat?: string;
   assignee?: boolean;
   due?: boolean;
   passed?: boolean;
@@ -134,6 +146,12 @@ export function AddTaskRow({
       dueRef.current?.focus();
       return;
     }
+    const firstDue = firstDueOf(draft.due_date, draft.repeat.timeZone);
+    const repeat = firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
+    if (repeat && !repeat.ok) {
+      setMissing((prev) => ({ ...prev, repeat: repeat.error }));
+      return;
+    }
     let referencePhotoPaths: string[] | undefined;
     if (draft.photoFiles.length > 0) {
       const problem = taskPhotosProblem(draft.photoFiles);
@@ -163,6 +181,7 @@ export function AddTaskRow({
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
       reference_photo_paths: referencePhotoPaths,
       proof_kind: draft.proofKind === "none" ? undefined : draft.proofKind,
+      recurrence_rule: repeat?.ok ? (repeat.rule ?? undefined) : undefined,
     });
     if (!created) return;
     setDraft(EMPTY);
@@ -289,6 +308,21 @@ export function AddTaskRow({
           setDraft((prev) => ({ ...prev, point_reward: next }));
         }}
       />
+      <RepeatOptions
+        forTasks
+        idPrefix="add-task-repeat"
+        draft={draft.repeat}
+        start={firstDueOf(draft.due_date, draft.repeat.timeZone)}
+        showLength
+        disabled={busy}
+        onChange={(repeat) => {
+          setDraft((prev) => ({ ...prev, repeat }));
+          setMissing((prev) => ({ ...prev, repeat: undefined }));
+        }}
+      />
+      {missing.repeat ? (
+        <p className="text-caption text-destructive-text">{missing.repeat}</p>
+      ) : null}
       <SubtaskListEditor
         items={draft.subtasks}
         disabled={pending}

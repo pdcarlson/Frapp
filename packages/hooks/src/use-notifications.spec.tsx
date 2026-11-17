@@ -1,11 +1,8 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { createFrappClient } from "@repo/api-sdk";
 import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   markNotificationReadMutationKey,
   markChannelNotificationsReadInCache,
@@ -21,6 +18,7 @@ import {
   useUserSettings,
   userSettingsKey,
 } from "./use-notifications";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * These cover the optimistic half of #312. The bug they guard against is not
@@ -31,30 +29,17 @@ import {
  * the write, the rollback and the reconciliation all land on the same key.
  */
 
-// Note the absence of `gcTime: 0`, which the other specs in this package use:
-// these tests seed cache entries that no component observes, and a zero gc time
+// `createTestQueryClient()` leaves `gcTime` at its default; don't set it to 0
+// here. These tests seed cache entries that no component observes, and a zero gc time
 // collects an unobserved entry the moment it is written — so the mutation would
 // find an empty cache and correctly decline to write, for the wrong reason.
-function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
-
 function createWrapper(client: unknown, queryClient: QueryClient) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={client as ReturnType<typeof createFrappClient>}
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "NotificationsHookWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client,
+    queryClient,
+    chapterId: "chapter-1",
+    displayName: "NotificationsHookWrapper",
+  });
 }
 
 /** A PATCH that stays pending until the test resolves or rejects it. */
@@ -73,7 +58,7 @@ function deferredPatch() {
 
 describe("useMarkNotificationRead", () => {
   it("carries markNotificationReadMutationKey by default (the inbox's taps and Mark all read: no retry)", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const patch = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
@@ -94,7 +79,7 @@ describe("useMarkNotificationRead", () => {
   });
 
   it("carries the on-open key for a push tap's receipt, which mobile's retry default is registered by (#3747)", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const patch = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
@@ -115,7 +100,7 @@ describe("useMarkNotificationRead", () => {
   });
 
   it("fails an empty-bodied 5xx, with its status, rather than reading it as a receipt", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const patch = vi.fn().mockResolvedValue({
       data: undefined,
       error: undefined,
@@ -150,7 +135,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
     (rows as Row[] | undefined)?.find((row) => row.id === id)?.read_at;
 
   it("asks for the inbox's first page by default (#4962)", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
     const { result } = renderInbox({ GET: get, PATCH: vi.fn() }, queryClient);
     await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
@@ -164,7 +149,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   });
 
   it("serves the row read while the PATCH is pending, and leaves the others unread", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
     const { patch } = deferredPatch();
     const { result } = renderInbox({ GET: get, PATCH: patch }, queryClient);
@@ -179,7 +164,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   });
 
   it("serves a push tap's receipt (the on-open key) read while it is pending", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
     const { patch } = deferredPatch();
     const { result } = renderHook(
@@ -200,7 +185,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   });
 
   it("keeps it read when a refetch lands before the PATCH commits", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     // The second read differs elsewhere, so the list really is replaced.
     const get = vi
       .fn()
@@ -230,7 +215,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   });
 
   it("shows the row unread again when the PATCH fails", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
     const { patch, fail } = deferredPatch();
     const { result } = renderInbox({ GET: get, PATCH: patch }, queryClient);
@@ -247,7 +232,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   });
 
   it("holds the row read through a first fetch that read it before the write committed (push-tap cold start)", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     // The list's first GET is still in flight when the receipt goes out, and
     // read the row unread; a GET started after the write reads it read.
     let landFirstFetch!: (rows: Row[]) => void;
@@ -289,7 +274,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   });
 
   it("writes the server's stamp into the cache on success, and refetches lists, not preferences", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const prefsKey = notificationKeys.preferences("chapter-1");
     queryClient.setQueryData(prefsKey, [{ category: "events", is_enabled: true }]);
     // The refetch after the write must not be what clears the row here.
@@ -356,7 +341,7 @@ describe("clearing notifications (#3948)", () => {
   const ids = (rows: unknown) => (rows as Row[] | undefined)?.map((r) => r.id);
 
   it("takes the rows out on the tap, and out of the cache once the server agrees", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const get = vi
       .fn()
       .mockResolvedValue({ data: serverRows(), error: undefined });
@@ -380,7 +365,7 @@ describe("clearing notifications (#3948)", () => {
   });
 
   it("scrubs every cached list, a list nobody is showing included, and a conversation's other rows", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const chat = (id: string, extra: Record<string, unknown> = {}) => ({
       id,
       title: id,
@@ -427,7 +412,7 @@ describe("clearing notifications (#3948)", () => {
   });
 
   it("brings the rows back when the clear fails", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const get = vi
       .fn()
       .mockResolvedValue({ data: serverRows(), error: undefined });
@@ -493,7 +478,7 @@ describe("marking many notifications read in one request (#3929)", () => {
       .map((row) => row.id);
 
   it("Mark all read sends one request with no screens and clears every row the stamp covers", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
     const post = vi.fn().mockResolvedValue(ok({ read_at: READ_AT, updated: 3 }));
     const { result } = renderHook(() => useMarkNotificationsRead(), {
@@ -510,7 +495,7 @@ describe("marking many notifications read in one request (#3929)", () => {
   });
 
   it("with screens, clears only the rows that point at them", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
     const post = vi.fn().mockResolvedValue(ok({ read_at: READ_AT, updated: 1 }));
     const { result } = renderHook(() => useMarkNotificationsRead(), {
@@ -528,7 +513,7 @@ describe("marking many notifications read in one request (#3929)", () => {
   });
 
   it("with ids, reads only those rows: one inbox entry's (#3948)", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
     const post = vi.fn().mockResolvedValue(ok({ read_at: READ_AT, updated: 2 }));
     const { result } = renderHook(() => useMarkNotificationsRead(), {
@@ -546,7 +531,7 @@ describe("marking many notifications read in one request (#3929)", () => {
   });
 
   it("a refused request leaves every dot where it was", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
     const post = vi.fn().mockResolvedValue({
       data: undefined,
@@ -568,7 +553,7 @@ describe("marking many notifications read in one request (#3929)", () => {
     const get = (data: unknown) => vi.fn().mockResolvedValue(ok(data));
 
     it("reads the rows that point at the open screen, once", async () => {
-      const queryClient = makeQueryClient();
+      const queryClient = createTestQueryClient();
       const post = vi
         .fn()
         .mockResolvedValue(ok({ read_at: READ_AT, updated: 1 }));
@@ -589,7 +574,7 @@ describe("marking many notifications read in one request (#3929)", () => {
     });
 
     it("sends nothing when no unread row points at the screen", async () => {
-      const queryClient = makeQueryClient();
+      const queryClient = createTestQueryClient();
       const post = vi.fn();
       const fetchList = get(rows);
       renderHook(() => useMarkNotificationScreensSeen(["billing"]), {
@@ -602,7 +587,7 @@ describe("marking many notifications read in one request (#3929)", () => {
     });
 
     it("sends nothing while disabled, and does not retry a failed write for the same rows", async () => {
-      const queryClient = makeQueryClient();
+      const queryClient = createTestQueryClient();
       const post = vi.fn().mockResolvedValue({
         data: undefined,
         error: { message: "nope" },
@@ -635,7 +620,7 @@ describe("markChannelNotificationsReadInCache (#3788)", () => {
   const chat = (channelId: string) => ({ target: { screen: "chat", channelId } });
 
   it("clears only that channel's unread chat rows and says whether it changed any", () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     queryClient.setQueryData(listKey, [
       { id: "in-channel", read_at: null, data: chat("chan-1") },
       { id: "other-channel", read_at: null, data: chat("chan-2") },
@@ -664,7 +649,7 @@ describe("useUpdateNotificationPreference", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -948,7 +933,7 @@ describe("useUserSettings", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -1002,7 +987,7 @@ describe("useUpdateUserSettings", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 

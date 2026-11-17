@@ -103,13 +103,18 @@ const EVENT_REMINDER_LEAD_MINUTES = 30;
 const DUE_SOON_LEAD_DAYS = 1;
 
 /**
- * How long before a timed task's `due_at` its assignee is reminded (#4003).
- * Long enough to still do a chore ("Take out the trash" due at 9 PM nudges at
- * 7), short enough that the push is about today. The day-based lead above
- * doesn't fit a task due at 9 AM, which a 9 AM daily sweep would remind about
- * as it falls due.
+ * How long before a timed task's `due_at` its assignee is reminded: an hour
+ * (Paul, 2026-11-17, #5279: reminding people "with like an hour left on
+ * them"; two hours from #4003 until then). Close enough that the push reads
+ * as "now's the time", still long enough to do a chore ("Take out the trash"
+ * due at 9 PM nudges at 8). The day-based lead above doesn't fit a task due at
+ * 9 AM, which a 9 AM daily sweep would remind about as it falls due.
+ *
+ * It is the window's width, not the delivery offset: a five-minute tick
+ * first sees a task 55 to 60 minutes out, and one made inside its own window
+ * is closer still, so the body says the time actually left (`dueInPhrase`).
  */
-const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 120;
+const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 60;
 
 /**
  * How recently an entity must have *become* overdue to still earn a
@@ -721,13 +726,19 @@ export class ScheduledJobsService {
    * so the claim does not outlive the tick and an event that gains its first
    * required member later in the window is still reminded about.
    *
-   * **Known limit: a same-UTC-day reschedule is not re-armed.** The claim key's
-   * date component is `scheduled_notification_dispatches.due_date`, a `date`
-   * column, so moving an event from 14:00 to 20:00 on the same day reuses the
-   * key and the second claim loses — the member's only reminder named the old
-   * time. Moving it across a UTC day boundary does re-arm. The separate "event
-   * updated" push softens this but does not replace the reminder. Widening the
-   * key needs a schema change shared with three other sweeps; tracked in #1550.
+   * **A reschedule re-arms it (#1550).** The claim key's date component is a
+   * `date`, so a move within one UTC day would reuse the key. Two halves keep
+   * that from suppressing the reminder for the new time:
+   *
+   * - The `events_release_reminder_claims` trigger deletes the claim when
+   *   `start_time` changes, at the writer's commit, so the next tick claims
+   *   for the new time.
+   * - A tick that read the event before the move but claims after it would
+   *   re-create the old-time claim the trigger had nothing to delete, so the
+   *   time is read again once the claim is won. If it moved, the audience
+   *   resolves to nobody, which releases the claim, and the next tick sends
+   *   with the real time. It costs one single-row read per won claim, not
+   *   per losing tick.
    */
   private async notifyEventStartingSoon(
     event: SweepUpcomingEventRow,
@@ -750,6 +761,16 @@ export class ScheduledJobsService {
       threshold: 'EVENT_REMINDER',
       dueDate: startsOn,
       recipients: async () => {
+        const current = await this.repository.findEventStartTime(
+          event.chapter_id,
+          event.id,
+        );
+        if (
+          current === null ||
+          new Date(current).getTime() !== new Date(event.start_time).getTime()
+        ) {
+          return [];
+        }
         const [required, excused] = await Promise.all([
           this.attendanceService.resolveRequiredMembers(
             event.chapter_id,
@@ -1194,25 +1215,32 @@ export class ScheduledJobsService {
    * `notifications` rows scoped to a chapter they no longer belong to. The
    * assignee needs no such check: an unfinished task is their own record, and
    * `markAutoAbsent`-style membership churn does not reassign it.
+   *
+   * That check is resolved lazily, behind the claim (#5307): an overdue task
+   * stays in the sweep's lookback for days, and only the first tick can send,
+   * so reading the assigner's membership before claiming paid one
+   * `chapter_members` read per tick per replica for nothing. A failed read is
+   * a `warning`, as it was before: the claim is released and the task stays
+   * in the lookback for days, so the next tick retries and nothing is lost.
    */
-  private async notifyTaskOverdue(task: SweepTaskRow) {
-    const recipients = [task.assignee_id];
-
-    if (task.created_by !== task.assignee_id) {
-      const assigner = await this.memberRepo.findByUserAndChapter(
-        task.created_by,
-        task.chapter_id,
-      );
-      if (assigner) recipients.push(task.created_by);
-    }
-
+  private notifyTaskOverdue(task: SweepTaskRow) {
     return this.claimAndNotify({
       chapterId: task.chapter_id,
       entityType: 'TASK',
       entityId: task.id,
       threshold: 'OVERDUE',
       dueDate: task.due_date,
-      recipients,
+      recipients: async () => {
+        if (task.created_by === task.assignee_id) return [task.assignee_id];
+        const assigner = await this.memberRepo.findByUserAndChapter(
+          task.created_by,
+          task.chapter_id,
+        );
+        return assigner
+          ? [task.assignee_id, task.created_by]
+          : [task.assignee_id];
+      },
+      resolveFailureLevel: 'warning',
       title: task.title,
       body: `Overdue · was due ${formatDueDate(task.due_date)}`,
       category: 'tasks',
@@ -1239,11 +1267,12 @@ export class ScheduledJobsService {
    * the spec requires both the assignee and the assigner to hear about it.
    *
    * `recipients` may be a **thunk**, resolved only once the claim is won. The
-   * invoice and task sweeps already hold their recipient ids by the time they
-   * get here, so they pass an array; a sweep whose audience costs a query —
-   * the pre-event reminder reads the whole chapter roster — passes a function
+   * invoice sweeps and the task due-soon sweeps already hold their recipient
+   * ids on the row, so they pass an array; a sweep whose audience costs a
+   * query — the pre-event reminder reads the whole chapter roster, the
+   * overdue-task push reads the assigner's membership — passes a function
    * instead, and the losing ticks then cost one failed insert rather than a
-   * roster read they throw away. Resolving to an empty list is treated as
+   * read they throw away. Resolving to an empty list is treated as
    * "delivered to zero" below, so the claim is released rather than stranded.
    */
   private async claimAndNotify(params: {
@@ -1253,6 +1282,12 @@ export class ScheduledJobsService {
     threshold: DispatchThreshold;
     dueDate: string;
     recipients: string[] | (() => Promise<string[]>);
+    /**
+     * How a rejected thunk reports. `error` (the default) suits a reminder
+     * whose window is a few ticks wide, where a release is close to dropped
+     * work; a sweep that will retry for days passes `warning`.
+     */
+    resolveFailureLevel?: 'error' | 'warning';
     title: string;
     body: string;
     category: string;
@@ -1279,7 +1314,7 @@ export class ScheduledJobsService {
           : params.recipients;
     } catch (error) {
       reportCaughtFailure(this.logger, {
-        level: 'error',
+        level: params.resolveFailureLevel ?? 'error',
         site: `scheduled-reminder-resolve-recipients:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,

@@ -96,7 +96,9 @@ export function copyForErrorCode(code: string | null): string | null {
     return "Turn on Frapp AI in Settings to use this.";
   }
   if (code === "ai.chapter_off") {
-    return "Your chapter's president hasn't turned this on.";
+    // Every switch starts on (#5294), so it is off only by the president's
+    // choice; "has this turned off" holds for a chapter set before that too.
+    return "Your chapter's president has this turned off.";
   }
   if (code === "ai.consent.stale_sheet") {
     return "Frapp AI changed since you opened this. Look again, then answer.";
@@ -304,7 +306,8 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "That upload has already been filed": "That file was already added.",
   "A file with the same hash already exists in this chapter":
     "That file is already uploaded.",
-  "This file is already in your drafts.": "That file is already in your drafts.",
+  "This file is already in your drafts.":
+    "That file is already in your drafts.",
   "Someone in your chapter already saved this file as a draft.":
     "Someone in your chapter already uploaded this file and hasn't published it yet.",
   "Invalid content type. Only images are allowed.": "Pick an image file.",

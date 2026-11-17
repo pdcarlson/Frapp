@@ -16,8 +16,7 @@ import {
   collapseSeries,
   eventSeriesKey,
   selectOwnAttendance,
-  seriesCadenceLabel,
-  seriesHeadOf,
+  seriesCadenceOf,
   splitByHorizon,
   type AttendanceRowStatus,
   type DeviceInstant,
@@ -188,37 +187,6 @@ function groupByDay(entries: EventListEntry[], now: Date): EventDayGroup[] {
 }
 
 /**
- * How often `event`'s series meets ("Every Sunday"), or `null` for a one-time
- * event or a series whose head isn't among `rows`. The rule is the head's;
- * the day is the one most of the series' meetings share (`seriesCadenceLabel`,
- * as web's list reads it), never `event`'s own: an occurrence the API clamped
- * to the 30th, or one an officer moved to a Monday, belongs to a series that
- * still meets on the 31st or on Sundays.
- */
-export function selectSeriesCadence(
-  rows: readonly EventRow[],
-  event: Pick<
-    EventRow,
-    "id" | "start_time" | "recurrence_rule" | "parent_event_id"
-  >,
-): string | null {
-  const key = eventSeriesKey(event);
-  if (!key) return null;
-  const rule =
-    key === event.id
-      ? event.recurrence_rule
-      : seriesHeadOf(key, rows)?.recurrence_rule;
-  if (!rule) return null;
-  return seriesCadenceLabel(
-    rule,
-    event.start_time,
-    rows
-      .filter((row) => eventSeriesKey(row) === key)
-      .map((row) => row.start_time),
-  );
-}
-
-/**
  * The name most of a series' meetings carry (a tie goes to the soonest
  * meeting's), or `null` when none of them is among `rows`. s07 tells an
  * occurrence renamed on its own ("This event only") apart from it.
@@ -280,7 +248,7 @@ export function selectEventList(
   const withCadence = (entries: typeof shown): EventListEntry[] =>
     entries.map(({ event }) => ({
       event,
-      cadence: selectSeriesCadence(rows, event),
+      cadence: seriesCadenceOf(rows, event),
     }));
   const { soon, later } = splitByHorizon(shown, nowMs);
   return {

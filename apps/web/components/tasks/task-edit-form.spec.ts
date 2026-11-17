@@ -95,3 +95,29 @@ describe("taskEditFrom's photos and proof kind (#4635)", () => {
     });
   });
 });
+
+describe("taskEditFrom's repeat (#5119)", () => {
+  const RULE = "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York";
+  const copy: EditableTask = {
+    ...task,
+    series: { recurrence_rule: RULE, next_due_date: "2026-11-21", ended: false },
+  };
+
+  it("sends nothing when the rule stands", () => {
+    expect(taskEditFrom(copy, input({ recurrence_rule: RULE }))).toEqual({});
+  });
+
+  it("sends a new rule, or null to stop repeating", () => {
+    const daily = "FREQ=DAILY;INTERVAL=1;TZID=America/New_York";
+    expect(taskEditFrom(copy, input({ recurrence_rule: daily }))).toEqual({
+      recurrence_rule: daily,
+    });
+    expect(taskEditFrom(copy, input({ recurrence_rule: null }))).toEqual({
+      recurrence_rule: null,
+    });
+  });
+
+  it("never sends a rule for a task that doesn't repeat", () => {
+    expect(taskEditFrom(task, input({ recurrence_rule: RULE }))).toEqual({});
+  });
+});

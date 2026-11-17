@@ -1,15 +1,13 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { createFrappClient } from "@repo/api-sdk";
 import {
   EVENT_LISTS_SAVE_DELAY_MS,
   useEventListsEditor,
   type EventLists,
 } from "./use-event-agenda";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 
 /**
  * One meeting's agenda and attachments editor (#4934): changes show at once,
@@ -32,14 +30,11 @@ function setup(PATCH: ReturnType<typeof vi.fn>, onFailed = vi.fn()) {
     id: "evt-1",
     ...SERVER,
   });
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={{ PATCH } as unknown as ReturnType<typeof createFrappClient>}
-      chapterId={CHAPTER}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
+  const Wrapper = createHookWrapper({
+    client: { PATCH },
+    queryClient,
+    chapterId: CHAPTER,
+  });
   const view = renderHook(
     () => useEventListsEditor("evt-1", SERVER, { onFailed }),
     { wrapper: Wrapper },

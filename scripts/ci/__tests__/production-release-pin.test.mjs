@@ -492,6 +492,44 @@ describe("collectLiveShas", () => {
     assert.match(hosts.api.reason, /HTTP 502/);
   });
 
+  it("on Cloud Run, takes the API's commit from /health and reads no Render deploy", async () => {
+    const sha = "a".repeat(40);
+    const { fetchImpl, calls } = dualFetch([
+      { method: "GET", path: "projectId=prj_web", body: vercelProductionBody() },
+      { method: "GET", path: "projectId=prj_landing", body: vercelProductionBody() },
+      { method: "GET", path: "/health", body: { status: "ok", commit: sha } },
+    ]);
+    const hosts = await collectLiveShas({
+      apiHost: "cloud-run",
+      vercelApiKey: "v",
+      webProjectId: "prj_web",
+      landingProjectId: "prj_landing",
+      healthUrl: DEFAULT_HEALTH_URL,
+      fetchImpl,
+    });
+    assert.deepEqual(hosts.api, { ok: true, sha });
+    assert.equal(hosts.health.present, false);
+    assert.ok(!calls.some((c) => String(c.url).includes("api.render.com")), "Render is not where production deploys");
+  });
+
+  it("on Cloud Run, a /health with no commit is a failed api SHA, not a pass", async () => {
+    const { fetchImpl } = dualFetch([
+      { method: "GET", path: "projectId=prj_web", body: vercelProductionBody() },
+      { method: "GET", path: "projectId=prj_landing", body: vercelProductionBody() },
+      { method: "GET", path: "/health", body: { status: "ok" } },
+    ]);
+    const hosts = await collectLiveShas({
+      apiHost: "cloud-run",
+      vercelApiKey: "v",
+      webProjectId: "prj_web",
+      landingProjectId: "prj_landing",
+      healthUrl: DEFAULT_HEALTH_URL,
+      fetchImpl,
+    });
+    assert.equal(hosts.api.ok, false);
+    assert.match(hosts.api.reason, /no commit/);
+  });
+
   it("ignores a thrown /health fetch", async () => {
     const fetchImpl = async (url) => {
       if (String(url).includes("api.render.com")) {

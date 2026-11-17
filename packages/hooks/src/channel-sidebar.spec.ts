@@ -9,6 +9,8 @@ import {
   sidebarUnreadCounts,
   type ArrangeSidebarInput,
   type SidebarUnreadCounts,
+  channelsWithUnreadThreads,
+  withUnreadThreadChannels,
 } from "./channel-sidebar";
 import { groupChannelsByCategory } from "./channel-sections";
 
@@ -665,5 +667,41 @@ describe("countsLookUnread (#3999)", () => {
     expect(
       countsLookUnread(false, { unreadCount: 0, mentionCount: 0 }, false),
     ).toBe(false);
+  });
+});
+
+describe("threads under their channel (#5277, #5300)", () => {
+  it("names each channel whose listed thread has new replies", () => {
+    const ids = channelsWithUnreadThreads(
+      new Map([
+        ["c-1", [{ unread_count: 0 }, { unread_count: 2 }]],
+        ["c-2", [{ unread_count: 0 }]],
+      ]),
+    );
+    expect([...ids]).toEqual(["c-1"]);
+  });
+
+  it("counts a read channel with an unread thread as one unread, keeping its mentions", () => {
+    const counts = new Map([
+      ["c-1", { unreadCount: 0, mentionCount: 0 }],
+      ["c-2", { unreadCount: 4, mentionCount: 1 }],
+    ]);
+    const merged = withUnreadThreadChannels(
+      counts,
+      new Set(["c-1", "c-2", "c-3"]),
+    );
+    expect(merged?.get("c-1")).toEqual({ unreadCount: 1, mentionCount: 0 });
+    expect(merged?.get("c-2")).toEqual({ unreadCount: 4, mentionCount: 1 });
+    expect(merged?.get("c-3")).toEqual({ unreadCount: 1, mentionCount: 0 });
+    // The server's map is never written.
+    expect(counts.get("c-1")?.unreadCount).toBe(0);
+  });
+
+  it("leaves unknown counts unknown, and the same map when no thread is unread", () => {
+    expect(
+      withUnreadThreadChannels(undefined, new Set(["c-1"])),
+    ).toBeUndefined();
+    const counts = new Map();
+    expect(withUnreadThreadChannels(counts, new Set())).toBe(counts);
   });
 });

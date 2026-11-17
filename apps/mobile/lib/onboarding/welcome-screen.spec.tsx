@@ -85,8 +85,6 @@ const aiChoice = vi.hoisted(() => ({
   consentFailed: false,
   readConsent: () => Promise.resolve(null),
   providers: ["Anthropic", "Google"],
-  forChapter: false,
-  chapterSettled: true,
   turnOn: vi.fn(() => Promise.resolve(true)),
   notNow: vi.fn(() => Promise.resolve()),
   pending: false,

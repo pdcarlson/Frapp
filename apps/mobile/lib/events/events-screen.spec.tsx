@@ -604,15 +604,19 @@ describe("Events after the first", () => {
     expect(text).toContain("1 event");
   });
 
-  it('draws a weekly series once, as "Chapter · Every …" (#3823)', () => {
-    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
-    events = Array.from({ length: 13 }, (_, index) =>
+  // A weekly "Chapter" series meeting today and every 7 days after.
+  const weeklySeries = (length: number) =>
+    Array.from({ length }, (_, index) =>
       make(index === 0 ? "head" : `child-${index}`, index * 7, {
         name: "Chapter",
         recurrence_rule: index === 0 ? "WEEKLY" : null,
         parent_event_id: index === 0 ? null : "head",
       }),
     );
+
+  it('draws a weekly series once, as "Chapter · Every …" (#3823)', () => {
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    events = weeklySeries(13);
     const tree = render();
     const rows = tree.root.findAll(
       (node) =>
@@ -623,6 +627,26 @@ describe("Events after the first", () => {
     expect(drawnText(rows[0]!)).toContain(`Chapter · Every ${weekday}`);
     // Nothing waits in Later: the other twelve live on the event's page.
     expect(screenText(tree)).not.toContain("Later");
+  });
+
+  it("says a series meeting's cadence on its Calendar day too", () => {
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    events = weeklySeries(4);
+    const tree = render();
+    const calendar = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === "Calendar" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => calendar.props.onPress());
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Open Chapter"),
+    );
+    expect(row.props.accessibilityLabel).toBe(`Open Chapter, Every ${weekday}`);
+    expect(drawnText(row)).toContain(`Chapter · Every ${weekday}`);
   });
 
   it("draws a later row with no card fill and Mandatory as a hairline", () => {

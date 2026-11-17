@@ -621,6 +621,28 @@ export function sidebarThreadsByChannel<T extends SidebarThreadInput>(
 }
 
 /**
+ * What a screen reader hears for a thread row under its channel (#5277,
+ * #5300), on web and the phone alike: "Thread: grill is in my garage, in
+ * #general, 2 new", with "muted" while muted.
+ */
+export function sidebarThreadRowLabel(parts: {
+  rootText: string;
+  channelLabel: string;
+  muted: boolean;
+  unreadCount: number;
+}): string {
+  const { rootText, channelLabel, muted, unreadCount } = parts;
+  return [
+    `Thread: ${rootText}`,
+    `in ${channelLabel}`,
+    muted ? "muted" : null,
+    unreadCount > 0 ? `${unreadCount} new` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
  * What a screen reader hears for the thread card (#4297), on web and the
  * phone alike: "3 replies, 2 new, last reply 5m ago, latest from Devin: grill
  * is in my garage", without the parts the card doesn't draw.

@@ -7,8 +7,8 @@ This guide explains how Frapp is configured across local, staging, and productio
 We maintain three main environments:
 
 - **Local** — developer machine, Supabase CLI + Docker, secrets from Infisical `dev` (`.env.local` as fallback; see §3)
-- **Staging** — Supabase Cloud (staging project), the API on Render, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
-- **Production** — Supabase Cloud (prod project), the API on Render, web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
+- **Staging** — Supabase Cloud (staging project), the API on Google Cloud Run, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
+- **Production** — Supabase Cloud (prod project), the API on Google Cloud Run (#5228; Render until its cutover), web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
 
 How each deploy runs, in order: [`docs/ops/deployment/ci-cd.md` § How Deployments Are Gated](../ops/deployment/ci-cd.md#how-deployments-are-gated). Why it is shaped that way: [`spec/environments/README.md` § 6](../../spec/environments/README.md#6-continuous-deployment-cd).
 

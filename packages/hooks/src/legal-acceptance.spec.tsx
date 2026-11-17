@@ -1,7 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
 import {
   JOIN_TERMS_REQUIRED_COPY,
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
@@ -18,28 +17,19 @@ import {
   type LegalAcceptance,
 } from "./legal-acceptance";
 import { useRedeemInvite } from "./use-invites";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const createWrapper = (
   queryClient: QueryClient,
   mockClient: unknown,
   chapterId: string | null = "test-chapter",
-) => {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
-};
+) =>
+  createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName: "Wrapper",
+  });
 
 describe("Terms acceptance hooks (#2302)", () => {
   let queryClient: QueryClient;
@@ -51,9 +41,7 @@ describe("Terms acceptance hooks (#2302)", () => {
   };
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("reads the status without needing a chapter", async () => {
@@ -222,9 +210,7 @@ describe("useJoinTermsCheckbox (#2302)", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   const render = (required: boolean | "pending" | "error") => {

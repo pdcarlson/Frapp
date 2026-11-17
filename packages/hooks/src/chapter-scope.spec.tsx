@@ -1,9 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { createFrappClient } from "@repo/api-sdk";
 import { resolveChapterScope, useChapterScope } from "./chapter-scope";
 import {
   useCategories,
@@ -12,7 +10,7 @@ import {
   useChannels,
   useChannelUnreadCounts,
 } from "./use-chat";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 import { useTasks } from "./use-tasks";
 
 /**
@@ -117,9 +115,7 @@ describe("chapter-scoped reads with no chapter (#4094)", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   /** A client that answers `/v1/chapters` with `memberships` and records every path. */
@@ -136,18 +132,12 @@ describe("chapter-scoped reads with no chapter (#4094)", () => {
   }
 
   function wrapper(client: { GET: unknown }, chapterId: string | null) {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={client as unknown as ReturnType<typeof createFrappClient>}
-        chapterId={chapterId}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "ChapterScopeWrapper";
-    return Wrapper;
+    return createHookWrapper({
+      client,
+      queryClient,
+      chapterId,
+      displayName: "ChapterScopeWrapper",
+    });
   }
 
   function requestedPaths(client: { GET: ReturnType<typeof vi.fn> }) {

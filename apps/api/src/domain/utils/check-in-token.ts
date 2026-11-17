@@ -60,7 +60,7 @@ export const CHECK_IN_TOKEN_WINDOW_MS = 30_000;
  * read off a screen and typed without the 1/I/L and 0/O confusions. `U` is
  * excluded by the alphabet's design to avoid accidental obscenities.
  */
-const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 /** How many past windows a code stays good for: a scan racing a rotation. */
 export const PREVIOUS_WINDOWS = 1;

@@ -432,6 +432,7 @@ The categories themselves stay the chapter's (§ Channels).
 - **Filters,** off by default, either or both on:
   - **Unread only** keeps rows with something unread by the server's counts (§ Read Receipts), an @-mention included.
     A muted channel's plain unread (nothing that addresses the member) doesn't count, since its row reads as read (below).
+    A channel with a thread listed under it that has new replies counts too (§ All threads, [#5277](https://github.com/frapplive/Frapp/issues/5277), [#5300](https://github.com/frapplive/Frapp/issues/5300)), since thread replies never count toward the channel's own unread and its thread rows would otherwise be filtered away; its row keeps reading the server's counts.
   - **Hide muted** drops rows whose effective notification level is `off` ([`../notifications.md`](../notifications.md#chat-notification-preferences)).
     A muted row that addresses the member stays: an unread @-mention, or anything unread in a DM.
     That matches push, where a mention gets past a mute.
@@ -450,6 +451,7 @@ The categories themselves stay the chapter's (§ Channels).
 - **Folds.**
   Any section header, Pinned included, folds its section, and the choice is remembered.
   A folded header shows the unread total of the rows inside it that pass the filters, a muted channel's plain unread left out (above), in the mention red when any of them addresses the member, so folding never hides a mention.
+  A channel whose only news is a thread with new replies adds one to that total (`withUnreadThreadChannels` in `@repo/hooks`), so a folded section over it still reads unread.
   The open channel stays visible under a folded header.
   While the list scrolls, the section in view keeps its header pinned at the top, so it can still be folded from there ([`../../ui/design-system/components.md`](../../ui/design-system/components.md#sidebar-item) § Sidebar item, "Pinned section headings").
 - **Where it lives.**
@@ -757,9 +759,10 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   `GET /v1/threads` serves it: the API reads which chapter channels hold the member's follows, authorizes them before the limit applies, and masks the parents for blocks.
   On the web it is a Threads button in the chat header, beside Members, with a dot while any thread has new replies; tapping a row switches to the thread's channel and opens the thread there, waiting for the channel list when the channel is new to the tab.
   On the phone the threads sit under their channel instead ([#5277](https://github.com/frapplive/Frapp/issues/5277), asked by Paul, after Discord's channel list): Chat home draws a channel's active threads indented under its row, joined to its `#` by a curved connector, and Messages does the same under a group DM's row.
+  The web rail draws them the same way under each channel, and under a conversation in its Direct messages view, never under a hidden one ([#5300](https://github.com/frapplive/Frapp/issues/5300), asked by Paul, after Discord's desktop sidebar), and keeps the header button as the full list, which reaches threads past the quiet window; the open thread's row reads as the current row, and a click opens the thread in its channel's thread panel as an All threads row does.
   A thread row is one line, the parent's words as the All threads row's title reads them; it reads unread (bold, the leading pip, no number) while it has new replies and muted while muted, and a tap opens the thread with its channel under it, as a thread push's tap does, so back returns to the channel and its topic carries the live replies.
   Active is one rule in `sidebarThreadsByChannel` (`@repo/chat-core/threads`), over the newest 50 the list holds: every thread with new replies, uncapped, then read ones with activity in the last three days (Discord's default auto-archive; Frapp archives nothing), newest first, up to five per channel.
-  Because a thread reply never counts toward its channel, the channel list counts a channel with an unread thread as unread for arranging only: Unread only keeps it and a folded section reads unread over it, while the row's own badge stays the server's.
+  Because a thread reply never counts toward its channel, the channel list on both surfaces counts a channel with an unread thread as unread for arranging only (`withUnreadThreadChannels`, `@repo/hooks`): Unread only keeps it and a folded section reads unread over it, while the row's own badge stays the server's.
   The Messages door counts a group DM whose thread has new replies, and Messages draws no thread rows under search results.
   A failed read says so in one line on Chat home, and the pull re-reads it.
   A channel with none draws nothing under it, so there is no Threads entry, no empty state and no sheet; a thread that has dropped off is still on its parent's thread card.
@@ -767,6 +770,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   _Changed 2026-11-17 ([#5277](https://github.com/frapplive/Frapp/issues/5277), asked by Paul):_ it was the Threads row, the first row of Chat home's channel list and always drawn, badged in house gold, opening a sheet of the rows above (#5139, 2026-11-16; a title-row button before that, #4960).
   On the web the list is re-read when it opens, once a minute behind the button, and right after the member reads a thread.
   _Web, 2026-11-17 (#5277):_ recommended to match the phone, with each channel's active threads under its row in the rail as Discord's desktop sidebar draws them, keeping the header button for the full list; not built here, pending Paul ([#5300](https://github.com/frapplive/Frapp/issues/5300)).
+  _Built 2026-11-17 ([#5300](https://github.com/frapplive/Frapp/issues/5300)), after Paul said go:_ the header button stays.
 - **No auto-archive.**
   A thread stays open as long as its parent exists.
 - **Slices.**

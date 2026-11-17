@@ -106,6 +106,10 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    > still does). Silence still counts as no, and the yes is still explicit, which is what keeps
    > it within Apple's 5.1.2(i). The four tester accounts were recorded as yes by migration. A
    > president whose chapter never set its switches turns them on with the same Continue.
+   >
+   > **Paul, 2026-11-17 (#5294):** "I would like more AI stuff on by default." The chapter's
+   > three switches now start on and stay on until the president turns one off; the president's
+   > Continue no longer touches them. The member's own yes is unchanged and still explicit.
 
    The president also turns chat on as a source for the chapter, separately from the other AI
    features. All of it is in [`spec/behavior/ai.md` § Chat as a source](../../behavior/ai.md#chat-as-a-source)

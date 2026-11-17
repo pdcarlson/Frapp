@@ -1,3 +1,4 @@
+import { noTaskRepeatDraft, type RepeatDraft } from "@repo/validation";
 import {
   EMPTY_TASK_PHOTO_DRAFT,
   type TaskPhotoDraft,
@@ -19,6 +20,8 @@ export interface TaskDraft extends TaskPhotoDraft {
   description: string;
   /** The steps typed so far (#4003). */
   subtasks: string[];
+  /** How it repeats (#5119); "Doesn't repeat" by default. */
+  repeat: RepeatDraft;
   showMore: boolean;
 }
 
@@ -34,6 +37,7 @@ export function taskDraftFrom(
       prefill.pointReward !== undefined ? String(prefill.pointReward) : "",
     description: "",
     subtasks: [],
+    repeat: noTaskRepeatDraft(),
     ...EMPTY_TASK_PHOTO_DRAFT,
     // Open when the typed command set something that lives there.
     showMore: prefill.pointReward !== undefined,

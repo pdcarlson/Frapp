@@ -852,8 +852,18 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
           node.props.onPress
         ) === "function",
     );
-  const openPanel = (tree: ReactTestRenderer) =>
-    act(() => byLabel(tree, "Sort and filter").props.onPress());
+  // The filter and sort sheets (#5278), by their titles.
+  const sheet = (tree: ReactTestRenderer, title: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.title === title &&
+        Array.isArray(node.props.options) &&
+        typeof node.props.onSelect === "function",
+    );
+  const sheetLabels = (tree: ReactTestRenderer, title: string) =>
+    (sheet(tree, title).props.options as { label: string }[]).map(
+      (option) => option.label,
+    );
 
   function loaded() {
     documentRows = LIBRARY;
@@ -891,20 +901,58 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(rowLabels(tree)).toEqual(["Alumni mixer flyer", "Budget FY2026"]);
   });
 
-  it("sorts and filters from the Sort & filter panel, and counts what is set", () => {
+  it("sorts from the control over the list and filters from the chips, each naming its pick", () => {
     const tree = loaded();
-    openPanel(tree);
+    expect(byLabel(tree, "Sort: Name A–Z")).toBeDefined();
 
-    act(() => byLabel(tree, "Sort documents").props.onSelect("newest"));
+    act(() => sheet(tree, "Sort by").props.onSelect("newest"));
     expect(rowLabels(tree)).toEqual([
       "Budget FY2026",
       "Alumni mixer flyer",
       "Chapter bylaws",
     ]);
 
-    act(() => byLabel(tree, "Filter by uploader").props.onSelect("u-ryan"));
+    expect(byLabel(tree, "Sort: Newest first")).toBeDefined();
+
+    act(() => sheet(tree, "Uploaded by").props.onSelect("u-ryan"));
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
-    expect(byLabel(tree, "Sort and filter, 2 set")).toBeDefined();
+    expect(byLabel(tree, "Uploaded by: Ryan Castellano")).toBeDefined();
+    // Clear leads the row once a filter is set. It leaves the order and
+    // what was typed: the search is not one of the row's filters.
+    act(() => byLabel(tree, "Search documents").props.onChangeText("c"));
+    act(() => byLabel(tree, "Clear filters").props.onPress());
+    expect(byLabel(tree, "Search documents").props.value).toBe("c");
+    expect(byLabel(tree, "Sort: Newest first")).toBeDefined();
+    act(() => byLabel(tree, "Search documents").props.onChangeText(""));
+    expect(rowLabels(tree)).toHaveLength(3);
+    // Nothing set, no Clear.
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Clear filters",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("opens each chip's sheet and the sort's with one tap", () => {
+    const tree = loaded();
+    for (const label of [
+      "Type",
+      "Uploaded by",
+      "Date added",
+      "Sort: Name A–Z",
+    ]) {
+      present.mockClear();
+      act(() => byLabel(tree, label).props.onPress());
+      expect(present).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("names a date pick on its chip and lights it", () => {
+    const tree = loaded();
+    act(() => sheet(tree, "Date added").props.onSelect("30d"));
+    const chip = byLabel(tree, "Date added: Last 30 days");
+    expect(chip.props.accessibilityState).toEqual({ selected: true });
+    expect(sheet(tree, "Date added").props.selected).toBe("30d");
   });
 
   it("filters by file type, from the declared type or the stored name", () => {
@@ -919,17 +967,19 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     ];
     names = { "u-ryan": "Ryan Castellano", "u-ana": "Ana Ruiz" };
     const tree = render();
-    openPanel(tree);
-    const types = byLabel(tree, "Filter by file type");
-    expect(
-      (types.props.chips as { label: string }[]).map((chip) => chip.label),
-    ).toEqual(["Any type", "PDF", "Spreadsheet", "Other"]);
+    expect(sheetLabels(tree, "File type")).toEqual([
+      "Any type",
+      "PDF",
+      "Spreadsheet",
+      "Other",
+    ]);
 
-    act(() => types.props.onSelect("spreadsheet"));
+    act(() => sheet(tree, "File type").props.onSelect("spreadsheet"));
     expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
-    expect(byLabel(tree, "Sort and filter, 1 set")).toBeDefined();
+    expect(byLabel(tree, "Type: Spreadsheet")).toBeDefined();
 
-    act(() => byLabel(tree, "Filter by file type").props.onSelect(null));
+    act(() => sheet(tree, "File type").props.onSelect(null));
+    expect(byLabel(tree, "Type")).toBeDefined();
     act(() => byLabel(tree, "Search documents").props.onChangeText("pdf"));
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
   });
@@ -937,28 +987,22 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
   it("offers This semester only once the archives have loaded", () => {
     semesterRows = undefined;
     const tree = loaded();
-    openPanel(tree);
-    const dateLabels = () =>
-      (
-        byLabel(tree, "Filter by date added").props.chips as { label: string }[]
-      ).map((chip) => chip.label);
-    expect(dateLabels()).toEqual(["Any time", "Last 30 days"]);
+    expect(sheetLabels(tree, "Date added")).toEqual([
+      "Any time",
+      "Last 30 days",
+    ]);
 
     semesterRows = [
       { end_date: "2026-08-31", created_at: "2026-09-01T00:00:00Z" },
     ];
     const later = loaded();
-    act(() => byLabel(later, "Sort and filter").props.onPress());
-    act(() =>
-      byLabel(later, "Filter by date added").props.onSelect("semester"),
-    );
+    act(() => sheet(later, "Date added").props.onSelect("semester"));
     expect(rowLabels(later)).toEqual(["Alumni mixer flyer", "Budget FY2026"]);
   });
 
   it("says a filter matched nothing and clears it", () => {
     const tree = loaded();
-    openPanel(tree);
-    act(() => byLabel(tree, "Filter by uploader").props.onSelect("u-ryan"));
+    act(() => sheet(tree, "Uploaded by").props.onSelect("u-ryan"));
     act(() => byLabel(tree, "Search documents").props.onChangeText("budget"));
     const note = tree.root.findByType(InlineNote);
     expect(screenText(tree)).toContain("No documents match “budget”.");
@@ -1138,25 +1182,14 @@ describe("Documents pinned and starred (#3934)", () => {
     ]);
   });
 
-  it("filters to Pinned, Starred or either from the panel, with the search (#4290)", () => {
+  it("filters to Pinned, Starred or either from the chip row, with the search (#4290)", () => {
     const tree = loaded();
-    const press = (label: string) =>
-      act(() =>
-        tree.root
-          .find(
-            (node) =>
-              node.props.accessibilityLabel === label &&
-              typeof node.props.onPress === "function",
-          )
-          .props.onPress(),
-      );
     const toggle = (label: string) =>
       tree.root.find(
         (node) =>
           node.props.accessibilityRole === "togglebutton" &&
           node.props.label === label,
       );
-    press("Sort and filter");
     expect(toggle("Starred").props.accessibilityState).toEqual({
       checked: false,
     });
@@ -1168,21 +1201,15 @@ describe("Documents pinned and starred (#3934)", () => {
     // Any filter swaps the cards for the list, the tiers leading it.
     expect(tree.root.findAllByType(MarkedCards)).toHaveLength(0);
     expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
-    // It counts as one filter on the Sort & filter chip.
+    // Clear leads the row while a filter is on.
     expect(
       tree.root.findAll(
-        (node) => node.props.accessibilityLabel === "Sort and filter, 1 set",
+        (node) => node.props.accessibilityLabel === "Clear filters",
       ).length,
     ).toBeGreaterThan(0);
 
     act(() => toggle("Pinned").props.onPress());
     expect(rowLabels(tree)).toEqual(["Chapter bylaws", "Budget FY2026"]);
-    // Each toggle is one filter on the chip.
-    expect(
-      tree.root.findAll(
-        (node) => node.props.accessibilityLabel === "Sort and filter, 2 set",
-      ).length,
-    ).toBeGreaterThan(0);
 
     act(() => toggle("Starred").props.onPress());
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
@@ -1217,15 +1244,6 @@ describe("Documents pinned and starred (#3934)", () => {
 
   it("keeps a file unstarred from the sheet under Starred until the filter changes (#4290)", async () => {
     const tree = loaded();
-    act(() =>
-      tree.root
-        .find(
-          (node) =>
-            node.props.accessibilityLabel === "Sort and filter" &&
-            typeof node.props.onPress === "function",
-        )
-        .props.onPress(),
-    );
     const starredToggle = () =>
       tree.root.find(
         (node) =>
@@ -1445,6 +1463,117 @@ describe("Documents pinned and starred (#3934)", () => {
  * Grid lays the same rows out two to a line as tiles that take the row's tap
  * and long press, so the layout changes nothing a member can do.
  */
+describe("Documents folder tree (#5337)", () => {
+  // A synced Drive tree, named by path as Drive sync names its folders.
+  const FOLDERS = [
+    { id: "t-1", name: "Town in Fiji", sort_order: 0 },
+    { id: "t-2", name: "Town in Fiji / Rush", sort_order: 1 },
+    { id: "t-3", name: "Town in Fiji / Rush / 2024", sort_order: 2 },
+    { id: "t-4", name: "Town in Fiji / Rush / 2025", sort_order: 3 },
+    { id: "t-5", name: "Town in Fiji / Formal", sort_order: 4 },
+    { id: "t-6", name: "Bylaws", sort_order: 5 },
+  ];
+  const LIBRARY = [
+    {
+      id: "d-1",
+      title: "2024 flyer",
+      folder: "Town in Fiji / Rush / 2024",
+      created_at: "2026-08-12T14:00:00.000Z",
+    },
+    {
+      id: "d-2",
+      title: "Rush schedule",
+      folder: "Town in Fiji / Rush",
+      created_at: "2026-08-13T14:00:00.000Z",
+    },
+  ];
+
+  function loaded() {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS;
+    starRows = { folder_ids: [], document_ids: [] };
+    return render();
+  }
+  const folderChips = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType(FilterChips)
+      .find((chips) => chips.props.accessibilityLabel === "Filter by folder")!;
+  const chips = (tree: ReactTestRenderer) =>
+    (
+      folderChips(tree).props.chips as {
+        value: string | null;
+        label: string;
+        trailing?: unknown;
+        accessibilityLabel?: string;
+      }[]
+    ).map((chip) => chip.accessibilityLabel ?? chip.label);
+  const rowLabels = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ListRow).map((row) => row.props.label as string);
+
+  it("shows the top level, marking a folder that holds folders", () => {
+    expect(chips(loaded())).toEqual([
+      "All",
+      "Town in Fiji, holds folders",
+      "Bylaws",
+    ]);
+  });
+
+  it("steps into a folder that holds folders, its own files one tap away", () => {
+    const tree = loaded();
+    act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush"));
+    expect(chips(tree)).toEqual([
+      "Back to Town in Fiji",
+      "Rush",
+      "2024",
+      "2025",
+    ]);
+    expect(folderChips(tree).props.selected).toBe("Town in Fiji / Rush");
+    // Rush's own files only, not its folders'.
+    expect(rowLabels(tree)).toEqual(["Rush schedule"]);
+  });
+
+  it("names where a pinned folder lives when it leads the top row, and on its card", () => {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS.map((entry) =>
+      entry.id === "t-3"
+        ? { ...entry, pinned_at: "2026-11-17T00:00:00.000Z" }
+        : entry,
+    );
+    starRows = { folder_ids: [], document_ids: [] };
+    const tree = render();
+    const top = folderChips(tree).props.chips as {
+      label: string;
+      accessibilityLabel?: string;
+    }[];
+    expect(top[1]).toMatchObject({
+      label: "2024 · Rush",
+      accessibilityLabel: "2024, in Town in Fiji / Rush",
+    });
+    expect(screenText(tree)).toContain("In Town in Fiji / Rush · 1 file");
+  });
+
+  it("keeps a folder that holds none among its siblings, and steps back out", () => {
+    const tree = loaded();
+    act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush / 2024"));
+    expect(chips(tree)).toEqual([
+      "Back to Town in Fiji",
+      "Rush",
+      "2024",
+      "2025",
+    ]);
+    expect(rowLabels(tree)).toEqual(["2024 flyer"]);
+    act(() => folderChips(tree).props.onSelect("Town in Fiji"));
+    expect(chips(tree)).toEqual([
+      "Back to All",
+      "Town in Fiji",
+      "Rush, holds folders",
+      "Formal",
+    ]);
+    act(() => folderChips(tree).props.onSelect(null));
+    expect(chips(tree)[0]).toBe("All");
+  });
+});
+
 describe("Documents as a grid (#4175)", () => {
   const tiles = (tree: ReactTestRenderer) =>
     tree.root

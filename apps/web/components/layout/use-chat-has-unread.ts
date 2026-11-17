@@ -25,8 +25,10 @@ import { asArray } from "@/lib/utils";
  *   from the last good preferences, so a failed refetch keeps a muted channel
  *   muted; while they have never loaded, plain unread lights nothing.
  * - **Direct messages** are counted, not lit: the number of conversations
- *   with anything unread, the count the phone's Messages door shows. A direct
- *   message addresses the member, so it counts past a mute.
+ *   with anything unread. A direct message addresses the member, so it counts
+ *   past a mute. The phone's Messages door also counts a group DM whose thread
+ *   has new replies (#5277); this count doesn't yet, since that would read the
+ *   member's threads on every route (#5346).
  *
  * Counts are the server's (`GET /v1/channels/unread`, the read the list uses),
  * never a local re-derivation, and unknown counts light nothing. Until the

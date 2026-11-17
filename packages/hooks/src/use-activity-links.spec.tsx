@@ -1,14 +1,13 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
+import type { QueryClient } from "@tanstack/react-query";
 import type { Activity } from "./activity-rows";
 import { activityKeys } from "./use-activity";
 import {
   useClearActivityLinkState,
   useSetActivityLinkState,
 } from "./use-activity-links";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const KEY = activityKeys.chapter("chapter-1");
 
@@ -61,24 +60,15 @@ function deferredWrites() {
 }
 
 function setup(write: ReturnType<typeof vi.fn>) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  const queryClient = createTestQueryClient();
   queryClient.setQueryData(KEY, read(["a", "b", "c"]));
   const invalidate = vi.spyOn(queryClient, "invalidateQueries");
   const client = { PUT: write, DELETE: write };
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
+  const wrapper = createHookWrapper({
+    client,
+    queryClient,
+    chapterId: "chapter-1",
+  });
   return { queryClient, invalidate, wrapper };
 }
 

@@ -1,10 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { createFrappClient } from "@repo/api-sdk";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   deriveDisplayStatus,
   readAllTaskPages,
@@ -20,6 +17,7 @@ import {
   useUpdateTaskStatus,
 } from "./use-tasks";
 import { activityKeys } from "./use-activity";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * These cover #560 — promoting the optimistic task writes out of
@@ -41,30 +39,17 @@ const detailKey = taskKeys.detail(CHAPTER, TASK);
 /** A future due date, so nothing derives to OVERDUE unless a test wants it. */
 const FUTURE = "2999-01-01";
 
-// Note the absence of `gcTime: 0`, which some specs in this package use: these
-// tests seed cache entries that no component observes, and a zero gc time
+// `createTestQueryClient()` leaves `gcTime` at its default; don't set it to 0
+// here. These tests seed cache entries that no component observes, and a zero gc time
 // collects an unobserved entry the moment it is written — so the mutation would
 // find an empty cache and correctly decline to write, for the wrong reason.
-function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
-
 function createWrapper(client: unknown, queryClient: QueryClient) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={client as ReturnType<typeof createFrappClient>}
-      chapterId={CHAPTER}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "TasksHookWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client,
+    queryClient,
+    chapterId: CHAPTER,
+    displayName: "TasksHookWrapper",
+  });
 }
 
 /**
@@ -149,7 +134,7 @@ describe("useUpdateTaskStatus", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -496,7 +481,7 @@ describe("useConfirmTask", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -551,7 +536,7 @@ describe("useRejectTask", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -632,7 +617,7 @@ describe("useSetSubtaskDone (#4003)", () => {
   ];
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
   });
 
   function stepDone(id: string) {
@@ -787,21 +772,14 @@ describe("readAllTaskPages", () => {
 
   it("is what useTasks reads through", async () => {
     const GET = vi.fn().mockResolvedValue({ data: [row(1)], error: undefined });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
 
     const { result } = renderHook(() => useTasks(), {
-      wrapper: ({ children }) => (
-        <FrappClientProvider
-          client={{ GET } as unknown as ReturnType<typeof createFrappClient>}
-          chapterId={CHAPTER}
-        >
-          <QueryClientProvider client={queryClient}>
-            {children}
-          </QueryClientProvider>
-        </FrappClientProvider>
-      ),
+      wrapper: createHookWrapper({
+        client: { GET },
+        queryClient,
+        chapterId: CHAPTER,
+      }),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -827,7 +805,7 @@ describe("readAllTaskPages", () => {
 
 describe("useUpdateTask", () => {
   it("refreshes Activity, which draws the edited task's card (#4512)", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const PATCH = vi.fn().mockResolvedValue({ data: {}, error: undefined });
     const { result } = renderHook(() => useUpdateTask(), {

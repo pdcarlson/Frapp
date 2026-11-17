@@ -120,6 +120,12 @@ export class AiChapterSettingsDto implements AiChapterSettingsView {
   chat_source: boolean;
 
   @ApiProperty({
+    description:
+      "Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes.",
+  })
+  nudges: boolean;
+
+  @ApiProperty({
     type: String,
     format: 'date-time',
     nullable: true,
@@ -149,4 +155,9 @@ export class UpdateAiChapterSettingsDto {
   @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   chat_source?: boolean;
+
+  @ApiPropertyOptional()
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  nudges?: boolean;
 }

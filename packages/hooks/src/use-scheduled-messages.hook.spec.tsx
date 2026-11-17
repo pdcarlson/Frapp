@@ -2,36 +2,26 @@
  * `useScheduleMessage`'s request (#4971): what both clients send when they
  * schedule, files and the quote or thread included.
  */
-import type { ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 import {
   useScheduleMessage,
   useScheduledMessages,
 } from "./use-scheduled-messages";
 
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: vi.fn(),
-  useActiveChapterId: vi.fn(),
-}));
-
 describe("useScheduleMessage (#4971)", () => {
   let post: ReturnType<typeof vi.fn>;
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={new QueryClient()}>
-      {children}
-    </QueryClientProvider>
-  );
+  let wrapper: ReturnType<typeof createHookWrapper>;
 
   beforeEach(() => {
     post = vi.fn(async () => ({ data: { id: "s-1" }, error: undefined }));
-    vi.mocked(useFrappClient).mockReturnValue({
-      POST: post,
-    } as unknown as ReturnType<typeof useFrappClient>);
-    vi.mocked(useActiveChapterId).mockReturnValue("ch-1");
+    wrapper = createHookWrapper({
+      client: { POST: post },
+      queryClient: new QueryClient(),
+      chapterId: "ch-1",
+    });
   });
 
   const sendAt = new Date("2026-11-15T14:00:00.000Z");
@@ -98,17 +88,15 @@ describe("useScheduledMessages (#5005)", () => {
       data: [row("top", null), row("in-a", "root-a"), row("in-b", "root-b")],
       error: undefined,
     }));
-    vi.mocked(useFrappClient).mockReturnValue({
-      GET: get,
-    } as unknown as ReturnType<typeof useFrappClient>);
-    vi.mocked(useActiveChapterId).mockReturnValue("ch-1");
   });
 
   it("lists the whole channel, or one thread's replies from the same read", async () => {
     const client = new QueryClient();
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
+    const wrapper = createHookWrapper({
+      client: { GET: get },
+      queryClient: client,
+      chapterId: "ch-1",
+    });
     const { result } = renderHook(
       () => ({
         channel: useScheduledMessages("c"),

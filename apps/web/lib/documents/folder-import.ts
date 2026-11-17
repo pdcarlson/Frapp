@@ -29,6 +29,14 @@ export type DuplicateReason =
   /** A document with the same file name and size is already in Documents. */
   | "in-library";
 
+/**
+ * What Upload says to a .zip (#5331). Documents doesn't take archives (the
+ * `document` allowlist), but the folder inside one is what Import a folder is
+ * for, so the refusal names it.
+ */
+export const ZIP_REFUSAL =
+  "Zip files can't be uploaded. Unzip it and use Import a folder.";
+
 export const LEFT_OUT_LABEL: Record<LeftOutReason, string> = {
   type: "Not a type Documents takes",
   size: `Over ${MAX_UPLOAD_LABEL}`,
@@ -112,7 +120,10 @@ function sameName(folder: string, segment: string): boolean {
 }
 
 function words(name: string): string[] {
-  return name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
 }
 
 /** Every word of the path's folder is a word of the chapter's folder. */

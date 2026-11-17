@@ -11,18 +11,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // A purple chapter's accent, deliberately not house gold, so a glyph or time
 // that slipped back to the accent or a `gold.*` token would show up in an
 // assertion (the strip draws no accent: foundations.md §6).
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { ForwardGlyph } from "@/components/control-glyphs";

@@ -13,6 +13,15 @@ const data = vi.hoisted(() => ({
   throws: null as string | null,
   /** The Ask conversation's New conversation. */
   resetAsk: vi.fn(),
+  newMinutes: vi.fn(),
+}));
+// The meeting actions are their own spec (`meeting-actions.spec.tsx`).
+vi.mock("@/components/quick-actions/meeting-actions", () => ({
+  useMeetingQuickActions: () => ({
+    record: null,
+    newMinutes: data.newMinutes,
+    sheets: null,
+  }),
 }));
 vi.mock("@/components/route-error", () => ({ reportRouteError: vi.fn() }));
 
@@ -320,6 +329,14 @@ describe("where the rest go", () => {
       pathname: "/host-check-in",
       params: { eventId: "soon" },
     });
+  });
+
+  it("sends Search to search and New minutes to its sheet (#5287)", () => {
+    render();
+    run("search");
+    run("newMinutes");
+    expect(router.push).toHaveBeenCalledWith("/search");
+    expect(data.newMinutes).toHaveBeenCalledTimes(1);
   });
 
   it("sends Host check-in to Events when nothing is coming up", () => {

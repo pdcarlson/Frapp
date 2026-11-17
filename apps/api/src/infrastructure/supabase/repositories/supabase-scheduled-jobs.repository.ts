@@ -182,6 +182,20 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     return rows.filter(eventRequiresAnyone);
   }
 
+  async findEventStartTime(
+    chapterId: string,
+    eventId: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('events')
+      .select('start_time')
+      .eq('id', eventId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data?.start_time ?? null;
+  }
+
   /**
    * OPEN invoices with a `due_date` inside the window. Callers pass dates as
    * `YYYY-MM-DD` because `financial_invoices.due_date` is a `date`, not a

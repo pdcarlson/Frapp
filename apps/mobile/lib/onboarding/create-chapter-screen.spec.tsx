@@ -91,22 +91,14 @@ const aiChoice = vi.hoisted(() => ({
   consentFailed: false,
   readConsent: () => Promise.resolve(null),
   providers: ["Anthropic", "Google"],
-  forChapter: false,
-  chapterSettled: true,
   turnOn: vi.fn(() => Promise.resolve(true)),
   notNow: vi.fn(() => Promise.resolve()),
   pending: false,
-  lastOptions: undefined as { includeChapter?: boolean } | undefined,
-  seenOptions: [] as ({ includeChapter?: boolean } | undefined)[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useFrappAiChoice: (options?: { includeChapter?: boolean }) => {
-    aiChoice.lastOptions = options;
-    aiChoice.seenOptions.push(options);
-    return aiChoice;
-  },
+  useFrappAiChoice: () => aiChoice,
   useChapterDirectorySearch: () => ({
     data: directoryRows,
     isFetching: false,
@@ -408,16 +400,13 @@ describe("chapter setup — step order", () => {
         sheet_changed: false,
         sheet: { version: 2, providers: [], data: [] },
       };
-      aiChoice.forChapter = true;
       aiChoice.turnOn.mockReset();
       aiChoice.turnOn.mockImplementation(() => Promise.resolve(true));
       aiChoice.notNow.mockClear();
-      aiChoice.seenOptions = [];
     });
 
     afterEach(() => {
       aiChoice.consent = null;
-      aiChoice.forChapter = false;
     });
 
     async function reachAi() {
@@ -437,12 +426,10 @@ describe("chapter setup — step order", () => {
       return view;
     }
 
-    it("asks the founder after the display pick, for the new chapter too", async () => {
+    it("asks the founder after the display pick, for their own account (#5294)", async () => {
       const { root } = await reachAi();
-      // The chapter's switches are only touched once the new chapter is the
-      // active one: before it is, the screen asks for no chapter at all.
-      expect(aiChoice.seenOptions[0]).toEqual({ includeChapter: false });
-      expect(aiChoice.lastOptions).toEqual({ includeChapter: true });
+      // The new chapter's switches start on, so the screen asks about the
+      // founder's own Frapp AI only and never names the chapter.
       // Read through `drawnText`: the line nests the privacy link's Text.
       expect(
         root
@@ -450,7 +437,7 @@ describe("chapter setup — step order", () => {
           .map((text) => drawnText(text))
           .join("\n"),
       ).toContain(
-        "Frapp AI works with Anthropic and Google. Continuing turns it on for you and your chapter.",
+        "Frapp AI works with Anthropic and Google. Continuing turns it on for your account.",
       );
       await press(root, "Continue");
       expect(aiChoice.turnOn).toHaveBeenCalledTimes(1);

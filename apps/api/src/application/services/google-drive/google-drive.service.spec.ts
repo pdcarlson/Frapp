@@ -7,6 +7,7 @@ import {
 import {
   GOOGLE_DRIVE_FOLDER_MIME,
   GoogleDriveApiError,
+  type GoogleDriveItem,
   type IGoogleDriveApi,
 } from '#domain/adapters/google-drive.interface';
 import type { IChapterDriveRepository } from '#domain/repositories/chapter-drive.repository.interface';
@@ -16,6 +17,7 @@ import type { ChapterDocumentService } from '../chapter-document.service';
 
 const FOLDER_ID = '1AbCdEfGhIjKlMnOp';
 const EMAIL = 'frapp-docs@signet-frapp.iam.gserviceaccount.com';
+const CODE = 'frapp-k3x9qm2p';
 
 const live = (
   over: Partial<ChapterDriveConnection> = {},
@@ -32,6 +34,7 @@ const live = (
   last_error: null,
   synced_count: 12,
   skipped_count: 1,
+  folders_left_out: 2,
   created_at: '2026-11-16T15:00:00.000Z',
   who_can_see: null,
   ...over,
@@ -47,21 +50,28 @@ describe('GoogleDriveService', () => {
     drive = {
       isConfigured: jest.fn().mockReturnValue(true),
       serviceAccountEmail: jest.fn().mockReturnValue(EMAIL),
+      proofCode: jest.fn().mockReturnValue(CODE),
       getItem: jest.fn().mockResolvedValue({
         id: FOLDER_ID,
-        name: 'Chapter files',
+        name: `Chapter files ${CODE}`,
         mimeType: GOOGLE_DRIVE_FOLDER_MIME,
         modifiedTime: '',
         size: null,
         webViewLink: null,
+        description: null,
+        parents: [],
       }),
-      listChildren: jest.fn(),
+      listChildren: jest.fn().mockResolvedValue([]),
       download: jest.fn(),
       exportAs: jest.fn(),
     };
     repo = {
       findLive: jest.fn().mockResolvedValue(null),
       findAny: jest.fn().mockResolvedValue(null),
+      folderTakenElsewhere: jest.fn().mockResolvedValue(false),
+      folderIdsConnectedEarlierElsewhere: jest
+        .fn()
+        .mockResolvedValue(new Set()),
       create: jest.fn().mockResolvedValue(live()),
       markDue: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(true),
@@ -95,6 +105,7 @@ describe('GoogleDriveService', () => {
         last_synced_at: '2026-11-16T15:45:00.000Z',
         synced_count: 12,
         skipped_count: 1,
+        folders_left_out: 2,
         syncing: false,
         who_can_see: null,
       },
@@ -109,10 +120,11 @@ describe('GoogleDriveService', () => {
     );
 
     expect(drive.getItem).toHaveBeenCalledWith(FOLDER_ID);
+    expect(drive.proofCode).toHaveBeenCalledWith(`ch-1:${FOLDER_ID}`);
     expect(repo.create).toHaveBeenCalledWith({
       chapter_id: 'ch-1',
       folder_id: FOLDER_ID,
-      folder_name: 'Chapter files',
+      folder_name: `Chapter files ${CODE}`,
       connected_by: 'user-1',
       who_can_see: null,
     });
@@ -159,6 +171,115 @@ describe('GoogleDriveService', () => {
     await expect(
       service.connect('ch-1', 'user-1', 'https://example.com/folders/abc'),
     ).rejects.toThrow('isn’t a Google Drive folder link');
+  });
+
+  // #5185: one service account sees every chapter's shared folders, so
+  // seeing the folder doesn't make it the connecting chapter's.
+  describe('proving the folder is the chapter’s', () => {
+    const plain = (over: Partial<GoogleDriveItem> = {}): GoogleDriveItem => ({
+      id: FOLDER_ID,
+      name: 'Chapter files',
+      mimeType: GOOGLE_DRIVE_FOLDER_MIME,
+      modifiedTime: '',
+      size: null,
+      webViewLink: null,
+      description: null,
+      parents: [],
+      ...over,
+    });
+
+    it('refuses a folder without the code, naming the code, and saves nothing', async () => {
+      drive.getItem.mockResolvedValue(plain());
+      drive.listChildren.mockResolvedValue([
+        plain({ id: 'f1', name: 'Bylaws.pdf', mimeType: 'application/pdf' }),
+      ]);
+
+      const attempt = service.connect('ch-1', 'user-1', FOLDER_ID);
+      await expect(attempt).rejects.toThrow(BadRequestException);
+      await expect(attempt).rejects.toThrow(CODE);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a taken folder before asking for the code, so nobody renames another chapter’s folder', async () => {
+      drive.getItem.mockResolvedValue(plain());
+      repo.folderTakenElsewhere.mockResolvedValue(true);
+
+      await expect(
+        service.connect('ch-1', 'user-1', FOLDER_ID),
+      ).rejects.toThrow(ConflictException);
+      expect(drive.listChildren).not.toHaveBeenCalled();
+    });
+
+    it('takes a code typed by hand, with look-alike letters and spacing', async () => {
+      // frapp-k3x9qm2p typed as "FRAPP K3X9QM2P" with the 2 fine, and an O
+      // for a 0 elsewhere would match too.
+      drive.proofCode.mockReturnValue('frapp-k3x0qm1p');
+      drive.getItem.mockResolvedValue(plain({ name: 'Rush FRAPP K3XO QMLP' }));
+      await service.connect('ch-1', 'user-1', FOLDER_ID);
+      expect(repo.create).toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'its name, in any case',
+        { name: `Chapter files ${CODE.toUpperCase()}` },
+      ],
+      ['its Description', { description: `Frapp: ${CODE}` }],
+    ])('takes the code in %s', async (_where, over) => {
+      drive.getItem.mockResolvedValue(plain(over));
+      await service.connect('ch-1', 'user-1', FOLDER_ID);
+      expect(drive.listChildren).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalled();
+    });
+
+    it('takes the code as the name of something directly inside it', async () => {
+      drive.getItem.mockResolvedValue(plain());
+      drive.listChildren.mockResolvedValue([
+        plain({
+          id: 'f1',
+          name: CODE,
+          mimeType: 'application/vnd.google-apps.document',
+        }),
+      ]);
+      await service.connect('ch-1', 'user-1', FOLDER_ID);
+      expect(drive.listChildren).toHaveBeenCalledWith(FOLDER_ID);
+      expect(repo.create).toHaveBeenCalled();
+    });
+
+    it('refuses a folder inside another chapter’s connected one, walking up as far as Frapp sees', async () => {
+      drive.getItem.mockImplementation((id: string) => {
+        if (id === FOLDER_ID) {
+          return Promise.resolve(plain({ name: CODE, parents: ['parent-1'] }));
+        }
+        if (id === 'parent-1') {
+          return Promise.resolve(plain({ id, parents: ['parent-2'] }));
+        }
+        return Promise.reject(
+          new GoogleDriveApiError('not_found', 404, 'notFound'),
+        );
+      });
+      repo.folderTakenElsewhere.mockResolvedValue(true);
+
+      await expect(
+        service.connect('ch-1', 'user-1', FOLDER_ID),
+      ).rejects.toThrow(ConflictException);
+      expect(repo.folderTakenElsewhere).toHaveBeenCalledWith('ch-1', [
+        FOLDER_ID,
+        'parent-1',
+        'parent-2',
+      ]);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('is unavailable when Google can’t be reached while checking', async () => {
+      drive.getItem.mockResolvedValue(plain());
+      drive.listChildren.mockRejectedValue(
+        new GoogleDriveApiError('failed', 500, 'backendError'),
+      );
+      await expect(
+        service.connect('ch-1', 'user-1', FOLDER_ID),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
   });
 
   it('refuses a second folder while one is connected, or still leaving', async () => {

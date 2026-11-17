@@ -61,6 +61,10 @@ export interface FilterChip {
   count?: number | null;
   /** A small glyph before the label, e.g. s12's pin or star (#3934). */
   mark?: ReactNode;
+  /** A small glyph after the label, e.g. s12's chevron on a folder that holds folders (#5337). */
+  trailing?: ReactNode;
+  /** What a screen reader says instead of the label, when the glyphs carry meaning. */
+  accessibilityLabel?: string;
   /**
    * A long press's action, e.g. s12's folder actions (#3934). Also offered
    * as a named accessibility action, so it is never press-and-hold only.
@@ -91,6 +95,7 @@ export function Chip({
   accessibilityLabel,
   accessibilityHint,
   mark,
+  trailing,
   onLongPress,
   longPressLabel,
   onLayout,
@@ -104,6 +109,8 @@ export function Chip({
   accessibilityLabel?: string;
   accessibilityHint?: string;
   mark?: ReactNode;
+  /** A small glyph after the label: a menu chip's chevron (#5278). */
+  trailing?: ReactNode;
   onLongPress?: () => void;
   longPressLabel?: string;
   /** Where the chip landed, for a row that scrolls to its lit chip. */
@@ -149,7 +156,7 @@ export function Chip({
       lifts={!on}
       style={[
         styles.chip,
-        mark ? styles.chipWithMark : null,
+        mark || trailing ? styles.chipWithMark : null,
         on
           ? { backgroundColor: accentPrimary }
           : [
@@ -162,6 +169,7 @@ export function Chip({
       <Text style={[styles.chipText, on ? { color: accentOnPrimary } : null]}>
         {label}
       </Text>
+      {trailing}
     </PressableRow>
   );
 }
@@ -172,7 +180,7 @@ export function Chip({
  * touch slop and takes that back with a negative margin, so the slop is
  * inside its bounds and the layout around it doesn't move.
  */
-function ChipRow({
+export function ChipRow({
   scroll,
   scrollRef,
   onScrollerLayout,
@@ -307,6 +315,8 @@ export function FilterChips({
             on={selected === chip.value}
             onPress={() => onSelect(chip.value)}
             mark={chip.mark}
+            trailing={chip.trailing}
+            accessibilityLabel={chip.accessibilityLabel}
             onLongPress={chip.onLongPress}
             longPressLabel={chip.longPressLabel}
             // A count is omitted rather than shown as `· 0` while its query

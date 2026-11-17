@@ -10,7 +10,7 @@ type ConsentDenial = Extract<AiConsentDecision, { allowed: false }>['reason'];
  *
  * - `ai.consent.required`: the caller has not said yes on the current AI
  *   sheet, or said No. Show the sheet (`GET /v1/ai/consent`).
- * - `ai.chapter_off`: the president has not turned this feature on. Hide the
+ * - `ai.chapter_off`: the president has turned this feature off. Hide the
  *   entry point (`GET /v1/ai/settings`).
  *
  * A background run that meets the same refusal fails, and is retried only

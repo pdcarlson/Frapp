@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FRAPP_AI_COPY } from "@repo/validation";
 
 const state = vi.hoisted(() => ({
   consent: undefined as Record<string, unknown> | null | undefined,
@@ -24,7 +25,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     consentFailed: false,
     readConsent: () => Promise.resolve(state.consent ?? null),
     providers: ["Anthropic", "Google"],
-    forChapter: false,
     turnOn: state.turnOn,
     notNow: state.notNow,
     pending: false,
@@ -68,13 +68,13 @@ describe("the member's Frapp AI switch in Settings", () => {
     state.offline = false;
   });
 
-  it("shows it off until the member said yes, and names the companies", () => {
+  it("shows it off until the member said yes, and names no company", () => {
     state.consent = consent();
     render(<AiSection />);
     expect(screen.getByRole("switch", { name: "Frapp AI" })).not.toBeChecked();
-    expect(
-      screen.getByText("Works with Anthropic and Google."),
-    ).toBeInTheDocument();
+    expect(screen.getByText(FRAPP_AI_COPY.settingsCaption)).toBeInTheDocument();
+    // The companies are named on Meet Frapp AI, where the yes is given.
+    expect(screen.queryByText(/anthropic|google/i)).toBeNull();
   });
 
   it("turning it on opens Meet Frapp AI, and Continue there turns it on", async () => {

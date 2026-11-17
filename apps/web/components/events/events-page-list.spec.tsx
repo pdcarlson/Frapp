@@ -80,61 +80,30 @@ vi.mock("@/components/ai/suggested-events", () => ({
   useRecordPlannedEvent: () => async () => undefined,
 }));
 
-vi.mock("@repo/hooks", async () => ({
-  // The Subscribe menu reads the real shared Google Calendar copy (#4676);
-  // the hooks below override what this spec stubs.
-  ...(await import("@repo/hooks/use-google-calendar")),
-  // The rule itself is the hook's own spec; here the page has to follow
-  // whatever it answers (#4132).
-  useRequiredOfViewer: () => requiredOfViewer.current,
-  // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
-  useCalendarFeedLink: () => ({ data: undefined, isError: false }),
-  useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  calendarAppLinks: () => null,
-  useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  readGoogleCalendarReturn: () => null,
-  GOOGLE_CALENDAR_RETURN_PARAMS: [],
-  useActiveChapterId: () => "chap-1",
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useCalendarBirthdays: () => birthdaysRef.current,
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => ({
-    data: { subscription_status: "active", past_due_since: null },
-    isPending: false,
-    isError: false,
-  }),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [], isError: false }),
-  // The editor itself, opened by the draft cases (#4593).
-  useEventTypes: () => ({ data: [], isLoading: false }),
-  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEvents: () => ({
-    data: eventsQuery.data,
-    isLoading: false,
-    isError: eventsQuery.isError ?? false,
-    error: eventsQuery.isError ? new Error("boom") : null,
-    refetch: vi.fn(),
-  }),
-  useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({
-    data: { permissions: permissionsRef.current },
-    isLoading: false,
-  }),
-  useNow: () => Date.now(),
-}));
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks, eventTypeHooks } =
+    await import("@/tests/events-page");
+  return eventsPageHooks({
+    // The rule itself is the hook's own spec; here the page has to follow
+    // whatever it answers (#4132).
+    useRequiredOfViewer: () => requiredOfViewer.current,
+    useCalendarBirthdays: () => birthdaysRef.current,
+    useRoles: () => ({ data: [], isError: false }),
+    // The editor itself, opened by the draft cases (#4593).
+    ...eventTypeHooks([]),
+    useEvents: () => ({
+      data: eventsQuery.data,
+      isLoading: false,
+      isError: eventsQuery.isError ?? false,
+      error: eventsQuery.isError ? new Error("boom") : null,
+      refetch: vi.fn(),
+    }),
+    useMyPermissions: () => ({
+      data: { permissions: permissionsRef.current },
+      isLoading: false,
+    }),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.
