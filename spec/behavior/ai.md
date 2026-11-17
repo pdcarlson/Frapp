@@ -1017,6 +1017,9 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
   Every number must be one the facts hold.
   Words that fail any check are replaced whole by Frapp's fixed sentence for that kind, which says only what the task says; so are a refusal, a provider failure and a reached spending limit.
   The member never waits on a card and never reads one nobody could stand behind.
+- **Words someone else wrote go only where the chapter has Ask on.**
+  The task's description (usually the assigner's) and an officer's sent-back note reach the model only while the president has Ask switched on; otherwise the card is written from the title, deadline, steps and counts alone, and its place to start comes from the steps.
+  Decided by Paul, 2026-11-17, when nudges went on by default (#5309): a chapter that never turned any AI on should not send what an officer wrote, who may have said No to Frapp AI themselves.
 - **What people typed is read, never obeyed.**
   The task's title, description, checklist and note go to the model as data in the user turn, and the instructions are the system channel.
   The call has no tools, and what comes back is text for one reader.

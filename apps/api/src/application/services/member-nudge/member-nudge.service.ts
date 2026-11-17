@@ -354,7 +354,7 @@ export class MemberNudgeService implements OnModuleInit {
     const completedSince = new Date(
       now.getTime() - NUDGE_HISTORY_MS,
     ).toISOString();
-    const [identities, subtasks, finished, own] = await Promise.all([
+    const [identities, subtasks, finished, own, askOn] = await Promise.all([
       this.users.findDisplayIdentitiesByIds([userId]),
       this.tasks.findSubtasks(chapterId, [candidate.task.id]),
       this.tasks.findByChapter(chapterId, {
@@ -370,6 +370,9 @@ export class MemberNudgeService implements OnModuleInit {
         completedSince,
         limit: HISTORY_LIMIT,
       }),
+      // Words others wrote on the task go to the model only where the
+      // president turned Ask on; nudges alone are on by default.
+      this.consent.chapterSwitchOn(chapterId, 'ask'),
     ]);
     const facts = buildNudgeFacts({
       candidate,
@@ -378,6 +381,7 @@ export class MemberNudgeService implements OnModuleInit {
       history: nudgeHistory({ task: candidate.task, userId, finished, own }),
       timeZone: input.timeZone,
       now,
+      othersWords: askOn,
     });
 
     let generated: Awaited<
