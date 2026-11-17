@@ -46,6 +46,35 @@ export function ThreadsGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) 
   );
 }
 
+/**
+ * The List / Grid toggle's two pictures: Lucide's `LayoutGrid` and `List`,
+ * as Google Drive and Files draw their layout switch. The toggle shows the
+ * layout a tap switches to.
+ */
+export function GridGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
+        {...detail}
+      />
+    </Frame>
+  );
+}
+
+export function ListGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
+        {...detail}
+      />
+    </Frame>
+  );
+}
+
 export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
