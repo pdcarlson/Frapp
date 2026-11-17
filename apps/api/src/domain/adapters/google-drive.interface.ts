@@ -19,6 +19,16 @@ export interface GoogleDriveItem {
   size: number | null;
   /** The item's page in Drive. */
   webViewLink: string | null;
+  /**
+   * The item's Description in Drive. Read by `getItem` only (a listing
+   * leaves it out), for the connect check's code (#5185).
+   */
+  description?: string | null;
+  /**
+   * The folders that hold it, as far as the service account can see them.
+   * Read by `getItem` only.
+   */
+  parents?: string[];
 }
 
 export type GoogleDriveErrorKind =
@@ -50,7 +60,14 @@ export interface IGoogleDriveApi {
   isConfigured(): boolean;
   /** The address a chapter shares its folder with, or null when unconfigured. */
   serviceAccountEmail(): string | null;
-  /** One item by id. */
+  /**
+   * A short code only this server can make for `subject`, keyed by the
+   * service account's own private key, or null when unconfigured. Connecting
+   * asks for it in the folder (#5185): only someone who can edit the folder
+   * can put it there.
+   */
+  proofCode(subject: string): string | null;
+  /** One item by id, with its Description and parents. */
   getItem(id: string): Promise<GoogleDriveItem>;
   /** A folder's children, not trashed, every page. */
   listChildren(folderId: string): Promise<GoogleDriveItem[]>;

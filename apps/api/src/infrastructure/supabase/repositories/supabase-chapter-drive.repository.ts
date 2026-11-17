@@ -12,7 +12,9 @@ import { SupabaseQueryError } from '../supabase-query-error';
  * A chapter's connected Google Drive folder (#5157).
  *
  * Officer-facing reads and writes filter on `chapter_id`. The unscoped ones
- * are the worker's, which act on rows the claim handed them. The table
+ * are the worker's, which act on rows the claim handed them, and the two
+ * "elsewhere" reads, which return only whether a folder is taken (or the
+ * taken folder ids), never another chapter's rows. The table
  * enables RLS with no policies, so only the API (service role) reaches it.
  */
 @Injectable()
@@ -57,6 +59,40 @@ export class SupabaseChapterDriveRepository implements IChapterDriveRepository {
       .single();
     if (error) throw new SupabaseQueryError(error);
     return created;
+  }
+
+  async folderTakenElsewhere(
+    chapterId: string,
+    folderIds: string[],
+  ): Promise<boolean> {
+    if (folderIds.length === 0) return false;
+    const connected = await this.supabase
+      .from('chapter_drive_connections')
+      .select('id')
+      .in('folder_id', folderIds)
+      .neq('chapter_id', chapterId)
+      .neq('status', 'disconnecting')
+      .limit(1);
+    if (connected.error) throw new SupabaseQueryError(connected.error);
+    if ((connected.data ?? []).length > 0) return true;
+    const synced = await this.supabase
+      .from('chapter_document_folders')
+      .select('id')
+      .in('drive_folder_id', folderIds)
+      .neq('chapter_id', chapterId)
+      .limit(1);
+    if (synced.error) throw new SupabaseQueryError(synced.error);
+    return (synced.data ?? []).length > 0;
+  }
+
+  async liveFolderIdsElsewhere(chapterId: string): Promise<Set<string>> {
+    const { data, error } = await this.supabase
+      .from('chapter_drive_connections')
+      .select('folder_id')
+      .neq('chapter_id', chapterId)
+      .neq('status', 'disconnecting');
+    if (error) throw new SupabaseQueryError(error);
+    return new Set((data ?? []).map((row) => row.folder_id));
   }
 
   async markDue(chapterId: string, now: Date): Promise<boolean> {

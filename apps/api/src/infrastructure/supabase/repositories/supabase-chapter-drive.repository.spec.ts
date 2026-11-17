@@ -44,6 +44,18 @@ const seed = () => ({
     inA(connection(CONN_A_OLD, 'disconnecting')),
     inB(connection(CONN_B_OLD, 'disconnecting')),
   ],
+  chapter_document_folders: [
+    inA({
+      id: '0a000000-0000-4000-8000-000000000512',
+      name: 'Chapter files / Rush',
+      drive_folder_id: 'sub-a',
+    }),
+    inB({
+      id: '0b000000-0000-4000-8000-000000000512',
+      name: 'Chapter files / Rush',
+      drive_folder_id: 'sub-1',
+    }),
+  ],
 });
 
 describe('SupabaseChapterDriveRepository — tenant scope', () => {
@@ -56,7 +68,10 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
     harness = createTenantHarness({
       tables: seed(),
       // Two chapters may share one Drive folder with Frapp.
-      collisionExempt: { chapter_drive_connections: ['folder_id'] },
+      collisionExempt: {
+        chapter_drive_connections: ['folder_id'],
+        chapter_document_folders: ['drive_folder_id'],
+      },
     });
     repo = new SupabaseChapterDriveRepository(harness.client);
   });
@@ -94,6 +109,33 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
     expect(done).toBe(true);
     expect(row(CONN_B)?.status).toBe('disconnecting');
     expect(row(CONN_A)?.status).toBe('active');
+  });
+
+  // #5185: answers only whether a folder is taken elsewhere, never rows.
+  it('folderTakenElsewhere sees other chapters’ live and synced folders, not the caller’s', async () => {
+    await expect(
+      repo.folderTakenElsewhere(CHAPTER_A, ['folder-1']),
+    ).resolves.toBe(true);
+    await expect(
+      repo.folderTakenElsewhere(CHAPTER_A, ['x', 'sub-1']),
+    ).resolves.toBe(true);
+    await expect(repo.folderTakenElsewhere(CHAPTER_B, ['sub-1'])).resolves.toBe(
+      false,
+    );
+    await expect(repo.folderTakenElsewhere(CHAPTER_A, ['x'])).resolves.toBe(
+      false,
+    );
+    await expect(repo.folderTakenElsewhere(CHAPTER_A, [])).resolves.toBe(false);
+  });
+
+  it('liveFolderIdsElsewhere lists other chapters’ live folders only', async () => {
+    await expect(repo.liveFolderIdsElsewhere(CHAPTER_A)).resolves.toEqual(
+      new Set(['folder-1']),
+    );
+    await repo.disconnect(CHAPTER_B, new Date('2026-11-16T01:00:00.000Z'));
+    await expect(repo.liveFolderIdsElsewhere(CHAPTER_A)).resolves.toEqual(
+      new Set(),
+    );
   });
 
   it('finishSync leaves a disconnecting row disconnecting', async () => {
