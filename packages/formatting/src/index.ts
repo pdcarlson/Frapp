@@ -13,6 +13,7 @@ export {
 } from "./locale";
 export { formatPaddedStopwatch, formatTimer } from "./stopwatch";
 export { parseInstant } from "./instant";
+export { closesAtHasPassed } from "./deadline";
 export {
   /** @public See `formatLocaleDate`. */
   formatBareDate,
