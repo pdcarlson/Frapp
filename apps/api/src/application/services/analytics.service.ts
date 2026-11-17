@@ -161,6 +161,34 @@ export class AnalyticsService {
   }
 
   /**
+   * The chapter group id for a chapter the caller belongs to, for
+   * `GET /v1/analytics/identity`. That route's chapter can come from the
+   * unverified `x-chapter-id` header (identity works before a chapter is
+   * picked), so the pseudonym is handed out only after a membership check:
+   * not a member, or a lookup that fails, answers null, and the user's own
+   * id still comes back for Sentry.
+   */
+  async getMemberChapterGroupId(
+    userId: string,
+    chapterId: string | undefined | null,
+  ): Promise<string | null> {
+    const groupId = this.getChapterGroupId(chapterId);
+    if (!groupId || !chapterId) return null;
+    try {
+      const member = await this.members.findByUserAndChapter(userId, chapterId);
+      return member ? groupId : null;
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        'analytics identity membership check failed; leaving the chapter out',
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Record a user-keyed behavioral event. Best-effort: a provider or
    * opt-out lookup failure is logged and swallowed so product requests are
    * never affected. A *content/PII* payload, by contrast, throws — that is a

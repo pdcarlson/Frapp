@@ -277,6 +277,9 @@ function isMemberSwitchable(category: string, priority: string): boolean {
   return priority !== 'URGENT' && isNotificationCategoryKey(category);
 }
 
+/** Devices one member keeps push tokens for (L4 of the 2026-11 API audit). */
+export const MAX_PUSH_TOKENS_PER_USER = 10;
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -998,28 +1001,77 @@ export class NotificationService {
     const existing = await this.pushTokenRepo.findByToken(token);
     if (existing) {
       if (existing.user_id === userId) {
-        // The phone sends its platform label on every register (#4563), so a
-        // row stored before it did gets one, and an OS update refreshes it.
-        // An absent label never clears a stored one, and a row deleted since
+        // A phone re-registers its unchanged token on every launch, so each
+        // one stamps `last_registered_at`, which the cap below ranks by. The
+        // phone also sends its platform label every time (#4563), so a row
+        // stored before it did gets one, and an OS update refreshes it. An
+        // absent label never clears a stored one, and a row deleted since
         // the read above returns as read, as it did before labels.
-        if (deviceName && existing.device_name !== deviceName) {
-          const updated = await this.pushTokenRepo.updateDeviceName(
-            existing.id,
-            userId,
-            deviceName,
-          );
-          return updated ?? existing;
-        }
-        return existing;
+        const updated = await this.pushTokenRepo.markRegistered(
+          existing.id,
+          userId,
+          new Date().toISOString(),
+          deviceName && existing.device_name !== deviceName
+            ? deviceName
+            : undefined,
+        );
+        return updated ?? existing;
       }
+      // The same phone signed in to another account: the token follows
+      // whoever registered it last. Logged (no token, no device name) so a
+      // move nobody made on purpose can be traced.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'push_token_moved',
+          from_user_id: existing.user_id,
+          to_user_id: userId,
+        }),
+      );
       await this.pushTokenRepo.deleteByToken(token);
     }
 
-    return this.pushTokenRepo.create({
+    const created = await this.pushTokenRepo.create({
       user_id: userId,
       token,
       device_name: deviceName ?? null,
     });
+    try {
+      await this.dropOldestPushTokens(userId);
+    } catch (err) {
+      // The new row is stored and will receive pushes; a failed trim leaves
+      // the member over the cap until their next register, which is no reason
+      // to tell the phone its registration failed. No token in the log.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'push_token_cap_failed',
+          user_id: userId,
+          error: err instanceof Error ? err.name : 'unknown',
+        }),
+      );
+    }
+    return created;
+  }
+
+  /**
+   * A member keeps at most `MAX_PUSH_TOKENS_PER_USER` devices. A reinstall or
+   * a new phone registers a new token while the old one lingers until Expo
+   * reports it gone, so past the cap the ones registered longest ago go: every
+   * push fans out to each stored token, and an account can't pile up rows
+   * without end. A phone in use re-registers on every launch, so it ranks by
+   * its last launch, not by when its token was first stored.
+   */
+  private async dropOldestPushTokens(userId: string): Promise<void> {
+    const tokens = await this.pushTokenRepo.findByUser(userId);
+    if (tokens.length <= MAX_PUSH_TOKENS_PER_USER) return;
+    const oldest = [...tokens]
+      .sort(
+        (a, b) =>
+          Date.parse(b.last_registered_at) - Date.parse(a.last_registered_at),
+      )
+      .slice(MAX_PUSH_TOKENS_PER_USER);
+    for (const row of oldest) {
+      await this.pushTokenRepo.delete(row.id, userId);
+    }
   }
 
   async removePushToken(id: string, userId: string): Promise<void> {

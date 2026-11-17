@@ -109,11 +109,17 @@ export interface IPushTokenRepository {
   findByUserIds(userIds: string[]): Promise<PushToken[]>;
   findById(id: string): Promise<PushToken | null>;
   findByToken(token: string): Promise<PushToken | null>;
-  /** Null when no row with that id belongs to the user any more. */
-  updateDeviceName(
+  /**
+   * A re-register by the token's own member: stamps `last_registered_at`
+   * with `now`, and sets `device_name` only when `deviceName` is given (an
+   * absent label never clears a stored one). Null when no row with that id
+   * belongs to the user any more.
+   */
+  markRegistered(
     id: string,
     userId: string,
-    deviceName: string,
+    now: string,
+    deviceName?: string,
   ): Promise<PushToken | null>;
   delete(id: string, userId: string): Promise<void>;
   deleteByToken(token: string): Promise<void>;

@@ -16,7 +16,7 @@ describe('AnalyticsController', () => {
   let analytics: jest.Mocked<
     Pick<
       AnalyticsService,
-      'getDistinctId' | 'getChapterGroupId' | 'trackFromClient'
+      'getDistinctId' | 'getMemberChapterGroupId' | 'trackFromClient'
     >
   >;
 
@@ -25,7 +25,7 @@ describe('AnalyticsController', () => {
     // delegation + error mapping without the guard/interceptor DI graph.
     analytics = {
       getDistinctId: jest.fn(),
-      getChapterGroupId: jest.fn(),
+      getMemberChapterGroupId: jest.fn(),
       trackFromClient: jest.fn(),
     };
     controller = new AnalyticsController(
@@ -34,62 +34,71 @@ describe('AnalyticsController', () => {
   });
 
   describe('getIdentity', () => {
-    it('returns validated pseudonyms when a chapter is in context', () => {
+    it('returns validated pseudonyms when a chapter is in context', async () => {
       analytics.getDistinctId.mockReturnValue(USER_HEX);
-      analytics.getChapterGroupId.mockReturnValue(CHAPTER_HEX);
+      analytics.getMemberChapterGroupId.mockResolvedValue(CHAPTER_HEX);
 
-      expect(controller.getIdentity(USER_ID, CHAPTER_ID)).toEqual({
+      expect(await controller.getIdentity(USER_ID, CHAPTER_ID)).toEqual({
         distinct_id: USER_HEX,
         enabled: true,
         chapter_group_id: CHAPTER_HEX,
       });
       expect(analytics.getDistinctId).toHaveBeenCalledWith(USER_ID);
-      expect(analytics.getChapterGroupId).toHaveBeenCalledWith(CHAPTER_ID);
+      expect(analytics.getMemberChapterGroupId).toHaveBeenCalledWith(
+        USER_ID,
+        CHAPTER_ID,
+      );
     });
 
-    it('returns chapter_group_id=null when no chapter is in context', () => {
+    it('returns chapter_group_id=null when no chapter is in context', async () => {
       analytics.getDistinctId.mockReturnValue(USER_HEX);
-      analytics.getChapterGroupId.mockReturnValue(null);
+      analytics.getMemberChapterGroupId.mockResolvedValue(null);
 
-      expect(controller.getIdentity(USER_ID)).toEqual({
+      expect(await controller.getIdentity(USER_ID)).toEqual({
         distinct_id: USER_HEX,
         enabled: true,
         chapter_group_id: null,
       });
-      expect(analytics.getChapterGroupId).toHaveBeenCalledWith(undefined);
+      expect(analytics.getMemberChapterGroupId).toHaveBeenCalledWith(
+        USER_ID,
+        undefined,
+      );
     });
 
-    it('returns a different chapter_group_id when the chapter changes', () => {
+    it('returns a different chapter_group_id when the chapter changes', async () => {
       analytics.getDistinctId.mockReturnValue(USER_HEX);
-      analytics.getChapterGroupId.mockImplementation((chapterId) =>
-        chapterId === CHAPTER_ID ? CHAPTER_HEX : 'c'.repeat(64),
+      analytics.getMemberChapterGroupId.mockImplementation((_user, chapterId) =>
+        Promise.resolve(
+          chapterId === CHAPTER_ID ? CHAPTER_HEX : 'c'.repeat(64),
+        ),
       );
 
-      expect(controller.getIdentity(USER_ID, CHAPTER_ID).chapter_group_id).toBe(
-        CHAPTER_HEX,
-      );
       expect(
-        controller.getIdentity(USER_ID, OTHER_CHAPTER_ID).chapter_group_id,
+        (await controller.getIdentity(USER_ID, CHAPTER_ID)).chapter_group_id,
+      ).toBe(CHAPTER_HEX);
+      expect(
+        (await controller.getIdentity(USER_ID, OTHER_CHAPTER_ID))
+          .chapter_group_id,
       ).toBe('c'.repeat(64));
     });
 
-    it('returns enabled=false when analytics is unconfigured', () => {
+    it('returns enabled=false when analytics is unconfigured', async () => {
       analytics.getDistinctId.mockReturnValue(null);
-      analytics.getChapterGroupId.mockReturnValue(null);
+      analytics.getMemberChapterGroupId.mockResolvedValue(null);
 
-      expect(controller.getIdentity(USER_ID, CHAPTER_ID)).toEqual({
+      expect(await controller.getIdentity(USER_ID, CHAPTER_ID)).toEqual({
         distinct_id: null,
         enabled: false,
         chapter_group_id: null,
       });
     });
 
-    it('never puts raw user or chapter ids on the payload', () => {
+    it('never puts raw user or chapter ids on the payload', async () => {
       analytics.getDistinctId.mockReturnValue(USER_HEX);
-      analytics.getChapterGroupId.mockReturnValue(CHAPTER_HEX);
+      analytics.getMemberChapterGroupId.mockResolvedValue(CHAPTER_HEX);
 
       const payload = JSON.stringify(
-        controller.getIdentity(USER_ID, CHAPTER_ID),
+        await controller.getIdentity(USER_ID, CHAPTER_ID),
       );
       expect(payload).not.toContain(USER_ID);
       expect(payload).not.toContain(CHAPTER_ID);

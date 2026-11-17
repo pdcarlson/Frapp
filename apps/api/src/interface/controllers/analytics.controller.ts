@@ -43,13 +43,13 @@ export class AnalyticsController {
   @Get('identity')
   @ApiOperation({
     summary:
-      "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
+      "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter the caller belongs to is in context). Lets the client attribute events without ever holding the salt.",
   })
   @ApiOkResponse({ type: IdentityResponseDto })
-  getIdentity(
+  async getIdentity(
     @CurrentUser('id') userId: string,
     @OptionalChapterId() chapterId?: string,
-  ): IdentityResponseDto {
+  ): Promise<IdentityResponseDto> {
     // `enabled: false` tells the client SDK to stay dark (no key configured).
     // Chapter opt-out does not hide these digests — Sentry still needs
     // `user.id`. Event capture remains gated in AnalyticsService.
@@ -57,7 +57,10 @@ export class AnalyticsController {
     return {
       distinct_id: distinctId,
       enabled: distinctId !== null,
-      chapter_group_id: this.analytics.getChapterGroupId(chapterId),
+      chapter_group_id: await this.analytics.getMemberChapterGroupId(
+        userId,
+        chapterId,
+      ),
     };
   }
 
