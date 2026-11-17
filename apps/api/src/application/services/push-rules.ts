@@ -184,7 +184,8 @@ export type PushOutcome =
 /**
  * Apply the full chain. Order matters: presence is the cheapest skip and the
  * one that protects users from notifications they don't need (they're
- * actively reading). Level filtering follows.
+ * actively reading), except for an announcement, which presence never quiets
+ * (see below). Level filtering follows.
  *
  * @mentions override a muted channel: an explicit (or default) `off` level is
  * bypassed when the recipient is mentioned (spec `behavior/notifications.md`,
@@ -220,7 +221,15 @@ export function decidePush(input: PushDecisionInput): PushOutcome {
   ) {
     return 'skip-level';
   }
-  if (input.recipientIsPresent) return 'skip-presence';
+  // Presence is published by the readers' own clients on a topic any reader
+  // of the channel may publish to, so it can't prove who is reading. It still
+  // quiets every other push, sparing active readers the noise (ADR-04),
+  // but never an announcement: one forged entry per member would
+  // otherwise silence the chapter's URGENT push.
+  // Decided by the channel, as the worker's URGENT label is; a thread reply
+  // under an announcement is not one (2026-11-17).
+  const announcement = !input.thread && isAnnouncementChannel(input.channel);
+  if (input.recipientIsPresent && !announcement) return 'skip-presence';
   const level = resolveLevel(
     input.channel,
     input.messageKind,
