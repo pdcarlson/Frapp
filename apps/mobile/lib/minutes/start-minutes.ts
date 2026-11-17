@@ -44,8 +44,10 @@ const RECENT_DAYS = 14;
 const MAX_OPTIONS = 6;
 
 export const MEETING_START_COPY = {
-  record: "Record the meeting",
-  newHeading: "Start minutes",
+  record: "Record",
+  typeInstead: "Type notes instead",
+  forMeeting: "Meeting",
+  newHeading: "New minutes",
   change: "Change",
   pickHeading: "Which meeting?",
   onNow: "On now",

@@ -743,6 +743,13 @@ export class MeetingRecordingDto {
       'The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes.',
   })
   transcript: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted.',
+  })
+  audio_url: string | null;
   @ApiProperty({ type: Number, nullable: true })
   speaker_count: number | null;
   @ApiProperty({ type: String, format: 'date-time', nullable: true })

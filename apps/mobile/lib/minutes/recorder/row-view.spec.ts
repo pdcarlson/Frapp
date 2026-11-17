@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MEETING_RECORDER_COPY } from "@repo/validation";
 import { IDLE, type RecorderState, type RecordingSubject } from "./machine";
 import {
+  recorderBusy,
   recordingBarView,
   recordingRowView,
   type ServerRecording,
@@ -9,9 +10,9 @@ import {
 
 /**
  * What the recording row and the bar say in each state. The officer reads
- * this from across a table, so each state has one plain line and at most two
- * buttons, and a recording that isn't being written never reads as one that
- * is.
+ * this from across a table, so each state has one plain line, at most one
+ * full-width button, and a recording that isn't being written never reads as
+ * one that is.
  */
 const subject: RecordingSubject = {
   meetingId: "meeting-1",
@@ -28,7 +29,7 @@ const view = (local: RecorderState, server: ServerRecording = none) =>
   recordingRowView("meeting-1", local, server);
 const does = (local: RecorderState, server: ServerRecording = none) => {
   const row = view(local, server);
-  return [row.primary?.does ?? null, row.secondary?.does ?? null];
+  return [row.primary?.does ?? null, ...row.actions.map((a) => a.does)];
 };
 
 describe("recordingRowView", () => {
@@ -42,7 +43,7 @@ describe("recordingRowView", () => {
     expect(row.dot).toBeNull();
   });
 
-  it("shows a live dot, the clock, Stop and Pause while recording", () => {
+  it("shows a live dot, the clock and the round controls while recording", () => {
     const row = view({
       phase: "recording",
       subject,
@@ -54,10 +55,11 @@ describe("recordingRowView", () => {
       dot: "live",
       clock: "1:02:03",
       tone: "quiet",
+      live: "recording",
     });
+    // Pause and Stop are the round controls, never full-width buttons.
     expect(does({ phase: "recording", subject, seconds: 1, paused: null })).toEqual([
-      "stop",
-      "pause",
+      null,
     ]);
   });
 
@@ -68,8 +70,12 @@ describe("recordingRowView", () => {
       dot: "paused",
       text: MEETING_RECORDER_COPY.pausedHint,
       tone: "quiet",
+      live: "paused",
     });
-    expect([row.primary?.does, row.secondary?.does]).toEqual(["resume", "stop"]);
+    // The same two controls in the same places: only the pause one's glyph
+    // turns to carry on.
+    expect(row.primary).toBeNull();
+    expect(row.actions).toEqual([]);
   });
 
   it("says a call took the microphone, as a problem", () => {
@@ -87,8 +93,9 @@ describe("recordingRowView", () => {
   });
 
   it("offers nothing to press while the microphone opens or the file closes", () => {
-    expect(does({ phase: "starting", subject })).toEqual([null, null]);
-    expect(does({ phase: "saving", subject, seconds: 9 })).toEqual([null, null]);
+    expect(does({ phase: "starting", subject })).toEqual([null]);
+    expect(does({ phase: "saving", subject, seconds: 9 })).toEqual([null]);
+    expect(view({ phase: "saving", subject, seconds: 9 }).working).toBe(true);
   });
 
   it("shows the upload's real progress and a Cancel", () => {
@@ -101,7 +108,14 @@ describe("recordingRowView", () => {
     });
     expect(row.progress).toBe(0.5);
     expect(row.text).toContain("50% of 28 MB");
-    expect(row.primary?.does).toBe("cancel_upload");
+    expect(row.working).toBe(true);
+    expect(does({
+      phase: "uploading",
+      subject,
+      seconds: 3600,
+      sent: 1,
+      total: 2,
+    })).toEqual([null, "cancel_upload"]);
   });
 
   it.each([
@@ -125,7 +139,7 @@ describe("recordingRowView", () => {
       });
       expect(row).toMatchObject({ text, tone });
       expect(row.primary).toEqual({ label, does: "upload" });
-      expect(row.secondary?.does).toBe("delete");
+      expect(row.actions.map((a) => a.does)).toEqual(["delete"]);
     },
   );
 
@@ -152,17 +166,17 @@ describe("recordingRowView", () => {
       none,
     );
     expect(row.text).toBe(MEETING_RECORDER_COPY.elsewhere("Chapter meeting"));
-    expect(row.primary?.does).toBe("open_other");
+    expect(row.actions.map((a) => a.does)).toEqual(["open_other"]);
     expect(row.dot).toBeNull();
   });
 
   it.each([
     ["microphone_denied", ["open_settings", "record"]],
     ["notifications_denied", ["open_settings", "record"]],
-    ["low_storage", ["record", null]],
-    ["too_short", ["record", null]],
-    ["lost", ["record", null]],
-    ["start_failed", ["record", null]],
+    ["low_storage", ["record"]],
+    ["too_short", ["record"]],
+    ["lost", ["record"]],
+    ["start_failed", ["record"]],
   ] as const)("a refusal (%s) says why and offers the way on", (kind, buttons) => {
     const state: RecorderState = {
       phase: "idle",
@@ -181,13 +195,16 @@ describe("recordingRowView", () => {
   });
 
   it("follows the server once the phone holds nothing", () => {
-    expect(does(IDLE, { ...none, status: "uploading" })).toEqual([null, null]);
+    expect(does(IDLE, { ...none, status: "uploading" })).toEqual([null]);
     expect(view(IDLE, { ...none, status: "uploading" }).text).toBe(
       MEETING_RECORDER_COPY.otherDevice,
     );
     expect(
       does(IDLE, { ...none, status: "transcribing", duration_seconds: 3600 }),
-    ).toEqual(["stop_transcribing", null]);
+    ).toEqual([null, "stop_transcribing"]);
+    expect(
+      view(IDLE, { ...none, status: "transcribing", duration_seconds: 3600 }),
+    ).toMatchObject({ title: "Transcribing", working: true });
     expect(
       does(IDLE, {
         ...none,
@@ -195,7 +212,7 @@ describe("recordingRowView", () => {
         duration_seconds: 3600,
         transcript: "Speaker 1: Call to order.",
       }),
-    ).toEqual(["open_notes", "record"]);
+    ).toEqual([null]);
     const failed = view(IDLE, {
       ...none,
       status: "failed",
@@ -214,6 +231,29 @@ describe("recordingRowView", () => {
       { ...none, status: "ready", transcript: "Old transcript." },
     );
     expect(row.title).toBe("Recording");
+  });
+});
+
+describe("recorderBusy", () => {
+  it("holds the rest of the screen back while this meeting's recording is in hand", () => {
+    expect(recorderBusy("meeting-1", IDLE, none)).toBe(false);
+    expect(
+      recorderBusy(
+        "meeting-1",
+        { phase: "recording", subject, seconds: 5, paused: "user" },
+        none,
+      ),
+    ).toBe(true);
+    expect(recorderBusy("meeting-1", IDLE, { status: "transcribing" })).toBe(true);
+    expect(recorderBusy("meeting-1", IDLE, { status: "ready" })).toBe(false);
+    // Another meeting's recording doesn't hold this one's minutes.
+    expect(
+      recorderBusy(
+        "meeting-2",
+        { phase: "recording", subject, seconds: 5, paused: null },
+        none,
+      ),
+    ).toBe(false);
   });
 });
 

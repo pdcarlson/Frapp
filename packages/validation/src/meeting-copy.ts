@@ -102,6 +102,7 @@ export const MEETING_ENTRY_COPY = {
   posted: "Posted",
   open: "Open minutes",
   write: "Write minutes",
+  record: "Record minutes",
   alreadyStartedTitle: "These minutes are already started",
   alreadyStartedBody:
     "Someone else started minutes for this meeting. They show here once they are posted.",
@@ -147,7 +148,6 @@ export const MEETING_COPY = {
    * The phone reads minutes, drafts them from notes and posts them. Changing
    * a section's wording by hand is on the web for now.
    */
-  editOnWeb: "To change the wording, open these minutes on the web.",
   writeOnWeb: "Open these minutes on the web to write them.",
   suggestedTasks: "Suggested tasks",
 } as const;

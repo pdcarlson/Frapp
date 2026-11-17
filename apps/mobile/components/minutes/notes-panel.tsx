@@ -1,6 +1,11 @@
-import { forwardRef, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { codeOf } from "@repo/api-sdk";
 import {
   useDiscardMeetingDraft,
@@ -31,18 +36,8 @@ import {
   type AiReportTarget,
 } from "@/components/ai/report-ai-sheet";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
-import {
-  SHEET_STACK_BEHAVIOR,
-  SheetBackToClose,
-  SheetGrabber,
-  SheetPrimaryButton,
-  SheetScrim,
-  TallSheetHeader,
-  sheetFieldStyles,
-  useSheetBackgroundStyle,
-  useSheetClose,
-  useTallSheetProps,
-} from "@/components/sheet-scaffold";
+import { TextAction } from "@/components/minutes/recorder-controls";
+import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   useDropKeptSheetDraft,
@@ -61,23 +56,23 @@ interface KeptNotes {
 }
 import { confirmAlert } from "@/lib/minutes/meetings-on";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
- * Minutes drafted from an officer's notes, on the phone
- * (`spec/behavior/meetings.md` § Drafting from notes; #4312). The secretary
- * types or pastes what they wrote down during the meeting, asks for a draft,
- * and the minutes behind this sheet fill in for them to read and post. Web's
+ * The officer's notes and the draft written from them, on the minutes screen
+ * itself (`spec/behavior/meetings.md` § Drafting from notes; #4312). Web's
  * twin is `notes-draft-panel.tsx`; both say the same words
  * (`MEETING_NOTES_COPY`) and call the same routes.
  *
- * It is a tall sheet over the minutes, the way Apple Notes and Granola give
- * rough notes the whole screen: notes are long, and a half-height box would
- * scroll them in a window.
+ * On the screen, not in a sheet (Paul, 2026-11-17: "I don't want a pop-up
+ * sheet for everything ... if I'm writing my notes, they should be on
+ * screen"), the way Granola keeps its notes beside the recording: the officer
+ * types under the running clock, and the draft that comes back fills in the
+ * minutes above.
  *
- * One status line sits under the field and keeps its height in every state,
- * so nothing below it moves while a draft is written (principles P4). The AI
- * question is asked here, where the officer first reaches for the draft.
+ * Drafting is one action, not two doors to the same sheet. The screen's
+ * button asks for it (`draft()`), and a finished transcript asks for it by
+ * itself (`autoDraft`), so after Stop the minutes simply arrive. The AI
+ * question is asked where a draft is first asked for.
  *
  * The phone has no section editor, so nothing typed elsewhere can be lost:
  * the version a draft builds on is read fresh from the server (`getVersion`)
@@ -99,7 +94,12 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * A kept copy comes back only over the stored notes it was typed over, and a
  * transcript put in by itself isn't kept (the server holds it).
  */
-export interface NotesDraftSheetProps {
+export interface NotesPanelHandle {
+  /** Asks for a draft from these notes and the transcript. */
+  draft: () => Promise<void>;
+}
+
+export interface NotesPanelProps {
   meetingId: string;
   eventStart: string;
   state: MeetingDraftState;
@@ -111,12 +111,17 @@ export interface NotesDraftSheetProps {
   getVersion: () => Promise<string | null>;
   /** A draft stopped being written, however it ended: read the minutes again. */
   onSettled: () => void;
+  /**
+   * A transcript is in and nothing is drafted yet: ask for the draft without
+   * waiting for a press, once.
+   */
+  autoDraft?: boolean;
+  /** Whether the box holds anything typed, for the screen's button. */
+  onTyped?: (typed: boolean) => void;
 }
 
-export const NotesDraftSheet = forwardRef<
-  BottomSheetModal,
-  NotesDraftSheetProps
->(function NotesDraftSheet(
+export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
+  function NotesPanel(
   {
     meetingId,
     eventStart,
@@ -125,15 +130,14 @@ export const NotesDraftSheet = forwardRef<
     recording = null,
     getVersion,
     onSettled,
+    autoDraft = false,
+    onTyped,
   },
   ref,
 ) {
   const { tokens } = useFrappTheme();
-  const { accent, accentOnPrimary } = useChapterBranding();
+  const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
-  const backgroundStyle = useSheetBackgroundStyle();
-  const tall = useTallSheetProps();
-  const closeSheet = useSheetClose(ref);
 
   const request = useRequestMeetingDraft();
   const discard = useDiscardMeetingDraft();
@@ -209,10 +213,6 @@ export const NotesDraftSheet = forwardRef<
     (taker) => taker.notes.trim() !== "" && taker.held === null,
   );
   const othersWrote = otherWriters.length > 0 || transcriptReady;
-  const alsoReads = [
-    ...otherWriters.map((taker) => `${taker.display_name}'s notes`),
-    ...(transcriptReady ? [MEETING_NOTE_TAKERS_COPY.recordingSource] : []),
-  ];
   const choose = useChooseMeetingDraftVersion();
   const viewer = useCurrentUser().data as { id?: string } | undefined;
   const myName = useMemberDisplayNames().nameFor(viewer?.id ?? "");
@@ -308,6 +308,32 @@ export const NotesDraftSheet = forwardRef<
     }
   }
 
+  useImperativeHandle(ref, () => ({ draft: handleDraft }));
+
+  const typed = notes.trim() !== "";
+  const typedReported = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (typedReported.current === typed) return;
+    typedReported.current = typed;
+    onTyped?.(typed);
+  }, [typed, onTyped]);
+
+  // A transcript just came in for minutes with nothing drafted: draft now.
+  const autoAsked = useRef(false);
+  const autoReady =
+    autoDraft &&
+    !drafting &&
+    state.status === "none" &&
+    !needsConsent &&
+    !kept.sendingElsewhere;
+  useEffect(() => {
+    if (!autoReady || autoAsked.current) return;
+    autoAsked.current = true;
+    void handleDraft();
+    // handleDraft reads the latest notes through the closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoReady]);
+
   async function handleStop() {
     // Only the writing stops: the notes stay, stored and in the box.
     try {
@@ -390,7 +416,7 @@ export const NotesDraftSheet = forwardRef<
                     ? MEETING_NOTE_TAKERS_COPY.appliedAll
                     : MEETING_NOTES_COPY.applied,
                 }
-              : { problem: false, text: MEETING_NOTES_COPY.idle };
+              : { problem: false, text: "" };
 
   const reviewed = state.status === "applied" || state.status === "ready";
   const { gaps, left_out: leftOut } = state.review;
@@ -408,235 +434,185 @@ export const NotesDraftSheet = forwardRef<
   const draftReported = reporting.isReported(reportTarget);
 
   return (
-    <>
-      <BottomSheetModal
-        ref={ref}
-        stackBehavior={SHEET_STACK_BEHAVIOR}
-        {...tall}
-        keyboardBehavior="interactive"
-        backgroundStyle={backgroundStyle}
-        handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-      >
-        <SheetBackToClose onClose={closeSheet} />
-        <BottomSheetScrollView
-          onAccessibilityEscape={closeSheet}
-          stickyHeaderIndices={[0]}
-          contentContainerStyle={styles.body}
-          keyboardShouldPersistTaps="handled"
+    <View style={styles.panel}>
+      <TextInput
+        multiline
+        value={notes}
+        editable={!drafting}
+        onChangeText={(text) => {
+          setNotes(text);
+          if (problem) setProblem(null);
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={MEETING_NOTES_COPY.placeholder}
+        placeholderTextColor={tokens.color.text.muted}
+        accessibilityLabel={MEETING_NOTES_COPY.heading}
+        style={[
+          styles.field,
+          styles.fieldMultilineText,
+          styles.notes,
+          focused ? styles.fieldFocused : null,
+        ]}
+      />
+      {status.text ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={[styles.status, status.problem ? styles.problem : null]}
         >
-          <View style={styles.header}>
-            <TallSheetHeader
-              title={MEETING_NOTES_COPY.heading}
-              onClose={closeSheet}
-            />
-          </View>
-          <Text style={styles.hint}>{MEETING_NOTES_COPY.hint}</Text>
-          <BottomSheetTextInput
-            multiline
-            value={notes}
-            editable={!drafting}
-            onChangeText={(text) => {
-              setNotes(text);
-              if (problem) setProblem(null);
-            }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            placeholder={MEETING_NOTES_COPY.placeholder}
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel={MEETING_NOTES_COPY.heading}
-            accessibilityHint={MEETING_NOTES_COPY.hint}
-            style={[
-              styles.field,
-              styles.fieldMultilineText,
-              styles.notes,
-              focused ? styles.fieldFocused : null,
-            ]}
+          {status.text}
+        </Text>
+      ) : null}
+
+      <View style={styles.actions}>
+        {drafting ? (
+          <TextAction
+            label={MEETING_NOTES_COPY.stop}
+            color={tokens.color.text.mutedForeground}
+            disabled={
+              discard.isPending || request.isPending || kept.sendingElsewhere
+            }
+            onPress={() => void handleStop()}
           />
-          {alsoReads.length > 0 ? (
+        ) : null}
+        {waiting ? (
+          <TextAction
+            label={MEETING_NOTES_COPY.useDraft}
+            color={accent}
+            disabled={use.isPending}
+            onPress={() => void handleUse()}
+          />
+        ) : null}
+        {!drafting && (reviewed || waiting) ? (
+          <TextAction
+            label={MEETING_NOTES_COPY.draftAgain}
+            color={accent}
+            onPress={() => void handleDraft()}
+          />
+        ) : null}
+        {canClear ? (
+          <TextAction
+            label={MEETING_NOTES_COPY.clear}
+            color={tokens.color.text.mutedForeground}
+            disabled={clearing}
+            onPress={() => void handleClear()}
+          />
+        ) : null}
+      </View>
+
+      {reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
+        <View style={styles.review}>
+          <Text accessibilityRole="header" style={styles.reviewHead}>
+            {MEETING_NOTES_COPY.toFillIn}
+          </Text>
+          {gaps.map((gap, index) => (
+            <Text key={index} style={styles.gap}>
+              {`• ${gap}`}
+            </Text>
+          ))}
+          {leftOut > 0 ? (
             <Text style={styles.hint}>
-              {MEETING_NOTE_TAKERS_COPY.alsoReads(alsoReads)}
+              {MEETING_NOTES_COPY.leftOut(leftOut)}
             </Text>
           ) : null}
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.status, status.problem ? styles.problem : null]}
-          >
-            {status.text}
+        </View>
+      ) : null}
+
+      {reviewed && !drafting && conflicts.length > 0 ? (
+        <View style={styles.review}>
+          <Text accessibilityRole="header" style={styles.reviewHead}>
+            {MEETING_NOTE_TAKERS_COPY.disagreed}
           </Text>
-
-          {drafting ? (
-            <OnboardingSecondaryButton
-              fill
-              label={MEETING_NOTES_COPY.stop}
-              busy={discard.isPending}
-              disabled={
-                discard.isPending || request.isPending || kept.sendingElsewhere
-              }
-              onPress={() => void handleStop()}
-            />
-          ) : waiting ? (
-            <SheetPrimaryButton
-              label={MEETING_NOTES_COPY.useDraft}
-              busy={use.isPending}
-              disabled={use.isPending}
-              onPress={() => void handleUse()}
-              accent={accent}
-              onAccent={accentOnPrimary}
-            />
-          ) : (
-            <SheetPrimaryButton
-              label={
-                reviewed
-                  ? MEETING_NOTES_COPY.draftAgain
-                  : othersWrote
-                    ? MEETING_NOTE_TAKERS_COPY.draftAll
-                    : MEETING_NOTES_COPY.draft
-              }
-              onPress={() => void handleDraft()}
-              accent={accent}
-              onAccent={accentOnPrimary}
-            />
-          )}
-          {waiting ? (
-            <OnboardingSecondaryButton
-              fill
-              label={MEETING_NOTES_COPY.draftAgain}
-              onPress={() => void handleDraft()}
-            />
-          ) : null}
-          {canClear ? (
-            <OnboardingSecondaryButton
-              fill
-              label={MEETING_NOTES_COPY.clear}
-              disabled={clearing}
-              onPress={() => void handleClear()}
-            />
-          ) : null}
-
-          {reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
-            <View style={styles.review}>
-              <Text accessibilityRole="header" style={styles.reviewHead}>
-                {MEETING_NOTES_COPY.toFillIn}
+          {conflicts.map((conflict, index) => (
+            <View key={index} style={styles.conflict}>
+              <Text style={styles.settled}>
+                {conflict.settled_by
+                  ? MEETING_NOTE_TAKERS_COPY.settledBy[conflict.settled_by]
+                  : MEETING_NOTE_TAKERS_COPY.youDecide}
               </Text>
-              {gaps.map((gap, index) => (
-                <Text key={index} style={styles.gap}>
-                  {`• ${gap}`}
-                </Text>
-              ))}
-              {leftOut > 0 ? (
-                <Text style={styles.hint}>
-                  {MEETING_NOTES_COPY.leftOut(leftOut)}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          {reviewed && !drafting && conflicts.length > 0 ? (
-            <View style={styles.review}>
-              <Text accessibilityRole="header" style={styles.reviewHead}>
-                {MEETING_NOTE_TAKERS_COPY.disagreed}
-              </Text>
-              {conflicts.map((conflict, index) => (
-                <View key={index} style={styles.conflict}>
-                  <Text style={styles.settled}>
-                    {conflict.settled_by
-                      ? MEETING_NOTE_TAKERS_COPY.settledBy[conflict.settled_by]
-                      : MEETING_NOTE_TAKERS_COPY.youDecide}
+              <Text style={styles.gap}>{conflict.about}</Text>
+              {conflict.versions.map((version, at) => (
+                <View key={at} style={styles.version}>
+                  <Text style={styles.gap}>{version.text}</Text>
+                  <Text style={styles.hint}>
+                    {`${MEETING_NOTE_TAKERS_COPY.from(version.from, isMine(version.from))}: “${version.quote}”`}
                   </Text>
-                  <Text style={styles.gap}>{conflict.about}</Text>
-                  {conflict.versions.map((version, at) => (
-                    <View key={at} style={styles.version}>
-                      <Text style={styles.gap}>{version.text}</Text>
-                      <Text style={styles.hint}>
-                        {`${MEETING_NOTE_TAKERS_COPY.from(version.from, isMine(version.from))}: “${version.quote}”`}
-                      </Text>
-                      {conflict.chosen === at ? (
-                        <Text style={styles.hint}>
-                          {MEETING_NOTE_TAKERS_COPY.inMinutes}
-                        </Text>
-                      ) : state.status === "applied" ? (
-                        <OnboardingSecondaryButton
-                          fill
-                          label={
-                            conflict.chosen === null
-                              ? MEETING_NOTE_TAKERS_COPY.pickVersion(
-                                  version.from,
-                                  isMine(version.from),
-                                )
-                              : MEETING_NOTE_TAKERS_COPY.takeVersion(
-                                  version.from,
-                                  isMine(version.from),
-                                )
-                          }
-                          disabled={choose.isPending}
-                          onPress={() => void handleChoose(index, at)}
-                        />
-                      ) : null}
-                    </View>
-                  ))}
+                  {conflict.chosen === at ? (
+                    <Text style={styles.hint}>
+                      {MEETING_NOTE_TAKERS_COPY.inMinutes}
+                    </Text>
+                  ) : state.status === "applied" ? (
+                    <OnboardingSecondaryButton
+                      fill
+                      label={
+                        conflict.chosen === null
+                          ? MEETING_NOTE_TAKERS_COPY.pickVersion(
+                              version.from,
+                              isMine(version.from),
+                            )
+                          : MEETING_NOTE_TAKERS_COPY.takeVersion(
+                              version.from,
+                              isMine(version.from),
+                            )
+                      }
+                      disabled={choose.isPending}
+                      onPress={() => void handleChoose(index, at)}
+                    />
+                  ) : null}
                 </View>
               ))}
             </View>
-          ) : null}
+          ))}
+        </View>
+      ) : null}
 
-          {/* Last in the sheet, so it turning into "Reported" moves nothing. */}
-          {reviewed && !drafting && reporting.offered ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                draftReported
-                  ? AI_REPORT_COPY.reported
-                  : AI_REPORT_COPY.titles.meeting_draft
-              }
-              accessibilityState={
-                draftReported ? { disabled: true } : undefined
-              }
-              disabled={draftReported}
-              onPress={() => reporting.report(reportTarget)}
-              style={({ pressed }) => [
-                styles.report,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={styles.reportText}>
-                {draftReported
-                  ? AI_REPORT_COPY.reported
-                  : AI_REPORT_COPY.action}
-              </Text>
-            </Pressable>
-          ) : null}
-        </BottomSheetScrollView>
-      </BottomSheetModal>
+      {/* Last, so it turning into "Reported" moves nothing. */}
+      {reviewed && !drafting && reporting.offered ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            draftReported
+              ? AI_REPORT_COPY.reported
+              : AI_REPORT_COPY.titles.meeting_draft
+          }
+          accessibilityState={draftReported ? { disabled: true } : undefined}
+          disabled={draftReported}
+          onPress={() => reporting.report(reportTarget)}
+          style={({ pressed }) => [styles.report, pressed ? styles.pressed : null]}
+        >
+          <Text style={styles.reportText}>
+            {draftReported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
+          </Text>
+        </Pressable>
+      ) : null}
       {consentSheet}
       {reporting.reportSheet}
-    </>
+    </View>
   );
-});
+  },
+);
 
 function createStyles(tokens: SignetTokens, accent: string) {
   const caption = typeRole(tokens.typography.role.caption);
   return StyleSheet.create({
     ...sheetFieldStyles(tokens, accent),
-    body: {
-      paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing["2xl"],
-      gap: tokens.spacing.md,
+    panel: {
+      gap: tokens.spacing.sm,
     },
-    header: {
-      backgroundColor: tokens.color.surface.popover,
+    actions: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.lg,
     },
     hint: {
       ...caption,
       color: tokens.color.text.mutedForeground,
     },
     notes: {
-      minHeight: 220,
+      minHeight: 120,
     },
     status: {
       ...caption,
-      // Three lines whichever words it holds, so nothing under it moves.
-      minHeight: (caption.lineHeight ?? 18) * 3,
       color: tokens.color.text.mutedForeground,
     },
     problem: {

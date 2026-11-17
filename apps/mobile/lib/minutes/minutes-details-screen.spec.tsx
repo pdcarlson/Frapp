@@ -4,7 +4,11 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { MEETING_COPY, MEETING_NOTES_COPY } from "@repo/validation";
+import {
+  MEETING_COPY,
+  MEETING_NOTES_COPY,
+  MEETING_RECORDER_COPY,
+} from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 
@@ -29,11 +33,14 @@ const state = vi.hoisted(() => ({
   notesSheet: 0,
   recording: null as Record<string, unknown> | null,
   recordingEnabled: undefined as boolean | undefined,
-  recordingRow: null as Record<string, unknown> | null,
   recordingPending: false,
-  recordingPlaceholder: 0,
   recorder: { phase: "idle", refusal: null } as Record<string, unknown>,
   notesProps: null as Record<string, unknown> | null,
+  panelDraft: vi.fn(),
+  row: null as Record<string, unknown> | null,
+  rowArgs: null as Record<string, unknown> | null,
+  stage: null as Record<string, unknown> | null,
+  controls: 0,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -80,10 +87,12 @@ vi.mock("@/components/screen-shell", () => ({
   ScreenShell: ({
     title,
     children,
+    footer,
   }: {
     title: string;
     children: React.ReactNode;
-  }) => React.createElement("ScreenShell", { title }, children),
+    footer?: React.ReactNode;
+  }) => React.createElement("ScreenShell", { title }, children, footer),
 }));
 vi.mock("@/components/pull-to-refresh", () => ({
   useRefetchAll: () => undefined,
@@ -91,26 +100,32 @@ vi.mock("@/components/pull-to-refresh", () => ({
 vi.mock("@/components/minutes/minutes-body", () => ({
   MinutesBody: () => React.createElement("MinutesBody"),
 }));
-vi.mock("@/components/minutes/notes-draft-sheet", async () => {
-  const { forwardRef } = await import("react");
+vi.mock("@/components/minutes/notes-panel", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
   return {
-    NotesDraftSheet: forwardRef(function NotesDraftSheet(
+    NotesPanel: forwardRef(function NotesPanel(
       props: Record<string, unknown>,
+      ref: React.Ref<{ draft: () => Promise<void> }>,
     ) {
+      useImperativeHandle(ref, () => ({ draft: state.panelDraft }));
       state.notesSheet += 1;
       state.notesProps = props;
       return null;
     }),
   };
 });
-vi.mock("@/components/minutes/recording-row", () => ({
-  RecordingRow: (props: Record<string, unknown>) => {
-    state.recordingRow = props;
-    return React.createElement("RecordingRow");
+vi.mock("@/components/minutes/recorder", () => ({
+  useMeetingRecorderRow: (args: Record<string, unknown>) => {
+    state.rowArgs = args;
+    return state.row;
   },
-  RecordingRowPlaceholder: () => {
-    state.recordingPlaceholder += 1;
-    return React.createElement("RecordingRowPlaceholder");
+  RecorderStage: (props: Record<string, unknown>) => {
+    state.stage = props;
+    return React.createElement("RecorderStage");
+  },
+  RecorderControls: () => {
+    state.controls += 1;
+    return React.createElement("RecorderControls");
   },
 }));
 vi.mock("@/lib/minutes/recorder/session", () => ({
@@ -135,7 +150,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import MinutesDetailsScreen from "@/app/(app)/minutes-details";
 
-const WRITTEN = { sections: { discussion: "Budget passed 12-3." } };
+const WRITTEN = { summary: "Budget passed 12-3." };
 function meeting(over: Record<string, unknown> = {}) {
   return {
     id: "m1",
@@ -153,6 +168,21 @@ function meeting(over: Record<string, unknown> = {}) {
     ...over,
   };
 }
+
+/** What the recorder hook hands the screen: by default, Record on offer. */
+function recorderRow(over: Record<string, unknown> = {}) {
+  return {
+    shown: true,
+    view: { live: null },
+    primary: { does: "record", label: "Record" },
+    actions: [],
+    run: vi.fn(),
+    busy: false,
+    sheets: null,
+    ...over,
+  };
+}
+const LIVE_ROW = { view: { live: "recording" }, primary: null };
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -183,9 +213,11 @@ beforeEach(() => {
   state.suggestions = [];
   state.notesSheet = 0;
   state.recording = null;
-  state.recordingRow = null;
   state.recordingPending = false;
-  state.recordingPlaceholder = 0;
+  state.row = recorderRow();
+  state.rowArgs = null;
+  state.stage = null;
+  state.controls = 0;
   state.recorder = { phase: "idle", refusal: null };
   state.notesProps = null;
   state.draftPending = false;
@@ -194,6 +226,9 @@ beforeEach(() => {
   confirm.mockResolvedValue(true);
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ id: "m1" });
 });
+
+
+const EMPTY = {};
 
 describe("Recording on the minutes screen", () => {
   const available = {
@@ -205,21 +240,44 @@ describe("Recording on the minutes screen", () => {
 
   it("offers the recorder to a draft's editor where the server can transcribe", () => {
     state.recording = available;
+    state.meeting = meeting({ content: EMPTY });
     render();
     expect(state.recordingEnabled).toBe(true);
-    expect(state.recordingRow).toMatchObject({
+    expect(state.rowArgs).toMatchObject({
       meetingId: "m1",
       eventName: "Chapter meeting",
       server: available,
+      autoRecord: false,
     });
-    // And the notes sheet is handed the same record, for its transcript.
+    expect(state.stage).not.toBeNull();
+    // With nothing written, Record is the one thing at the bottom.
+    expect(state.controls).toBeGreaterThan(0);
+    // And the notes are handed the same record, for its transcript.
     expect(state.notesProps).toMatchObject({ recording: available });
+  });
+
+  it("puts Post at the bottom, not Record, once the minutes have words", () => {
+    state.recording = available;
+    const tree = render();
+    expect(button(tree, MEETING_COPY.post)).toBeDefined();
+    expect(state.controls).toBe(0);
+  });
+
+  it("asks to record straight away when opened from a Record button", () => {
+    state.recording = available;
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      id: "m1",
+      record: "1",
+    });
+    render();
+    expect(state.rowArgs).toMatchObject({ autoRecord: true });
   });
 
   it("offers none where transcription isn't set up, and hands the notes none", () => {
     state.recording = { ...available, available: false };
     render();
-    expect(state.recordingRow).toBeNull();
+    expect(state.rowArgs).toMatchObject({ server: null });
+    expect(state.stage).toBeNull();
     expect(state.notesProps).toMatchObject({ recording: null });
   });
 
@@ -228,7 +286,7 @@ describe("Recording on the minutes screen", () => {
     state.meeting = meeting({ can_edit: false });
     render();
     expect(state.recordingEnabled).toBe(false);
-    expect(state.recordingRow).toBeNull();
+    expect(state.stage).toBeNull();
 
     state.meeting = meeting({
       status: "posted",
@@ -241,14 +299,15 @@ describe("Recording on the minutes screen", () => {
     state.surfaces = { available: true, meetingNotes: false };
     render();
     expect(state.recordingEnabled).toBe(false);
-    expect(state.recordingRow).toBeNull();
+    expect(state.stage).toBeNull();
   });
 
-  it("holds the row's place while the server's answer is out", () => {
+  it("offers no Record while the server's answer is out", () => {
     state.recordingPending = true;
+    state.meeting = meeting({ content: EMPTY });
     render();
-    expect(state.recordingRow).toBeNull();
-    expect(state.recordingPlaceholder).toBeGreaterThan(0);
+    expect(state.stage).toBeNull();
+    expect(state.controls).toBe(0);
   });
 
   describe("while this phone holds this meeting's recording", () => {
@@ -263,38 +322,40 @@ describe("Recording on the minutes screen", () => {
       paused: null,
     };
 
-    it("keeps the row, and its Stop, when the server's answer is out or never comes", () => {
+    it("keeps the stage, and its pinned controls, when the server's answer is out or never comes", () => {
       state.recorder = live;
+      state.row = recorderRow(LIVE_ROW);
       state.recordingPending = true;
-      render();
-      expect(state.recordingRow).toMatchObject({
-        meetingId: "m1",
-        server: null,
-      });
-      expect(state.recordingPlaceholder).toBe(0);
+      const tree = render();
+      expect(state.rowArgs).toMatchObject({ meetingId: "m1", server: null });
+      expect(state.stage).not.toBeNull();
+      expect(state.controls).toBeGreaterThan(0);
+      // Nothing can be posted mid-recording.
+      expect(button(tree, MEETING_COPY.post)).toBeUndefined();
     });
 
-    it("keeps the row when transcription was turned off meanwhile", () => {
+    it("keeps the stage when transcription was turned off meanwhile", () => {
       state.recorder = live;
+      state.row = recorderRow(LIVE_ROW);
       state.recording = { ...available, available: false };
       render();
-      expect(state.recordingRow).toMatchObject({ server: null });
+      expect(state.rowArgs).toMatchObject({ server: null });
+      expect(state.stage).not.toBeNull();
     });
 
-    it("keeps the row on minutes posted from another device", () => {
+    it("keeps the stage on minutes posted from another device", () => {
       state.recorder = live;
+      state.row = recorderRow(LIVE_ROW);
       state.meeting = meeting({
         status: "posted",
         posted_at: "2026-11-10T02:00:00Z",
       });
       render();
-      expect(state.recordingRow).toMatchObject({
-        meetingId: "m1",
-        server: null,
-      });
+      expect(state.stage).not.toBeNull();
+      expect(state.controls).toBeGreaterThan(0);
     });
 
-    it("shows no row for a recording of another meeting once the minutes are posted", () => {
+    it("shows nothing for a recording of another meeting once the minutes are posted", () => {
       state.recorder = {
         ...live,
         subject: { ...live.subject, meetingId: "m2" },
@@ -304,13 +365,43 @@ describe("Recording on the minutes screen", () => {
         posted_at: "2026-11-10T02:00:00Z",
       });
       render();
-      expect(state.recordingRow).toBeNull();
+      expect(state.stage).toBeNull();
     });
+  });
+
+  it("drafts on its own once the transcript is in and nothing is written", () => {
+    state.recording = {
+      ...available,
+      status: "ready",
+      transcript: "Speaker 1: Call to order.",
+      duration_seconds: 1800,
+    };
+    state.meeting = meeting({ content: EMPTY });
+    render();
+    expect(state.notesProps).toMatchObject({ autoDraft: true });
+
+    state.meeting = meeting();
+    render();
+    expect(state.notesProps).toMatchObject({ autoDraft: false });
+  });
+
+  it("shows the transcript on the screen on a tap, not in a sheet", () => {
+    state.recording = {
+      ...available,
+      status: "ready",
+      transcript: "Speaker 1: Call to order.",
+      duration_seconds: 1800,
+    };
+    const tree = render();
+    const row = MEETING_RECORDER_COPY.transcriptRow(1800);
+    expect(drawnText(tree.root)).not.toContain("Call to order.");
+    act(() => button(tree, row).props.onPress());
+    expect(drawnText(tree.root)).toContain("Speaker 1  Call to order.");
   });
 });
 
 describe("Minutes on the phone", () => {
-  it("is read-only for a member: no Draft, no Post, no web line", () => {
+  it("is read-only for a member: no Draft, no Post", () => {
     state.meeting = meeting({
       status: "posted",
       can_edit: false,
@@ -319,39 +410,36 @@ describe("Minutes on the phone", () => {
     const tree = render();
     expect(button(tree, MEETING_COPY.post)).toBeUndefined();
     expect(button(tree, MEETING_NOTES_COPY.draft)).toBeUndefined();
-    expect(screenText(tree)).not.toContain(MEETING_COPY.editOnWeb);
     expect(state.draftEnabled).toBe(false);
     expect(state.notesSheet).toBe(0);
   });
 
-  it("offers Draft minutes to a draft's editor only where the server offers drafting", () => {
+  it("puts Draft minutes at the bottom once notes are typed into empty minutes", async () => {
+    state.meeting = meeting({ content: EMPTY });
     const tree = render();
-    expect(button(tree, MEETING_NOTES_COPY.draft)).toBeDefined();
-    expect(screenText(tree)).toContain(MEETING_COPY.editOnWeb);
+    expect(button(tree, MEETING_NOTES_COPY.draft)).toBeUndefined();
+    act(() => (state.notesProps?.onTyped as (typed: boolean) => void)(true));
+    await act(async () =>
+      button(tree, MEETING_NOTES_COPY.draft).props.onPress(),
+    );
+    expect(state.panelDraft).toHaveBeenCalledTimes(1);
+  });
 
+  it("offers no notes without drafting, and sends an editor with nothing written to the web", () => {
     state.surfaces = { available: false, meetingNotes: false };
-    const without = render();
-    expect(button(without, MEETING_NOTES_COPY.draft)).toBeUndefined();
+    state.meeting = meeting({ content: EMPTY });
+    const tree = render();
     expect(state.draftEnabled).toBe(false);
-    // Still postable: what was written on the web can be posted from here.
-    expect(button(without, MEETING_COPY.post)).toBeDefined();
-  });
-
-  it("holds Draft minutes' place while its read is out, so Post doesn't move", () => {
-    state.draftPending = true;
-    state.meeting = meeting({ content: {} });
-    const tree = render();
-    expect(button(tree, MEETING_NOTES_COPY.draft).props.disabled).toBe(true);
-    // Not "write them on the web": the phone is about to offer drafting.
-    expect(screenText(tree)).not.toContain(MEETING_COPY.writeOnWeb);
-  });
-
-  it("sends an editor with nothing written, and no drafting, to the web", () => {
-    state.surfaces = { available: false, meetingNotes: false };
-    state.meeting = meeting({ content: {} });
-    const tree = render();
+    expect(state.notesSheet).toBe(0);
     expect(screenText(tree)).toContain(MEETING_COPY.writeOnWeb);
-    expect(button(tree, MEETING_COPY.post).props.disabled).toBe(true);
+    expect(button(tree, MEETING_COPY.post)).toBeUndefined();
+  });
+
+  it("still posts from here what was written on the web, without drafting", () => {
+    state.surfaces = { available: false, meetingNotes: false };
+    const tree = render();
+    expect(button(tree, MEETING_COPY.post)).toBeDefined();
+    expect(screenText(tree)).not.toContain(MEETING_COPY.writeOnWeb);
   });
 
   it("posts the version the server holds now, without asking first", async () => {
@@ -367,17 +455,17 @@ describe("Minutes on the phone", () => {
     });
   });
 
-  it("says a post failed in the web line's place", async () => {
+  it("says a post failed above the button", async () => {
     state.post.mockRejectedValue(new Error("nope"));
     const tree = render();
     await act(async () => button(tree, MEETING_COPY.post).props.onPress());
-    expect(screenText(tree)).not.toContain(MEETING_COPY.editOnWeb);
+    expect(screenText(tree)).toContain(MEETING_COPY.postFailed);
   });
 
   it("can't post while a draft is being written", () => {
     state.draft = { status: "drafting" };
     const tree = render();
-    expect(button(tree, MEETING_COPY.post).props.disabled).toBe(true);
+    expect(button(tree, MEETING_COPY.post)).toBeUndefined();
   });
 
   it("links the tasks suggested from posted minutes, and asks only where AI is on", () => {

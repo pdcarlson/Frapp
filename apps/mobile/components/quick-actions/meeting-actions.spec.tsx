@@ -184,11 +184,14 @@ vi.mock("@/components/sheet-scaffold", () => ({
   SheetScrim: () => null,
   useSheetBackgroundStyle: () => ({}),
   useSheetClose: () => data.sheetClose,
+  // Record leads where the phone can record; Start minutes otherwise.
   SheetPrimaryButton: (props: {
+    label: string;
     onPress: () => Promise<void>;
     disabled?: boolean;
   }) => {
-    keepStartButton(props);
+    if (props.label === "Record") keepRecordButton(props);
+    else keepStartButton(props);
     return null;
   },
 }));
@@ -198,12 +201,10 @@ function keepRecordButton(props: {
 }) {
   data.recordButton = props;
 }
-vi.mock("@/components/onboarding/onboarding-secondary-button", () => ({
-  OnboardingSecondaryButton: (props: {
-    onPress: () => Promise<void>;
-    disabled?: boolean;
-  }) => {
-    keepRecordButton(props);
+// Under Record, typed notes are a quiet word that starts the minutes.
+vi.mock("@/components/minutes/recorder-controls", () => ({
+  TextAction: (props: { onPress: () => Promise<void>; disabled?: boolean }) => {
+    keepStartButton(props);
     return null;
   },
 }));
