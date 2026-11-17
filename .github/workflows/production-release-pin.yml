@@ -8,8 +8,8 @@ name: Production release pin
 # a split-brain deploy or a named-SHA ship that skipped Release.
 #
 # Matching origin/main is NOT required: live is allowed to lag main until the
-# next Deploy production. /health `commit` is corroboration only — absent is
-# ignored (the live tag predates that field).
+# next Deploy production. The API's commit is the one /health reports (#5228),
+# so a /health without one fails.
 #
 # ── Why this job does NOT say `environment: production` ─────────────────────
 # ADR-19 put Required reviewers on the `production` GitHub environment. A
@@ -78,16 +78,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           # Passed rather than defaulted in the script: a watchdog that carries
           # its own copy of a service id keeps asserting against the old service
           # after a recreate, and reports green about an object nothing deploys
           # to. These come from `.github/environments.json`, the file the
-          # production deploy reads its ids from too (#2806).
-          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
-          # Where the API runs: on Cloud Run its commit is /health's (#5228).
-          API_HOST: ${{ steps.ids.outputs.api_host }}
+          # production deploy reads its ids from too (#2806). The API's
+          # commit is /health's (#5228).
           VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
           VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}

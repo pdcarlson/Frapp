@@ -1,6 +1,6 @@
 # Frapp Deployment Guide
 
-This guide walks through the complete deployment setup: Vercel for frontends, Render for the API, Supabase Cloud for the database, and EAS for mobile. It covers both **staging** and **production** environments.
+This guide walks through the complete deployment setup: Vercel for frontends, Google Cloud Run for the API, Supabase Cloud for the database, and EAS for mobile. It covers both **staging** and **production** environments.
 
 This folder is the canonical operator runbook for those providers and the CI/CD gate that ships them. **Routers link; leaves assert.** Cite a leaf and a heading anchor, never `§N`.
 
@@ -16,24 +16,15 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
 - ✅ Branch protection enforced on `main`, the only long-lived branch (#1340).
 - ✅ Staging deployment is automated, in one ordered job: after green CI on `main`,
   `.github/workflows/deploy-staging.yml` builds web and landing, applies staging migrations,
-  deploys **that commit** to `frapp-api-staging` by commit and verifies it, and only then uploads
+  deploys **that commit** to the staging API on Cloud Run and verifies it, and only then uploads
   web and landing ([#2505](https://github.com/pdcarlson/Frapp/issues/2505),
   [#2803](https://github.com/pdcarlson/Frapp/issues/2803)). The order is
   [How Deployments Are Gated](ci-cd.md#how-deployments-are-gated), and
   [Deploy verification](ci-cd.md#deploy-verification) has the details.
-- ⚠️ Render-side auto-deploy **must be off** on staging too (`staging-conformance.yml` asserts
-  it): it builds every push before CI and before the migration, and its deploy can cancel the one
-  `deploy-staging.yml` creates. It was still **on** when read on 2026-09-25 and **off** when read on
-  2026-09-29 (Render API); what's left of [#2679](https://github.com/pdcarlson/Frapp/issues/2679)
-  is retiring the staging deploy hook.
-- ✅ Production API deployment does **not** use auto-deploy either. `deploy-production.yml` calls
-  the Render API with an explicit `commitId`, so what ships is the commit a human named.
-  This requires `frapp-api-prod` to have auto-deploy **off** and to track `main`;
-  `scripts/ci/production-guardrails.mjs` asserts both, on a schedule and again as a
-  preflight before every deploy. Both dashboard settings have been in place since the
-  #1340 cutover and the scheduled guardrail has been green since #1579 inverted its Vercel
-  half (2026-09-02); the earlier note here that it "fails by design" described the window
-  before those settings were changed and was stale by 2026-09-06.
+- ✅ Production API deployment does **not** use auto-deploy either. `deploy-production.yml` deploys
+  the commit a human named to Cloud Run ([`cloud-run.md`](cloud-run.md)), and
+  `scripts/ci/production-guardrails.mjs` checks the Vercel side on a schedule and again as a
+  preflight before every deploy. The API moved from Render to Cloud Run on 2026-11-17 (#5228).
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
   syncs are inventoried in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (in
@@ -61,7 +52,7 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
        │                   ▼
        │            ┌─────────────┐
        │            │     API     │
-       │            │  (Render)   │
+       │            │ (Cloud Run) │
        │            │api.frapp.live│
        │            └──────┬──────┘
        │                   │
@@ -87,8 +78,9 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
 | [Git branching model](branching.md) | One long-lived branch; production is a named commit. |
 | [Supabase Cloud](supabase.md) | Hosted projects, migrations, keys, and Auth settings, including the Sign in with Apple and Google console setup ([§ Auth OAuth providers](supabase.md#auth-oauth-providers-google-and-apple)). |
 | [Vercel](vercel.md) | Web and landing: CI-driven deploys, env scopes, DNS, `vercel.json` pins. |
-| [Render (API)](render.md) | API services, health check, in-process workers and scheduled jobs. |
+| [API process](api-process.md) | Health check, in-process workers and scheduled jobs. |
 | [Cloud Run (API)](cloud-run.md) | The API's move to Google Cloud Run (#5228): projects, identities, secrets, one-time setup. |
+| [Google Cloud organization](google-cloud.md) | The frapp.live organization: folders, every project, admin groups, organization policies, audit logs, and the sign-in project's move (#5323). |
 | [Mobile (EAS)](mobile.md) | EAS profiles, env vars, and store-bound configuration. |
 | [Integrations](integrations.md) | Stripe (test/live, and what customers see) and the Discord archive-importer bot. |
 | [Launch checklist](launch.md) | Staging/production checklist and hobby-tier cost notes. |

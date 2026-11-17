@@ -507,7 +507,7 @@ for how an agent is expected to use it.
 | ---- | ------- |
 | `staging.frapp.live` | the landing site (apex — see wildcard note) |
 | `*.staging.frapp.live` | `app.staging.frapp.live`, the web dashboard |
-| `api-staging.frapp.live` | the Render-hosted API. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
+| `api-staging.frapp.live` | the API, on Cloud Run behind a Google load balancer. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
 | `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated — and so must [`.github/environments.json`](../../../.github/environments.json), which `run-migration.mjs` fails closed against and `check-migration-order.mjs` reads, so a rotation that misses it blocks every production migration and every migration-bearing PR. The bringup probe below is what will tell you about this line |
 
 ### Wildcard semantics — weaker than the docs imply
@@ -565,7 +565,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   probes then need a staging user; `scripts/ci/staging-conformance.mjs` already defines the
   convention (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated
   smoke account, never a real member's.
-- **Provider APIs.** Render, Vercel, Sentry, PostHog and the Supabase Management API stay
+- **Provider APIs.** Vercel, Sentry, PostHog and the Supabase Management API stay
   blocked to direct `fetch` (`api.supabase.com` answered `000` through the proxy and `403
   host_not_allowed` direct on 2026-09-24, so a `403` there says nothing about a token), so
   agents fall back to **MCP connectors**, which do not go through this allowlist at all —

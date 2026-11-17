@@ -1,19 +1,17 @@
 name: Production guardrails
 
-# Watchdog for the provider settings that make deploy-off-`main` safe, plus
-# the Render health-check path that keeps a production deploy HTTP-gated.
+# Watchdog for the provider setting that makes deploy-off-`main` safe.
 #
 # Since #1340, `deploy-production.yml` is meant to be the ONLY way code reaches
-# production. That is true only while two dashboard settings stay put, and both
-# of them fail OPEN — if either drifts, ordinary merges to `main` start shipping
-# to production with no CI gate, no migration gate and no approval, and nothing
+# production. That is true only while a dashboard setting stays put, and it
+# fails OPEN — if it drifts, ordinary merges to `main` start shipping to
+# production with no CI gate, no migration gate and no approval, and nothing
 # anywhere turns red on its own.
 #
-#   * Render `frapp-api-prod` must have auto-deploy OFF and track `main`.
 #   * Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git.
-#   * Render `frapp-api-prod` `serviceDetails.healthCheckPath` must be `/health`.
-#     Empty is a TCP socket check (documented 2026-09-06); `/health/ready`
-#     would cancel a deploy when a dependency is degraded.
+#
+# It asserted Render `frapp-api-prod`'s auto-deploy, branch and health-check
+# path too, until the API moved to Cloud Run and Render was removed (#5228).
 #
 # The Vercel assertion was inverted on 2026-09-02 (#1579). It used to read
 # "Production Branch must not be `main`"; ADR-21 then retired the Git
@@ -22,10 +20,9 @@ name: Production guardrails
 # absence of a link, so a PRESENT link is the violation — staying unlinked is
 # still unversioned dashboard state, so it still needs a watchdog.
 #
-# None of these is expressible in this repository: `render.yaml` is not applied
-# to the already-created service, and the Vercel Git connection lives only in
-# the dashboard. So they cannot be enforced, only asserted — which is what this
-# does.
+# None of this is expressible in this repository: the Vercel Git connection
+# lives only in the dashboard. So it cannot be enforced, only asserted — which
+# is what this does.
 #
 # `deploy-production.yml` runs the same script as a preflight, so a deploy
 # cannot proceed against drifted settings. This schedule is for the gap between
@@ -85,14 +82,12 @@ jobs:
       - name: Assert production deploy guardrails
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           # Passed rather than defaulted in the script: a watchdog that carries
-          # its own copy of a service id keeps asserting against the old service
+          # its own copy of a project id keeps asserting against the old project
           # after a recreate, and reports green about an object nothing deploys
           # to. These come from `.github/environments.json`, the file the
           # production deploy reads its ids from too (#2806).
-          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
           VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
           VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}

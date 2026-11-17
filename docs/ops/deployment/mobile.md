@@ -541,7 +541,8 @@ stops if a later ship has tagged another commit; dispatch Deploy production for 
   which skips a variable of **Secret** visibility: the job then stops with what to change. It must
   be Plain text or Sensitive (`npm run eas -- env:list --environment production` shows it). The
   file is Firebase's client config, which ships inside the app anyway. *Status:* set since
-  2026-11-03; its visibility hasn't been read from a session, so the first run says.
+  2026-11-03, but as **Secret**: the first production run from a GitHub runner (44113979528,
+  2026-11-17) stopped on it, so the owner changes it to Sensitive.
 - **`SENTRY_AUTH_TOKEN`** as a secret of the GitHub **`automation`** environment, the
   organization token `_mobile-update.yml` uses for an update's source maps. EAS's variable of that
   name is Secret and never reaches a runner. Without it the build still ships, with Sentry's upload

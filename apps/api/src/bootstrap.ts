@@ -73,9 +73,9 @@ import { runsOnCloudRun } from './config/runtime-platform';
  *   staging figure applied to production unobserved, which left one entry of
  *   production's chain client-supplied: a single forged `X-Forwarded-For`
  *   value set `req.ip` and with it the caller's own rate-limit bucket.
- *   Production moves to Cloud Run behind its own balancer of the same shape
- *   (#5228), which documents the same two entries; re-check `xffCount` there
- *   after its cutover.
+ *   Production moved to Cloud Run behind its own balancer of the same shape
+ *   on 2026-11-17 (#5228), which documents the same two entries; the probe in
+ *   `cloud-run.md` § Address re-checks `xffCount` there.
  *
  * Why a count rather than `true`: `true` trusts the entire chain, so any client
  * can prepend a forged address and rotate it to evade the very rate limit this
@@ -88,10 +88,9 @@ import { runsOnCloudRun } from './config/runtime-platform';
  * Each environment must have one public path, or the shorter chain
  * over-trusts. Staging's Cloud Run service has one, the balancer, with both
  * of its hosts (`api-staging.frapp.live` and the deploy's `candidate.` host)
- * the same chain; its old Render service stays up as the rollback until
- * #5228 removes it, and runs its own older build with Render's count.
- * Production's two Render hostnames have not been compared that way; the
- * tripwire below covers a shorter one.
+ * the same chain. Production's balancer is built the same way (#5228). The
+ * Render services each environment used before are suspended and being
+ * deleted; the tripwire below covers any shorter chain that appears.
  *
  * **The limit of a hop count, stated rather than left sharp:** it trusts N
  * entries whether or not N proxies actually appended them. Where the real

@@ -361,19 +361,19 @@ caveat above; confirm it by eye in the portal until that caveat's first
 observation is recorded.
 
 **Where an import's attachment bytes go, and who bills them** ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
-Render bills a service's outbound bytes to the public internet, which includes its own requests to
-Supabase. An import's media is the largest thing the importer moves, so which hop carries the bytes
+The API's host bills its outbound bytes to the public internet (Google Cloud since 2026-11-17, Render
+before), which includes its own requests to Supabase. An import's media is the largest thing the importer moves, so which hop carries the bytes
 decides whose bill they land on:
 
 | Path | Where the bytes go | Billed as |
 | --- | --- | --- |
-| Upload (DiscordChatExporter) | The admin's browser PUTs each file to Storage through a signed URL | Nothing on Render. Upload into Storage is ingress on Supabase. |
-| Bot | The API sends the `discord-attachment-copy` Edge Function a batch of URLs and object paths. The function streams each file from Discord's CDN into Storage. | Render: a few hundred bytes of JSON per attachment. Supabase: open whether the function's upload to Storage counts as egress; #2851 records the reading from a staging import. |
-| Bot, before #2848 | Discord's CDN → the API → Storage, inside the API process | Render egress equal to the stored size (the measurement is in ADR-26's context). |
+| Upload (DiscordChatExporter) | The admin's browser PUTs each file to Storage through a signed URL | Nothing on the API's host. Upload into Storage is ingress on Supabase. |
+| Bot | The API sends the `discord-attachment-copy` Edge Function a batch of URLs and object paths. The function streams each file from Discord's CDN into Storage. | API host: a few hundred bytes of JSON per attachment. Supabase: open whether the function's upload to Storage counts as egress; #2851 records the reading from a staging import. |
+| Bot, before #2848 | Discord's CDN → the API → Storage, inside the API process | API host egress equal to the stored size (Render at the time; the measurement is in ADR-26's context). |
 | Reading the archive later (either path) | Storage → the member's device, through a signed URL | Supabase egress |
 
 The allowances and per-GB rates are the providers' to state and change:
-[Render bandwidth](https://render.com/docs/outbound-bandwidth) and
+[Google Cloud network pricing](https://cloud.google.com/vpc/network-pricing) and
 [Supabase egress](https://supabase.com/docs/guides/platform/manage-your-usage/egress). Supabase's
 quotas as of the Pro upgrade are in [`supabase.md` § Plan and quotas](supabase.md#plan-and-quotas).
 
@@ -386,7 +386,9 @@ subscription link as before; set, it connects the member's Google account and
 Frapp writes their events and tasks into a calendar of its own there
 ([`events.md` § Google Calendar](../../../spec/behavior/events.md#google-calendar),
 #3322). Everything below is provider-side configuration no repo state creates.
-Owner-only: it is the `signet-frapp` Google Cloud project, the one whose
+Owner-only: it is the `signet-frapp` Google Cloud project (display name
+"Frapp sign-in", in the frapp.live organization since 2026-11-17:
+[`google-cloud.md`](google-cloud.md)), the one whose
 consent screen Google sign-in already uses (brand "Frapp", verified;
 publishing status In production, user type External:
 [`supabase.md`](supabase.md#auth-oauth-providers-google-and-apple)).
@@ -422,7 +424,8 @@ publishing status In production, user type External:
    `GOOGLE_CALENDAR_CLIENT_SECRET`; in prod, the production client's. And
    `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per environment, made with
    `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
-   to boot on a partial set. Redeploy the API after the sync reaches Render.
+   to boot on a partial set. Redeploy the API after the sync reaches Secret Manager: each
+   deploy pins the secret versions it finds.
 
 **Verify after setup.** `GET /v1/google-calendar` (signed in, any chapter)
 answers `"available": true`. Then connect from the web Subscribe menu: Google's
@@ -450,6 +453,12 @@ keeps them matching it
 there is no consent screen, no scope review and nothing on the Google sign-in
 client. Owner-only, in the `signet-frapp` Google Cloud project.
 
+> **Don't set this up yet (2026-11-17).** `signet-frapp` joined the frapp.live
+> organization, whose policy blocks service account key files, so step 3
+> fails there. [#5323](https://github.com/frapplive/Frapp/issues/5323) moves
+> these accounts to the `nonprod` and `prod` projects and has the API on
+> Cloud Run act as them with no key file; these steps change with it.
+
 1. **Enable the API.** Google Cloud console, project `signet-frapp` → APIs &
    Services → Library → **Google Drive API** → Enable.
 2. **Make two service accounts**, one per environment, so a staging chapter
@@ -463,7 +472,7 @@ client. Owner-only, in the `signet-frapp` Google Cloud project.
 4. **Store each in Infisical** as `GOOGLE_DRIVE_CREDENTIALS_JSON`, the whole
    file's contents: the staging account's in staging, the production
    account's in prod. Delete the downloaded files. Redeploy the API after the
-   sync reaches Render.
+   sync reaches Secret Manager: each deploy pins the secret versions it finds.
 
 **Verify after setup.** `GET /v1/google-drive` (signed in as an officer with Manage documents)
 answers `"available": true` with the account's email. In a test chapter, share

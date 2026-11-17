@@ -279,7 +279,8 @@ the ones a later reader would otherwise re-litigate.
   and it never did: the ids stayed literals, copied across several workflow files, with comments asking
   humans to keep them in step. Epic #2802 finished it once staging and production shared one deploy
   job (`_deploy.yml`). The file now holds each environment's `renderServiceId` and the Vercel team
-  and project ids; workflows read them through `scripts/ci/provider-ids.mjs`, and a test fails on a
+  and project ids *(corrected 2026-11-17, #5228: the Render ids gave way to each environment's
+  `cloudRun` block when the API left Render)*; workflows read them through `scripts/ci/provider-ids.mjs`, and a test fails on a
   literal id anywhere under `.github/workflows` or `.github/actions`.
 
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist

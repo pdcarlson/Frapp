@@ -465,8 +465,10 @@ jobs:
 
       # The binary's own Info.plist against what the build step read from
       # eas-cli's log, so the record can't name a build number the binary
-      # doesn't carry. `-W`: `*` stops at a slash, so an extension's or a
-      # watch app's Info.plist can't answer for the app's.
+      # doesn't carry. The entry is picked from the archive's listing with a
+      # pattern that can't cross a slash, so an extension's or a watch app's
+      # Info.plist can't answer for the app's. (macOS's unzip has no `-W`,
+      # which an earlier cut used for the same thing: run 44113979528.)
       - name: Check the binary carries the version it is recorded as
         env:
           ARCHIVE: ${{ runner.temp }}/frapp.ipa
@@ -474,7 +476,12 @@ jobs:
         run: |
           set -euo pipefail
           PLIST="$RUNNER_TEMP/Info.plist"
-          unzip -W -p "$ARCHIVE" 'Payload/*.app/Info.plist' > "$PLIST"
+          ENTRIES="$(unzip -Z1 "$ARCHIVE" | grep -E '^Payload/[^/]+\.app/Info\.plist$' || true)"
+          if [ "$(printf '%s' "$ENTRIES" | grep -c .)" != "1" ]; then
+            echo "::error::Expected one app Info.plist in the archive, found: ${ENTRIES:-none}. Not uploading."
+            exit 1
+          fi
+          unzip -p "$ARCHIVE" "$ENTRIES" > "$PLIST"
           SHORT="$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")"
           NUMBER="$(plutil -extract CFBundleVersion raw -o - "$PLIST")"
           WANT_SHORT="$(jq -r '.appVersion' <<< "$BUILD")"

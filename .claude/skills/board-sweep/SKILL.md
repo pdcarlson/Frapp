@@ -64,7 +64,7 @@ most urgent first. Don't list PRs waiting to merge: he merges everything anyway.
 him, the line reads "Needs you: nothing."
 
 **Connectors.** The session holds every connector the owner has, write tools included. Use Sentry,
-Supabase, Vercel, Render and PostHog for reads only, and never call Stripe, Gmail, Resend or any
+Supabase, Vercel and PostHog for reads only, and never call Stripe, Gmail, Resend or any
 messaging connector.
 
 ## How the run ends

@@ -10,11 +10,13 @@ export function createClock({
 }
 
 /**
- * The "poll until terminal" skeleton behind `deploy-render-production.mjs`,
- * `deploy-vercel.mjs`, since #2505 `verify-served-commit.mjs`, and since #3483
- * `confirm-store-submissions.mjs`. Before
- * this (#1351), four provider pollers (the first two and the since-retired
- * `verify-render-deploy.mjs` and `verify-vercel-deploy.mjs`, #1778) each
+ * The "poll until terminal" skeleton behind `deploy-vercel.mjs`, since #2505
+ * `verify-served-commit.mjs`, since #3483 `confirm-store-submissions.mjs`, and
+ * since #5228 `deploy-cloud-run.mjs` (`deploy-render-production.mjs` used it
+ * until #5228 retired Render). Before
+ * this (#1351), four provider pollers (`deploy-vercel.mjs`, the Render deploy
+ * script, and the since-retired `verify-render-deploy.mjs` and
+ * `verify-vercel-deploy.mjs`, #1778) each
  * hand-wrote the same loop — `startedAt = clock.now()` →
  * while under the deadline: fetch, classify, return on terminal, else log and
  * sleep → identical timeout-failure return — which meant a change to the

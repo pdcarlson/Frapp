@@ -22,7 +22,7 @@ export const CI_CHECKS = [
   // Shared packages compile.
   "packages-build",
   // ESLint + TypeScript (all workspaces); `npm run build -w apps/api`
-  // (`nest build`, Render parity); landing plus `@repo/validation`,
+  // (`nest build`, as the API image runs it); landing plus `@repo/validation`,
   // `@repo/color`, `@repo/formatting`, `@repo/observability`,
   // `@repo/chapter-theme`, `@repo/theme` and `@repo/api-sdk` unit tests;
   // plus `npm run check:brand-assets` and `npm run check:edge-functions`

@@ -1035,8 +1035,9 @@ describe("the build step, against a stand-in eas", () => {
 });
 
 describe("the iOS binary's version check, against stand-ins", () => {
-  function run({ short, number, build }) {
-    const { dir, path } = withStub("unzip", 'echo plist');
+  const LISTING = "Payload/Frapp.app/Info.plist\\nPayload/Frapp.app/PlugIns/Share.appex/Info.plist\\nPayload/Frapp.app/Frapp";
+  function run({ short, number, build, listing = LISTING }) {
+    const { dir, path } = withStub("unzip", `if [ "$1" = "-Z1" ]; then printf '${listing}\\n'; else echo plist; fi`);
     addStub(dir, "plutil", `case "$2" in CFBundleShortVersionString) echo '${short}' ;; CFBundleVersion) echo '${number}' ;; *) exit 2 ;; esac`);
     const step = stepNamed(CALLED, "ios", PLIST);
     const result = runStep(step, { cwd: dir, env: { PATH: path, RUNNER_TEMP: dir, ARCHIVE: join(dir, "frapp.ipa"), BUILD: JSON.stringify(build) } });
@@ -1049,8 +1050,18 @@ describe("the iOS binary's version check, against stand-ins", () => {
     const step = stepNamed(CALLED, "ios", PLIST);
     assert.equal(step.stepEnv.get("BUILD"), "${{ steps.build.outputs.build }}");
     assert.equal(step.stepEnv.get("ARCHIVE"), ARCHIVES.ios);
-    assert.match(scriptOf(step), /unzip -W -p "\$ARCHIVE" 'Payload\/\*\.app\/Info\.plist'/);
+    // macOS's unzip has no -W (run 44113979528): the entry comes from the listing instead.
+    assert.doesNotMatch(scriptOf(step), /unzip -W/);
+    assert.match(scriptOf(step), /unzip -Z1 "\$ARCHIVE"/);
     assert.equal(run({ short: "0.13.0", number: "25", build }).status, 0);
+  });
+
+  it("refuses an archive with no app Info.plist, or more than one", () => {
+    for (const listing of ["Payload/Frapp.app/Frapp", "Payload/A.app/Info.plist\\nPayload/B.app/Info.plist"]) {
+      const result = run({ short: "0.13.0", number: "25", build, listing });
+      assert.equal(result.status, 1, listing);
+      assert.match(result.stdout, /Expected one app Info\.plist/);
+    }
   });
 
   it("refuses a binary whose version or build number differs from the record's", () => {
