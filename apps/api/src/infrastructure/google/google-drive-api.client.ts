@@ -12,6 +12,10 @@ import {
 import { CROCKFORD } from '#domain/utils/check-in-token';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+/** The runtime identity's own token, from Cloud Run's metadata server. */
+const METADATA_TOKEN_URL =
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
+const IAM_CREDENTIALS_API = 'https://iamcredentials.googleapis.com/v1';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 /** A metadata call gives up after this long. */
@@ -38,11 +42,13 @@ const RATE_LIMIT_REASONS = new Set([
 ]);
 
 /**
- * Google Drive for connected chapter folders (#5157), over `fetch` with a
- * service account's signed assertion. No Google SDK, as with
- * `GoogleCalendarApiClient`: these are four plain calls.
+ * Google Drive for what chapters share with Frapp (#5157), over `fetch`. No
+ * Google SDK, as with `GoogleCalendarApiClient`: these are a few plain calls.
  *
- * Reads `GOOGLE_DRIVE_CREDENTIALS_JSON` (`config/google-drive-config.ts`).
+ * Signs in as the Drive service account (`config/google-drive-config.ts`):
+ * with its key file, a signed assertion; without one, on Cloud Run (#5434),
+ * the runtime identity's token from the metadata server, traded at IAM
+ * Credentials for a token that acts as the Drive account.
  * Errors carry Google's short reason and status, never a token or a body.
  */
 @Injectable()
@@ -66,7 +72,7 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
 
   proofCode(subject: string): string | null {
     if (!this.account) return null;
-    const digest = createHmac('sha256', this.account.privateKey)
+    const digest = createHmac('sha256', this.account.proofSecret)
       .update(`frapp-drive-connect:${subject}`)
       .digest();
     let code = '';
@@ -204,14 +210,29 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     if (!account) {
       throw new GoogleDriveApiError('failed', null, 'not_configured');
     }
+    const token = account.privateKey
+      ? await this.keyFileToken(account.clientEmail, account.privateKey)
+      : await this.actAsToken(account.clientEmail);
+    this.token = token;
+    return token.value;
+  }
+
+  /** A key file's signed assertion, traded for a token. */
+  private async keyFileToken(
+    clientEmail: string,
+    privateKey: string,
+  ): Promise<{ value: string; expiresAt: number }> {
     const now = Math.floor(Date.now() / 1000);
-    const assertion = signJwt(account, {
-      iss: account.clientEmail,
-      scope: SCOPE,
-      aud: TOKEN_URL,
-      iat: now,
-      exp: now + 3600,
-    });
+    const assertion = signJwt(
+      { clientEmail, privateKey },
+      {
+        iss: clientEmail,
+        scope: SCOPE,
+        aud: TOKEN_URL,
+        iat: now,
+        exp: now + 3600,
+      },
+    );
     const response = await this.send(
       TOKEN_URL,
       {
@@ -229,16 +250,69 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
       access_token?: unknown;
       expires_in?: unknown;
     };
-    if (typeof body.access_token !== 'string') {
+    return oauthToken(body);
+  }
+
+  /**
+   * No key file (#5434): the runtime identity's own token from the metadata
+   * server, then IAM Credentials' `generateAccessToken` for a Drive-only
+   * token that acts as the Drive account. Google refuses the second call
+   * unless the runtime identity holds Service Account Token Creator on it.
+   */
+  private async actAsToken(
+    clientEmail: string,
+  ): Promise<{ value: string; expiresAt: number }> {
+    const runtime = await this.send(
+      METADATA_TOKEN_URL,
+      { headers: { 'Metadata-Flavor': 'Google' } },
+      TIMEOUT_MS,
+    );
+    if (!runtime.ok) {
+      throw new GoogleDriveApiError(
+        'failed',
+        runtime.status,
+        'no_runtime_token',
+      );
+    }
+    const own = oauthToken(
+      (await runtime.json()) as {
+        access_token?: unknown;
+        expires_in?: unknown;
+      },
+    );
+    const response = await this.send(
+      `${IAM_CREDENTIALS_API}/projects/-/serviceAccounts/${encodeURIComponent(clientEmail)}:generateAccessToken`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${own.value}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ scope: [SCOPE], lifetime: '3600s' }),
+      },
+      TIMEOUT_MS,
+    );
+    if (!response.ok) {
+      // A 403 here is the setup (the Token Creator grant, or the IAM
+      // Credentials API switched off), never a folder: it goes to the logs.
+      const error = await apiError(response);
+      throw new GoogleDriveApiError('failed', error.status, error.reason);
+    }
+    const body = (await response.json()) as {
+      accessToken?: unknown;
+      expireTime?: unknown;
+    };
+    if (typeof body.accessToken !== 'string') {
       throw new GoogleDriveApiError('failed', null, 'no_access_token');
     }
-    const lifetime =
-      typeof body.expires_in === 'number' ? body.expires_in : 3600;
-    this.token = {
-      value: body.access_token,
-      expiresAt: Date.now() + lifetime * 1000,
+    const expiresAt =
+      typeof body.expireTime === 'string' ? Date.parse(body.expireTime) : NaN;
+    return {
+      value: body.accessToken,
+      expiresAt: Number.isFinite(expiresAt)
+        ? expiresAt
+        : Date.now() + 3600 * 1000,
     };
-    return body.access_token;
   }
 
   private async send(
@@ -257,6 +331,18 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
   }
 }
 
+/** An OAuth token response, as a token and when it expires. */
+function oauthToken(body: { access_token?: unknown; expires_in?: unknown }): {
+  value: string;
+  expiresAt: number;
+} {
+  if (typeof body.access_token !== 'string') {
+    throw new GoogleDriveApiError('failed', null, 'no_access_token');
+  }
+  const lifetime = typeof body.expires_in === 'number' ? body.expires_in : 3600;
+  return { value: body.access_token, expiresAt: Date.now() + lifetime * 1000 };
+}
+
 function transferReason(error: unknown): string {
   return error instanceof Error && error.name === 'TimeoutError'
     ? 'timeout'
@@ -269,7 +355,7 @@ function base64Url(input: string | Buffer): string {
 
 /** An RS256 JWT signed with the service account's key. */
 export function signJwt(
-  account: GoogleDriveServiceAccount,
+  account: { clientEmail: string; privateKey: string },
   claims: Record<string, unknown>,
 ): string {
   const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
