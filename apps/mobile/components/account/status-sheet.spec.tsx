@@ -176,6 +176,23 @@ describe("StatusSheet", () => {
     }
   });
 
+  it("names the day when DND's end falls tomorrow", () => {
+    // 23:45 local on Thursday 2026-01-15, so half an hour on is Friday 00:15.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 0, 15, 23, 45));
+    try {
+      state.settings = {
+        ...ONLINE,
+        status: "dnd",
+        status_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      };
+      const tree = render();
+      expect(screenText(tree)).toMatch(/Until Fri 12:15\sAM/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("saves a custom line that clears today by default", async () => {
     const tree = render();
     press(tree, "status-custom-line");
