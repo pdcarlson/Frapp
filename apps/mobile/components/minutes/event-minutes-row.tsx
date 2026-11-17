@@ -30,13 +30,12 @@ import { NoteTakerSheet } from "@/components/minutes/note-taker-sheet";
  * `event-minutes.tsx`, with the same words).
  *
  * - Minutes the viewer may read: one row that opens them.
- * - None yet, for an officer who records minutes (`meetings:record`) on a
- *   chapter with drafting from notes: Record minutes where this phone can
- *   record (it starts them and opens them asking to record, notice first),
- *   else Write minutes, which starts them in one tap with the type the
- *   event's name suggests and opens them, ready for notes. Without drafting there is nothing to write them with on a phone
- *   (the section editor is on the web), so the row is not offered and no
- *   empty draft is left behind.
+ * - None yet, for an officer who records minutes (`meetings:record`):
+ *   Record minutes where this phone can record (it starts them and opens
+ *   them asking to record, notice first), else Write minutes, which starts
+ *   them in one tap with the type the event's name suggests and opens them,
+ *   ready to type in. Without drafting from notes what is typed there is the
+ *   minutes' Summary (#5288).
  * - Someone else's unposted minutes this member may take notes on (an
  *   officer who records minutes, or a member their author added, #4935):
  *   Take notes, which opens their own notes in a sheet.
@@ -96,7 +95,7 @@ export function EventMinutesRow({
   }
   // Someone else may have started them; the note-taking read decides.
   if (!minutes && canDraft && takingQuery.isPending) return null;
-  if (!minutes && !(canRecord && canDraft)) return null;
+  if (!minutes && !canRecord) return null;
 
   const open = (id: string, record = false) =>
     router.push({

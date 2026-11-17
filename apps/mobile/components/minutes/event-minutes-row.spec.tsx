@@ -143,9 +143,9 @@ describe("EventMinutesRow", () => {
     expect(render().toJSON()).toBeNull();
   });
 
-  it("offers no Write minutes where the phone has nothing to write them with", () => {
+  it("offers Write minutes without drafting too: the note is the Summary (#5288)", () => {
     state.canDraft = false;
-    expect(render().toJSON()).toBeNull();
+    expect(screenText(render())).toContain(MEETING_ENTRY_COPY.write);
   });
 
   it("starts minutes in one tap for an officer who can draft, and opens them", async () => {

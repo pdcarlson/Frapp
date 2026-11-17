@@ -15,6 +15,7 @@ import {
   useMemberDisplayNames,
   useRemoveMeetingRecording,
   useRequestMeetingDraft,
+  useSaveMeetingNotes,
   useUseMeetingDraft,
   type MeetingDraftState,
   type MeetingRecordingState,
@@ -82,14 +83,20 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * #4935): the draft reads it beside the notes, so it never goes into the box.
  * Clearing the notes removes the recording with them, as web does.
  *
- * Notes are stored only when a draft is asked for, so what was typed before
- * then is kept past the minutes screen (`meeting-notes:<meetingId>`, #5041):
- * meeting notes are the costliest text in the app to lose to a back swipe.
- * Asking for a draft gives the kept copy up once the ask lands (the server
- * holds the notes then), and holds it out while the ask is in flight; Clear
- * gives it up too. Leaving the screen keeps it, as a back swipe does.
- * A kept copy comes back only over the stored notes it was typed over.
+ * Notes are saved as the officer types (#5288), once typing rests, to the
+ * same notes store a note-taker's go to (`PUT /v1/meetings/:id/notes`), so
+ * the web sees them and a lost phone loses nothing. An empty box is never
+ * saved by itself: saving empty notes clears them and the draft written from
+ * them, which only Clear notes may do. They are also kept on the phone
+ * (`meeting-notes:<meetingId>`, #5041) until a draft is asked for: meeting
+ * notes are the costliest text in the app to lose to a back swipe with no
+ * signal. Asking for a draft gives the kept copy up once the ask lands, and
+ * holds it out while the ask is in flight; Clear gives it up too. A kept copy
+ * comes back only over the stored notes it was typed over.
  */
+/** How long typing rests before the notes save: the web's own wait. */
+const NOTES_AUTOSAVE_MS = 1200;
+
 export interface NotesPanelHandle {
   /** Asks for a draft from these notes and the transcript. */
   draft: () => Promise<void>;
@@ -309,6 +316,29 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
   }
 
   useImperativeHandle(ref, () => ({ draft: handleDraft }));
+
+  // Saved as they type, once typing rests (#5288). Never an empty box: that
+  // would clear the notes and the draft written from them.
+  const saveNotes = useSaveMeetingNotes();
+  const typed = notes.replace(/\s+$/u, "");
+  const unsaved =
+    !drafting &&
+    typed.trim() !== "" &&
+    typed !== base &&
+    typed.length <= MEETING_NOTES_MAX_LENGTH;
+  useEffect(() => {
+    if (!unsaved) return;
+    const timer = setTimeout(() => {
+      saveNotes.mutate(
+        { id: meetingId, notes: typed },
+        // What is typed next is over these; the server stores them trimmed
+        // at the end, as sent.
+        { onSuccess: () => setBase(typed) },
+      );
+    }, NOTES_AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unsaved, typed, meetingId]);
 
   const draftable = notes.trim() !== "" || othersWrote;
   const draftableReported = useRef<boolean | null>(null);

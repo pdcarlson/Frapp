@@ -11,15 +11,6 @@ const state = vi.hoisted(() => ({
   /** Pending reads, by chapter, resolved by the test. */
   reads: new Map<string, (keys: string[] | null) => void>(),
   write: vi.fn(),
-  meetingNotes: false,
-  aiReady: true,
-}));
-
-vi.mock("@/lib/ai/availability", () => ({
-  useAiSurfaces: () => ({
-    meetingNotes: state.meetingNotes,
-    ready: state.aiReady,
-  }),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -75,8 +66,6 @@ beforeEach(() => {
   state.modules = {};
   state.reads.clear();
   state.write.mockReset();
-  state.meetingNotes = false;
-  state.aiReady = true;
 });
 
 describe("useQuickActions", () => {
@@ -91,7 +80,7 @@ describe("useQuickActions", () => {
 
   it("shows the saved arrangement once it is read", async () => {
     render();
-    expect(latest.shown[0]).toBe("search");
+    expect(latest.shown[0]).toBe("newMinutes");
     await settle("chapter-1", ["study", "message"]);
     expect(latest.shown).toEqual(["study", "message"]);
   });
@@ -145,14 +134,8 @@ describe("useQuickActions", () => {
     expect(latest.ready).toBe(true);
   });
 
-  it("waits on the AI read too, and offers New minutes where it drafts (#5287)", () => {
-    state.aiReady = false;
-    const tree = render();
-    expect(latest.ready).toBe(false);
-    expect(latest.available).not.toContain("newMinutes");
-    state.aiReady = true;
-    state.meetingNotes = true;
-    act(() => tree.update(<Harness />));
+  it("offers New minutes to an officer who records them, drafting or not (#5288)", () => {
+    render();
     expect(latest.ready).toBe(true);
     expect(latest.available[0]).toBe("newMinutes");
   });

@@ -7,7 +7,13 @@ import {
   cloneElement,
   isValidElement,
 } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -29,6 +35,7 @@ import {
   ThemedRefreshControl,
   type ScreenRefresh,
 } from "@/components/pull-to-refresh";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
@@ -112,6 +119,12 @@ type ScreenShellProps = {
    */
   footer?: ReactNode;
   /**
+   * Rises with the keyboard, so a field low on the page and the `footer`
+   * stay above it: a meeting's note, typed while the recorder's bar stays
+   * under the thumb (#5288).
+   */
+  avoidKeyboard?: boolean;
+  /**
    * The body's scroll view, for a screen that moves it to a part of itself:
    * Activity's week strip jumps To do to the day pressed (#5310), as
    * Fantastical's DayTicker jumps its list. Measure the part against a host
@@ -160,6 +173,7 @@ export function ScreenShell({
   scrollEnabled = true,
   keyboardShouldPersistTaps,
   footer,
+  avoidKeyboard = false,
   scrollRef,
   children,
 }: ScreenShellProps) {
@@ -190,7 +204,7 @@ export function ScreenShell({
           edges={["top", "left", "right", "bottom"]}
         >
           {/* Unpadded, so the pinned row sits where the content starts. */}
-          <View style={styles.safeArea}>
+          <ShellBody avoidKeyboard={avoidKeyboard} style={styles.safeArea}>
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
               ref={scrollRef}
@@ -228,11 +242,29 @@ export function ScreenShell({
               {body}
             </ScrollView>
             {footer ? <View style={styles.footer}>{footer}</View> : null}
-          </View>
+          </ShellBody>
         </SafeAreaView>
       </CoveredByOverlay>
       {overlay?.content}
     </View>
+  );
+}
+
+/** The shell's body, rising with the keyboard where the screen asks. */
+function ShellBody({
+  avoidKeyboard,
+  style,
+  children,
+}: {
+  avoidKeyboard: boolean;
+  style: ViewStyle;
+  children: ReactNode;
+}) {
+  if (!avoidKeyboard) return <View style={style}>{children}</View>;
+  return (
+    <KeyboardAvoidingArea atScreenBottom style={style}>
+      {children}
+    </KeyboardAvoidingArea>
   );
 }
 

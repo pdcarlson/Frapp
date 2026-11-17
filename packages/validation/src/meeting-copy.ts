@@ -147,10 +147,17 @@ export const MEETING_COPY = {
   loadTheirs: "Load their version",
   tryAgain: "Try again in a moment.",
   /**
-   * The phone reads minutes, drafts them from notes and posts them. Changing
-   * a section's wording by hand is on the web for now.
+   * Where the chapter doesn't draft minutes from notes, the phone's note is
+   * the minutes' Summary (#5288); the other sections are written on the web
+   * until the phone has a section editor (#4412).
    */
-  writeOnWeb: "Open these minutes on the web to write them.",
+  summaryPlaceholder: "Type what was said and decided.",
+  restOnWeb: "Decisions and action items are added on the web.",
+  saveFailed: "Not saved yet. It tries again as you type.",
+  /** The note's chips (#5288). */
+  checkedIn: (count: number) => `${count} checked in`,
+  audienceEveryone: "Everyone",
+  audienceInvited: "Invited only",
   suggestedTasks: "Suggested tasks",
 } as const;
 

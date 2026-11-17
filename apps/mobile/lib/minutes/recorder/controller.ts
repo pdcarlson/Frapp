@@ -99,6 +99,12 @@ export interface RecorderDevice {
   resume: () => void;
   /** What the recorder says now, or null when there is none. */
   status: () => { isRecording: boolean; seconds: number } | null;
+  /**
+   * How loud the room is now, 0 to 1, or null while nothing is being
+   * written. Read by the recorder bar's level (#5288), never by the
+   * controller.
+   */
+  level?: () => number | null;
   /** Closes the file and gives the microphone back. */
   finish: () => Promise<void>;
   /** Told when recording ended without `finish`: the notification's Stop, an error. */

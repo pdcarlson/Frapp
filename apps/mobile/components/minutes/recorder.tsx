@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -39,6 +39,7 @@ import {
   type RowAction,
   type RowButton,
 } from "@/lib/minutes/recorder/row-view";
+import { meetingRecorderDevice } from "@/lib/minutes/recorder/device";
 import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
@@ -50,12 +51,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * 2026-11-17 pass on the real screen: "Show me, not tell me ... literally
  * like a play, pause, and then like an indicator that shows it's recording."
  *
- * Voice Memos is the model. While it records, the screen shows a large
- * running clock under a pulsing red dot and moving bars (`RecorderStage`),
- * and the only controls are two round icons pinned at the bottom
- * (`RecorderControls`): pause, which turns to carry on in the same place,
- * and stop. After Stop the stage ticks off four steps, recorded, uploaded,
- * transcribed, drafted, so it is plain that nothing was lost and where it is.
+ * Voice Memos and Granola are the model. While it records, the recorder is
+ * a bar pinned to the bottom (`RecorderControls`, #5288): pause, which turns
+ * to carry on in the same place, the room's live level, the running clock and
+ * stop, so the page above stays the officer's note to type in, keyboard up.
+ * After Stop the page shows a card that ticks off four steps (`RecorderStage`),
+ * recorded, uploaded, transcribed, drafted, so it is plain that nothing was
+ * lost and where it is.
  * Rare states (a refusal, a recording kept on the phone) say why in one line
  * and offer their one way on.
  *
@@ -232,37 +234,17 @@ export function RecorderStage({
   const styles = createStyles(tokens);
   const { view } = row;
 
+  // While it records the bar at the bottom says everything; the page keeps
+  // only why it paused by itself (a call took the microphone).
   if (view.live) {
-    const live = view.live === "recording";
-    return (
-      <View style={styles.stage}>
-        <View
-          style={styles.liveHead}
-          accessible
-          accessibilityLabel={[view.title, view.clock].filter(Boolean).join(", ")}
-          accessibilityLiveRegion="none"
-        >
-          <PulseDot
-            color={
-              live
-                ? tokens.color.semantic.destructive
-                : tokens.color.semantic.warning
-            }
-            pulsing={live}
-          />
-          <Text style={styles.liveTitle}>{view.title}</Text>
-        </View>
-        <Text style={styles.clock}>{view.clock}</Text>
-        <View style={styles.meter}>
-          {live ? (
-            <WorkingBars color={tokens.color.semantic.destructive} />
-          ) : null}
-        </View>
-        {view.tone === "problem" ? (
-          <Text style={[styles.line, styles.problem]}>{view.text}</Text>
-        ) : null}
-      </View>
-    );
+    return view.tone === "problem" ? (
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.line, styles.problem]}
+      >
+        {view.text}
+      </Text>
+    ) : null;
   }
 
   if (steps) {
@@ -361,9 +343,9 @@ export function RecorderStage({
 }
 
 /**
- * The bottom of the screen while the recorder has it: pause or carry on, and
- * stop, as two round icons that never trade places; or the recorder's one
- * button (Record, Upload, Open Settings). Null when the recorder
+ * The bottom of the screen while the recorder has it: a bar with pause or
+ * carry on, the live level, the clock and stop, whose round icons never trade
+ * places; or the recorder's one button (Record, Upload, Open Settings). Null when the recorder
  * wants nothing pressed, so the screen's own button (Post) can have the spot.
  */
 export function RecorderControls({ row }: { row: MeetingRecorderRow }) {
@@ -374,32 +356,44 @@ export function RecorderControls({ row }: { row: MeetingRecorderRow }) {
   const ink = tokens.color.text.foreground;
 
   if (view.live) {
+    const live = view.live === "recording";
+    const hue = live
+      ? tokens.color.semantic.destructive
+      : tokens.color.semantic.warning;
     return (
-      <View style={styles.controls}>
-        {view.live === "recording" ? (
+      <View style={[styles.bar, { borderColor: hue }]}>
+        {live ? (
           <RoundControl
-            size="large"
             label={MEETING_RECORDER_COPY.pauseControl}
             onPress={() => void row.run("pause")}
           >
-            <PauseGlyph color={ink} size={28} />
+            <PauseGlyph color={ink} size={22} />
           </RoundControl>
         ) : (
           <RoundControl
-            size="large"
             label={MEETING_RECORDER_COPY.resumeControl}
             onPress={() => void row.run("resume")}
           >
-            <PlayGlyph color={ink} size={28} />
+            <PlayGlyph color={ink} size={22} />
           </RoundControl>
         )}
+        <View
+          style={styles.barMiddle}
+          accessible
+          accessibilityLabel={[view.title, view.clock]
+            .filter(Boolean)
+            .join(", ")}
+        >
+          <PulseDot color={hue} pulsing={live} />
+          <LevelMeter live={live} color={hue} />
+          <Text style={styles.barClock}>{view.clock}</Text>
+        </View>
         <RoundControl
-          size="large"
           tone="stop"
           label={MEETING_RECORDER_COPY.stopControl}
           onPress={() => void row.run("stop")}
         >
-          <StopGlyph color={tokens.color.semantic.destructive} size={28} />
+          <StopGlyph color={tokens.color.semantic.destructive} size={22} />
         </RoundControl>
       </View>
     );
@@ -419,6 +413,77 @@ export function RecorderControls({ row }: { row: MeetingRecorderRow }) {
     />
   );
 }
+
+/** How many readings the level shows, newest at the right. */
+const LEVEL_SAMPLES = 18;
+/** How often the level is read: often enough to move with a voice. */
+const LEVEL_EVERY_MS = 120;
+
+/**
+ * The room's loudness over the last two seconds, as bars that rise with a
+ * voice (Voice Memos' waveform), so the officer sees the phone is hearing the
+ * meeting. Read from the recorder itself (`RecorderDevice.level`); flat while
+ * paused. Where the recorder gives no reading (an older build), the three
+ * working bars stand in, so something still moves while it records.
+ */
+function LevelMeter({ live, color }: { live: boolean; color: string }) {
+  const read = meetingRecorderDevice()?.level ?? null;
+  const [samples, setSamples] = useState<number[]>(QUIET);
+  useEffect(() => {
+    if (!live || !read) return;
+    const timer = setInterval(() => {
+      const level = read() ?? 0;
+      setSamples((before) => [...before.slice(1), level]);
+    }, LEVEL_EVERY_MS);
+    return () => {
+      clearInterval(timer);
+      // Flat again for the next time it records.
+      setSamples(QUIET);
+    };
+  }, [live, read]);
+
+  if (live && !read) return <WorkingBars color={color} />;
+  return (
+    <View
+      style={levelStyles.meter}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {(live ? samples : QUIET).map((level, index) => (
+        <View
+          key={index}
+          style={[
+            levelStyles.sample,
+            {
+              backgroundColor: color,
+              height: LEVEL_FLOOR + level * (LEVEL_HEIGHT - LEVEL_FLOOR),
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const QUIET: number[] = new Array<number>(LEVEL_SAMPLES).fill(0);
+
+const LEVEL_HEIGHT = 24;
+const LEVEL_FLOOR = 3;
+const levelStyles = StyleSheet.create({
+  meter: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    height: LEVEL_HEIGHT,
+    gap: 2,
+  },
+  sample: {
+    flex: 1,
+    maxWidth: 3,
+    borderRadius: 1.5,
+  },
+});
 
 /** The live dot: it breathes while audio is written, still while paused. */
 function PulseDot({ color, pulsing }: { color: string; pulsing: boolean }) {
@@ -464,32 +529,26 @@ const dotStyles = StyleSheet.create({
 function createStyles(tokens: SignetTokens) {
   const caption = typeRole(tokens.typography.role.caption);
   return StyleSheet.create({
-    stage: {
+    bar: {
+      flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.lg,
+      gap: tokens.spacing.md,
+      padding: tokens.spacing.sm,
+      borderRadius: 999,
+      borderWidth: 1,
+      backgroundColor: tokens.color.surface.card,
     },
-    liveHead: {
+    barMiddle: {
+      flex: 1,
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
     },
-    liveTitle: {
+    barClock: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    clock: {
-      ...typeRole(tokens.typography.role.display),
-      // Read from across a table, as Voice Memos' clock is.
-      fontSize: 56,
-      lineHeight: 64,
       color: tokens.color.text.foreground,
       // Digits of one width, so the clock doesn't shiver as it counts.
       fontVariant: ["tabular-nums"],
-    },
-    meter: {
-      height: 16,
-      justifyContent: "center",
     },
     line: {
       ...caption,
@@ -501,9 +560,12 @@ function createStyles(tokens: SignetTokens) {
     notice: {
       gap: tokens.spacing.sm,
     },
+    // After Stop: a card, so the steps read as one thing happening.
     steps: {
       gap: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      backgroundColor: tokens.color.surface.card,
     },
     step: {
       flexDirection: "row",
@@ -541,11 +603,6 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: tokens.spacing.lg,
-    },
-    controls: {
-      flexDirection: "row",
-      justifyContent: "center",
-      gap: tokens.spacing["2xl"],
     },
   });
 }

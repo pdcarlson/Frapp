@@ -20,6 +20,7 @@ vi.mock("expo-constants", () => ({
 
 import {
   createRecorderDevice,
+  levelOf,
   meetingRecorderDevice,
   resetMeetingRecorderDeviceForTests,
   setRecorderModulesLoaderForTests,
@@ -41,7 +42,12 @@ function fakeModules() {
   const recorder = {
     uri: `${DOCS}/ExpoAudio/recording-1.aac` as string | null,
     options: null as Record<string, unknown> | null,
-    status: { isRecording: false, durationMillis: 0, url: null as string | null },
+    status: {
+      isRecording: false,
+      durationMillis: 0,
+      url: null as string | null,
+      metering: undefined as number | undefined,
+    },
     prepareToRecordAsync: vi.fn(async (...args: unknown[]) => {
       calls.push(`prepare:${args.length}`);
     }),
@@ -215,6 +221,27 @@ describe("createRecorderDevice", () => {
     Platform.OS = "android";
     fake.permissions.notifications = false;
     expect(await device.backgroundAllowed()).toBe(false);
+  });
+
+  it("reads the room's level while it records, and nothing while paused or without a reading (#5288)", async () => {
+    const fake = fakeModules();
+    const device = createRecorderDevice(fake.modules);
+    expect(device.level?.()).toBeNull();
+    await device.begin();
+    expect(fake.recorder.options).toMatchObject({ isMeteringEnabled: true });
+    expect(device.level?.()).toBeNull();
+    fake.recorder.status.metering = -35;
+    expect(device.level?.()).toBeCloseTo(0.5);
+    device.pause();
+    expect(device.level?.()).toBeNull();
+  });
+
+  it("reads quiet as low and a near voice as full", () => {
+    expect(levelOf(-160)).toBe(0);
+    expect(levelOf(-60)).toBe(0);
+    expect(levelOf(-10)).toBe(1);
+    expect(levelOf(0)).toBe(1);
+    expect(levelOf(Number.NaN)).toBe(0);
   });
 
   it("reads the clock in seconds, and nothing when there is no recorder", async () => {

@@ -26,6 +26,7 @@ const hooks = vi.hoisted(() => ({
   use: vi.fn(),
   removeRecording: vi.fn(),
   choose: vi.fn(),
+  saveNotes: vi.fn(),
   notesState: null as unknown,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -34,6 +35,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: hooks.request,
     isPending: false,
   }),
+  useSaveMeetingNotes: () => ({ mutate: hooks.saveNotes, isPending: false }),
   useDiscardMeetingDraft: () => ({
     mutateAsync: hooks.discard,
     isPending: false,
@@ -283,6 +285,39 @@ describe("NotesPanel", () => {
       MEETING_NOTES_COPY.tooLong(MEETING_NOTES_MAX_LENGTH, long.length),
     );
     expect(hooks.request).not.toHaveBeenCalled();
+  });
+
+  it("saves the notes as they type, once typing rests (#5288)", () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render(draftState());
+      act(() => field(tree).props.onChangeText("Budget passed"));
+      act(() => vi.advanceTimersByTime(600));
+      act(() => field(tree).props.onChangeText("Budget passed 12-3.  "));
+      act(() => vi.advanceTimersByTime(1199));
+      expect(hooks.saveNotes).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      // Once, with what rests, trimmed at the end as the server stores it.
+      expect(hooks.saveNotes).toHaveBeenCalledTimes(1);
+      expect(hooks.saveNotes).toHaveBeenCalledWith(
+        { id: "m1", notes: "Budget passed 12-3." },
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never saves an emptied box by itself: that would clear the draft written from it", () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render(draftState({ notes: "Typed." }));
+      act(() => field(tree).props.onChangeText("   "));
+      act(() => vi.advanceTimersByTime(5000));
+      expect(hooks.saveNotes).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends the notes against the version read just now, with the meeting's local day", async () => {
