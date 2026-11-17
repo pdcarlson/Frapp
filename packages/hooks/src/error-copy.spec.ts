@@ -192,6 +192,30 @@ describe("errorCopy", () => {
     ).not.toMatch(/discord:import/);
   });
 
+  it("shows a daily limit's own words, which say how long to wait", () => {
+    const invites = nest(
+      429,
+      "Your chapter can email up to 300 invites in 24 hours and has 12 left. You can send these 50 in about 5 hours, or share an invite link now.",
+      "invite.email_daily_limit",
+    );
+    const own = nest(
+      429,
+      "You can email up to 300 invites in 24 hours and have none left. You can send this one in about 20 minutes, or share an invite link now.",
+    );
+    const chapters = nest(
+      429,
+      "You've started 3 chapters in the last 24 hours, the most allowed. You can start another in about an hour.",
+      "chapter.start_daily_limit",
+    );
+    for (const e of [invites, own, chapters]) {
+      expect(errorCopy(e, FALLBACK)).toBe(e.message);
+    }
+    // The throttler's own 429 keeps the shared line.
+    expect(
+      errorCopy(nest(429, "ThrottlerException: Too Many Requests"), FALLBACK),
+    ).toMatch(/Wait a minute/);
+  });
+
   it("writes every mapped line as a sentence", () => {
     for (const line of Object.values(SERVER_MESSAGE_COPY)) {
       expect(line).toMatch(/^[A-Z].*\.$/);

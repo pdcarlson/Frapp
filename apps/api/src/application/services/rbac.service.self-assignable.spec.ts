@@ -35,6 +35,7 @@ describe('RbacService self-assignable roles (#4958)', () => {
   let audit: AuditLogServiceMock;
   let roleRepo: TieredRoleRepoMock;
   let memberRepo: TieredMemberRepoMock;
+  let members: { id: string; role_ids: string[] }[];
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -54,7 +55,7 @@ describe('RbacService self-assignable roles (#4958)', () => {
       interest(BRAND_NEW, 'Study group', false),
     ]);
     ({ service, roles, audit, roleRepo, memberRepo } = harness);
-    const { members } = harness;
+    ({ members } = harness);
     memberRepo.setSelfAssignedRole.mockImplementation(
       async (_c: string, memberId: string, roleId: string, join: boolean) => {
         const held = members.find((m) => m.id === memberId)!.role_ids;
@@ -69,6 +70,7 @@ describe('RbacService self-assignable roles (#4958)', () => {
   });
 
   const roleById = (id: string) => roles.find((r) => r.id === id)!;
+  const brother = () => members.find((m) => m.id === 'member-brother')!;
   const codeOf = async (promise: Promise<unknown>) => {
     try {
       await promise;
@@ -316,6 +318,7 @@ describe('RbacService self-assignable roles (#4958)', () => {
       expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
       // Unmarked since the member picked it, and now carrying a permission:
       // leaving only takes from the caller, so it stays open.
+      brother().role_ids.push(BRAND_NEW);
       roleById(BRAND_NEW).permissions = ['events:update'];
       await service.setOwnSelfAssignableRole(
         CHAPTER_ID,
@@ -329,6 +332,60 @@ describe('RbacService self-assignable roles (#4958)', () => {
         BRAND_NEW,
         false,
       );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'role_self_left',
+          targetId: BRAND_NEW,
+          diff: { member_id: { from: 'member-brother', to: null } },
+          memberVisible: false,
+        }),
+      );
+    });
+
+    it('records a join and a leave as exec-only audit rows', async () => {
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        true,
+      );
+      expect(audit.record).toHaveBeenLastCalledWith({
+        chapterId: CHAPTER_ID,
+        actorUserId: USER.brother,
+        action: 'role_self_joined',
+        targetType: 'role',
+        targetId: INTRAMURALS,
+        diff: { member_id: { from: null, to: 'member-brother' } },
+        memberVisible: false,
+      });
+
+      brother().role_ids.push(INTRAMURALS);
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        false,
+      );
+      expect(audit.record).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          action: 'role_self_left',
+          targetId: INTRAMURALS,
+          diff: { member_id: { from: 'member-brother', to: null } },
+          memberVisible: false,
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledTimes(2);
+    });
+
+    it('records nothing when the roles did not change', async () => {
+      // Leaving a role not held, as `self_assign_role` answers it.
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        false,
+      );
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('refuses an alum, as the database answers', async () => {

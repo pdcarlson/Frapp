@@ -392,6 +392,12 @@ export class RbacService {
    * marked and safe, checked here for the refusal's words and again by
    * `self_assign_role` under the role's lock, which answers for a role
    * unmarked, changed or deleted in between (409, reload).
+   *
+   * A join or leave that changes the caller's roles writes an exec-only audit
+   * row (`role_self_joined` / `role_self_left`), not mirrored to
+   * `#chapter-audit`: a role picker can draw a join from every member in an
+   * afternoon. An officer's `PATCH /members/:id/roles` writes none; marking
+   * and unmarking the role are in its `role_updated` row.
    */
   async setOwnSelfAssignableRole(
     chapterId: string,
@@ -442,6 +448,25 @@ export class RbacService {
         code: NOT_SELF_ASSIGNABLE_CODE,
         message:
           'This role changed while you were saving. Reload and try again.',
+      });
+    }
+    const id = role.id.toLowerCase();
+    const holds = (ids: readonly string[]) =>
+      ids.some((held) => held.toLowerCase() === id);
+    if (holds(member.role_ids) !== holds(result.role_ids)) {
+      await this.chapterAuditLogService.record({
+        chapterId,
+        actorUserId: userId,
+        action: join ? 'role_self_joined' : 'role_self_left',
+        targetType: AUDIT_TARGET_TYPE,
+        targetId: role.id,
+        diff: {
+          member_id: {
+            from: join ? null : member.id,
+            to: join ? member.id : null,
+          },
+        },
+        memberVisible: false,
       });
     }
     return { role_ids: result.role_ids };

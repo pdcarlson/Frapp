@@ -267,6 +267,11 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "Only the next officer in line can claim the presidency.",
   "A rollover has already been performed this calendar month":
     "The semester was already rolled over this month.",
+  // Pledge classes (`PledgeClassService.assign`), already in an officer's words.
+  "You can only set the class of members ranked below you, and your own.":
+    "You can only set the class of members ranked below you, and your own.",
+  "A channel uses this class to decide who can see or post in it, so only someone who can manage channels can change who is in it.":
+    "A channel uses this class to decide who can see or post in it, so only someone who can manage channels can change who is in it.",
   // Points and hours
   "Admins cannot adjust their own points":
     "You can't adjust your own points. Ask another officer.",
@@ -387,6 +392,14 @@ const SERVER_MESSAGE_PATTERNS: ReadonlyArray<
     /^Poll must have between (\d+) and (\d+) options$/,
     (m) => `A poll needs between ${m[1]} and ${m[2]} options.`,
   ],
+  // The daily ceilings on emailed invites and on starting chapters (429,
+  // `daily-send-limits.ts` in the API). The API writes them for the member,
+  // with how many are left and how long to wait, so they show as sent.
+  [
+    /^(?:Your chapter can|You can) email up to \d+ invites in 24 hours\b.*\.$/,
+    (m) => m[0],
+  ],
+  [/^You've started \d+ chapters in the last 24 hours\b.*\.$/, (m) => m[0]],
 ];
 
 export function copyForServerMessage(message: string): string | null {

@@ -108,6 +108,7 @@ The president's switch for each AI feature family ([#4308](https://github.com/pd
   - The tier routes (`/v1/role-tiers`, [#4071](https://github.com/pdcarlson/Frapp/issues/4071)) write `role_tier_created` and `role_tier_deleted` (the tier row under `tier`), `role_tier_updated` (`name` as `from`/`to`, `permissions` as `{ added, removed }`; no row when neither changed) and `role_tiers_reordered` (`order`, the tier names before and after), with `target_type` `role_tier`.
   - A Discord import that creates roles or grants them its channels' read permissions writes the same rows, as the member who started it.
   - `POST /v1/roles/transfer-presidency` writes `presidency_transferred` (`target_type` `chapter`) with `president_member_id` going from the outgoing to the incoming member.
+  - A member's own `POST /v1/roles/:id/join` and `/leave` ([`rbac.md` § Self-assignable roles](../rbac.md#self-assignable-roles)) write `role_self_joined` and `role_self_left` (`target_type` `role`, the member's id under `member_id`, `{ from: null, to: id }` or `{ from: id, to: null }`) when the member's roles change. These two are the exception to `member_visible = true`: they are created exec-only and never mirrored to `#chapter-audit`, which a role picker would otherwise fill with every member's pick.
 
   Not every Settings write is audited: the Semester tab's rollover (`POST /v1/chapters/current/rollover`, including any New Member promotion) writes no row ([#2596](https://github.com/pdcarlson/Frapp/issues/2596)).
 

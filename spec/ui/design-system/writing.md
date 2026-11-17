@@ -245,10 +245,14 @@ Behaviour is [README.md](README.md) §4.
 |---|---|---|
 | Any API request the throttler refuses with a 429 (the body's `message`) | the surface's own | `Too many requests in a short time. Wait a minute, then try again.` |
 | A points adjustment past the per-chapter hourly cap (429, the body's `message`) | the surface's own | `You've made {N} point adjustments in this chapter in the last hour, the most allowed. Try again later.` |
+| An emailed-invite batch past the chapter's daily ceiling (429, `invite.email_daily_limit`, the body's `message`) | the surface's own | `Your chapter can email up to {limit} invites in 24 hours and has {left} left. You can send these {N} in {wait}, or share an invite link now.` (`this one` for a batch of one; `none` when nothing is left) |
+| The same, past the sender's own daily ceiling across their chapters | the surface's own | `You can email up to {limit} invites in 24 hours and have {left} left. You can send these {N} in {wait}, or share an invite link now.` |
+| Starting a chapter past the account's daily ceiling (429, `chapter.start_daily_limit`, the body's `message`) | the surface's own | `You've started {limit} chapters in the last 24 hours, the most allowed. You can start another in {wait}.` |
 
 The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.guard.ts`, #3142); before it, a throttled write toasted the framework's `ThrottlerException: Too Many Requests`.
 Both buckets reset within a minute, so "a minute" is the longest wait; `Retry-After` carries the exact seconds.
-The points cap is the one other 429 and keeps its own sentence, because its window is an hour, not a minute ([points.md § Anti-Fraud](../../behavior/points.md#anti-fraud)).
+The points cap keeps its own sentence, because its window is an hour, not a minute ([points.md § Anti-Fraud](../../behavior/points.md#anti-fraud)).
+The daily ceilings keep theirs, because their window is a day: the API writes each for the member, with how many are left and `{wait}` as `about a minute`, `about 20 minutes`, `about an hour` or `about 5 hours`, rounded up so waiting that long finds room, and the apps show it as sent (`SERVER_MESSAGE_PATTERNS`, `@repo/validation`; [README.md § Daily limits](../../behavior/README.md#daily-limits)).
 Chat's upload mints on web and mobile show this sentence for any 429, whatever its body (`RATE_LIMITED_COPY`, `packages/chat-core`), because their own "in a moment" retry sentence understates a block that lasts the whole minute.
 A chat send shows it for any 429 too, so an intermediary's text can't stand in, under `Message not sent` rather than `Message rejected`: the pace was refused, not the message.
 The send fails rather than waiting in the outbox, which flushes on boot and when a channel's connection goes live but never on a timer, so the row's Retry is the member's way back ([Chat (dashboard)](#chat-dashboard)).

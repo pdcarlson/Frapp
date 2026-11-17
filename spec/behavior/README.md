@@ -96,7 +96,7 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | --- | --- | --- |
 | `POST /v1/reports/attendance`, `/points`, `/roster`, `/service` | 5/min | Full-chapter aggregation plus export rendering. |
 | `POST /v1/invites/batch` | 5/min | Mints `count` invite tokens in one call. |
-| `POST /v1/invites/email` | 5/min | Mints a token and sends an email per address in one call. |
+| `POST /v1/invites/email` | 5/min | Mints a token and sends an email per address in one call. The daily ceilings below bound the total. |
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
 | `POST /v1/invites/preview` | 10/min | Token-guessing surface, the same as redeem. |
 | `POST /v1/integrations/dev-log` | 10/min | Token-guessing surface, and each call writes a message into a channel. Counted per caller IP: its bearer token is not a member's ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)). |
@@ -111,5 +111,22 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `GET /v1/search` | 20/min | One full-text scan per search source, per call, and the message source runs one per 100 channels the caller can read ([`search.md`](search.md#global-search)). A message filter with no text is one call for every readable channel, each channel read through an index up to the limit ([`search.md`](search.md#message-filters)). |
 
 `POST /v1/points/adjust` is deliberately absent: its abuse control is the adjustments-per-hour anti-fraud rule in the points service, not the throttler. [`points.md`](points.md) § Anti-Fraud owns the limit and its scoping. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.
+
 - Passwords are never stored by Frapp. Authentication is delegated entirely to Supabase Auth.
 - All secrets (Supabase keys, Stripe keys) are injected via environment variables. Never committed to version control. Never logged.
+
+### Daily limits
+
+Writes that reach people outside the chapter also have a rolling 24-hour ceiling, counted from the rows the database keeps, so it holds across API replicas and restarts where the per-minute throttle is per process. The database counts and writes in one step, one request per chapter, sender or starting account at a time, so requests sent together can't pass a ceiling between them. The numbers are product choices in `apps/api/src/domain/constants/daily-send-limits.ts`, set so normal use never meets them. Each refusal is `429` with a code and a sentence the apps show as written, saying how many are left and how long to wait.
+
+| What | Ceiling | Refusal code |
+| --- | --- | --- |
+| Emailed invites (`POST /v1/invites/email`), per chapter | 300 in any 24 hours | `invite.email_daily_limit` |
+| Emailed invites, per sender across every chapter | 300 in any 24 hours | `invite.email_daily_limit` |
+| Chapters started (`POST /v1/chapters/onboard`), per account | 3 in any 24 hours | `chapter.start_daily_limit` |
+
+- A new president inviting a whole 150-member chapter on day one sends 150 emails, and resends to mistyped or bounced addresses stay inside 300. A chapter at its ceiling can still share a join link, which sends no email, and the refusal says so.
+- Every emailed invite whose email was handed to the provider counts, revoked, replaced, used or not, because the email went out. One whose send failed stops counting once the batch finishes (its join link still works, shared by hand), so re-sending to the addresses that failed costs only what goes out. Share-link invites never count. A batch that would pass a ceiling is refused whole, before any token is made or email sent.
+- Starting a chapter keeps the default write throttle (30 a minute) and no tighter one, so a president who fixes the wizard's errors and resubmits isn't held up by the tries that were refused; only chapters actually made count.
+- There is no tighter ceiling for a chapter of one member: a real chapter is one on its first day too, so any ceiling that lets that president invite everyone is no tighter than these. The per-sender ceiling, which counts across chapters, and the chapters-started ceiling are what bound an account that starts chapters only to send email.
+- The chapter's starter is the account onboarding stamps as `legal_accepted_by`; a deleted chapter no longer counts.
