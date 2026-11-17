@@ -257,6 +257,41 @@ describe('AllExceptionsFilter', () => {
     expect(spike).toMatchObject({ count: 3, threshold: 3 });
   });
 
+  // The detector counts by the address the throttler counts under
+  // (`clientAddress`): an IPv6 caller by its /64, since a device may pick a
+  // fresh address inside it for every request.
+  it('counts IPv6 callers by their /64, as the throttler does', () => {
+    const filter = new AllExceptionsFilter(
+      new AuthFailureSpikeDetector({ threshold: 3, windowMs: 60_000 }),
+    );
+
+    filter.catch(new UnauthorizedException(), host({ ip: '2001:db8:7:8::1' }));
+    filter.catch(
+      new UnauthorizedException(),
+      host({ ip: '2001:db8:7:8:aaaa:bbbb:cccc:dddd' }),
+    );
+    filter.catch(
+      new UnauthorizedException(),
+      host({ ips: ['2001:db8:7:8::9'], ip: '10.0.0.1' }),
+    );
+
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    const origins = securityEvents()
+      .filter((e) => e.kind === 'auth_failure')
+      .map((e) => e.originHash);
+    expect(new Set(origins).size).toBe(1);
+    expect(JSON.stringify(securityEvents())).not.toContain('2001:db8');
+  });
+
+  it('keeps IPv6 callers on different /64s apart', () => {
+    const filter = new AllExceptionsFilter(
+      new AuthFailureSpikeDetector({ threshold: 2, windowMs: 60_000 }),
+    );
+    filter.catch(new UnauthorizedException(), host({ ip: '2001:db8:7:8::1' }));
+    filter.catch(new UnauthorizedException(), host({ ip: '2001:db8:7:9::1' }));
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
   describe('401 reason (#3907)', () => {
     const TOKEN = 'header.payload.signature-never-logged';
     const mobile = {

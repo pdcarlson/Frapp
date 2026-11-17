@@ -1,4 +1,10 @@
-import { ExecutionContext, Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import {
   ThrottlerGuard,
   ThrottlerLimitDetail,
@@ -7,10 +13,18 @@ import {
 } from '@nestjs/throttler';
 import { createHash, createHmac } from 'node:crypto';
 import type { Response } from 'express';
-import type { JwtPayload } from '@supabase/supabase-js';
+import type { JWK, JwtPayload } from '@supabase/supabase-js';
 import { getHeaderValue } from '../types/request-context.types';
 import { constantTimeEquals } from '#domain/utils/constant-time';
-import { decodeJwtSegment } from '#domain/utils/jwt-segment';
+import {
+  decodeJwtSegment,
+  readUnverifiedJwtPayload,
+} from '#domain/utils/jwt-segment';
+import {
+  INVALID_TOKEN_MESSAGE,
+  authRejected,
+  tokenExpired,
+} from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
@@ -28,19 +42,20 @@ export const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * How often a token whose `kid` has never verified may reach the JWKS
- * verifier (see `jwksClaims`). Ten seconds bounds a random-`kid` flood to six
- * outbound JWKS fetches a minute for the whole process, and delays a genuine
- * key rotation's first per-user bucket by at most that long.
+ * How often a token naming a signing-key id (`kid`) the guard does not hold
+ * may make it read the project's JWKS again (see `jwksVerdict`). The read
+ * learns every key the project lists, so after a key rotation the first
+ * request carrying the new `kid` teaches it for everyone; the interval bounds
+ * outbound reads to six a minute for the whole process however many unknown
+ * `kid`s arrive.
  */
-export const UNKNOWN_KID_ATTEMPT_INTERVAL_MS = 10_000;
+export const JWKS_REFRESH_INTERVAL_MS = 10_000;
 
 /**
- * How long the boot-time read of the project's signing keys may take (see
- * `seedKnownKids`). Requests whose `kid` is not yet known wait for it, so it
- * is short; when it runs out, the guard learns `kid`s as it did before.
+ * How long one read of the project's JWKS may take. Requests whose `kid` is
+ * not yet known wait for a read in flight, so it is short.
  */
-export const KID_SEED_TIMEOUT_MS = 3_000;
+export const JWKS_READ_TIMEOUT_MS = 3_000;
 
 /**
  * The name of the throttler that counts requests carrying a bearer token this
@@ -57,20 +72,37 @@ export const UNVERIFIED_BEARER_THROTTLER = 'unverified';
  * per-route buckets let one address multiply its calls by the number of
  * routes.
  *
- * Signed-in members are not counted: their tokens verify and are keyed per
- * user, so a chapter of 100 opening the app on one campus network never comes
- * near it. Calls with no token at all (the health checks, the version check,
- * an invite preview before sign-in) are not counted either: without a token
- * the auth guard refuses before any outbound call. What lands here from real
- * members is a token that went stale a moment before the app refreshed it,
- * and the few seconds after a signing-key rotation before its new `kid` is
- * learned. Product choice: generous for those, and still a small fraction of
- * what the per-route buckets allowed one address in total.
+ * What counts (`TokenVerdict`): a token the guard found invalid (malformed,
+ * expired, a bad signature against a key the project lists), and one it could
+ * not check although its key list is working (a `kid` the project's JWKS did
+ * not list when last read). What does not: a token that verified (keyed per
+ * user instead), no token at all (the auth guard refuses those without an
+ * outbound call), and a token the guard could not check because its own
+ * means of checking are down (the JWKS not read yet, or its last read
+ * failed), so an outage on that side never puts a whole network's members in
+ * this one bucket.
+ *
+ * Past the limit (or any other bucket's), an invalid token is answered with
+ * the auth guard's own 401 rather than a 429 (`throwThrottlingException`): a
+ * client recovers from a dead or stale session only through a 401 (it drops a
+ * learned clock offset, refreshes or signs out), so a 429 there would keep it
+ * stuck for as long as the address stays over. A token the guard could not
+ * check gets the 429, so a valid one is never told its session is gone.
+ * Product choice on the number: generous for a campus network of members
+ * whose tokens lapse together, and a small fraction of what the per-route
+ * buckets allowed one address in total.
  */
 export const UNVERIFIED_BEARER_LIMIT = 200;
 
 /** The window {@link UNVERIFIED_BEARER_LIMIT} counts over. */
 export const UNVERIFIED_BEARER_TTL_MS = 60_000;
+
+/**
+ * The `authErrorCode` on the throttler's 401 (see
+ * {@link UNVERIFIED_BEARER_LIMIT}), so the security record tells it apart
+ * from the auth guard's own refusals (`spec/behavior/observability.md`).
+ */
+export const UNVERIFIED_LIMIT_AUTH_CODE = 'unverified_limit';
 
 /**
  * IPv6 addresses are bucketed by their /64. A home or campus network is
@@ -119,6 +151,8 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   @Inject(SUPABASE_CLIENT)
   private readonly supabase?: FrappSupabaseClient;
 
+  private readonly keysLogger = new Logger(CustomThrottlerGuard.name);
+
   /**
    * Rate-limit buckets are keyed per authenticated user (Supabase JWT `sub`)
    * rather than per IP, so the limit follows a user across networks and is not
@@ -137,20 +171,20 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * - **HS256** — checked locally against `SUPABASE_JWT_SECRET`. Kept for a
    *   project that still signs symmetrically (an older CLI, a self-hosted
    *   GoTrue); no Frapp project does today.
-   * - **ES256 / RS256** — checked with `supabase.auth.getClaims()`, which
-   *   verifies against the project's JWKS with WebCrypto and caches the key set,
-   *   so after the first fetch it is a local signature check, not a network
-   *   round trip. Both hosted Frapp projects sign ES256 (`HS256` is
-   *   `previously_used` on each) and so does the local stack the pinned CLI
-   *   starts, so before this path existed no request anywhere was keyed per
-   *   user — the secret would not have verified those tokens even if it had
-   *   been set, and `SupabaseAuthGuard` says as much about its own
+   * - **ES256 / RS256** — checked with `supabase.auth.getClaims()` against the
+   *   key the project's JWKS lists for the token's `kid`, which this guard
+   *   reads itself (`jwksVerdict`), so a check is a local WebCrypto signature
+   *   check, not a network round trip. Both hosted Frapp projects sign ES256
+   *   (`HS256` is `previously_used` on each) and so does the local stack the
+   *   pinned CLI starts, so before this path existed no request anywhere was
+   *   keyed per user — the secret would not have verified those tokens even if
+   *   it had been set, and `SupabaseAuthGuard` says as much about its own
    *   `getClaims()` call.
    *
    * Requests without a valid, unexpired token fall back to per-IP keying, which
-   * preserves the original denial-of-service protection; those that sent a
-   * token are also counted in the shared {@link UNVERIFIED_BEARER_THROTTLER}
-   * bucket (`handleRequest`).
+   * preserves the original denial-of-service protection; most of those that
+   * sent a token are also counted in the shared
+   * {@link UNVERIFIED_BEARER_THROTTLER} bucket (`handleRequest`).
    */
   protected async getTracker(req: Record<string, any>): Promise<string> {
     return (await this.tracking(req)).tracker;
@@ -159,8 +193,8 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   /**
    * One request's tracker, worked out once. The base guard asks for it once
    * per throttler that runs, and the token check behind it must run once: a
-   * second `getClaims` would be a second verification, and for an unknown
-   * `kid` would spend the next attempt slot on the same token.
+   * second check would be wasted work, and for an unknown `kid` could start a
+   * second JWKS read.
    */
   private tracking(req: Record<string, any>): Promise<RequestTracking> {
     let tracking = trackingByRequest.get(req);
@@ -174,24 +208,24 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   private async resolveTracking(
     req: Record<string, any>,
   ): Promise<RequestTracking> {
-    const claims = await this.verifiedClaims(req);
-    const userId = claims ? subjectOfUnexpired(claims) : null;
-    if (claims && userId) {
+    const verification = await this.verifyBearer(req);
+    if (verification.verdict === 'verified') {
+      const { claims, userId } = verification;
       // Handed on so `SupabaseAuthGuard` can start the chapter lookups on
       // this verified `sub` (#3728). On a read marked
       // `@VerifySessionLocally()` (#5043) that guard verifies the token again
-      // itself, but only when these claims are present: so a token whose
-      // `kid` this guard's unknown-`kid` bound below kept from the JWKS
-      // verifier never reaches one from there either. Keep that
+      // itself, but only when these claims are present: so a token this
+      // guard did not verify (a `kid` the project's JWKS does not list,
+      // among others) never reaches a verifier from there either. Keep that
       // precondition.
       (
         req as { throttlerVerifiedClaims?: JwtPayload }
       ).throttlerVerifiedClaims = claims;
-      return { tracker: `user:${userId}`, unverifiedBearer: false };
+      return { tracker: `user:${userId}`, verdict: 'verified' };
     }
     return {
-      tracker: `ip:${clientAddress(req)}`,
-      unverifiedBearer: bearerToken(req) !== null,
+      tracker: `ip:${clientAddress(req) ?? 'unknown'}`,
+      verdict: verification.verdict,
     };
   }
 
@@ -211,14 +245,13 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       return true;
     }
 
-    // Every method, but only a request whose bearer token did not verify
-    // (`UNVERIFIED_BEARER_LIMIT`): a signed-in member's request, and one with
-    // no token at all, pass this throttler untouched.
+    // Every method, but only a request whose bearer token the guard found
+    // invalid or could not check (`UNVERIFIED_BEARER_LIMIT` says which): a
+    // signed-in member's request, and one with no token at all, pass this
+    // throttler untouched.
     if (throttler.name === UNVERIFIED_BEARER_THROTTLER) {
-      const { unverifiedBearer } = await this.tracking(
-        request as Record<string, any>,
-      );
-      if (!unverifiedBearer) {
+      const { verdict } = await this.tracking(request as Record<string, any>);
+      if (!COUNTED_VERDICTS.has(verdict)) {
         return true;
       }
     }
@@ -244,21 +277,18 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   }
 
   /**
-   * Learn the project's signing-key ids at boot. A `kid` is otherwise learned
-   * on its first successful verification, and until then shares one attempt
-   * per `UNKNOWN_KID_ATTEMPT_INTERVAL_MS` with every other unknown `kid`, so
-   * right after a deploy a stream of made-up `kid`s could keep taking that
-   * slot and leave real members keyed per address (and counted in the
-   * unverified-token bucket). Not awaited, so boot never waits on the
-   * network; a request with an unknown `kid` waits for it instead
-   * (`jwksClaims`), at most {@link KID_SEED_TIMEOUT_MS}.
+   * Starts the first read of the project's signing keys. Not awaited, so boot
+   * never waits on the network; a request whose `kid` is not yet known waits
+   * for it instead (`jwksVerdict`), at most {@link JWKS_READ_TIMEOUT_MS}.
    */
   async onModuleInit(): Promise<void> {
     await super.onModuleInit();
-    this.kidSeed = this.seedKnownKids();
+    if (this.supabase) {
+      void this.readSigningKeys();
+    }
   }
 
-  /** Every throttled request, any bucket, reads {@link THROTTLED_MESSAGE}. */
+  /** Every 429 from the throttler, any bucket, reads {@link THROTTLED_MESSAGE}. */
   protected getErrorMessage(): Promise<string> {
     return Promise.resolve(THROTTLED_MESSAGE);
   }
@@ -268,194 +298,300 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * Because we register *named* throttlers (`read`/`write`), the base guard
    * only sets a name-suffixed header (`Retry-After-read` / `Retry-After-write`)
    * that HTTP clients do not honour, so we add the canonical one here.
+   *
+   * The one refusal that is not a 429: a request whose token the guard found
+   * invalid gets the auth guard's own 401 instead, whichever bucket it used
+   * up. That is the answer the auth guard would give it, and a client
+   * recovers a dead or stale session only through a 401 (see
+   * {@link UNVERIFIED_BEARER_LIMIT}).
    */
   protected async throwThrottlingException(
     context: ExecutionContext,
     throttlerLimitDetail: ThrottlerLimitDetail,
   ): Promise<void> {
-    const res = context.switchToHttp().getResponse<Response>();
+    const http = context.switchToHttp();
+    const request = http.getRequest<Record<string, any>>();
+    if ((await this.tracking(request)).verdict === 'rejected') {
+      throw authRejected(INVALID_TOKEN_MESSAGE, 'claims_rejected', {
+        authErrorCode: UNVERIFIED_LIMIT_AUTH_CODE,
+        tokenExpired: tokenExpired(bearerToken(request) ?? ''),
+      });
+    }
+    const res = http.getResponse<Response>();
     res.header('Retry-After', String(throttlerLimitDetail.timeToBlockExpire));
     await super.throwThrottlingException(context, throttlerLimitDetail);
   }
 
   /**
-   * Return the claims of a cryptographically verified Supabase access token on
-   * the request, or `null` (missing/malformed/invalid token, or no verifier
-   * available for its `alg`) so callers fall back to per-IP keying. The
-   * caller still checks `exp` and `sub` (`subjectOfUnexpired`).
+   * What the bearer token on the request is (`TokenVerdict`), with the claims
+   * and subject when it verified. The caller keys a verified one per user and
+   * everything else per address.
    */
-  private async verifiedClaims(
-    req: Record<string, any>,
-  ): Promise<JwtPayload | null> {
+  private async verifyBearer(req: Record<string, any>): Promise<Verification> {
     const token = bearerToken(req);
     if (token === null) {
-      return null;
+      return NO_TOKEN;
     }
 
     const segments = token.split('.');
     if (segments.length !== 3) {
-      return null;
+      return REJECTED;
     }
     const [headerSeg, payloadSeg, signatureSeg] = segments;
 
     // A header that isn't a JSON object (unparseable, `null`, a number)
-    // carries no `alg`: fall back to per-IP keying, as the payload path does.
+    // carries no `alg`, and a payload that isn't one carries no claims:
+    // Supabase Auth refuses either.
     const decodedHeader = decodeJwtSegment(headerSeg);
     if (decodedHeader === null || typeof decodedHeader !== 'object') {
-      return null;
+      return REJECTED;
+    }
+    if (readUnverifiedJwtPayload(token) === undefined) {
+      return REJECTED;
+    }
+    // Supabase Auth refuses an expired token whatever signed it, so one whose
+    // own `exp` has passed is invalid without a signature check.
+    if (tokenExpired(token) === true) {
+      return REJECTED;
     }
     const header = decodedHeader as { alg?: unknown; kid?: unknown };
 
     if (header.alg === 'HS256') {
-      return this.hs256Claims(headerSeg, payloadSeg, signatureSeg);
+      return this.hs256Verdict(headerSeg, payloadSeg, signatureSeg);
     }
     if (typeof header.alg === 'string' && JWKS_VERIFIED_ALGS.has(header.alg)) {
-      return this.jwksClaims(
+      return this.jwksVerdict(
         token,
         typeof header.kid === 'string' ? header.kid : undefined,
       );
     }
-    // `none`, an unknown alg, or no alg at all: nothing here can verify it.
-    return null;
+    // `none`, or an alg Supabase never signs with: nothing accepts it.
+    return REJECTED;
   }
 
   /**
-   * HS256 — the local Supabase stack's algorithm — verified against
-   * `SUPABASE_JWT_SECRET`. Without the secret there is no way to check the
-   * signature, so the token yields no subject rather than an unverified one.
+   * HS256 verified against `SUPABASE_JWT_SECRET`. Without the secret there is
+   * no way to check the signature, so the token is `unknown`, never verified.
    */
-  private hs256Claims(
+  private hs256Verdict(
     headerSeg: string,
     payloadSeg: string,
     signatureSeg: string,
-  ): JwtPayload | null {
+  ): Verification {
     const secret = process.env.SUPABASE_JWT_SECRET;
     if (!secret) {
-      return null;
+      return UNKNOWN;
     }
 
     const expected = createHmac('sha256', secret)
       .update(`${headerSeg}.${payloadSeg}`)
       .digest('base64url');
     if (!constantTimeEquals(signatureSeg, expected)) {
-      return null;
+      return REJECTED;
     }
 
     const payload = decodeJwtSegment(payloadSeg);
-    return payload !== null && typeof payload === 'object'
-      ? (payload as JwtPayload)
-      : null;
+    return verifiedOrRejected(
+      payload !== null && typeof payload === 'object'
+        ? (payload as JwtPayload)
+        : null,
+    );
   }
 
   /**
-   * ES256 / RS256 — verified by supabase-js against the project JWKS (cached
-   * after the first fetch; WebCrypto locally thereafter). `getClaims` already
-   * rejects a bad signature and an expired token, and the `exp` re-check below
-   * is the same belt the HS256 path wears: a claims object with no usable
-   * `exp` must not become a perpetual per-user bucket. Any failure — no client
-   * wired, JWKS unreachable on a cold start, verification error — is a `null`
-   * and therefore per-IP keying, never a rejected request: this guard limits
-   * rates, `SupabaseAuthGuard` decides authentication.
+   * ES256 / RS256, verified by supabase-js's `getClaims` against the one key
+   * the project's JWKS lists under the token's `kid`, handed to it from
+   * {@link signingKeys}: a local WebCrypto check, never a fetch, because
+   * `getClaims` re-fetches the JWKS for a `kid` it has not cached, and for a
+   * `kid` the JWKS does not list asks Supabase Auth instead. This guard runs
+   * on every request before authentication, so a `kid` it does not hold
+   * never reaches `getClaims`: it makes the guard read the project's JWKS
+   * again, at most once per {@link JWKS_REFRESH_INTERVAL_MS} process-wide and
+   * one read at a time, and the token is checked if that read lists it. The
+   * keys come from the project's own Auth server, never from a request, so a
+   * caller cannot add to them.
    *
-   * One thing supabase-js does not do is negative-cache: `fetchJwk` re-fetches
-   * the JWKS over the network whenever a token's `kid` is not in its cache,
-   * and this guard runs on every request *before* authentication. Unbounded,
-   * that is an amplifier — an unauthenticated flood of ES256-shaped headers
-   * with random `kid`s becomes one outbound fetch each. So a `kid` earns the
-   * verifier's attention once: a `kid` that has verified before is always
-   * sent (real members share one or two, and a key rotation is a single new
-   * one); any other `kid` gets at most one attempt per
-   * `UNKNOWN_KID_ATTEMPT_INTERVAL_MS`, process-wide, and everything in between
-   * keys on IP — the pre-existing, safe behaviour. A `kid` is added to the
-   * known set only on a successful verification, so an attacker cannot grow
-   * it.
+   * Any failure that is not about the token (no client wired, the JWKS not
+   * read yet or unreachable, a thrown error) is `unavailable` and therefore
+   * per-IP keying, never a rejected request: this guard limits rates,
+   * `SupabaseAuthGuard` decides authentication.
    */
-  private async jwksClaims(
+  private async jwksVerdict(
     token: string,
     kid: string | undefined,
-  ): Promise<JwtPayload | null> {
+  ): Promise<Verification> {
     if (!this.supabase) {
-      return null;
+      return UNAVAILABLE;
     }
-    let known = kid !== undefined && this.verifiedKids.has(kid);
-    if (!known && kid !== undefined) {
-      // Already settled once boot's JWKS read is done; until then it may
-      // still name this `kid`.
-      await this.kidSeed;
-      known = this.verifiedKids.has(kid);
+    if (kid === undefined) {
+      // Supabase names the key on every token it signs asymmetrically.
+      return UNKNOWN;
     }
-    if (!known) {
-      const now = Date.now();
-      if (now < this.nextUnknownKidAttemptAt) {
-        return null;
+    let key = this.signingKeys.get(kid);
+    if (!key) {
+      await this.refreshSigningKeys();
+      key = this.signingKeys.get(kid);
+      if (!key) {
+        return this.signingKeysCurrent ? UNKNOWN : UNAVAILABLE;
       }
-      this.nextUnknownKidAttemptAt = now + UNKNOWN_KID_ATTEMPT_INTERVAL_MS;
     }
     try {
-      const { data, error } = await this.supabase.auth.getClaims(token);
-      if (error || !data?.claims) {
-        return null;
+      const { data, error } = await this.supabase.auth.getClaims(token, {
+        jwks: { keys: [key] },
+      });
+      if (data?.claims) {
+        return verifiedOrRejected(data.claims);
       }
-      if (kid !== undefined) {
-        this.verifiedKids.add(kid);
-      }
-      return data.claims;
+      // `invalid_jwt` is supabase-js's verdict on the token itself: a bad
+      // signature, an expired or malformed one. Anything else is not.
+      return error?.code === 'invalid_jwt' ? REJECTED : UNAVAILABLE;
     } catch {
-      return null;
+      return UNAVAILABLE;
     }
   }
 
   /**
-   * Adds every `kid` the project's JWKS lists to the known set. They come from
-   * the project's own Auth server, not from a request, so no caller can grow
-   * the set this way. Any failure (no client or URL wired, Auth unreachable,
-   * an unexpected body) leaves the set as it was, and `kid`s are learned on
-   * first verification as before.
+   * Waits for a read of the project's JWKS that may list a `kid` not held:
+   * the one in flight (boot's, or one another request started), else a new
+   * one when {@link JWKS_REFRESH_INTERVAL_MS} has passed since the last began.
+   * Otherwise returns at once, and the token stays unchecked.
    */
-  private async seedKnownKids(): Promise<void> {
+  private async refreshSigningKeys(): Promise<void> {
+    if (
+      this.signingKeysRead !== null ||
+      Date.now() >= this.nextSigningKeysReadAt
+    ) {
+      await this.readSigningKeys();
+    }
+  }
+
+  /**
+   * Reads the project's JWKS and replaces {@link signingKeys} with what it
+   * lists. One read at a time: a call while one is in flight joins it. A
+   * failure keeps the keys already held, logs a warning, and leaves tokens
+   * whose `kid` is not among them `unavailable` until a later read succeeds.
+   *
+   * The request is the one supabase-js's own `fetchJwk` makes: the same URL,
+   * with the same `apikey` and `Authorization` headers it sends to Auth, here
+   * the API's own key. Neither the key nor the URL is ever logged.
+   */
+  private readSigningKeys(): Promise<void> {
+    if (this.signingKeysRead) {
+      return this.signingKeysRead;
+    }
+    this.nextSigningKeysReadAt = Date.now() + JWKS_REFRESH_INTERVAL_MS;
+    this.signingKeysRead = this.fetchSigningKeys().finally(() => {
+      this.signingKeysRead = null;
+    });
+    return this.signingKeysRead;
+  }
+
+  private async fetchSigningKeys(): Promise<void> {
     const base = process.env.SUPABASE_URL;
-    if (!this.supabase || !base) {
+    const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!base || !apiKey) {
+      this.signingKeysCurrent = false;
+      this.keysLogger.warn(
+        'Cannot read the project signing keys: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set. ES256/RS256 tokens are keyed by address.',
+      );
       return;
     }
+    let failure: string;
     try {
       const res = await fetch(
         `${base.replace(/\/+$/, '')}/auth/v1/.well-known/jwks.json`,
-        { signal: AbortSignal.timeout(KID_SEED_TIMEOUT_MS) },
+        {
+          headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(JWKS_READ_TIMEOUT_MS),
+        },
       );
-      if (!res.ok) {
-        return;
-      }
-      const body = (await res.json()) as { keys?: unknown } | null;
-      const keys: unknown[] = Array.isArray(body?.keys) ? body.keys : [];
-      for (const key of keys) {
-        const kid = (key as { kid?: unknown } | null)?.kid;
-        if (typeof kid === 'string' && kid.length > 0) {
-          this.verifiedKids.add(kid);
+      if (res.ok) {
+        const body = (await res.json()) as { keys?: unknown } | null;
+        if (Array.isArray(body?.keys)) {
+          const keys = new Map<string, JWK>();
+          for (const key of body.keys as unknown[]) {
+            const kid = (key as { kid?: unknown } | null)?.kid;
+            if (typeof kid === 'string' && kid.length > 0) {
+              keys.set(kid, key as JWK);
+            }
+          }
+          this.signingKeys = keys;
+          this.signingKeysCurrent = true;
+          return;
         }
+        failure = 'the response had no key list';
+      } else {
+        failure = `HTTP ${res.status}`;
       }
-    } catch {
-      // Learned on first verification instead (see above).
+    } catch (error) {
+      failure = error instanceof Error ? error.name : 'an unknown error';
     }
+    this.signingKeysCurrent = false;
+    this.keysLogger.warn(
+      `Could not read the project signing keys (${failure}). Tokens naming a key not already held are keyed by address until a read succeeds; the next is tried at most ${JWKS_REFRESH_INTERVAL_MS / 1000} s from now, when such a token arrives.`,
+    );
   }
 
   /**
-   * `kid`s known to be the project's: listed by its JWKS at boot, or verified
-   * against it at least once.
+   * The project's signing keys by `kid`, as its JWKS listed them at the last
+   * read that succeeded.
    */
-  private readonly verifiedKids = new Set<string>();
+  private signingKeys = new Map<string, JWK>();
 
-  /** Boot's JWKS read (`seedKnownKids`); it never rejects. */
-  private kidSeed: Promise<void> = Promise.resolve();
+  /** Whether the last read of the JWKS succeeded. */
+  private signingKeysCurrent = false;
 
-  /** Earliest time an unknown `kid` may next be sent to the verifier. */
-  private nextUnknownKidAttemptAt = 0;
+  /** The read of the JWKS in flight, if any (`readSigningKeys`). */
+  private signingKeysRead: Promise<void> | null = null;
+
+  /** Earliest time an unknown `kid` may start another read of the JWKS. */
+  private nextSigningKeysReadAt = 0;
 }
 
-/** What the throttler keys one request on, and whether its token failed. */
+/**
+ * What the guard made of a request's bearer token.
+ *
+ * - `none`: no bearer token at all.
+ * - `verified`: it verified to a user whose token has not expired.
+ * - `rejected`: it is not a live session, and Supabase Auth would refuse it:
+ *   not a well-formed JWT, an algorithm Supabase does not sign with, an
+ *   expired `exp`, a signature that does not match the key the project
+ *   lists, or verified claims with no subject.
+ * - `unknown`: it could not be checked although the guard's means of checking
+ *   work: a `kid` the project's JWKS did not list when last read, an
+ *   asymmetric token with no `kid`, or HS256 without the secret.
+ * - `unavailable`: it could not be checked because those means do not work
+ *   right now: no Supabase client, the JWKS not read yet or its last read
+ *   failed, or the verifier failed for a reason that is not the token.
+ */
+type TokenVerdict =
+  'none' | 'verified' | 'rejected' | 'unknown' | 'unavailable';
+
+/** The verdicts {@link UNVERIFIED_BEARER_THROTTLER} counts. */
+const COUNTED_VERDICTS: ReadonlySet<TokenVerdict> = new Set<TokenVerdict>([
+  'rejected',
+  'unknown',
+]);
+
+type Verification =
+  | { verdict: 'verified'; claims: JwtPayload; userId: string }
+  | { verdict: Exclude<TokenVerdict, 'verified'> };
+
+const NO_TOKEN: Verification = { verdict: 'none' };
+const REJECTED: Verification = { verdict: 'rejected' };
+const UNKNOWN: Verification = { verdict: 'unknown' };
+const UNAVAILABLE: Verification = { verdict: 'unavailable' };
+
+/** Verified when the claims carry an unexpired `exp` and a `sub`. */
+function verifiedOrRejected(claims: JwtPayload | null): Verification {
+  const userId = claims ? subjectOfUnexpired(claims) : null;
+  return claims && userId ? { verdict: 'verified', claims, userId } : REJECTED;
+}
+
+/** What the throttler keys one request on, and what its token was. */
 interface RequestTracking {
   tracker: string;
-  /** A bearer token was sent and did not verify to an unexpired user. */
-  unverifiedBearer: boolean;
+  verdict: TokenVerdict;
 }
 
 /**
@@ -479,15 +615,19 @@ function bearerToken(req: Record<string, any>): string | null {
  * The address a request is counted under when it has no verified user: the
  * client address Express resolved through the measured `trust proxy` hops
  * (`bootstrap.ts`), an IPv6 one cut to its /64 ({@link IPV6_BUCKET_PREFIX}).
- * Exported so the calendar feed's failed-lookup limit counts by the same
- * address.
+ * `undefined` when Express resolved none. Exported so everything that counts
+ * or groups callers by address (the calendar feed's failed-lookup limit, the
+ * auth-failure spike detector) uses this one notion of an address.
  */
-export function clientAddress(req: Record<string, any>): string {
+export function clientAddress(req: {
+  ips?: unknown;
+  ip?: unknown;
+}): string | undefined {
   const ips = Array.isArray(req.ips) ? (req.ips as unknown[]) : [];
-  const ip: unknown = ips.length > 0 ? ips[0] : (req.ip as unknown);
-  return typeof ip === 'string'
+  const ip: unknown = ips.length > 0 ? ips[0] : req.ip;
+  return typeof ip === 'string' && ip.length > 0
     ? normalizeIp(ip, IPV6_BUCKET_PREFIX)
-    : String(ip);
+    : undefined;
 }
 
 /**

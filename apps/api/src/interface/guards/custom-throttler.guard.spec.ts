@@ -1,4 +1,4 @@
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -11,13 +11,19 @@ import {
 import { createHmac } from 'node:crypto';
 import {
   CustomThrottlerGuard,
+  JWKS_REFRESH_INTERVAL_MS,
   READ_THROTTLE_METHODS,
   THROTTLED_MESSAGE,
-  UNKNOWN_KID_ATTEMPT_INTERVAL_MS,
   UNVERIFIED_BEARER_LIMIT,
   UNVERIFIED_BEARER_THROTTLER,
   UNVERIFIED_BEARER_TTL_MS,
+  UNVERIFIED_LIMIT_AUTH_CODE,
+  clientAddress,
 } from './custom-throttler.guard';
+import {
+  AuthRejectedException,
+  INVALID_TOKEN_MESSAGE,
+} from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { WebhookController } from '../controllers/webhook.controller';
 import { ReportController } from '../controllers/report.controller';
@@ -284,23 +290,44 @@ describe('CustomThrottlerGuard', () => {
   // Both hosted Frapp projects sign access tokens with ES256 (the HS256 secret
   // is `previously_used` on each), so the HS256 path above never keys a hosted
   // request per user. Asymmetric tokens go to `supabase.auth.getClaims()`,
-  // which verifies against the project JWKS. The client is mocked here: what
-  // is under test is the routing by `alg`, the trust placed in the verifier's
-  // answer, and every failure landing in per-IP keying rather than a rejection.
+  // handed the key the project's JWKS lists for their `kid`, which the guard
+  // reads itself. The client and the JWKS are mocked here: what is under test
+  // is the routing by `alg`, which keys reach the verifier, the trust placed
+  // in its answer, and every failure landing in per-IP keying rather than a
+  // rejection.
   describe('getTracker — asymmetric (ES256/RS256) tokens via JWKS', () => {
     let getClaims: jest.Mock;
     let jwksGuard: TestableGuard;
+    let fetchSpy: jest.SpyInstance;
+    let warn: jest.SpyInstance;
+
+    const SERVICE_KEY = 'service-role-key-for-tests';
+    const PROJECT_URL = 'https://project.example.test/';
+    const JWKS_URL =
+      'https://project.example.test/auth/v1/.well-known/jwks.json';
+    const KEY_1 = { kid: 'key-1', kty: 'EC', alg: 'ES256' };
+    const previousEnv = {
+      url: process.env.SUPABASE_URL,
+      key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    };
+
+    const jwksResponse = (body: unknown, ok = true, status = 200) =>
+      ({
+        ok,
+        status,
+        json: () => Promise.resolve(body),
+      }) as unknown as Response;
 
     /** A token whose header names an asymmetric alg; the signature is opaque
      * to this guard — the verifier is what decides, and it is mocked. */
     const asymmetricJwt = (
       payload: Record<string, unknown>,
       alg: 'ES256' | 'RS256' = 'ES256',
+      kid = 'key-1',
     ): string =>
-      `${b64url({ alg, typ: 'JWT', kid: 'key-1' })}.${b64url(payload)}.opaque-signature`;
+      `${b64url({ alg, typ: 'JWT', kid })}.${b64url(payload)}.opaque-signature`;
 
-    beforeEach(async () => {
-      getClaims = jest.fn();
+    const buildGuard = async (): Promise<TestableGuard> => {
       const moduleRef: TestingModule = await Test.createTestingModule({
         providers: [
           TestableGuard,
@@ -310,7 +337,35 @@ describe('CustomThrottlerGuard', () => {
           { provide: SUPABASE_CLIENT, useValue: { auth: { getClaims } } },
         ],
       }).compile();
-      jwksGuard = moduleRef.get(TestableGuard);
+      const built = moduleRef.get(TestableGuard);
+      // Starts the boot read of the JWKS; requests wait for it.
+      await built.onModuleInit();
+      return built;
+    };
+
+    beforeEach(async () => {
+      process.env.SUPABASE_URL = PROJECT_URL;
+      process.env.SUPABASE_SERVICE_ROLE_KEY = SERVICE_KEY;
+      fetchSpy = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(jwksResponse({ keys: [KEY_1] }));
+      warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      getClaims = jest.fn();
+      jwksGuard = await buildGuard();
+    });
+
+    afterEach(() => {
+      fetchSpy.mockRestore();
+      warn.mockRestore();
+      for (const [name, value] of [
+        ['SUPABASE_URL', previousEnv.url],
+        ['SUPABASE_SERVICE_ROLE_KEY', previousEnv.key],
+      ] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     });
 
     it('keys on the sub the verifier returns for an ES256 token', async () => {
@@ -328,8 +383,11 @@ describe('CustomThrottlerGuard', () => {
           ip: '203.0.113.20',
         }),
       ).resolves.toBe('user:user-es256');
-      // The whole compact token goes to the verifier, untouched.
-      expect(getClaims).toHaveBeenCalledWith(token);
+      // The whole compact token goes to the verifier, untouched, with the one
+      // key the project lists for its `kid`, so the check never fetches.
+      expect(getClaims).toHaveBeenCalledWith(token, {
+        jwks: { keys: [KEY_1] },
+      });
     });
 
     // `SupabaseAuthGuard` starts the chapter lookups on these while `getUser`
@@ -353,7 +411,7 @@ describe('CustomThrottlerGuard', () => {
 
       getClaims.mockResolvedValueOnce({
         data: null,
-        error: { message: 'invalid signature' },
+        error: { message: 'invalid signature', code: 'invalid_jwt' },
       });
       const rejected: Record<string, unknown> = {
         headers: {
@@ -396,7 +454,7 @@ describe('CustomThrottlerGuard', () => {
     it('falls back to IP when the verifier rejects the token', async () => {
       getClaims.mockResolvedValue({
         data: null,
-        error: { message: 'invalid signature' },
+        error: { message: 'invalid signature', code: 'invalid_jwt' },
       });
       await expect(
         jwksGuard.track({
@@ -408,8 +466,8 @@ describe('CustomThrottlerGuard', () => {
       ).resolves.toBe('ip:203.0.113.22');
     });
 
-    it('falls back to IP when the verifier throws (JWKS unreachable on a cold start)', async () => {
-      getClaims.mockRejectedValue(new Error('fetch failed'));
+    it('falls back to IP when the verifier throws', async () => {
+      getClaims.mockRejectedValue(new Error('crypto failure'));
       await expect(
         jwksGuard.track({
           headers: {
@@ -430,7 +488,7 @@ describe('CustomThrottlerGuard', () => {
       await expect(
         jwksGuard.track({
           headers: {
-            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: 1 })}`,
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: futureExp() })}`,
           },
           ip: '203.0.113.24',
         }),
@@ -448,6 +506,19 @@ describe('CustomThrottlerGuard', () => {
           ip: '203.0.113.25',
         }),
       ).resolves.toBe('ip:203.0.113.25');
+      expect(getClaims).toHaveBeenCalledTimes(2);
+    });
+
+    it('never sends a token whose own exp has passed to the verifier', async () => {
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: 1 })}`,
+          },
+          ip: '203.0.113.29',
+        }),
+      ).resolves.toBe('ip:203.0.113.29');
+      expect(getClaims).not.toHaveBeenCalled();
     });
 
     it('never sends an HS256 token to the JWKS verifier', async () => {
@@ -476,16 +547,32 @@ describe('CustomThrottlerGuard', () => {
       expect(getClaims).not.toHaveBeenCalled();
     });
 
-    // supabase-js re-fetches the JWKS over the network for every `kid` it has
-    // not cached, and this guard runs before authentication — so without a
-    // bound, a flood of ES256-shaped headers with random `kid`s is one
-    // outbound fetch each. The bound: a `kid` that never verified gets one
-    // attempt per interval, process-wide; a `kid` that has verified always
-    // goes through.
-    describe('JWKS fetch amplification is bounded', () => {
+    it('verifies a request once however many throttlers ask for its tracker', async () => {
+      getClaims.mockResolvedValue({
+        data: { claims: { sub: 'member-a', exp: futureExp() } },
+        error: null,
+      });
+      const req = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.36',
+      };
+      await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
+      await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
+      expect(getClaims).toHaveBeenCalledTimes(1);
+    });
+
+    // supabase-js fetches the JWKS for a `kid` it has not cached, and asks
+    // Supabase Auth about a token whose `kid` the JWKS does not list; this
+    // guard runs before authentication. So the guard reads the project's
+    // JWKS itself, hands the verifier only a key from it, and for a `kid` it
+    // does not hold re-reads the JWKS, one read at a time and at most once
+    // per interval, learning every key the project lists.
+    describe("the project's signing keys", () => {
       const withKid = (kid: string): string =>
-        `${b64url({ alg: 'ES256', typ: 'JWT', kid })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
-      const reqFor = (kid: string, ip: string) => ({
+        asymmetricJwt({ sub: 'u', exp: futureExp() }, 'ES256', kid);
+      const reqFor = (kid: string, ip = '203.0.113.40') => ({
         headers: { authorization: `Bearer ${withKid(kid)}` },
         ip,
       });
@@ -493,237 +580,191 @@ describe('CustomThrottlerGuard', () => {
       let nowSpy: jest.SpyInstance<number, []>;
       let now: number;
 
-      beforeEach(() => {
+      beforeEach(async () => {
         now = 1_800_000_000_000;
         nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+        // Rebuilt under the mocked clock, so its boot read's interval is on it.
+        fetchSpy.mockClear();
+        jwksGuard = await buildGuard();
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-a', exp: futureExp() } },
+          error: null,
+        });
       });
 
       afterEach(() => {
         nowSpy.mockRestore();
       });
 
-      it('sends an unknown kid to the verifier at most once per interval', async () => {
-        getClaims.mockResolvedValue({
-          data: null,
-          error: { message: 'no matching key' },
+      it('reads the JWKS with the headers supabase-js sends for it', () => {
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fetchSpy).toHaveBeenCalledWith(JWKS_URL, {
+          headers: {
+            apikey: SERVICE_KEY,
+            Authorization: `Bearer ${SERVICE_KEY}`,
+          },
+          signal: expect.any(AbortSignal),
         });
-        await expect(
-          jwksGuard.track(reqFor('random-1', '203.0.113.30')),
-        ).resolves.toBe('ip:203.0.113.30');
-        await expect(
-          jwksGuard.track(reqFor('random-2', '203.0.113.30')),
-        ).resolves.toBe('ip:203.0.113.30');
-        await expect(
-          jwksGuard.track(reqFor('random-3', '203.0.113.31')),
-        ).resolves.toBe('ip:203.0.113.31');
-        expect(getClaims).toHaveBeenCalledTimes(1);
-
-        now += UNKNOWN_KID_ATTEMPT_INTERVAL_MS;
-        await expect(
-          jwksGuard.track(reqFor('random-4', '203.0.113.30')),
-        ).resolves.toBe('ip:203.0.113.30');
-        expect(getClaims).toHaveBeenCalledTimes(2);
       });
 
-      it('always sends a kid that has verified before, regardless of the interval', async () => {
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-a', exp: futureExp() } },
-          error: null,
-        });
-        await expect(
-          jwksGuard.track(reqFor('rotated-key', '203.0.113.32')),
-        ).resolves.toBe('user:member-a');
-
-        // Same kid, immediately, from another member on the same network.
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-b', exp: futureExp() } },
-          error: null,
-        });
-        await expect(
-          jwksGuard.track(reqFor('rotated-key', '203.0.113.32')),
-        ).resolves.toBe('user:member-b');
-        expect(getClaims).toHaveBeenCalledTimes(2);
-
-        // A forged token naming the known kid still reaches the verifier — a
-        // known kid is a local WebCrypto check, not a fetch — and still fails.
-        getClaims.mockResolvedValue({
-          data: null,
-          error: { message: 'invalid signature' },
-        });
-        await expect(
-          jwksGuard.track(reqFor('rotated-key', '203.0.113.33')),
-        ).resolves.toBe('ip:203.0.113.33');
-        expect(getClaims).toHaveBeenCalledTimes(3);
-      });
-
-      it('does not learn a kid from a failed verification', async () => {
-        getClaims.mockResolvedValueOnce({
-          data: null,
-          error: { message: 'invalid signature' },
-        });
-        await jwksGuard.track(reqFor('attacker-kid', '203.0.113.34'));
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'u', exp: futureExp() } },
-          error: null,
-        });
-        // Still inside the interval: the failed kid is unknown, so it waits.
-        await expect(
-          jwksGuard.track(reqFor('attacker-kid', '203.0.113.34')),
-        ).resolves.toBe('ip:203.0.113.34');
-        expect(getClaims).toHaveBeenCalledTimes(1);
-      });
-
-      it('treats a header without a kid as unknown every time', async () => {
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'u', exp: futureExp() } },
-          error: null,
-        });
-        const noKid = `${b64url({ alg: 'ES256', typ: 'JWT' })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
-        // A fresh request object each time, as Express makes: the guard
-        // works a request's tracker out once and reuses it.
-        const req = () => ({
-          headers: { authorization: `Bearer ${noKid}` },
-          ip: '203.0.113.35',
-        });
-        await expect(jwksGuard.track(req())).resolves.toBe('user:u');
-        await expect(jwksGuard.track(req())).resolves.toBe('ip:203.0.113.35');
-        expect(getClaims).toHaveBeenCalledTimes(1);
-      });
-
-      it('verifies a request once however many throttlers ask for its tracker', async () => {
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-a', exp: futureExp() } },
-          error: null,
-        });
-        const req = reqFor('key-once', '203.0.113.36');
-        await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
-        await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
-        expect(getClaims).toHaveBeenCalledTimes(1);
-      });
-    });
-
-    // After a deploy the process has learned no `kid`, so every member's
-    // token would compete with made-up `kid`s for the one unknown-`kid`
-    // attempt per interval. Reading the project's JWKS at boot means the
-    // project's real `kid`s are known before that race can start.
-    describe('signing-key ids read at boot', () => {
-      const withKid = (kid: string): string =>
-        `${b64url({ alg: 'ES256', typ: 'JWT', kid })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
-      const reqFor = (kid: string) => ({
-        headers: { authorization: `Bearer ${withKid(kid)}` },
-        ip: '203.0.113.40',
-      });
-
-      let fetchSpy: jest.SpyInstance;
-      const previousUrl = process.env.SUPABASE_URL;
-
-      beforeEach(() => {
-        process.env.SUPABASE_URL = 'https://project.example.test/';
-        fetchSpy = jest.spyOn(globalThis, 'fetch');
-      });
-
-      afterEach(() => {
-        fetchSpy.mockRestore();
-        if (previousUrl === undefined) {
-          delete process.env.SUPABASE_URL;
-        } else {
-          process.env.SUPABASE_URL = previousUrl;
-        }
-      });
-
-      const jwksResponse = (body: unknown, ok = true) =>
-        ({ ok, json: () => Promise.resolve(body) }) as unknown as Response;
-
-      it("treats the JWKS's kids as known, so a flood of made-up kids cannot hold them back", async () => {
-        fetchSpy.mockResolvedValue(
-          jwksResponse({ keys: [{ kid: 'project-key', alg: 'ES256' }] }),
-        );
-        await jwksGuard.onModuleInit();
-        expect(fetchSpy).toHaveBeenCalledWith(
-          'https://project.example.test/auth/v1/.well-known/jwks.json',
-          expect.objectContaining({ signal: expect.any(AbortSignal) }),
-        );
-
-        // A made-up kid takes the unknown-kid attempt for this interval.
-        getClaims.mockResolvedValueOnce({
-          data: null,
-          error: { message: 'no matching key' },
-        });
-        await expect(jwksGuard.track(reqFor('made-up'))).resolves.toBe(
+      it('never sends a kid the project does not list to the verifier, and re-reads at most once per interval', async () => {
+        await expect(jwksGuard.track(reqFor('made-up-1'))).resolves.toBe(
           'ip:203.0.113.40',
         );
-
-        // A member's token on the project's key still verifies at once.
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-a', exp: futureExp() } },
-          error: null,
-        });
-        await expect(jwksGuard.track(reqFor('project-key'))).resolves.toBe(
-          'user:member-a',
-        );
-        // And another made-up kid is still held to the interval.
         await expect(jwksGuard.track(reqFor('made-up-2'))).resolves.toBe(
           'ip:203.0.113.40',
         );
-        expect(getClaims).toHaveBeenCalledTimes(2);
+        // The boot read, and nothing more inside its interval.
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+        now += JWKS_REFRESH_INTERVAL_MS;
+        await expect(jwksGuard.track(reqFor('made-up-3'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        await expect(jwksGuard.track(reqFor('made-up-4'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+        expect(getClaims).not.toHaveBeenCalled();
       });
 
-      it('makes a request with a kid not yet known wait for the read rather than race it', async () => {
+      it("learns a rotated key from the project's list the first time a token names it", async () => {
+        await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+          'user:member-a',
+        );
+        const KEY_2 = { kid: 'key-2', kty: 'EC', alg: 'ES256' };
+        fetchSpy.mockResolvedValue(jwksResponse({ keys: [KEY_1, KEY_2] }));
+        now += JWKS_REFRESH_INTERVAL_MS;
+
+        await expect(jwksGuard.track(reqFor('key-2'))).resolves.toBe(
+          'user:member-a',
+        );
+        expect(getClaims).toHaveBeenLastCalledWith(withKid('key-2'), {
+          jwks: { keys: [KEY_2] },
+        });
+        // Known from then on: no read for the next member.
+        await expect(jwksGuard.track(reqFor('key-2'))).resolves.toBe(
+          'user:member-a',
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('lets a made-up kid start a read that teaches the real one, rather than taking its place', async () => {
+        const KEY_2 = { kid: 'key-2', kty: 'EC', alg: 'ES256' };
+        fetchSpy.mockResolvedValue(jwksResponse({ keys: [KEY_1, KEY_2] }));
+        now += JWKS_REFRESH_INTERVAL_MS;
+
+        await expect(jwksGuard.track(reqFor('made-up'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        // Inside the next interval, the member's new key is already held.
+        await expect(jwksGuard.track(reqFor('key-2'))).resolves.toBe(
+          'user:member-a',
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('makes requests arriving during a read wait for that one read', async () => {
         let answer!: (res: Response) => void;
         fetchSpy.mockReturnValue(
           new Promise<Response>((resolve) => {
             answer = resolve;
           }),
         );
-        await jwksGuard.onModuleInit();
-        // Spend the unknown-kid slot first, so only the seed can let the
-        // member's kid through.
-        getClaims.mockResolvedValueOnce({
-          data: null,
-          error: { message: 'no matching key' },
-        });
-        const early = jwksGuard.track(reqFor('made-up'));
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-b', exp: futureExp() } },
-          error: null,
-        });
-        const member = jwksGuard.track(reqFor('project-key'));
-        answer(jwksResponse({ keys: [{ kid: 'project-key' }] }));
-        await expect(early).resolves.toBe('ip:203.0.113.40');
-        await expect(member).resolves.toBe('user:member-b');
+        now += JWKS_REFRESH_INTERVAL_MS;
+        const KEY_2 = { kid: 'key-2', kty: 'EC', alg: 'ES256' };
+        const members = [1, 2, 3].map((n) =>
+          jwksGuard.track(reqFor('key-2', `203.0.113.${50 + n}`)),
+        );
+        answer(jwksResponse({ keys: [KEY_1, KEY_2] }));
+        await expect(Promise.all(members)).resolves.toEqual([
+          'user:member-a',
+          'user:member-a',
+          'user:member-a',
+        ]);
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('makes a request wait for the boot read rather than race it', async () => {
+        let answer!: (res: Response) => void;
+        fetchSpy.mockReturnValue(
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+        );
+        jwksGuard = await buildGuard();
+        const member = jwksGuard.track(reqFor('key-1'));
+        answer(jwksResponse({ keys: [KEY_1] }));
+        await expect(member).resolves.toBe('user:member-a');
       });
 
       it.each([
-        ['the JWKS is unreachable', () => Promise.reject(new Error('down'))],
+        [
+          'the JWKS is unreachable',
+          () => Promise.reject(new TypeError('fetch failed')),
+          'TypeError',
+        ],
         [
           'the JWKS answers an error',
-          () => Promise.resolve(jwksResponse({}, false)),
+          () => Promise.resolve(jwksResponse({}, false, 503)),
+          'HTTP 503',
         ],
         [
           'the body has no key list',
           () => Promise.resolve(jwksResponse({ keys: 'nope' })),
+          'no key list',
         ],
       ])(
-        'learns kids on first verification as before when %s',
-        async (_why, answer) => {
-          fetchSpy.mockImplementation(answer);
-          await jwksGuard.onModuleInit();
-          getClaims.mockResolvedValue({
-            data: { claims: { sub: 'member-c', exp: futureExp() } },
-            error: null,
-          });
-          await expect(jwksGuard.track(reqFor('project-key'))).resolves.toBe(
-            'user:member-c',
+        'warns, and keys tokens it cannot check by address, when %s',
+        async (_why, failure, named) => {
+          fetchSpy.mockImplementation(failure);
+          jwksGuard = await buildGuard();
+          await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+            'ip:203.0.113.40',
           );
-          // Learned from that verification: no interval for it now.
-          await expect(jwksGuard.track(reqFor('project-key'))).resolves.toBe(
-            'user:member-c',
+          expect(getClaims).not.toHaveBeenCalled();
+          expect(warn).toHaveBeenCalledWith(expect.stringContaining(named));
+          // Never the key, never the project's address.
+          const logged = JSON.stringify(warn.mock.calls);
+          expect(logged).not.toContain(SERVICE_KEY);
+          expect(logged).not.toContain('project.example.test');
+
+          // A later read that works is picked up by the next token.
+          fetchSpy.mockResolvedValue(jwksResponse({ keys: [KEY_1] }));
+          now += JWKS_REFRESH_INTERVAL_MS;
+          await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+            'user:member-a',
           );
-          expect(getClaims).toHaveBeenCalledTimes(2);
         },
       );
 
+      it('keeps the keys it holds when a later read fails', async () => {
+        await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+          'user:member-a',
+        );
+        fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+        now += JWKS_REFRESH_INTERVAL_MS;
+        await jwksGuard.track(reqFor('made-up'));
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenCalled();
+        await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+          'user:member-a',
+        );
+      });
+
+      it('treats a token with no kid as one it cannot check', async () => {
+        const noKid = `${b64url({ alg: 'ES256', typ: 'JWT' })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
+        await expect(
+          jwksGuard.track({
+            headers: { authorization: `Bearer ${noKid}` },
+            ip: '203.0.113.35',
+          }),
+        ).resolves.toBe('ip:203.0.113.35');
+        expect(getClaims).not.toHaveBeenCalled();
+      });
+
       it('does not read the JWKS when no Supabase client is wired', async () => {
+        fetchSpy.mockClear();
         await guard.onModuleInit();
         expect(fetchSpy).not.toHaveBeenCalled();
       });
@@ -849,6 +890,7 @@ describe('CustomThrottlerGuard', () => {
 
     let bucketGuard: TestableGuard;
     let increment: jest.Mock;
+    let header: jest.Mock;
 
     const ctxFor = (
       cls: new (...args: never[]) => unknown,
@@ -860,7 +902,7 @@ describe('CustomThrottlerGuard', () => {
         getHandler: () => handler,
         switchToHttp: () => ({
           getRequest: () => req,
-          getResponse: () => ({ header: jest.fn() }),
+          getResponse: () => ({ header }),
         }),
       }) as unknown as ExecutionContext;
 
@@ -877,7 +919,40 @@ describe('CustomThrottlerGuard', () => {
         call[0] as string,
       ]);
 
+    /** Storage that reports the unverified-token bucket used up. */
+    const usedUp = () =>
+      increment.mockImplementation(
+        (
+          _key: string,
+          _ttl: number,
+          _limit: number,
+          _b: number,
+          name: string,
+        ) =>
+          Promise.resolve({
+            totalHits: name === UNVERIFIED_BEARER_THROTTLER ? 201 : 1,
+            timeToExpire: 60,
+            isBlocked: name === UNVERIFIED_BEARER_THROTTLER,
+            timeToBlockExpire: 30,
+          }),
+      );
+
+    const refusal = (authorization: string): Promise<unknown> =>
+      bucketGuard
+        .canActivate(
+          ctxFor(
+            FirstController,
+            FirstController.prototype.list,
+            get(authorization),
+          ),
+        )
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+
     beforeEach(async () => {
+      header = jest.fn();
       increment = jest.fn().mockResolvedValue({
         totalHits: 1,
         timeToExpire: 60,
@@ -973,7 +1048,93 @@ describe('CustomThrottlerGuard', () => {
       expect(counted().map(([name]) => name)).toEqual(['read', 'read']);
     });
 
-    it('refuses with the usual 429 once the address has used it up', async () => {
+    // An outage of the guard's own means of checking (here: no verifier for
+    // an ES256 token at all) must not put every member on a network into one
+    // bucket: those tokens keep the per-route address keying alone.
+    it('leaves out a token it could not check because its means of checking are down', async () => {
+      const es256 = `${b64url({ alg: 'ES256', typ: 'JWT', kid: 'key-1' })}.${b64url({ sub: 'u', exp: futureExp() })}.sig`;
+      await bucketGuard.canActivate(
+        ctxFor(
+          FirstController,
+          FirstController.prototype.list,
+          get(`Bearer ${es256}`),
+        ),
+      );
+      expect(counted().map(([name]) => name)).toEqual(['read']);
+    });
+
+    // A client recovers a dead or stale session only through a 401: mobile
+    // drops its learned clock offset and re-checks the session, web signs a
+    // revoked one out. Past the limit, a 429 would keep such a member stuck
+    // for as long as their network stays over it.
+    describe('once the address has used it up', () => {
+      beforeEach(() => {
+        usedUp();
+      });
+
+      it.each([
+        ['a malformed token', 'Bearer not-a-jwt'],
+        [
+          'a forged signature',
+          `Bearer ${makeJwt({ sub: 'x', exp: futureExp() }, null)}`,
+        ],
+        [
+          'a lapsed token from a phone whose clock runs behind',
+          `Bearer ${makeJwt({ sub: 'member-1', exp: Math.floor(Date.now() / 1000) - 30 })}`,
+        ],
+      ])(
+        "answers %s with the auth guard's 401, not a 429",
+        async (_why, authorization) => {
+          const error = await refusal(authorization);
+          expect(error).toBeInstanceOf(AuthRejectedException);
+          expect((error as AuthRejectedException).getStatus()).toBe(401);
+          expect((error as AuthRejectedException).getResponse()).toMatchObject({
+            message: INVALID_TOKEN_MESSAGE,
+          });
+          expect((error as AuthRejectedException).detail).toMatchObject({
+            reason: 'claims_rejected',
+            authErrorCode: UNVERIFIED_LIMIT_AUTH_CODE,
+          });
+          // No retry header on a 401: the client should refresh, not wait.
+          expect(header).not.toHaveBeenCalledWith(
+            'Retry-After',
+            expect.anything(),
+          );
+        },
+      );
+
+      it('says on the 401 whether the token had expired', async () => {
+        const lapsed = await refusal(
+          `Bearer ${makeJwt({ sub: 'member-1', exp: Math.floor(Date.now() / 1000) - 30 })}`,
+        );
+        expect((lapsed as AuthRejectedException).detail.tokenExpired).toBe(
+          true,
+        );
+      });
+
+      // A token the guard could not check might be a member's valid one (a
+      // signing key it has not learned yet), so it is never told its session
+      // is gone: it waits like any other throttled request.
+      it('answers a token it could not check with the usual 429', async () => {
+        delete process.env.SUPABASE_JWT_SECRET;
+        const error = await refusal(
+          `Bearer ${makeJwt({ sub: 'member-1', exp: futureExp() })}`,
+        );
+        expect(error).toBeInstanceOf(ThrottlerException);
+        expect((error as ThrottlerException).getStatus()).toBe(429);
+        expect(header).toHaveBeenCalledWith('Retry-After', '30');
+      });
+
+      it('still lets a signed-in member through', async () => {
+        await expect(
+          refusal(`Bearer ${makeJwt({ sub: 'member-1', exp: futureExp() })}`),
+        ).resolves.toBeUndefined();
+      });
+    });
+
+    // The per-route buckets count the same address, so the same holds when
+    // one of those is what ran out.
+    it("answers an invalid token with a 401 when a route's own bucket ran out too", async () => {
       increment.mockImplementation(
         (
           _key: string,
@@ -983,21 +1144,23 @@ describe('CustomThrottlerGuard', () => {
           name: string,
         ) =>
           Promise.resolve({
-            totalHits: name === UNVERIFIED_BEARER_THROTTLER ? 201 : 1,
+            totalHits: name === 'read' ? 101 : 1,
             timeToExpire: 60,
-            isBlocked: name === UNVERIFIED_BEARER_THROTTLER,
+            isBlocked: name === 'read',
             timeToBlockExpire: 30,
           }),
       );
-      await expect(
-        bucketGuard.canActivate(
-          ctxFor(
-            FirstController,
-            FirstController.prototype.list,
-            get('Bearer not-a-jwt'),
-          ),
-        ),
-      ).rejects.toBeInstanceOf(ThrottlerException);
+      const lapsed = await refusal(
+        `Bearer ${makeJwt({ sub: 'member-1', exp: Math.floor(Date.now() / 1000) - 30 })}`,
+      );
+      expect(lapsed).toBeInstanceOf(AuthRejectedException);
+
+      const tokenless = await bucketGuard
+        .canActivate(
+          ctxFor(FirstController, FirstController.prototype.list, get()),
+        )
+        .catch((error: unknown) => error);
+      expect(tokenless).toBeInstanceOf(ThrottlerException);
     });
 
     it('is skipped on the Stripe webhook, whatever it carries', async () => {
@@ -1252,11 +1415,32 @@ describe('CustomThrottlerGuard', () => {
     });
   });
 
+  // The one notion of a caller's address: the throttler, the calendar feed's
+  // miss limit and the auth-failure spike detector all count by it.
+  describe('clientAddress', () => {
+    it('takes the first forwarded address, cutting IPv6 to its /64', () => {
+      expect(
+        clientAddress({ ips: ['2001:db8:1:2:3:4:5:6', '10.0.0.1'], ip: 'x' }),
+      ).toBe('2001:db8:1:2::/64');
+      expect(clientAddress({ ips: [], ip: '198.51.100.3' })).toBe(
+        '198.51.100.3',
+      );
+    });
+
+    it('is undefined when Express resolved no address', () => {
+      expect(clientAddress({ ips: [] })).toBeUndefined();
+      expect(clientAddress({ ip: '' })).toBeUndefined();
+    });
+  });
+
   describe('throwThrottlingException', () => {
     it('sets a standard Retry-After header before throwing', async () => {
       const header = jest.fn();
       const context = {
-        switchToHttp: () => ({ getResponse: () => ({ header }) }),
+        switchToHttp: () => ({
+          getRequest: () => ({ headers: {} }),
+          getResponse: () => ({ header }),
+        }),
         getClass: () => class {},
         getHandler: () => () => undefined,
       } as unknown as ExecutionContext;
@@ -1272,7 +1456,10 @@ describe('CustomThrottlerGuard', () => {
 
     it('says what happened and what to do, not the framework class name (#3142)', async () => {
       const context = {
-        switchToHttp: () => ({ getResponse: () => ({ header: jest.fn() }) }),
+        switchToHttp: () => ({
+          getRequest: () => ({ headers: {} }),
+          getResponse: () => ({ header: jest.fn() }),
+        }),
         getClass: () => class {},
         getHandler: () => () => undefined,
       } as unknown as ExecutionContext;

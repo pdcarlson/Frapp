@@ -26,6 +26,7 @@ import {
   sharesBurstLookups,
 } from '../../infrastructure/supabase/request-reads';
 import {
+  INVALID_TOKEN_MESSAGE,
   authRejected,
   safeAuthErrorCode,
   tokenExpired,
@@ -214,7 +215,7 @@ export class SupabaseAuthGuard implements CanActivate {
       throw lookupUnavailable('Could not verify your session right now', error);
     }
     if (error || !data.user) {
-      throw authRejected('Invalid or expired token', 'token_rejected', {
+      throw authRejected(INVALID_TOKEN_MESSAGE, 'token_rejected', {
         authErrorCode: safeAuthErrorCode(error?.code),
         tokenExpired: tokenExpired(token),
       });
@@ -286,7 +287,7 @@ export class SupabaseAuthGuard implements CanActivate {
       throw lookupUnavailable('Could not verify your session right now', error);
     }
     const refuse = (check: string | undefined) =>
-      authRejected('Invalid or expired token', 'claims_rejected', {
+      authRejected(INVALID_TOKEN_MESSAGE, 'claims_rejected', {
         authErrorCode: check,
         tokenExpired: tokenExpired(token),
       });
