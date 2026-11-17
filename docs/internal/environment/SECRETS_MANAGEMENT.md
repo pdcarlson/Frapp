@@ -119,10 +119,11 @@ has the table. No sync targets Vercel.
 
 **The two Render syncs are retired (2026-11-17, [#5228](https://github.com/frapplive/Frapp/issues/5228)).**
 `render-api-production` and `render-api-staging` copied path `/` of `prod` and `staging` into
-`frapp-api-prod` and `frapp-api-staging` until the API moved to Cloud Run. They are deleted with the
-two Render services, and so is Infisical's Render App Connection, which holds a Render API key that
-can deploy any service. If any of the three is still listed, it is left over: delete the syncs first,
-then the connection.
+`frapp-api-prod` and `frapp-api-staging` until the API moved to Cloud Run. Both services are
+suspended (2026-11-17), and nothing in the repo reads Render. The owner deletes the two syncs first,
+then the services, then Infisical's Render App Connection, which holds a Render API key that can
+deploy any service. Until the services are deleted, their env still holds a copy of every `prod` and
+`staging` value, so a rotation in that window also counts them.
 
 **The two production Vercel syncs are deleted too (2026-09-28, #834).** Since #2673 no build reads a
 Vercel env row, so `vercel-web-production` and `vercel-landing-production` only copied the whole

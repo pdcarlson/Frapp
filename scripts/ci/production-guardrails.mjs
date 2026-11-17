@@ -13,8 +13,9 @@
 //
 // Until #5228 this also asserted Render `frapp-api-prod`'s settings
 // (auto-deploy off, tracking `main`, healthCheckPath `/health`). The API moved
-// to Cloud Run, which nothing deploys but the deploy job (no build trigger
-// watches the repository), and Render was removed.
+// to Cloud Run and Render was removed. Cloud Run has no setting that deploys
+// on push unless someone adds a build trigger in the console, which nothing
+// here checks yet: the deploy job is meant to be the only way in.
 //
 // The assertion was INVERTED on 2026-09-02 (#1579). It used to read "Production
 // Branch must not be `main`", with an ABSENT value failing because Vercel fell

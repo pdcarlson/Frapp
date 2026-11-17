@@ -11,8 +11,9 @@ export function createClock({
 
 /**
  * The "poll until terminal" skeleton behind `deploy-vercel.mjs`, since #2505
- * `verify-served-commit.mjs`, and since #3483 `confirm-store-submissions.mjs`
- * (`deploy-render-production.mjs` used it until #5228 retired Render). Before
+ * `verify-served-commit.mjs`, since #3483 `confirm-store-submissions.mjs`, and
+ * since #5228 `deploy-cloud-run.mjs` (`deploy-render-production.mjs` used it
+ * until #5228 retired Render). Before
  * this (#1351), four provider pollers (`deploy-vercel.mjs`, the Render deploy
  * script, and the since-retired `verify-render-deploy.mjs` and
  * `verify-vercel-deploy.mjs`, #1778) each

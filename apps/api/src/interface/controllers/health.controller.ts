@@ -20,14 +20,15 @@ import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
 // which is the whole point of it being a liveness check.
 const PROBE_TIMEOUT_MS = 3000;
 
-// How long `/health` reuses one probe result. Render calls it every 5 seconds
-// and every open web or mobile client every 30, and no automated caller reads
+// How long `/health` reuses one probe result. Every open web or mobile client
+// calls it every 30 seconds (Render's health check also did, every 5, until
+// 2026-11-17), and no automated caller reads
 // the dependency fields: they act on the status code, which is 2xx either way.
 // Probing per call made each hit two Supabase requests, and at that cadence
 // each opened a fresh TLS connection, because undici drops a socket after 4
 // idle seconds. Measured against Supabase (2026-09-29), that is ~2.4 KB sent
 // per probe before TCP/IP headers, which puts the probes at an estimated 60%
-// of an idle instance's ~6.5 MB/hour of billed Render egress. `/health/ready`
+// of an idle instance's ~6.5 MB/hour of billed egress (measured on Render). `/health/ready`
 // never uses this cache: the deploy gate, and anyone checking a recovery,
 // needs a probe taken now.
 export const LIVENESS_PROBE_TTL_MS = 60_000;
@@ -87,8 +88,8 @@ export class HealthController {
       });
     }
 
-    // Stripe is not a `/health` probe: Render's healthCheckPath must stay 2xx
-    // through a Stripe blip. Deploy smoke and production uptime poll this path,
+    // Stripe is not a `/health` probe: liveness must stay 2xx through a
+    // Stripe blip. Deploy smoke and production uptime poll this path,
     // so a Price/account mismatch (resource_missing / inactive) 503s here —
     // and `StripePriceConsistencyService.onModuleInit` already refused boot.
     //
