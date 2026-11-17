@@ -226,7 +226,7 @@ export type CreateTaskResult = Task & {
   group?: TaskGroupSummary;
 };
 
-/** Pushes sent at once when a group task is made. */
+/** Copies written or pushed at once when a group task is made or edited. */
 const GROUP_NOTIFY_CONCURRENCY = 10;
 
 @Injectable()
@@ -969,21 +969,31 @@ export class TaskService {
         'Every copy is already confirmed, so none can change',
       );
     }
-    // Copy by copy, each its own compare-and-set: a confirm that lands on one
-    // mid-edit wins there, and the rest still take the edit.
-    for (const copy of open) {
-      try {
-        await this.update(copy.id, chapterId, actorId, input);
-      } catch (error) {
-        if (
-          copy.id === id ||
-          !(error instanceof BadRequestException) ||
-          !/confirmed/.test(error.message)
-        ) {
-          throw error;
-        }
-      }
+    // Each copy its own compare-and-set, a few at a time: a confirm that
+    // lands on one mid-edit wins there, and the rest still take the edit. A
+    // copy that fails otherwise doesn't stop the others; the first such
+    // failure is thrown once all have been tried, and saving again reaches
+    // the copies it missed (a copy already edited has nothing to change).
+    const failures: Error[] = [];
+    for (let i = 0; i < open.length; i += GROUP_NOTIFY_CONCURRENCY) {
+      const batch = open.slice(i, i + GROUP_NOTIFY_CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((copy) => this.applyEdit(copy, chapterId, actorId, input)),
+      );
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') return;
+        const error: unknown = result.reason;
+        const raceLost =
+          batch[index].id !== id &&
+          error instanceof BadRequestException &&
+          /confirmed/.test(error.message);
+        if (raceLost) return;
+        failures.push(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      });
     }
+    if (failures.length > 0) throw failures[0];
     return this.findById(id, chapterId);
   }
 
@@ -1098,6 +1108,25 @@ export class TaskService {
   ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) throw new NotFoundException('Task not found');
+    const updated = await this.applyEdit(task, chapterId, actorId, input);
+    const [view] = await this.withSubtasks(chapterId, [
+      toDisplayStatus(updated),
+    ]);
+    return view;
+  }
+
+  /**
+   * One task's edit, read from the row as given: the write and its side
+   * effects, without the view. `update` reads the row first; a group edit
+   * passes the copies it already read.
+   */
+  private async applyEdit(
+    task: Task,
+    chapterId: string,
+    actorId: string,
+    input: UpdateTaskInput,
+  ): Promise<Task> {
+    const id = task.id;
     if (task.points_awarded) {
       throw new BadRequestException(
         'This task is already confirmed, so it can no longer change',
@@ -1212,9 +1241,7 @@ export class TaskService {
       patch.points_awarded = true;
     }
 
-    if (Object.keys(patch).length === 0 && !photosChange) {
-      return this.findById(id, chapterId);
-    }
+    if (Object.keys(patch).length === 0 && !photosChange) return task;
 
     // A photos-only edit still goes through the compare-and-set, as a write
     // of the one field it can't change, so a confirm that landed first wins.
@@ -1269,11 +1296,7 @@ export class TaskService {
     }
 
     if (reassigned) await this.notifyAssigned(updated, actorId);
-
-    const [view] = await this.withSubtasks(chapterId, [
-      toDisplayStatus(updated),
-    ]);
-    return view;
+    return updated;
   }
 
   /**

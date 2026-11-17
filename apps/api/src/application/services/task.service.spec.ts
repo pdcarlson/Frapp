@@ -394,6 +394,46 @@ describe('TaskService', () => {
         expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledTimes(2);
       });
 
+      it('refuses the edit when the copy it was asked on is confirmed mid-edit', async () => {
+        mockTaskRepo.updateUnconfirmed.mockImplementation(
+          async (id: string, _chapterId: string, patch: Partial<Task>) =>
+            id === 'copy-user-1' ? null : { ...copyOf('user-2'), ...patch },
+        );
+
+        await expect(
+          service.updateGroup('copy-user-1', 'ch-1', 'admin-1', {
+            title: 'Renamed',
+          }),
+        ).rejects.toThrow('confirmed while you were editing');
+        // The other copy still took it.
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'copy-user-2',
+          'ch-1',
+          { title: 'Renamed' },
+        );
+      });
+
+      it('edits the other copies when one fails, then says it failed', async () => {
+        const down = new Error('connection reset');
+        mockTaskRepo.updateUnconfirmed.mockImplementation(
+          async (id: string, _chapterId: string, patch: Partial<Task>) => {
+            if (id === 'copy-user-1') throw down;
+            return { ...copyOf('user-2'), ...patch };
+          },
+        );
+
+        await expect(
+          service.updateGroup('copy-user-1', 'ch-1', 'admin-1', {
+            title: 'Renamed',
+          }),
+        ).rejects.toBe(down);
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'copy-user-2',
+          'ch-1',
+          { title: 'Renamed' },
+        );
+      });
+
       it('refuses a task that is not for a group', async () => {
         mockTaskRepo.findById.mockResolvedValue(baseTask);
 

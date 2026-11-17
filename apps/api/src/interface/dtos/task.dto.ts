@@ -120,7 +120,7 @@ export class CreateTaskDto {
     description:
       'User ID of the assignee. Send this or `audience`, exactly one of them.',
   })
-  @ValidateIf((dto: CreateTaskDto) => dto.audience === undefined)
+  @ValidateIf((dto: CreateTaskDto) => dto.audience == null)
   @IsUUID()
   assignee_id?: string;
 

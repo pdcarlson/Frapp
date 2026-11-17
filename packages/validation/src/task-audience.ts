@@ -39,9 +39,6 @@ export const TASK_AUDIENCE_COPY = {
   /** Why a group task can't repeat or carry photos yet. */
   noRepeat: "A task for everyone can't repeat yet.",
   noPhotos: "A task for everyone can't carry photos yet.",
-  /** The edit and delete scopes on a group copy. */
-  thisMemberOnly: "This member only",
-  everyonesCopy: "Everyone's copy",
 } as const;
 
 /**

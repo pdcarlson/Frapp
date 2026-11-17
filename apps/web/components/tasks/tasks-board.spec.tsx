@@ -1952,6 +1952,69 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     );
   });
 
+  it("edits everyone's copy, sending the change with the group scope", async () => {
+    updateTaskMutate.mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit Fill out the tabling form for everyone",
+      }),
+    );
+    const editor = screen.getByRole("listitem", {
+      name: "Editing Fill out the tabling form for everyone",
+    });
+    const title = within(editor).getByLabelText("Title");
+    await user.clear(title);
+    await user.type(title, "Fill out the new form");
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateTaskMutate).toHaveBeenCalledWith({
+        id: "copy-me",
+        body: { title: "Fill out the new form", scope: "group" },
+      }),
+    );
+  });
+
+  it("saving the group unchanged sends its fields, to bring every copy level", async () => {
+    updateTaskMutate.mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit Fill out the tabling form for everyone",
+      }),
+    );
+    const editor = screen.getByRole("listitem", {
+      name: "Editing Fill out the tabling form for everyone",
+    });
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateTaskMutate).toHaveBeenCalledTimes(1));
+    const sent = updateTaskMutate.mock.calls[0]![0] as {
+      body: Record<string, unknown>;
+    };
+    expect(sent.body).toMatchObject({
+      title: "Fill out the tabling form",
+      due_date: "2099-11-20",
+      scope: "group",
+    });
+    expect("reference_photo_paths" in sent.body).toBe(false);
+  });
+
+  it("counts the group as the API does, copies on other pages included", () => {
+    tasksRef.current = GROUP.map((task) => ({
+      ...task,
+      group: { total: 20, done: 14, confirmed: 9 },
+    }));
+    render(<TasksBoard />);
+    const tile = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
+    });
+    expect(within(tile).getByText("14 of 20 done")).toBeInTheDocument();
+  });
+
   it("shows each copy on its own once a filter asks about members", () => {
     render(<TasksBoard />);
     fireEvent.click(screen.getByRole("radio", { name: "By person" }));

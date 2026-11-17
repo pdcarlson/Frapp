@@ -336,7 +336,11 @@ export function AddTaskRow({
           setDraft((prev) => ({ ...prev, point_reward: next }));
         }}
       />
-      {forEveryone ? null : (
+      {forEveryone ? (
+        <p className="text-caption text-muted-foreground">
+          {TASK_AUDIENCE_COPY.noRepeat}
+        </p>
+      ) : (
         <RepeatOptions
           forTasks
           idPrefix="add-task-repeat"

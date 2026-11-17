@@ -488,6 +488,11 @@ export function TaskForm({
               />
             </div>
           )}
+          {forEveryone && !suggestion && !editing?.group ? (
+            <p className="text-caption text-muted-foreground">
+              {TASK_AUDIENCE_COPY.noRepeat}
+            </p>
+          ) : null}
           {showRepeat ? (
             <div className="grid gap-1">
               <RepeatOptions

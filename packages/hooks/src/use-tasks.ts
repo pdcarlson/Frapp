@@ -531,10 +531,15 @@ export function useUpdateTask() {
     },
     // Returned, so a form awaiting the save closes onto the saved values
     // rather than the old ones for a refetch's length.
-    onSettled: (_data, _error, { id }) =>
+    onSettled: (_data, _error, { id, body }) =>
       Promise.all([
         queryClient.invalidateQueries({
-          queryKey: taskKeys.detail(chapterId, id),
+          // An edit for everyone (#4295 step 3) changes every copy, so every
+          // task's detail is read again, not just the one it went through.
+          queryKey:
+            body.scope === "group"
+              ? (["tasks", chapterId, "detail"] as const)
+              : taskKeys.detail(chapterId, id),
         }),
         queryClient.invalidateQueries({ queryKey: taskKeys.lists(chapterId) }),
         // Activity draws a task's card from its own read, not the task's: an

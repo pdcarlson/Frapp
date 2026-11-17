@@ -199,9 +199,22 @@ export function TaskEditForm({
         onDiscard={onClose}
         onDone={onClose}
         onPost={async (input) => {
-          const body = taskEditFrom(shared, input);
-          delete body.reference_photo_paths;
-          if (Object.keys(body).length === 0) return { ok: true };
+          const changed = taskEditFrom(shared, input);
+          delete changed.reference_photo_paths;
+          // Saving with no change against this copy sends the fields as they
+          // stand: an edit cut off partway left other copies behind, and this
+          // brings them level (a copy already there has nothing to change).
+          const body =
+            Object.keys(changed).length > 0
+              ? changed
+              : {
+                  title: input.title,
+                  description: input.description ?? null,
+                  due_date: input.due_date,
+                  due_at: input.due_at ?? null,
+                  point_reward: input.point_reward || null,
+                  ...(input.proof_kind ? { proof_kind: input.proof_kind } : {}),
+                };
           try {
             await updateTask.mutateAsync({
               id: task.id,

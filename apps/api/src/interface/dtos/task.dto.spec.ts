@@ -163,6 +163,12 @@ describe('CreateTaskDto audience', () => {
     expect(await invalid({})).toEqual(['assignee_id']);
   });
 
+  it('still checks the assignee when audience is sent as null', async () => {
+    expect(await invalid({ assignee_id: 'abc', audience: null })).toEqual([
+      'assignee_id',
+    ]);
+  });
+
   it('refuses an audience it does not know', async () => {
     expect(await invalid({ audience: 'actives' })).toEqual(['audience']);
   });

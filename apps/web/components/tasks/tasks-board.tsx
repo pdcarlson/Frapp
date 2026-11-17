@@ -147,6 +147,8 @@ type Task = {
   series?: TaskSeriesLine | null;
   /** The task for everyone this is one member's copy of (#4295 step 3). */
   group_id?: string | null;
+  /** A task for everyone's progress over all its copies, as the API counts it. */
+  group?: { total: number; done: number } | null;
 };
 
 /**
@@ -546,6 +548,11 @@ export function TasksBoard() {
       for (const tile of openTiles) {
         tile.open.sort(compareTasksByDue);
         tile.sample = tile.open[0]!;
+        // The API's count covers every copy, loaded on this page or not.
+        if (tile.sample.group) {
+          tile.total = tile.sample.group.total;
+          tile.done = tile.sample.group.done;
+        }
       }
       const overdueTile = (tile: GroupTileData) =>
         tile.open.some((task) => task.status === "OVERDUE");
@@ -1319,18 +1326,7 @@ function TaskCard({
         {task.point_reward ? (
           <Badge className="ml-1">{formatPointsChip(task.point_reward)}</Badge>
         ) : null}
-        {task.proof_kind &&
-        task.proof_kind !== "none" &&
-        status !== "COMPLETED" ? (
-          <Badge variant="outline" className="ml-1 gap-1">
-            {task.proof_kind === "photo" ? (
-              <Camera className="h-3 w-3" aria-hidden="true" />
-            ) : (
-              <Link2 className="h-3 w-3" aria-hidden="true" />
-            )}
-            {task.proof_kind === "photo" ? "Photo required" : "Link required"}
-          </Badge>
-        ) : null}
+        {status !== "COMPLETED" ? <ProofBadge kind={task.proof_kind} /> : null}
         {showStatus && !sentBack && status === "IN_PROGRESS" ? (
           <Badge variant="outline" className="ml-1">
             {TASK_STATUS_LABELS.IN_PROGRESS}
@@ -1635,18 +1631,7 @@ function GroupTaskCard({
                 {formatPointsChip(task.point_reward)}
               </Badge>
             ) : null}
-            {task.proof_kind && task.proof_kind !== "none" ? (
-              <Badge variant="outline" className="ml-1 gap-1">
-                {task.proof_kind === "photo" ? (
-                  <Camera className="h-3 w-3" aria-hidden="true" />
-                ) : (
-                  <Link2 className="h-3 w-3" aria-hidden="true" />
-                )}
-                {task.proof_kind === "photo"
-                  ? "Photo required"
-                  : "Link required"}
-              </Badge>
-            ) : null}
+            <ProofBadge kind={task.proof_kind} />
           </div>
           <div className="mt-3 grid gap-1.5">
             <div className="flex items-center justify-between gap-2 text-caption">
@@ -1742,5 +1727,20 @@ function GroupTaskCard({
         </Can>
       </div>
     </li>
+  );
+}
+
+/** What Mark done needs, on a tile: nothing for a task that asks for none. */
+function ProofBadge({ kind }: { kind?: string | null }) {
+  if (kind !== "photo" && kind !== "link") return null;
+  return (
+    <Badge variant="outline" className="ml-1 gap-1">
+      {kind === "photo" ? (
+        <Camera className="h-3 w-3" aria-hidden="true" />
+      ) : (
+        <Link2 className="h-3 w-3" aria-hidden="true" />
+      )}
+      {kind === "photo" ? "Photo required" : "Link required"}
+    </Badge>
   );
 }
