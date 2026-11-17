@@ -38,14 +38,24 @@ import {
   useDocumentAccessChoices,
 } from "@/components/documents/document-access";
 
-/** The folder dialog's draft; `whoCanSee` `null` is everyone (#3642 piece 1). */
+/**
+ * The folder dialog's draft; `whoCanSee` `null` is everyone (#3642 piece 1).
+ * `synced` marks a folder Google Drive sync made (#5220), whose name is
+ * Drive's.
+ */
 type FolderDraft = {
   id: string | null;
   name: string;
   whoCanSee: string[] | null;
+  synced: boolean;
 };
 
-const EMPTY_FOLDER_DRAFT: FolderDraft = { id: null, name: "", whoCanSee: null };
+const EMPTY_FOLDER_DRAFT: FolderDraft = {
+  id: null,
+  name: "",
+  whoCanSee: null,
+  synced: false,
+};
 
 /**
  * Folder writes — create, edit, reorder, delete — and the one dialog that
@@ -109,6 +119,7 @@ export function useFolderManagement({
       id: folder?.id ?? null,
       name: folder?.name ?? "",
       whoCanSee: folder?.who_can_see ?? null,
+      synced: !!folder?.drive_folder_id,
     });
     folderDialog.setOpen(true);
   }
@@ -134,7 +145,9 @@ export function useFolderManagement({
       and an unchanged list is no write at all, so saving a dialog opened
       only to look sends nothing.
     */
-    const renamed = editing && name !== previousName;
+    // A synced folder's name is Drive's (#5220): never sent, even if a sync
+    // renamed it while the dialog was open.
+    const renamed = editing && !folderDraft.synced && name !== previousName;
     const accessChanged =
       editing &&
       !sameChannelAccessList(
@@ -357,9 +370,11 @@ export function FolderDialog({
             {folderDraft.id ? "Edit folder" : "New folder"}
           </DialogTitle>
           <DialogDescription>
-            {folderDraft.id
-              ? "Renaming re-files every document in it. Who can see it reaches every file inside."
-              : "Folders are flat and one level deep. Create it now, then file documents into it on upload."}
+            {folderDraft.synced
+              ? "This folder comes from Google Drive: rename or delete it there. Who can see it reaches every file inside, and stays when Drive renames it."
+              : folderDraft.id
+                ? "Renaming re-files every document in it. Who can see it reaches every file inside."
+                : "Folders are flat and one level deep. Create it now, then file documents into it on upload."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -379,6 +394,8 @@ export function FolderDialog({
                 }))
               }
               placeholder="Governance"
+              readOnly={folderDraft.synced}
+              aria-readonly={folderDraft.synced || undefined}
             />
           </div>
           {/*

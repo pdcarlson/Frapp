@@ -238,8 +238,8 @@ export function FolderRail({
         {loadFailed ? (
           <p className="px-2 pt-2 text-xs text-muted-foreground">
             Couldn&apos;t load the folder list, so these are read from the
-            documents shown. Empty folders and folder management are
-            unavailable until it loads.{" "}
+            documents shown. Empty folders and folder management are unavailable
+            until it loads.{" "}
             <button
               type="button"
               className={`underline ${FOCUS_RING_OFFSET}`}
@@ -406,16 +406,22 @@ function FolderItem({
             >
               <Pencil className="h-4 w-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={MANAGE_CONTROL}
-              aria-label={`Delete folder ${folder.name}`}
-              onClick={() => void handleDeleteFolder(folder)}
-              {...gate.controlProps(folderBusy)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            {/*
+              A folder Drive sync made (#5220) is deleted in Drive, and
+              Documents follows; the API refuses it here.
+            */}
+            {folder.drive_folder_id ? null : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={MANAGE_CONTROL}
+                aria-label={`Delete folder ${folder.name}`}
+                onClick={() => void handleDeleteFolder(folder)}
+                {...gate.controlProps(folderBusy)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </Can>
       ) : null}

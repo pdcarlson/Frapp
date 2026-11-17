@@ -8,7 +8,7 @@
  * may (`viewer_can_remove`). Never on your own profile: the sheet offers none
  * of them there, so the `⋯` isn't drawn.
  */
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert } from "react-native";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
 import { CORRECTION_MENU_LABEL } from "@repo/validation";
 import {
@@ -16,6 +16,7 @@ import {
   REMOVE_FROM_CHAPTER_LABEL,
   removeConfirmTitle,
 } from "@repo/hooks/member-removal-copy";
+import { showActionMenu } from "@/lib/action-menu";
 
 export type MemberMenuAction = "edit" | "block" | "unblock" | "remove";
 
@@ -42,10 +43,7 @@ export function memberMenuActions({
 }
 
 /** A row's label: `Block <name>` is `block-copy`'s on every surface. */
-function memberMenuLabel(
-  action: MemberMenuAction,
-  name: string,
-): string {
+function memberMenuLabel(action: MemberMenuAction, name: string): string {
   switch (action) {
     case "edit":
       return CORRECTION_MENU_LABEL;
@@ -61,8 +59,8 @@ function memberMenuLabel(
 const DESTRUCTIVE: ReadonlySet<MemberMenuAction> = new Set(["block", "remove"]);
 
 /**
- * Opens the menu: the iOS action sheet, or Android's dialog, whose Cancel is
- * a tap outside or back (`cancelable`), as the Invited list's menu does.
+ * Opens the menu (`lib/action-menu.ts`): the iOS action sheet, or Android's
+ * dialog, whose Cancel is a tap outside or back.
  */
 export function showMemberMenu(
   name: string,
@@ -70,37 +68,15 @@ export function showMemberMenu(
   onPick: (action: MemberMenuAction) => void,
 ): void {
   if (actions.length === 0) return;
-  const labels = actions.map((action) => memberMenuLabel(action, name));
-  if (Platform.OS === "ios") {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: name,
-        options: [...labels, "Cancel"],
-        destructiveButtonIndex: actions
-          .map((action, index) => (DESTRUCTIVE.has(action) ? index : -1))
-          .filter((index) => index >= 0),
-        cancelButtonIndex: labels.length,
-        userInterfaceStyle: "dark",
-      },
-      (index) => {
-        const picked = actions[index];
-        if (picked) onPick(picked);
-      },
-    );
-    return;
-  }
-  Alert.alert(
-    name,
-    undefined,
-    actions.map((action, index) => ({
-      text: labels[index],
-      style: DESTRUCTIVE.has(action)
-        ? ("destructive" as const)
-        : ("default" as const),
+  showActionMenu({
+    title: name,
+    rows: actions.map((action) => ({
+      label: memberMenuLabel(action, name),
+      style: DESTRUCTIVE.has(action) ? "destructive" : "default",
       onPress: () => onPick(action),
     })),
-    { cancelable: true },
-  );
+    userInterfaceStyle: "dark",
+  });
 }
 
 /**

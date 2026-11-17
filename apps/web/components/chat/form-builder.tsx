@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Loader2, X } from "lucide-react";
 import {
-  FORM_END_PASSED_PROBLEM,
   FORM_QUESTION_TYPE_CHOICES,
   addFormOption,
   addFormQuestion,
@@ -20,6 +19,7 @@ import {
   type FormDraft,
   type FormQuestionRow,
 } from "@repo/chat-core/form-draft";
+import { CARD_END_PASSED_PROBLEM } from "@repo/chat-core/card-closing";
 import {
   buildFormMessage,
   isChoiceQuestion,
@@ -107,7 +107,7 @@ export function FormBuilder({
     // Checked again now: an end time can pass while the builder sits open.
     const fresh = checkFormDraft(draft);
     if (!fresh.ok) {
-      setFailure(fresh.problem ?? FORM_END_PASSED_PROBLEM);
+      setFailure(fresh.problem ?? CARD_END_PASSED_PROBLEM);
       return;
     }
     sending.current = true;

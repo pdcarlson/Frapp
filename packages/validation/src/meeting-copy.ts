@@ -136,9 +136,6 @@ export const MEETING_COPY = {
   attendeesGone: "The event is gone, so its check-ins are too.",
   attendeesNone:
     "Nobody has checked in yet. Who checked in to the event shows here.",
-  postConfirmTitle: "Post these minutes?",
-  postConfirmBody:
-    "Everyone the meeting's event invites can read them, and each of them is told once. You can still edit them after.",
   post: "Post minutes",
   posted_toast: "Minutes posted",
   postFailed: "Couldn't post the minutes",
@@ -153,6 +150,34 @@ export const MEETING_COPY = {
   editOnWeb: "To change the wording, open these minutes on the web.",
   writeOnWeb: "Open these minutes on the web to write them.",
   suggestedTasks: "Suggested tasks",
+} as const;
+
+/**
+ * Marking who was at a meeting by hand, when nobody checked in (Paul,
+ * 2026-11-16; `events.md` § Marking attendance by hand).
+ */
+export const MEETING_ATTENDANCE_COPY = {
+  open: "Mark who was there",
+  openMore: "Mark more people",
+  title: "Who was there",
+  body: "This fills in the event's attendance for anyone not marked yet. Officer marks don't add points.",
+  statusLabel: "Mark them as",
+  find: "Find a member",
+  pickEveryone: "Everyone not marked yet",
+  pickShown: (count: number) => `All ${count} shown`,
+  alreadyMarked: "Marked",
+  save: (count: number, status: "PRESENT" | "LATE" | "EXCUSED") => {
+    const as =
+      status === "PRESENT" ? "present" : status === "LATE" ? "late" : "excused";
+    return count === 0 ? `Mark ${as}` : `Mark ${count} ${as}`;
+  },
+  marked: (count: number) =>
+    count === 1 ? "Marked 1 member" : `Marked ${count} members`,
+  notInvited: (count: number) =>
+    count === 1
+      ? "1 wasn't invited to this event, so they weren't marked."
+      : `${count} weren't invited to this event, so they weren't marked.`,
+  failed: "Couldn't mark attendance",
 } as const;
 
 /** Drafting minutes from an officer's notes (`meetings.md` § Drafting from notes). */
@@ -191,6 +216,22 @@ export const MEETING_NOTES_COPY = {
   applied: "Drafted from your notes. Read it through before you post.",
   idle: "Your notes go to an AI provider to write the draft. Nothing is posted until you post it.",
   toFillIn: "To fill in",
+  /** Under the questions: what answering them does. */
+  toFillInHint:
+    "Answer what you can and the draft is written again with your answers. Leave the rest blank.",
+  answerPlaceholder: "Your answer",
+  updateDraft: "Update the draft",
+  /** The block a set of answers adds to the officer's notes. */
+  answersHeading:
+    "Answers from the minutes author to the draft's open questions (these correct anything above):",
+  /** The notes once a draft has filled the minutes, folded under them. */
+  foldedHeading: "Notes and transcript",
+  foldedSummary: (words: number) =>
+    words === 0
+      ? "Nothing typed in your notes."
+      : `${words.toLocaleString("en-US")} ${words === 1 ? "word" : "words"} in your notes.`,
+  show: "Show",
+  hide: "Hide",
   leftOut: (count: number) =>
     count === 1
       ? "One drafted line was left out because nothing in your notes backed it."

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import type { LanguageModelUsage } from '#domain/adapters/language-model.interface';
 import {
   BadRequestException,
   ConflictException,
@@ -16,6 +18,7 @@ import {
   MEETING_NOTES_MAX_LENGTH,
   MeetingDraftOutputSchema,
   MeetingDraftReviewSchema,
+  type MeetingDraftOutput,
   type MeetingActionItem,
   type MeetingDecision,
   STANDARDS_MEETING_REFUSAL,
@@ -39,6 +42,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import type { Meeting, MeetingDraft } from '#domain/entities/meeting.entity';
 import type { AiRunFailureReason } from '#domain/entities/ai-run.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
 import {
   buildMinutesDraftPrompt,
@@ -48,6 +52,11 @@ import {
   readableSources,
   type MinutesSource,
 } from '#domain/utils/minutes-draft';
+import {
+  buildSummaryPrompt,
+  mergeParts,
+  partRequests,
+} from '#domain/utils/minutes-draft-parts';
 import { MeetingService } from './meeting.service';
 import { MeetingNotesService } from './meeting-notes.service';
 import { RbacService } from './rbac.service';
@@ -59,16 +68,13 @@ import {
   type AiRunContext,
   type AiRunHandler,
 } from './ai-run-registry';
-import { AiGatewayService } from './ai/ai-gateway.service';
+import { AiGatewayService, type AiObjectResult } from './ai/ai-gateway.service';
 import { AiConsentService } from './ai/ai-consent.service';
 import { aiConsentRefusal } from './ai/ai-consent-refusal';
 
 /** The catalog task, and the AI run kind, for a draft from notes. */
 const MINUTES_DRAFT_TASK = 'minutes.draft';
 const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
-
-/** Notes and drafts older than this are deleted, posted or not. */
-const MEETING_DRAFT_RETENTION_DAYS = 30;
 
 /** What the editor reads about a meeting's draft from notes. */
 export interface MeetingDraftState {
@@ -156,9 +162,12 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   readonly actsForMember = true;
   /** Still an officer who may write minutes when the run runs. */
   readonly runPermissions = [SystemPermissions.MEETINGS_RECORD];
-  /** An officer is waiting on the page: two tries, two minutes each. */
+  /**
+   * An officer is waiting on the page: two tries. A long meeting is drafted
+   * in parts side by side and then summarized, so a try gets four minutes.
+   */
   readonly maxAttempts = 2;
-  readonly timeoutMs = 120_000;
+  readonly timeoutMs = 240_000;
 
   constructor(
     @Inject(MEETING_DRAFT_REPOSITORY)
@@ -458,11 +467,10 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
    * than the limit, everywhere.
    */
   async deleteExpired(now: Date = new Date()): Promise<number> {
-    const cutoff = new Date(
-      now.getTime() - MEETING_DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
     const [drafts, notes] = await Promise.all([
-      this.drafts.deleteRequestedBefore(cutoff.toISOString()),
+      this.drafts.deleteRequestedBefore(
+        meetingRetentionCutoff(now).toISOString(),
+      ),
       this.meetingNotes.deleteExpired(now),
     ]);
     return drafts + notes;
@@ -615,12 +623,8 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         return fail('not_permitted', 'not_permitted');
       }
     }
-    const prompt = buildMinutesDraftPrompt(request);
-    const result = await this.gateway.generateObject(
-      MINUTES_DRAFT_TASK,
-      { ...prompt, schema: MeetingDraftOutputSchema, signal },
-      { chapterId, actingUserId: userId, runId: run.id },
-    );
+    const context = { chapterId, actingUserId: userId, runId: run.id };
+    const result = await this.drafted(request, signal, context);
 
     if (result.status === 'unavailable') {
       if (result.reason === 'consent') {
@@ -709,6 +713,61 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * The model's draft: one pass, or for a long meeting one pass per part and
+   * a summary over them (`minutes-draft-parts.ts`). A part that can't be
+   * drafted ends the whole draft the way a one-pass failure would, because a
+   * draft missing an hour of the meeting reads as complete when it isn't.
+   */
+  private async drafted(
+    request: MinutesDraftRequest,
+    signal: AbortSignal | undefined,
+    context: { chapterId: string; actingUserId: string; runId: string },
+  ): Promise<AiObjectResult<MeetingDraftOutput>> {
+    const draftOf = (part: MinutesDraftRequest) =>
+      this.gateway.generateObject(
+        MINUTES_DRAFT_TASK,
+        {
+          ...buildMinutesDraftPrompt(part),
+          schema: MeetingDraftOutputSchema,
+          signal,
+        },
+        context,
+      );
+    const parts = partRequests(request);
+    if (!parts) return draftOf(request);
+
+    const results = await Promise.all(parts.map(draftOf));
+    const outputs: MeetingDraftOutput[] = [];
+    const usages: LanguageModelUsage[] = [];
+    for (const result of results) {
+      if (result.status !== 'ok') return result;
+      outputs.push(result.value);
+      usages.push(result.usage);
+    }
+    const merged = mergeParts(outputs);
+    if (request.sections.includes('summary')) {
+      const summary = await this.gateway.generateObject(
+        MINUTES_DRAFT_TASK,
+        {
+          ...buildSummaryPrompt(
+            request,
+            outputs.map((output) => output.summary),
+          ),
+          promptVersion: MEETING_DRAFT_PROMPT_VERSION,
+          schema: PartsSummarySchema,
+          signal,
+        },
+        context,
+      );
+      // Without it the parts' summaries stand, one after another.
+      if (summary.status === 'ok' && summary.value.summary.trim()) {
+        merged.summary = summary.value.summary.trim();
+      }
+    }
+    return { status: 'ok', value: merged, usage: usageOf(usages) };
+  }
 
   /** The chapter's switch and the member's answer, for this task. */
   private consentFor(chapterId: string, userId: string) {
@@ -946,4 +1005,19 @@ function meetingDateOf(meeting: Meeting, fromClient?: string): string {
   }
   const apart = Math.abs(noon.getTime() - Date.parse(meeting.event_start_time));
   return apart <= 36 * 60 * 60 * 1000 ? fromClient : utcDay;
+}
+
+/** What the summary over a long meeting's parts returns. */
+const PartsSummarySchema = z.object({ summary: z.string() });
+
+/** The parts' token counts together, as the one draft they make. */
+function usageOf(usages: readonly LanguageModelUsage[]): LanguageModelUsage {
+  return usages.reduce(
+    (total, usage) => ({
+      inputTokens: total.inputTokens + usage.inputTokens,
+      outputTokens: total.outputTokens + usage.outputTokens,
+      cachedInputTokens: total.cachedInputTokens + usage.cachedInputTokens,
+    }),
+    { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+  );
 }

@@ -66,27 +66,31 @@ describe('PosthogRuntime', () => {
     const transport = new RecordingPosthogTransport(FIXTURES);
     const original = transport.fetch;
     let fetchStarted = 0;
+    let recordedBatch: (() => void) | undefined;
+    const batchRecorded = new Promise<void>((resolve) => {
+      recordedBatch = resolve;
+    });
     // `fetch` is readonly on the transport; this test swaps it for a hung one.
     const patchable: { fetch: typeof original } = transport;
     patchable.fetch = async (url, options) => {
       fetchStarted += 1;
       const recorded = await original(url, options);
+      recordedBatch?.();
       await hung;
       return recorded;
     };
     const runtime = startRuntime(transport, { flushAt: 1 });
 
-    const started = Date.now();
+    // The upload never finishes until `release`, so a capture that waited on
+    // it would never return and the test would time out: returning at all is
+    // the check, with no clock to false-fail on a loaded runner (#5178).
     await runtime.analytics.capture({
       name: 'opened-channel',
       distinctId: HEX,
       properties: { channel_kind: 'general' },
     });
-    expect(Date.now() - started).toBeLessThan(100);
 
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 20);
-    });
+    await batchRecorded;
     expect(fetchStarted).toBe(1);
     expect(transport.calls.some((call) => call.url.includes('/batch'))).toBe(
       true,

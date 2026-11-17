@@ -2,13 +2,18 @@
 
 import { useState } from "react";
 import { Loader2, Lock } from "lucide-react";
-import { useDocumentAccessOptions, useSetDocumentAccess } from "@repo/hooks";
 import {
-  isEmptyChannelAccessChoice,
-  selectChannelAccessOptions,
-  type ChannelAccessOption,
-} from "@repo/hooks/channel-access";
-import { isDriveCopy } from "@repo/hooks/document-library";
+  documentAccessChoices,
+  useDocumentAccessOptions,
+  useSetDocumentAccess,
+} from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
+import {
+  FILE_ALWAYS_LINE,
+  FOLDER_ALWAYS_LINE,
+  LIMITED_LABEL,
+  isDriveCopy,
+} from "@repo/hooks/document-library";
 import { sameChannelAccessList } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,36 +30,17 @@ import type { ChapterDocument } from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn, getErrorMessage } from "@/lib/utils";
 
-/** Under a folder's list: who passes it anyway. */
-export const FOLDER_ALWAYS_LINE = "The President can always see it.";
-/** Under a file's list: its uploader passes too (a Drive copy has none). */
-export const FILE_ALWAYS_LINE =
-  "The President and whoever uploaded it can always see it.";
+// The lines under a list and the lock's label are shared with the phone.
+export { FILE_ALWAYS_LINE, FOLDER_ALWAYS_LINE };
 
 /**
- * What a Documents "Who can see" field offers (#3642 piece 1,
- * `chapter-docs.md` § Who can see): the chapter's tiers, roles and groups,
- * as a channel's list offers them, and the tiers every list the caller sets
- * keeps (their own and those above), drawn fixed. `canLimit` is false while
- * those load, when they fail, and for a caller outside the tiers, who may
- * not set a list; the field is left out then rather than offered and refused.
+ * What a Documents "Who can see" field offers (#3642 piece 1): the shared
+ * reading (`documentAccessChoices`, the phone's upload sheet reads the
+ * same) of the access options. The field is left out while `canLimit` is
+ * false rather than offered and refused.
  */
 export function useDocumentAccessChoices(enabled = true) {
-  const query = useDocumentAccessOptions({ enabled });
-  const options: ChannelAccessOption[] = selectChannelAccessOptions(
-    query.data?.options,
-  );
-  const locked = query.data?.always ?? null;
-  return {
-    options,
-    optionsState: query.isError
-      ? ("error" as const)
-      : query.isSuccess
-        ? ("ready" as const)
-        : ("loading" as const),
-    locked: locked ?? [],
-    canLimit: query.isSuccess && locked !== null,
-  };
+  return documentAccessChoices(useDocumentAccessOptions({ enabled }));
 }
 
 /**
@@ -79,7 +65,7 @@ export function canSetDocumentAccess(
  */
 export function LimitedMark({
   className,
-  label = "Not everyone can see this",
+  label = LIMITED_LABEL,
 }: {
   className?: string;
   label?: string;

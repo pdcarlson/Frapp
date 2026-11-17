@@ -15,6 +15,9 @@ import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import {
   calendarAppLinks,
   errorCopy,
+  GOOGLE_CALENDAR_RETURN_COPY,
+  googleCalendarDisconnectCopy,
+  googleCalendarFootnote,
   readGoogleCalendarReturn,
   useCalendarFeedLink,
   useConfirmGoogleCalendarConnect,
@@ -136,8 +139,8 @@ export const CalendarSubscribeSheet = forwardRef<
         Alert.alert(
           "Google Calendar wasn't connected",
           outcome.kind === "expired"
-            ? "That Google sign-in expired. Connect Google Calendar again."
-            : "Google didn't finish the sign-in. Connect Google Calendar again.",
+            ? GOOGLE_CALENDAR_RETURN_COPY.expired
+            : GOOGLE_CALENDAR_RETURN_COPY.failed,
         );
       }
       return;
@@ -154,7 +157,7 @@ export const CalendarSubscribeSheet = forwardRef<
       .catch((error: unknown) =>
         Alert.alert(
           "Google Calendar wasn't connected",
-          errorCopy(error, "Google didn't finish the sign-in. Connect Google Calendar again.", {
+          errorCopy(error, GOOGLE_CALENDAR_RETURN_COPY.failed, {
             serverWritesForMembers: true,
           }),
         ),
@@ -191,12 +194,10 @@ export const CalendarSubscribeSheet = forwardRef<
   }
 
   function confirmDisconnectGoogle() {
-    const account = googleConnect?.google_email;
+    const copy = googleCalendarDisconnectCopy(googleConnect?.google_email);
     Alert.alert(
-      "Disconnect Google Calendar?",
-      `Frapp's calendar is removed from ${
-        account ? `your Google account (${account})` : "your Google account"
-      }. Your other calendars aren't touched.`,
+      copy.title,
+      copy.description,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -399,11 +400,7 @@ export const CalendarSubscribeSheet = forwardRef<
           </Pressable>
         </View>
         <Text style={styles.footnote}>
-          {googleConnect?.connected && googleConnect.google_email
-            ? `Google Calendar is connected as ${googleConnect.google_email} and updates within minutes. Other calendar apps check on their own schedule.`
-            : googleConnect
-              ? "Google Calendar updates within minutes once connected. Other calendar apps check on their own schedule."
-              : "Your calendar app checks for changes on its own schedule. Google Calendar can take several hours."}
+          {googleCalendarFootnote(googleConnect)}
         </Text>
       </BottomSheetView>
     </BottomSheetModal>

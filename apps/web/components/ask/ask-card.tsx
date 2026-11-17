@@ -33,6 +33,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
 
 /**
  * Ask Frapp on web (#450, #451, #718): one conversation with Frapp, in a
@@ -198,18 +199,8 @@ export function AskCard({
     });
   }, [open, asking, onAsked, working, ask, saving, mayAct, ensureConsent]);
 
-  // The field grows with what is typed. `field-sizing: content` does that
-  // where the browser has it; elsewhere the height is set from the text, or a
-  // long question would be read one line at a time.
-  useEffect(() => {
-    const element = field.current;
-    if (!shown || !element) return;
-    if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content"))
-      return;
-    element.style.height = "auto";
-    if (element.scrollHeight > 0)
-      element.style.height = `${element.scrollHeight}px`;
-  }, [shown, draft]);
+  // The field grows with what is typed.
+  useGrowWithText(field, draft, shown);
 
   // A new turn, or the card opening on a thread, shows the newest words.
   useEffect(() => {

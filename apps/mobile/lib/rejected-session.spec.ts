@@ -4,7 +4,8 @@ import {
   AuthRetryableFetchError,
   AuthSessionMissingError,
 } from "@supabase/supabase-js";
-import { createRejectedSessionHandler, isSessionOver } from "./rejected-session";
+import { isSessionOver } from "@repo/hooks/auth-error-copy";
+import { createRejectedSessionHandler } from "./rejected-session";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 
@@ -33,7 +34,9 @@ describe("isSessionOver", () => {
   });
 
   it("keeps a live session and ignores an outage", () => {
-    expect(isSessionOver({ data: { user: { id: "u" } }, error: null })).toBe(false);
+    expect(isSessionOver({ data: { user: { id: "u" } }, error: null })).toBe(
+      false,
+    );
     expect(
       isSessionOver({
         data: { user: null },
@@ -119,10 +122,38 @@ describe("createRejectedSessionHandler", () => {
     expect(reportAuthFailure).not.toHaveBeenCalled();
   });
 
+  // An outage is not Auth's verdict: signing out on it would sign every
+  // member out while Auth is down (`isSessionOver`).
+  it.each([
+    ["a dropped request", new AuthRetryableFetchError("fetch failed", 0)],
+    ["a 503", new AuthApiError("unavailable", 503, "unexpected_failure")],
+    ["a 429", new AuthApiError("slow down", 429, "over_request_rate_limit")],
+  ])(
+    "leaves the member signed in when Auth answers with %s",
+    async (_, error) => {
+      const signOut = vi.fn(async () => {});
+      const notify = vi.fn();
+      const handle = createRejectedSessionHandler({
+        getSupabase: () =>
+          fakeSupabase({ data: { user: null }, error }) as never,
+        signOut,
+        notify,
+      });
+
+      handle();
+      await flush();
+
+      expect(signOut).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+      expect(reportAuthFailure).not.toHaveBeenCalled();
+    },
+  );
+
   it("leaves a session Auth still recognises", async () => {
     const signOut = vi.fn(async () => {});
     const handle = createRejectedSessionHandler({
-      getSupabase: () => fakeSupabase({ data: { user: { id: "u" } }, error: null }) as never,
+      getSupabase: () =>
+        fakeSupabase({ data: { user: { id: "u" } }, error: null }) as never,
       signOut,
       notify: vi.fn(),
     });

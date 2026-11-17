@@ -10,6 +10,7 @@ import { NavGlyph } from "@/components/nav-glyph";
 import { PressableRow, SectionHeader } from "@/components/list-section";
 import type { DocumentFolder, MobileDocument } from "@/lib/more/documents";
 import { StarGlyph } from "./document-glyphs";
+import { LIMITED_LABEL, LimitedMark } from "./limited-mark";
 
 /** A pinned or starred thing on s12: a folder, or a single file (#3934). */
 export type MarkedCardItem = MarkedItem<DocumentFolder, MobileDocument>;
@@ -28,6 +29,7 @@ export function MarkedCards({
   pinned,
   starred,
   isStarred,
+  isLimited,
   openingId,
   deletingIds,
   actionsLabel,
@@ -38,6 +40,8 @@ export function MarkedCards({
   pinned: readonly MarkedCardItem[];
   starred: readonly MarkedCardItem[];
   isStarred: (item: MarkedCardItem) => boolean;
+  /** Whether not everyone can see the card's folder or file: a lock (#5216). */
+  isLimited: (item: MarkedCardItem) => boolean;
   /** The file whose link is being fetched, which shows its spinner. */
   openingId: string | null;
   /** Files being deleted: their cards take no press, as their rows don't. */
@@ -58,6 +62,7 @@ export function MarkedCards({
             items={pinned}
             accented
             isStarred={isStarred}
+            isLimited={isLimited}
             openingId={openingId}
             deletingIds={deletingIds}
             actionsLabel={actionsLabel}
@@ -74,6 +79,7 @@ export function MarkedCards({
             items={starred}
             accented={false}
             isStarred={isStarred}
+            isLimited={isLimited}
             openingId={openingId}
             deletingIds={deletingIds}
             actionsLabel={actionsLabel}
@@ -91,6 +97,7 @@ function CardList({
   items,
   accented,
   isStarred,
+  isLimited,
   openingId,
   deletingIds,
   actionsLabel,
@@ -101,6 +108,7 @@ function CardList({
   items: readonly MarkedCardItem[];
   accented: boolean;
   isStarred: (item: MarkedCardItem) => boolean;
+  isLimited: (item: MarkedCardItem) => boolean;
   openingId: string | null;
   deletingIds: ReadonlySet<string>;
   actionsLabel: string;
@@ -132,6 +140,7 @@ function CardList({
                 .filter(Boolean)
                 .join(" · ");
         const starred = isStarred(item);
+        const limited = isLimited(item);
         // A file on its way out takes no second press or long press, as its
         // row doesn't (`ListRow` while busy): a second Delete would fail.
         const deleting =
@@ -144,6 +153,7 @@ function CardList({
             onCard
             accessibilityRole="button"
             accessibilityLabel={title}
+            accessibilityValue={limited ? { text: LIMITED_LABEL } : undefined}
             accessibilityHint={
               item.kind === "folder"
                 ? "Shows this folder's files."
@@ -151,7 +161,9 @@ function CardList({
             }
             accessibilityState={busy ? { busy: true } : undefined}
             accessibilityActions={
-              deleting ? undefined : [{ name: "longpress", label: actionsLabel }]
+              deleting
+                ? undefined
+                : [{ name: "longpress", label: actionsLabel }]
             }
             onAccessibilityAction={(event) => {
               if (!deleting && event.nativeEvent.actionName === "longpress") {
@@ -187,6 +199,12 @@ function CardList({
                 </Text>
               ) : null}
             </View>
+            {limited ? (
+              <LimitedMark
+                color={tokens.color.text.mutedForeground}
+                size={16}
+              />
+            ) : null}
             {starred ? <StarGlyph color={accent} on size={16} /> : null}
           </PressableRow>
         );

@@ -1,25 +1,27 @@
-import {
-  forwardRef,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { forwardRef, useMemo, useRef, useState, type ReactNode } from "react";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import {
+  documentAccessChoices,
   useConfirmDocumentUpload,
+  useDocumentAccessOptions,
   useRequestDocumentUploadUrl,
 } from "@repo/hooks";
+import { FILE_ALWAYS_LINE } from "@repo/hooks/document-library";
+import {
+  describeChannelAccess,
+  isEmptyChannelAccessChoice,
+} from "@repo/hooks/channel-access";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { DOCUMENT_TITLE_MAX_LENGTH, MAX_UPLOAD_LABEL } from "@repo/validation";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
+import { ChannelAccessSheet } from "@/components/chat/channel-access-sheet";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { FilterChips } from "@/components/filter-chips";
 import { PhotoGlyph } from "@/components/tab-glyphs";
 import {
@@ -59,9 +61,9 @@ export interface PendingDocumentUpload {
   failed: string | null;
 }
 
-/** Why the title and folder stopped taking edits after a failed confirm. */
+/** Why the title, folder and Who can see stopped taking edits after a failed confirm. */
 export const RETRY_KEEPS_DRAFT =
-  "Trying again keeps this title and folder. Change the file to start over.";
+  "Trying again keeps this title, folder and who can see it. Change the file to start over.";
 
 /** The Files row's second line: what it takes, and the cap. */
 export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX_UPLOAD_LABEL}`;
@@ -72,11 +74,21 @@ export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX
  * wire steps and their refusals live in `lib/more/document-upload.ts`; this
  * file wires them to the board's controls.
  *
+ * ## Who can see
+ *
+ * The board's "Officers only" toggle became Who can see (#5216,
+ * `chapter-docs.md` § Who can see): a row under Folder reading Same as folder
+ * (Everyone with no folder) that opens the channel picker's tall step
+ * (`channel-access-sheet.tsx`) for chosen tiers, roles and groups, as web's
+ * upload panel offers it. The uploader's own tier and those above are always
+ * on a list they set. A member outside every tier gets no row (the API
+ * would refuse their list), and Upload waits while Chosen roles holds
+ * nothing.
+ *
  * ## What the board draws that this leaves out
  *
- * - **"Officers only".** `chapter_documents` has no visibility column, so the
- *   toggle would set nothing, and a privacy switch that does nothing is worse
- *   than none.
+ * - **The "Documents feed ✦ Ask answers" line.** Ask's reach is Ask's to
+ *   describe, not an upload sheet's.
  *
  * ## Files and Photos
  *
@@ -88,8 +100,6 @@ export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX
  * "· from Photos", and Change goes back to the two rows. A binary without the
  * file picker (a store build from before #3401) draws the photo card alone,
  * as it did before, where Change reopens the library.
- * - **The "Documents feed ✦ Ask answers" line.** Ask's reach is Ask's to
- *   describe, not an upload sheet's.
  *
  * The board draws no title field. A phone photo's name is `IMG_2041.jpg`, which
  * is a poor title in a chapter library, so the sheet has web's: blank means
@@ -146,6 +156,8 @@ type KeptUpload = {
   source: DocumentSource | null;
   title: string;
   chosenFolder: string | null | undefined;
+  /** Who can see it: `null` follows its folder (#5216). */
+  whoCanSee?: string[] | null;
   stored: SentUpload | null;
 };
 
@@ -204,6 +216,11 @@ export const UploadDocumentSheet = forwardRef<
   const [chosenFolder, setChosenFolder] = useState<string | null | undefined>(
     () => opening?.chosenFolder,
   );
+  const [whoCanSee, setWhoCanSee] = useState<string[] | null>(
+    () => opening?.whoCanSee ?? null,
+  );
+  const access = documentAccessChoices(useDocumentAccessOptions());
+  const accessSheetRef = useRef<BottomSheetModal>(null);
   const [titleFocused, setTitleFocused] = useState(false);
   const [uploading, setUploading] = useState(false);
   /** Why the pick was refused (type, size, photo access). */
@@ -226,12 +243,13 @@ export const UploadDocumentSheet = forwardRef<
   const draftHeld = uploading || stored !== null;
   const kept = useKeptSheetDraft<KeptUpload>(
     keptDraft ?? null,
-    { picked, source, title, chosenFolder, stored },
+    { picked, source, title, chosenFolder, whoCanSee, stored },
     JSON.stringify([
       picked?.uri ?? null,
       source,
       title,
       chosenFolder ?? null,
+      whoCanSee,
       stored?.uploaded ?? null,
     ]),
     opening,
@@ -254,22 +272,27 @@ export const UploadDocumentSheet = forwardRef<
   // answers with that row, wherever it now sits, so the folder sent is moot.
   const heldFolder = stored && listed(stored.folder) ? stored.folder : null;
   const folder = stored ? heldFolder : draftFolder;
-  const canUpload = picked !== null && !uploading && !picking && !refusal;
+  // A held retry files with the list it was sent with, as with the folder.
+  const accessList = stored ? (stored.whoCanSee ?? null) : whoCanSee;
+  // The API refuses an empty Chosen list, so Upload waits for an entry.
+  const accessEmpty = isEmptyChannelAccessChoice(accessList);
+  const canUpload =
+    picked !== null && !uploading && !picking && !refusal && !accessEmpty;
 
-  const { clear: clearKept } = kept;
-  const reset = useCallback(() => {
-    clearKept();
+  const reset = () => {
+    kept.clear();
     setPicked(null);
     setSource(null);
     setChanging(false);
     setTitle("");
     setChosenFolder(undefined);
+    setWhoCanSee(null);
     setTitleFocused(false);
     setPickRefusal(null);
     setFailure(null);
     setRefusal(null);
     setStored(null);
-  }, [clearKept]);
+  };
 
   const { onAnimate, markClosed, dismiss } = useSheetVisit(ref);
   // Set the moment Upload sends, before `uploading` reaches a render, so two
@@ -369,7 +392,7 @@ export const UploadDocumentSheet = forwardRef<
     dismiss();
     const result = await uploadDocumentPhoto(
       picked,
-      { title, folder },
+      { title, folder, whoCanSee },
       {
         requestUploadUrl: (body) => requestUploadUrl.mutateAsync(body),
         confirm: (body) => confirmUpload.mutateAsync(body),
@@ -401,209 +424,268 @@ export const UploadDocumentSheet = forwardRef<
       }`
     : `JPEG, PNG, GIF or WebP, up to ${MAX_UPLOAD_LABEL}`;
   const pickDisabled = picking !== null || uploading;
+  const everyoneLabel = folder ? "Same as folder" : "Everyone";
+  // Left out for a member outside every tier, who may not set a list.
+  const showAccess = access.canLimit || accessList !== null;
+  const accessText =
+    accessList === null
+      ? everyoneLabel
+      : describeChannelAccess(accessList, "see", access.options);
 
   return (
-    <BottomSheetModal
-      ref={ref}
-      stackBehavior={SHEET_STACK_BEHAVIOR}
-      enableDynamicSizing
-      keyboardBehavior="interactive"
-      backgroundStyle={backgroundStyle}
-      backdropComponent={SheetScrim}
-      handleComponent={SheetGrabber}
-      onAnimate={onAnimate}
-      onDismiss={closed}
-    >
-      <SheetBackToClose onClose={closeSheet} />
-      <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
-        <SheetHeader
-          title="Upload document"
-          onCancel={cancel}
-          cancelDisabled={uploading}
-        />
+    <>
+      <BottomSheetModal
+        ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
+        enableDynamicSizing
+        keyboardBehavior="interactive"
+        backgroundStyle={backgroundStyle}
+        backdropComponent={SheetScrim}
+        handleComponent={SheetGrabber}
+        onAnimate={onAnimate}
+        onDismiss={closed}
+      >
+        <SheetBackToClose onClose={closeSheet} />
+        <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
+          <SheetHeader
+            title="Upload document"
+            onCancel={cancel}
+            cancelDisabled={uploading}
+          />
 
-        {(picked && !changing) || !filesAvailable ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              picked
-                ? `Change ${filesAvailable ? "file" : "photo"}, ${picked.filename}`
-                : "Choose a photo"
-            }
-            accessibilityHint={
-              filesAvailable
-                ? "Shows the choice of a file or a photo again."
-                : "Opens your photo library."
-            }
-            accessibilityState={{ disabled: pickDisabled }}
-            disabled={pickDisabled}
-            onPress={() => (filesAvailable ? change() : void choose("photos"))}
-            style={({ pressed }) => [
-              styles.fileCard,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            {filesAvailable && source === "photos" ? (
-              <PhotoGlyph
-                focused={false}
-                accent={accent}
-                muted={tokens.color.text.mutedForeground}
-              />
-            ) : (
-              <DocumentsGlyph
-                color={tokens.color.text.mutedForeground}
-                size={24}
-              />
-            )}
-            <View style={styles.fileText}>
-              <Text style={styles.fileName} numberOfLines={1}>
-                {picked ? picked.filename : "Choose a photo"}
-              </Text>
-              <Text style={styles.fileMeta} numberOfLines={1}>
-                {sourceLine}
-              </Text>
-            </View>
-            <Text style={styles.change}>
-              {picking ? "Opening…" : picked ? "Change" : "Choose"}
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={styles.sourceCard}>
-            <SourceRow
-              label="Choose a file"
-              meta={FILES_ROW_META}
-              hint="Opens Files, where iCloud Drive and Google Drive are too."
-              opening={picking === "files"}
-              disabled={pickDisabled}
-              onPress={() => void choose("files")}
-              styles={styles}
-              glyph={
-                <DocumentsGlyph
-                  color={tokens.color.text.mutedForeground}
-                  size={24}
-                />
+          {(picked && !changing) || !filesAvailable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                picked
+                  ? `Change ${filesAvailable ? "file" : "photo"}, ${picked.filename}`
+                  : "Choose a photo"
               }
-            />
-            <View style={styles.sourceDivider} />
-            <SourceRow
-              label="Choose a photo"
-              meta="From your photo library"
-              hint="Opens your photo library."
-              opening={picking === "photos"}
+              accessibilityHint={
+                filesAvailable
+                  ? "Shows the choice of a file or a photo again."
+                  : "Opens your photo library."
+              }
+              accessibilityState={{ disabled: pickDisabled }}
               disabled={pickDisabled}
-              onPress={() => void choose("photos")}
-              styles={styles}
-              glyph={
+              onPress={() =>
+                filesAvailable ? change() : void choose("photos")
+              }
+              style={({ pressed }) => [
+                styles.fileCard,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              {filesAvailable && source === "photos" ? (
                 <PhotoGlyph
                   focused={false}
                   accent={accent}
                   muted={tokens.color.text.mutedForeground}
                 />
-              }
-            />
-            {picked ? (
-              <>
-                <View style={styles.sourceDivider} />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Keep ${picked.filename}`}
-                  disabled={pickDisabled}
-                  onPress={() => setChanging(false)}
-                  style={({ pressed }) => [
-                    styles.sourceRow,
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text
-                    style={[styles.fileMeta, styles.fileText]}
-                    numberOfLines={1}
+              ) : (
+                <DocumentsGlyph
+                  color={tokens.color.text.mutedForeground}
+                  size={24}
+                />
+              )}
+              <View style={styles.fileText}>
+                <Text style={styles.fileName} numberOfLines={1}>
+                  {picked ? picked.filename : "Choose a photo"}
+                </Text>
+                <Text style={styles.fileMeta} numberOfLines={1}>
+                  {sourceLine}
+                </Text>
+              </View>
+              <Text style={styles.change}>
+                {picking ? "Opening…" : picked ? "Change" : "Choose"}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.sourceCard}>
+              <SourceRow
+                label="Choose a file"
+                meta={FILES_ROW_META}
+                hint="Opens Files, where iCloud Drive and Google Drive are too."
+                opening={picking === "files"}
+                disabled={pickDisabled}
+                onPress={() => void choose("files")}
+                styles={styles}
+                glyph={
+                  <DocumentsGlyph
+                    color={tokens.color.text.mutedForeground}
+                    size={24}
+                  />
+                }
+              />
+              <View style={styles.sourceDivider} />
+              <SourceRow
+                label="Choose a photo"
+                meta="From your photo library"
+                hint="Opens your photo library."
+                opening={picking === "photos"}
+                disabled={pickDisabled}
+                onPress={() => void choose("photos")}
+                styles={styles}
+                glyph={
+                  <PhotoGlyph
+                    focused={false}
+                    accent={accent}
+                    muted={tokens.color.text.mutedForeground}
+                  />
+                }
+              />
+              {picked ? (
+                <>
+                  <View style={styles.sourceDivider} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Keep ${picked.filename}`}
+                    disabled={pickDisabled}
+                    onPress={() => setChanging(false)}
+                    style={({ pressed }) => [
+                      styles.sourceRow,
+                      pressed ? styles.pressed : null,
+                    ]}
                   >
-                    {`Keep ${picked.filename}`}
-                  </Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-        )}
-        {pickRefusal ? (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {pickRefusal}
-          </Text>
-        ) : null}
+                    <Text
+                      style={[styles.fileMeta, styles.fileText]}
+                      numberOfLines={1}
+                    >
+                      {`Keep ${picked.filename}`}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
+          )}
+          {pickRefusal ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {pickRefusal}
+            </Text>
+          ) : null}
 
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Title</Text>
-          <BottomSheetTextInput
-            value={title}
-            onChangeText={setTitle}
-            editable={!draftHeld}
-            onFocus={() => setTitleFocused(true)}
-            onBlur={() => setTitleFocused(false)}
-            placeholder={picked?.filename ?? "Meeting minutes — Aug 14"}
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Title"
-            accessibilityHint={
-              stored ? RETRY_KEEPS_DRAFT : "Leave blank to use the file name."
-            }
-            autoCapitalize="sentences"
-            maxLength={DOCUMENT_TITLE_MAX_LENGTH}
-            style={[styles.field, titleFocused ? styles.fieldFocused : null]}
-          />
-        </View>
-
-        {folders.length > 0 ? (
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Folder</Text>
-            <FilterChips
-              accessibilityLabel="Folder"
-              selected={folder}
-              onSelect={(value) => {
-                if (!draftHeld) setChosenFolder(value);
-              }}
-              chips={[
-                { value: null, label: "None" },
-                ...folders.map((entry) => ({
-                  value: entry.name,
-                  label: entry.name,
-                })),
-              ]}
+            <Text style={styles.label}>Title</Text>
+            <BottomSheetTextInput
+              value={title}
+              onChangeText={setTitle}
+              editable={!draftHeld}
+              onFocus={() => setTitleFocused(true)}
+              onBlur={() => setTitleFocused(false)}
+              placeholder={picked?.filename ?? "Meeting minutes — Aug 14"}
+              placeholderTextColor={tokens.color.text.muted}
+              accessibilityLabel="Title"
+              accessibilityHint={
+                stored ? RETRY_KEEPS_DRAFT : "Leave blank to use the file name."
+              }
+              autoCapitalize="sentences"
+              maxLength={DOCUMENT_TITLE_MAX_LENGTH}
+              style={[styles.field, titleFocused ? styles.fieldFocused : null]}
             />
           </View>
-        ) : null}
 
-        {refusal ? (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {refusal}
-          </Text>
-        ) : null}
-        {failure ? (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {failure}
-          </Text>
-        ) : null}
-        {stored ? (
-          // Also on a visit opened on a kept draft, whose failure went with
-          // the last screen: it says why title and folder hold still.
-          <Text style={styles.note}>{RETRY_KEEPS_DRAFT}</Text>
-        ) : null}
+          {folders.length > 0 ? (
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Folder</Text>
+              <FilterChips
+                accessibilityLabel="Folder"
+                selected={folder}
+                onSelect={(value) => {
+                  if (!draftHeld) setChosenFolder(value);
+                }}
+                chips={[
+                  { value: null, label: "None" },
+                  ...folders.map((entry) => ({
+                    value: entry.name,
+                    label: entry.name,
+                  })),
+                ]}
+              />
+            </View>
+          ) : null}
 
-        <SheetPrimaryButton
-          label={uploading ? "Uploading…" : "Upload"}
-          onPress={() => void upload()}
-          disabled={!canUpload}
-          accessibilityHint={
-            refusal ??
-            (picked
-              ? undefined
-              : filesAvailable
-                ? "Choose a file or a photo first."
-                : "Choose a photo first.")
+          {showAccess ? (
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Who can see</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Who can see: ${accessText}`}
+                accessibilityHint={stored ? RETRY_KEEPS_DRAFT : undefined}
+                accessibilityState={{ disabled: draftHeld || !access.canLimit }}
+                disabled={draftHeld || !access.canLimit}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  accessSheetRef.current?.present?.();
+                }}
+                style={({ pressed }) => [
+                  styles.accessRow,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.accessValue} numberOfLines={1}>
+                  {accessText}
+                </Text>
+                <ForwardGlyph color={tokens.color.text.mutedForeground} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {refusal ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {refusal}
+            </Text>
+          ) : null}
+          {failure ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {failure}
+            </Text>
+          ) : null}
+          {stored ? (
+            // Also on a visit opened on a kept draft, whose failure went with
+            // the last screen: it says why title and folder hold still.
+            <Text style={styles.note}>{RETRY_KEEPS_DRAFT}</Text>
+          ) : null}
+
+          <SheetPrimaryButton
+            label={uploading ? "Uploading…" : "Upload"}
+            onPress={() => void upload()}
+            disabled={!canUpload}
+            accessibilityHint={
+              refusal ??
+              (!picked
+                ? filesAvailable
+                  ? "Choose a file or a photo first."
+                  : "Choose a photo first."
+                : accessEmpty
+                  ? "Pick who can see it first."
+                  : undefined)
+            }
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
+          />
+        </BottomSheetView>
+      </BottomSheetModal>
+      {/* A sibling, as on the channel form: it stacks over this sheet
+        (`SHEET_STACK_BEHAVIOR`), which stays presented under it. */}
+      {showAccess ? (
+        <ChannelAccessSheet
+          ref={accessSheetRef}
+          question="see"
+          value={whoCanSee}
+          onChange={setWhoCanSee}
+          options={access.options}
+          optionsState={access.optionsState}
+          everyoneLabel={everyoneLabel}
+          everyoneLine={
+            folder
+              ? `Whoever can see ${folder} can see it.`
+              : "Everyone in the chapter can see it."
           }
-          accent={accent}
-          onAccent={tokens.color.gold.onHouse}
+          locked={access.locked}
+          alwaysLine={FILE_ALWAYS_LINE}
         />
-      </BottomSheetView>
-    </BottomSheetModal>
+      ) : null}
+    </>
   );
 });
 
@@ -727,6 +809,17 @@ function createStyles(tokens: SignetTokens, accent: string) {
     note: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    accessRow: {
+      ...fieldStyles.field,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    accessValue: {
+      flex: 1,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
     },
   });
 }

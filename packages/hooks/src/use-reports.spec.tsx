@@ -1,16 +1,14 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   useAttendanceReport,
   usePointsReport,
   useRosterReport,
   useServiceReport,
 } from "./use-reports";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * These hooks are the only place the `json`/`csv` truncation signal can be
@@ -36,24 +34,15 @@ describe("report hooks — truncation signalling", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "ReportHookWrapper";
-    return Wrapper;
-  };
+  const createWrapper = (mockClient: unknown) =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      displayName: "ReportHookWrapper",
+    });
 
   const respondWith = (headers: Record<string, string>, data: unknown = []) =>
     vi.fn().mockResolvedValue({

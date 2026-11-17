@@ -42,19 +42,27 @@ export async function pageTextLayer(
   boxes: readonly Box[],
   isVisible?: IsVisible,
 ): Promise<PlacedText[]> {
-  const content = await page.getTextContent();
-  const items = content.items.filter(
-    (item): item is RawTextItem => "str" in item && "transform" in item,
-  );
-  const placed = placeTextItems(
-    items,
-    (x, y) => base.convertToViewportPoint(x, y) as [number, number],
-    base.rotation,
-  );
+  const placed = await placedPageText(page, base);
   const outside = textOutsideBoxes(placed, boxes);
   return isVisible
     ? outside.filter((item) => inkCells(item).every(isVisible))
     : outside;
+}
+
+/** Every text item on the page, placed in the boxes' space (`text-layer.ts`). */
+export async function placedPageText(
+  page: TextPage,
+  base: BaseViewport,
+): Promise<PlacedText[]> {
+  const content = await page.getTextContent();
+  const items = content.items.filter(
+    (item): item is RawTextItem => "str" in item && "transform" in item,
+  );
+  return placeTextItems(
+    items,
+    (x, y) => base.convertToViewportPoint(x, y) as [number, number],
+    base.rotation,
+  );
 }
 
 /** The areas whose ink decides whether a text item is visible. */

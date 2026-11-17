@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
-import { isSessionOver } from "./rejected-session";
+import { isSessionOver } from "@repo/hooks/auth-error-copy";
 
 const user = { id: "u1" };
 

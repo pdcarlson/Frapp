@@ -19,12 +19,12 @@ import {
   EMAIL_RESEND_COOLDOWN_SECONDS,
   emailCooldownSeconds,
   isEmailNotConfirmed,
+  OAUTH_MEMBERSHIP_HINT,
   UNCONFIRMED_EMAIL_COPY,
 } from "@repo/hooks/auth-error-copy";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import {
   describeOAuthKickoffError,
-  OAUTH_MEMBERSHIP_HINT,
   signInProviderLayout,
   type OAuthProvider,
 } from "@/lib/auth-providers";

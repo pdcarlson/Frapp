@@ -278,8 +278,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       // origin otherwise. Sharing the notion of "who" means this degrades
       // exactly as the rate limiter does behind a proxy rather than inventing a
       // second, differently-wrong one. `trust proxy` is set to the measured
-      // hop count in `configureApp` (#864), so behind Render's edge this
-      // resolves to the real caller rather than collapsing every
+      // hop count in `configureApp` (#864, #5269), so behind the deployed
+      // proxies this resolves to the real caller rather than collapsing every
       // unauthenticated request into one bucket.
       const originKey =
         request.appUser?.id ?? originHash ?? clientIp(request) ?? 'unknown';

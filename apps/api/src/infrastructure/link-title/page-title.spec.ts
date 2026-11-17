@@ -90,7 +90,8 @@ describe('page titles (#4187)', () => {
     });
 
     it('stays fast on an enormous, repetitive title', () => {
-      const started = Date.now();
+      // Checked by what makes it fast, not by a clock, which false-fails on a
+      // loaded runner (#5178). Quadratic matching took seconds here.
       expect(cleanPageTitle('sign in '.repeat(64 * 1024))).not.toBeUndefined();
       expect(
         pageTitleFromHtml(`<head>${'<meta '.repeat(64 * 1024)}`),
@@ -98,8 +99,33 @@ describe('page titles (#4187)', () => {
       expect(
         pageTitleFromHtml(`<head>${'<title>'.repeat(64 * 1024)}`),
       ).toBeNull();
-      // Quadratic matching took seconds here; linear takes milliseconds.
-      expect(Date.now() - started).toBeLessThan(500);
+    });
+
+    it('cleans and matches only the start of an enormous title', () => {
+      // The title checks are not linear in the title, so only its first
+      // 2,000 characters are read: words past them change nothing.
+      const long = 'Rush BBQ '.repeat(64 * 1024);
+      expect(cleanPageTitle(`${long}access denied`)).toBe(cleanPageTitle(long));
+      expect(cleanPageTitle(`${long}access denied`)).not.toBeNull();
+      // Pinned at the cap itself, so raising it (and the quadratic cost with
+      // it) turns this red: the only words sit just past the first 2,000
+      // characters, so the title reads as empty.
+      expect(cleanPageTitle(`${' '.repeat(2_000)}Formal RSVP`)).toBeNull();
+      expect(cleanPageTitle(`${' '.repeat(1_989)}Formal RSVP`)).toBe(
+        'Formal RSVP',
+      );
+    });
+
+    it('never lets a tag match run past the next `<`', () => {
+      // `[^<>]` keeps each try at an unclosed `<meta` or `<title` from
+      // scanning past the next tag, which is what keeps the match linear:
+      // `[^>]` here rescans the rest of the page from every unclosed tag.
+      expect(
+        pageTitleFromHtml(
+          `<meta property="og:title" <meta content="Formal RSVP">`,
+        ),
+      ).toBeNull();
+      expect(pageTitleFromHtml(`<title x<y>Formal RSVP</title>`)).toBeNull();
     });
 
     it('caps a long title', () => {

@@ -128,7 +128,9 @@ digest 07).
   production's Render chain turned out one hop shorter. The code now sets it per deployment, 2 for
   production and 3 for staging, and a deployed process reports a chain shorter than its count
   (#2972). Production runs it from the first Deploy production that carries that change. A plan
-  change on the same host can move the count too.)* The in-memory throttler and auth-failure counters divide by
+  change on the same host can move the count too.)* *(2026-11-17: staging moved to Cloud Run behind a
+  Google load balancer, and its count is 2, from Google's documented chain, pending a forged-entry
+  probe (#5269).)* The in-memory throttler and auth-failure counters divide by
   the number of instances.
 - **The lockstep release pin goes** (#2506). The ledger and a compatibility matrix replace
   `production-release-pin.yml`, so mixed SHAs across surfaces become normal.

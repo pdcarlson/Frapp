@@ -35,10 +35,19 @@ vi.mock("@/lib/more/document-upload", async (importOriginal) => ({
   uploadDocumentPhoto: (...args: unknown[]) => uploadDocumentPhoto(...args),
 }));
 
+const accessQuery = vi.hoisted(() => ({
+  data: undefined as
+    { options: unknown[]; always: string[] | null } | undefined,
+  isSuccess: false,
+  isError: false,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
+  // Who can see (#5216): unread by default, so no row shows.
+  useDocumentAccessOptions: () => accessQuery,
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -77,6 +86,7 @@ const SENT = {
   },
   title: "IMG_2041.jpg",
   folder: null,
+  whoCanSee: null,
 };
 
 const dismiss = vi.fn();
@@ -115,8 +125,11 @@ function render(
   return tree;
 }
 
+// The upload sheet is the first modal; Who can see's step mounts after it.
 const modal = (tree: ReactTestRenderer) =>
-  tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
+  tree.root.findAll(
+    (node) => (node.type as unknown) === "BottomSheetModal",
+  )[0]!;
 
 /** What gorhom reports as `present()` starts bringing the sheet up. */
 function open(tree: ReactTestRenderer) {
@@ -273,7 +286,7 @@ describe("UploadDocumentSheet (#3399)", () => {
 
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PHOTO,
-      { title: "Minutes — Aug 14", folder: "Bylaws" },
+      { title: "Minutes — Aug 14", folder: "Bylaws", whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -292,7 +305,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
-      { title: "", folder: "Minutes" },
+      { title: "", folder: "Minutes", whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -306,7 +319,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
-      { title: "", folder: null },
+      { title: "", folder: null, whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -420,7 +433,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PHOTO,
-      { title: "Minutes — Aug 14", folder: "Bylaws" },
+      { title: "Minutes — Aug 14", folder: "Bylaws", whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -1065,7 +1078,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
-      { title: "Minutes", folder: null },
+      { title: "Minutes", folder: null, whoCanSee: null },
       expect.any(Object),
       expect.objectContaining({ title: "Minutes", folder: null }),
     );
@@ -1324,7 +1337,7 @@ describe("UploadDocumentSheet with Files (#3401)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PDF,
-      { title: "", folder: null },
+      { title: "", folder: null, whoCanSee: null },
       expect.anything(),
       undefined,
     );
@@ -1436,5 +1449,147 @@ describe("UploadDocumentSheet with Files (#3401)", () => {
     act(() => {
       pressable(second, "Cancel").props.onPress();
     });
+  });
+});
+
+describe("UploadDocumentSheet who can see (#5216)", () => {
+  const EXEC = {
+    entry: "tier:t-exec",
+    kind: "tier",
+    id: "t-exec",
+    name: "Executive board",
+    color: null,
+    tier_id: null,
+    user_ids: ["u-1", "u-2"],
+  };
+
+  beforeEach(() => {
+    accessQuery.data = { options: [EXEC], always: [] };
+    accessQuery.isSuccess = true;
+  });
+
+  afterEach(() => {
+    accessQuery.data = undefined;
+    accessQuery.isSuccess = false;
+  });
+
+  const accessSheet = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        "question" in node.props &&
+        "locked" in node.props &&
+        typeof node.props.onChange === "function",
+    );
+
+  it("reads Same as folder under a folder, and Everyone with none", () => {
+    const tree = render("Minutes");
+    expect(pressable(tree, "Who can see: Same as folder")).toBeTruthy();
+    act(() => {
+      pressable(tree, "None").props.onPress();
+    });
+    expect(pressable(tree, "Who can see: Everyone")).toBeTruthy();
+  });
+
+  it("files the list the uploader chose", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange(["tier:t-exec"]);
+    });
+    expect(pressable(tree, "Who can see: Executive board")).toBeTruthy();
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "IMG_2041.jpg",
+    });
+
+    await pressUpload(tree);
+
+    expect(uploadDocumentPhoto).toHaveBeenCalledWith(
+      PHOTO,
+      { title: "", folder: null, whoCanSee: ["tier:t-exec"] },
+      expect.any(Object),
+      undefined,
+    );
+  });
+
+  it("keeps the setter's tiers on the list it hands the picker", () => {
+    accessQuery.data = { options: [EXEC], always: ["tier:t-exec"] };
+    const tree = render(null);
+    expect(accessSheet(tree).props.locked).toEqual(["tier:t-exec"]);
+  });
+
+  it("holds Upload while Chosen roles holds nothing", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange([]);
+    });
+    expect(uploadButton(tree).props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+    expect(uploadButton(tree).props.accessibilityHint).toBe(
+      "Pick who can see it first.",
+    );
+  });
+
+  it("keeps the chosen list with a draft past its screen", async () => {
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    act(() => {
+      accessSheet(first).props.onChange(["tier:t-exec"]);
+    });
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(pressable(second, "Who can see: Executive board")).toBeTruthy();
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
+  });
+
+  it("holds the list a failed confirm was sent with", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange(["tier:t-exec"]);
+    });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: {
+        image: PHOTO,
+        uploaded: {
+          storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+          filename: "IMG_2041.jpg",
+          contentType: "image/jpeg",
+          byteSize: PHOTO.byteSize,
+        },
+        title: "",
+        folder: null,
+        whoCanSee: ["tier:t-exec"],
+      },
+    });
+    await pressUpload(tree);
+
+    // The row is held; even a change that reached the draft isn't what's shown.
+    act(() => {
+      accessSheet(tree).props.onChange(null);
+    });
+    const row = pressable(tree, "Who can see: Executive board");
+    expect(row.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(row.props.accessibilityHint).toBe(RETRY_KEEPS_DRAFT);
+  });
+
+  it("offers no row to a member outside every tier", () => {
+    accessQuery.data = { options: [EXEC], always: null };
+    const tree = render(null);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Who can see:"),
+      ),
+    ).toHaveLength(0);
   });
 });

@@ -11,7 +11,7 @@ import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repo
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
-import { ChannelCacheModule } from './channel-cache.module';
+import { ChannelCacheModule } from '../channel-cache/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { AuthModule } from '../auth/auth.module';
 
