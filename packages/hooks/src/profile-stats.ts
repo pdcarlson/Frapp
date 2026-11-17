@@ -1,7 +1,8 @@
 /**
- * The two stat cards on the viewer's own Profile, points and service hours,
- * which both apps draw (s15; web since #4137). One copy of the reads and the
- * arithmetic, so the web card and the phone card can't disagree on a number.
+ * The viewer's own points and approved service hours: web's Profile draws them
+ * as two stat cards (#4137), and the phone's You tab as a points figure beside
+ * its title and the Service hours row's value (#5281). One copy of the reads
+ * and the arithmetic, so the two apps can't disagree on a number.
  *
  * The drawn screen carries a third card, "96% attendance". It is not built on
  * either app because no attendance *rate* is readable by a member:
@@ -115,9 +116,9 @@ export interface ProfileStats {
   /** Approved hours as text, or `null` for "—". */
   serviceHours: string | null;
   /**
-   * The same total in minutes, or `null` until the read answers. The phone
-   * draws its service card only when this is above zero (#5281), so it reads
-   * the number rather than parsing `serviceHours` back.
+   * The same total in minutes, or `null` until the read answers. The phone's
+   * Service hours row formats it itself and says nothing at zero (#5281), so
+   * it reads the number rather than parsing `serviceHours` back.
    */
   serviceMinutes: number | null;
   /** Points are chapter-scoped: without an active chapter neither card can fill. */

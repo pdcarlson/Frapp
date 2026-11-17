@@ -278,7 +278,8 @@ export default function YouScreen() {
       .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
     // Quiet at zero (#5281, Paul 2026-11-17): "0.0 hrs" says nothing a member
     // needs. Against a goal it stays, since "0.0 / 6.0" says how far to go.
-    if (minutes === 0 && !studyGoal) return null;
+    // Zero as drawn, so a two-minute week doesn't read "0.0 hrs" either.
+    if (!studyGoal && formatHoursValue(minutes) === "0.0") return null;
     return studyGoal
       ? `${formatHoursValue(minutes)} / ${formatHoursLabel(studyGoal)}`
       : formatHoursLabel(minutes);
@@ -288,12 +289,23 @@ export default function YouScreen() {
   // them (`@repo/hooks` `profile-stats.ts`, #4137). Both say nothing at zero
   // or with their module off (#5281): points as the title's trailing figure,
   // service hours as the Service hours row's value.
+  // A failed read says so with a dash rather than reading as zero; a module
+  // counts as on until the chapter has loaded, so nothing vanishes on a slow
+  // read (`isModuleEnabled`: absence is not disablement).
   const stats = useMyProfileStats();
   const pointsOn = moduleGate?.("points") ?? true;
   const serviceOn = moduleGate?.("hours") ?? true;
-  const serviceValue =
-    stats.serviceMinutes && stats.serviceHours
-      ? `${stats.serviceHours} hrs`
+  const showPoints =
+    pointsOn &&
+    stats.visible &&
+    (stats.pointsFailed || (stats.points !== null && stats.points !== 0));
+  const serviceMinutes = stats.serviceMinutes;
+  // Formatted as Study's row is ("1.0 hr", "2.5 hrs"), and nothing while it
+  // would draw as zero.
+  const serviceValue = stats.serviceFailed
+    ? "—"
+    : serviceMinutes !== null && formatHoursValue(serviceMinutes) !== "0.0"
+      ? formatHoursLabel(serviceMinutes)
       : null;
 
   const duesDue = useMemo(() => {
@@ -308,8 +320,8 @@ export default function YouScreen() {
     <ScreenShell
       title="You"
       headerAction={
-        pointsOn && stats.visible ? (
-          <PointsLabel points={stats.points} />
+        showPoints ? (
+          <PointsLabel points={stats.points} failed={stats.pointsFailed} />
         ) : undefined
       }
     >

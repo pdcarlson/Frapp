@@ -407,12 +407,12 @@ describe("Profile pledge class and order number (#3939)", () => {
 
 /** #5281: the points figure at the top right of the You tab. */
 describe("PointsLabel (#5281)", () => {
-  function renderLabel(points: number | null) {
+  function renderLabel(points: number | null, failed = false) {
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
         <FrappThemeProvider>
-          <PointsLabel points={points} />
+          <PointsLabel points={points} failed={failed} />
         </FrappThemeProvider>,
       );
     });
@@ -432,6 +432,19 @@ describe("PointsLabel (#5281)", () => {
       `${(1240).toLocaleString()} points`,
     );
     expect(screenText(renderLabel(1))).toContain("1 pt");
+  });
+
+  it("shows a negative balance, singular at minus one", () => {
+    expect(screenText(renderLabel(-1))).toContain("-1 pt");
+    expect(screenText(renderLabel(-5))).toContain("-5 pts");
+  });
+
+  it("says a failed read with a dash, not as zero", () => {
+    const tree = renderLabel(null, true);
+    expect(screenText(tree)).toContain("— pts");
+    expect(
+      tree.root.findByProps({ testID: "you-points" }).props.accessibilityLabel,
+    ).toBe("Points couldn't load");
   });
 
   it("is never the chapter accent", () => {

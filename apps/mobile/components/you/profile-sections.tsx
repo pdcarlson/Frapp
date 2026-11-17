@@ -42,7 +42,8 @@ import { pageSurfaces } from "@/lib/surfaces";
  * ... Points is not the end-all be-all of this app". Points is now a quiet
  * figure at the top right of the screen (`PointsLabel`, the You tab's
  * `headerAction`), and service hours the trailing value of the Service hours
- * row, the way Study hours carries its week. Both say nothing at zero.
+ * row, the way Study hours carries its week. Both say nothing at zero and
+ * show a dash when their read failed.
  * Attendance was never built: no member-readable rate exists
  * (`POST /v1/reports/attendance` is a chapter-wide `reports:export` report
  * with no per-member filter).
@@ -122,22 +123,40 @@ export function ProfileHead({
  * The member's points at the top right of the You tab (#5281, Paul
  * 2026-11-17: "maybe put it in the top right ... It doesn't need to be the
  * most prominent thing"). Plain text in the muted foreground, never the
- * chapter accent (foundations.md §6: a number is not an accent), and nothing
- * at all while the balance is unknown or zero, the way the Study and Service
- * rows say nothing at zero.
+ * chapter accent (foundations.md §6: a number is not an accent). Nothing while
+ * the balance is unknown or zero; a negative balance (a fine, points.md) shows,
+ * since it is something the member needs to know; a failed read is a dash.
  */
-export function PointsLabel({ points }: { points: number | null }) {
+export function PointsLabel({
+  points,
+  failed = false,
+}: {
+  points: number | null;
+  failed?: boolean;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  if (failed && points === null) {
+    return (
+      <Text
+        style={styles.points}
+        accessibilityLabel="Points couldn't load"
+        testID="you-points"
+      >
+        — pts
+      </Text>
+    );
+  }
   if (points === null || points === 0) return null;
-  const label = `${points.toLocaleString()} ${points === 1 ? "pt" : "pts"}`;
+  const one = Math.abs(points) === 1;
+  const figure = points.toLocaleString();
   return (
     <Text
       style={styles.points}
-      accessibilityLabel={`${points.toLocaleString()} ${points === 1 ? "point" : "points"}`}
+      accessibilityLabel={`${figure} ${one ? "point" : "points"}`}
       testID="you-points"
     >
-      {label}
+      {`${figure} ${one ? "pt" : "pts"}`}
     </Text>
   );
 }

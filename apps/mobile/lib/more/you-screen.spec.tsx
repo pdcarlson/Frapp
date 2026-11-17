@@ -48,6 +48,8 @@ const goalReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
 let chapterModules: Record<string, boolean> = {};
+/** False while `useCurrentChapter` hasn't answered (#5281's slow-read case). */
+let chapterLoaded = true;
 /** What `useMyProfileStats` answers (#5281); its reads are its own spec's. */
 let profileStats = {
   points: null as number | null,
@@ -133,15 +135,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => currentUser,
   useMyProfileStats: () => profileStats,
   useCurrentChapter: () => ({
-    data: {
-      name: "FIJI Tau Nu",
-      enabled_modules: chapterModules,
-      theme_palette: {
-        "--signet-accent-text": "#7FB2FF",
-        "--signet-accent-primary": "#2D7BFF",
-        "--signet-accent-on-primary": "#FFFFFF",
-      },
-    },
+    data: !chapterLoaded
+      ? undefined
+      : {
+          name: "FIJI Tau Nu",
+          enabled_modules: chapterModules,
+          theme_palette: {
+            "--signet-accent-text": "#7FB2FF",
+            "--signet-accent-primary": "#2D7BFF",
+            "--signet-accent-on-primary": "#FFFFFF",
+          },
+        },
   }),
 }));
 
@@ -298,6 +302,23 @@ describe("You tab clock (#2101)", () => {
     } finally {
       studyGoal = null;
     }
+  });
+
+  it("says nothing for a week that would draw as 0.0 hrs (#5281)", () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 18, 0, 0));
+    sessions = [
+      {
+        id: "session-1",
+        status: "COMPLETED",
+        start_time: new Date(2026, 9, 3, 10, 0).toISOString(),
+        end_time: new Date(2026, 9, 3, 10, 2).toISOString(),
+        total_foreground_minutes: 2,
+      },
+    ];
+    const study = render()
+      .root.findAllByType(ListRow)
+      .find((row) => row.props.label === "Study hours");
+    expect(study?.props.value).toBeNull();
   });
 
   it("keeps 0.0 against a goal, which says how far there is to go (#5281)", () => {
@@ -771,6 +792,7 @@ describe("You tab points and service hours (#5281)", () => {
     vi.useRealTimers();
     profileStats = { ...baseStats };
     chapterModules = {};
+    chapterLoaded = true;
   });
 
   const pointsLabel = (tree: ReactTestRenderer) =>
@@ -811,6 +833,47 @@ describe("You tab points and service hours (#5281)", () => {
     // The row stays at zero: it is where a member logs hours.
     expect(zero).toBeDefined();
     expect(zero?.props.value).toBeNull();
+  });
+
+  it("draws no corner figure at zero, and a dash when the read failed", () => {
+    profileStats.points = 0;
+    expect(pointsLabel(render())).toHaveLength(0);
+
+    profileStats.points = null;
+    profileStats.pointsFailed = true;
+    const failed = pointsLabel(render());
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.props.failed).toBe(true);
+  });
+
+  it("shows a negative balance: a fine is something the member needs to see", () => {
+    profileStats.points = -5;
+    expect(pointsLabel(render())[0]?.props.points).toBe(-5);
+  });
+
+  it("formats service hours as Study's row does, singular at one hour", () => {
+    profileStats.serviceMinutes = 60;
+    profileStats.serviceHours = "1";
+    expect(serviceRow(render())?.props.value).toBe("1.0 hr");
+  });
+
+  it("says nothing for a total that would draw as zero", () => {
+    profileStats.serviceMinutes = 2;
+    profileStats.serviceHours = "0.0";
+    expect(serviceRow(render())?.props.value).toBeNull();
+  });
+
+  it("gives the Service hours row a dash when its read failed", () => {
+    profileStats.serviceFailed = true;
+    expect(serviceRow(render())?.props.value).toBe("—");
+  });
+
+  it("hides nothing while the chapter hasn't loaded: its modules count as on", () => {
+    chapterLoaded = false;
+    profileStats.points = 60;
+    const tree = render();
+    expect(pointsLabel(tree)).toHaveLength(1);
+    expect(serviceRow(tree)).toBeDefined();
   });
 
   it("drops the Service hours row for a chapter with the module off", () => {
