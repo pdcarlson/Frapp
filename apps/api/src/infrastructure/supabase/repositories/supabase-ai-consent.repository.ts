@@ -12,7 +12,7 @@ import type {
 } from '#domain/repositories/ai-consent.repository.interface';
 
 const SETTINGS_SELECT =
-  'chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, updated_by, updated_at';
+  'chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, nudges_enabled, updated_by, updated_at';
 const CONSENT_SELECT = 'user_id, sheet_version, accepted, answered_at';
 const ID_BATCH = 200;
 

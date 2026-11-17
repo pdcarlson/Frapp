@@ -163,8 +163,9 @@ Three gates stand between Frapp's data and a model.
 Each governs a different thing.
 
 1. **The chapter turned the feature on.**
-   The president switches on each family separately: Ask, meeting notes, and chat as a source.
-   Each is off until then.
+   The president switches on each family separately: Ask, meeting notes, chat as a source, and nudges.
+   Each is off until then, except nudges, which are on until the president turns them off.
+   *Changed 2026-11-17 by `pdcarlson` (Paul: "We should turn on nudges on activity by default"):* nudges got their own switch, on by default. Until then a nudge stood behind Ask's switch, so a chapter whose president never turned Ask on got no cards. A nudge reads only the member's own tasks and counts of the chapter's earlier ones, for that member, and still needs gate 2, so a member who hasn't said yes gets no card and nothing is sent for them.
    This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
    An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
@@ -1019,7 +1020,8 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
 - **What people typed is read, never obeyed.**
   The task's title, description, checklist and note go to the model as data in the user turn, and the instructions are the system channel.
   The call has no tools, and what comes back is text for one reader.
-- **It stands behind Ask's switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
+- **It stands behind the chapter's nudges switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
+  The nudges switch is on unless the president turns it off ([Consent](#consent), gate 1; Paul, 2026-11-17). It was Ask's switch until then.
   With either off there is no card, no error and no explanation, because a card is an extra.
   Tasks turned off for the chapter means no card.
 - **Nothing is scheduled and nothing is pushed.**

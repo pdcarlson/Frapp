@@ -86,15 +86,27 @@ export const AI_CONSENT_SHEET = {
 
 /**
  * The president's switches (`spec/behavior/ai.md` § Consent, gate 1), as the
- * API names them. Each is off until the president turns it on.
+ * API names them. Each is off until the president turns it on, except those
+ * in {@link AI_SWITCHES_ON_BY_DEFAULT}.
  */
 export const AI_CHAPTER_SWITCHES = [
   'ask',
   'meeting_notes',
   'chat_source',
+  'nudges',
 ] as const;
 
 export type AiChapterSwitch = (typeof AI_CHAPTER_SWITCHES)[number];
+
+/**
+ * Switches that are on for a chapter whose president never changed them:
+ * nudge cards (Paul, 2026-11-17: "We should turn on nudges on activity by
+ * default"). The column's default is true too, so a chapter that has a row
+ * reads the same. A card still needs the member's own yes (gate 2).
+ */
+export const AI_SWITCHES_ON_BY_DEFAULT: ReadonlySet<AiChapterSwitch> = new Set([
+  'nudges',
+]);
 
 /**
  * Which switch a gateway call sits behind, by the catalog's family.
@@ -114,4 +126,7 @@ export const AI_FAMILY_SWITCH: Readonly<
   // chapter document the sheet's `chapter_records` row already names, so it
   // stands behind the same switch and the uploader's own Yes.
   backwork: 'ask',
+  // Nudge cards (#4781) read only the member's own tasks and counts of the
+  // chapter's earlier ones, for that member: their own switch, on by default.
+  nudges: 'nudges',
 };

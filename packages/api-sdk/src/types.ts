@@ -9320,6 +9320,8 @@ export interface components {
             meeting_notes: boolean;
             /** @description Messages in chapter channels, from members who said yes, are a source. */
             chat_source: boolean;
+            /** @description Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes. */
+            nudges: boolean;
             /**
              * Format: date-time
              * @description When a switch last changed. Null when none ever has.
@@ -9332,6 +9334,7 @@ export interface components {
             ask?: boolean;
             meeting_notes?: boolean;
             chat_source?: boolean;
+            nudges?: boolean;
         };
         AiRunDto: {
             /** Format: uuid */
