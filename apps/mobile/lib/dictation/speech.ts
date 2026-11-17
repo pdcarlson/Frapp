@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireSpeechModule } from "./speech-module";
@@ -13,16 +14,27 @@ import type {
  * provider). Apple's `SFSpeechRecognizer` on iOS and Android's
  * `SpeechRecognizer`, through `expo-speech-recognition`.
  *
- * **On the phone where it can be.** A session asks for on-device recognition
- * whenever the recogniser says it supports it, so the voice never leaves the
- * phone. Where it doesn't (an older Android, or one whose language pack isn't
- * installed), the phone's own recogniser runs as the keyboard's mic does,
- * which is what the approved speech purpose string says: "On most phones this
+ * **On the phone where it can be.** A session demands on-device recognition
+ * wherever the package can enforce it: on iOS when the recogniser reports
+ * support, and on Android 13 and later, where the package builds Android's
+ * on-device recogniser. Android 12 reports support too, but the package only
+ * asks Google's service there to prefer offline, which does not keep the voice
+ * on the phone, so it isn't counted. Elsewhere, and on an Android phone whose
+ * on-device recogniser lacks the English pack, the phone's ordinary recogniser
+ * runs, as the keyboard's mic does, and Apple or Google turns the speech into
+ * text. The approved speech purpose string says as much: "On most phones this
  * happens on the phone itself."
  *
- * **Absent in Expo Go and on web.** Go doesn't ship the native module and the
- * web bundle must never name the package, so both get `null` here and Ask
- * draws no mic (`spec/ui/mobile/README.md` § Run paths).
+ * **Absent in Expo Go and on web.** Go doesn't ship the native module, which
+ * the package reads at import. On web the package would run the browser's
+ * recogniser (Chrome's sends audio to Google), and Ask has no web mic in #5276.
+ * So both get `null` here, and Ask draws its mic only where this loads
+ * (`spec/ui/mobile/README.md` § Run paths).
+ *
+ * **Known gap:** on iOS the package checks availability and on-device support
+ * for the phone's own language, while sessions listen in US English. A phone
+ * set to a language Apple's recogniser doesn't cover may report no dictation
+ * though English would work.
  *
  * This file is the device boundary only: it starts and stops one listening
  * session and reports words, level and how it ended. What the field shows, and
@@ -43,6 +55,9 @@ const DICTATION_LANG = "en-US";
 
 /** How often the level reaches the waveform. */
 const LEVEL_INTERVAL_MS = 60;
+
+/** Android 13: the first release the package builds an on-device recogniser for. */
+const ANDROID_ON_DEVICE_API = 33;
 
 /** Whether this build and phone can dictate at all. Draw no mic when false. */
 export function isDictationAvailable(): boolean {
@@ -70,7 +85,7 @@ export async function requestDictationPermission(): Promise<boolean> {
   }
 }
 
-/** How a session ended without words. */
+/** How a session ended before any words were heard. */
 export type DictationFailure =
   /** The member said no to the microphone or speech recognition. */
   | "denied"
@@ -87,8 +102,13 @@ export interface DictationHandlers {
   onWords: (text: string) => void;
   /** The voice's level, 0 (silence) to 1 (loud), for the waveform. */
   onLevel: (level: number) => void;
-  /** The session is over; `text` is everything heard (may be empty). */
+  /**
+   * The session is over with everything heard. Also how a session that heard
+   * words ends when the recogniser then fails (a call, a dropped network):
+   * the words are kept.
+   */
   onEnd: (text: string) => void;
+  /** The session is over and nothing was heard. */
   onFailure: (failure: DictationFailure) => void;
 }
 
@@ -99,14 +119,23 @@ export interface DictationSession {
   cancel: () => void;
 }
 
+/** The session listening now. The recogniser is one per app. */
+let current: DictationSession | null = null;
+
 /**
- * Starts listening, or returns null when the module is absent. Call
- * `requestDictationPermission` first.
+ * Starts listening, or returns null when the module is absent or refused to
+ * start (`onFailure` has then been called). Call
+ * `requestDictationPermission` first. A session already listening is
+ * cancelled first: the native recogniser is one per app, and on Android a new
+ * start replaces the old one without telling it.
  *
  * Words arrive as the recogniser revises them. A final result fixes what it
  * covers: Android's continuous mode ends each pause with a final for that
  * stretch and starts afresh, so finals are kept in order and the partial in
  * progress is shown after them. iOS sends one final, at the end.
+ *
+ * Both platforms send `end` after every `error`, so a session ends on `end`,
+ * never on the error itself, and a restart waits for that `end`.
  */
 export function startDictation(
   handlers: DictationHandlers,
@@ -116,12 +145,16 @@ export function startDictation(
   if (!loaded) return null;
   const module: SpeechModule = loaded;
 
+  current?.cancel();
+
   let onDevice = supportsOnDevice(module);
-  // A fallback restart is allowed once, before any words: see `error`.
-  let heardAnything = false;
   let committed = "";
   let partial = "";
   let done = false;
+  /** The error this run ended with, reported when its `end` arrives. */
+  let failure: DictationFailure | null = null;
+  /** Start again without on-device once this run's `end` arrives. */
+  let restart = false;
 
   const text = () => join(committed, partial);
 
@@ -129,7 +162,6 @@ export function startDictation(
     module.addListener("result", (event: SpeechResultEvent) => {
       if (done) return;
       const transcript = event.results[0]?.transcript ?? "";
-      if (transcript) heardAnything = true;
       if (event.isFinal) {
         committed = join(committed, transcript);
         partial = "";
@@ -144,28 +176,60 @@ export function startDictation(
     }),
     module.addListener("error", ({ error }) => {
       if (done) return;
-      // An Android phone that offers on-device recognition but lacks the
-      // language pack refuses at start. Run its ordinary recogniser instead,
-      // as the keyboard's mic would.
-      if (error === "language-not-supported" && onDevice && !heardAnything) {
+      // An Android phone that has an on-device recogniser but not its English
+      // pack refuses at start. Once this run has ended, run the phone's
+      // ordinary recogniser instead, as the keyboard's mic would.
+      if (error === "language-not-supported" && onDevice && !text()) {
         onDevice = false;
-        begin();
+        restart = true;
         return;
       }
-      if (error === "aborted") return;
-      end();
-      handlers.onFailure(failureOf(error));
+      failure = failureOf(error);
     }),
     module.addListener("end", () => {
       if (done) return;
-      end();
-      handlers.onEnd(text());
+      if (restart) {
+        restart = false;
+        begin();
+        return;
+      }
+      finishWith(failure);
     }),
   ];
 
-  function end() {
+  const session: DictationSession = {
+    finish() {
+      if (done) return;
+      try {
+        module.stop();
+      } catch {
+        finishWith(null);
+      }
+    },
+    cancel() {
+      if (done) return;
+      close();
+      try {
+        module.abort();
+      } catch {
+        // Already stopped: nothing to drop.
+      }
+    },
+  };
+  current = session;
+
+  function close() {
     done = true;
     for (const subscription of subscriptions) subscription.remove();
+    if (current === session) current = null;
+  }
+
+  /** Words heard are always kept, whatever stopped the recogniser. */
+  function finishWith(why: DictationFailure | null) {
+    close();
+    const heard = text();
+    if (heard || !why) handlers.onEnd(heard);
+    else handlers.onFailure(why);
   }
 
   function begin() {
@@ -188,36 +252,23 @@ export function startDictation(
     try {
       module.start(startOptions);
     } catch {
-      end();
-      handlers.onFailure("unavailable");
+      finishWith("unavailable");
     }
   }
 
   begin();
-
-  return {
-    finish() {
-      if (done) return;
-      try {
-        module.stop();
-      } catch {
-        end();
-        handlers.onEnd(text());
-      }
-    },
-    cancel() {
-      if (done) return;
-      end();
-      try {
-        module.abort();
-      } catch {
-        // Already stopped: nothing to drop.
-      }
-    },
-  };
+  return done ? null : session;
 }
 
+/**
+ * Whether a session can demand on-device recognition and get it. Android 12
+ * answers yes, but the package builds the on-device recogniser only from
+ * Android 13 (see the header).
+ */
 function supportsOnDevice(module: SpeechModule): boolean {
+  if (Platform.OS === "android" && Number(Platform.Version) < ANDROID_ON_DEVICE_API) {
+    return false;
+  }
   try {
     return module.supportsOnDeviceRecognition();
   } catch {

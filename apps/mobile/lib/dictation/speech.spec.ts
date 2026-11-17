@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { Platform } from "react-native";
 import path from "node:path";
 
 const constantsState = vi.hoisted(() => ({
@@ -87,13 +88,25 @@ function result(transcript: string, isFinal = false) {
   return { isFinal, results: [{ transcript }] };
 }
 
+const platform = Platform as { OS: string; Version?: number | string };
+
 beforeEach(() => {
   constantsState.executionEnvironment = "standalone";
+  platform.OS = "ios";
+  platform.Version = "18.0";
 });
 
 afterEach(() => {
   setSpeechLoaderForTests(null);
+  platform.OS = "ios";
+  delete platform.Version;
 });
+
+/** The package sends `end` after every `error`, on both platforms. */
+function fail(fake: ReturnType<typeof fakeSpeech>, error: string) {
+  fake.emit("error", { error, message: "" });
+  fake.emit("end", null);
+}
 
 describe("availability", () => {
   it("is off where the module is absent (web's half of the split)", () => {
@@ -235,31 +248,103 @@ describe("startDictation", () => {
     setSpeechLoaderForTests(() => fake.module);
     const h = handlers();
     startDictation(h);
-    fake.emit("error", { error, message: "" });
-    fake.emit("end", null);
+    fail(fake, error);
     expect(h.onFailure).toHaveBeenCalledTimes(1);
     expect(h.onFailure).toHaveBeenCalledWith(failure);
     expect(h.onEnd).not.toHaveBeenCalled();
   });
 
-  it("falls back to the phone's ordinary recogniser once when on-device has no language pack", () => {
+  it("keeps words heard before the recogniser fails", () => {
     const fake = fakeSpeech();
     setSpeechLoaderForTests(() => fake.module);
     const h = handlers();
     startDictation(h);
+    fake.emit("result", result("remind the rush chairs"));
+    fail(fake, "interrupted");
+    expect(h.onEnd).toHaveBeenCalledWith("remind the rush chairs");
+    expect(h.onFailure).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the phone's ordinary recogniser once, after the failed run's end", () => {
+    const fake = fakeSpeech();
+    setSpeechLoaderForTests(() => fake.module);
+    const h = handlers();
+    const session = startDictation(h)!;
+
     fake.emit("error", { error: "language-not-supported", message: "" });
+    expect(fake.starts).toHaveLength(1);
+    fake.emit("end", null);
     expect(fake.starts.map((s) => s.requiresOnDeviceRecognition)).toEqual([
       true,
       false,
     ]);
+    expect(h.onEnd).not.toHaveBeenCalled();
     expect(h.onFailure).not.toHaveBeenCalled();
 
-    fake.emit("error", { error: "language-not-supported", message: "" });
+    // The restarted run is still listened to, and still stoppable.
+    fake.emit("result", result("hello from the fallback"));
+    expect(h.onWords).toHaveBeenLastCalledWith("hello from the fallback");
+    session.finish();
+    expect(h.onEnd).toHaveBeenCalledWith("hello from the fallback");
+
+    // No second fallback.
+    expect(fake.starts).toHaveLength(2);
+  });
+
+  it("fails rather than restarting again when the fallback refuses too", () => {
+    const fake = fakeSpeech();
+    setSpeechLoaderForTests(() => fake.module);
+    const h = handlers();
+    startDictation(h);
+    fail(fake, "language-not-supported");
+    fail(fake, "language-not-supported");
     expect(fake.starts).toHaveLength(2);
     expect(h.onFailure).toHaveBeenCalledWith("unavailable");
   });
 
-  it("reports a start that throws as unavailable", () => {
+  it("doesn't restart, and keeps the words, when the language error comes after words", () => {
+    const fake = fakeSpeech();
+    setSpeechLoaderForTests(() => fake.module);
+    const h = handlers();
+    startDictation(h);
+    fake.emit("result", result("so the bid dinner"));
+    fail(fake, "language-not-supported");
+    expect(fake.starts).toHaveLength(1);
+    expect(h.onEnd).toHaveBeenCalledWith("so the bid dinner");
+  });
+
+  it("does not demand on-device recognition on Android 12, where the package can't enforce it", () => {
+    platform.OS = "android";
+    platform.Version = 32;
+    const fake = fakeSpeech();
+    setSpeechLoaderForTests(() => fake.module);
+    startDictation(handlers());
+    expect(fake.starts[0]?.requiresOnDeviceRecognition).toBe(false);
+  });
+
+  it("demands on-device recognition on Android 13", () => {
+    platform.OS = "android";
+    platform.Version = 33;
+    const fake = fakeSpeech();
+    setSpeechLoaderForTests(() => fake.module);
+    startDictation(handlers());
+    expect(fake.starts[0]?.requiresOnDeviceRecognition).toBe(true);
+  });
+
+  it("cancels a session still listening before starting another", () => {
+    const fake = fakeSpeech();
+    setSpeechLoaderForTests(() => fake.module);
+    const first = handlers();
+    const second = handlers();
+    startDictation(first);
+    startDictation(second);
+    expect(fake.module.abort).toHaveBeenCalledTimes(1);
+    fake.emit("result", result("only the second"));
+    expect(first.onWords).not.toHaveBeenCalled();
+    expect(second.onWords).toHaveBeenCalledWith("only the second");
+  });
+
+  it("reports a start that throws as unavailable, and returns no session", () => {
     const fake = fakeSpeech({
       start: vi.fn(() => {
         throw new Error("no audio session");
@@ -267,7 +352,7 @@ describe("startDictation", () => {
     });
     setSpeechLoaderForTests(() => fake.module);
     const h = handlers();
-    startDictation(h);
+    expect(startDictation(h)).toBeNull();
     expect(h.onFailure).toHaveBeenCalledWith("unavailable");
     expect(fake.listenerCount()).toBe(0);
   });

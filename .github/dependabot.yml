@@ -282,7 +282,8 @@ updates:
       - dependency-name: "expo-router"
       - dependency-name: "expo-secure-store"
       - dependency-name: "expo-sharing"
-      # Third-party (jamsch), but its major tracks the Expo SDK (57.x for SDK 57).
+      # Third-party (jamsch), but its major tracks the Expo SDK (57.x for SDK 57);
+      # an SDK upgrade moves it by hand (docs/ci-cd/dependency-updates.md).
       - dependency-name: "expo-speech-recognition"
       - dependency-name: "expo-splash-screen"
       - dependency-name: "expo-status-bar"

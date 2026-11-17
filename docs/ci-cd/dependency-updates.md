@@ -208,6 +208,12 @@ check:expo-sdk-line` checks it mechanically in the required `mobile-validate` jo
   Installed Expo packages the map doesn't list (`expo-modules-jsi`, `expo-modules-autolinking`, the
   `@expo/*` tooling on its own version lines) aren't checked; `expo`'s own dependency ranges pin
   them.
+- **Third-party `expo-*` packages.** A declared package that only shares the prefix, which the map
+  can't know, is named with its reason in the script's `UNBUNDLED_EXPO_PACKAGES` instead of failing
+  the gate. It still needs its Dependabot entry, and nothing checks its version, so **an SDK upgrade
+  moves it by hand** to the release for the new SDK. Today that is `expo-speech-recognition`
+  (Ask's dictation, #5276), whose major follows the SDK (`57.x` for SDK 57, per its GitHub
+  README's install table and its `sdk-*` npm tags).
 
 It asserts SDK-line coherence only: a package inside its range can still fail to compile.
 `@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check

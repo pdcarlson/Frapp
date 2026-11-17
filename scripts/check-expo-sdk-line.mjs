@@ -29,7 +29,9 @@
 //    and it lists nested copies. An `expo-*` / `@expo/*` package apps/mobile
 //    declares (in any dependency section) must also be in the map and installed,
 //    and its declared range's floor must be on the line, so an edit to
-//    package.json alone gets this diagnosis rather than only npm ci's.
+//    package.json alone gets this diagnosis rather than only npm ci's. The
+//    exceptions are third-party packages that only share the prefix,
+//    UNBUNDLED_EXPO_PACKAGES below, which an SDK upgrade moves by hand.
 //    An installed Expo package the map doesn't list (`expo-modules-jsi`,
 //    `expo-modules-autolinking`, the `@expo/*` tooling, which has its own version
 //    lines) isn't checked: the map is the only SDK statement there is to check
@@ -75,7 +77,7 @@ const DEPENDABOT_CONFIG = ".github/dependabot.yml";
 export const UNBUNDLED_EXPO_PACKAGES = new Map([
   [
     "expo-speech-recognition",
-    "third-party (jamsch/expo-speech-recognition), Ask's dictation (#5276). Its major follows the Expo SDK by hand (57.x for SDK 57, per its README), so it is held in Dependabot's ignore list and moved with each SDK upgrade",
+    "third-party (jamsch/expo-speech-recognition), Ask's dictation (#5276). Its major follows the Expo SDK (57.x for SDK 57, as its GitHub README's install table and its sdk-* npm tags show), so it is held in Dependabot's ignore list and moved by hand with each SDK upgrade",
   ],
 ]);
 

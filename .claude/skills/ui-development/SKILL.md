@@ -138,12 +138,10 @@ constraints web habits most often break:
   must stay outside the sheet provider, or an open sheet draws over it. Figtree loads there behind a splash hold.
 - Expo Go is the local run path (`npm run start -w apps/mobile`, then scan from a device or
   emulator). It can't be verified headless. Native modules that crash Go at launch or break
-  `expo export --platform web` (Stripe React Native, `expo-notifications`,
-  `react-native-keyboard-controller`, `expo-apple-authentication`,
-  `@react-native-google-signin/google-signin`) must be imported through their isolation modules
-  (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`, `@/lib/apple-auth`,
-  `@/lib/google-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
-  a direct import.
+  `expo export --platform web` must be imported through their isolation modules, which check the
+  runtime and degrade. The list, package by package, is
+  [`spec/ui/mobile/README.md` § Run paths](../../../spec/ui/mobile/README.md#run-paths-expo-go-vs-eas);
+  ESLint `no-restricted-imports` in `apps/mobile/eslint.config.mjs` rejects a direct import.
 - Eight files are frozen: `app/_layout.tsx`, `app/(app)/_layout.tsx`, `app/(app)/(tabs)/_layout.tsx`,
   `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every
   planned route is already registered on the stack in `app/(app)/_layout.tsx` with a backing file,

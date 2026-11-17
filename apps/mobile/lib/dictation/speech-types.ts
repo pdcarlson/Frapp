@@ -1,9 +1,8 @@
 /**
  * The parts of `expo-speech-recognition` dictation uses, declared
- * structurally. A `typeof import("expo-speech-recognition")` in a type
- * position would put the package back in the web bundle's graph and defeat
- * the platform split (`spec/ui/mobile/README.md` § Run paths), so the surface
- * is written out here instead, as `lib/minutes/recorder/native-types.ts` does.
+ * structurally, as `lib/minutes/recorder/native-types.ts` does, so only the
+ * native half of the loader split (`speech-module.native.ts`) names the
+ * package and the lint rule against importing it has no exceptions.
  */
 
 export interface SpeechStartOptions {

@@ -97,7 +97,7 @@ export default [
                 "expo-speech-recognition/*",
               ],
               message:
-                "Import via @/lib/dictation/speech. The package reads its native module at import, which crashes Expo Go and kills expo export --platform web.",
+                "Import via @/lib/dictation/speech. The package reads its native module at import, which crashes Expo Go, and on web it would run the browser's recogniser, which Ask doesn't offer.",
             },
             {
               group: [

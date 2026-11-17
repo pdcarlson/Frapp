@@ -12,8 +12,10 @@ before you pick up a phone.
 
 ## Before you start
 
-- **The builds.** Run it on the **0.13.0** store builds (TestFlight and the Play internal track),
-  which come from the first **Deploy production** run with a mobile build after #4763 merged.
+- **The builds.** Run it on the **0.14.0** store builds (TestFlight and the Play internal track),
+  which come from the first **Deploy production** run with a mobile build after `app.json` moved
+  to 0.14.0 for the speech-recognition module behind Ask's dictation (#5276, 2026-11-17). The 0.13.0
+  builds stop receiving over-the-air updates then and miss everything merged after it.
   `app.json` moved to 0.13.0 with #4763 (2026-11-13), so the 0.12.0 builds (iOS 22 to 24, Android 13 to 16; iOS 21 never reached TestFlight, #4673)
   stop receiving over-the-air updates then and miss everything merged after it. Before that,
   `app.json` moved to 0.12.0 when #4472 merged (2026-11-12 16:21Z), which is why 0.11.0 builds
@@ -37,7 +39,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
 | 1 | Both | Open the app after the update | What's new opens by itself once. Close it, force-quit, reopen: it doesn't open again | #3809, #4131 |
-| 2 | Both | Before opening the app: TestFlight (iPhone) or the Play Store's internal-testing listing (Android) | The installed build is 0.13.0. Note its build number in your #808 comment. The app itself has no About row | #808 |
+| 2 | Both | Before opening the app: TestFlight (iPhone) or the Play Store's internal-testing listing (Android) | The installed build is 0.14.0. Note its build number in your #808 comment. The app itself has no About row | #808 |
 
 ## 2. Chat home (2 minutes)
 
