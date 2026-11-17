@@ -3624,7 +3624,7 @@ export interface paths {
         };
         /**
          * Get the chapter’s AI switches
-         * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.
+         * @description Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. Nudges are on until the president turns them off; the rest are off until the president turns them on. `can_change` says whether the caller is the president, who alone may change them.
          */
         get: operations["AiChapterSettingsController_getSettings_v1"];
         put?: never;
@@ -9320,6 +9320,8 @@ export interface components {
             meeting_notes: boolean;
             /** @description Messages in chapter channels, from members who said yes, are a source. */
             chat_source: boolean;
+            /** @description Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes. */
+            nudges: boolean;
             /**
              * Format: date-time
              * @description When a switch last changed. Null when none ever has.
@@ -9332,6 +9334,7 @@ export interface components {
             ask?: boolean;
             meeting_notes?: boolean;
             chat_source?: boolean;
+            nudges?: boolean;
         };
         AiRunDto: {
             /** Format: uuid */

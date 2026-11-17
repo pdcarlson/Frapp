@@ -42,6 +42,7 @@ class FakeAiConsentRepository implements IAiConsentRepository {
       ask_enabled: false,
       meeting_notes_enabled: false,
       chat_source_enabled: false,
+      nudges_enabled: true,
       ...this.settings.get(chapterId),
       ...patch,
       updated_by: updatedBy,
@@ -135,14 +136,32 @@ describe('AiConsentService', () => {
   });
 
   describe('check (the gateway seam)', () => {
-    it('refuses every family while the chapter has no switch on', async () => {
+    it('refuses every family that starts off while the chapter has no switch on', async () => {
       await sayYes(MEMBER);
-      for (const family of ['ask', 'meetings', 'corpus'] as const) {
+      for (const family of ['ask', 'meetings', 'corpus', 'backwork'] as const) {
         await expect(service.check(call({ family }))).resolves.toEqual({
           allowed: false,
           reason: 'chapter_off',
         });
       }
+    });
+
+    it('lets a nudge through with no switch ever set, but only after the member said yes (2026-11-17)', async () => {
+      const nudge = call({ task: 'nudges.write', family: 'nudges' });
+      await expect(service.check(nudge)).resolves.toEqual({
+        allowed: false,
+        reason: 'member_declined',
+      });
+      await sayYes(MEMBER);
+      await expect(service.check(nudge)).resolves.toEqual({ allowed: true });
+      // Ask's switch no longer decides it either way.
+      await turnOn(CHAPTER, { ask_enabled: false });
+      await expect(service.check(nudge)).resolves.toEqual({ allowed: true });
+      await turnOn(CHAPTER, { nudges_enabled: false, ask_enabled: true });
+      await expect(service.check(nudge)).resolves.toEqual({
+        allowed: false,
+        reason: 'chapter_off',
+      });
     });
 
     it('refuses a member who has not answered, which counts as No', async () => {
@@ -368,13 +387,14 @@ describe('AiConsentService', () => {
       ).resolves.toBe(true);
     });
 
-    it('are all off for a chapter that never changed one', async () => {
+    it('are all off, except nudges, for a chapter that never changed one', async () => {
       await expect(
         service.getChapterSettings(CHAPTER, ['role-member']),
       ).resolves.toEqual({
         ask: false,
         meeting_notes: false,
         chat_source: false,
+        nudges: true,
         updated_at: null,
         can_change: false,
       });
@@ -412,6 +432,25 @@ describe('AiConsentService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(repo.settings.size).toBe(0);
       expect(record).not.toHaveBeenCalled();
+    });
+
+    it('lets the president turn nudges off on a chapter that never set a switch', async () => {
+      const view = await service.updateChapterSettings(
+        CHAPTER,
+        { userId: PRESIDENT, roleIds: [PRESIDENT_ROLE] },
+        { nudges: false },
+      );
+      expect(view).toMatchObject({ nudges: false, ask: false });
+      expect(repo.settings.get(CHAPTER)?.nudges_enabled).toBe(false);
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: { nudges: { from: true, to: false } },
+        }),
+      );
+      await sayYes(MEMBER);
+      await expect(
+        service.check(call({ task: 'nudges.write', family: 'nudges' })),
+      ).resolves.toEqual({ allowed: false, reason: 'chapter_off' });
     });
 
     it("refuses another chapter's president role", async () => {

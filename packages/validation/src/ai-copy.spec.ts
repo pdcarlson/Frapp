@@ -28,6 +28,7 @@ describe("AI copy", () => {
       "ask",
       "chat_source",
       "meeting_notes",
+      "nudges",
     ]);
     const keys = new Set(AI_SWITCHES.map((entry) => entry.key));
     for (const entry of AI_SWITCHES) {
