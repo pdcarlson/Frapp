@@ -1847,6 +1847,155 @@ describe("DocumentsPage folder management (#791)", () => {
   });
 });
 
+describe("DocumentsPage folder tree (#5337)", () => {
+  // A synced Drive tree, as `folderPath` names its folders.
+  const FIJI = [
+    { id: "t-1", name: "Town in Fiji", sort_order: 0, drive_folder_id: "d1" },
+    {
+      id: "t-2",
+      name: "Town in Fiji / Rush",
+      sort_order: 1,
+      drive_folder_id: "d2",
+    },
+    {
+      id: "t-3",
+      name: "Town in Fiji / Rush / 2024",
+      sort_order: 2,
+      drive_folder_id: "d3",
+    },
+    {
+      id: "t-4",
+      name: "Town in Fiji / Formal",
+      sort_order: 3,
+      drive_folder_id: "d4",
+    },
+  ];
+  const FLYER = {
+    ...BYLAWS,
+    id: "doc-flyer",
+    title: "Rush flyer",
+    folder: "Town in Fiji / Rush / 2024",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+    foldersQuery.data = FIJI;
+    documentsQuery.data = [BYLAWS, FLYER];
+    window.localStorage.clear();
+  });
+
+  const row = (name: string) =>
+    screen.getByRole("button", { name: new RegExp(`^${name}$`) });
+
+  it("draws each folder under its parent by its own name, the lone top folder open", () => {
+    render(<DocumentsPage />);
+    expect(row("Town in Fiji")).toBeInTheDocument();
+    // Two folders at this level, so each starts closed.
+    expect(row("Rush")).toBeInTheDocument();
+    expect(row("Formal")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^2024$/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open Town in Fiji / Rush" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.getByRole("button", { name: "Close Town in Fiji" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("opens a folder from its chevron, and a folder shows only its own files", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(
+      screen.getByRole("button", { name: "Open Town in Fiji / Rush" }),
+    );
+    // Opening is not choosing: the list is still All files.
+    expect(screen.getByText("Chapter bylaws")).toBeInTheDocument();
+    await user.click(row("2024"));
+    expect(screen.getByText("Rush flyer")).toBeInTheDocument();
+    expect(screen.queryByText("Chapter bylaws")).toBeNull();
+    // Its parent holds none of its child's files.
+    await user.click(row("Rush"));
+    expect(screen.queryByText("Rush flyer")).toBeNull();
+  });
+
+  it("opens a closed folder when it is chosen, as Drive's sidebar does", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(row("Rush"));
+    expect(row("2024")).toBeInTheDocument();
+  });
+
+  it("keeps what this member closed on this browser", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<DocumentsPage />);
+    await user.click(
+      screen.getByRole("button", { name: "Close Town in Fiji" }),
+    );
+    expect(screen.queryByRole("button", { name: /^Rush$/ })).toBeNull();
+    unmount();
+    render(<DocumentsPage />);
+    expect(screen.queryByRole("button", { name: /^Rush$/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open Town in Fiji" }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts a folder whose parent the member can't see under the nearest one they can", () => {
+    foldersQuery.data = [FIJI[0]!, FIJI[2]!, FIJI[3]!];
+    render(<DocumentsPage />);
+    expect(row("Rush / 2024")).toBeInTheDocument();
+  });
+
+  it("lifts a pinned folder to Pinned with what is under it, saying where it lives", () => {
+    foldersQuery.data = [
+      FIJI[0]!,
+      { ...FIJI[1]!, pinned_at: "2026-11-17T00:00:00Z" },
+      FIJI[2]!,
+      FIJI[3]!,
+    ];
+    render(<DocumentsPage />);
+    const pinned = screen.getByRole("group", { name: "Pinned" });
+    expect(
+      within(pinned).getByRole("button", { name: /^Rush\s*Town in Fiji$/ }),
+    ).toBeInTheDocument();
+    // The card above All files reads the same way.
+    expect(screen.getByText("In Town in Fiji · 0 files")).toBeInTheDocument();
+    // Shown once in the rail: not also under Town in Fiji.
+    const rail = screen.getByRole("navigation", { name: "Folders" });
+    expect(within(rail).getAllByRole("button", { name: /^Rush/ })).toHaveLength(
+      1,
+    );
+  });
+
+  it("moves a folder past the one beside it at its own level", async () => {
+    manageGate.granted = true;
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: /^edit folders$/i }));
+    await user.click(
+      screen.getByRole("button", { name: "Move Town in Fiji / Formal up" }),
+    );
+    // Formal steps past Rush and everything under it: 0, Formal, Rush, 2024.
+    await waitFor(() =>
+      expect(mockUpdateFolder).toHaveBeenCalledWith({
+        id: "t-4",
+        sort_order: 1,
+      }),
+    );
+    expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "t-2", sort_order: 2 });
+    expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "t-3", sort_order: 3 });
+    expect(
+      screen.getByRole("button", { name: "Move Town in Fiji / Rush up" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Move Town in Fiji down" }),
+    ).toBeDisabled();
+  });
+});
+
 describe("DocumentsPage search and folder resilience", () => {
   beforeEach(() => {
     vi.clearAllMocks();
