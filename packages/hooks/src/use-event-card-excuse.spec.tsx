@@ -4,24 +4,18 @@
  * say the event requires the viewer, and a card that doesn't reads no excuse
  * or attendance row.
  */
-import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   useEventCardExcuse,
   useRequiredOfViewer,
   type ExcuseCardEvent,
 } from "./use-event-excuses";
-import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useListChapters } from "./use-chapters";
 import { useRoles } from "./use-roles";
+import { createHookWrapper } from "./test-utils";
 
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: vi.fn(),
-  useActiveChapterId: vi.fn(),
-}));
 vi.mock("./use-chapters", () => ({ useListChapters: vi.fn() }));
 vi.mock("./use-roles", () => ({ useRoles: vi.fn() }));
 
@@ -58,10 +52,6 @@ describe("useEventCardExcuse (#4660)", () => {
         response: { ok: true, status: 200 },
       };
     });
-    vi.mocked(useFrappClient).mockReturnValue({
-      GET: get,
-    } as unknown as ReturnType<typeof useFrappClient>);
-    vi.mocked(useActiveChapterId).mockReturnValue("ch-1");
     vi.mocked(useListChapters).mockReturnValue({
       data: [{ chapter_id: "ch-1", role_ids: ["role-new"] }],
     } as unknown as ReturnType<typeof useListChapters>);
@@ -73,9 +63,11 @@ describe("useEventCardExcuse (#4660)", () => {
   afterEach(() => queryClient.clear());
 
   function render(event: ExcuseCardEvent | null, now = NOW) {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    );
+    const wrapper = createHookWrapper({
+      client: { GET: get },
+      queryClient,
+      chapterId: "ch-1",
+    });
     return renderHook(
       () => useEventCardExcuse(event, now, useRequiredOfViewer()),
       { wrapper },

@@ -1,20 +1,13 @@
 import { renderHook, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useGetOrCreateDm } from "./use-chat";
-import { createTestQueryClient } from "./test-utils";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
-const { mockPost } = vi.hoisted(() => ({ mockPost: vi.fn() }));
-
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: () => ({ POST: mockPost }),
-}));
+const mockPost = vi.fn();
 
 function makeWrapper(qc: QueryClient) {
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-  };
+  return createHookWrapper({ client: { POST: mockPost }, queryClient: qc });
 }
 
 describe("useGetOrCreateDm channel-cache refresh (#316)", () => {
