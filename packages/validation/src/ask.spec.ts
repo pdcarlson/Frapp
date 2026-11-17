@@ -310,6 +310,12 @@ describe("Ask copy", () => {
     );
   });
 
+  it("has words for every step the server names", () => {
+    for (const step of ASK_STEPS) {
+      expect(ASK_COPY.steps[step]).toMatch(/\S/);
+    }
+  });
+
   it("has a line for a reason it does not know", () => {
     expect(askUnavailableLine("something_new")).toBe(
       askUnavailableLine("not_available"),
