@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useRef, useState, type ReactElement, type ReactNode } from "react";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
   Command,
@@ -28,6 +28,9 @@ type PickerGroup<T> = { heading: string; items: readonly T[] };
  *
  * Each caller brings its own trigger, words, item key and item content, and
  * may sort the shown items under headings; empty headings are left out.
+ * Channel and document access's "Add" (#5264) and a long filter chip's list
+ * draw it too, which is what the optional props below are for: each one's
+ * default is the picker as "Who can" and Goals draw it.
  */
 export function SearchablePicker<T>({
   trigger,
@@ -41,6 +44,12 @@ export function SearchablePicker<T>({
   itemClassName,
   renderItem,
   onPick,
+  widthClassName = "min-w-[14rem] max-w-[min(22rem,calc(100vw-2rem))]",
+  status,
+  emptyText,
+  leadingItems = [],
+  defaultValue,
+  keyboardlessOnTouch = false,
 }: {
   /** The button that opens the list; it becomes the popover's trigger. */
   trigger: ReactElement;
@@ -60,13 +69,34 @@ export function SearchablePicker<T>({
   /** What each item shows inside its row. */
   renderItem: (item: T) => ReactNode;
   onPick: (item: T) => void;
+  /** The list's min and max width; it is otherwise as wide as its widest row. */
+  widthClassName?: string;
+  /** Said in place of the list while there is nothing to pick from yet. */
+  status?: ReactNode;
+  /** Said when there are no items at all and no search is typed. */
+  emptyText?: string;
+  /**
+   * Rows that lead the list and step aside while a search is typed: an "Any"
+   * row isn't something to search for, and as the first match it would be
+   * the row Enter picks.
+   */
+  leadingItems?: readonly T[];
+  /** The row cmdk opens highlighted and scrolled into view. */
+  defaultValue?: string;
+  /**
+   * On touch, open without the on-screen keyboard so the list can be
+   * scrolled; a tap on the field brings it up. Focus still moves into the
+   * list, so a hardware keyboard's arrows and Enter work.
+   */
+  keyboardlessOnTouch?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const shown =
-    normalizeWords(query).length === 0
-      ? items
-      : items.filter((item) => matchesWordStarts(nameOf(item), query));
+  const commandRef = useRef<HTMLDivElement>(null);
+  const searching = normalizeWords(query).length > 0;
+  const shown = searching
+    ? items.filter((item) => matchesWordStarts(nameOf(item), query))
+    : [...leadingItems, ...items];
   const close = () => {
     setOpen(false);
     setQuery("");
@@ -93,7 +123,16 @@ export function SearchablePicker<T>({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align={align}
-        className="w-max min-w-[14rem] max-w-[min(22rem,calc(100vw-2rem))] p-0"
+        className={`w-max ${widthClassName} p-0`}
+        onOpenAutoFocus={(event) => {
+          if (
+            keyboardlessOnTouch &&
+            window.matchMedia?.("(pointer: coarse)").matches
+          ) {
+            event.preventDefault();
+            commandRef.current?.focus();
+          }
+        }}
         onEscapeKeyDown={(event) => {
           if (!query) return;
           event.preventDefault();
@@ -101,9 +140,11 @@ export function SearchablePicker<T>({
         }}
       >
         <Command
+          ref={commandRef}
           tabIndex={-1}
           className="outline-none"
           shouldFilter={false}
+          defaultValue={defaultValue}
           label={label}
         >
           <CommandInput
@@ -113,9 +154,15 @@ export function SearchablePicker<T>({
             className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
           />
           <CommandList className="max-h-72 p-1">
-            {shown.length === 0 ? (
+            {status !== undefined ? (
               <p role="status" className="px-2 py-3 text-sm text-muted">
-                Nothing matches “{query.trim()}”.
+                {status}
+              </p>
+            ) : shown.length === 0 ? (
+              <p role="status" className="px-2 py-3 text-sm text-muted">
+                {!searching && emptyText !== undefined
+                  ? emptyText
+                  : `Nothing matches “${query.trim()}”.`}
               </p>
             ) : groupsOf ? (
               groupsOf(shown)

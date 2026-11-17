@@ -76,4 +76,26 @@ describe("a searchable picker", () => {
     expect(onPick).toHaveBeenCalledWith("Social chair");
     expect(screen.queryByRole("listbox")).toBeNull();
   });
+
+  it("focuses its search on touch unless a caller opts out (#5264)", async () => {
+    // Only the filter chip opts into a keyboardless open on touch; every other
+    // picker (Who can, Goals, channel and document access) keeps the focus.
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(pointer: coarse)",
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const user = userEvent.setup();
+      renderPicker({});
+      await user.click(screen.getByRole("button", { name: "Pick" }));
+      expect(await screen.findByRole("combobox")).toHaveFocus();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 });
