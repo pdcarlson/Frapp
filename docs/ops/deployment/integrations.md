@@ -426,7 +426,7 @@ publishing status In production, user type External:
    `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
    to boot on a partial set. Redeploy the API after the sync reaches Secret Manager: each
    deploy pins the secret versions it finds (on staging, a re-run doesn't:
-   [`cloud-run.md` § Secrets](cloud-run.md#secrets)).
+   [`cloud-run.md` § Deploys](cloud-run.md#deploys)).
 
 **Verify after setup.** `GET /v1/google-calendar` (signed in, any chapter)
 answers `"available": true`. Then connect from the web Subscribe menu: Google's
