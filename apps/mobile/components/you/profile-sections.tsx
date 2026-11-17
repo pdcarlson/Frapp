@@ -3,12 +3,10 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   useCurrentUser,
   useMemberByUserId,
-  useMyProfileStats,
   usePermissionList,
   useViewerUserId,
   useOwnAvatarTint,
   profileIdentityLine,
-  profileStatsErrorNote,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { BIRTHDAY_COPY, can, formatBirthday } from "@repo/validation";
@@ -31,18 +29,23 @@ import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The member's own profile, drawn on the You tab (#3839): what was s15, the
- * pushed Profile screen, before the tab took it in. The head (photo, name,
- * the line under it, and the points and service-hours cards) opens the tab;
- * Details and Bio close it, under the hub's rows.
+ * pushed Profile screen, before the tab took it in. The head (photo, name and
+ * the line under it) opens the tab; Details and Bio close it, under the hub's
+ * rows.
  *
- * ## Two stat cards, not three
+ * ## No stat cards (#5281)
  *
- * Canvas draws points, service hours, and "96% attendance". The third is not
- * built and is not buildable by a member: `POST /v1/reports/attendance` is a
- * chapter-wide report generator gated on `reports:export`, its rows carry
- * `member_name` and no `user_id`, it takes no per-member filter, and there is
- * no denominator of events a member owed. `spec/ui/mobile/screens.md` also
- * records that reports stay web-only. Filed rather than invented.
+ * Canvas draws three cards under the name: points, service hours and "96%
+ * attendance". The phone drew the first two until 2026-11-17, when Paul took
+ * them off: "everybody will have zero service hours like most of the
+ * semester", and the points card was "a lot of space just to say 0 points
+ * ... Points is not the end-all be-all of this app". Points is now a quiet
+ * figure at the top right of the screen (`PointsLabel`, the You tab's
+ * `headerAction`), and service hours the trailing value of the Service hours
+ * row, the way Study hours carries its week. Both say nothing at zero.
+ * Attendance was never built: no member-readable rate exists
+ * (`POST /v1/reports/attendance` is a chapter-wide `reports:export` report
+ * with no per-member filter).
  *
  * ## The detail rows
  *
@@ -67,7 +70,7 @@ import { pageSurfaces } from "@/lib/surfaces";
  * over fields already set.
  */
 
-/** Photo, name, the line under it, and the two stat cards. */
+/** Photo, name and the line under it. */
 export function ProfileHead({
   profile,
   onEdit,
@@ -80,9 +83,6 @@ export function ProfileHead({
   const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
   const userQuery = useCurrentUser();
-  // Points and approved service hours, read and summed as web's Profile does
-  // them (`@repo/hooks` `profile-stats.ts`, #4137).
-  const stats = useMyProfileStats();
   const identityMeta = profile
     ? profileIdentityLine({
         major: profile.major,
@@ -90,11 +90,6 @@ export function ProfileHead({
         graduationYear: profile.graduationYear,
       })
     : null;
-  const statsNote = profileStatsErrorNote(
-    stats.pointsFailed,
-    stats.serviceFailed,
-  );
-
   return (
     <>
       <View style={styles.identity}>
@@ -119,38 +114,31 @@ export function ProfileHead({
           <Text style={styles.identityMeta}>{identityMeta}</Text>
         ) : null}
       </View>
-
-      {stats.visible ? (
-        <>
-          <View style={styles.statRow}>
-            <View style={styles.statCard}>
-              {/* Both stats in the foreground text: a number is never the chapter
-              accent (foundations.md §6, "Where the accent goes"). */}
-              <Text style={styles.statValue}>
-                {stats.points === null ? "—" : stats.points.toLocaleString()}
-              </Text>
-              <Text style={styles.statLabel}>points</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{stats.serviceHours ?? "—"}</Text>
-              <Text style={styles.statLabel}>service hrs</Text>
-            </View>
-          </View>
-
-          {!stats.hasChapter ? (
-            // Points are chapter-scoped, so without one the card would sit on a
-            // dash forever with nothing explaining why. The claim is absent until
-            // a membership exists (and during a hook-off incident), so this is
-            // the empty-prod case rather than an edge one.
-            <Text style={styles.statNote}>
-              Your points show here once you&apos;re in a chapter.
-            </Text>
-          ) : statsNote ? (
-            <Text style={styles.statNote}>{statsNote}</Text>
-          ) : null}
-        </>
-      ) : null}
     </>
+  );
+}
+
+/**
+ * The member's points at the top right of the You tab (#5281, Paul
+ * 2026-11-17: "maybe put it in the top right ... It doesn't need to be the
+ * most prominent thing"). Plain text in the muted foreground, never the
+ * chapter accent (foundations.md §6: a number is not an accent), and nothing
+ * at all while the balance is unknown or zero, the way the Study and Service
+ * rows say nothing at zero.
+ */
+export function PointsLabel({ points }: { points: number | null }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  if (points === null || points === 0) return null;
+  const label = `${points.toLocaleString()} ${points === 1 ? "pt" : "pts"}`;
+  return (
+    <Text
+      style={styles.points}
+      accessibilityLabel={`${points.toLocaleString()} ${points === 1 ? "point" : "points"}`}
+      testID="you-points"
+    >
+      {label}
+    </Text>
   );
 }
 
@@ -282,7 +270,7 @@ const EDIT_HINT = "Opens a sheet to edit your profile";
 
 /**
  * The head's loading state, on the loaded head's own styles: the photo's
- * circle with the name and meta lines under it, and the two stat cards. The
+ * circle with the name and meta lines under it. The
  * You tab draws its rows under it at once, since none of them waits on the
  * profile, and Details only once the profile has loaded.
  *
@@ -303,15 +291,6 @@ export function ProfileSkeleton() {
         />
         <SkeletonText role={headline} width="44%" />
         <SkeletonText role={caption} width="30%" />
-      </View>
-
-      <View style={styles.statRow}>
-        {[0, 1].map((index) => (
-          <View key={index} style={styles.statCard}>
-            <SkeletonText role={headline} width="36%" />
-            <SkeletonText role={caption} width="48%" />
-          </View>
-        ))}
       </View>
     </SkeletonRegion>
   );
@@ -337,34 +316,10 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
-    statRow: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-    },
-    statCard: {
-      flex: 1,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      // The Details list's tone (a screen's card step, `lib/surfaces.ts`), as
-      // s15 draws both in one.
-      backgroundColor: surfaces.card,
-      padding: tokens.spacing.lg,
-      alignItems: "center",
-      gap: tokens.spacing.xs,
-    },
-    statValue: {
-      ...typeRole(tokens.typography.role.headline),
-      color: tokens.color.text.foreground,
-    },
-    statLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    statNote: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingHorizontal: tokens.spacing.xs,
+    points: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+      fontVariant: ["tabular-nums"],
     },
     bioCard: {
       borderRadius: tokens.radius.card,

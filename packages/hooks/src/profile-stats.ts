@@ -114,6 +114,12 @@ export interface ProfileStats {
   points: number | null;
   /** Approved hours as text, or `null` for "—". */
   serviceHours: string | null;
+  /**
+   * The same total in minutes, or `null` until the read answers. The phone
+   * draws its service card only when this is above zero (#5281), so it reads
+   * the number rather than parsing `serviceHours` back.
+   */
+  serviceMinutes: number | null;
   /** Points are chapter-scoped: without an active chapter neither card can fill. */
   hasChapter: boolean;
   /**
@@ -156,6 +162,7 @@ export function useMyProfileStats(): ProfileStats {
   return {
     points: selectPointsBalance(pointsQuery.data),
     serviceHours: minutes === null ? null : formatServiceHours(minutes),
+    serviceMinutes: minutes,
     hasChapter: !!chapterId,
     visible: !permissionsKnown || canView,
     pointsFailed: pointsQuery.isError && pointsQuery.data === undefined,

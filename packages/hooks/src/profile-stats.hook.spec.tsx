@@ -56,6 +56,7 @@ describe("useMyProfileStats (#4137)", () => {
     expect(result.current).toEqual({
       points: 1240,
       serviceHours: "1.5",
+      serviceMinutes: 90,
       hasChapter: true,
       visible: true,
       pointsFailed: false,

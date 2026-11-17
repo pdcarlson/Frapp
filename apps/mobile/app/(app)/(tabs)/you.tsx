@@ -11,6 +11,7 @@ import {
   useListChapters,
   useMyGoals,
   useMyPermissions,
+  useMyProfileStats,
   useNowDate,
   usePermissionList,
   useStudySessions,
@@ -40,6 +41,7 @@ import { StatusSheet } from "@/components/account/status-sheet";
 import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
 import { ErrorState } from "@/components/state-block";
 import {
+  PointsLabel,
   ProfileDetails,
   ProfileHead,
   ProfileSkeleton,
@@ -78,8 +80,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Order
  *
- * The profile's head (photo, name, points and service hours,
- * `components/you/profile-sections.tsx`), then Status, then the rows the More
+ * The member's points at the top right, beside the title (#5281), then the
+ * profile's head (photo and name, `components/you/profile-sections.tsx`), then
+ * Status, then the rows the More
  * hub held, then the Admin group, then Details and Bio. The rows come before
  * Details because they are what a member opens the tab for most days; the
  * details are set once and read rarely, so they close the screen.
@@ -148,7 +151,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Canvas draws "4.0 / 6.0" on Study: the week's real total over the member's
  * weekly study goal, which officers set in Chapter settings (#1062,
  * `useMyGoals`). With no goal the row shows the total with no denominator
- * (see `components/study/week-summary.tsx`). Neither Study nor Dues renders a
+ * (see `components/study/week-summary.tsx`), and nothing at zero (#5281). Neither Study nor Dues renders a
  * placeholder while its query is in flight: a row that says "0.0 hrs" for a
  * beat at a member who studied all week is worse than one that says nothing
  * yet.
@@ -273,10 +276,25 @@ export default function YouScreen() {
     const minutes = selectSessionHistory(sessionsQuery.data)
       .filter((row) => Date.parse(row.startTime) >= weekStart)
       .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
+    // Quiet at zero (#5281, Paul 2026-11-17): "0.0 hrs" says nothing a member
+    // needs. Against a goal it stays, since "0.0 / 6.0" says how far to go.
+    if (minutes === 0 && !studyGoal) return null;
     return studyGoal
       ? `${formatHoursValue(minutes)} / ${formatHoursLabel(studyGoal)}`
       : formatHoursLabel(minutes);
   }, [sessionsQuery.data, weekStart, studyGoal]);
+
+  // Points and approved service hours, read and summed as web's Profile does
+  // them (`@repo/hooks` `profile-stats.ts`, #4137). Both say nothing at zero
+  // or with their module off (#5281): points as the title's trailing figure,
+  // service hours as the Service hours row's value.
+  const stats = useMyProfileStats();
+  const pointsOn = moduleGate?.("points") ?? true;
+  const serviceOn = moduleGate?.("hours") ?? true;
+  const serviceValue =
+    stats.serviceMinutes && stats.serviceHours
+      ? `${stats.serviceHours} hrs`
+      : null;
 
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;
@@ -287,7 +305,14 @@ export default function YouScreen() {
   }, [invoicesQuery.data, viewerUserId, now]);
 
   return (
-    <ScreenShell title="You">
+    <ScreenShell
+      title="You"
+      headerAction={
+        pointsOn && stats.visible ? (
+          <PointsLabel points={stats.points} />
+        ) : undefined
+      }
+    >
       {userQuery.isPending ? (
         <ProfileSkeleton />
       ) : profileFailed ? (
@@ -324,12 +349,17 @@ export default function YouScreen() {
             onPress={() => router.push("/study")}
           />
         )}
-        <ListRow
-          label="Service hours"
-          leading={tile(ServiceGlyph, "service")}
-          accessibilityHint="Opens your logged service hours."
-          onPress={() => router.push("/service-hours")}
-        />
+        {/* Only on a chapter that keeps service hours in Frapp (#5281).
+            It stays at zero hours: it is where a member logs them. */}
+        {serviceOn ? (
+          <ListRow
+            label="Service hours"
+            leading={tile(ServiceGlyph, "service")}
+            value={serviceValue}
+            accessibilityHint="Opens your logged service hours."
+            onPress={() => router.push("/service-hours")}
+          />
+        ) : null}
         {duesOn ? (
           <ListRow
             label="Dues"
