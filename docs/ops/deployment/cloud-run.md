@@ -28,7 +28,8 @@ The API runs on Google Cloud Run ([#5228](https://github.com/frapplive/Frapp/iss
 
 `scripts/gcp/bootstrap.sh` creates these in each project. None of them has a key.
 
-- **`frapp-api-runtime`** is the identity the API runs as. It can read its own project's Secret Manager values and call Vertex AI in its own project.
+- **`frapp-api-runtime`** is the identity the API runs as. It can read its own project's Secret Manager values, call Vertex AI in its own project, and mint tokens for `frapp-docs`.
+- **`frapp-docs`** is the Google Drive account chapters share folders and files with ([`integrations.md` § 7C](integrations.md#7c-google-drive), #5434). It holds no project role; the API acts as it, so it has no key.
 - **`frapp-deployer`** is the identity a GitHub Actions deploy acts as. It can manage Cloud Run, push to its project's registry, list secrets, and run revisions as `frapp-api-runtime`. It holds `run.admin` because the deploy also turns off Cloud Run's invoker check, which is what makes the API public. Try narrowing it to `run.developer` once the deploy path works. Production's deployer can also read staging's registry, which it was given to copy staging's image; production builds its own since #5228, so nothing uses that grant now ([#5335](https://github.com/frapplive/Frapp/issues/5335)).
 - **GitHub sign-in** goes through the workload identity pool `github`, provider `frapplive-frapp`. It accepts a GitHub token only when all three of these hold:
   - the repository is `frapplive/Frapp`;

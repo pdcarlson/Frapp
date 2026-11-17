@@ -56,13 +56,14 @@ export class GoogleDriveApiError extends Error {
 }
 
 export interface IGoogleDriveApi {
-  /** Whether a service account key is configured. */
+  /** Whether a Drive service account is configured, with or without a key file. */
   isConfigured(): boolean;
   /** The address a chapter shares its folder with, or null when unconfigured. */
   serviceAccountEmail(): string | null;
   /**
-   * A short code only this server can make for `subject`, keyed by the
-   * service account's own private key, or null when unconfigured. Connecting
+   * A short code only this server can make for `subject`, keyed by
+   * `GOOGLE_DRIVE_PROOF_SECRET` (or a key file's private key when that is
+   * unset), or null when unconfigured. Connecting
    * asks for it in the folder (#5185): only someone who can edit the folder
    * can put it there.
    */
