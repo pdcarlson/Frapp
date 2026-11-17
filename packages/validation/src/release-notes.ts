@@ -134,6 +134,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Drafted minutes now list what the meeting actually decided, with the amounts and conditions, and leave out procedural votes like moving on to new business.",
       "Frapp's entries in the audit log can no longer be deleted, and nothing there can be newly pinned or flagged.",
       "Settings has a Linked apps page: Google Calendar, Discord and the ways you sign in each show a green check when connected, and red when they need reconnecting.",
+      "Drafted minutes now come with full notes, topic by topic with every point and detail, and posted minutes keep the meeting's transcript for members to read and for Frapp AI to answer from.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
@@ -153,6 +154,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On iPhone, a message sent just as autocorrect was fixing a word no longer comes back into the box with the fix applied.",
       "Documents, the Directory and Tasks switch between list and grid with one button in the top corner.",
       "The + menu has one New minutes option again: it starts the minutes, or records the meeting from the same sheet.",
+      "Recording a meeting is now one screen: tap Record, pause and stop with two buttons at the bottom, watch it upload and transcribe, then read the draft, your notes and the transcript in place, and play the recording back until the minutes are posted.",
     ],
   },
   {
