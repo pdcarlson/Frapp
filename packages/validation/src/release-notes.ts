@@ -127,15 +127,18 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp now opens on a greeting and a few questions you can tap, and tells you what it can do the first time you open it.",
       "A connected Google Drive folder now brings in files from folders inside folders, not just the first two levels down.",
       "Nudge cards on Activity no longer need your chapter to have Ask on: they're on unless your president turns them off in Chapter settings, and you still choose for yourself whether Frapp AI is on.",
+      "When an event moves to a new time on the same day, you now get its starting-soon reminder for the new time.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
+      "Your active threads now sit under their channel in the channel list, so you can open one in a click and see at a glance which have new replies.",
     ],
     phone: [
       "Threads you're in now sit under their channel in Chat, as in Discord, instead of in a separate Threads list.",
       "Your points sit quietly at the top of the You tab, and your service and study hours show on their rows instead of in big cards that mostly read zero.",
       "Documents' sort and filters are each a tap away: Type, Uploaded by and Date added are chips that open a list, and the order sits over the list.",
       "The + menu can now record a meeting: tap Record meeting, read the notice to the room, and the minutes open already recording. It also starts new minutes and opens search.",
+      "Frapp AI and Nudges on Activity now have their own AI section in Settings, and presidents can turn the chapter's AI features on or off from Chapter settings.",
     ],
   },
   {
