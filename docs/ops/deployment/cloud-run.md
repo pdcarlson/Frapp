@@ -128,7 +128,7 @@ The certificate is proved by a DNS record rather than by traffic, so it is issue
 
 Staging's `api-staging.frapp.live` moved on 2026-11-17. Its rollback value is the CNAME `frapp-api-staging.onrender.com`.
 
-**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on staging. Staging's old Render service, `frapp-api-staging.onrender.com`, stays up as the rollback until Render is removed. It is a second way into staging's database, running its own older build with Render's count of 3, so a rollback to it needs no re-measuring, but a redeploy of current code to Render would.
+**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on staging. The probe below measured it on 2026-11-17: 2 with no forged entry, 3 with one. Staging's old Render service, `frapp-api-staging.onrender.com`, stays up as the rollback until Render is removed. It is a second way into staging's database, running its own older build with Render's count of 3, so a rollback to it needs no re-measuring, but a redeploy of current code to Render would.
 
 **Measuring the chain.** Send one request with no `X-Forwarded-For` and one with a single forged entry, each to a path of its own, then read their `xffCount` from the service's request log. The first is what the proxies append and should equal the hop count; the second should be one more. In Cloud Shell:
 
@@ -139,6 +139,8 @@ sleep 20
 gcloud logging read 'resource.type="cloud_run_revision" AND "xff-probe"' --project=<project-id> --freshness=10m --format=json \
   | grep -oE 'xff-probe-[01]|xffCount[^0-9]{0,6}[0-9]+'
 ```
+
+Each request's entry prints its path and its count more than once, and `gcloud` lists the newest entry first, so a second run inside the ten minutes shows up as extra pairs. Read each path with the count that follows it.
 
 Both request logs, the balancer's and Cloud Run's, record the full URL with its query string and the caller's IP. That includes calendar feed tokens and OAuth callback codes, which [#5268](https://github.com/frapplive/Frapp/issues/5268) puts to Paul. Cloud Armor in front of the balancer is [#5270](https://github.com/frapplive/Frapp/issues/5270).
 
