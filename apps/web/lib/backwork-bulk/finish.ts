@@ -10,6 +10,7 @@ import {
   SEMESTERS,
   readSignedUpload,
 } from "@repo/validation";
+import { within } from "@/lib/bulk-upload/stall";
 import { parseGuardedInt } from "@/lib/utils";
 import type { BulkFields } from "./fields";
 import { countBoxes, type BoxesByPage } from "./geometry";
@@ -36,12 +37,15 @@ export type FinishDeps<Doc> = {
     content_type: string;
     size_bytes: number;
   }) => Promise<unknown>;
-  put: (input: { signedUrl: string; body: Blob }) => Promise<void>;
+  /** Gets a signal to stop on, for the upload's own time limit and the queue's. */
+  put: (input: { signedUrl: string; body: Blob; signal: AbortSignal }) => Promise<void>;
   confirm: (body: ConfirmBody) => Promise<unknown>;
 };
 
 export type FinishJob<Doc> = {
   file: File;
+  /** Aborts when the queue gives up on this upload as stalled. */
+  signal?: AbortSignal;
   prepared: { bytes: Uint8Array; hash: string; doc: Doc };
   submission: {
     fields: BulkFields;
@@ -54,6 +58,23 @@ export type FinishJob<Doc> = {
     unchecked?: boolean;
   };
 };
+
+/**
+ * How long the small requests may go unanswered before the upload fails with
+ * Retry instead of spinning: asking for the upload link, and saving the
+ * draft. Both answer in well under a second when the API is reachable.
+ */
+export const REQUEST_STALL_MS = 30_000;
+
+/**
+ * How long the file's own upload may take: a minute, plus a second for every
+ * 100 KB (about 0.8 Mbps), so the 50 MB cap gets close to ten minutes on a
+ * slow connection while a typical file fails within a couple of minutes if
+ * nothing moves.
+ */
+export function putStallMs(bytes: number): number {
+  return 60_000 + Math.ceil(bytes / 100_000) * 1_000;
+}
 
 /** What `storePdf` needs: the upload-url request, the PUT, and the checks. */
 export type StoreDeps = Pick<
@@ -126,7 +147,7 @@ export function confirmFields(fields: BulkFields, fallbackTitle: string) {
 }
 
 export async function finishUpload<Doc>(
-  { file, prepared, submission }: FinishJob<Doc>,
+  { file, prepared, submission, signal }: FinishJob<Doc>,
   deps: FinishDeps<Doc>,
 ): Promise<void> {
   // Decided again here rather than trusted from the submission alone, so a
@@ -146,9 +167,11 @@ export async function finishUpload<Doc>(
     body,
     flatten ? flattenedFileName(submission.fields.title) : file.name,
     deps,
+    signal,
   );
   await deps.assertChapter?.();
-  await deps.confirm({
+  signal?.throwIfAborted();
+  const saving = deps.confirm({
     storage_path: storagePath,
     file_hash: fileHash,
     ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
@@ -158,6 +181,7 @@ export async function finishUpload<Doc>(
     draft: true,
     ...(submission.unchecked ? { pages_checked: false } : {}),
   });
+  await within(saving, REQUEST_STALL_MS);
 }
 
 /**
@@ -191,6 +215,7 @@ export async function storePdf(
   body: Uint8Array,
   filename: string,
   deps: StoreDeps,
+  signal?: AbortSignal,
 ): Promise<string> {
   const sleep = deps.sleep ?? realSleep;
   const request = {
@@ -201,8 +226,9 @@ export async function storePdf(
   let signed: unknown;
   for (let attempt = 0; ; attempt += 1) {
     await deps.assertChapter?.();
+    signal?.throwIfAborted();
     try {
-      signed = await deps.requestUpload(request);
+      signed = await within(deps.requestUpload(request), REQUEST_STALL_MS);
       break;
     } catch (error) {
       const wait = RATE_LIMIT_WAITS_MS[attempt];
@@ -211,9 +237,23 @@ export async function storePdf(
     }
   }
   const { signedUrl, storagePath } = readSignedUpload(signed);
-  await deps.put({
-    signedUrl,
-    body: new Blob([body as BlobPart], { type: "application/pdf" }),
-  });
+  // Stopped when the queue gives up on the upload, or when it runs past its
+  // own allowance; either way the PUT's fetch is dropped, not left running.
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    await within(
+      deps.put({
+        signedUrl,
+        body: new Blob([body as BlobPart], { type: "application/pdf" }),
+        signal: controller.signal,
+      }),
+      putStallMs(body.byteLength),
+    );
+  } finally {
+    signal?.removeEventListener("abort", stop);
+    stop();
+  }
   return storagePath;
 }

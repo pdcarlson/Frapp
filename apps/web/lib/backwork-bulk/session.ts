@@ -13,7 +13,8 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import type { BulkFields } from "@/lib/backwork-bulk/fields";
-import { finishUpload } from "@/lib/backwork-bulk/finish";
+import { finishUpload, putStallMs } from "@/lib/backwork-bulk/finish";
+import { within } from "@/lib/bulk-upload/stall";
 import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
@@ -111,10 +112,30 @@ function releasePrepared(prepared: Prepared) {
   void loadPdfModule().then(({ destroyPdf }) => destroyPdf(prepared.doc));
 }
 
-/** The signed-in account right now: the one the API client's token is for. */
+/**
+ * The signed-in account right now: the one the API client's token is for.
+ * Bounded: the session read waits on a sign-in refresh in flight, and one the
+ * network never answers held every upload on "Uploading" (2026-11-17).
+ */
 async function liveUserId(): Promise<string | null> {
-  const { data } = await createSupabaseBrowserClient().auth.getSession();
+  const { data } = await within(
+    createSupabaseBrowserClient().auth.getSession(),
+    SESSION_STALL_MS,
+    "Couldn't check your sign-in. Check your connection, then try again.",
+  );
   return data.session?.user?.id ?? null;
+}
+
+const SESSION_STALL_MS = 20_000;
+
+/**
+ * The backstop for one document's whole finish (flatten, upload, save), past
+ * the per-request limits in `finish.ts`: two minutes, fifteen seconds a page
+ * to flatten, and the upload's own allowance. Only a step with no limit of
+ * its own, such as a pdf.js render that never returns, reaches it.
+ */
+function finishStallMs({ file, prepared }: { file: File; prepared: Prepared }): number {
+  return 120_000 + prepared.pageCount * 15_000 + putStallMs(file.size);
 }
 
 function createSession(userId: string, chapterId: string): BulkSession {
@@ -131,6 +152,7 @@ function createSession(userId: string, chapterId: string): BulkSession {
     trim: trimPrepared,
     sizeOf: (prepared) => prepared.bytes.byteLength,
     maxHeldBytes: BACKWORK_MAX_HELD_BYTES,
+    stallAfterMs: finishStallMs,
     prepare: async (file, id) => {
       // Files read and hash side by side, but claim their hash one at a time
       // in the order the queue started them. The queue starts the files it
@@ -203,10 +225,11 @@ function createSession(userId: string, chapterId: string): BulkSession {
           assertChapter,
           flatten: flattenPdf,
           requestUpload: (body) => bound.requestUpload.mutateAsync(body),
-          put: ({ signedUrl, body }) =>
+          put: ({ signedUrl, body, signal }) =>
             putSignedUpload({
               signedUrl,
               body,
+              signal,
               contentType: "application/pdf",
               upsert: true,
               describeRejection: () => "The file didn't upload.",

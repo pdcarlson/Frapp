@@ -47,6 +47,8 @@ export interface PutSignedUploadInput {
    * go through".
    */
   describeRejection?: (status: number) => string;
+  /** Stops the PUT, for a caller that bounds how long an upload may take. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -59,10 +61,11 @@ export async function putSignedUpload({
   contentType,
   upsert = false,
   describeRejection = () => UPLOAD_REJECTED_COPY,
+  signal,
 }: PutSignedUploadInput): Promise<void> {
   const headers: Record<string, string> = { "content-type": contentType };
   if (upsert) headers["x-upsert"] = "true";
-  const response = await fetch(signedUrl, { method: "PUT", body, headers });
+  const response = await fetch(signedUrl, { method: "PUT", body, headers, signal });
   if (!response.ok) {
     throw new SignedUploadError(
       response.status,

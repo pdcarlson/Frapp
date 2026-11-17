@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_BACKWORK_UPLOAD_BYTES } from "@repo/validation";
 import { EMPTY_FIELDS, type BulkFields } from "./fields";
-import { finishUpload, flattenedFileName, type FinishDeps } from "./finish";
+import {
+  REQUEST_STALL_MS,
+  finishUpload,
+  flattenedFileName,
+  putStallMs,
+  type FinishDeps,
+} from "./finish";
+import { UploadStalledError } from "@/lib/bulk-upload/stall";
 import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BoxesByPage } from "./geometry";
 
@@ -263,5 +270,65 @@ describe("flattenedFileName", () => {
     expect(flattenedFileName("Café / Exam #2: Final?")).toBe("Cafe-Exam-2-Final.pdf");
     expect(flattenedFileName("..-Midterm-..")).toBe("Midterm.pdf");
     expect(flattenedFileName("x".repeat(120))).toBe(`${"x".repeat(80)}.pdf`);
+  });
+});
+
+describe("finishUpload when a step stalls", () => {
+  const PENDING = Symbol("pending");
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Steps the clock until `promise` settles, giving up past twice `ms`. Stepped, not
+   * one jump: hashing runs on real crypto before the timed step starts.
+   */
+  async function settleWithin(promise: Promise<unknown>, ms: number) {
+    let outcome: unknown = PENDING;
+    void promise.then(
+      () => (outcome = "resolved"),
+      (error: unknown) => (outcome = error),
+    );
+    for (let waited = 0; outcome === PENDING && waited <= 2 * ms; waited += 500) {
+      await new Promise((resolve) => setImmediate(resolve));
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    return outcome;
+  }
+
+  it("fails the upload-link request as stalled instead of waiting forever", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { deps, put } = harness();
+    deps.requestUpload = vi.fn(() => new Promise<never>(() => undefined));
+    const error = await settleWithin(run({ document_variant: "Blank Copy" }, {}, deps), REQUEST_STALL_MS);
+    expect(error).toBeInstanceOf(UploadStalledError);
+    expect(put).not.toHaveBeenCalled();
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("stops a file upload that never finishes, and says so", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { deps, put } = harness();
+    put.mockImplementation(
+      ({ signal }) =>
+        new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason));
+        }),
+    );
+    const error = await settleWithin(
+      run({ document_variant: "Blank Copy" }, {}, deps),
+      putStallMs(ORIGINAL.byteLength),
+    );
+    expect(error).toBeInstanceOf(UploadStalledError);
+    expect(put.mock.calls[0]![0].signal.aborted).toBe(true);
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("fails a draft save that never answers", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { deps } = harness();
+    deps.confirm = vi.fn(() => new Promise<never>(() => undefined));
+    const error = await settleWithin(run({ document_variant: "Blank Copy" }, {}, deps), REQUEST_STALL_MS);
+    expect(error).toBeInstanceOf(UploadStalledError);
   });
 });
