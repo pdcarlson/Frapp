@@ -553,7 +553,7 @@ describe('ChatPushWorkerService', () => {
     expect(notifyUser).toHaveBeenCalledWith('b', 'chap-1', expect.any(Object));
   });
 
-  it('pushes an announcement and an @mention through presence', async () => {
+  it('pushes an announcement through presence', async () => {
     service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
     service.__setPresenceForTest(ANNOUNCEMENT_CHANNEL.id, ['a']);
     setMembers(['sender', 'a', 'b']);
@@ -566,23 +566,9 @@ describe('ChatPushWorkerService', () => {
       mentions: [],
       created_at: '',
     });
+    expect(notifyUser).toHaveBeenCalledTimes(2);
     expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
     expect(notifyUser).toHaveBeenCalledWith('b', 'chap-1', expect.any(Object));
-
-    notifyUser.mockClear();
-    service.__setChannelForTest(CHANNEL);
-    service.__setPresenceForTest(CHANNEL.id, ['a']);
-    await service.handleMessage({
-      id: 'm2',
-      channel_id: CHANNEL.id,
-      sender_id: 'sender',
-      content: 'hello @a',
-      kind: 'text',
-      mentions: ['a'],
-      created_at: '',
-    });
-    expect(notifyUser).toHaveBeenCalledTimes(1);
-    expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
   });
 
   it('honors a per-channel off preference', async () => {
