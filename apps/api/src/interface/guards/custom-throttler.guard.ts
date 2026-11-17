@@ -3,8 +3,9 @@ import {
   ThrottlerGuard,
   ThrottlerLimitDetail,
   ThrottlerRequest,
+  normalizeIp,
 } from '@nestjs/throttler';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import type { Response } from 'express';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { getHeaderValue } from '../types/request-context.types';
@@ -35,11 +36,57 @@ export const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set([
 export const UNKNOWN_KID_ATTEMPT_INTERVAL_MS = 10_000;
 
 /**
+ * How long the boot-time read of the project's signing keys may take (see
+ * `seedKnownKids`). Requests whose `kid` is not yet known wait for it, so it
+ * is short; when it runs out, the guard learns `kid`s as it did before.
+ */
+export const KID_SEED_TIMEOUT_MS = 3_000;
+
+/**
+ * The name of the throttler that counts requests carrying a bearer token this
+ * guard could not tie to a verified user (`AppModule` registers it with
+ * {@link UNVERIFIED_BEARER_LIMIT}). Unlike `read` and `write`, its counter is
+ * one per address, shared by every handler: see `generateKey`.
+ */
+export const UNVERIFIED_BEARER_THROTTLER = 'unverified';
+
+/**
+ * Requests a minute one address may send with a bearer token that did not
+ * verify, across all routes together. Each such request makes the auth guard
+ * ask Supabase Auth about the token, so without a shared ceiling the
+ * per-route buckets let one address multiply its calls by the number of
+ * routes.
+ *
+ * Signed-in members are not counted: their tokens verify and are keyed per
+ * user, so a chapter of 100 opening the app on one campus network never comes
+ * near it. Calls with no token at all (the health checks, the version check,
+ * an invite preview before sign-in) are not counted either: without a token
+ * the auth guard refuses before any outbound call. What lands here from real
+ * members is a token that went stale a moment before the app refreshed it,
+ * and the few seconds after a signing-key rotation before its new `kid` is
+ * learned. Product choice: generous for those, and still a small fraction of
+ * what the per-route buckets allowed one address in total.
+ */
+export const UNVERIFIED_BEARER_LIMIT = 200;
+
+/** The window {@link UNVERIFIED_BEARER_LIMIT} counts over. */
+export const UNVERIFIED_BEARER_TTL_MS = 60_000;
+
+/**
+ * IPv6 addresses are bucketed by their /64. A home or campus network is
+ * handed at least a whole /64, and any device on it may pick a fresh address
+ * inside it at will (privacy addresses), so keying on the full address would
+ * give one caller a new bucket per request. A /64 is the unit providers
+ * assign per subscriber, so it is still one network. IPv4 is unchanged.
+ */
+export const IPV6_BUCKET_PREFIX = 64;
+
+/**
  * The `message` every 429 from the throttler carries (#3142).
  *
  * The base guard's default is "ThrottlerException: Too Many Requests", a
  * framework class name, and clients show a refusal's `message`: web's
- * `getErrorMessage` puts it in a toast. Both buckets reset within a minute
+ * `getErrorMessage` puts it in a toast. Every bucket resets within a minute
  * (`app.module.ts`), so "a minute" is the longest a member waits; the exact
  * seconds are in `Retry-After`. Copy: `writing.md` § Rate limited (global).
  */
@@ -101,9 +148,32 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    *   `getClaims()` call.
    *
    * Requests without a valid, unexpired token fall back to per-IP keying, which
-   * preserves the original denial-of-service protection.
+   * preserves the original denial-of-service protection; those that sent a
+   * token are also counted in the shared {@link UNVERIFIED_BEARER_THROTTLER}
+   * bucket (`handleRequest`).
    */
   protected async getTracker(req: Record<string, any>): Promise<string> {
+    return (await this.tracking(req)).tracker;
+  }
+
+  /**
+   * One request's tracker, worked out once. The base guard asks for it once
+   * per throttler that runs, and the token check behind it must run once: a
+   * second `getClaims` would be a second verification, and for an unknown
+   * `kid` would spend the next attempt slot on the same token.
+   */
+  private tracking(req: Record<string, any>): Promise<RequestTracking> {
+    let tracking = trackingByRequest.get(req);
+    if (!tracking) {
+      tracking = this.resolveTracking(req);
+      trackingByRequest.set(req, tracking);
+    }
+    return tracking;
+  }
+
+  private async resolveTracking(
+    req: Record<string, any>,
+  ): Promise<RequestTracking> {
     const claims = await this.verifiedClaims(req);
     const userId = claims ? subjectOfUnexpired(claims) : null;
     if (claims && userId) {
@@ -117,11 +187,12 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       (
         req as { throttlerVerifiedClaims?: JwtPayload }
       ).throttlerVerifiedClaims = claims;
-      return `user:${userId}`;
+      return { tracker: `user:${userId}`, unverifiedBearer: false };
     }
-    const ips = Array.isArray(req.ips) ? (req.ips as unknown[]) : [];
-    const ip: unknown = ips.length > 0 ? ips[0] : (req.ip as unknown);
-    return `ip:${String(ip)}`;
+    return {
+      tracker: `ip:${clientAddress(req)}`,
+      unverifiedBearer: bearerToken(req) !== null,
+    };
   }
 
   protected async handleRequest(
@@ -140,10 +211,54 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       return true;
     }
 
+    // Every method, but only a request whose bearer token did not verify
+    // (`UNVERIFIED_BEARER_LIMIT`): a signed-in member's request, and one with
+    // no token at all, pass this throttler untouched.
+    if (throttler.name === UNVERIFIED_BEARER_THROTTLER) {
+      const { unverifiedBearer } = await this.tracking(
+        request as Record<string, any>,
+      );
+      if (!unverifiedBearer) {
+        return true;
+      }
+    }
+
     return super.handleRequest(requestProps);
   }
 
-  /** Every throttled request, either bucket, reads {@link THROTTLED_MESSAGE}. */
+  /**
+   * `read` and `write` keep the base key: one counter per handler per caller.
+   * The unverified-token counter leaves the handler out, so it is one per
+   * address across the whole API: spreading requests over many routes does
+   * not buy more of them.
+   */
+  protected generateKey(
+    context: ExecutionContext,
+    suffix: string,
+    name: string,
+  ): string {
+    if (name === UNVERIFIED_BEARER_THROTTLER) {
+      return createHash('sha256').update(`${name}-${suffix}`).digest('hex');
+    }
+    return super.generateKey(context, suffix, name);
+  }
+
+  /**
+   * Learn the project's signing-key ids at boot. A `kid` is otherwise learned
+   * on its first successful verification, and until then shares one attempt
+   * per `UNKNOWN_KID_ATTEMPT_INTERVAL_MS` with every other unknown `kid`, so
+   * right after a deploy a stream of made-up `kid`s could keep taking that
+   * slot and leave real members keyed per address (and counted in the
+   * unverified-token bucket). Not awaited, so boot never waits on the
+   * network; a request with an unknown `kid` waits for it instead
+   * (`jwksClaims`), at most {@link KID_SEED_TIMEOUT_MS}.
+   */
+  async onModuleInit(): Promise<void> {
+    await super.onModuleInit();
+    this.kidSeed = this.seedKnownKids();
+  }
+
+  /** Every throttled request, any bucket, reads {@link THROTTLED_MESSAGE}. */
   protected getErrorMessage(): Promise<string> {
     return Promise.resolve(THROTTLED_MESSAGE);
   }
@@ -172,15 +287,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   private async verifiedClaims(
     req: Record<string, any>,
   ): Promise<JwtPayload | null> {
-    const authHeader = getHeaderValue(
-      (req.headers ?? {}) as Record<string, string | string[] | undefined>,
-      'authorization',
-    );
-    if (!authHeader?.startsWith('Bearer ')) {
+    const token = bearerToken(req);
+    if (token === null) {
       return null;
     }
 
-    const token = authHeader.slice('Bearer '.length);
     const segments = token.split('.');
     if (segments.length !== 3) {
       return null;
@@ -266,7 +377,13 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     if (!this.supabase) {
       return null;
     }
-    const known = kid !== undefined && this.verifiedKids.has(kid);
+    let known = kid !== undefined && this.verifiedKids.has(kid);
+    if (!known && kid !== undefined) {
+      // Already settled once boot's JWKS read is done; until then it may
+      // still name this `kid`.
+      await this.kidSeed;
+      known = this.verifiedKids.has(kid);
+    }
     if (!known) {
       const now = Date.now();
       if (now < this.nextUnknownKidAttemptAt) {
@@ -288,11 +405,89 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
   }
 
-  /** `kid`s that have verified against the JWKS at least once. */
+  /**
+   * Adds every `kid` the project's JWKS lists to the known set. They come from
+   * the project's own Auth server, not from a request, so no caller can grow
+   * the set this way. Any failure (no client or URL wired, Auth unreachable,
+   * an unexpected body) leaves the set as it was, and `kid`s are learned on
+   * first verification as before.
+   */
+  private async seedKnownKids(): Promise<void> {
+    const base = process.env.SUPABASE_URL;
+    if (!this.supabase || !base) {
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${base.replace(/\/+$/, '')}/auth/v1/.well-known/jwks.json`,
+        { signal: AbortSignal.timeout(KID_SEED_TIMEOUT_MS) },
+      );
+      if (!res.ok) {
+        return;
+      }
+      const body = (await res.json()) as { keys?: unknown } | null;
+      const keys: unknown[] = Array.isArray(body?.keys) ? body.keys : [];
+      for (const key of keys) {
+        const kid = (key as { kid?: unknown } | null)?.kid;
+        if (typeof kid === 'string' && kid.length > 0) {
+          this.verifiedKids.add(kid);
+        }
+      }
+    } catch {
+      // Learned on first verification instead (see above).
+    }
+  }
+
+  /**
+   * `kid`s known to be the project's: listed by its JWKS at boot, or verified
+   * against it at least once.
+   */
   private readonly verifiedKids = new Set<string>();
+
+  /** Boot's JWKS read (`seedKnownKids`); it never rejects. */
+  private kidSeed: Promise<void> = Promise.resolve();
 
   /** Earliest time an unknown `kid` may next be sent to the verifier. */
   private nextUnknownKidAttemptAt = 0;
+}
+
+/** What the throttler keys one request on, and whether its token failed. */
+interface RequestTracking {
+  tracker: string;
+  /** A bearer token was sent and did not verify to an unexpired user. */
+  unverifiedBearer: boolean;
+}
+
+/**
+ * Per request, keyed by the request object, so nothing outlives the request
+ * and nothing on the request itself can claim a tracking.
+ */
+const trackingByRequest = new WeakMap<object, Promise<RequestTracking>>();
+
+/** The bearer token a request carries, or `null` when it carries none. */
+function bearerToken(req: Record<string, any>): string | null {
+  const authHeader = getHeaderValue(
+    (req.headers ?? {}) as Record<string, string | string[] | undefined>,
+    'authorization',
+  );
+  return authHeader?.startsWith('Bearer ')
+    ? authHeader.slice('Bearer '.length)
+    : null;
+}
+
+/**
+ * The address a request is counted under when it has no verified user: the
+ * client address Express resolved through the measured `trust proxy` hops
+ * (`bootstrap.ts`), an IPv6 one cut to its /64 ({@link IPV6_BUCKET_PREFIX}).
+ * Exported so the calendar feed's failed-lookup limit counts by the same
+ * address.
+ */
+export function clientAddress(req: Record<string, any>): string {
+  const ips = Array.isArray(req.ips) ? (req.ips as unknown[]) : [];
+  const ip: unknown = ips.length > 0 ? ips[0] : (req.ip as unknown);
+  return typeof ip === 'string'
+    ? normalizeIp(ip, IPV6_BUCKET_PREFIX)
+    : String(ip);
 }
 
 /**

@@ -5,7 +5,11 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import request from 'supertest';
 import { configureApp } from '../../bootstrap';
 import { CalendarFeedService } from '../../application/services/calendar-feed/calendar-feed.service';
-import { CalendarFeedFetchController } from './calendar-feed-fetch.controller';
+import {
+  CALENDAR_FEED_MISS_LIMIT,
+  CalendarFeedFetchController,
+} from './calendar-feed-fetch.controller';
+import { THROTTLED_MESSAGE } from '../guards/custom-throttler.guard';
 
 jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
   enqueueSanitizedLog: jest.fn(),
@@ -24,7 +28,9 @@ describe('GET /v1/calendar-feed/feed.ics', () => {
   let app: INestApplication;
   const fetch = jest.fn();
 
-  beforeAll(async () => {
+  // A fresh app per test: the failed-lookup counts live on the controller.
+  beforeEach(async () => {
+    fetch.mockReset();
     const moduleRef = await Test.createTestingModule({
       // The app's two named buckets, with a limit of two, so a route the
       // throttler did not skip would 429 by the third request.
@@ -45,9 +51,7 @@ describe('GET /v1/calendar-feed/feed.ics', () => {
     await app.init();
   });
 
-  beforeEach(() => fetch.mockReset());
-
-  afterAll(async () => {
+  afterEach(async () => {
     await app.close();
   });
 
@@ -87,5 +91,74 @@ describe('GET /v1/calendar-feed/feed.ics', () => {
     await request(app.getHttpServer())
       .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
       .expect(404);
+  });
+
+  // Only lookups that find no link count against an address, so a calendar
+  // server fetching real links is never slowed, and one trying tokens is
+  // stopped before the database.
+  describe('failed lookups', () => {
+    const missUntilLimit = async () => {
+      fetch.mockRejectedValue(new NotFoundException());
+      for (let i = 0; i < CALENDAR_FEED_MISS_LIMIT; i += 1) {
+        await request(app.getHttpServer())
+          .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
+          .expect(404);
+      }
+    };
+
+    it('refuses an address that keeps missing, before any lookup, saying when to retry', async () => {
+      await missUntilLimit();
+      fetch.mockReset();
+      fetch.mockResolvedValue(ICS);
+
+      const res = await request(app.getHttpServer())
+        .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
+        .expect(429);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+      // The route's `@Header` content type rides on its error bodies too, so
+      // read the JSON from the text.
+      expect(JSON.parse(res.text)).toMatchObject({
+        statusCode: 429,
+        message: THROTTLED_MESSAGE,
+      });
+    });
+
+    it('lets the address look up again once the minute is over', async () => {
+      const realNow = Date.now.bind(Date);
+      const start = realNow();
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(start);
+      try {
+        await missUntilLimit();
+        nowSpy.mockReturnValue(start + 60_000);
+        fetch.mockResolvedValue(ICS);
+        await request(app.getHttpServer())
+          .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
+          .expect(200);
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it('never counts a lookup that found a link', async () => {
+      fetch.mockResolvedValue(ICS);
+      for (let i = 0; i < CALENDAR_FEED_MISS_LIMIT + 5; i += 1) {
+        await request(app.getHttpServer())
+          .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
+          .expect(200);
+      }
+    });
+
+    it('does not count a request refused for its shape, which never looks up', async () => {
+      for (let i = 0; i < CALENDAR_FEED_MISS_LIMIT + 5; i += 1) {
+        await request(app.getHttpServer())
+          .get('/v1/calendar-feed/feed.ics?token=abc')
+          .expect(400);
+      }
+      fetch.mockResolvedValue(ICS);
+      await request(app.getHttpServer())
+        .get(`/v1/calendar-feed/feed.ics?token=${TOKEN}`)
+        .expect(200);
+    });
   });
 });

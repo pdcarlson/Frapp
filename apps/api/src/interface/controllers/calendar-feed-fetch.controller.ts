@@ -3,7 +3,10 @@ import {
   Controller,
   Get,
   Header,
+  NotFoundException,
   Query,
+  Req,
+  Res,
 } from '@nestjs/common';
 import {
   ApiNotFoundResponse,
@@ -12,11 +15,30 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, ThrottlerException } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import { CalendarFeedService } from '../../application/services/calendar-feed/calendar-feed.service';
+import {
+  THROTTLED_MESSAGE,
+  UNVERIFIED_BEARER_THROTTLER,
+  clientAddress,
+} from '../guards/custom-throttler.guard';
+import { FailedLookupLimiter } from '../utils/failed-lookup-limiter';
 
 /** What `CalendarFeedService` mints: 32 random bytes, base64url. */
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Lookups that find no link, per address per minute, before that address is
+ * refused for the rest of the minute. A calendar app only misses when a link
+ * stopped existing (its member deleted their account), and it asks at most
+ * hourly per link, so even a calendar server's shared address fetching many
+ * such links stays far below this. Product choice.
+ */
+export const CALENDAR_FEED_MISS_LIMIT = 20;
+const MISS_WINDOW_MS = 60_000;
+/** Addresses whose misses are counted at once, per API instance. */
+const MISS_TRACKED_ADDRESSES = 10_000;
 
 /**
  * The calendar a subscription link serves (#3322;
@@ -30,13 +52,22 @@ const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
  *
  * `@SkipThrottle`: Google fetches every member's subscription from a shared
  * pool of addresses, so the per-address read limit would refuse it once a
- * chapter subscribes, as it would Stripe's webhooks. A guess at a token is
- * one indexed lookup against a 256-bit space.
+ * chapter subscribes, as it would Stripe's webhooks. What is limited per
+ * address instead is lookups that find no link
+ * ({@link CALENDAR_FEED_MISS_LIMIT}): fetching real links never counts, and
+ * an address that keeps trying tokens no link has is refused before it
+ * reaches the database.
  */
 @ApiTags('Calendar feed')
-@SkipThrottle({ read: true, write: true })
+@SkipThrottle({ read: true, write: true, [UNVERIFIED_BEARER_THROTTLER]: true })
 @Controller('calendar-feed')
 export class CalendarFeedFetchController {
+  private readonly misses = new FailedLookupLimiter(
+    CALENDAR_FEED_MISS_LIMIT,
+    MISS_WINDOW_MS,
+    MISS_TRACKED_ADDRESSES,
+  );
+
   constructor(private readonly feeds: CalendarFeedService) {}
 
   @Get('feed.ics')
@@ -51,10 +82,27 @@ export class CalendarFeedFetchController {
   @ApiQuery({ name: 'token', required: true })
   @ApiProduces('text/calendar')
   @ApiNotFoundResponse({ description: 'No link has this token.' })
-  fetch(@Query('token') token: unknown): Promise<string> {
+  async fetch(
+    @Query('token') token: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
     if (typeof token !== 'string' || !TOKEN_SHAPE.test(token)) {
       throw new BadRequestException('Not a calendar link');
     }
-    return this.feeds.fetch(token);
+    const address = clientAddress(req);
+    const retryAfter = this.misses.retryAfterSeconds(address, Date.now());
+    if (retryAfter > 0) {
+      res.header('Retry-After', String(retryAfter));
+      throw new ThrottlerException(THROTTLED_MESSAGE);
+    }
+    try {
+      return await this.feeds.fetch(token);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        this.misses.recordMiss(address, Date.now());
+      }
+      throw error;
+    }
   }
 }

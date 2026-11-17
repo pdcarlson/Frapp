@@ -732,7 +732,7 @@ known limitation of a dump-only restore.
 
 ## Verification after rollback/recovery
 
-- [ ] `GET /health/ready` answers `200`, or its `503` `message` reads `database: connected` (it probes fresh; `/health`'s fields can be up to 60 s old, [Health Check](../../spec/behavior/observability.md#health-check))
+- [ ] `GET /health/ready` answers `200`, or its `503` `message` reads `database: connected` (its probe is at most 5 s old; `/health`'s fields can be up to 60 s old, [Health Check](../../spec/behavior/observability.md#health-check))
 - [ ] critical API routes pass smoke checks
 - [ ] Stripe webhook endpoint processes signed test event
 - [ ] no ongoing elevated error alerts (Sentry/logs)

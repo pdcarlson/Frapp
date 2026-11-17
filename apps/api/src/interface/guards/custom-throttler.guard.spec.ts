@@ -14,6 +14,9 @@ import {
   READ_THROTTLE_METHODS,
   THROTTLED_MESSAGE,
   UNKNOWN_KID_ATTEMPT_INTERVAL_MS,
+  UNVERIFIED_BEARER_LIMIT,
+  UNVERIFIED_BEARER_THROTTLER,
+  UNVERIFIED_BEARER_TTL_MS,
 } from './custom-throttler.guard';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { WebhookController } from '../controllers/webhook.controller';
@@ -229,6 +232,26 @@ describe('CustomThrottlerGuard', () => {
         ip: '10.0.0.1',
       };
       await expect(guard.track(req)).resolves.toBe('ip:198.51.100.4');
+    });
+
+    // A device on an IPv6 network can pick a fresh address inside its /64 for
+    // every request, so the /64 is what one network is keyed on.
+    it('keys IPv6 callers on their /64, and IPv4 ones unchanged', async () => {
+      const track = (ip: string) => guard.track({ headers: {}, ip });
+
+      const [a, b, other] = await Promise.all([
+        track('2001:db8:aa:bb:1111:2222:3333:4444'),
+        track('2001:db8:aa:bb:9999:8888:7777:6666'),
+        track('2001:db8:aa:cc::1'),
+      ]);
+      expect(a).toBe('ip:2001:db8:aa:bb::/64');
+      expect(b).toBe(a);
+      expect(other).not.toBe(a);
+
+      await expect(track('::ffff:198.51.100.9')).resolves.toBe(
+        'ip:198.51.100.9',
+      );
+      await expect(track('198.51.100.9')).resolves.toBe('ip:198.51.100.9');
     });
 
     it('falls back to IP for a structurally malformed bearer token', async () => {
@@ -556,13 +579,153 @@ describe('CustomThrottlerGuard', () => {
           error: null,
         });
         const noKid = `${b64url({ alg: 'ES256', typ: 'JWT' })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
-        const req = {
+        // A fresh request object each time, as Express makes: the guard
+        // works a request's tracker out once and reuses it.
+        const req = () => ({
           headers: { authorization: `Bearer ${noKid}` },
           ip: '203.0.113.35',
-        };
-        await expect(jwksGuard.track(req)).resolves.toBe('user:u');
-        await expect(jwksGuard.track(req)).resolves.toBe('ip:203.0.113.35');
+        });
+        await expect(jwksGuard.track(req())).resolves.toBe('user:u');
+        await expect(jwksGuard.track(req())).resolves.toBe('ip:203.0.113.35');
         expect(getClaims).toHaveBeenCalledTimes(1);
+      });
+
+      it('verifies a request once however many throttlers ask for its tracker', async () => {
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-a', exp: futureExp() } },
+          error: null,
+        });
+        const req = reqFor('key-once', '203.0.113.36');
+        await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
+        await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
+        expect(getClaims).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    // After a deploy the process has learned no `kid`, so every member's
+    // token would compete with made-up `kid`s for the one unknown-`kid`
+    // attempt per interval. Reading the project's JWKS at boot means the
+    // project's real `kid`s are known before that race can start.
+    describe('signing-key ids read at boot', () => {
+      const withKid = (kid: string): string =>
+        `${b64url({ alg: 'ES256', typ: 'JWT', kid })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
+      const reqFor = (kid: string) => ({
+        headers: { authorization: `Bearer ${withKid(kid)}` },
+        ip: '203.0.113.40',
+      });
+
+      let fetchSpy: jest.SpyInstance;
+      const previousUrl = process.env.SUPABASE_URL;
+
+      beforeEach(() => {
+        process.env.SUPABASE_URL = 'https://project.example.test/';
+        fetchSpy = jest.spyOn(globalThis, 'fetch');
+      });
+
+      afterEach(() => {
+        fetchSpy.mockRestore();
+        if (previousUrl === undefined) {
+          delete process.env.SUPABASE_URL;
+        } else {
+          process.env.SUPABASE_URL = previousUrl;
+        }
+      });
+
+      const jwksResponse = (body: unknown, ok = true) =>
+        ({ ok, json: () => Promise.resolve(body) }) as unknown as Response;
+
+      it("treats the JWKS's kids as known, so a flood of made-up kids cannot hold them back", async () => {
+        fetchSpy.mockResolvedValue(
+          jwksResponse({ keys: [{ kid: 'project-key', alg: 'ES256' }] }),
+        );
+        await jwksGuard.onModuleInit();
+        expect(fetchSpy).toHaveBeenCalledWith(
+          'https://project.example.test/auth/v1/.well-known/jwks.json',
+          expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        );
+
+        // A made-up kid takes the unknown-kid attempt for this interval.
+        getClaims.mockResolvedValueOnce({
+          data: null,
+          error: { message: 'no matching key' },
+        });
+        await expect(jwksGuard.track(reqFor('made-up'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+
+        // A member's token on the project's key still verifies at once.
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-a', exp: futureExp() } },
+          error: null,
+        });
+        await expect(jwksGuard.track(reqFor('project-key'))).resolves.toBe(
+          'user:member-a',
+        );
+        // And another made-up kid is still held to the interval.
+        await expect(jwksGuard.track(reqFor('made-up-2'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        expect(getClaims).toHaveBeenCalledTimes(2);
+      });
+
+      it('makes a request with a kid not yet known wait for the read rather than race it', async () => {
+        let answer!: (res: Response) => void;
+        fetchSpy.mockReturnValue(
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+        );
+        await jwksGuard.onModuleInit();
+        // Spend the unknown-kid slot first, so only the seed can let the
+        // member's kid through.
+        getClaims.mockResolvedValueOnce({
+          data: null,
+          error: { message: 'no matching key' },
+        });
+        const early = jwksGuard.track(reqFor('made-up'));
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-b', exp: futureExp() } },
+          error: null,
+        });
+        const member = jwksGuard.track(reqFor('project-key'));
+        answer(jwksResponse({ keys: [{ kid: 'project-key' }] }));
+        await expect(early).resolves.toBe('ip:203.0.113.40');
+        await expect(member).resolves.toBe('user:member-b');
+      });
+
+      it.each([
+        ['the JWKS is unreachable', () => Promise.reject(new Error('down'))],
+        [
+          'the JWKS answers an error',
+          () => Promise.resolve(jwksResponse({}, false)),
+        ],
+        [
+          'the body has no key list',
+          () => Promise.resolve(jwksResponse({ keys: 'nope' })),
+        ],
+      ])(
+        'learns kids on first verification as before when %s',
+        async (_why, answer) => {
+          fetchSpy.mockImplementation(answer);
+          await jwksGuard.onModuleInit();
+          getClaims.mockResolvedValue({
+            data: { claims: { sub: 'member-c', exp: futureExp() } },
+            error: null,
+          });
+          await expect(jwksGuard.track(reqFor('project-key'))).resolves.toBe(
+            'user:member-c',
+          );
+          // Learned from that verification: no interval for it now.
+          await expect(jwksGuard.track(reqFor('project-key'))).resolves.toBe(
+            'user:member-c',
+          );
+          expect(getClaims).toHaveBeenCalledTimes(2);
+        },
+      );
+
+      it('does not read the JWKS when no Supabase client is wired', async () => {
+        await guard.onModuleInit();
+        expect(fetchSpy).not.toHaveBeenCalled();
       });
     });
 
@@ -669,6 +832,184 @@ describe('CustomThrottlerGuard', () => {
       // Exactly once: the write throttler increments; the read throttler is
       // method-gated off for POST by handleRequest.
       expect(increment).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // A bearer token that does not verify sends the auth guard to Supabase Auth,
+  // so those requests share one counter per address across every route,
+  // while signed-in members (keyed per user) and token-less calls (refused
+  // by the auth guard without an outbound call) never touch it.
+  describe('unverified-token bucket', () => {
+    class FirstController {
+      list(): void {}
+    }
+    class SecondController {
+      list(): void {}
+    }
+
+    let bucketGuard: TestableGuard;
+    let increment: jest.Mock;
+
+    const ctxFor = (
+      cls: new (...args: never[]) => unknown,
+      handler: (...args: never[]) => unknown,
+      req: Record<string, unknown>,
+    ): ExecutionContext =>
+      ({
+        getClass: () => cls,
+        getHandler: () => handler,
+        switchToHttp: () => ({
+          getRequest: () => req,
+          getResponse: () => ({ header: jest.fn() }),
+        }),
+      }) as unknown as ExecutionContext;
+
+    const get = (authorization?: string): Record<string, unknown> => ({
+      method: 'GET',
+      headers: authorization ? { authorization } : {},
+      ip: '198.51.100.20',
+    });
+
+    /** `[throttlerName, key]` for each counter the request reached. */
+    const counted = (): [string, string][] =>
+      (increment.mock.calls as unknown[][]).map((call) => [
+        call[4] as string,
+        call[0] as string,
+      ]);
+
+    beforeEach(async () => {
+      increment = jest.fn().mockResolvedValue({
+        totalHits: 1,
+        timeToExpire: 60,
+        isBlocked: false,
+        timeToBlockExpire: 0,
+      });
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        providers: [
+          TestableGuard,
+          Reflector,
+          {
+            provide: getOptionsToken(),
+            useValue: [
+              { name: 'read', ttl: 60_000, limit: 100 },
+              { name: 'write', ttl: 60_000, limit: 30 },
+              {
+                name: UNVERIFIED_BEARER_THROTTLER,
+                ttl: UNVERIFIED_BEARER_TTL_MS,
+                limit: UNVERIFIED_BEARER_LIMIT,
+              },
+            ],
+          },
+          { provide: getStorageToken(), useValue: { increment } },
+        ],
+      }).compile();
+      bucketGuard = moduleRef.get(TestableGuard);
+      await bucketGuard.onModuleInit();
+    });
+
+    it('counts a token that did not verify in one counter shared by every route', async () => {
+      const forged = `Bearer ${makeJwt({ sub: 'x', exp: futureExp() }, null)}`;
+      await bucketGuard.canActivate(
+        ctxFor(FirstController, FirstController.prototype.list, get(forged)),
+      );
+      await bucketGuard.canActivate(
+        ctxFor(SecondController, SecondController.prototype.list, get(forged)),
+      );
+
+      const unverified = counted().filter(
+        ([name]) => name === UNVERIFIED_BEARER_THROTTLER,
+      );
+      expect(unverified).toHaveLength(2);
+      expect(unverified[0][1]).toBe(unverified[1][1]);
+      expect(increment).toHaveBeenCalledWith(
+        expect.any(String),
+        UNVERIFIED_BEARER_TTL_MS,
+        UNVERIFIED_BEARER_LIMIT,
+        UNVERIFIED_BEARER_TTL_MS,
+        UNVERIFIED_BEARER_THROTTLER,
+      );
+      // The per-route `read` counters stay per route.
+      const reads = counted().filter(([name]) => name === 'read');
+      expect(reads[0][1]).not.toBe(reads[1][1]);
+    });
+
+    it('applies to writes too', async () => {
+      const req = {
+        ...get('Bearer not-a-jwt'),
+        method: 'POST',
+      };
+      await bucketGuard.canActivate(
+        ctxFor(FirstController, FirstController.prototype.list, req),
+      );
+      expect(
+        counted()
+          .map(([name]) => name)
+          .sort(),
+      ).toEqual([UNVERIFIED_BEARER_THROTTLER, 'write']);
+    });
+
+    it("leaves a signed-in member's request out of it", async () => {
+      await bucketGuard.canActivate(
+        ctxFor(
+          FirstController,
+          FirstController.prototype.list,
+          get(`Bearer ${makeJwt({ sub: 'member-1', exp: futureExp() })}`),
+        ),
+      );
+      expect(counted().map(([name]) => name)).toEqual(['read']);
+    });
+
+    it('leaves a call with no token out of it (health, version check, invite preview)', async () => {
+      await bucketGuard.canActivate(
+        ctxFor(FirstController, FirstController.prototype.list, get()),
+      );
+      await bucketGuard.canActivate(
+        ctxFor(
+          FirstController,
+          FirstController.prototype.list,
+          get('Basic abc123'),
+        ),
+      );
+      expect(counted().map(([name]) => name)).toEqual(['read', 'read']);
+    });
+
+    it('refuses with the usual 429 once the address has used it up', async () => {
+      increment.mockImplementation(
+        (
+          _key: string,
+          _ttl: number,
+          _limit: number,
+          _b: number,
+          name: string,
+        ) =>
+          Promise.resolve({
+            totalHits: name === UNVERIFIED_BEARER_THROTTLER ? 201 : 1,
+            timeToExpire: 60,
+            isBlocked: name === UNVERIFIED_BEARER_THROTTLER,
+            timeToBlockExpire: 30,
+          }),
+      );
+      await expect(
+        bucketGuard.canActivate(
+          ctxFor(
+            FirstController,
+            FirstController.prototype.list,
+            get('Bearer not-a-jwt'),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ThrottlerException);
+    });
+
+    it('is skipped on the Stripe webhook, whatever it carries', async () => {
+      const req = { ...get('Bearer not-a-jwt'), method: 'POST' };
+      await bucketGuard.canActivate(
+        ctxFor(
+          WebhookController,
+          WebhookController.prototype.handleStripeWebhook,
+          req,
+        ),
+      );
+      expect(increment).not.toHaveBeenCalled();
     });
   });
 

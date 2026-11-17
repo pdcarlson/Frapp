@@ -20,7 +20,7 @@ Database rollback and restore are their own procedures:
 
 1. Confirm outage scope (`staging` vs `production`).
 2. Check Render deploy/activity timeline.
-3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. It probes fresh; `/health`'s body can be up to 60 s old.
+3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. Its probe is at most 5 s old; `/health`'s body can be up to 60 s old.
 4. Inspect Render logs for startup/env errors.
 5. Inspect Sentry for first error spike and root exception.
 
