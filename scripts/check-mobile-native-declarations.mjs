@@ -107,6 +107,8 @@ import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 const MOBILE_DIR = "apps/mobile";
 /** Where the meeting recorder asks for the microphone and starts recording. */
 const RECORDER_DEVICE = "apps/mobile/lib/minutes/recorder/device.ts";
+/** Where Ask's dictation asks for the microphone and speech recognition. */
+const DICTATION_SPEECH = "apps/mobile/lib/dictation/speech.ts";
 /** Where s18's Scan code asks for the camera. */
 const CHECK_IN_SCANNER = "apps/mobile/components/check-in/check-in-scanner.tsx";
 
@@ -130,9 +132,9 @@ const CHECK_IN_SCANNER = "apps/mobile/components/check-in/check-in-scanner.tsx";
  * added when Apple names the key, not for every symbol a library links.
  *
  * Plugin options that are load-bearing, which the checks below catch changing:
- *   - Three plugins write NSMicrophoneUsageDescription: expo-audio (the meeting
- *     recorder, the only microphone surface), expo-camera and
- *     expo-image-picker. All three carry the same text in app.json. Omitting
+ *   - Four plugins write NSMicrophoneUsageDescription: expo-audio (the meeting
+ *     recorder), expo-speech-recognition (Ask's dictation), expo-camera and
+ *     expo-image-picker. All four carry the same text in app.json. Omitting
  *     one ships that plugin's default string, and `false` on expo-camera's
  *     deletes the key the recorder needs, either of which check 1 fails;
  *     `false` on image-picker's compiles to a blocked RECORD_AUDIO, which
@@ -179,12 +181,23 @@ export const IOS_PURPOSE_STRINGS = new Map([
     },
   ],
   [
-    // The meeting recorder (spec/behavior/meetings.md § Recording in the app),
-    // the app's one microphone surface. Draft text until Paul approves it.
+    // Two microphone surfaces: the meeting recorder (spec/behavior/meetings.md
+    // § Recording in the app) and Ask's dictation (#5276). Paul approved this
+    // text on 2026-11-17. The recorder's request is the one pinned; dictation's
+    // `requestPermissionsAsync(` asks for the microphone and speech together.
     "NSMicrophoneUsageDescription",
     {
-      text: "Frapp uses the microphone when an officer records a chapter meeting to write its minutes. Recording starts only when you tap Record.",
+      text: "Frapp uses the microphone when you tap the mic to dictate to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
       requestedBy: { file: RECORDER_DEVICE, call: "requestRecordingPermissionsAsync(" },
+    },
+  ],
+  [
+    // Ask's dictation (#5276): the phone's own speech recogniser, on-device
+    // where it can be. Paul approved this text on 2026-11-17.
+    "NSSpeechRecognitionUsageDescription",
+    {
+      text: "Frapp turns what you say into text when you tap the mic in Ask Frapp. On most phones this happens on the phone itself.",
+      requestedBy: { file: DICTATION_SPEECH, call: "requestPermissionsAsync(" },
     },
   ],
   [

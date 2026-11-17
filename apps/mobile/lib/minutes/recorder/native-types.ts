@@ -1,9 +1,8 @@
 /**
  * The parts of `expo-audio` and `expo-file-system` the meeting recorder
- * uses, declared structurally. A `typeof import("expo-audio")` in a type
- * position would put the package back in the web bundle's graph and defeat
- * the platform split (`spec/ui/mobile/README.md` § Run paths), so the surface
- * is written out here instead.
+ * uses, declared structurally, so only the native half of the loader split
+ * (`native-module.native.ts`) names the packages and the lint rule against
+ * importing `expo-audio` has no exceptions.
  */
 
 interface NativeRecorderStatus {
