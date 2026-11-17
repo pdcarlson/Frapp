@@ -236,7 +236,8 @@ Only while the server has AI: every place waits for `GET /v1/ai/consent`, which 
   Continue and Not now are both answers; closing it is not, so the next open asks again.
 - **At an AI entry point**, for a member who chose Not now.
   Every AI entry point calls `useAiConsentGate` (web and phone): a member with Frapp AI on goes straight through, anyone else is shown the same screen, and the feature goes ahead only on Continue.
-- **In personal Settings**, as one Frapp AI switch with the companies named under it.
+- **In personal Settings**, as one Frapp AI switch, captioned with what it does.
+  The companies are not named there (Paul, 2026-11-17, #5292: "that lives in the privacy policy"), and the phone's AI section links the privacy policy.
   Turning it on opens Meet Frapp AI, so the yes is given where the companies are named and the policy is linked; turning it off is immediate.
 - **A president whose chapter never set its switches** (none on, none ever changed) turns the chapter's three switches on with the same Continue, and the screen's line says "for you and your chapter".
   A chapter whose switches someone already set is left as it is.
