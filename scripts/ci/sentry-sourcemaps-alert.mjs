@@ -135,14 +135,13 @@ function fixFor(verdict, infisicalSlug) {
   switch (verdict) {
     case "missing":
       return (
-        "Read the build that uploaded (or should have). The API's Render build logs `WARNING: … frapp-api source-map upload not confirmed` when `sentry-cli` failed, " +
-        "and `SENTRY_AUTH_TOKEN unset; skipping` when Render's environment lacks the token (check the Infisical sync); " +
-        "a failed upload is cached with its Docker layer, so clear Render's build cache before redeploying the same commit. " +
-        "Web and landing log the Sentry plugin's error in the `Build the Vercel … bundles` step of the deploy run."
+        "Read the build that uploaded (or should have), in the deploy run. The API's `Build the API image` step logs `WARNING: … frapp-api source-map upload not confirmed` when `sentry-cli` failed, " +
+        "and `SENTRY_AUTH_TOKEN unset; skipping` when the build got no token. " +
+        "Web and landing log the Sentry plugin's error in the `Build the Vercel … bundles` step."
       );
     case "no-token":
       return (
-        `Add \`SENTRY_AUTH_TOKEN\` (a Sentry org auth token) to Infisical \`${infisicalSlug}\`. Render and the deploy job both read it from there; ` +
+        `Add \`SENTRY_AUTH_TOKEN\` (a Sentry org auth token) to Infisical \`${infisicalSlug}\`. The deploy job's builds read it from there; ` +
         "never set it on the platform ([SECRETS_MANAGEMENT.md § 5](https://github.com/pdcarlson/Frapp/blob/main/docs/internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs))."
       );
     case "rejected":

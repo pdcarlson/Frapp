@@ -298,7 +298,7 @@ test("the nudge is suppressed by warnings, not only by an empty staging_reachabl
       generated_at: "2026-09-14T20:00:00Z",
       probe_ok: true,
       summary: "EGRESS: staging partially reachable (1 of 4); production correctly blocked",
-      staging_reachable: ["staging API (Render)"],
+      staging_reachable: ["staging API (Cloud Run)"],
       production_blocked_as_expected: ["PRODUCTION API", "PRODUCTION web", "PRODUCTION Supabase"],
       warnings: ["staging web dashboard is NOT reachable."],
       hosts: [],

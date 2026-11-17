@@ -88,7 +88,7 @@ Follow the internal promotion and rollback runbooks when promoting schema change
 
 The repo has one Supabase Edge Function, `discord-attachment-copy` (`supabase/functions/`). It copies
 a Discord bot import's attachments from Discord's CDN into the `chat-archive` bucket, so the bytes
-never pass through the API on Render ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
+never pass through the API ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
 The API's `SupabaseArchiveMediaCopier` is its only caller.
 
 **How it deploys.** Only through CI, never by hand. `_deploy.yml` runs

@@ -1,19 +1,17 @@
 #!/usr/bin/env node
 
 // Write one environment's provider ids to `$GITHUB_OUTPUT`, for the workflow
-// steps that deploy to or assert against Render and Vercel (#2806), with how
-// its API ships (`render_deploy_source`, and the image repository `api_image`;
-// #2506).
+// steps that deploy to or assert against Cloud Run (#5228) and Vercel (#2806).
 //
 // The ids live in `.github/environments.json`, next to the Supabase project
 // refs, and nowhere else: workflows used to carry them as literals in several
 // files, with comments asking humans to keep the copies in step. A step runs
 // this with `TARGET_ENVIRONMENT` (`staging` or `production`) and the steps
-// after it read `${{ steps.<id>.outputs.render_service_id }}` and the rest.
+// after it read `${{ steps.<id>.outputs.gcp_project_id }}` and the rest.
 // `_deploy.yml` runs it at the trusted ref, so a rollback to an older commit
 // still deploys to the services the config names today.
 //
-// Not secrets: an id grants nothing without RENDER_API_KEY or VERCEL_API_KEY.
+// Not secrets: an id grants nothing without the deployer's sign-in or VERCEL_API_KEY.
 // The values are printed so a run log says which services it touched.
 //
 // Env inputs:
@@ -30,10 +28,6 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 /** Step output name for each id, in the order they are written. */
 export const PROVIDER_ID_OUTPUTS = [
-  ["renderServiceId", "render_service_id"],
-  ["renderDeploySource", "render_deploy_source"],
-  ["apiImage", "api_image"],
-  ["apiHost", "api_host"],
   ["gcpProjectId", "gcp_project_id"],
   ["gcpRegion", "gcp_region"],
   ["cloudRunService", "cloud_run_service"],

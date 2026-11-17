@@ -62,12 +62,11 @@ docker compose up --build api
 
 ## 5. Production deployment target
 
-The current target platform for the API is **Render**.
+The API runs on **Google Cloud Run** ([`cloud-run.md`](../ops/deployment/cloud-run.md), since 2026-11-17).
 
-- Use `apps/api/Dockerfile`.
-- Set root build context to the monorepo root.
-- Configure required env vars in Render service settings.
-- Keep staging (deployed from `main`) and production (deployed from a named commit) services isolated.
+- The deploy job builds `apps/api/Dockerfile` with the monorepo root as the build context.
+- Required env vars reach the service from Infisical through Google Secret Manager, never through the console.
+- Staging (deployed from `main`) and production (deployed from a named commit) are separate Google Cloud projects.
 
 For the full rollout checklist (including current status and pending items), use the repository runbook: `docs/ops/deployment/`.
 

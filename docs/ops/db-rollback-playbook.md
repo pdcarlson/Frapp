@@ -158,7 +158,7 @@ file's entry holds the SQL for the second run. Never deploy an older commit for
 this. Production has applied a migration that an older commit's tree lacks. The
 rehearsal (`scripts/ci/check-migration-replay.mjs`, run by `_deploy.yml` before
 anything is applied) puts that version in `foreign` and fails the run as
-`foreign-migrations` before Render is touched, and `supabase db push` refuses
+`foreign-migrations` before the API is touched, and `supabase db push` refuses
 the same state. An older commit deploys only while production has applied no
 migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
@@ -172,7 +172,7 @@ and a guarded `do` block where it doesn't. `alter publication … drop table` ha
 no `if exists`, so check `pg_publication_tables` first, as the original
 migrations do. Merge it once staging serves the revert, and ship it with a
 second Deploy production run once the revert is live on production. One run
-can't do both. `_deploy.yml` applies migrations before it deploys to Render, so
+can't do both. `_deploy.yml` applies migrations before it deploys the API, so
 a combined run would drop the object while the API that uses it is still
 serving, the order most recipes warn breaks live writes. For the same reason,
 the first run ships the revert's SHA, not a later `main` commit that already
@@ -285,9 +285,10 @@ a new migration that repeats the original's SQL under a new version, with its ow
 entries, shipped before or with the code that needs it. What the recipe says
 about re-applying being safe or idempotent is about repeating those statements.
 
-**A Render-dashboard rollback is not sanctioned.** Render's dashboard can roll
-`frapp-api-prod` back to an earlier deploy, but nothing in this repo documents or
-has verified that path. It skips every layer Deploy production runs: the SHA
+**A console rollback is not sanctioned.** The Cloud Run console can move
+`frapp-api`'s traffic back to an earlier revision (as Render's dashboard could roll
+back a deploy until 2026-11-17), but nothing in this repo documents or has verified
+that path. It skips every layer Deploy production runs: the SHA
 validation, the reviewer approval, the served-commit check, the outcome alert
 and the tag. It also leaves the API on a commit that the frontends and the
 newest `v*` tag aren't on, which

@@ -22,7 +22,7 @@ hours** (`code: "api-upload-free"`). A per-file prebuilt Next.js upload is thous
 every traced `node_modules` file under `functions/*.func` — and six merges to `main` on 2026-09-06
 exhausted the budget: staging run 34062542629 failed with `Too many requests - try again in 24
 hours`, and the same failure on the production path lands in the upload step, after the apply and
-the Render deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
+the API deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
 parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fails closed (nothing
 partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
 paid plan, which is the owner's call, not a workflow's.
@@ -100,7 +100,7 @@ default 307 to `www.frapp.live` and keeps the path (read from the project's doma
 
 A merge to `main` never moves these hostnames. Only the `--prod` upload re-points them, and only a
 Deploy production run with scope `full` that isn't a dry run and gets past the migration apply,
-the Render deploy and the health check reaches that upload. A dry run, a `migrations-only` run,
+the API deploy and the health check reaches that upload. A dry run, a `migrations-only` run,
 or a run that fails earlier leaves them where they were. The run's `release` job then tags the
 shipped commit `vX.Y.Z`. If tagging fails after a live ship, `production-release-pin.mjs` raises
 its own alert. Anything merged since the last such run is on the staging hostnames, not here. On 2026-09-28 the
@@ -136,9 +136,12 @@ app.frapp.live      CNAME  cname.vercel-dns.com
 staging.frapp.live       CNAME  cname.vercel-dns.com
 app.staging.frapp.live   CNAME  cname.vercel-dns.com
 
-# API (Render — fill in after creating Render services)
-api.frapp.live           CNAME  <frapp-api-prod>.onrender.com
-api-staging.frapp.live   CNAME  <frapp-api-staging>.onrender.com
+# API (Cloud Run, each behind its own Google load balancer: cloud-run.md § Address)
+api.frapp.live                     A      34.8.133.226
+candidate.api.frapp.live           A      34.8.133.226
+api-staging.frapp.live             A      136.81.202.162
+candidate.api-staging.frapp.live   A      136.81.202.162
+# plus one _acme-challenge CNAME per API host, which proves the certificates
 ```
 
 This list is not the whole zone. The zone also holds mail records, and not all of them are written down or have been read back, so a DNS move (#2508) starts from an export of the live zone, not from this list. Known so far:
