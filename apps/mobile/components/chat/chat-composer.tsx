@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type RefObject,
 } from "react";
 import {
@@ -556,25 +557,65 @@ function ScheduledGlyph({ color }: { color: string }) {
 
 /**
  * How long after Send the native box's leftover copy of the sent text can
- * still arrive. It is an event the JS thread had not read yet when Send
- * landed, so it comes within a frame or two, or a few hundred milliseconds on
- * a busy thread.
+ * still arrive. A keystroke JS had not read yet comes within a frame or two.
+ * iOS autocorrect is slower: a correction pending as Send is tapped (the
+ * underlined "thsy" that would become "that") is committed by the keyboard
+ * once the clear reaches the box, and it puts the whole corrected text back,
+ * sometimes after the first retry has already run (Paul on iOS, 2026-11-17;
+ * react-native#29073). Three seconds covers that with room to spare, and the
+ * match below is narrow enough that typing the next message never trips it.
  */
-const SENT_ECHO_MS = 1000;
-/** When the clear is retried once the JS thread has caught up. */
-const CLEAR_RETRY_MS = 300;
+const SENT_ECHO_MS = 3000;
+/**
+ * When the clear is retried after a send, in milliseconds: a frame later as
+ * the first, then as a busy thread catches up, then across the window in
+ * which a late autocorrect can still put the text back without telling JS.
+ */
+const CLEAR_RETRIES_MS = [100, 300, 700, 1500, SENT_ECHO_MS] as const;
 /**
  * How much of the sent text a late change must start with to be taken for the
- * box's leftover copy, in code points. Typing the next message reaches the
- * draft one letter or one emoji at a time, so a first change this long that
- * opens like the sent message is the old text, give or take the keystroke or
- * autocorrect that was in flight.
+ * box's leftover copy, in code points, when the message is a single word.
+ * Typing the next message reaches the draft one letter or one emoji at a
+ * time, so a first change this long that opens like the sent message is the
+ * old text, give or take the keystroke or autocorrect that was in flight.
  */
 const ECHO_PREFIX = 3;
 
 /** The first `count` code points, so an emoji is never cut in half. */
 function leading(text: string, count: number): string {
   return Array.from(text).slice(0, count).join("");
+}
+
+/**
+ * The part of a sent message that a late keystroke or autocorrect cannot
+ * change: everything up to the start of its last word. Autocorrect only
+ * rewrites the word being typed, so the copy the box puts back always opens
+ * with this. Empty for a one-word message.
+ */
+function settledPart(text: string): string {
+  const match = /^([\s\S]*?\s)\S*\s*$/.exec(text);
+  return match ? match[1] : "";
+}
+
+/**
+ * Whether `next`, arriving after a send of `sent`, is the box's leftover copy
+ * of it rather than the member typing. A multi-word message's copy opens with
+ * all of its settled part, then some of its last word; a one-word message's with its first
+ * `ECHO_PREFIX` code points. A message shorter than that has no copy check,
+ * since a member repeating "k" or an emoji types exactly what was sent.
+ */
+function isCopyOfSent(next: string, sent: string): boolean {
+  const settled = settledPart(sent);
+  if (Array.from(settled.trim()).length >= ECHO_PREFIX) {
+    // And carries a last word: a prediction tapped into the empty box can
+    // be the message's first word, but never the whole message.
+    return next.startsWith(settled) && next.slice(settled.length).trim() !== "";
+  }
+  const prefix = leading(sent, ECHO_PREFIX);
+  return (
+    Array.from(prefix).length === ECHO_PREFIX &&
+    leading(next, ECHO_PREFIX) === prefix
+  );
 }
 
 /**
@@ -591,28 +632,35 @@ function leading(text: string, count: number): string {
  * 2026-11-12, #4632; react-native#37722, and Expensify's same composer bug in
  * Expensify/App#37896).
  *
- * Two ways that event shows up, and one fix for each:
+ * iOS autocorrect adds a third way (Paul, 2026-11-17): a correction still
+ * pending at the tap is committed once the clear lands, and the keyboard puts
+ * the whole message back with the word fixed ("...do thsy" sent, "...do that"
+ * back in the box). It can arrive after the early retries, and it doesn't
+ * always reach JS as a change.
  *
- * - It arrives after the send, as a change carrying the box's text: the sent
- *   text, or the sent text with the in-flight keystroke or correction applied.
- *   Taking it would put the message back in the draft, so `isStaleEcho` turns
- *   it away. The input then sees its text differ from `value` and sends the
- *   draft again, stamped with the newer count, which the field accepts.
- * - It was read before the send but not yet rendered, so the dropped clear
- *   never retries and no change ever comes. The clear is retried here, a frame
- *   later and again once a busy thread has caught up, while the draft is still
- *   empty. A retry against a field the member has typed into since is dropped
- *   by the same count check, so it can't take their new letters.
+ * The fixes:
  *
- * What counts as the echo, within `SENT_ECHO_MS` of the tap: a change that
- * opens with the sent text's first `ECHO_PREFIX` code points, while the draft
- * is no longer the sent text, unless it reads as typing onto the draft (an
- * edit's save hands the box back the member's draft, and that is theirs to
- * type on). The first change that isn't one closes the window. A message
- * shorter than `ECHO_PREFIX` has no echo check, since a member repeating "k"
- * or an emoji types exactly what was sent; the retry still covers it. The
- * cost: the same long text pasted into the box within a second of sending it
- * is taken for the echo and wiped.
+ * - A change carrying the box's copy of the sent text (as sent, or with the
+ *   in-flight keystroke or correction applied) is turned away by
+ *   `isStaleEcho`. The input then sees its text differ from `value` and sends
+ *   the draft again, stamped with the newer count, which the field accepts.
+ *   A clear is also queued behind it, in case that resend is dropped too.
+ * - A copy that never reaches JS is cleared by retrying the clear through
+ *   `SENT_ECHO_MS` (`CLEAR_RETRIES_MS`), while the draft is still empty. A
+ *   retry against a field the member has typed into since is dropped by the
+ *   same count check, so it can't take their new letters, and one against an
+ *   already empty field changes nothing.
+ *
+ * What counts as the copy, within `SENT_ECHO_MS` of the tap: a change that
+ * `isCopyOfSent`, while the draft is no longer the sent text, unless it reads
+ * as typing onto the draft (an edit's save hands the box back the member's
+ * draft, and that is theirs to type on). The first change that isn't one
+ * closes the window, so once the member has typed a letter of the next
+ * message nothing is turned away. The cost: the same text pasted into the box
+ * within three seconds of sending it is taken for the copy and wiped.
+ *
+ * What is sent is what the box showed at the tap, typo included: JS learns of
+ * the correction only after the message has gone.
  */
 function useClearedOnSend(
   inputRef: RefObject<TextInput | null>,
@@ -628,6 +676,7 @@ function useClearedOnSend(
   const sent = useRef<{ text: string; at: number; echoOpen: boolean } | null>(
     null,
   );
+  const [echoes, setEchoes] = useState(0);
 
   const markSent = useCallback(() => {
     sent.current = { text: valueRef.current, at: Date.now(), echoOpen: true };
@@ -636,30 +685,33 @@ function useClearedOnSend(
   useEffect(() => {
     const last = sent.current;
     if (value !== "" || !last || last.text === "") return;
-    if (Date.now() - last.at > SENT_ECHO_MS) return;
+    const elapsed = Date.now() - last.at;
+    if (elapsed > SENT_ECHO_MS) return;
     const clear = () => {
       if (valueRef.current === "") inputRef.current?.clear();
     };
     const frame = requestAnimationFrame(clear);
-    const timer = setTimeout(clear, CLEAR_RETRY_MS);
+    const timers = CLEAR_RETRIES_MS.filter((at) => at > elapsed).map((at) =>
+      setTimeout(clear, at - elapsed),
+    );
     return () => {
       cancelAnimationFrame(frame);
-      clearTimeout(timer);
+      timers.forEach(clearTimeout);
     };
-  }, [inputRef, value]);
+    // `echoes` re-runs it after a turned-away copy, from that moment.
+  }, [inputRef, value, echoes]);
 
   const isStaleEcho = useCallback((next: string) => {
     const last = sent.current;
     if (!last || !last.echoOpen) return false;
     const draft = valueRef.current;
-    const prefix = leading(last.text, ECHO_PREFIX);
     const echo =
       Date.now() - last.at <= SENT_ECHO_MS &&
       draft !== last.text &&
-      Array.from(prefix).length === ECHO_PREFIX &&
-      leading(next, ECHO_PREFIX) === prefix &&
+      isCopyOfSent(next, last.text) &&
       !(draft !== "" && (next.startsWith(draft) || draft.startsWith(next)));
     if (!echo) last.echoOpen = false;
+    else setEchoes((count) => count + 1);
     return echo;
   }, []);
 
