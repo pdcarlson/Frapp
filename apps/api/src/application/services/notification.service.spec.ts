@@ -7,7 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
-import { NotificationService } from './notification.service';
+import {
+  MAX_PUSH_TOKENS_PER_USER,
+  NotificationService,
+} from './notification.service';
 import { ChatBlockService } from './chat-block.service';
 import {
   NOTIFICATION_REPOSITORY,
@@ -1476,6 +1479,7 @@ describe('NotificationService', () => {
   describe('push token management', () => {
     it('should register new push token', async () => {
       mockPushTokenRepo.findByToken.mockResolvedValue(null);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
       mockPushTokenRepo.create.mockResolvedValue(basePushToken);
 
       const result = await service.registerPushToken(
@@ -1490,6 +1494,48 @@ describe('NotificationService', () => {
         device_name: 'iPhone',
       });
       expect(result).toEqual(basePushToken);
+    });
+
+    it('moves a token another account registered to the caller, and logs the move without the token', async () => {
+      mockPushTokenRepo.findByToken.mockResolvedValue({
+        ...basePushToken,
+        user_id: 'u-2',
+      });
+      mockPushTokenRepo.create.mockResolvedValue(basePushToken);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.registerPushToken('u-1', 'ExponentPushToken[xxx]');
+
+      expect(mockPushTokenRepo.deleteByToken).toHaveBeenCalledWith(
+        'ExponentPushToken[xxx]',
+      );
+      expect(mockPushTokenRepo.create).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain('push_token_moved');
+      expect(String(warn.mock.calls[0][0])).not.toContain('ExponentPushToken');
+    });
+
+    it(`keeps a member's newest ${MAX_PUSH_TOKENS_PER_USER} devices, dropping the oldest`, async () => {
+      mockPushTokenRepo.findByToken.mockResolvedValue(null);
+      mockPushTokenRepo.create.mockResolvedValue(basePushToken);
+      const rows = Array.from(
+        { length: MAX_PUSH_TOKENS_PER_USER + 2 },
+        (_, i) => ({
+          ...basePushToken,
+          id: `pt-${i}`,
+          created_at: new Date(Date.UTC(2026, 10, 1 + i)).toISOString(),
+        }),
+      );
+      mockPushTokenRepo.findByUser.mockResolvedValue(rows);
+
+      await service.registerPushToken('u-1', 'ExponentPushToken[new]');
+
+      expect(mockPushTokenRepo.delete).toHaveBeenCalledTimes(2);
+      expect(mockPushTokenRepo.delete).toHaveBeenCalledWith('pt-0', 'u-1');
+      expect(mockPushTokenRepo.delete).toHaveBeenCalledWith('pt-1', 'u-1');
     });
 
     it('should return existing token when same user re-registers', async () => {

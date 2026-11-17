@@ -80,9 +80,19 @@ class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
   }
 }
 
+/**
+ * The shapes `Expo.isExpoPushToken` takes: `ExponentPushToken[…]`,
+ * `ExpoPushToken[…]`, or a bare UUID. Anything else can never be delivered
+ * to, so it is refused at the door rather than stored.
+ */
+const EXPO_PUSH_TOKEN =
+  /^(?:Expo(?:nent)?PushToken\[[^\]\s]{1,200}\]|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+
 export class RegisterPushTokenDto {
-  @ApiProperty({ description: 'Expo push token' })
+  @ApiProperty({ description: 'Expo push token', maxLength: 255 })
   @IsString()
+  @MaxLength(255)
+  @Matches(EXPO_PUSH_TOKEN, { message: 'token must be an Expo push token' })
   token: string;
 
   @ApiPropertyOptional({

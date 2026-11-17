@@ -277,6 +277,9 @@ function isMemberSwitchable(category: string, priority: string): boolean {
   return priority !== 'URGENT' && isNotificationCategoryKey(category);
 }
 
+/** Devices one member keeps push tokens for (L4 of the 2026-11 API audit). */
+export const MAX_PUSH_TOKENS_PER_USER = 10;
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -1012,14 +1015,43 @@ export class NotificationService {
         }
         return existing;
       }
+      // The same phone signed in to another account: the token follows
+      // whoever registered it last. Logged (no token, no device name) so a
+      // move nobody made on purpose can be traced.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'push_token_moved',
+          from_user_id: existing.user_id,
+          to_user_id: userId,
+        }),
+      );
       await this.pushTokenRepo.deleteByToken(token);
     }
 
-    return this.pushTokenRepo.create({
+    const created = await this.pushTokenRepo.create({
       user_id: userId,
       token,
       device_name: deviceName ?? null,
     });
+    await this.dropOldestPushTokens(userId);
+    return created;
+  }
+
+  /**
+   * A member keeps at most `MAX_PUSH_TOKENS_PER_USER` devices. A reinstall or
+   * a new phone registers a new token while the old one lingers until Expo
+   * reports it gone, so past the cap the oldest go: every push fans out to
+   * each stored token, and an account can't pile up rows without end.
+   */
+  private async dropOldestPushTokens(userId: string): Promise<void> {
+    const tokens = await this.pushTokenRepo.findByUser(userId);
+    if (tokens.length <= MAX_PUSH_TOKENS_PER_USER) return;
+    const oldest = [...tokens]
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      .slice(MAX_PUSH_TOKENS_PER_USER);
+    for (const row of oldest) {
+      await this.pushTokenRepo.delete(row.id, userId);
+    }
   }
 
   async removePushToken(id: string, userId: string): Promise<void> {
