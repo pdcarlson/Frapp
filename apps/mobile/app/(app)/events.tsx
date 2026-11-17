@@ -1,6 +1,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, StyleSheet, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { localIsoDate, startOfMonth } from "@repo/formatting";
@@ -15,20 +15,15 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
+import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import { SignetTokens } from "@repo/theme/signet";
 import { BACK_TO_ACTIVITY } from "@/components/back-row";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
-import {
-  NewEventSheet,
-  useCanCreateEvents,
-} from "@/components/events/new-event-sheet";
-import {
-  emptyEventDraft,
-  pickedDayStart,
-  type NewEventDraft,
-} from "@/lib/events/create-event";
+import { useCanCreateEvents } from "@/components/events/new-event-sheet";
+import { pickedDayStart } from "@/lib/events/create-event";
+import { useNewEventAt } from "@/lib/events/use-new-event-at";
 import {
   EventsCalendar,
   EventsCalendarSkeleton,
@@ -70,10 +65,6 @@ import { useFrappTheme } from "@/lib/theme";
  * the endpoint (#1035), as on s07.
  */
 
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
 export default function EventsScreen() {
   const chapterId = useActiveChapterId();
   const router = useRouter();
@@ -86,20 +77,12 @@ export default function EventsScreen() {
   // while it is up.
   const subscribeSheet = useRef<BottomSheetModal>(null);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
-  // New event from the header's + (#5113), filled in to start on the picked
-  // day. One sheet per press (`key`), since a template seeds the draft once.
-  const createSheet = useRef<BottomSheetModal>(null);
-  const [createAt, setCreateAt] = useState<{
-    key: number;
-    template: NewEventDraft;
-  } | null>(null);
-  useEffect(() => {
-    if (createAt) createSheet.current?.present();
-  }, [createAt]);
-
   // One `now` per render so every row agrees on what "today" and "open" mean,
   // and it ticks so a check-in window opens and closes while the screen is up.
   const now = useNowDate();
+  // New event from the header's + (#5113), filled in to start on the picked
+  // day.
+  const newEvent = useNewEventAt(now);
   const allEvents = useMemo(
     () => selectAllEventRows(eventsQuery.data),
     [eventsQuery.data],
@@ -236,15 +219,7 @@ export default function EventsScreen() {
             {canCreateEvents ? (
               <HeaderButton
                 label="New event"
-                onPress={() =>
-                  setCreateAt((previous) => ({
-                    key: (previous?.key ?? 0) + 1,
-                    template: {
-                      ...emptyEventDraft(),
-                      start: pickedDayStart(selectedDay, now),
-                    },
-                  }))
-                }
+                onPress={() => newEvent.open(pickedDayStart(selectedDay, now))}
               >
                 <PlusGlyph color={brand.accent} />
               </HeaderButton>
@@ -261,19 +236,7 @@ export default function EventsScreen() {
         open={subscribeOpen}
         onDismiss={() => setSubscribeOpen(false)}
       />
-      {createAt ? (
-        <NewEventSheet
-          key={createAt.key}
-          ref={createSheet}
-          now={now}
-          template={createAt.template}
-          // The new event landing on the month is the visible confirmation;
-          // a screen reader hears it said.
-          onCreated={() =>
-            AccessibilityInfo.announceForAccessibility("Event added.")
-          }
-        />
-      ) : null}
+      {newEvent.sheet}
     </ScreenShell>
   );
 }

@@ -6,6 +6,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { drawnText } from "@/test/screen-text";
 
 const device = vi.hoisted(() => ({ bottomInset: 0 }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -40,6 +41,19 @@ const unreadConversations = vi.hoisted(() => ({ count: 0 }));
 vi.mock("@/lib/chat/unread-conversations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/chat/unread-conversations")>()),
   useUnreadConversationCount: () => unreadConversations.count,
+}));
+
+// The tour's spots are measured off the refs its anchors hand out; each stop's
+// ref is a spy here, so a spec can see which control it landed on.
+const tourAnchors = vi.hoisted(
+  () => new Map<string, ReturnType<typeof vi.fn>>(),
+);
+vi.mock("@/components/onboarding/tour", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/onboarding/tour")>()),
+  useTourAnchor: (key: string) => {
+    if (!tourAnchors.has(key)) tourAnchors.set(key, vi.fn());
+    return tourAnchors.get(key);
+  },
 }));
 
 // The You tab's avatar has its own spec (`you-tab-avatar.spec.tsx`); the bar
@@ -313,6 +327,42 @@ describe("the bar (#3344)", () => {
     } finally {
       unreadConversations.count = 0;
     }
+  });
+
+  it("caps the Messages count at 99+", () => {
+    const shown = (count: number) => {
+      unreadConversations.count = count;
+      const [pill] = render().root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.testID === "tab-messages-badge",
+      );
+      return drawnText(pill!);
+    };
+    try {
+      expect(shown(99)).toBe("99");
+      expect(shown(100)).toBe("99+");
+    } finally {
+      unreadConversations.count = 0;
+    }
+  });
+
+  // The first-run tour's Messages stop spots the Messages tab (#5310).
+  it("hands the tour's messages stop the Messages tab", () => {
+    tourAnchors.get("messages")?.mockClear();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element("index"), {
+        createNodeMock: (node) => ({
+          label: (node.props as { accessibilityLabel?: string })
+            .accessibilityLabel,
+        }),
+      });
+    });
+    expect(tourAnchors.get("messages")).toHaveBeenCalledWith({
+      label: "Messages",
+    });
+    act(() => tree.unmount());
   });
 
   it("holds the badge's count fresh, leaving Activity's own re-read to it", () => {
@@ -632,6 +682,78 @@ describe("the fold", () => {
       onMessages.root.findByProps({ testID: "tab-folded" }).props
         .accessibilityLabel,
     ).toMatch(/^Messages, show all tabs, Activity: /);
+  });
+
+  it("keeps Messages' count in sight while folded, in mention red, and says it", async () => {
+    quick.hasAsk = true;
+    unreadConversations.count = 2;
+    try {
+      const onMessages = await renderSettled("messages");
+      act(() => setBarFolded(true));
+      const [badge] = onMessages.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.testID === "tab-folded-messages-badge",
+      );
+      expect(drawnText(badge!)).toBe("2");
+      expect(flat(badge!.props.style).backgroundColor).toBe(
+        signetDarkTokens.color.semantic.mention,
+      );
+      expect(
+        onMessages.root.findByProps({ testID: "tab-folded" }).props
+          .accessibilityLabel,
+      ).toBe("Messages, 2 unread conversations, show all tabs");
+      act(() => onMessages.unmount());
+
+      const onChat = await renderSettled("index");
+      act(() => setBarFolded(true));
+      const dots = onChat.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.testID === "tab-folded-messages-dot",
+      );
+      expect(dots).toHaveLength(1);
+      expect(flat(dots[0]!.props.style).backgroundColor).toBe(
+        signetDarkTokens.color.semantic.mention,
+      );
+      act(() => onChat.unmount());
+    } finally {
+      unreadConversations.count = 0;
+    }
+  });
+
+  it("names both counts on the folded round, the dots stacked rather than on top of each other", async () => {
+    quick.hasAsk = true;
+    activity.data = { needs_you_count: 3, unavailable: [] };
+    unreadConversations.count = 2;
+    try {
+      const onChat = await renderSettled("index");
+      act(() => setBarFolded(true));
+      const round = onChat.root.findByProps({ testID: "tab-folded" });
+      expect(round.props.accessibilityLabel).toMatch(
+        /^Chat, show all tabs, Activity: .+, Messages: 2 unread conversations$/,
+      );
+      const top = (testID: string) =>
+        flat(
+          onChat.root.find(
+            (node) =>
+              typeof node.type === "string" && node.props.testID === testID,
+          ).props.style,
+        ).top;
+      expect(top("tab-folded-dot")).not.toBe(top("tab-folded-messages-dot"));
+      act(() => onChat.unmount());
+
+      // On Messages, its own count leads and Activity's follows.
+      const onMessages = await renderSettled("messages");
+      act(() => setBarFolded(true));
+      expect(
+        onMessages.root.findByProps({ testID: "tab-folded" }).props
+          .accessibilityLabel,
+      ).toMatch(/^Messages, 2 unread conversations, show all tabs, Activity: /);
+      act(() => onMessages.unmount());
+    } finally {
+      unreadConversations.count = 0;
+    }
   });
 
   it("gives the tabs back their touches only once they are back in place", async () => {

@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "expo-router";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 // Only the ref's type: the field is `SearchField`, at the top of the screen as
 // on the Directory, so it needs no keyboard avoidance (#3354 guards fields a
@@ -148,15 +148,18 @@ export default function MessagesScreen() {
   // The member whose DM is being opened, so no second start runs meanwhile,
   // and a count of picks: any later pick (another row, another member) or
   // leaving the screen bumps it, so a slow start that lands after it opens
-  // nothing (web's search and the member sheet guard the same way).
+  // nothing (web's search and the member sheet guard the same way). A tab is
+  // never unmounted, so leaving is a blur: switching tabs or pushing a screen.
   const startingRef = useRef<string | null>(null);
   const pickSeq = useRef(0);
-  useEffect(() => {
-    const seq = pickSeq;
-    return () => {
-      seq.current += 1;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      const seq = pickSeq;
+      return () => {
+        seq.current += 1;
+      };
+    }, []),
+  );
   const refresh = useRefetchAll([
     channelsQuery,
     unreadQuery,

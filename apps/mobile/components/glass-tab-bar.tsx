@@ -39,6 +39,7 @@ import {
   useUnreadConversationCount,
 } from "@/lib/chat/unread-conversations";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { SCREEN_TITLES } from "@/lib/back-target";
 import {
   FLOATING_ASK_BAR,
   FLOATING_TAB_BAR,
@@ -69,6 +70,9 @@ const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
 const TAB_HEIGHT = FLOATING_TAB_BAR.height - 12;
 /** How long the fold takes. With Reduce Motion on it changes at once. */
 const FOLD_MS = 320;
+/** Where the folded round's first count dot sits, and how far down each next one goes. */
+const FOLDED_DOT_TOP = 12;
+const FOLDED_DOT_STEP = 12;
 
 /**
  * The tab bar (owner pick 2026-11-06, after Bevel's): a glass pill holding the
@@ -125,6 +129,55 @@ export function GlassTabBar({
   const focusedOptions = descriptors[focusedRoute.key]?.options ?? {};
   const focusedLabel = focusedOptions.title ?? focusedRoute.name;
   useActivityRereadOnTab(focusedRoute.key, focusedRoute.name === "activity");
+
+  const unreadConversationsBadge =
+    unreadConversations > 99 ? "99+" : String(unreadConversations);
+  // The counts the folded round keeps, Activity's before Messages' as the bar
+  // orders them, with what each one says and wears.
+  const counted = [
+    needsYou
+      ? {
+          route: "activity",
+          tab: SCREEN_TITLES.activity,
+          label: needsYou.label,
+          spoken: needsYou.spoken,
+          fill: tokens.color.gold.house,
+          ink: tokens.color.gold.onHouse,
+          badgeId: "tab-folded-badge",
+          dotId: "tab-folded-dot",
+        }
+      : null,
+    unreadConversationsLabel
+      ? {
+          route: "messages",
+          tab: SCREEN_TITLES.messages,
+          label: unreadConversationsBadge,
+          spoken: unreadConversationsLabel,
+          fill: tokens.color.semantic.mention,
+          ink: tokens.color.semantic.mentionForeground,
+          badgeId: "tab-folded-messages-badge",
+          dotId: "tab-folded-messages-dot",
+        }
+      : null,
+  ].filter((count) => count !== null);
+  // The focused tab's badge first, so the dots stack below it.
+  const foldedCounts = [
+    ...counted.filter((count) => count.route === focusedRoute.name),
+    ...counted.filter((count) => count.route !== focusedRoute.name),
+  ];
+  // The focused tab's own count follows its name; the others follow "show
+  // all tabs", each named: "Chat, show all tabs, Activity: 3 to do,
+  // Messages: 2 unread conversations".
+  const foldedLabel = [
+    focusedLabel,
+    ...foldedCounts
+      .filter((count) => count.route === focusedRoute.name)
+      .map((count) => count.spoken),
+    "show all tabs",
+    ...foldedCounts
+      .filter((count) => count.route !== focusedRoute.name)
+      .map((count) => `${count.tab}: ${count.spoken}`),
+  ].join(", ");
 
   // Open on the tab it was opened from: moving to another tab closes it. The
   // close is kept, so coming back to the tab doesn't open it again (state
@@ -456,7 +509,7 @@ export function GlassTabBar({
                         { color: tokens.color.semantic.mentionForeground },
                       ]}
                     >
-                      {unreadConversations > 99 ? "99+" : unreadConversations}
+                      {unreadConversationsBadge}
                     </Text>
                   </View>
                 ) : null}
@@ -476,13 +529,7 @@ export function GlassTabBar({
           <Pressable
             testID="tab-folded"
             accessibilityRole="button"
-            accessibilityLabel={
-              needsYou
-                ? focusedRoute.name === "activity"
-                  ? `${focusedLabel}, ${needsYou.spoken}, show all tabs`
-                  : `${focusedLabel}, show all tabs, Activity: ${needsYou.spoken}`
-                : `${focusedLabel}, show all tabs`
-            }
+            accessibilityLabel={foldedLabel}
             accessibilityElementsHidden={!foldOn}
             importantForAccessibility={foldOn ? "auto" : "no-hide-descendants"}
             onPress={() => {
@@ -496,38 +543,37 @@ export function GlassTabBar({
               color: accent,
               size: 24,
             })}
-            {/* Activity's count stays in sight while folded: the number on
-                Activity's own round, a dot on any other. */}
-            {needsYou ? (
-              focusedRoute.name === "activity" ? (
+            {/* Activity's and Messages' counts stay in sight while folded:
+                the number on the tab's own round, a dot on any other, the
+                dots stacked down the round's edge under whatever is above
+                them. */}
+            {foldedCounts.map((count, slot) =>
+              count.route === focusedRoute.name ? (
                 <View
-                  testID="tab-folded-badge"
+                  key={count.route}
+                  testID={count.badgeId}
                   pointerEvents="none"
-                  style={[
-                    styles.badge,
-                    { backgroundColor: tokens.color.gold.house },
-                  ]}
+                  style={[styles.badge, { backgroundColor: count.fill }]}
                 >
-                  <Text
-                    style={[
-                      styles.badgeText,
-                      { color: tokens.color.gold.onHouse },
-                    ]}
-                  >
-                    {needsYou.label}
+                  <Text style={[styles.badgeText, { color: count.ink }]}>
+                    {count.label}
                   </Text>
                 </View>
               ) : (
                 <View
-                  testID="tab-folded-dot"
+                  key={count.route}
+                  testID={count.dotId}
                   pointerEvents="none"
                   style={[
                     styles.foldedDot,
-                    { backgroundColor: tokens.color.gold.house },
+                    {
+                      top: FOLDED_DOT_TOP + slot * FOLDED_DOT_STEP,
+                      backgroundColor: count.fill,
+                    },
                   ]}
                 />
-              )
-            ) : null}
+              ),
+            )}
           </Pressable>
         </Animated.View>
       </Animated.View>
@@ -600,7 +646,6 @@ const styles = StyleSheet.create({
   folded: { flex: 1, alignItems: "center", justifyContent: "center" },
   foldedDot: {
     position: "absolute",
-    top: 12,
     right: 14,
     width: 8,
     height: 8,

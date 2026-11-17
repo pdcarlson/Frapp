@@ -53,7 +53,7 @@ type Props = {
   highlight?: string;
   /**
    * A number to show in mention red (#3774): the Direct messages row's count
-   * of conversations with anything unread, as the phone's Messages door shows
+   * of conversations with anything unread, as the phone's Messages tab badges
    * it. A direct message addresses the member, so it takes the fixed mention
    * red and never the chapter accent (foundations.md §5).
    */

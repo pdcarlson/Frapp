@@ -799,7 +799,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   The bulk button also takes the event write subscription gate, as the attendance panel's does.
   Rows sit under written-out day headings; a repeating series is one row, its next meeting, reading `Every Sunday · 6:48 PM`, and opening it lists the series' upcoming meetings under the one it opened.
   Under Upcoming the list holds today through the next 14 days, and what starts later waits behind a **Later** disclosure ([#3707](https://github.com/pdcarlson/Frapp/issues/3707);
-  the series and horizon rules are `@repo/hooks/event-series`, which mobile's Events tab reads too ([#3823](https://github.com/pdcarlson/Frapp/issues/3823))).
+  the series and horizon rules are `@repo/hooks/event-series`; mobile's Calendar reads only its cadence line from there since #5310 ([#3823](https://github.com/pdcarlson/Frapp/issues/3823))).
   Mandatory is the hairline badge, not a red pill on every row, and it means the event requires this viewer, by default or by a role of theirs ([`events.md` § Attendance by role](../../behavior/events.md#event-creation); #4132, 2026-11-13: until then web drew it for an event required of everyone, and the chat event card drew it red).
   The toolbar is `PageActions` like every route's: the List and Calendar toggle leads as the page's primary control, a segmented control ([`components.md`](../design-system/components.md) § Segmented control;
   it was underlined tabs until #3822), and the page opens on whichever view this person last used on this browser;

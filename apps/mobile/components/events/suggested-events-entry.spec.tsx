@@ -8,7 +8,7 @@ import { LAST_YEAR_COPY } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
-/** The Events tab's row to "This time last year" (#3930). */
+/** The Calendar's row to "This time last year" (#3930). */
 const state = vi.hoisted(() => ({
   available: true as boolean | undefined,
   items: [] as unknown[],
@@ -73,7 +73,9 @@ describe("SuggestedEventsEntry", () => {
         typeof node.props.onPress === "function",
     )[0]!;
     act(() => row.props.onPress());
-    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/suggested-tasks");
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+      "/suggested-tasks",
+    );
   });
 
   it("says one event as one", () => {

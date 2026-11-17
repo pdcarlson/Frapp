@@ -5,7 +5,7 @@ import { ListRow, ListSection } from "@/components/list-section";
 import { useAiSurfaces } from "@/lib/ai/availability";
 
 /**
- * The Events tab's way to "This time last year" (#3930): one row, "2 events
+ * The Calendar's way to "This time last year" (#3930): one row, "2 events
  * from this time last year", only while some are waiting for this officer.
  * The server lists a suggestion only for someone who could act on it, so
  * everyone else, and every chapter with the server's AI off, sees nothing.

@@ -107,7 +107,8 @@ device run, check:
 - [ ] Every **You** row does what the smoke checklist's
       [You row](interaction-smoke-checklist.md#2-primary-tab-routes) says.
 - [ ] **Profile** is the top of the You tab, with no screen of its own, and
-      Chat home's header shows Messages and the bell.
+      Chat home's header shows Search and the bell; Messages is tab 3, and
+      the Calendar opens from Activity's Calendar row.
 - [ ] A deleted path (`exp://.../--/points`, `--/task-center`) lands on home via
       `+not-found` instead of an error screen.
 - [ ] **`frapp://event-details` still resolves** — open

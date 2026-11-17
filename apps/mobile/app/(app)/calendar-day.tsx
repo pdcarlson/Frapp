@@ -1,9 +1,7 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo } from "react-native";
+import { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { localIsoDate } from "@repo/formatting";
+import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import { EVENTS_COPY } from "@repo/validation";
 import {
   useActiveChapterId,
@@ -21,17 +19,11 @@ import {
   SkeletonBlock,
   SkeletonRegion,
 } from "@/components/state-block";
-import {
-  NewEventSheet,
-  useCanCreateEvents,
-} from "@/components/events/new-event-sheet";
+import { useCanCreateEvents } from "@/components/events/new-event-sheet";
 import { EventsTimeGrid } from "@/components/events/events-time-grid";
 import { useCalendarItemsByDay } from "@/lib/events/calendar-items";
-import {
-  calendarHourStart,
-  emptyEventDraft,
-  type NewEventDraft,
-} from "@/lib/events/create-event";
+import { calendarHourStart } from "@/lib/events/create-event";
+import { useNewEventAt } from "@/lib/events/use-new-event-at";
 import { parseCalendarDayParam } from "@/lib/events/calendar-day";
 import { selectAllEventRows } from "@/lib/events/select";
 
@@ -55,11 +47,11 @@ export default function CalendarDayScreen() {
   const canCreateEvents = useCanCreateEvents();
   const now = useNowDate();
   const raw = Array.isArray(params.day) ? params.day[0] : params.day;
-  const todayKey = localIsoDate(now);
+  const today = startOfDay(now).getTime();
   // Keyed on the param and today's date, not `now`, which ticks.
   const day = useMemo(
-    () => parseCalendarDayParam(raw) ?? parseCalendarDayParam(todayKey)!,
-    [raw, todayKey],
+    () => parseCalendarDayParam(raw) ?? new Date(today),
+    [raw, today],
   );
   const allEvents = useMemo(
     () => selectAllEventRows(eventsQuery.data),
@@ -70,15 +62,7 @@ export default function CalendarDayScreen() {
   const birthdaysQuery = useMemberBirthdays();
   const refresh = useRefetchAll([eventsQuery, tasksQuery, birthdaysQuery]);
 
-  // One sheet per press (`key`), since a template seeds the draft once.
-  const createSheet = useRef<BottomSheetModal>(null);
-  const [createAt, setCreateAt] = useState<{
-    key: number;
-    template: NewEventDraft;
-  } | null>(null);
-  useEffect(() => {
-    if (createAt) createSheet.current?.present();
-  }, [createAt]);
+  const newEvent = useNewEventAt(now);
 
   const title = day.toLocaleDateString(undefined, {
     weekday: "long",
@@ -123,11 +107,7 @@ export default function CalendarDayScreen() {
         canCreate={canCreateEvents}
         onCreateAt={(hourDay, hour) => {
           const start = calendarHourStart(hourDay, hour, now);
-          if (!start) return;
-          setCreateAt((previous) => ({
-            key: (previous?.key ?? 0) + 1,
-            template: { ...emptyEventDraft(), start },
-          }));
+          if (start) newEvent.open(start);
         }}
       />
     );
@@ -136,19 +116,7 @@ export default function CalendarDayScreen() {
   return (
     <ScreenShell back={BACK_TO_EVENTS} title={title} refresh={refresh}>
       {renderBody()}
-      {createAt ? (
-        <NewEventSheet
-          key={createAt.key}
-          ref={createSheet}
-          now={now}
-          template={createAt.template}
-          // The new block on the grid is the visible confirmation; a screen
-          // reader hears it said.
-          onCreated={() =>
-            AccessibilityInfo.announceForAccessibility("Event added.")
-          }
-        />
-      ) : null}
+      {newEvent.sheet}
     </ScreenShell>
   );
 }

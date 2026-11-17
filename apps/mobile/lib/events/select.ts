@@ -50,16 +50,16 @@ export interface EventRow {
   attendance: EventAttendanceFields;
   /**
    * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`) on a series head,
-   * `null` on a generated occurrence or a one-off. The list collapses a series
-   * by it (`collapseSeries`), and the edit flow reads it (`seriesRuleOf` in
-   * `@repo/validation`'s `event-edit.ts`) to tell a series from a one-off.
+   * `null` on a generated occurrence or a one-off. A series' cadence line
+   * reads it (`seriesCadenceOf`), and the edit flow reads it (`seriesRuleOf`
+   * in `@repo/validation`'s `event-edit.ts`) to tell a series from a one-off.
    */
   recurrence_rule: string | null;
   /**
    * The series head's id on a generated occurrence, `null` on a head or a
-   * one-off. The list groups a series by it; the edit flow reads it to fetch
-   * the series parent and to ask whether a save covers this occurrence or the
-   * series.
+   * one-off. A series' cadence line groups a series by it; the edit flow
+   * reads it to fetch the series parent and to ask whether a save covers this
+   * occurrence or the series.
    */
   parent_event_id: string | null;
 }
