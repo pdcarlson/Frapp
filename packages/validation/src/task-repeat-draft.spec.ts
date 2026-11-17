@@ -10,6 +10,7 @@ import {
   taskRepeatDraftFromRule,
   taskRepeatRuleOf,
   taskRepeatSummary,
+  taskSaveScope,
   taskSeriesLine,
 } from "./repeat-draft";
 
@@ -125,5 +126,29 @@ describe("taskSeriesLine (#5119)", () => {
   it("says nothing for a task with no series, or one that ended", () => {
     expect(taskSeriesLine(null, FIRST)).toBeNull();
     expect(taskSeriesLine({ ...series, ended: true }, FIRST)).toBeNull();
+  });
+});
+
+describe("taskSaveScope (#5119)", () => {
+  const copy = {
+    due_date: "2026-11-16",
+    series: { ended: false },
+  };
+
+  it("asks on a copy of a live series", () => {
+    expect(taskSaveScope(copy, { due_date: "2026-11-16" })).toBe("ask");
+    expect(taskSaveScope(copy, {})).toBe("ask");
+  });
+
+  it("takes the series for a Repeat change, the copy for a new day", () => {
+    expect(taskSaveScope(copy, { recurrence_rule: null })).toBe("series");
+    expect(taskSaveScope(copy, { due_date: "2026-11-18" })).toBe("instance");
+  });
+
+  it("never asks on a task with no live series", () => {
+    expect(taskSaveScope({ due_date: "2026-11-16" }, {})).toBe("instance");
+    expect(taskSaveScope({ ...copy, series: { ended: true } }, {})).toBe(
+      "instance",
+    );
   });
 });

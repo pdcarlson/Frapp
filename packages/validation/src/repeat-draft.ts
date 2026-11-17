@@ -934,3 +934,44 @@ export function taskSeriesLine(
   const tz = parseTaskRepeatRule(series.recurrence_rule)?.timeZone;
   return `${pattern} · next ${shortDay(series.next_due_date, first, tz ?? localTimeZone())}`;
 }
+
+/**
+ * The scope prompt on a copy of a repeating task (#5119), worded as the event
+ * editors' (`SERIES_SCOPE_COPY` in `event-edit.ts`), for both apps.
+ */
+export const TASK_SERIES_SCOPE_COPY = {
+  thisTask: "This task only",
+  allUpcoming: "All upcoming tasks",
+  saveTitle: "This is a repeating task",
+  saveMessage:
+    "Save your changes to this task only, or to every upcoming task?",
+  deleteTitle: "Delete a repeating task",
+  deleteMessage:
+    "Delete this task only, or stop it repeating? Tasks that are done or overdue stay.",
+  /** Stopping the repeat, in a delete prompt's confirm button. */
+  stopRepeating: "Stop repeating",
+} as const;
+
+/**
+ * Which scope an edit of a task takes (#5119): `instance` for a task that
+ * isn't a copy of a live series, or for a move to another day (one copy
+ * moves; the schedule stays); `series` for a Repeat change, which is about
+ * the series; `ask` for anything else on a copy of a live series.
+ */
+export function taskSaveScope(
+  task: {
+    due_date: string;
+    series?: { ended: boolean } | null;
+  },
+  edit: { due_date?: string | null; recurrence_rule?: string | null },
+): "instance" | "series" | "ask" {
+  if (!task.series || task.series.ended) return "instance";
+  if (edit.recurrence_rule !== undefined) return "series";
+  if (
+    edit.due_date !== undefined &&
+    edit.due_date?.slice(0, 10) !== task.due_date.slice(0, 10)
+  ) {
+    return "instance";
+  }
+  return "ask";
+}

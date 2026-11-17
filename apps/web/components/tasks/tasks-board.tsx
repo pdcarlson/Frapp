@@ -35,7 +35,12 @@ import {
   taskDueBucket,
   type TaskDueBucket,
 } from "@repo/hooks";
-import type { LiveTaskPhoto, TaskStatus, TaskSubtask } from "@repo/hooks";
+import type {
+  LiveTaskPhoto,
+  TaskEditScope,
+  TaskStatus,
+  TaskSubtask,
+} from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import {
   formatDayTime,
@@ -44,10 +49,12 @@ import {
   nextUpLine,
 } from "@repo/formatting";
 import {
+  TASK_SERIES_SCOPE_COPY,
   can,
   taskNeedsSignOff,
   taskSignedOffAutomatically,
   type TaskProofKind,
+  type TaskSeriesLine,
 } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -82,6 +89,7 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { TaskEditForm } from "./task-edit-form";
+import { TaskRepeatLine } from "./task-repeat";
 import {
   MarkDoneControl,
   SendBackDialog,
@@ -132,6 +140,8 @@ type Task = {
   completed_at: string | null;
   confirmed_at: string | null;
   created_at: string;
+  /** How it repeats, on a copy of a repeating task (#5119). */
+  series?: TaskSeriesLine | null;
 };
 
 /*
@@ -617,6 +627,20 @@ export function TasksBoard() {
   }
 
   async function removeTask(task: Task) {
+    // A copy of a live series asks which, as the event editors do (#5119):
+    // this copy, or stop the repeat (its open copy goes only if untouched).
+    if (task.series && !task.series.ended) {
+      const picked = await confirm({
+        title: TASK_SERIES_SCOPE_COPY.deleteTitle,
+        description: TASK_SERIES_SCOPE_COPY.deleteMessage,
+        confirmLabel: TASK_SERIES_SCOPE_COPY.allUpcoming,
+        alternativeLabel: TASK_SERIES_SCOPE_COPY.thisTask,
+        tone: "destructive",
+      });
+      if (!picked) return;
+      await deleteConfirmed(task, picked.alternative ? "instance" : "series");
+      return;
+    }
     const confirmed = await confirm({
       title: `Delete "${task.title}"?`,
       description: "This can't be undone.",
@@ -624,23 +648,32 @@ export function TasksBoard() {
       tone: "destructive",
     });
     if (!confirmed) return;
-    await deleteConfirmed(task);
+    await deleteConfirmed(task, "instance");
   }
 
   /** The delete itself, after the member said yes: what Try again repeats. */
-  async function deleteConfirmed(task: Task) {
+  async function deleteConfirmed(task: Task, scope: TaskEditScope) {
     try {
-      await deleteTask.mutateAsync(task.id);
-      toast({
-        title: "Task deleted",
-        description: `${task.title} was removed.`,
-      });
+      await deleteTask.mutateAsync(
+        scope === "series" ? { id: task.id, scope } : task.id,
+      );
+      toast(
+        scope === "series"
+          ? {
+              title: "Stopped repeating",
+              description: `${task.title} won't repeat. Tasks already done or overdue stay.`,
+            }
+          : {
+              title: "Task deleted",
+              description: `${task.title} was removed.`,
+            },
+      );
     } catch (error) {
       toastFailure({
         title: "Couldn't delete task",
         error,
         fallback: "Try again in a moment.",
-        retry: () => deleteConfirmed(task),
+        retry: () => deleteConfirmed(task, scope),
       });
     }
   }
@@ -1151,6 +1184,12 @@ function TaskCard({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {task.series && !task.series.ended ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <TaskRepeatLine task={task} next />
+          </>
+        ) : null}
         {/* No `·` before it: its checklist icon separates it, the way
             Todoist's sub-task count sits, so a wrapped line never starts or
             ends on a dangling dot. */}

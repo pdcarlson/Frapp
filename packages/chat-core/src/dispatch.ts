@@ -929,6 +929,11 @@ export interface TaskInput {
   reference_photo_paths?: string[];
   /** What Mark done needs (#4635). */
   proof_kind?: TaskProofKind;
+  /**
+   * Repeat on this rule (#5119). On an edit, the rule as it should stand:
+   * `null` stops the repeat, `undefined` leaves it.
+   */
+  recurrence_rule?: string | null;
 }
 
 /**
@@ -967,6 +972,7 @@ export async function postTask(
           ? input.reference_photo_paths
           : undefined,
         proof_kind: input.proof_kind,
+        recurrence_rule: input.recurrence_rule ?? undefined,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },
