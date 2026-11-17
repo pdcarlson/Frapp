@@ -4,6 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
   MAX_REPEAT_RULE_LENGTH,
   POINTS_ADJUSTMENT_MAX,
   isRepeatRule,
@@ -17,8 +20,6 @@ import type {
 import { EventService } from './event.service';
 import { EventTypeService } from './event-type.service';
 
-export const NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH = 255;
-export const NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH = 2000;
 /** An event proposal is stale by the next day (the acting agent, #718). */
 const NEW_EVENT_SUGGESTION_EXPIRY_DAYS = 1;
 /** Longer than any ISO 8601 instant, so a model's essay is not one. */
@@ -68,7 +69,7 @@ interface NewEventPointsFrom {
 function pointsFromOrNull(value: unknown): NewEventPointsFrom | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const from = value as Record<string, unknown>;
-  const name = text(from.name, NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH);
+  const name = text(from.name, EVENT_NAME_MAX_LENGTH);
   return (from.kind === 'type' || from.kind === 'event') && name
     ? { kind: from.kind, name }
     : null;
@@ -126,12 +127,9 @@ export function readNewEventPayload(
   payload: AiSuggestionPayload,
 ): NewEventSuggestionPayload {
   return {
-    name: text(payload.name, NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH) ?? '',
-    description: text(
-      payload.description,
-      NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH,
-    ),
-    location: text(payload.location, NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH),
+    name: text(payload.name, EVENT_NAME_MAX_LENGTH) ?? '',
+    description: text(payload.description, EVENT_DESCRIPTION_MAX_LENGTH),
+    location: text(payload.location, EVENT_LOCATION_MAX_LENGTH),
     start_time: instantOrNull(payload.start_time) ?? '',
     end_time: instantOrNull(payload.end_time) ?? '',
     point_value: pointsOrNull(payload.point_value),
@@ -177,17 +175,14 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
   normalizeProposal(raw: unknown): AiSuggestionPayload | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const input = raw as Record<string, unknown>;
-    const name = text(input.name, NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH);
+    const name = text(input.name, EVENT_NAME_MAX_LENGTH);
     const start = instantOrNull(input.start_time);
     const end = instantOrNull(input.end_time);
     if (!name || !start || !end || end <= start) return null;
     const event: NewEventSuggestionPayload = {
       name,
-      description: text(
-        input.description,
-        NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH,
-      ),
-      location: text(input.location, NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH),
+      description: text(input.description, EVENT_DESCRIPTION_MAX_LENGTH),
+      location: text(input.location, EVENT_LOCATION_MAX_LENGTH),
       start_time: start,
       end_time: end,
       point_value: pointsOrNull(input.point_value),
@@ -216,15 +211,12 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
     const next = readNewEventPayload(payload);
     const has = (key: string) => edits[key] !== undefined;
     if (has('name')) {
-      const name = text(edits.name, NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH);
+      const name = text(edits.name, EVENT_NAME_MAX_LENGTH);
       if (!name) throw new BadRequestException('An event needs a name.');
       next.name = name;
     }
     if (has('location')) {
-      next.location = text(
-        edits.location,
-        NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH,
-      );
+      next.location = text(edits.location, EVENT_LOCATION_MAX_LENGTH);
     }
     if (has('start_time')) {
       const start = instantOrNull(edits.start_time);

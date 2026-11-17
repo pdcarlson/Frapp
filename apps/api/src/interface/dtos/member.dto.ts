@@ -18,6 +18,7 @@ import {
   GRADUATION_YEAR_MIN,
   MEMBER_DISMISSAL_KEYS,
   DISPLAY_NAME_MAX_LENGTH,
+  BLANK_NAME_REFUSAL,
 } from '@repo/validation';
 import { Trim } from '../decorators/trim.decorator';
 
@@ -38,7 +39,7 @@ export class CorrectMemberProfileDto {
   @ValidateIf((_obj, value) => value !== undefined)
   @Trim()
   @IsString()
-  @IsNotEmpty({ message: 'Enter a name.' })
+  @IsNotEmpty({ message: BLANK_NAME_REFUSAL })
   @MaxLength(DISPLAY_NAME_MAX_LENGTH)
   display_name?: string;
 

@@ -1,5 +1,4 @@
 import {
-  IsNotEmpty,
   IsString,
   IsOptional,
   IsUrl,
@@ -10,9 +9,14 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_NAME_MIN_LENGTH,
   CHAPTER_UNIVERSITY_MAX_LENGTH,
-} from '#domain/constants/field-limits';
-import { Trim } from '../decorators/trim.decorator';
+  CHAPTER_UNIVERSITY_MIN_LENGTH,
+} from '@repo/validation';
+import {
+  ChapterNameRules,
+  ChapterUniversityRules,
+} from '../decorators/chapter-identity.decorator';
 
 export class LogoUploadUrlDto {
   @ApiProperty({ description: 'Original filename (e.g. logo.png)' })
@@ -44,32 +48,25 @@ export class ConfirmLogoDto {
 }
 
 export class UpdateChapterDto {
+  // The onboarding wizard's rule (`ChapterOnboardingDto`), so a name one route
+  // takes the other takes too. Settings sends only a field the officer
+  // changed, so a name stored before the rule never refuses an unrelated save.
   @ApiPropertyOptional({
-    description: "The chapter's name. Trimmed; it may not be blank.",
+    description: `The chapter's name. Trimmed; at least ${CHAPTER_NAME_MIN_LENGTH} characters. Omit it to leave it as stored.`,
     maxLength: CHAPTER_NAME_MAX_LENGTH,
   })
   // Not `@IsOptional`, which would also skip the checks for `null` and let it
   // reach the NOT NULL column as a 500: only an absent name is skipped.
   @ValidateIf((_obj, value) => value !== undefined)
-  @Trim()
-  @IsString()
-  @IsNotEmpty({ message: "Enter the chapter's name." })
-  @MaxLength(CHAPTER_NAME_MAX_LENGTH, {
-    message: `Keep the chapter's name to ${CHAPTER_NAME_MAX_LENGTH} characters or fewer.`,
-  })
+  @ChapterNameRules()
   name?: string;
 
   @ApiPropertyOptional({
-    description: "The chapter's university. Trimmed; it may not be blank.",
+    description: `The chapter's university. Trimmed; at least ${CHAPTER_UNIVERSITY_MIN_LENGTH} characters. Omit it to leave it as stored.`,
     maxLength: CHAPTER_UNIVERSITY_MAX_LENGTH,
   })
   @ValidateIf((_obj, value) => value !== undefined)
-  @Trim()
-  @IsString()
-  @IsNotEmpty({ message: 'Enter the university.' })
-  @MaxLength(CHAPTER_UNIVERSITY_MAX_LENGTH, {
-    message: `Keep the university to ${CHAPTER_UNIVERSITY_MAX_LENGTH} characters or fewer.`,
-  })
+  @ChapterUniversityRules()
   university?: string;
 
   @ApiPropertyOptional()

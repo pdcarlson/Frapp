@@ -5,12 +5,16 @@ import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
   BIRTHDAY_COPY,
   BIRTHDAY_VISIBILITIES,
+  DISPLAY_NAME_MAX_LENGTH,
   MAJOR_MAX_LENGTH,
   parseBirthdayVisibility,
   PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   showsAfterGraduation,
+  USER_BIO_MAX_LENGTH,
+  USER_CITY_MAX_LENGTH,
+  USER_COMPANY_MAX_LENGTH,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -328,6 +332,7 @@ export const EditProfileSheet = forwardRef<
         {field("displayName", copy.displayName.label, {
           placeholder: copy.displayName.placeholder,
           autoCapitalize: "words",
+          maxLength: DISPLAY_NAME_MAX_LENGTH,
         })}
         {field("phone", copy.phone.label, {
           placeholder: copy.phone.placeholder,
@@ -405,6 +410,7 @@ export const EditProfileSheet = forwardRef<
           placeholder: copy.bio.placeholder,
           multiline: true,
           autoCapitalize: "sentences",
+          maxLength: USER_BIO_MAX_LENGTH,
         })}
 
         {afterGraduation ? (
@@ -420,10 +426,12 @@ export const EditProfileSheet = forwardRef<
             {field("city", copy.city.label, {
               placeholder: copy.city.placeholder,
               autoCapitalize: "words",
+              maxLength: USER_CITY_MAX_LENGTH,
             })}
             {field("company", copy.company.label, {
               placeholder: copy.company.placeholder,
               autoCapitalize: "words",
+              maxLength: USER_COMPANY_MAX_LENGTH,
             })}
           </>
         ) : null}

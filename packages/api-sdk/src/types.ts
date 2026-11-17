@@ -6244,9 +6244,9 @@ export interface components {
             colors?: components["schemas"]["BrandingColorsDto"];
         };
         ChapterOnboardingDto: {
-            /** @description Chapter display name (org name). Trimmed. */
+            /** @description Chapter display name (org name). Trimmed; at least 3 characters. */
             name: string;
-            /** @description University / institution name. Trimmed. */
+            /** @description University / institution name. Trimmed; at least 2 characters. */
             university: string;
             /** @description Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc. */
             org_archetype?: string;
@@ -6293,9 +6293,9 @@ export interface components {
             logo_url: string | null;
         };
         UpdateChapterDto: {
-            /** @description The chapter's name. Trimmed; it may not be blank. */
+            /** @description The chapter's name. Trimmed; at least 3 characters. Omit it to leave it as stored. */
             name?: string;
-            /** @description The chapter's university. Trimmed; it may not be blank. */
+            /** @description The chapter's university. Trimmed; at least 2 characters. Omit it to leave it as stored. */
             university?: string;
             accent_color?: string;
             donation_url?: string;

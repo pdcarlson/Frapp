@@ -21,6 +21,7 @@ import {
   BIRTH_YEAR_MAX,
   BIRTH_YEAR_MIN,
   BIRTHDAY_VISIBILITIES,
+  BLANK_NAME_REFUSAL,
   type BirthdayVisibility,
   DISPLAY_NAME_MAX_LENGTH,
   GRADUATION_YEAR_MAX,
@@ -31,12 +32,11 @@ import {
   PHONE_INVALID_MESSAGE,
   PHONE_MAX_LENGTH,
   RELEASE_NOTE_VERSION_PATTERN,
-} from '@repo/validation';
-import {
+  tooLongRefusal,
   USER_BIO_MAX_LENGTH,
   USER_CITY_MAX_LENGTH,
   USER_COMPANY_MAX_LENGTH,
-} from '#domain/constants/field-limits';
+} from '@repo/validation';
 import { Trim } from '../decorators/trim.decorator';
 
 /**
@@ -212,9 +212,9 @@ export class UpdateUserDto {
   @ValidateIf((_obj, value) => value !== undefined)
   @Trim()
   @IsString()
-  @IsNotEmpty({ message: 'Enter a name.' })
+  @IsNotEmpty({ message: BLANK_NAME_REFUSAL })
   @MaxLength(DISPLAY_NAME_MAX_LENGTH, {
-    message: `Keep your name to ${DISPLAY_NAME_MAX_LENGTH} characters or fewer.`,
+    message: tooLongRefusal('your name', DISPLAY_NAME_MAX_LENGTH),
   })
   display_name?: string;
 
@@ -225,7 +225,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   @MaxLength(USER_BIO_MAX_LENGTH, {
-    message: `Keep your bio to ${USER_BIO_MAX_LENGTH.toLocaleString('en-US')} characters or fewer.`,
+    message: tooLongRefusal('your bio', USER_BIO_MAX_LENGTH),
   })
   bio?: string;
 
@@ -254,7 +254,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   @MaxLength(USER_CITY_MAX_LENGTH, {
-    message: `Keep your city to ${USER_CITY_MAX_LENGTH} characters or fewer.`,
+    message: tooLongRefusal('your city', USER_CITY_MAX_LENGTH),
   })
   current_city?: string;
 
@@ -265,7 +265,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   @MaxLength(USER_COMPANY_MAX_LENGTH, {
-    message: `Keep your company to ${USER_COMPANY_MAX_LENGTH} characters or fewer.`,
+    message: tooLongRefusal('your company', USER_COMPANY_MAX_LENGTH),
   })
   current_company?: string;
 

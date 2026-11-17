@@ -4,7 +4,7 @@ import { validate } from 'class-validator';
 import {
   CHAPTER_NAME_MAX_LENGTH,
   CHAPTER_UNIVERSITY_MAX_LENGTH,
-} from '#domain/constants/field-limits';
+} from '@repo/validation';
 import { ChapterOnboardingDto } from './chapter-onboarding.dto';
 
 /** Validate a plain payload through the DTO and return the failing property names. */

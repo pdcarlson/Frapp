@@ -29,6 +29,10 @@ import {
   EVENT_CREATE_PERMISSIONS,
   deleteOffersSeriesChoice,
   describeAttendance,
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
   eventLimitsAudience,
   isEmptyEventPatch,
   leavesAfterSave,
@@ -64,7 +68,6 @@ import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { RepeatOptions } from "@/components/events/repeat-options";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
-  EVENT_NAME_MAX_LENGTH,
   applyEventType,
   emptyEventDraft,
   MINUTE_INTERVAL,
@@ -798,6 +801,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 onBlur={() => setFocused(null)}
                 editable={!pending}
                 placeholder="Location (optional)"
+                maxLength={EVENT_LOCATION_MAX_LENGTH}
                 placeholderTextColor={tokens.color.text.muted}
                 accessibilityLabel="Location"
                 style={[
@@ -941,6 +945,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     onBlur={() => setFocused(null)}
                     editable={!pending}
                     placeholder="Description (optional)"
+                    maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
                     placeholderTextColor={tokens.color.text.muted}
                     accessibilityLabel="Description"
                     multiline
@@ -969,6 +974,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     onBlur={() => setFocused(null)}
                     editable={!pending}
                     placeholder={`${notesLabel} (optional)`}
+                    maxLength={EVENT_NOTES_MAX_LENGTH}
                     placeholderTextColor={tokens.color.text.muted}
                     accessibilityLabel={notesLabel}
                     multiline

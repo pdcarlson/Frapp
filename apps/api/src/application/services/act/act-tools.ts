@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
   REPEAT_DEFAULT_COUNT,
@@ -18,15 +21,12 @@ import {
   zonedTimeToUtc,
 } from '#domain/utils/zoned-time';
 import { POINTS_SUGGESTION_MAX_MEMBERS } from '../ai-suggestion-points-kind';
+import { TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH } from '../ai-suggestion-task-kind';
 import { AttendanceService } from '../attendance.service';
 import { EventService } from '../event.service';
 import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import { EventTypeService } from '../event-type.service';
 import { ActPeopleResolver } from './act-people';
-import {
-  NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH,
-  NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH,
-} from '../ai-suggestion-new-event-kind';
 import type { ActPlan, ActRepeat } from './act-prompt';
 import type {
   ActDraft,
@@ -47,8 +47,6 @@ const HOUR_MS = 60 * 60 * 1000;
 const ATTENDED_EVENT_BACK_DAYS = 14;
 /** Events offered when which one is not clear. */
 const EVENT_CHOICES_MAX = 8;
-const EVENT_NAME_MAX_LENGTH = NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH;
-const TEXT_MAX_LENGTH = NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH;
 
 function clean(value: string | null | undefined, max: number): string | null {
   const flat = (value ?? '').replace(/\s+/g, ' ').trim();
@@ -365,7 +363,10 @@ export class CreateTaskActTool implements ActTool {
       status: 'draft',
       payload: {
         title,
-        description: clean(plan.details, TEXT_MAX_LENGTH),
+        description: clean(
+          plan.details,
+          TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH,
+        ),
         assignee_id: assigneeId,
         due_date: dueDate,
         due_at: dueAt,
@@ -489,8 +490,8 @@ export class CreateEventActTool implements ActTool {
       status: 'draft',
       payload: {
         name,
-        description: clean(plan.details, TEXT_MAX_LENGTH),
-        location: clean(plan.location, TEXT_MAX_LENGTH),
+        description: clean(plan.details, EVENT_DESCRIPTION_MAX_LENGTH),
+        location: clean(plan.location, EVENT_LOCATION_MAX_LENGTH),
         start_time: start.toISOString(),
         end_time: end.toISOString(),
         point_value: points,

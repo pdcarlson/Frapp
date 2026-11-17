@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_MEETING_NAME,
+  EVENT_NAME_MAX_LENGTH,
   NEW_MEETING_MINUTES,
   meetingStartingNow,
 } from "@repo/validation";
@@ -157,7 +158,7 @@ export function OffCalendarMeetingFields({
         <Input
           id={`${ids}-name`}
           value={value.name}
-          maxLength={200}
+          maxLength={EVENT_NAME_MAX_LENGTH}
           placeholder={DEFAULT_MEETING_NAME}
           autoFocus={autoFocus}
           aria-invalid={problems.name ? true : undefined}

@@ -6,12 +6,10 @@ import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   MAJOR_MAX_LENGTH,
-} from '@repo/validation';
-import {
   USER_BIO_MAX_LENGTH,
   USER_CITY_MAX_LENGTH,
   USER_COMPANY_MAX_LENGTH,
-} from '#domain/constants/field-limits';
+} from '@repo/validation';
 import { ConfirmAvatarDto, UpdateUserDto } from './user.dto';
 
 const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);

@@ -3,8 +3,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
-  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
@@ -12,10 +10,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_NAME_MIN_LENGTH,
   CHAPTER_UNIVERSITY_MAX_LENGTH,
-} from '#domain/constants/field-limits';
+  CHAPTER_UNIVERSITY_MIN_LENGTH,
+} from '@repo/validation';
 import { BrandingDto } from './chapter-config.dto';
-import { Trim } from '../decorators/trim.decorator';
+import {
+  ChapterNameRules,
+  ChapterUniversityRules,
+} from '../decorators/chapter-identity.decorator';
 
 /**
  * Payload for the onboarding wizard (Chunk 03). The wizard collects chapter
@@ -25,30 +28,20 @@ import { Trim } from '../decorators/trim.decorator';
  * arbitrary module map. Actor identity comes from the session, not this DTO.
  */
 export class ChapterOnboardingDto {
-  // Trimmed before the length checks, so spaces alone never make a name long
-  // enough. Both wizards trim before sending already.
+  // The Settings save's rule too (`UpdateChapterDto`). Both wizards trim
+  // before sending already.
   @ApiProperty({
-    description: 'Chapter display name (org name). Trimmed.',
+    description: `Chapter display name (org name). Trimmed; at least ${CHAPTER_NAME_MIN_LENGTH} characters.`,
     maxLength: CHAPTER_NAME_MAX_LENGTH,
   })
-  @Trim()
-  @IsString()
-  @MinLength(3)
-  @MaxLength(CHAPTER_NAME_MAX_LENGTH, {
-    message: `Keep the chapter's name to ${CHAPTER_NAME_MAX_LENGTH} characters or fewer.`,
-  })
+  @ChapterNameRules()
   name: string;
 
   @ApiProperty({
-    description: 'University / institution name. Trimmed.',
+    description: `University / institution name. Trimmed; at least ${CHAPTER_UNIVERSITY_MIN_LENGTH} characters.`,
     maxLength: CHAPTER_UNIVERSITY_MAX_LENGTH,
   })
-  @Trim()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(CHAPTER_UNIVERSITY_MAX_LENGTH, {
-    message: `Keep the university to ${CHAPTER_UNIVERSITY_MAX_LENGTH} characters or fewer.`,
-  })
+  @ChapterUniversityRules()
   university: string;
 
   @ApiPropertyOptional({

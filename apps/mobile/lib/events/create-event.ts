@@ -38,8 +38,6 @@ import { parsePointReward } from "@/lib/tasks/create-task";
  * past midnight simply ends on the next day.
  */
 
-/** `@MaxLength(255)` on `CreateEventDto.name`. */
-export const EVENT_NAME_MAX_LENGTH = 255;
 /** The hour most chapter events start: 7:00 PM. */
 const DEFAULT_START_HOUR = 19;
 /** A new event lasts an hour until the officer says otherwise. */

@@ -10,7 +10,11 @@ import {
   orgHidingGreekLettersIn,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
-import { type PatchChapterConfig } from "@repo/validation";
+import {
+  CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_UNIVERSITY_MAX_LENGTH,
+  type PatchChapterConfig,
+} from "@repo/validation";
 import {
   FOUNDED_YEAR_MIN,
   latestFoundedYear,
@@ -279,6 +283,7 @@ export function SettingsOrgTab({
                 <Label htmlFor="chapter-name">Chapter name</Label>
                 <Input
                   id="chapter-name"
+                  maxLength={CHAPTER_NAME_MAX_LENGTH}
                   value={profileDraft.name}
                   onChange={(event) =>
                     setProfileDraft((prev) => ({
@@ -292,6 +297,7 @@ export function SettingsOrgTab({
                 <Label htmlFor="chapter-university">University</Label>
                 <Input
                   id="chapter-university"
+                  maxLength={CHAPTER_UNIVERSITY_MAX_LENGTH}
                   value={profileDraft.university}
                   onChange={(event) =>
                     setProfileDraft((prev) => ({

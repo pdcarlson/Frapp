@@ -20,6 +20,9 @@ import {
 /** The default "what next" when nothing more specific is known. */
 export const TRY_AGAIN = "Try again in a moment.";
 
+/** A member's name sent blank, on their own profile or an officer's fix. */
+export const BLANK_NAME_REFUSAL = "Enter a name.";
+
 export const OFFLINE_COPY =
   "Couldn't reach Frapp. Check your connection and try again.";
 const MODULE_OFF =
@@ -235,6 +238,8 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "This account cannot be blocked": "This account can't be blocked.",
   "This report is no longer open": "Someone already handled this report.",
   // Roles and members
+  // A blank name on a member's own profile or an officer's fix (#4367).
+  [BLANK_NAME_REFUSAL]: BLANK_NAME_REFUSAL,
   "Role name already exists in this chapter":
     "A role with that name already exists. Pick another name.",
   "A custom field with this key already exists in this chapter":
@@ -328,10 +333,31 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "This invite doesn't work anymore. Ask an officer for a new one.",
 };
 
+/**
+ * The API's refusal of text past its limit (`@MaxLength` on a DTO field), in
+ * a member's words: "Keep the description to 5,000 characters or fewer." The
+ * API words its messages with this and {@link tooShortRefusal}, and the
+ * patterns below read them back, so a refusal and the words a member sees
+ * can't drift apart. `subject` is "your bio", "the chapter's name".
+ */
+export function tooLongRefusal(subject: string, max: number): string {
+  return `Keep ${subject} to ${max.toLocaleString("en-US")} characters or fewer.`;
+}
+
+/** The API's refusal of text under its minimum, trimmed first. */
+export function tooShortRefusal(subject: string, min: number): string {
+  return `Use at least ${min.toLocaleString("en-US")} characters for ${subject}.`;
+}
+
 /** Server sentences with a value in the middle, matched by shape. */
 const SERVER_MESSAGE_PATTERNS: ReadonlyArray<
   readonly [RegExp, (match: RegExpMatchArray) => string]
 > = [
+  // Already in a member's words ({@link tooLongRefusal},
+  // {@link tooShortRefusal}). Matched at the start only, so of two fields
+  // refused at once (Nest joins them with ", ") the first is shown.
+  [/^Keep (?:your|the) [^.]+? to [\d,]+ characters or fewer\./, (m) => m[0]],
+  [/^Use at least [\d,]+ characters for [^.]+\./, (m) => m[0]],
   [
     /^File extension\b.*\bnot allowed/i,
     () => "That file type isn't supported.",

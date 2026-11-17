@@ -3,13 +3,17 @@ import {
   BadRequestException,
   ValidationPipe,
 } from '@nestjs/common';
-import { MAX_CHECK_IN_OPENS_MINUTES } from '@repo/validation';
-import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
-import { CreateEventDto, UpdateEventDto } from './event.dto';
 import {
   EVENT_DESCRIPTION_MAX_LENGTH,
   EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
   EVENT_NOTES_MAX_LENGTH,
+  MAX_CHECK_IN_OPENS_MINUTES,
+} from '@repo/validation';
+import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
+import { CreateEventDto, UpdateEventDto } from './event.dto';
+import {
+  EVENT_ROLE_ID_MAX_LENGTH,
   EVENT_ROLE_IDS_MAX,
 } from '#domain/constants/field-limits';
 
@@ -158,12 +162,14 @@ describe('Event DTOs — text lengths and role lists', () => {
     async (_, dto, base) => {
       const body = {
         ...base,
+        name: 'c'.repeat(EVENT_NAME_MAX_LENGTH),
         description: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH),
         location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH),
         notes: 'n'.repeat(EVENT_NOTES_MAX_LENGTH),
       };
       await expect(transform(dto, body)).resolves.toEqual(
         expect.objectContaining({
+          name: body.name,
           description: body.description,
           location: body.location,
           notes: body.notes,
@@ -175,10 +181,11 @@ describe('Event DTOs — text lengths and role lists', () => {
   it.each(cases)(
     '%s refuses each text field one past its limit, saying the limit',
     async (_, dto, base) => {
-      for (const [field, max] of [
-        ['description', EVENT_DESCRIPTION_MAX_LENGTH],
-        ['location', EVENT_LOCATION_MAX_LENGTH],
-        ['notes', EVENT_NOTES_MAX_LENGTH],
+      for (const [field, max, subject] of [
+        ['name', EVENT_NAME_MAX_LENGTH, "the event's name"],
+        ['description', EVENT_DESCRIPTION_MAX_LENGTH, 'the description'],
+        ['location', EVENT_LOCATION_MAX_LENGTH, 'the location'],
+        ['notes', EVENT_NOTES_MAX_LENGTH, 'the notes'],
       ] as const) {
         const error: unknown = await transform(dto, {
           ...base,
@@ -187,7 +194,9 @@ describe('Event DTOs — text lengths and role lists', () => {
         expect(error).toBeInstanceOf(BadRequestException);
         expect(
           JSON.stringify((error as BadRequestException).getResponse()),
-        ).toContain(`Keep the ${field} to`);
+        ).toContain(
+          `Keep ${subject} to ${max.toLocaleString('en-US')} characters or fewer.`,
+        );
       }
     },
   );
@@ -201,20 +210,39 @@ describe('Event DTOs — text lengths and role lists', () => {
     }
   });
 
+  // The columns are `text[]` and an officer's edit sends back the ids the
+  // event already holds, so an id stored in another shape must not refuse
+  // their unrelated edit: entries are bounded by length, not read as UUIDs.
   it.each(cases)(
-    '%s refuses a role id that is not an id, and a list past the cap',
+    '%s takes back a stored role id that is not a UUID',
+    async (_, dto, base) => {
+      for (const field of roleFields) {
+        await expect(
+          transform(dto, { ...base, [field]: ['officers', roleId] }),
+        ).resolves.toEqual(
+          expect.objectContaining({ [field]: ['officers', roleId] }),
+        );
+      }
+    },
+  );
+
+  it.each(cases)(
+    '%s refuses a role list past the cap, an entry past its length, and a non-string',
     async (_, dto, base) => {
       const tooMany = Array.from(
         { length: EVENT_ROLE_IDS_MAX + 1 },
         () => roleId,
       );
       for (const field of roleFields) {
-        await expect(
-          transform(dto, { ...base, [field]: ['officers'] }),
-        ).rejects.toBeInstanceOf(BadRequestException);
-        await expect(
-          transform(dto, { ...base, [field]: tooMany }),
-        ).rejects.toBeInstanceOf(BadRequestException);
+        for (const value of [
+          tooMany,
+          ['r'.repeat(EVENT_ROLE_ID_MAX_LENGTH + 1)],
+          [42],
+        ]) {
+          await expect(
+            transform(dto, { ...base, [field]: value }),
+          ).rejects.toBeInstanceOf(BadRequestException);
+        }
       }
     },
   );
