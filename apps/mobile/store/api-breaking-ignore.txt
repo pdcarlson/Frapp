@@ -41,3 +41,15 @@ POST /v1/tasks removed the required property 'photo_required' from the response 
 POST /v1/tasks removed the required property 'proof_photo_path' from the response with the '201' status
 POST /v1/tasks removed the required property 'reference_photo_path' from the response with the '201' status
 GET /v1/tasks/{id}/photo-url api path removed without deprecation
+
+# The backwork confirm now takes file_hash only as a SHA-256 in lowercase hex, which is what the web
+# app's sha256Hex has always sent. Only the web upload sheet and bulk upload confirm a backwork
+# file (useConfirmBackworkUpload); the phone has no Backwork (#2258). Checked 2026-11-17 at every
+# SHA in shipped-builds.json (ea9bc12c, cca52dec, 5e43a27b, 55922eab, 108b7ac7, 728fb69e, b61c20c3,
+# c91ec8d8, 547c1364, 68a47019, e83a0109, dcdfde42, 218b178c, 5615e8b2, c85e2c3a, 5f0bd6c9,
+# 6928a014): `git grep '"/v1/backwork"' <sha> -- apps/mobile packages` finds only
+# packages/api-sdk/src/types.ts, packages/hooks/src/use-backwork.spec.tsx, and in
+# packages/hooks/src/use-backwork.ts the list GET and useConfirmBackworkUpload's POST; and
+# `git grep 'useConfirmBackworkUpload\|backwork/upload-url\|/v1/backwork' <sha> -- apps/mobile`
+# finds nothing. So no binary sends this POST (the hook it bundles defines it, unused).
+POST /v1/backwork added the pattern '^[0-9a-f]{64}$' to the request property 'file_hash'

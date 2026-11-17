@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
@@ -216,7 +217,15 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_LOG)
   @ApiOperation({ summary: 'Log a service entry' })
-  @ApiCreatedResponse({ type: CreateServiceEntryResponseDto })
+  @ApiCreatedResponse({
+    type: CreateServiceEntryResponseDto,
+    description:
+      'The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one.',
+  })
+  @ApiBadRequestResponse({
+    description:
+      "A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again.",
+  })
   @FeatureEvent(
     'service-hours-logged',
     ({

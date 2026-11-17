@@ -415,9 +415,10 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         onError: (error: unknown) => {
           sending.current = false;
           kept.release();
-          // The API turned the held path down (another chapter's, or no
-          // object behind it): drop it, so the next Submit uploads the photo
-          // again instead of resending a path that can't win. Whatever visit
+          // The API turned the held path down (another chapter's, no object
+          // behind it, or on another member's entry): drop it, so the next
+          // Submit uploads the photo again instead of resending a path that
+          // can't win. Whatever visit
           // is on screen, since the path is wrong in all of them.
           const sentPath = body.proof_path;
           if (sentPath && proofPathRefusedOf(error)) {

@@ -81,6 +81,26 @@ export interface IBackworkResourceRepository {
     fields: BackworkDraftFields,
   ): Promise<BackworkResource | null>;
   /**
+   * Marks one of the uploader's drafts as being AI-filled, only when no other
+   * fill holds it: no claim, or one started before `staleBefore`. One
+   * conditional update, so of two fills racing for the same draft, on any
+   * number of API instances, one wins. Returns the claim's timestamp, which
+   * `releaseAiFill` needs; null when another fill holds the draft or it is
+   * no longer the uploader's draft.
+   */
+  claimAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<string | null>;
+  /**
+   * Clears a claim `claimAiFill` returned, unless a later fill has since
+   * taken the draft over (its claim went stale).
+   */
+  releaseAiFill(id: string, chapterId: string, claim: string): Promise<void>;
+  /**
    * Rows, drafts included, whose file is at this path: a path already in use
    * is never taken by another row, nor deleted while one still points at it.
    */

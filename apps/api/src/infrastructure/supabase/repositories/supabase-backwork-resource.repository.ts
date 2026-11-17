@@ -199,6 +199,48 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     return data;
   }
 
+  async claimAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<string | null> {
+    const claim = now.toISOString();
+    // The lease pattern the scheduled-message worker uses: the `or` filter is
+    // part of the UPDATE's WHERE, which Postgres checks again against the row
+    // it locks, so a second claim that waited on the first sees its timestamp
+    // and matches nothing.
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ ai_fill_started_at: claim })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .or(
+        `ai_fill_started_at.is.null,ai_fill_started_at.lt."${staleBefore.toISOString()}"`,
+      )
+      .select('id')
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data ? claim : null;
+  }
+
+  async releaseAiFill(
+    id: string,
+    chapterId: string,
+    claim: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('backwork_resources')
+      .update({ ai_fill_started_at: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('ai_fill_started_at', claim);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async replaceDraftFile(
     id: string,
     chapterId: string,

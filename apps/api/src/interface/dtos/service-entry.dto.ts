@@ -43,7 +43,8 @@ export class CreateServiceEntryDto {
   description: string;
 
   @ApiPropertyOptional({
-    description: 'Storage path to proof file (e.g. from upload)',
+    description:
+      'The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400.',
   })
   @IsOptional()
   @IsString()
@@ -59,7 +60,7 @@ export class CreateServiceEntryDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry.',
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it.',
   })
   @IsOptional()
   @IsUUID()

@@ -5603,7 +5603,7 @@ export interface paths {
         put?: never;
         /**
          * Propose fields for one of the caller's drafts from its redacted text
-         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.
          */
         post: operations["BackworkFillController_fill_v1"];
         delete?: never;
@@ -8635,7 +8635,7 @@ export interface components {
             tags?: string[] | null;
             /** @description Storage path returned from upload-url */
             storage_path: string;
-            /** @description SHA-256 hash of the uploaded file */
+            /** @description SHA-256 hash of the uploaded file, as 64 lowercase hex characters */
             file_hash: string;
             /** @default false */
             is_redacted: boolean;
@@ -8812,11 +8812,11 @@ export interface components {
             duration_minutes: number;
             /** @description Description of the service performed */
             description: string;
-            /** @description Storage path to proof file (e.g. from upload) */
+            /** @description The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400. */
             proof_path?: string;
             /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it. */
             client_message_id?: string;
         };
         CreateServiceEntryResponseDto: {
@@ -19085,6 +19085,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -19092,6 +19093,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CreateServiceEntryResponseDto"];
                 };
+            };
+            /** @description A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -24435,6 +24443,13 @@ export interface operations {
             };
             /** @description AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another fill of this draft is still running. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
