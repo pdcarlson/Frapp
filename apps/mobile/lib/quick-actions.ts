@@ -31,8 +31,9 @@ export type QuickActionKey =
  * The panel holds at most nine, three rows of three (Paul, 2026-11-13: "cap it
  * at 9, and then you could go 3 rows of 3"), and stays nine with New minutes
  * and Search added (Paul, 2026-11-17, #5287): an officer who can use all ten
- * places nine and leaves one in the Add row. Record meeting is a row above
- * the grid and takes no slot.
+ * places nine and leaves one in the Add row. Recording starts from New
+ * minutes' sheet, not a slot of its own (Paul, 2026-11-17: "Why have 2
+ * options?").
  */
 export const QUICK_ACTION_LIMIT = 9;
 
@@ -56,9 +57,8 @@ export const QUICK_ACTION_COLUMNS = 3;
  * and a member whose role logs hours with Search, Message, Log hours and
  * Study. New minutes and Search lead (Paul, 2026-11-17, #5287: "there's no
  * way for me to record ... minutes on my phone", "one of those options could
- * be search"); Record meeting is not in this list at all but a row above the
- * grid (`components/quick-actions/record-meeting-row.tsx`), so no edit can
- * hide it. There is no Check in: a member checks in by pointing the phone's
+ * be search"); recording starts from New minutes' sheet
+ * (`components/quick-actions/meeting-actions.tsx`). There is no Check in: a member checks in by pointing the phone's
  * camera at the host's code, which opens the app already checking in
  * (2026-11-13), and a saved panel that held it just drops it. Invite stays
  * in the first six for the officer who can invite (owner ask 2026-11-06, "I

@@ -30,7 +30,7 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * both announce a recording to the room before it starts; here the officer
  * does it, because the phone on the table has no voice.
  *
- * The +'s Record meeting opens it too (#5287), with the meeting it will
+ * The +'s New minutes opens it too, from Record the meeting (#5287), with the meeting it will
  * record on a row under the heading (`subject`), so picking the meeting is
  * never a step of its own.
  */

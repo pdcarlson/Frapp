@@ -196,18 +196,21 @@ export function useMeetingQuickActions({
 
   /**
    * Record, from New minutes: the AI question first when it is owed
-   * (§ Recording in the app), then the notice, on the meeting the sheet had.
+   * (§ Recording in the app), over the sheet, then the notice on the meeting
+   * the sheet had. Whether to go on, so a No leaves New minutes open with
+   * the meeting the officer picked.
    */
-  async function recordFromSheet() {
+  async function recordFromSheet(): Promise<boolean> {
     if (consentNeeded) {
       try {
-        if (!(await ensureConsent())) return;
+        if (!(await ensureConsent())) return false;
       } catch {
-        return;
+        return false;
       }
       void refetchAvailability();
     }
     present("record", true);
+    return true;
   }
 
   /** Starts or opens the minutes, or the line to show when it can't. */
@@ -326,8 +329,11 @@ const StartMinutesSheet = forwardRef<
     canStart: boolean;
     /** Resolves to the line to show when the start failed, else null. */
     onStart: () => Promise<string | null>;
-    /** Starts them recording instead, or null where this phone can't. */
-    onRecord: (() => void) | null;
+    /**
+     * Starts them recording instead, resolving to whether the notice is
+     * coming, or null where this phone can't record.
+     */
+    onRecord: (() => Promise<boolean>) | null;
   }
 >(function StartMinutesSheet({ pick, canStart, onStart, onRecord }, ref) {
   const { tokens } = useFrappTheme();
@@ -385,9 +391,8 @@ const StartMinutesSheet = forwardRef<
             fill
             label={MEETING_START_COPY.record}
             disabled={!pick || !canStart || busy}
-            onPress={() => {
-              closeSheet();
-              onRecord();
+            onPress={async () => {
+              if (await onRecord()) closeSheet();
             }}
           />
         ) : null}

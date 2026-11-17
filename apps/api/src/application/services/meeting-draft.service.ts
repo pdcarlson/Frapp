@@ -717,10 +717,13 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /**
-   * The model's draft: one pass, or for a long meeting one pass per part and
-   * a summary over them (`minutes-draft-parts.ts`). A part that can't be
-   * drafted ends the whole draft the way a one-pass failure would, because a
-   * draft missing an hour of the meeting reads as complete when it isn't.
+   * The model's draft: a first pass over the notes, or for a long meeting one
+   * per part (`minutes-draft-parts.ts`), then the editor's read over every
+   * candidate (`minutes-draft-review.ts`). Every draft gets the editor's
+   * read, because a procedural motion reads as a decision in an hour's notes
+   * as much as in four. A part that can't be drafted ends the whole draft the
+   * way a one-pass failure would, because a draft missing an hour of the
+   * meeting reads as complete when it isn't.
    */
   private async drafted(
     request: MinutesDraftRequest,
@@ -752,16 +755,23 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     // Pass 2: the editor's read over the whole meeting
     // (`minutes-draft-review.ts`). Several note-takers' conflicts are settled
     // by the first pass and pass through untouched.
-    const reviewed = await this.gateway.generateObject(
-      MINUTES_DRAFT_TASK,
-      {
-        ...buildReviewPrompt(request, outputs),
-        schema: ReviewedMinutesSchema,
-        signal,
-      },
-      context,
-    );
-    if (reviewed.status === 'ok') {
+    const reviewed = await this.gateway
+      .generateObject(
+        MINUTES_DRAFT_TASK,
+        {
+          ...buildReviewPrompt(request, outputs),
+          schema: ReviewedMinutesSchema,
+          signal,
+        },
+        context,
+      )
+      .catch((error: unknown) => {
+        // A cancelled run stays cancelled; any other failure of this pass
+        // (a timeout, a provider error) leaves the first pass standing.
+        if (signal?.aborted) throw error;
+        return null;
+      });
+    if (reviewed?.status === 'ok') {
       usages.push(reviewed.usage);
       return {
         status: 'ok',
@@ -769,12 +779,10 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         usage: usageOf(usages),
       };
     }
-    // A refusal or a closed gate ends the draft as the first pass would
-    // have; a review that only failed to come back leaves the first pass's
+    // The first pass is already paid for and already checked word for word,
+    // so whatever stopped the editor's read (a reply that didn't parse, a
+    // refusal, the spend cap reached on this call, an error) leaves its
     // draft, with procedure taken out, rather than nothing.
-    if (reviewed.status === 'unavailable' || reviewed.status === 'refused') {
-      return reviewed;
-    }
     const merged = mergeParts(outputs);
     return {
       status: 'ok',

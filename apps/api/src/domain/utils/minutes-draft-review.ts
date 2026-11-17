@@ -181,38 +181,61 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The reviewed minutes as a draft the usual checks read: each decision and
- * action item takes its words and source from the first candidate it names.
- * One that names no candidate the first pass found is left out, since it
- * has no words in the notes to stand on.
+ * action item takes its words and source from a candidate it names. Of
+ * those, the one whose own vote, owner or day matches the reviewed item is
+ * used, so a count or an owner that came with the settling words is checked
+ * against them; otherwise, for a decision, the first that isn't itself a
+ * procedural step (so "voted to discuss it" never stands as the words of how
+ * it ended), else the first named. One that names no candidate the
+ * first pass found keeps no words, so `verifyMinutesDraft` leaves it out and
+ * counts it, as it does any item without words in the notes.
  */
 export function applyReview(
   parts: readonly MeetingDraftOutput[],
   reviewed: ReviewedMinutes,
 ): MeetingDraftOutput {
   const byId = new Map(candidatesOf(parts).map((c) => [c.id, c]));
-  const first = (ids: readonly string[]) =>
-    ids.map((id) => byId.get(id.trim())).find((c) => c !== undefined);
+  const named = (ids: readonly string[]) =>
+    ids
+      .map((id) => byId.get(id.toUpperCase().replace(/[^A-Z0-9]/g, '')))
+      .filter((c): c is Candidate => c !== undefined);
+  const words = (c: Candidate | undefined) =>
+    c
+      ? { quote: c.quote, ...(c.source ? { source: c.source } : {}) }
+      : { quote: '' };
   const decisions: MeetingDraftOutput['decisions'] = [];
   for (const item of reviewed.decisions) {
-    const from = first(item.from);
-    if (!from) continue;
-    decisions.push({
-      text: item.text,
-      vote: item.vote,
-      quote: from.quote,
-      ...(from.source ? { source: from.source } : {}),
-    });
+    const from = named(item.from);
+    const vote = item.vote;
+    const holder =
+      (vote &&
+        from.find(
+          (c) =>
+            c.vote &&
+            c.vote.for === vote.for &&
+            c.vote.against === vote.against &&
+            c.vote.abstain === vote.abstain,
+        )) ||
+      from.find((c) => !isProceduralDecision(c.text)) ||
+      from[0];
+    decisions.push({ text: item.text, vote: item.vote, ...words(holder) });
   }
   const actionItems: MeetingDraftOutput['action_items'] = [];
   for (const item of reviewed.action_items) {
-    const from = first(item.from);
-    if (!from) continue;
+    const from = named(item.from);
+    const due = item.due_date && DAY.test(item.due_date) ? item.due_date : null;
+    const holder =
+      from.find(
+        (c) =>
+          (!item.owner || c.owner === item.owner) &&
+          (!due || c.due_date === due) &&
+          (item.owner || due),
+      ) || from[0];
     actionItems.push({
       text: item.text,
       owner: item.owner,
-      due_date: item.due_date && DAY.test(item.due_date) ? item.due_date : null,
-      quote: from.quote,
-      ...(from.source ? { source: from.source } : {}),
+      due_date: due,
+      ...words(holder),
     });
   }
   return {
@@ -233,11 +256,23 @@ export function applyReview(
  * A procedural step written up as a decision: "The chapter voted to move on
  * to new business", "voted to discuss the afterparty", "voted to adjourn".
  * The review pass is told to drop these; this catches one it missed, and
- * covers the draft when the review pass could not run. Tabling, postponing
- * and sending to a committee are outcomes and stay.
+ * covers the draft when the review pass could not run. It matches only a
+ * step in how the meeting ran: moving to a part of the agenda, opening or
+ * closing the floor, discussing or considering something, approving the
+ * agenda, calling the question, a recess, adjourning. "Voted to move into
+ * the new house" or "decided to start a scholarship fund" are outcomes and
+ * stay, as do tabling, postponing and sending to a committee.
  */
-const PROCEDURAL =
-  /^(?:the\s+)?(?:chapter|meeting|members|body|room|brothers|sisters|group|exec(?:utive)? board|officers)?\s*(?:unanimously\s+)?(?:voted|agreed|moved|decided|approved a motion|passed a motion)\s+(?:unanimously\s+)?to\s+(?:move\s+(?:on\s+)?(?:to|into)|go\s+(?:on\s+)?to|proceed\s+(?:to|with)|open\s+(?:the\s+)?(?:floor|nominations|discussion)|close\s+(?:the\s+)?(?:floor|nominations|discussion)|discuss|consider|hear|begin|start|enter|skip|adjourn|recess|approve\s+the\s+agenda|call\s+the\s+question)\b/i;
+const AGENDA_PART =
+  '(?:the\\s+)?(?:next\\s+(?:item|topic|order|section|agenda)|(?:new|old|unfinished|special|general)\\s+business|announcements|(?:officer|officers|committee|chair|exec(?:utive)?)\\s+reports?|reports|open\\s+forum|good\\s+of\\s+the\\s+order|(?:the\\s+)?agenda|nominations|elections|discussion|questions|the\\s+floor)';
+const PROCEDURAL = new RegExp(
+  '^(?:the\\s+)?(?:chapter|meeting|members|body|room|brothers|sisters|group|exec(?:utive)? board|officers)?\\s*(?:unanimously\\s+)?(?:voted|agreed|moved|decided|approved a motion|passed a motion)\\s+(?:unanimously\\s+)?to\\s+' +
+    `(?:(?:move|go|proceed)\\s+(?:on\\s+)?(?:to|into)\\s+${AGENDA_PART}\\b` +
+    '|(?:open|close|reopen)\\s+(?:the\\s+)?(?:floor|nominations|discussion)' +
+    '|discuss\\b|consider\\b|hear\\s+(?:the\\s+)?(?:reports?|presentations?)' +
+    '|adjourn|recess|approve\\s+the\\s+agenda|call\\s+the\\s+question)',
+  'i',
+);
 
 export function isProceduralDecision(text: string): boolean {
   return PROCEDURAL.test(text.trim());

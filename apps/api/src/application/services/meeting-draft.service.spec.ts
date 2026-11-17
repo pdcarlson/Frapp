@@ -608,32 +608,46 @@ describe('MeetingDraftService', () => {
       expect(save.content.action_items).toHaveLength(1);
     });
 
-    it('keeps the first pass, procedure taken out, when the editor’s read does not come back', async () => {
-      const moveOn = 'All in favor moving on to new business? Any opposed?';
-      const partDraft: MeetingDraftOutput = {
-        ...DRAFTED,
-        decisions: [
-          ...DRAFTED.decisions,
-          {
-            text: 'The chapter voted to move on to new business.',
-            vote: null,
-            quote: moveOn,
-          },
-        ],
-      };
-      const { ask, work, meetings } = setup({
-        reply: (request) =>
-          String(request.messages[0].content).includes('Candidates (D =')
-            ? { text: 'not json', object: undefined }
-            : { text: JSON.stringify(partDraft), object: partDraft },
-      });
-      await ask(`${NOTES}\n${moveOn}`);
-      await work();
-      const [, , , save] = meetings.update.mock.calls[0];
-      expect(
-        save.content.decisions.map((d: { text: string }) => d.text),
-      ).toEqual(['Approved up to $1,200 for a DJ at formal.']);
-    });
+    it.each([
+      [
+        'comes back unreadable',
+        () => ({ text: 'not json', object: undefined }),
+      ],
+      [
+        'fails outright',
+        () => {
+          throw new Error('provider timed out');
+        },
+      ],
+    ])(
+      'keeps the first pass, procedure taken out, when the editor’s read %s',
+      async (_why, editor) => {
+        const moveOn = 'All in favor moving on to new business? Any opposed?';
+        const partDraft: MeetingDraftOutput = {
+          ...DRAFTED,
+          decisions: [
+            ...DRAFTED.decisions,
+            {
+              text: 'The chapter voted to move on to new business.',
+              vote: null,
+              quote: moveOn,
+            },
+          ],
+        };
+        const { ask, work, meetings } = setup({
+          reply: (request) =>
+            String(request.messages[0].content).includes('Candidates (D =')
+              ? editor()
+              : { text: JSON.stringify(partDraft), object: partDraft },
+        });
+        await ask(`${NOTES}\n${moveOn}`);
+        await work();
+        const [, , , save] = meetings.update.mock.calls[0];
+        expect(
+          save.content.decisions.map((d: { text: string }) => d.text),
+        ).toEqual(['Approved up to $1,200 for a DJ at formal.']);
+      },
+    );
 
     it('ends a long draft as a whole when one part fails', async () => {
       const talk = Array.from(

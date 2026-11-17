@@ -238,7 +238,7 @@ describe("what the panel shows", () => {
     // Nine without minutes drafting: every one fits.
     expect(officer).toHaveLength(9);
     // Ten with it (#5287): the cap stays nine (Paul, 2026-11-17), so one
-    // waits in the Add row. Record meeting takes no slot.
+    // waits in the Add row. Recording takes no slot: it starts from New minutes.
     const all = availableQuickActions({
       permissions: OFFICER,
       enabledModules: undefined,

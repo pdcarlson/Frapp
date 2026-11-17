@@ -16,8 +16,8 @@ import {
 import { selectAllEventRows, type EventRow } from "@/lib/events/select";
 
 /**
- * Starting minutes on the phone: which meeting the +'s Record meeting and
- * New minutes start on (#5287; `spec/behavior/meetings.md` § Recording in the
+ * Starting minutes on the phone: which meeting the +'s New minutes starts
+ * on, for notes or a recording, (#5287; `spec/behavior/meetings.md` § Recording in the
  * app, § Writing minutes by hand), and the one start call they and the event
  * screen's Write minutes share. Every set of minutes belongs to an event
  * (#4935), one per event.

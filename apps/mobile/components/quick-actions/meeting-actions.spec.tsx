@@ -44,7 +44,12 @@ const data = vi.hoisted(() => ({
     onPress: () => Promise<void>;
     disabled?: boolean;
   },
-  recordButton: null as null | { onPress: () => void; disabled?: boolean },
+  recordButton: null as null | {
+    onPress: () => Promise<void>;
+    disabled?: boolean;
+  },
+  sheetClose: vi.fn(),
+  pickChange: null as null | ((choice: unknown) => void),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -156,7 +161,10 @@ vi.mock("@gorhom/bottom-sheet", async () => {
 });
 // The picker is `meeting-pick-field`'s own; here it is a stand-in.
 vi.mock("@/components/minutes/meeting-pick-field", () => ({
-  MeetingPickField: () => null,
+  MeetingPickField: (props: { onChange: (choice: unknown) => void }) => {
+    data.pickChange = props.onChange;
+    return null;
+  },
 }));
 vi.mock("@/lib/sheet-scrollables", () => ({
   BottomSheetScrollView: (props: { children: React.ReactNode }) => (
@@ -175,7 +183,7 @@ vi.mock("@/components/sheet-scaffold", () => ({
   SheetGrabber: () => null,
   SheetScrim: () => null,
   useSheetBackgroundStyle: () => ({}),
-  useSheetClose: () => vi.fn(),
+  useSheetClose: () => data.sheetClose,
   SheetPrimaryButton: (props: {
     onPress: () => Promise<void>;
     disabled?: boolean;
@@ -184,12 +192,15 @@ vi.mock("@/components/sheet-scaffold", () => ({
     return null;
   },
 }));
-function keepRecordButton(props: { onPress: () => void; disabled?: boolean }) {
+function keepRecordButton(props: {
+  onPress: () => Promise<void>;
+  disabled?: boolean;
+}) {
   data.recordButton = props;
 }
 vi.mock("@/components/onboarding/onboarding-secondary-button", () => ({
   OnboardingSecondaryButton: (props: {
-    onPress: () => void;
+    onPress: () => Promise<void>;
     disabled?: boolean;
   }) => {
     keepRecordButton(props);
@@ -290,12 +301,13 @@ describe("Record, on New minutes", () => {
     expect(data.noticePresent).toHaveBeenCalledTimes(1);
   });
 
-  it("stops at a No on the AI question", async () => {
+  it("stops at a No on the AI question, leaving New minutes open", async () => {
     data.blocked = "consent_required";
     data.consent.mockResolvedValue(false);
     render();
     await record();
     expect(data.noticePresent).not.toHaveBeenCalled();
+    expect(data.sheetClose).not.toHaveBeenCalled();
   });
 
   it("starts the minutes, opens them and starts the recorder on Start", async () => {
@@ -316,6 +328,27 @@ describe("Record, on New minutes", () => {
     expect(data.recorderStart).toHaveBeenCalledWith(
       { meetingId: "m-new", eventName: "Chapter meeting", maxSeconds: 3600 },
       true,
+    );
+  });
+
+  it("records the meeting the officer picked with Change, not the +'s own pick", async () => {
+    render();
+    act(() => latest.newMinutes());
+    act(() =>
+      data.pickChange?.({
+        kind: "event",
+        event: {
+          id: "e-exec",
+          name: "Exec Meeting",
+          start_time: iso(-7 * 24 * 60),
+          end_time: iso(-7 * 24 * 60 + 60),
+        },
+      }),
+    );
+    await act(async () => data.recordButton?.onPress());
+    await act(async () => data.noticeProps?.onStart());
+    expect(data.start).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: "e-exec" }),
     );
   });
 

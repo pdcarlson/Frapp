@@ -120,11 +120,62 @@ describe('the editor’s read over a draft', () => {
         quote: 'Okay so that passes, with the deposit.',
         source: 'S1',
       },
+      // No words in the notes: verification leaves it out and counts it.
+      { text: 'Bought a boat.', vote: null, quote: '' },
     ]);
     expect(out.action_items[0]).toMatchObject({
       quote: 'someone has to get the deposit from them',
       due_date: null,
     });
+  });
+
+  it('takes the words of the candidate that holds the count, whichever is named first', () => {
+    const counted: MeetingDraftOutput[] = [
+      {
+        ...empty,
+        decisions: [
+          {
+            text: 'Motion to approve the afterparty.',
+            vote: null,
+            quote: 'I move we approve the afterparty',
+          },
+          {
+            text: 'Approved the afterparty.',
+            vote: { for: 30, against: 2, abstain: 1 },
+            quote: 'Thirty for, two against, one abstain, it passes',
+          },
+        ],
+      },
+    ];
+    const out = applyReview(counted, {
+      ...empty,
+      decisions: [
+        {
+          from: ['D1', 'D2'],
+          text: 'Approved the afterparty.',
+          vote: { for: 30, against: 2, abstain: 1 },
+        },
+      ],
+      action_items: [],
+      open_questions: [],
+    });
+    expect(out.decisions[0].quote).toBe(
+      'Thirty for, two against, one abstain, it passes',
+    );
+  });
+
+  it('reads an id written loosely, and leaves an item naming none without words', () => {
+    const out = applyReview(parts, {
+      ...empty,
+      decisions: [
+        { from: ['d1.'], text: 'Kept.', vote: null },
+        { from: ['D99'], text: 'Made up.', vote: null },
+      ],
+      action_items: [],
+      open_questions: [],
+    });
+    expect(out.decisions[0].quote).not.toBe('');
+    expect(out.decisions[1].quote).toBe('');
   });
 
   it('takes out a procedural step the review let through', () => {
@@ -149,6 +200,8 @@ describe('the editor’s read over a draft', () => {
     'The chapter voted to discuss the Rusty Pipes afterparty request.',
     'Voted to adjourn.',
     'The chapter voted to open the floor for nominations.',
+    'The chapter voted to move on to new business.',
+    'The chapter voted to go to the next item.',
   ])('reads "%s" as procedure', (text) => {
     expect(isProceduralDecision(text)).toBe(true);
   });
@@ -158,6 +211,12 @@ describe('the editor’s read over a draft', () => {
     'Paul Carlson was re-elected president by a vote of 9 to 5.',
     'The chapter voted to table the spring break trip until January.',
     'The chapter voted to move the formal to February 7.',
+    'The chapter voted to move into the new house on Elm Street.',
+    'The chapter voted to go to the regional conference.',
+    'The chapter decided to proceed with the venue deposit.',
+    'The chapter voted to start a scholarship fund.',
+    'The chapter agreed to skip the spring formal.',
+    'The chapter approved a motion to begin renovations.',
   ])('keeps "%s"', (text) => {
     expect(isProceduralDecision(text)).toBe(false);
   });

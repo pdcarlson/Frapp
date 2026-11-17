@@ -238,7 +238,7 @@ export function buildMinutesDraftPrompt(
     '',
     ...(request.part
       ? [
-          `This is part ${request.part.index} of ${request.part.count} of a long meeting, in order. Draft this part alone: its own summary, and every decision and action item in it. The officer's answers at the end apply to the whole meeting.`,
+          `This is part ${request.part.index} of ${request.part.count} of a long meeting, in order. Draft this part alone: its own summary, and every decision and action item in it. Write about the meeting, never about parts, transcripts or notes (no "in this part"). The officer's answers at the end apply to the whole meeting.`,
           '',
         ]
       : []),

@@ -8,11 +8,11 @@ import type { MinutesDraftRequest } from './minutes-draft';
  * One pass over hours of transcript picks out the headline items and drops
  * the rest. Above `DRAFT_PART_CHARS`, the notes are cut into parts of about
  * twenty-five minutes of talk, and each part is drafted on its own (in
- * parallel). The review pass (`minutes-draft-review.ts`) then reads every
- * part's candidates together and writes the minutes for the whole meeting;
+ * parallel). The review pass (`minutes-draft-review.ts`), which every draft
+ * gets, then reads every part's candidates together and writes the minutes for the whole meeting;
  * `mergeParts` is what stands if that pass can't run.
  *
- * Every part is a run of whole lines of the same notes, so a part's quotes
+ * Every part is a stretch of the same notes, so a part's quotes
  * are checked against the whole notes exactly as a one-pass draft's are.
  *
  * Only a draft from one source is split. Several note-takers and a
