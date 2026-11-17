@@ -1,4 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { db, miss } from "../harness.mjs";
+
+/** The seed migration, run again below over rows a president already set. */
+const SEED_SQL = readFileSync(
+  join(process.cwd(), "supabase/migrations/20261117050803_chapter_ai_settings_seed.sql"),
+  "utf8",
+);
 
 // ─── Functional: chat in the AI corpus (20261112170000, #4314) ──────────────
 //
@@ -43,6 +51,7 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
 {
   const CH = "a4314000-0000-4000-8000-00000000000a";
   const CH2 = "a4314000-0000-4000-8000-00000000000b";
+  const CH3 = "a4314000-0000-4000-8000-00000000000c";
   const U1 = "a4314000-0000-4000-8000-0000000000a1";
   const U2 = "a4314000-0000-4000-8000-0000000000a2";
   const GEN = "a4314000-0000-4000-8000-0000000000c1";
@@ -119,12 +128,55 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
     await db.exec(`
       begin;
       insert into chapters (id, name, university) values
-        ('${CH}', 'Chat A', 'U'), ('${CH2}', 'Chat B', 'U');
-      -- A new chapter's switches start on (#5294); this tier starts with them
-      -- off, as a president who turned them off, and turns chat on below.
+        ('${CH}', 'Chat A', 'U'), ('${CH2}', 'Chat B', 'U'), ('${CH3}', 'Chat C', 'U');
+    `);
+
+    // ── A chapter's switches start on (#5294) ───────────────────────────
+    const seeded = await rows(
+      `select chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, updated_at
+         from chapter_ai_settings where chapter_id in ($1, $2, $3)`,
+      [CH, CH2, CH3],
+    );
+    check(
+      "a new chapter gets its AI switches row from creation, all on and never changed (#5294)",
+      seeded.length === 3 &&
+        seeded.every(
+          (r) =>
+            r.ask_enabled && r.meeting_notes_enabled && r.chat_source_enabled &&
+            r.updated_at === null,
+        ),
+      { seeded },
+    );
+    // The backfill, run again over a president's own row and a chapter with
+    // no row (one created before the seed): it adds the missing row, on, and
+    // leaves the president's as they set it.
+    await db.exec(`
+      update chapter_ai_settings
+         set ask_enabled = false, meeting_notes_enabled = true, chat_source_enabled = false,
+             updated_at = '2026-11-14T12:00:00Z'
+       where chapter_id = '${CH2}';
+      delete from chapter_ai_settings where chapter_id = '${CH3}';
+    `);
+    await db.exec(SEED_SQL);
+    const [kept, added] = await Promise.all([
+      one(`select ask_enabled, meeting_notes_enabled, chat_source_enabled, updated_at from chapter_ai_settings where chapter_id = $1`, [CH2]),
+      one(`select ask_enabled, meeting_notes_enabled, chat_source_enabled, updated_at from chapter_ai_settings where chapter_id = $1`, [CH3]),
+    ]);
+    check(
+      "the seed's backfill keeps a president's switches and turns a row-less chapter on (#5294)",
+      kept && !kept.ask_enabled && kept.meeting_notes_enabled && !kept.chat_source_enabled &&
+        kept.updated_at !== null &&
+        added && added.ask_enabled && added.meeting_notes_enabled && added.chat_source_enabled &&
+        added.updated_at === null,
+      { kept, added },
+    );
+
+    await db.exec(`
+      -- This tier starts with the switches off, as a president who turned
+      -- them off, and turns chat on below.
       update chapter_ai_settings
          set ask_enabled = false, meeting_notes_enabled = false, chat_source_enabled = false
-       where chapter_id in ('${CH}', '${CH2}');
+       where chapter_id in ('${CH}', '${CH2}', '${CH3}');
       insert into users (id, supabase_auth_id, email, display_name) values
         ('${U1}', gen_random_uuid(), 'chat-1@test.local', 'Sam Ortiz'),
         ('${U2}', gen_random_uuid(), 'chat-2@test.local', 'Lee Park');
@@ -155,15 +207,6 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
         ('${GEN2}', '${U1}', 'other chapter talk', '2026-11-09T20:00:00Z');
     `);
 
-    const seeded = await one(
-      `select count(*)::int as n from chapter_ai_settings where chapter_id in ($1, $2) and updated_at is null`,
-      [CH, CH2],
-    );
-    check(
-      "a new chapter gets its AI switches row from creation, never changed (#5294)",
-      seeded.n === 2,
-      { seeded },
-    );
     check(
       "with no chat switch on, messages write no window and no source",
       (await windows(CH)).length === 0 &&

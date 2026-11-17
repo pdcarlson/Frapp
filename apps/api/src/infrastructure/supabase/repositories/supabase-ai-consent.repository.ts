@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { fetchAllPages } from '../supabase.utils';
 import type {
   ChapterAiSettings,
   UserAiConsent,
@@ -45,13 +46,19 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
   async listChapterIdsWithSwitchOn(
     column: keyof ChapterAiSettingsPatch,
   ): Promise<string[]> {
-    const { data, error } = await this.supabase
-      .from('chapter_ai_settings')
-      .select('chapter_id')
-      .eq(column, true)
-      .order('chapter_id');
-    if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).map((row) => row.chapter_id);
+    // Paged: every chapter has a row since #5294, all on by default, so
+    // this lists most chapters, and one read stops at the project's max rows.
+    const rows = await fetchAllPages<{ chapter_id: string }>(
+      (from, to) =>
+        this.supabase
+          .from('chapter_ai_settings')
+          .select('chapter_id')
+          .eq(column, true)
+          .order('chapter_id')
+          .range(from, to),
+      { pageSize: 500 },
+    );
+    return rows.map((row) => row.chapter_id);
   }
 
   async saveChapterSettings(

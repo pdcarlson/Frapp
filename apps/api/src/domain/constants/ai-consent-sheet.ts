@@ -86,7 +86,7 @@ export const AI_CONSENT_SHEET = {
 
 /**
  * The president's switches (`spec/behavior/ai.md` § Consent, gate 1), as the
- * API names them. Each is off until the president turns it on.
+ * API names them. Each is on until the president turns it off (#5294).
  */
 export const AI_CHAPTER_SWITCHES = [
   'ask',

@@ -207,7 +207,7 @@ export const CHAT_CATCH_UP_COPY = {
     consent_required: "Turn on Frapp AI to use summaries.",
     chapter_off: "Your chapter's president has turned summaries off.",
     chat_off:
-      "Your chapter's president hasn't turned on channel messages for AI, so there is nothing a summary may read.",
+      "Your chapter's president has channel messages for AI turned off, so there is nothing a summary may read.",
     chapter_limit:
       "Your chapter has used its AI allowance for this month. Summaries come back on the 1st.",
     member_limit:

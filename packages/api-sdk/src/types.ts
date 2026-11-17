@@ -3624,7 +3624,7 @@ export interface paths {
         };
         /**
          * Get the chapter’s AI switches
-         * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.
+         * @description Which AI features are on for the chapter: Ask, meeting notes, and chat as a source. All on until the president turns one off; `updated_at` is null until then. `can_change` says whether the caller is the president, who alone may change them.
          */
         get: operations["AiChapterSettingsController_getSettings_v1"];
         put?: never;

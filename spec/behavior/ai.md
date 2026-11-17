@@ -218,7 +218,7 @@ How the first two gates are kept (#4308, #4790):
   An answer names the version the member was shown, and an answer to a version that is no longer current is refused, so a Yes never covers a company the member was not told about.
   Each version's answer is kept.
 - **A refused call says why.**
-  A route answers `ai.consent.required` when the member has not said yes, so the app shows Meet Frapp AI, and `ai.chapter_off` when the president has not turned the feature on, so the app hides it.
+  A route answers `ai.consent.required` when the member has not said yes, so the app shows Meet Frapp AI, and `ai.chapter_off` when the president has turned the feature off, so the app hides it.
 - **Who may use AI at all is also a permission.**
   `ai:use` is in every starting tier of a chapter created from #4308 on, so every active member holds it and Alumni do not ([`rbac.md`](rbac.md)).
   Chapters created before that grant it from the Roles page.
