@@ -347,14 +347,19 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.25%** duplicated lines (1,244 clones, 15,479 duplicated lines, across
-  1,552 files analysed; 15,479 / 363,931 = 4.253%) — measured 2026-09-27 with
-  `npm run check:duplication` on jscpd **5.3.2**. That release changed the unit, not the code:
-  it fixed an off-by-one that counted every clone one line short (`end - start` instead of an
-  inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235 is
-  exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit** and
-  reads about one line per clone low against a current run.
-- **Threshold: 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
+- **Current measurement: 3.19%** duplicated lines (3,047 clones, 35,468 duplicated lines across
+  4,152 files analysed; 35,468 / 1,112,467 = 3.188%), measured 2026-11-17 at `62c3bcf` with
+  `npm run check:duplication` on jscpd **5.4.3**, after the hygiene sweep's consolidations (#5204).
+  The sweep began at 3.39% on the same unit. The previous datum was 4.25% (1,244 clones, 15,479
+  lines, 1,552 files), measured 2026-09-27 on jscpd **5.3.2**. That release changed the unit, not
+  the code: it fixed an off-by-one that counted every clone one line short (`end - start` instead
+  of an inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235
+  is exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit**
+  and reads about one line per clone low against a current run.
+- **Threshold: 3.5%.** Ratcheted from 4.4% on 2026-11-17 against the 3.19% measurement above
+  (#5204). The 0.3-point headroom matches what the 2026-09-17 ratchet kept (4.1% over 3.88%), so
+  ordinary drift does not redden the job.
+- **Previously 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
   not a loosening: 4.1% in the old unit is 14,921 lines on today's tree, which 5.3.2 counts as
   16,165, or 4.44%, and 4.4% is that figure rounded down. Before that it was ratcheted from 4.3%
   to 4.1% on 2026-09-17 against a 3.88% measurement (1,030 clones, 12,393 lines, 1,428 files,
