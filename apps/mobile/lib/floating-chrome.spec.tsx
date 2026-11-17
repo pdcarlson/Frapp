@@ -4,12 +4,16 @@ import { act } from "react";
 import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  barFoldAfterScroll,
   FLOATING_ASK_BAR,
   floatingScreenLayout,
   floatingTabBarBottom,
   floatingTabBarTop,
   setAskBarShown,
+  setBarFolded,
   useAskBarLift,
+  useBarFolded,
+  useBarScroll,
   useTabBarClearance,
 } from "./floating-chrome";
 
@@ -121,5 +125,91 @@ describe("the Ask Frapp bar's room", () => {
       create(<Probe seen={seen} />);
     });
     expect(seen).toEqual({ lift: 0, clearance: 0 });
+  });
+});
+
+/**
+ * The bar folds while a member reads down a tab screen and opens again on
+ * the way up (#4904, Paul's direction A, 2026-11-17).
+ */
+describe("the bar's fold on scroll", () => {
+  const VIEW = 700;
+  const CONTENT = 3000;
+  const start = { y: 0, travel: 0 };
+
+  function scrollTo(ys: number[]) {
+    let state = start;
+    const folds: (boolean | null)[] = [];
+    for (const y of ys) {
+      const next = barFoldAfterScroll(state, y, VIEW, CONTENT);
+      state = next.state;
+      folds.push(next.folded);
+    }
+    return folds;
+  }
+
+  it("folds after 12pt of reading down, past the list's first 40pt", () => {
+    expect(scrollTo([20, 39])).toEqual([false, false]);
+    expect(scrollTo([45, 50, 58])).toEqual([null, null, true]);
+  });
+
+  it("opens again on any move up, at the top, and where the list ends", () => {
+    expect(scrollTo([100, 200, 199])).toEqual([true, true, false]);
+    expect(scrollTo([100, 200, -20])).toEqual([true, true, false]);
+    expect(scrollTo([100, 2000, CONTENT - VIEW])).toEqual([true, true, false]);
+  });
+
+  it("never folds a list too short to scroll", () => {
+    expect(barFoldAfterScroll(start, 60, VIEW, 650).folded).toBe(false);
+  });
+
+  it("hands a scroll handler only to a screen under the tab bar", () => {
+    let onTab: unknown = null;
+    let pushed: unknown = null;
+    function OnTab() {
+      onTab = useBarScroll();
+      return null;
+    }
+    function Pushed() {
+      pushed = useBarScroll();
+      return null;
+    }
+    act(() => {
+      create(
+        floatingScreenLayout({
+          route: { name: "index" },
+          navigation: { addListener: () => () => {} },
+          children: <OnTab />,
+        }),
+      );
+      create(<Pushed />);
+    });
+    expect(typeof onTab).toBe("function");
+    expect(pushed).toBeUndefined();
+
+    let folded: boolean | null = null;
+    function Probe() {
+      folded = useBarFolded();
+      return null;
+    }
+    act(() => {
+      create(<Probe />);
+    });
+    const scroll = (y: number) =>
+      act(() =>
+        (onTab as (event: unknown) => void)({
+          nativeEvent: {
+            contentOffset: { y },
+            layoutMeasurement: { height: VIEW },
+            contentSize: { height: CONTENT },
+          },
+        }),
+      );
+    scroll(100);
+    scroll(200);
+    expect(folded).toBe(true);
+    scroll(150);
+    expect(folded).toBe(false);
+    act(() => setBarFolded(false));
   });
 });

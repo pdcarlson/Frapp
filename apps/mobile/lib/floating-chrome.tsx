@@ -1,9 +1,12 @@
 import {
   createContext,
   type ReactElement,
+  useCallback,
   useContext,
+  useRef,
   useSyncExternalStore,
 } from "react";
+import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { screenErrorLayout } from "@/components/route-error";
 
@@ -153,4 +156,101 @@ export function floatingScreenLayout(
       {screenErrorLayout(props)}
     </FloatingChromeContext.Provider>
   );
+}
+
+/*
+ * Whether the bar is folded (#4904, Paul's pick of direction A, 2026-11-17:
+ * "If you scroll down ... [it] gets shorter ... If you scroll back up ... it
+ * comes back ... to full"). Reading down a tab screen folds the tab bar to its
+ * current tab and brings the Ask Frapp bar down into the same row; any move
+ * back up unfolds it. The screens' scroll views write it and the tab bar reads
+ * it, siblings again, so it is a tiny store like the Ask bar's.
+ */
+let barFolded = false;
+const barFoldListeners = new Set<() => void>();
+
+/** Folds or unfolds the bar. The tab bar also unfolds it on a tab change. */
+export function setBarFolded(folded: boolean): void {
+  if (barFolded === folded) return;
+  barFolded = folded;
+  for (const listener of barFoldListeners) listener();
+}
+
+function subscribeBarFold(listener: () => void): () => void {
+  barFoldListeners.add(listener);
+  return () => barFoldListeners.delete(listener);
+}
+
+const readBarFolded = (): boolean => barFolded;
+
+/** Whether the bar is folded now. */
+export function useBarFolded(): boolean {
+  return useSyncExternalStore(subscribeBarFold, readBarFolded, readBarFolded);
+}
+
+/** Where a list is, and how far it has moved down since it last moved up. */
+export type BarScrollState = { y: number; travel: number };
+
+/**
+ * The fold's rule, read on every scroll event: past the first 40pt of a list,
+ * 12pt of travel down folds it; any move up, the top (an iPhone's bounce
+ * included) or the list's end unfolds it. Kept apart from the hook so it can
+ * be tested without a scroll view.
+ */
+export const BAR_FOLD = {
+  /** Above this the list is at its top: the bar stays open. */
+  top: 40,
+  /** How far down the member must move before the bar folds. */
+  travel: 12,
+  /** Within this of the end, the list has ended: the bar opens again. */
+  end: 4,
+} as const;
+
+export function barFoldAfterScroll(
+  state: BarScrollState,
+  y: number,
+  viewport: number,
+  content: number,
+): { state: BarScrollState; folded: boolean | null } {
+  // A list too short to scroll, or one bouncing past its end, never folds.
+  const atEnd = content <= viewport || y + viewport >= content - BAR_FOLD.end;
+  if (y < BAR_FOLD.top || atEnd || y < state.y) {
+    return { state: { y, travel: 0 }, folded: false };
+  }
+  // Travel counts from the top's edge, not from the very top.
+  const travel = state.travel + y - Math.max(state.y, BAR_FOLD.top);
+  return {
+    state: { y, travel },
+    folded: travel > BAR_FOLD.travel ? true : null,
+  };
+}
+
+/**
+ * The scroll handler a tab screen's list passes on (`onScroll`, with a
+ * `scrollEventThrottle` of 16) so the bar folds while the member reads down
+ * it. `undefined` off the tab bar: a pushed screen has no bar to fold.
+ * `ScreenShell` passes it for every screen it hosts; a screen with its own
+ * list opts in the same way.
+ */
+export function useBarScroll():
+  | ((event: NativeSyntheticEvent<NativeScrollEvent>) => void)
+  | undefined {
+  const { tabBar } = useFloatingChrome();
+  const state = useRef<BarScrollState>({ y: 0, travel: 0 });
+  const onScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement, contentSize } =
+        event.nativeEvent;
+      const next = barFoldAfterScroll(
+        state.current,
+        contentOffset.y,
+        layoutMeasurement.height,
+        contentSize.height,
+      );
+      state.current = next.state;
+      if (next.folded !== null) setBarFolded(next.folded);
+    },
+    [],
+  );
+  return tabBar ? onScroll : undefined;
 }
