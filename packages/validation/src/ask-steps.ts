@@ -94,8 +94,12 @@ export interface AskWorkStep {
   /** What it is doing, in the present tense: "Searching messages". */
   label: string;
   state: AskWorkStepState;
-  /** How many things it found. 0 until it ends. */
-  found: number;
+  /**
+   * How many things it found, once the server said. Null for a step it
+   * never counts (the one-shot path's live reads, a card being worked out),
+   * which then shows no count rather than "Nothing found".
+   */
+  found: number | null;
   /** Up to `ASK_STEP_NAMES_MAX` things it found, by name. */
   names: readonly string[];
 }
@@ -147,9 +151,10 @@ function settle(step: AskWorkStep): AskWorkStep {
  * - The one-shot path's `reading` (no `call`) ends the search with how many
  *   sources it found, then adds the live reads it picked, working.
  * - `proposing` adds one step for the card being worked out.
- * - Writing, a card, the answer or an error: every step still working is
- *   over. A search that never ended, because nothing was read at all, goes,
- *   so a turn that read nothing shows no list.
+ * - Writing, a card or the answer: every step still working is over, with
+ *   no count unless the server gave one. A search that never ended, because
+ *   nothing was read at all, goes, so a turn that read nothing shows no list.
+ * - An error: no list ({@link askStepsStopped}); the failure is the turn's.
  */
 export function askStepsOn(
   steps: readonly AskWorkStep[],
@@ -164,14 +169,22 @@ export function askStepsOn(
               kind: "records",
               label: ASK_COPY.steps.searching,
               state: "working",
-              found: 0,
+              found: null,
               names: [],
             },
           ]
         : [...steps];
     }
-    if (event.step === "reading" && event.call !== undefined) {
-      const key = `call:${event.call}`;
+    // A tool-loop read. A server from before #5427 names the tool with no
+    // number and never says how it ended: its row settles with no count.
+    if (
+      event.step === "reading" &&
+      (event.call !== undefined || event.tool !== undefined)
+    ) {
+      const key =
+        event.call !== undefined
+          ? `call:${event.call}`
+          : `tool:${steps.filter((step) => step.key.startsWith("tool:")).length + 1}`;
       if (steps.some((step) => step.key === key)) return [...steps];
       const kept = steps.filter(
         (step) => !(step.key === SEARCH_KEY && step.state === "working"),
@@ -185,7 +198,7 @@ export function askStepsOn(
             : askStepKind(event.tool),
           label: event.label ?? ASK_COPY.steps.reading,
           state: "working",
-          found: 0,
+          found: null,
           names: [],
         },
       ];
@@ -202,10 +215,7 @@ export function askStepsOn(
           : step,
       );
       const reads = (event.reads ?? []).flatMap((name) => {
-        const words = Object.prototype.hasOwnProperty.call(
-          ASK_COPY.reads,
-          name,
-        )
+        const words = Object.prototype.hasOwnProperty.call(ASK_COPY.reads, name)
           ? ASK_COPY.reads[name]
           : undefined;
         const key = `read:${name}`;
@@ -216,7 +226,7 @@ export function askStepsOn(
             kind: askStepKind(name),
             label: `Reading ${words}`,
             state: "working" as const,
-            found: 0,
+            found: null,
             names: [],
           },
         ];
@@ -236,7 +246,7 @@ export function askStepsOn(
           kind: "tasks",
           label: ASK_COPY.steps.proposing,
           state: "working",
-          found: 0,
+          found: null,
           names: [],
         },
       ];
@@ -263,14 +273,20 @@ export function askStepsOn(
       };
     });
   }
-  if (
-    event.type === "done" ||
-    event.type === "proposal" ||
-    event.type === "error"
-  ) {
-    return over(steps);
-  }
+  if (event.type === "done" || event.type === "proposal") return over(steps);
+  // The turn broke: what it was doing did not end, so it is not drawn as
+  // done or as nothing found. The failure is the turn's own words.
+  if (event.type === "error") return askStepsStopped();
   return [...steps];
+}
+
+/**
+ * The steps of a turn that ended without the server saying how its work
+ * ended (a refusal before the stream, a stream that broke): none. Before
+ * #5427 such a turn drew no working line either.
+ */
+export function askStepsStopped(): AskWorkStep[] {
+  return [];
 }
 
 /** The answer has started or the turn ended: nothing is still working. */
@@ -297,9 +313,9 @@ function plural(n: number, one: string, many: string): string {
 export function askStepFoundLine(step: AskWorkStep): string | null {
   if (step.state === "working") return null;
   if (step.state === "failed") return ASK_COPY.step_failed;
-  if (step.state === "nothing" || step.found === 0) {
-    return ASK_COPY.step_nothing;
-  }
+  if (step.state === "nothing") return ASK_COPY.step_nothing;
+  // Over, but never counted: its words and its tick say it all.
+  if (step.found === null || step.found === 0) return null;
   if (step.kind === "chat") {
     const count = plural(step.found, "message", "messages");
     if (step.names.length === 0) return count;

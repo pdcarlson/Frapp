@@ -367,6 +367,7 @@ export class AgentLoopService {
       const pending: Promise<RanCall>[] = [];
       // Each pending read's number, when it was announced as one (`tool`).
       const announced: (number | null)[] = [];
+      const announcedNames: (string | null)[] = [];
       for (const call of result.toolCalls) {
         const tool = offered.get(call.name);
         if (callsRun >= limits.calls) {
@@ -376,10 +377,12 @@ export class AgentLoopService {
             ),
           );
           announced.push(null);
+          announcedNames.push(null);
           continue;
         }
         callsRun += 1;
         announced.push(tool?.effect === 'read' ? callsRun : null);
+        announcedNames.push(tool?.name ?? null);
         if (tool) {
           yield {
             type: 'tool',
@@ -423,9 +426,7 @@ export class AgentLoopService {
       // see, so it is counted before the turn ends. Each announced read says
       // how it ended as soon as it settles, so a quick read is not shown
       // working until the slowest of its round is back (#5427).
-      const settled = new Array<PromiseSettledResult<RanCall>>(
-        pending.length,
-      );
+      const settled = new Array<PromiseSettledResult<RanCall>>(pending.length);
       const waiting = new Map(
         pending.map((read, index) => [
           index,
@@ -438,12 +439,23 @@ export class AgentLoopService {
       while (waiting.size > 0) {
         const done = await Promise.race(waiting.values());
         waiting.delete(done.index);
+        const number = announced[done.index];
         if (!done.ok) {
           settled[done.index] = { status: 'rejected', reason: done.reason };
+          // A read that threw still ended: say so, so it is not drawn as
+          // one that came back with nothing.
+          if (number != null && !input.signal?.aborted) {
+            yield {
+              type: 'read',
+              call: number,
+              name: announcedNames[done.index] ?? '(not offered)',
+              outcome: 'failed',
+              sources: [],
+            };
+          }
           continue;
         }
         settled[done.index] = { status: 'fulfilled', value: done.value };
-        const number = announced[done.index];
         if (number != null && !input.signal?.aborted) {
           yield {
             type: 'read',

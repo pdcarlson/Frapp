@@ -35,8 +35,14 @@ export function AskStepGlyph({
     >
       {kind === "chat" ? (
         <>
-          <Path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z" {...stroke} />
-          <Path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1" {...stroke} />
+          <Path
+            d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"
+            {...stroke}
+          />
+          <Path
+            d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"
+            {...stroke}
+          />
         </>
       ) : null}
       {kind === "channels" ? (
@@ -52,8 +58,14 @@ export function AskStepGlyph({
       ) : null}
       {kind === "document" ? (
         <>
-          <Path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" {...stroke} />
-          <Path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8" {...stroke} />
+          <Path
+            d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"
+            {...stroke}
+          />
+          <Path
+            d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"
+            {...stroke}
+          />
         </>
       ) : null}
       {kind === "minutes" ? (
@@ -80,11 +92,17 @@ export function AskStepGlyph({
         <>
           <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" {...stroke} />
           <Circle cx={9} cy={7} r={4} {...stroke} />
-          <Path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" {...stroke} />
+          <Path
+            d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+            {...stroke}
+          />
         </>
       ) : null}
       {kind === "tasks" ? (
-        <Path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8" {...stroke} />
+        <Path
+          d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"
+          {...stroke}
+        />
       ) : null}
       {kind === "points" ? (
         <Path
@@ -145,7 +163,9 @@ export function AskStepEndGlyph({
     >
       {state === "done" ? <Path d="M20 6 9 17l-5-5" {...stroke} /> : null}
       {state === "nothing" ? <Path d="M5 12h14" {...stroke} /> : null}
-      {state === "failed" ? <Path d="M18 6 6 18M6 6l12 12" {...stroke} /> : null}
+      {state === "failed" ? (
+        <Path d="M18 6 6 18M6 6l12 12" {...stroke} />
+      ) : null}
     </Svg>
   );
 }

@@ -607,7 +607,10 @@ describe("AskTurn", () => {
       exchange({
         phase: "working",
         step: "writing",
-        steps: stepsAfter([...READS, { v: 1, type: "status", step: "writing" }]),
+        steps: stepsAfter([
+          ...READS,
+          { v: 1, type: "status", step: "writing" },
+        ]),
         preview: "Quorum is",
         answer: null,
       }),

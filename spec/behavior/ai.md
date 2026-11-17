@@ -335,7 +335,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
     The clients show that line whole in place of "Reading …" (drawn since #4904, 2026-11-13).
 
   Since #5427 (Paul, 2026-11-17: "we write instead of show") these are not one line but a short list, one row per step, shown as each happens:
-  - **Each read is its own row**, with an icon for what it reads (chat, documents and minutes, a document, minutes, events, attendance, people, tasks, points, dues, hours, backwork), its words, and its state: working, done, nothing found, or could not read.
+  - **Each read is its own row**, with an icon for what it reads (the kinds are `ASK_STEP_KINDS`; their icons are [`components.md`](../ui/design-system/components.md) §11's), its words, and its state: working, done, nothing found, or could not read.
     Under a row that ended goes what it found: how many messages and in which channel ("3 messages in #exec-board"), or up to three things it found by name as chips ("Budget 2026"), with a count when it found more.
     The one-shot path's search is one row ("Searched your chapter's sources", with how many sources), and each live read it picked another; a card being worked out is one row too.
   - **The server says how each read ended.** A tool-loop read is numbered when it starts (`status` with `call`, and the kind of thing it reads), and a `step` event with the same number says, as soon as that read is back, whether it found anything, how many things and up to three of their names.

@@ -1,4 +1,6 @@
 import Svg, { Circle, Path, Rect } from "react-native-svg";
+import type { AskStepKind } from "@repo/validation";
+import { AskStepGlyph } from "./ask-step-glyphs";
 
 /**
  * The small marks on an Ask proposed card (#5148): one for the kind of card
@@ -7,7 +9,8 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
  * nicer and be clearer"). Web draws the same pictures from Lucide
  * (`CalendarDays`, `ListChecks`, `Star`, `Users`, `Repeat`, `User`, `Clock`,
  * `AlignLeft`, `CircleCheck`, `CircleX`); these are those outlines, drawn at
- * the same 24 grid with a 1.8 stroke. Decorative: the row's words carry the
+ * the same 24 grid with a 1.8 stroke. The calendar, people, star and clock
+ * are the step list's (`ask-step-glyphs.tsx`, #5427), Lucide's own paths. Decorative: the row's words carry the
  * meaning, so each is hidden from the screen reader.
  */
 
@@ -23,6 +26,13 @@ export type AskCardGlyphName =
   | "done"
   | "dismissed";
 
+const SHARED: Partial<Record<AskCardGlyphName, AskStepKind>> = {
+  event: "events",
+  people: "people",
+  points: "points",
+  clock: "hours",
+};
+
 export function AskCardGlyph({
   name,
   color,
@@ -32,6 +42,11 @@ export function AskCardGlyph({
   color: string;
   size?: number;
 }) {
+  // What the step list also draws is drawn once, from the step's own glyph
+  // (#5427), so a turn that read the calendar and offers an event shows one
+  // calendar.
+  const shared = SHARED[name];
+  if (shared) return <AskStepGlyph kind={shared} color={color} size={size} />;
   const stroke = {
     stroke: color,
     strokeWidth: 1.8,
@@ -47,30 +62,10 @@ export function AskCardGlyph({
       accessible={false}
       importantForAccessibility="no-hide-descendants"
     >
-      {name === "event" ? (
-        <>
-          <Rect x={3.5} y={5} width={17} height={15} rx={3} {...stroke} />
-          <Path d="M3.5 10h17M8 3v4M16 3v4" {...stroke} />
-        </>
-      ) : null}
       {name === "task" ? (
         <>
           <Rect x={4} y={4} width={16} height={16} rx={4} {...stroke} />
           <Path d="M8.5 12.2l2.4 2.4 4.8-5" {...stroke} />
-        </>
-      ) : null}
-      {name === "points" ? (
-        <Path
-          d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.4 7.2 18.9l.9-5.4-3.9-3.8 5.4-.8z"
-          {...stroke}
-        />
-      ) : null}
-      {name === "people" ? (
-        <>
-          <Circle cx={9} cy={9} r={3.2} {...stroke} />
-          <Path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6" {...stroke} />
-          <Circle cx={16.5} cy={9.5} r={2.5} {...stroke} />
-          <Path d="M16 14.5c2.4 0 4 1.3 4.6 3.8" {...stroke} />
         </>
       ) : null}
       {name === "repeat" ? (
@@ -83,12 +78,6 @@ export function AskCardGlyph({
         <>
           <Circle cx={12} cy={8.5} r={3.5} {...stroke} />
           <Path d="M5 19.5c.8-3.3 3.7-5 7-5s6.2 1.7 7 5" {...stroke} />
-        </>
-      ) : null}
-      {name === "clock" ? (
-        <>
-          <Circle cx={12} cy={12} r={8} {...stroke} />
-          <Path d="M12 7.5V12l3 2" {...stroke} />
         </>
       ) : null}
       {name === "reason" ? (

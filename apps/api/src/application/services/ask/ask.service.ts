@@ -869,7 +869,7 @@ export class AskService {
             kind: askStepKind(part.name),
           });
         } else if (part.type === 'read') {
-          yield event(askStepEnded(part, titleOf));
+          yield event(askStepEnded(part));
         } else outcome = part.outcome;
       }
     } finally {

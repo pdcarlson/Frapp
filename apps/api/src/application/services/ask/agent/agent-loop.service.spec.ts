@@ -693,10 +693,18 @@ describe('AgentLoopService', () => {
       round({ text: 'never' }),
     ]);
 
-    const { outcome } = await run(loop, input({ tools: [search] }));
+    const { events, outcome } = await run(loop, input({ tools: [search] }));
 
     expect(outcome?.stop).toBe('unavailable');
     expect(outcome?.result).toEqual(unavailable);
+    // The read still says it ended, as one that failed (#5427).
+    expect(events.find((event) => event.type === 'read')).toEqual({
+      type: 'read',
+      call: 1,
+      name: 'search_messages',
+      outcome: 'failed',
+      sources: [],
+    });
     expect(gateway.streamAgentRound).toHaveBeenCalledTimes(1);
   });
 

@@ -16,19 +16,19 @@ type AskStepEvent = Omit<Extract<AskStreamEvent, { type: 'step' }>, 'v'>;
  * found as it lands.
  *
  * Only what the turn already shows a member is named: a source's chip title
- * (`titleOf`, as the answer's own chips read), from what the read returned as
- * the asker, so each is something they can open. Chat sources are already
+ * (`source.title`, the bare name the answer's own chips show, never the
+ * model-facing `agentSourceTitle` with its labels, dates and headings), from
+ * what the read returned as the asker, so each is something they can open. Chat sources are already
  * past the consent filter, and their channel is named, never an author or a
  * line of text. No argument the model wrote and no source text is sent.
  */
-export function askStepEnded(
-  read: AgentRead,
-  titleOf: (source: AgentSource) => string,
-): AskStepEvent {
+export function askStepEnded(read: AgentRead): AskStepEvent {
   const ok = read.outcome === 'ok';
   const sources = ok ? read.sources : [];
   const names = [
-    ...new Set(sources.map((source) => titleOf(source)).filter(Boolean)),
+    ...new Set(
+      sources.map((source: AgentSource) => source.title).filter(Boolean),
+    ),
   ];
   // A message is one thing found; a document's passages are one document.
   const chat = sources.length > 0 && sources.every((source) => source.chat);

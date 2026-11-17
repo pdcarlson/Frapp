@@ -168,6 +168,62 @@ describe("askStepsOn: the tool loop (#5427)", () => {
   });
 });
 
+describe("steps the server never counted, and turns that broke", () => {
+  it("settles a one-shot live read and a card with a tick and no count", () => {
+    const steps = play([
+      status({ step: "searching" }),
+      status({ step: "reading", reads: ["events"], found: 3 }),
+      status({ step: "proposing" }),
+      DONE,
+    ]);
+    expect(steps.map((step) => [step.key, step.state])).toEqual([
+      ["search", "done"],
+      ["read:events", "done"],
+      ["propose", "done"],
+    ]);
+    expect(steps.map(askStepFoundLine)).toEqual(["3 sources", null, null]);
+    expect(askStepLabel(steps[2]!)).toBe("Worked out what that would change");
+    expect(askStepSpoken(steps[1]!)).toBe("Read the events calendar, done");
+  });
+
+  it("draws no list once the stream broke", () => {
+    expect(
+      play([
+        ...[status({ step: "searching" })],
+        status({
+          step: "reading",
+          tool: "events",
+          label: "Reading the events calendar",
+          call: 1,
+        }),
+        { v: 1, type: "error", code: "x", retryable: true },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("gives a server from before #5427 a row per read, with no count", () => {
+    const steps = play([
+      status({ step: "searching" }),
+      status({
+        step: "reading",
+        tool: "search_messages",
+        label: "Searching messages",
+      }),
+      status({
+        step: "reading",
+        tool: "events",
+        label: "Reading the events calendar",
+      }),
+      DONE,
+    ]);
+    expect(steps.map((step) => [step.key, step.kind, step.state])).toEqual([
+      ["tool:1", "chat", "done"],
+      ["tool:2", "events", "done"],
+    ]);
+    expect(steps.map(askStepFoundLine)).toEqual([null, null]);
+  });
+});
+
 describe("askStepsOn: the one-shot path", () => {
   it("ends the search with its count and adds the live reads it picked", () => {
     const steps = play([

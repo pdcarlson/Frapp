@@ -20,6 +20,7 @@ import {
   type AskAnswer,
   type AskEffort,
   askStepsOn,
+  askStepsStopped,
   type AskStreamEvent,
   type AskSuggestion,
   type AskWorkStep,
@@ -297,7 +298,10 @@ export function applyAskEvent(
     : { ...next, steps: askStepsOn(exchange.steps ?? [], event) };
 }
 
-function applyToTurn(exchange: AskExchange, event: AskStreamEvent): AskExchange {
+function applyToTurn(
+  exchange: AskExchange,
+  event: AskStreamEvent,
+): AskExchange {
   switch (event.type) {
     case "step":
       return exchange;
@@ -343,6 +347,8 @@ function failed(exchange: AskExchange, message: string): AskExchange {
     ...exchange,
     phase: "failed",
     step: null,
+    // What it was doing never ended: no list over the failure (#5427).
+    steps: askStepsStopped(),
     preview: "",
     failure: { message, retryable: true },
   };
@@ -750,6 +756,8 @@ function useAskConversation(): AskConversation {
                   ...current,
                   phase: "done",
                   step: null,
+                  // Refused before anything was read.
+                  steps: askStepsStopped(),
                   answer: unavailable(reason),
                 }
               : failed(current, errorCopy(result.error, ASK_COPY.failed)),

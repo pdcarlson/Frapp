@@ -28,24 +28,19 @@ const passage = (id: string, title: string): AgentSource => ({
   authorIds: [],
 });
 
-const titleOf = (source: AgentSource) => source.title;
-
 describe('askStepEnded (#5427)', () => {
   it('counts messages and names the channel, never a line of what was said', () => {
-    const step = askStepEnded(
-      {
-        type: 'read',
-        call: 3,
-        name: 'search_messages',
-        outcome: 'ok',
-        sources: [
-          message('m1', 'exec-board'),
-          message('m2', 'exec-board'),
-          message('m3', 'exec-board'),
-        ],
-      },
-      titleOf,
-    );
+    const step = askStepEnded({
+      type: 'read',
+      call: 3,
+      name: 'search_messages',
+      outcome: 'ok',
+      sources: [
+        message('m1', 'exec-board'),
+        message('m2', 'exec-board'),
+        message('m3', 'exec-board'),
+      ],
+    });
 
     expect(step).toEqual({
       type: 'step',
@@ -61,22 +56,19 @@ describe('askStepEnded (#5427)', () => {
   });
 
   it('counts a document once however many passages matched, and names at most three', () => {
-    const step = askStepEnded(
-      {
-        type: 'read',
-        call: 1,
-        name: 'search_records',
-        outcome: 'ok',
-        sources: [
-          passage('document:d1:1', 'Bylaws'),
-          passage('document:d1:2', 'Bylaws'),
-          passage('document:d2:1', 'Budget 2026'),
-          passage('document:d3:1', 'Risk policy'),
-          passage('document:d4:1', 'House rules'),
-        ],
-      },
-      titleOf,
-    );
+    const step = askStepEnded({
+      type: 'read',
+      call: 1,
+      name: 'search_records',
+      outcome: 'ok',
+      sources: [
+        passage('document:d1:1', 'Bylaws'),
+        passage('document:d1:2', 'Bylaws'),
+        passage('document:d2:1', 'Budget 2026'),
+        passage('document:d3:1', 'Risk policy'),
+        passage('document:d4:1', 'House rules'),
+      ],
+    });
 
     expect(step.found).toBe(4);
     expect(step.names).toEqual(['Bylaws', 'Budget 2026', 'Risk policy']);
@@ -86,31 +78,34 @@ describe('askStepEnded (#5427)', () => {
 
   it('says nothing was found, or that the read failed, with no names', () => {
     expect(
-      askStepEnded(
-        { type: 'read', call: 1, name: 'events', outcome: 'ok', sources: [] },
-        titleOf,
-      ),
+      askStepEnded({
+        type: 'read',
+        call: 1,
+        name: 'events',
+        outcome: 'ok',
+        sources: [],
+      }),
     ).toMatchObject({ outcome: 'nothing', found: 0, names: [] });
     expect(
-      askStepEnded(
-        {
-          type: 'read',
-          call: 2,
-          name: 'read_channel',
-          outcome: 'timed_out',
-          sources: [message('m1', 'general')],
-        },
-        titleOf,
-      ),
+      askStepEnded({
+        type: 'read',
+        call: 2,
+        name: 'read_channel',
+        outcome: 'timed_out',
+        sources: [message('m1', 'general')],
+      }),
     ).toMatchObject({ outcome: 'failed', found: 0, names: [] });
   });
 
   it('gives a tool this build has no kind for the plain mark', () => {
     expect(
-      askStepEnded(
-        { type: 'read', call: 1, name: 'new_tool', outcome: 'ok', sources: [] },
-        titleOf,
-      ).kind,
+      askStepEnded({
+        type: 'read',
+        call: 1,
+        name: 'new_tool',
+        outcome: 'ok',
+        sources: [],
+      }).kind,
     ).toBe('other');
   });
 });

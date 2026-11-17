@@ -90,7 +90,7 @@ function StepState({ step }: { step: AskWorkStep }) {
     return (
       <span
         aria-hidden="true"
-        className="size-[15px] rounded-full border-2 border-gold-ask-border border-t-gold-ask-text motion-safe:animate-spin"
+        className="size-[15px] rounded-full border-2 border-gold-ask-border border-t-gold-ask-text motion-safe:animate-spin motion-reduce:border-r-gold-ask-text"
       />
     );
   }
@@ -115,7 +115,7 @@ function StepRow({ step, last }: { step: AskWorkStep; last: boolean }) {
   return (
     <li
       aria-label={askStepSpoken(step)}
-      className="relative grid grid-cols-[28px_1fr_auto] gap-x-2.5 pb-2.5 last:pb-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1"
+      className="relative grid grid-cols-[28px_1fr_auto] gap-x-2.5 pb-2.5 last:pb-0"
     >
       {/* The rail that joins the icons, so the list reads as a path. */}
       {last ? null : (
@@ -163,11 +163,7 @@ function StepList({ steps }: { steps: readonly AskWorkStep[] }) {
   return (
     <ol className="flex flex-col">
       {steps.map((step, index) => (
-        <StepRow
-          key={step.key}
-          step={step}
-          last={index === steps.length - 1}
-        />
+        <StepRow key={step.key} step={step} last={index === steps.length - 1} />
       ))}
     </ol>
   );

@@ -155,7 +155,8 @@ describe("applyAskEvent", () => {
     expect(exchange.step).toBeNull();
     expect(exchange.steps?.map((step) => [step.key, step.state, step.found])).toEqual([
       ["search", "done", 2],
-      ["read:events", "done", 0],
+      // Read and used, but never counted: no "Nothing found" under it.
+      ["read:events", "done", null],
     ]);
   });
 
@@ -568,6 +569,8 @@ describe("the Ask hooks", () => {
     expect(result.current.exchanges[0]).toMatchObject({
       phase: "done",
       answer: { status: "unavailable", reason },
+      // Nothing was read: no "Searching" step left over the refusal (#5427).
+      steps: [],
     });
   });
 
@@ -580,6 +583,7 @@ describe("the Ask hooks", () => {
     expect(result.current.exchanges[0]).toMatchObject({
       phase: "failed",
       preview: "",
+      steps: [],
       failure: { message: ASK_COPY.failed, retryable: true },
     });
   });
@@ -589,6 +593,7 @@ describe("the Ask hooks", () => {
     const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
     await act(() => result.current.ask("What is quorum?"));
     expect(result.current.exchanges[0]?.phase).toBe("failed");
+    expect(result.current.exchanges[0]?.steps).toEqual([]);
   });
 
   describe("Think harder (#4904)", () => {

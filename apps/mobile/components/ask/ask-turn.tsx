@@ -74,20 +74,20 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * kind of source it is and its date are in the chip's spoken name, so a
  * thread of several answers stays short.
  *
- * **Nothing above moves while it works.** The step line ("Searching your
- * chapter's sources") sits under the text, so words stream in above it. The
- * streamed text is a preview: the server decides what stands once the model
- * stops, and that replaces it (`ask.ts`).
+ * **Nothing above moves while it works.** What Frapp is doing is a list of
+ * steps (`ask-steps.tsx`, #5427) that only grows at the end of the thread and
+ * folds into one row at the answer's first word, before any of the answer is
+ * under it. The streamed text is a preview: the server decides what stands
+ * once the model stops, and that replaces it (`ask.ts`).
  *
  * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
  * just needs to be better hierarchy", "report shouldn't be so obvious", and
- * the conversation "should feel more agentic"). Under the words, in the step
- * line's place and tone, a line says what Frapp read to write them ("Read
- * the events calendar and 3 sources"), as ChatGPT keeps "Thought for 12s"
- * and Perplexity its count of sources. Then the source chips. Last, two
- * small muted icons, Copy and Report, the row of quiet icons ChatGPT, Claude
- * and Gemini end an answer with. The words "Report this" stood there alone
- * and read as the thing to do next.
+ * the conversation "should feel more agentic"). Above the words, the folded
+ * steps say what Frapp did, as Perplexity's "Completed 2 steps" and Claude's
+ * tool rows do (until #5427 one line under the words said what it read).
+ * Then the source chips. Last, small muted icons, Copy and Report, the row
+ * of quiet icons ChatGPT, Claude and Gemini end an answer with. The words
+ * "Report this" stood there alone and read as the thing to do next.
  *
  * **The member's bubble is the chapter's colour; Frapp's marks are gold.**
  * The bubble takes the solid accent and its contrast-checked text colour
@@ -709,7 +709,6 @@ function AnswerBody({
       {answer.own_words ? (
         <Text style={styles.note}>{ASK_COPY.own_words}</Text>
       ) : null}
-      {/* Where the step line was while it worked, in the same tone. */}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
         <View style={styles.sources}>
