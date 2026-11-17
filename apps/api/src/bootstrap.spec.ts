@@ -183,9 +183,9 @@ describe('configureApp', () => {
       expect(tooLarge.body.requestId).toMatch(/^req_/);
     });
 
-    // Both used to answer 500 (#4404): the parser's errors are not
-    // `HttpException`s. They answer as the client's mistake, with an id and
-    // nothing of the body.
+    // Before #4404 an oversized body answered 500, and a malformed one 400
+    // quoting the body's own text (Nest passed on V8's parse message). Both
+    // now answer as the client's mistake, with an id and nothing of the body.
     it('answers 413 for a body over the limit and 400 for one that is not JSON', async () => {
       const tooLarge = await request(app.getHttpServer())
         .post('/v1/meetings')
