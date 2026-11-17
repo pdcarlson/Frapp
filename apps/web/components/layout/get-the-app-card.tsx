@@ -5,7 +5,7 @@ import { STORE_LISTING_URLS, openAppUrl } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { dismissGetTheApp, useGetTheAppDismissed } from "@/lib/get-the-app";
-import { usePhonePlatform } from "@/lib/use-phone-platform";
+import { useNativeApp, usePhonePlatform } from "@/lib/use-phone-platform";
 
 export const GET_THE_APP_TITLE = "Frapp works best in the app";
 
@@ -32,6 +32,7 @@ export const GET_THE_APP_TITLE = "Frapp works best in the app";
  */
 export function GetTheAppCard() {
   const phone = usePhonePlatform();
+  const app = useNativeApp();
   const dismissed = useGetTheAppDismissed();
   if (phone === null || dismissed) return null;
 
@@ -58,7 +59,7 @@ export function GetTheAppCard() {
             <a href={STORE_LISTING_URLS[phone]}>Get the app</a>
           </Button>
           <Button asChild variant="ghost" size="sm">
-            <a href={openAppUrl(phone)}>Open the app</a>
+            <a href={openAppUrl(phone, app)}>Open the app</a>
           </Button>
         </div>
       </div>

@@ -43,17 +43,30 @@ describe('EventService', () => {
     };
 
     it('says the code is needed while a screen is live, and not before', async () => {
-      await expect(service.checkInNeedsCode(baseEvent, during)).resolves.toBe(
-        false,
-      );
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'user-1', during),
+      ).resolves.toBe(false);
       mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
-      await expect(service.checkInNeedsCode(baseEvent, during)).resolves.toBe(
-        true,
-      );
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'user-1', during),
+      ).resolves.toBe(true);
       expect(mockScreenRepo.findLive).toHaveBeenLastCalledWith(
         'evt-1',
         'ch-1',
         during.toISOString(),
+      );
+    });
+
+    it('says no to a host, who checks in without the code (2026-11-17)', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
+      mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'officer-1', during),
+      ).resolves.toBe(false);
+      expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+        'ch-1',
+        'officer-1',
+        ['events:update'],
       );
     });
 
@@ -64,7 +77,7 @@ describe('EventService', () => {
         '2026-02-27T12:00:00.000Z', // the next day
       ]) {
         await expect(
-          service.checkInNeedsCode(baseEvent, new Date(at)),
+          service.checkInNeedsCode(baseEvent, 'user-1', new Date(at)),
         ).resolves.toBe(false);
       }
       expect(mockScreenRepo.findLive).not.toHaveBeenCalled();
@@ -74,9 +87,9 @@ describe('EventService', () => {
       mockScreenRepo.findLive.mockRejectedValue(new Error('db down'));
       const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
-      await expect(service.checkInNeedsCode(baseEvent, during)).resolves.toBe(
-        false,
-      );
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'user-1', during),
+      ).resolves.toBe(false);
       expect(reported).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ site: 'event-check-in-screen-read' }),

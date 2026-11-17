@@ -6,6 +6,7 @@ import {
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { Button } from "@/components/ui/button";
+import { useNativeApp } from "@/lib/use-phone-platform";
 
 const APP_HANDOFF_TITLE = "Join in the Frapp app";
 
@@ -39,6 +40,7 @@ export function AppHandoff({
   token: string;
   onContinueInBrowser: () => void;
 }) {
+  const app = useNativeApp();
   return (
     <AuthScreen
       title={APP_HANDOFF_TITLE}
@@ -51,7 +53,7 @@ export function AppHandoff({
     >
       <div className="flex flex-col gap-3">
         <Button asChild className="w-full">
-          <a href={openInAppUrl(platform, token)}>Open in the app</a>
+          <a href={openInAppUrl(platform, token, app)}>Open in the app</a>
         </Button>
         <Button asChild variant="secondary" className="w-full">
           <a href={STORE_LISTING_URLS[platform]}>{STORE_LABEL[platform]}</a>

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   STORE_LISTING_URLS,
   extractInviteToken,
+  nativeAppForOrigin,
   openAppUrl,
+  STAGING_NATIVE_APP,
   openInAppUrl,
   phonePlatform,
 } from "./index";
@@ -62,6 +64,28 @@ describe("openAppUrl (#4002)", () => {
     expect(openAppUrl("ios")).toBe("frapp://");
     expect(openAppUrl("android")).toBe(
       "intent://#Intent;scheme=frapp;package=live.frapp.mobile;end",
+    );
+  });
+});
+
+describe("nativeAppForOrigin (2026-11-17)", () => {
+  it("hands production's web to the store app and every other origin to Frapp Staging", () => {
+    expect(nativeAppForOrigin("https://app.frapp.live").id).toBe(
+      "live.frapp.mobile",
+    );
+    expect(nativeAppForOrigin("https://app.staging.frapp.live")).toBe(
+      STAGING_NATIVE_APP,
+    );
+    expect(nativeAppForOrigin("http://localhost:3000")).toBe(
+      STAGING_NATIVE_APP,
+    );
+    expect(nativeAppForOrigin("not a url")).toBe(STAGING_NATIVE_APP);
+  });
+
+  it("opens the staging app's own scheme and package from the staging web", () => {
+    expect(openAppUrl("ios", STAGING_NATIVE_APP)).toBe("frapp-staging://");
+    expect(openInAppUrl("android", "abc", STAGING_NATIVE_APP)).toBe(
+      "intent://join?token=abc#Intent;scheme=frapp-staging;package=live.frapp.mobile.staging;end",
     );
   });
 });

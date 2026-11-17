@@ -25,6 +25,7 @@ import type { Event } from '#domain/entities/event.entity';
 import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
 import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
 import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { RbacService } from './rbac.service';
 import { attendanceFor, visibleEventOrNotFound } from './event-role-targeting';
 import {
@@ -429,6 +430,28 @@ export class AttendanceService {
       chapterId,
       now.toISOString(),
     );
+    const zoned =
+      event.check_in_zone !== null && event.check_in_zone !== undefined;
+
+    // ── The host checks themselves in with one tap (2026-11-17) ─────────
+    //
+    // An officer who may host check-in (`events:update`, the mint's and the
+    // screen's gate) skips the code and the location checks below for their
+    // own check-in. The phone showing the QR is theirs, so they cannot scan
+    // it, and a host typing the code off their own screen was the flow Paul
+    // rejected. It grants nothing new: the same permission marks anyone
+    // present by hand (`markByHand`), themselves included. Asked only when a
+    // code or a location would otherwise be required, so a plain event's
+    // check-in costs no extra read.
+    if (
+      (zoned || screens.length > 0) &&
+      (await this.rbac.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.EVENTS_UPDATE,
+      ]))
+    ) {
+      return this.recordCheckIn(event, userId, now);
+    }
+
     const hasCode =
       options.token !== undefined || options.manualCode !== undefined;
     if (screensRequireCode(screens) && !hasCode) {
@@ -440,8 +463,6 @@ export class AttendanceService {
     // a screen that stored its location. Only then may a scanned link last
     // past one spare window (`check-in-token.ts`), because only then does a
     // forwarded link still fail.
-    const zoned =
-      event.check_in_zone !== null && event.check_in_zone !== undefined;
     const anchors = screens.filter(isLocatedScreen);
     const located = zoned || anchors.length > 0;
 
@@ -542,6 +563,16 @@ export class AttendanceService {
       }
     }
 
+    return this.recordCheckIn(event, userId, now);
+  }
+
+  /** The write every accepted check-in ends in. */
+  private async recordCheckIn(
+    event: Event,
+    userId: string,
+    now: Date,
+  ): Promise<EventAttendance> {
+    const eventId = event.id;
     const checkInTime = now.toISOString();
 
     // Insert the attendance row and award the event's ATTENDANCE points

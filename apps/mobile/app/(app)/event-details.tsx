@@ -36,6 +36,7 @@ import {
   useEventEditGrants,
 } from "@/components/events/new-event-sheet";
 import { type EventEditTarget } from "@/lib/events/edit-event";
+import { useHostSelfCheckIn } from "@/lib/events/use-host-self-check-in";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
@@ -402,12 +403,14 @@ export default function EventDetailsScreen() {
  *   opens too, so the QR can be up when the first member arrives. Events have
  *   no creator or hosts list (#3762), so "host" is the permission. A host who
  *   attends still earns the points, so while the window is open and they
- *   aren't in yet, a quieter "Check myself in" under the button opens s18,
- *   where they type the code their own screen shows.
+ *   aren't in yet, a quieter "Check myself in" under the button checks them
+ *   in right there (2026-11-17, `useHostSelfCheckIn`): the API needs no code
+ *   from a host, whose own phone is showing it and can't scan it.
  * - **Open, for a guest.** One line saying to scan the code here or with the
- *   phone's camera (2026-11-13: the QR is a link the camera opens), and a
- *   quieter "Scan code" that opens s18 with its viewport up, where the typed
- *   code is one tap further for a camera that won't read it.
+ *   phone's camera (2026-11-13: the QR is a link the camera opens), and
+ *   **Scan code** as the card's button (2026-11-17; it was a quiet link),
+ *   which opens s18 with its viewport up, where the typed code is one tap
+ *   further for a camera that won't read it.
  *   Held back while their own row is first being read, so a checked-in
  *   member never sees it flash. Not while that read is paused offline: s18
  *   says what offline means for a check-in. A failed read shows it too (the
@@ -469,11 +472,7 @@ function CheckInCard({
   // The accent fill marks a card with something to do now.
   const active = (isOpen && !own) || hostable;
   const showScan = canScan && !canHost;
-  const openCheckIn = () =>
-    router.push({
-      pathname: "/check-in",
-      params: { eventId: event.id },
-    });
+  const self = useHostSelfCheckIn(event.id);
   // s18 with Scan code's viewport already up: the member tapped Scan code.
   const openScanner = () =>
     router.push({
@@ -531,18 +530,25 @@ function CheckInCard({
             }
           />
           {canScan ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={openCheckIn}
-              style={({ pressed }) => [
-                styles.selfCheckIn,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[styles.selfCheckInText, { color: accent }]}>
-                Check myself in
-              </Text>
-            </Pressable>
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ busy: self.pending }}
+                disabled={self.pending}
+                onPress={self.checkIn}
+                style={({ pressed }) => [
+                  styles.selfCheckIn,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={[styles.selfCheckInText, { color: accent }]}>
+                  {self.pending ? "Checking you in…" : "Check myself in"}
+                </Text>
+              </Pressable>
+              {self.message ? (
+                <Text style={styles.zoneText}>{self.message}</Text>
+              ) : null}
+            </>
           ) : null}
         </>
       ) : showScan ? (
@@ -551,18 +557,12 @@ function CheckInCard({
             Scan the code on the officer&apos;s screen, here or with your
             phone&apos;s camera.
           </Text>
-          <Pressable
-            accessibilityRole="button"
+          <SheetPrimaryButton
+            label="Scan code"
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
             onPress={openScanner}
-            style={({ pressed }) => [
-              styles.selfCheckIn,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[styles.selfCheckInText, { color: accent }]}>
-              Scan code
-            </Text>
-          </Pressable>
+          />
         </>
       ) : null}
     </View>

@@ -100,6 +100,8 @@ const { eventAttendanceFor } = await vi.hoisted(
   async () => await import("@repo/validation"),
 );
 
+const checkIn = vi.fn();
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
@@ -112,6 +114,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useListChapters: () => ({
     data: [{ chapter_id: "chapter-1", role_ids: [] }],
   }),
+  useCheckIn: () => ({ mutateAsync: checkIn }),
   useMyAttendance: () => ({
     isPending: myAttendancePending,
     isPaused: myAttendancePaused,
@@ -382,11 +385,12 @@ describe("Event details layout", () => {
     expect(card).toBeDefined();
 
     // The QR is a link the phone's own camera opens, and Scan code reads it
-    // in the app; both are said, and Scan code is a quieter link in the accent.
+    // in the app; both are said, and Scan code is the card's button
+    // (2026-11-17: it was a quieter link a member had to find).
     expect(screenText(tree)).toContain(
       "Scan the code on the officer's screen, here or with your phone's camera.",
     );
-    expect(flat(textNode(tree, "Scan code")!).color).toBe(ACCENT);
+    expect(textNode(tree, "Scan code")).toBeDefined();
   });
 
   it("opens s18 with Scan code's viewport already up", () => {
@@ -538,11 +542,15 @@ describe("Event details layout", () => {
         node.findAll((text) => text.props.children === "Check myself in")
           .length > 0,
     );
+    checkIn.mockReset();
+    checkIn.mockResolvedValue({});
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
     act(() => self.props.onPress());
-    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
-      pathname: "/check-in",
-      params: { eventId: "evt-1" },
-    });
+    // Right there, with no code: the host's own phone shows it (2026-11-17).
+    expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+    expect(vi.mocked(expoRouter.useRouter)().push).not.toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: "/check-in" }),
+    );
   });
 
   it("offers a host no self check-in once they're in", () => {

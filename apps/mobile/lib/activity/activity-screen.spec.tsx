@@ -2071,12 +2071,12 @@ describe("Activity screen (#3897)", () => {
       }[];
       expect(buttons.map((each) => each.text)).toEqual([
         "Not now",
-        "Enter code",
+        "Scan code",
       ]);
       buttons[1]!.onPress!();
       expect(push).toHaveBeenCalledWith({
         pathname: "/check-in",
-        params: { eventId: "ev-plain" },
+        params: { eventId: "ev-plain", scan: "1" },
       });
       alert.mockRestore();
     });

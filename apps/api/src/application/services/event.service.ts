@@ -162,12 +162,18 @@ export class EventService {
    * check-in closes), so nothing is read. A failed read says no, and the
    * event still reads: the field is advisory, and the server's refusal
    * explains itself, as it did before the field existed.
+   *
+   * Per viewer (2026-11-17): a host (`events:update`) checks themselves in
+   * with no code (`AttendanceService.checkIn`), so it is false for them, and
+   * web offers them a plain Check in. Asked only once a screen requires the
+   * code, so most reads cost nothing extra.
    */
   async checkInNeedsCode(
     event: Pick<
       Event,
       'id' | 'chapter_id' | 'start_time' | 'end_time' | 'check_in_opens_minutes'
     >,
+    viewerId: string,
     now: Date = new Date(),
   ): Promise<boolean> {
     const start = new Date(event.start_time);
@@ -187,7 +193,12 @@ export class EventService {
         event.chapter_id,
         now.toISOString(),
       );
-      return screensRequireCode(screens);
+      if (!screensRequireCode(screens)) return false;
+      return !(await this.rbac.memberHasAnyPermission(
+        event.chapter_id,
+        viewerId,
+        [SystemPermissions.EVENTS_UPDATE],
+      ));
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
@@ -13,6 +13,7 @@ import {
   useAttendance,
   useEvent,
   useMintCheckInToken,
+  useMyAttendance,
   usePermissionList,
   type DeviceInstant,
 } from "@repo/hooks";
@@ -29,7 +30,13 @@ import {
   type ScreenPresence,
 } from "@/lib/events/check-in-screen-report";
 import { formatCountdown } from "@/lib/events/format";
-import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
+import {
+  selectEventDetail,
+  selectMintedToken,
+  selectMyAttendance,
+} from "@/lib/events/select";
+import { useHostSelfCheckIn } from "@/lib/events/use-host-self-check-in";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 import {
@@ -114,6 +121,14 @@ import {
  * after the computed rotation, on purpose: it asks half a second later,
  * because the computed rotation is early by the request's trip to the server
  * and asking exactly then could get the old window's code back.
+ *
+ * ## The host checks in here too
+ *
+ * The host can't scan the code their own phone is showing, so under the code
+ * a quiet "Check myself in" checks them in with one tap (2026-11-17,
+ * `useHostSelfCheckIn`; the API asks a host for no code). It is there only
+ * while their own row reads as missing, and turns into "You're checked in"
+ * once it lands.
  *
  * ## This phone is the check-in zone
  *
@@ -284,6 +299,13 @@ export default function HostCheckInScreen() {
     canHost && focused && minted !== null,
   );
   const line = presenceLine(presence);
+  const { accent } = useChapterBranding();
+  const mine = useMyAttendance(canHost ? eventId : "");
+  const own = selectMyAttendance(mine.data);
+  const self = useHostSelfCheckIn(eventId);
+  // Only once the host's own row has been read as missing, so a host already
+  // in never sees the button flash.
+  const showSelfCheckIn = mine.isSuccess && !own;
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
   const qrSize =
@@ -456,11 +478,34 @@ export default function HostCheckInScreen() {
           </View>
 
           {minted ? (
-            <View style={styles.footer}>
-              <Text style={styles.manualLabel}>Show code</Text>
-              <Text selectable style={styles.manualCode}>
-                {minted.manualCode}
-              </Text>
+            <View style={styles.footerStack}>
+              <View style={styles.footer}>
+                <Text style={styles.manualLabel}>Show code</Text>
+                <Text selectable style={styles.manualCode}>
+                  {minted.manualCode}
+                </Text>
+              </View>
+              {own?.checkedInAt ? (
+                <Text style={styles.selfDone}>You&apos;re checked in</Text>
+              ) : showSelfCheckIn ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ busy: self.pending }}
+                  disabled={self.pending}
+                  onPress={self.checkIn}
+                  style={({ pressed }) => [
+                    styles.selfCheckIn,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text style={[styles.selfCheckInText, { color: accent }]}>
+                    {self.pending ? "Checking you in…" : "Check myself in"}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {self.message && !own ? (
+                <Text style={styles.selfError}>{self.message}</Text>
+              ) : null}
             </View>
           ) : null}
         </>
@@ -555,13 +600,40 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       textDecorationLine: "underline",
     },
+    footerStack: {
+      alignItems: "center",
+      paddingHorizontal: tokens.spacing["2xl"],
+      paddingBottom: tokens.spacing.xl,
+      gap: tokens.spacing.xs,
+    },
     footer: {
       flexDirection: "row",
       alignItems: "baseline",
       justifyContent: "center",
       gap: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing["2xl"],
-      paddingBottom: tokens.spacing.xl,
+    },
+    // A text action at the 44pt floor, quieter than the code above it.
+    selfCheckIn: {
+      minHeight: tokens.touch.minimum,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    selfCheckInText: {
+      ...typeRole(tokens.typography.role.label),
+    },
+    selfDone: {
+      minHeight: tokens.touch.minimum,
+      textAlignVertical: "center",
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.label),
+    },
+    selfError: {
+      textAlign: "center",
+      color: tokens.color.semantic.destructive,
+      ...typeRole(tokens.typography.role.caption),
+    },
+    pressed: {
+      opacity: 0.7,
     },
     manualLabel: {
       color: tokens.color.text.muted,
