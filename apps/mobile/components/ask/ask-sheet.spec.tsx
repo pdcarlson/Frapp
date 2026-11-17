@@ -14,7 +14,7 @@ import {
   ASK_COPY,
   ASK_STARTER,
   askSavedLine,
-  askStepLine,
+  askStepsOn,
   askUnavailableLine,
   type AskAnswer,
 } from "@repo/validation";
@@ -935,6 +935,8 @@ describe("sending with the keyboard up (#5426)", () => {
     question,
     phase: "working",
     step: "searching",
+    // The search, working: the first step of the turn's list (#5427).
+    steps: askStepsOn([], { v: 1, type: "status", step: "searching" }),
     answer: null,
   });
 
@@ -973,7 +975,7 @@ describe("sending with the keyboard up (#5426)", () => {
 
     const text = screenText(tree);
     expect(text).toContain("When is formal?");
-    expect(text).toContain(askStepLine("searching", null));
+    expect(text).toContain(ASK_COPY.steps.searching);
     // Drawn where the window is, with the keyboard still up.
     expect(native().room).toBe(ROOM.keyboardUp);
     expect(onScreen(tree)).toBe(true);
