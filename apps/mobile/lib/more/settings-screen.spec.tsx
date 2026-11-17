@@ -3,6 +3,8 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useRouter } from "expo-router";
+import { AI_SETTINGS_COPY, FRAPP_AI_COPY } from "@repo/validation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   defaultNotificationCategoryState,
@@ -49,6 +51,14 @@ const state = vi.hoisted(() => ({
     answer: "yes" | "no" | null;
     sheet_changed: boolean;
   },
+  // The chapter's AI switches, behind the Chapter AI row.
+  aiChapter: {
+    ask: true,
+    meeting_notes: false,
+    chat_source: true,
+    can_change: true,
+    updated_at: null,
+  } as Record<string, unknown>,
 }));
 
 // The suite's stub has no `Linking`; the push switch's fallback opens the OS
@@ -109,6 +119,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePermissionList: () => state.permissions,
+  useAiChapterSettings: (options: { enabled?: boolean }) => ({
+    data: options.enabled ? state.aiChapter : undefined,
+  }),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -433,7 +446,40 @@ describe("Settings copy", () => {
       state.aiConsent = { answer, sheet_changed: false };
       const tree = render();
       expect(aiSwitch(tree)[0].props.value).toBe(on);
-      expect(screenText(tree)).toContain("Works with Anthropic and Google.");
+      // What it does, never who it works with (Paul, 2026-11-17): the
+      // companies are named on Meet Frapp AI, where the yes is given.
+      expect(screenText(tree)).toContain(FRAPP_AI_COPY.settingsCaption);
+      expect(screenText(tree)).not.toMatch(/Anthropic|Google/);
+    });
+
+    it("sits in its own AI section, before Account", () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const text = screenText(render());
+      expect(text.indexOf("AI")).toBeGreaterThan(-1);
+      expect(text.indexOf("Nudges on Activity")).toBeLessThan(
+        text.indexOf("Appearance"),
+      );
+    });
+
+    it("offers Chapter AI only to a member who can open Chapter settings", () => {
+      vi.mocked(useRouter().push).mockClear();
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const chapterRow = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.label === AI_SETTINGS_COPY.chapterRow &&
+            typeof node.props.onPress === "function",
+        );
+      state.permissions = [];
+      expect(chapterRow(render())).toHaveLength(0);
+
+      state.permissions = ["chapter-config:view"];
+      const [row] = chapterRow(render());
+      expect(row.props.value).toBe("2 on");
+      act(() => row.props.onPress());
+      expect(vi.mocked(useRouter().push)).toHaveBeenCalledWith(
+        "/chapter-settings",
+      );
     });
 
     it("offers the nudge switch only to a member who said yes to AI (#4781)", () => {

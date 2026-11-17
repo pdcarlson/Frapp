@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  useAiChapterSettings,
   useBlockedUserIds,
   useFrappAiChoice,
   useChapterChatLevel,
@@ -16,8 +17,9 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_SETTINGS_COPY,
+  AI_SWITCHES,
   FRAPP_AI_COPY,
-  joinNames,
   chatChapterLevelLabel,
   shownNotificationCategories,
 } from "@repo/validation";
@@ -35,8 +37,9 @@ import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChatDensity } from "@/lib/chat/chat-density";
+import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { shouldShowDonationCta } from "@/lib/more/donation";
-import { LEGAL_LINKS } from "@/lib/more/legal";
+import { LEGAL_LINKS, PRIVACY_LINK } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
 import {
   PUSH_PROMPT_ANSWERED_EVENT,
@@ -61,7 +64,8 @@ import {
  * s16 — Settings (`canvas-screens.dc.html:527`). The route file keeps the name
  * `preferences.tsx`; the drawn title is "Settings" (`spec/ui/mobile/screens.md`).
  *
- * Three sections: NOTIFICATIONS, CHAT, ACCOUNT. All but CHAT are drawn.
+ * Four sections: NOTIFICATIONS, CHAT, AI, ACCOUNT. NOTIFICATIONS and ACCOUNT
+ * are drawn.
  *
  * ## Deviations from the drawing, each deliberate
  *
@@ -80,6 +84,15 @@ import {
  *   conversation itself, so a switch that silenced every message at once was
  *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's
  *   docblock in `@repo/validation`.
+ * - **AI is here and is not drawn** (Paul, 2026-11-17: "maybe we just make an
+ *   AI section ... Frap AI, nudges on activity and ... everything else that
+ *   comes along with that"). It holds the member's Frapp AI switch, Nudges on
+ *   Activity, and, for a member who can open Chapter settings, a Chapter AI
+ *   row that opens the president's switches there, where the chapter's side
+ *   of settings lives. No row names an AI company: they are named on Meet
+ *   Frapp AI, which turning Frapp AI on opens, and in the privacy policy,
+ *   which the section's footnote links. Before this the two switches sat
+ *   under ACCOUNT, and Frapp AI's caption named the companies.
  * - **No CHAPTER · ADMIN.** The drawn group (accent, chat background, study
  *   zones) moved whole to Chapter settings (`app/(app)/chapter-settings.tsx`,
  *   #4074), the chapter's side of settings off You → Admin, so this screen
@@ -296,6 +309,15 @@ export default function PreferencesScreen() {
   } = useNotificationPreferencesSync();
 
   const permissions = usePermissionList();
+  // The Chapter AI row: for a member who can open Chapter settings, where the
+  // president's switches are, and only where the server has AI (the consent
+  // read answers first; with AI off it is null and nothing here is drawn).
+  const showChapterAi =
+    !!frappAi.consent && chapterSettingsAccess(permissions).any;
+  const chapterAi = useAiChapterSettings({ enabled: showChapterAi });
+  const chapterAiOn = chapterAi.data
+    ? AI_SWITCHES.filter((entry) => chapterAi.data?.[entry.key] === true).length
+    : null;
   const chapterQuery = useCurrentChapter();
   const donationUrl = chapterQuery.data?.donation_url;
   const showDonationCta = shouldShowDonationCta(permissions, donationUrl);
@@ -458,50 +480,85 @@ export default function PreferencesScreen() {
         />
       </ListSection>
 
+      {/* Only where the server has AI (`AI_ENABLED`): with it off the
+          section, like every AI entry, isn't drawn. */}
+      {frappAi.consent ? (
+        <>
+          <SectionHeader>{FRAPP_AI_COPY.settingsSection}</SectionHeader>
+          <ListSection>
+            {/* On opens Meet Frapp AI, so the yes is given where the
+                companies are named; off is at once. */}
+            <ListRow
+              label={FRAPP_AI_COPY.settingsSwitch}
+              description={FRAPP_AI_COPY.settingsCaption}
+              trailing={
+                <Toggle
+                  value={frappAi.consent.answer === "yes"}
+                  disabled={frappAi.pending}
+                  onValueChange={(next) => {
+                    setAiOffFailed(false);
+                    if (next) {
+                      meetAiSheetRef.current?.present();
+                      return;
+                    }
+                    frappAi.notNow().catch(() => setAiOffFailed(true));
+                  }}
+                  accessibilityLabel={FRAPP_AI_COPY.settingsSwitch}
+                />
+              }
+            />
+            {aiYes && nudgeSettings.data ? (
+              <ListRow
+                label="Nudges on Activity"
+                description="A short note from Frapp when one of your tasks could use it."
+                trailing={
+                  <Toggle
+                    value={nudgeSettings.data.enabled}
+                    onValueChange={(value) => setNudgesEnabled.mutate(value)}
+                    accessibilityLabel="Nudges on Activity"
+                  />
+                }
+              />
+            ) : null}
+            {showChapterAi && chapterAi.data ? (
+              <ListRow
+                label={AI_SETTINGS_COPY.chapterRow}
+                value={
+                  chapterAiOn === null
+                    ? null
+                    : AI_SETTINGS_COPY.chapterRowValue(chapterAiOn)
+                }
+                accessibilityHint="Opens Chapter settings, where the president turns the chapter's AI features on or off."
+                onPress={() => router.push("/chapter-settings")}
+              />
+            ) : null}
+          </ListSection>
+          {aiOffFailed ? (
+            <Text style={styles.footnoteError}>
+              {FRAPP_AI_COPY.turnOffFailed}. Try again.
+            </Text>
+          ) : null}
+          <Text style={styles.footnote}>
+            {FRAPP_AI_COPY.settingsFootnote}{" "}
+            <Text
+              style={styles.footnoteLink}
+              accessibilityRole="link"
+              onPress={() =>
+                openExternalLink(PRIVACY_LINK.label, PRIVACY_LINK.url)
+              }
+            >
+              {FRAPP_AI_COPY.privacyLink}
+            </Text>
+            .
+          </Text>
+        </>
+      ) : null}
+
       <SectionHeader>Account</SectionHeader>
       <ListSection>
         {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
             and Canvas draws this row as a value too. */}
         <ListRow label="Appearance" value="Dark" />
-        {/* Only where the server has AI (`AI_ENABLED`): with it off this
-            row, like every AI entry, isn't drawn. On opens Meet Frapp AI, so
-            the yes is given where the companies are named; off is at once. */}
-        {frappAi.consent ? (
-          <ListRow
-            label={FRAPP_AI_COPY.settingsSwitch}
-            description={FRAPP_AI_COPY.settingsCaption(
-              joinNames(frappAi.providers),
-            )}
-            trailing={
-              <Toggle
-                value={frappAi.consent.answer === "yes"}
-                disabled={frappAi.pending}
-                onValueChange={(next) => {
-                  setAiOffFailed(false);
-                  if (next) {
-                    meetAiSheetRef.current?.present();
-                    return;
-                  }
-                  frappAi.notNow().catch(() => setAiOffFailed(true));
-                }}
-                accessibilityLabel={FRAPP_AI_COPY.settingsSwitch}
-              />
-            }
-          />
-        ) : null}
-        {aiYes && nudgeSettings.data ? (
-          <ListRow
-            label="Nudges on Activity"
-            description="A short note from Frapp when one of your tasks could use it."
-            trailing={
-              <Toggle
-                value={nudgeSettings.data.enabled}
-                onValueChange={(value) => setNudgesEnabled.mutate(value)}
-                accessibilityLabel="Nudges on Activity"
-              />
-            }
-          />
-        ) : null}
         <ListRow
           label="What's new"
           accessibilityHint="Shows the latest changes to the app."
@@ -554,11 +611,6 @@ export default function PreferencesScreen() {
           onPress={handleDeleteAccount}
         />
       </ListSection>
-      {aiOffFailed ? (
-        <Text style={styles.footnoteError}>
-          {FRAPP_AI_COPY.turnOffFailed}. Try again.
-        </Text>
-      ) : null}
       {linkFailed ? (
         <Text style={styles.footnoteError}>
           {linkFailed} couldn&apos;t be opened. Try again in a moment.
@@ -582,6 +634,10 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       paddingHorizontal: tokens.spacing.xs,
+    },
+    footnoteLink: {
+      color: tokens.color.text.foreground,
+      textDecorationLine: "underline",
     },
     footnoteError: {
       ...typeRole(tokens.typography.role.caption),

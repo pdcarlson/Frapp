@@ -29,7 +29,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useAiConsent: () => ({
-    data: { sheet: SHEET, answer: null, answered_at: null, sheet_changed: false },
+    data: {
+      sheet: SHEET,
+      answer: null,
+      answered_at: null,
+      sheet_changed: false,
+    },
   }),
   // The diagnostics row has its own spec; here it is not offered.
   useAskStatus: () => ({ data: null }),
@@ -73,19 +78,22 @@ describe("the chapter's AI switches", () => {
     state.saving = false;
   });
 
-  it("names who the chapter's information goes to", () => {
+  it("says who turns them on, and names no AI company (Paul, 2026-11-17)", () => {
     state.settings = settings();
     render(<SettingsAiTab />);
     expect(
-      screen.getByText(/send chapter information to anthropic and google/i),
+      screen.getByText(/off until the president turns it on/i),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/anthropic|google|assemblyai/i)).toBeNull();
   });
 
   it("lets the president turn a feature on, and says so", async () => {
     const user = userEvent.setup();
     state.settings = settings();
     render(<SettingsAiTab />);
-    await user.click(screen.getByRole("switch", { name: /minutes from notes/i }));
+    await user.click(
+      screen.getByRole("switch", { name: /minutes from notes/i }),
+    );
     expect(state.update).toHaveBeenCalledWith({ meeting_notes: true });
     expect(state.toast).toHaveBeenCalledWith({
       title: "Minutes from notes turned on",
@@ -138,7 +146,9 @@ describe("the chapter's AI switches", () => {
         variant: "destructive",
       }),
     );
-    expect(screen.getByRole("switch", { name: /ask frapp/i })).not.toBeChecked();
+    expect(
+      screen.getByRole("switch", { name: /ask frapp/i }),
+    ).not.toBeChecked();
   });
 
   it("can't be changed offline", () => {
