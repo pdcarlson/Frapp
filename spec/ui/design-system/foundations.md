@@ -196,6 +196,8 @@ Unread and mentions keep their own rule above (§5): neutral for unread, red for
 ### A place's hue (2026-11-12)
 
 > **Owner decision, 2026-11-12 (Paul, mobile hierarchy pass, [#4610](https://github.com/pdcarlson/Frapp/issues/4610) step 3).** Asked to choose between neutral tiles everywhere, tinted tiles on the You tab only, and tinted tiles on every tab, on a page of the real screens, he chose tinted tiles on the You tab only.
+>
+> Changed in [#5310](https://github.com/frapplive/Frapp/issues/5310) by `pdcarlson`, 2026-11-17: Activity's week strip marks each day with a dot per kind due (events sky, tasks green, polls and sign-ups violet), from Paul's pick of direction B for the Calendar rethink and his "colour over grey sameness". A hue there still names a kind, never a state; the Activity rows themselves stay neutral.
 
 On mobile's You tab, a row that opens a place leads with a tile in that place's own fixed hue (`apps/mobile/lib/more/destination-hue.ts`). The tile is painted the way an initials avatar is (`memberAvatarTint`, [`components.md`](components.md): the hue at 14% over `--card`, with the glyph in the hue at full strength), so every hued tile on the phone sits at one strength. It joins the one earlier case of an icon that labels a row and is not neutral: a Notifications row that no person is behind, whose tile wears its kind's hue (`NOTIFICATION_TILE_HUE` in `@repo/hooks`; [`../mobile/screens.md`](../mobile/screens.md) s14).
 

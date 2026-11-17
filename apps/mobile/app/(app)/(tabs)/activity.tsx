@@ -10,6 +10,7 @@ import {
   BackHandler,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -30,6 +31,7 @@ import {
   activityGroups,
   activityNarrowedNote,
   activityReview,
+  activityWeekStrip,
   activityWeekSummary,
   findActivityTaskRow,
   useActivity,
@@ -57,6 +59,7 @@ import {
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
+  type ActivityStripDay,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { messageReminderPresetTime } from "@repo/hooks/use-message-reminders";
@@ -88,6 +91,10 @@ import {
   type StandingDestination,
 } from "@/components/activity/semester-strip";
 import { WeekCard, WeekCardSkeleton } from "@/components/activity/week-card";
+import { WeekStrip, WeekStripSkeleton } from "@/components/activity/week-strip";
+import { DisclosureGlyph } from "@/components/control-glyphs";
+import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
+import { NavGlyph } from "@/components/nav-glyph";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
@@ -100,10 +107,14 @@ import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useRemindMessage } from "@/lib/chat/message-reminder";
+import { setCalendarRange, setEventsView } from "@/lib/events/events-view";
 import { openMessageLink } from "@/lib/chat/open-link";
 import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { NOTIFICATION_TILE_HUE } from "@repo/hooks/notification-rows";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { localIsoDate } from "@repo/formatting";
 
 /**
  * Activity: the member's week, what they still have to do, and what waits on
@@ -115,13 +126,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * that, with the scale that we have right now, tell me no information"). Top
  * to bottom:
  *
+ * 0. The week strip (`WeekStrip`, #5310): today and the next six days, a
+ *    dot per kind due on each; pressing a day jumps To do to it.
  * 1. The week card (`WeekCard`): done of total this week, a line per kind,
  *    and the one thing to do next.
  * 2. This semester (`SemesterStrip`): up to four gauges, two across.
  * 3. To review (`ReviewCard`): for an officer with something to sign off.
  * 4. To do: the member's own events, tasks, polls and sign-ups by day
  *    (`activityAgenda`), three to a day before "Show more". A line of the
- *    week card narrows it to one kind.
+ *    week card narrows it to one kind. Under it, the Calendar row opens the
+ *    chapter's whole month (#5310: Calendar folds into Activity).
  * 5. Reminders, Waiting on others, then Links: the chat messages the member
  *    asked to be reminded about (#4957), what they made, and what was posted
  *    for them, each left out when it has nothing.
@@ -246,6 +260,78 @@ export default function ActivityScreen() {
     () => (visible ? activityAgenda(visible, filter, now) : null),
     [visible, filter, now],
   );
+  // The week strip (#5310) counts what is awake, whatever line narrows To
+  // do. Pressing a day scrolls To do to it: the screen holds the scroll view
+  // and each day section's view, measured against it at the press.
+  const strip = useMemo(
+    () =>
+      visible
+        ? activityWeekStrip(visible, now, agenda?.next?.key ?? null)
+        : null,
+    [visible, now, agenda],
+  );
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionViews = useRef(new Map<string, View>());
+  const bodyView = useRef<View>(null);
+  const bodyTop = useRef(0);
+  const sectionRef = useCallback(
+    (id: string) => (view: View | null) => {
+      if (view) sectionViews.current.set(id, view);
+      else sectionViews.current.delete(id);
+    },
+    [],
+  );
+  // The day last jumped to, by its date, so it stays picked across a
+  // re-read and lets go at midnight when it is no longer on the strip.
+  const [jumpedDay, setJumpedDay] = useState<string | null>(null);
+  const [pendingJump, setPendingJump] = useState<ActivityStripDay | null>(null);
+  const jumpTo = useCallback(
+    (day: ActivityStripDay) => {
+      const scroll = scrollRef.current;
+      if (!scroll) return;
+      const target = day.sections
+        .map((id) => sectionViews.current.get(id))
+        .find((view) => view !== undefined);
+      // The day's one thing is the week card's Next: the top of the page.
+      if (!target) {
+        scroll.scrollTo({ y: 0, animated: true });
+        return;
+      }
+      // Measured against the page's own body, a host view (a node handle
+      // is refused under the New Architecture), whose offset in the scroll
+      // content its layout reports.
+      const body = bodyView.current;
+      if (!body) return;
+      target.measureLayout(body, (_x, y) => {
+        scroll.scrollTo({
+          y: Math.max(0, bodyTop.current + y - tokens.spacing.sm),
+          animated: true,
+        });
+      });
+    },
+    [tokens.spacing.sm],
+  );
+  const selectStripDay = (day: ActivityStripDay) => {
+    setJumpedDay(localIsoDate(day.date));
+    if (filter !== "all") {
+      // A narrowed list may not hold the day: show everything, then jump
+      // once the full list has drawn.
+      setPicked("all");
+      setPendingJump(day);
+    } else {
+      jumpTo(day);
+    }
+  };
+  useEffect(() => {
+    if (!pendingJump || filter !== "all") return undefined;
+    const frame = requestAnimationFrame(() => {
+      jumpTo(pendingJump);
+      setPendingJump(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingJump, filter, jumpTo]);
+  const stripSelectedId =
+    strip?.find((day) => localIsoDate(day.date) === jumpedDay)?.id ?? null;
   // Only for the roles that review: a member is never shown the card.
   const review = useMemo(
     () =>
@@ -405,39 +491,61 @@ export default function ActivityScreen() {
     }
     if (activity.isPending) {
       return (
-        <SkeletonRegion label="Loading activity">
-          <View style={styles.body}>
-            <WeekCardSkeleton />
-            <SemesterStripSkeleton />
-            <View>
-              <SectionHeader>To do</SectionHeader>
-              {Array.from({ length: 4 }, (_, index) => (
-                <ActivityRowSkeleton
-                  key={index}
-                  index={index}
-                  isFirst={index === 0}
-                />
-              ))}
+        <>
+          <SkeletonRegion label="Loading activity">
+            <View style={styles.body}>
+              <WeekStripSkeleton />
+              <WeekCardSkeleton />
+              <SemesterStripSkeleton />
+              <View>
+                <SectionHeader>To do</SectionHeader>
+                {Array.from({ length: 4 }, (_, index) => (
+                  <ActivityRowSkeleton
+                    key={index}
+                    index={index}
+                    isFirst={index === 0}
+                  />
+                ))}
+              </View>
             </View>
-          </View>
-        </SkeletonRegion>
+          </SkeletonRegion>
+          {/* The month needs none of this read, so its door is never gone. */}
+          <CalendarRow />
+        </>
       );
     }
     // Only with nothing to show: a re-read that fails (this screen re-reads
     // after every action) keeps the page it already has.
     if (activity.isError && !activity.data) {
       return (
-        <ErrorState
-          title="Couldn't load your activity"
-          body={describeLoadFailure(activity.error)}
-          onRetry={() => void activity.refetch()}
-          isRetrying={activity.isFetching}
-        />
+        <>
+          <ErrorState
+            title="Couldn't load your activity"
+            body={describeLoadFailure(activity.error)}
+            onRetry={() => void activity.refetch()}
+            isRetrying={activity.isFetching}
+          />
+          <CalendarRow />
+        </>
       );
     }
-    if (!summary || !agenda) return null;
+    if (!summary || !agenda) return <CalendarRow />;
     return (
-      <View style={styles.body}>
+      <View
+        ref={bodyView}
+        // A direct child of the scroll content, so its y is its offset there.
+        onLayout={(event) => {
+          bodyTop.current = event.nativeEvent.layout.y;
+        }}
+        style={styles.body}
+      >
+        {strip ? (
+          <WeekStrip
+            days={strip}
+            selectedId={stripSelectedId}
+            onSelect={selectStripDay}
+          />
+        ) : null}
         <WeekCard
           summary={summary}
           next={agenda.next}
@@ -476,7 +584,9 @@ export default function ActivityScreen() {
           onShowAll={() => setPicked("all")}
           rowActions={rowActions}
           onOpen={open}
+          sectionRef={sectionRef}
         />
+        <CalendarRow />
         {below.map((group) => (
           <GroupSection
             key={group.id}
@@ -504,6 +614,7 @@ export default function ActivityScreen() {
         <ScreenShell
           title="Activity"
           refresh={refresh}
+          scrollRef={scrollRef}
           headerAction={moduleOn("tasks") ? <TaskBoardLink /> : undefined}
         >
           {renderBody()}
@@ -732,6 +843,7 @@ function ToDoSection({
   onShowAll,
   rowActions,
   onOpen,
+  sectionRef,
 }: {
   days: ActivityAgendaDay[];
   unavailable: ActivityGroup["unavailable"];
@@ -742,6 +854,8 @@ function ToDoSection({
   /** Check in on an open event's row (#4427); `null` while refused. */
   rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
+  /** Where the week strip finds each day to jump to (#5310). */
+  sectionRef: (id: string) => (view: View | null) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -776,6 +890,7 @@ function ToDoSection({
           day={day}
           rowActions={rowActions}
           onOpen={onOpen}
+          viewRef={sectionRef(day.id)}
         />
       ))}
     </View>
@@ -791,10 +906,12 @@ function DaySection({
   day,
   rowActions,
   onOpen,
+  viewRef,
 }: {
   day: ActivityAgendaDay;
   rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
+  viewRef: (view: View | null) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -814,7 +931,7 @@ function DaySection({
           // the Calendar's day headings are (`DayHeading`, #4138).
           { color: tokens.color.text.foreground };
   return (
-    <View testID={`activity-day-${day.id}`}>
+    <View ref={viewRef} testID={`activity-day-${day.id}`}>
       <View
         accessible
         accessibilityRole="header"
@@ -887,6 +1004,51 @@ function GroupSection({
         />
       ))}
     </View>
+  );
+}
+
+/**
+ * The Calendar row at the foot of To do (#5310, Paul's direction B): the
+ * chapter's whole month, optional events included, one press from the list
+ * that already runs by day. A place, so its tile wears the Events hue, as
+ * an event notice's does, and a chevron says it opens a screen.
+ */
+function CalendarRow() {
+  const router = useRouter();
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const hue = NOTIFICATION_TILE_HUE.events;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Calendar"
+      accessibilityHint="Opens the chapter's month."
+      onPress={() => {
+        // The month, not the List the tab may open on, until step 2 of
+        // #5310 makes the month the only view.
+        setEventsView("calendar");
+        setCalendarRange("month");
+        router.navigate("/events");
+      }}
+      testID="activity-calendar-row"
+      style={({ pressed }) => [
+        styles.calendarRow,
+        pressed ? styles.pressed : null,
+      ]}
+    >
+      <LeadTile hue={hue}>
+        <NavGlyph
+          paths={NAV_GLYPHS.events}
+          color={hue}
+          size={LEAD_TILE_GLYPH}
+        />
+      </LeadTile>
+      <Text style={styles.calendarLabel}>Calendar</Text>
+      <DisclosureGlyph
+        color={tokens.color.text.mutedForeground}
+        direction="right"
+      />
+    </Pressable>
   );
 }
 
@@ -1176,6 +1338,17 @@ function createStyles(tokens: SignetTokens) {
       alignSelf: "flex-start",
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
+    },
+    calendarRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+    },
+    calendarLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+      flex: 1,
     },
     archiveTitle: {
       ...typeRole(tokens.typography.role.title),

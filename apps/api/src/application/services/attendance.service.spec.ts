@@ -1771,6 +1771,25 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
+    it('checks the host in with one tap: no code, no location (2026-11-17)', async () => {
+      // The phone showing the QR is the host's own, so they can't scan it.
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      await expect(
+        service.checkIn('evt-1', 'officer-1', 'ch-1'),
+      ).resolves.toEqual(baseAttendance);
+      expect(mockAttendanceRepo.checkInAtomic).toHaveBeenCalled();
+    });
+
+    it('asks an officer who is not hosting for the code like anyone else', async () => {
+      // The permission alone is no proof of presence (review, 2026-11-17).
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      mockRbac.memberHasAnyPermission.mockResolvedValue(true);
+      await expect(
+        service.checkIn('evt-1', 'officer-2', 'ch-1'),
+      ).rejects.toThrow(CHECK_IN_NEEDS_CODE);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
     it('requires the code for an event with a drawn zone too', async () => {
       mockScreenRepo.findLive.mockResolvedValue([unlocatedScreen]);
       mockEventRepo.findById.mockResolvedValue({

@@ -223,10 +223,14 @@ function stagingLayerProblems(staticExpo, resolved) {
   if (resolved?.name !== STAGING_NAME) {
     problems.push(`the staging variant's expo.name must be ${STAGING_NAME}, not ${describe(resolved?.name)}`);
   }
-  if (resolved?.ios?.associatedDomains !== undefined) {
+  // It may claim its own environment's host (app.staging.frapp.live,
+  // 2026-11-17), never one the production app claims.
+  const productionDomains = new Set(staticExpo?.ios?.associatedDomains ?? []);
+  if ((resolved?.ios?.associatedDomains ?? []).some((d) => productionDomains.has(d))) {
     problems.push("the staging variant must not claim the production app's associated domains");
   }
-  if (resolved?.android?.intentFilters !== undefined) {
+  const productionHosts = new Set(linkHosts(staticExpo));
+  if (linkHosts(resolved).some((host) => productionHosts.has(host))) {
     problems.push("the staging variant must not claim the production app's App Links");
   }
   for (const [label, read] of SHARED_FIELDS) {
@@ -237,6 +241,13 @@ function stagingLayerProblems(staticExpo, resolved) {
     }
   }
   return [...problems, ...identityProblems(resolved, { staging: true })];
+}
+
+/** The https hosts an Android build's intent filters claim. */
+function linkHosts(expo) {
+  return (expo?.android?.intentFilters ?? []).flatMap((filter) =>
+    [filter.data ?? []].flat().filter((d) => d?.scheme === "https" && d.host).map((d) => d.host),
+  );
 }
 
 /** What both apps share, and app.config.js must hand back as app.json has it. */
@@ -776,7 +787,11 @@ for (const [label, mutate, expected] of [
     (expo) => (expo.ios.associatedDomains = ["applinks:app.frapp.live"]),
     "associated domains",
   ],
-  ["claiming the production app's App Links", (expo) => (expo.android.intentFilters = []), "App Links"],
+  [
+    "claiming the production app's App Links",
+    (expo) => (expo.android.intentFilters = liveAppJson().expo.android.intentFilters),
+    "App Links",
+  ],
   ["moving to another EAS project", (expo) => (expo.updates.url = "https://u.expo.dev/other"), "expo.updates.url"],
 ]) {
   test(`a staging build ${label} fails the dynamic-layer check`, () => {

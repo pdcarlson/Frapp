@@ -1,5 +1,11 @@
 import { PRODUCTION_APP_ORIGIN } from "./invite-token";
-import { appLinkParams, appUrl, type NativePlatform } from "./native-app";
+import {
+  appLinkParams,
+  appUrl,
+  PRODUCTION_NATIVE_APP,
+  type NativeApp,
+  type NativePlatform,
+} from "./native-app";
 
 /**
  * The check-in QR is a link (2026-11-13).
@@ -116,17 +122,19 @@ export function parseCheckInLink(
 
 /**
  * The link that opens a check-in in the installed app from the web page, for
- * a build whose binary does not claim the https path yet: the app's own
- * scheme on iOS, Chrome's `intent:` form on Android (which opens Play when the
+ * a build whose binary does not claim the https path yet: `app`'s own
+ * scheme on iOS (the staging web passes the staging app, 2026-11-17), Chrome's `intent:` form on Android (which opens Play when the
  * app is missing), through the one `appUrl` the invite's `openInAppUrl` uses.
  */
 export function openCheckInInAppUrl(
   platform: NativePlatform,
   target: CheckInLinkTarget,
+  app: NativeApp = PRODUCTION_NATIVE_APP,
 ): string {
   return appUrl(
     platform,
     `check-in?${CHECK_IN_LINK_EVENT_PARAM}=${encodeURIComponent(target.eventId)}` +
       `&${CHECK_IN_LINK_TOKEN_PARAM}=${encodeURIComponent(target.token)}`,
+    app,
   );
 }

@@ -58,6 +58,12 @@ vi.mock("@/components/meetings/live-meeting-card", () => ({
 
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
+  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+  useNativeApp: () => ({
+    id: "live.frapp.mobile",
+    scheme: "frapp",
+    name: "Frapp",
+  }),
 }));
 
 vi.mock("next/navigation", () => ({

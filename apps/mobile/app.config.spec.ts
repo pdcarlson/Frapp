@@ -6,6 +6,7 @@ import {
   APP_LINK_PATHS,
   PRODUCTION_API_ORIGIN as SHARED_PRODUCTION_API_ORIGIN,
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
+  STAGING_NATIVE_APP,
 } from "@repo/validation";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -574,9 +575,28 @@ describe("the staging variant (#2511)", () => {
     expect(result.scheme).toBe("frapp-staging");
     expect(result.ios.bundleIdentifier).toBe("live.frapp.mobile.staging");
     expect(result.android.package).toBe("live.frapp.mobile.staging");
-    // The production app's https links stay the production app's.
-    expect(result.ios).not.toHaveProperty("associatedDomains");
-    expect(result.android).not.toHaveProperty("intentFilters");
+    // Its own dashboard's links (2026-11-17): a staging check-in code the
+    // phone's camera reads opens Frapp Staging, on the same paths the
+    // production app claims on app.frapp.live.
+    expect(easStagingEnv.env.EXPO_PUBLIC_APP_URL).toBe(
+      "https://app.staging.frapp.live",
+    );
+    expect(result.ios.associatedDomains).toEqual([
+      "applinks:app.staging.frapp.live",
+    ]);
+    const filters = result.android.intentFilters as {
+      data: { scheme: string; host: string; path?: string }[];
+    }[];
+    const productionFilters = (
+      appJson.android as {
+        intentFilters: { data: { host: string; path?: string }[] }[];
+      }
+    ).intentFilters;
+    expect(filters.flatMap((filter) => filter.data)).toEqual(
+      productionFilters
+        .flatMap((filter) => filter.data)
+        .map((entry) => ({ ...entry, host: "app.staging.frapp.live" })),
+    );
     // Shared with the production app, and the rest of each platform block kept.
     expect(result.slug).toBe(appJson.slug);
     expect(result.updates).toEqual(appJson.updates);
@@ -584,6 +604,31 @@ describe("the staging variant (#2511)", () => {
     expect(result.android.adaptiveIcon).toEqual(
       (appJson.android as { adaptiveIcon: unknown }).adaptiveIcon,
     );
+  });
+
+  it("claims no links when its dashboard is not an https origin of its own", () => {
+    const { applyMobileConfig } = loadConfig();
+    for (const appUrl of [
+      "",
+      "http://localhost:3000",
+      "https://app.frapp.live",
+    ]) {
+      const result = applyMobileConfig(appJson, {
+        env: { ...stagingBuildEnv, EXPO_PUBLIC_APP_URL: appUrl },
+        existsSync: missing,
+      }) as { ios: Record<string, unknown>; android: Record<string, unknown> };
+      expect(result.ios).not.toHaveProperty("associatedDomains");
+      expect(result.android).not.toHaveProperty("intentFilters");
+    }
+  });
+
+  it("names the same app @repo/validation hands the staging web off to", () => {
+    const { STAGING_IDENTITY } = loadConfig();
+    expect(STAGING_NATIVE_APP).toEqual({
+      id: STAGING_IDENTITY.applicationId,
+      scheme: STAGING_IDENTITY.scheme,
+      name: STAGING_IDENTITY.name,
+    });
   });
 
   it("takes its runtime version from the native-input hash, for a build and a guarded update", () => {

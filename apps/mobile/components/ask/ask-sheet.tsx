@@ -135,15 +135,19 @@ import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
  *
  * **Consent is asked at the first question**, not when the sheet opens
  * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
- * first, so the consent sheet opens over the words it is about. The server
- * checks again.
+ * first, so the consent sheet opens with the words it is about already
+ * asked. Since #5426 a first question sits just above the field, where the
+ * consent sheet rises, so it may sit behind that sheet. The server checks
+ * again.
  *
  * **The saved line.** While the beta diagnostics window is on for this
  * chapter, a line above the field says questions and answers are saved and
  * until when, and only then does a question carry `saved_notice_shown`: the
  * server keeps nothing from a client that did not show it. It sits in the
  * composer, which is anchored to the sheet's bottom edge, so its arrival
- * moves neither the field nor the top of the thread.
+ * never moves the field. A short thread, which sits on the field (#5426,
+ * below), moves up by the line's height, as a chat's last message moves
+ * with its composer. Until #5426 it moved nothing.
  *
  * **A source opens the real thing.** A document opens in the in-app browser
  * over the sheet, so the thread is still there when it closes. Anything else
@@ -173,6 +177,37 @@ import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
  * stays at the top and the other pinned above the keyboard.
  * `BottomSheetScrollView` is a direct child of the sheet for the reason
  * `new-task-sheet.tsx` gives.
+ *
+ * ## Why the thread sits on the field, and follows the keyboard (#5426)
+ *
+ * A thread shorter than the room above the field is drawn at the bottom of
+ * that room, on the field, as Messages and ChatGPT's app draw a new
+ * conversation: what was just sent appears where the thumb sent it. Until
+ * #5426 it was drawn at the top, and the first turn replaced an opening that
+ * filled the room and was often scrolled, because the keyboard had shrunk
+ * the room under it. On iOS a scroll view keeps its offset when its content
+ * shrinks (React Native's `updateState` sets the new content size and leaves
+ * the offset alone), so the turn sat above the window and the sheet looked
+ * empty until the keyboard moved (Paul, 2026-11-17). Scrolling to the end
+ * did not rescue it: the scroll is asked for from JavaScript when the new
+ * layout is committed, and reaches the native view on the main queue, where
+ * it can run before the shrunk content is mounted and so measures the old
+ * content. Now the opening and the thread each get their own scroller, so the
+ * first turn arrives in a new one at offset zero, and the content always
+ * fills the room. While the member is following, every scroll to the end is
+ * asked for again on the next frame, after the new content is mounted, so a
+ * streamed line or a card that folds to one line is measured as it now is.
+ *
+ * Dragging the thread puts the keyboard away (#5429): the field is not the
+ * keyboard's own accessory view, so it can't follow an interactive drag of
+ * the keyboard. The sheet hears only that the keyboard will show or hide, and
+ * under "interactive" iOS moves the keyboard with the finger first. The sheet
+ * still held the field at the old keyboard top, over an empty band.
+ *
+ * The keyboard changes the room, not the content, so `onContentSizeChange`
+ * does not see it. The scroller's own layout does: while the member is
+ * reading the newest words, a change in the room scrolls to the end again,
+ * so those words stay above the field as the keyboard opens and closes.
  *
  * Whether a member has Ask at all is the host's question (`useAiSurfaces`):
  * with the server's AI off, nothing mounts this.
@@ -257,6 +292,19 @@ export const AskSheet = forwardRef<
 
   const savedUntil = status.data?.saved_until ?? null;
   const lastId = exchanges.at(-1)?.id;
+
+  // Keeps the newest words in view while the member is reading them: now,
+  // and again on the next frame, once the layout that asked is mounted
+  // (#5426, above).
+  const follow = useCallback(() => {
+    if (!following.current) return;
+    scroller.current?.scrollToEnd?.({ animated: false });
+    requestAnimationFrame(() => {
+      if (following.current) {
+        scroller.current?.scrollToEnd?.({ animated: false });
+      }
+    });
+  }, []);
 
   // A new turn shows the newest words.
   useEffect(() => {
@@ -390,14 +438,24 @@ export const AskSheet = forwardRef<
           </View>
         </View>
         <BottomSheetScrollView
+          // A new scroller when the first turn replaces the opening, and
+          // back: the old one's offset belongs to content that is gone
+          // (#5426, above).
+          key={exchanges.length > 0 ? "thread" : "opening"}
           ref={scroller}
           onAccessibilityEscape={closeSheet}
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            exchanges.length === 0 ? styles.scrollContentOpening : null,
-          ]}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          // A drag on the thread puts the keyboard away at once (#5429).
+          // The library's default, "interactive", lets iOS move the
+          // keyboard under the finger without telling the sheet, which
+          // keeps the field where the keyboard's top was, over an empty
+          // band. ChatGPT's and Claude's apps put it away on the drag too.
+          keyboardDismissMode="on-drag"
+          // The keyboard opening or closing changes the room, not the
+          // content: the newest words stay above the field (#5426).
+          onLayout={follow}
           onScrollBeginDrag={() => {
             dragged.current = true;
           }}
@@ -411,11 +469,7 @@ export const AskSheet = forwardRef<
           }}
           // The newest turn growing keeps its last line in view, unless the
           // member scrolled up to read something else.
-          onContentSizeChange={() => {
-            if (following.current) {
-              scroller.current?.scrollToEnd?.({ animated: false });
-            }
-          }}
+          onContentSizeChange={follow}
         >
           {exchanges.length > 0 ? (
             exchanges.map((exchange) => (
@@ -489,7 +543,7 @@ export const AskSheet = forwardRef<
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
-      // Takes the space the header, the search results and the composer do
+      // Takes the space the header and the composer do
       // not, so the composer stays pinned to the sheet's bottom edge at
       // every thread length.
       flex: 1,
@@ -499,11 +553,11 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: tokens.spacing.sm,
       paddingBottom: tokens.spacing.md,
       gap: tokens.spacing.xl,
-    },
-    scrollContentOpening: {
-      // The opening fills the room above the field: its crest in the middle
-      // and its rows at the bottom, in thumb reach (`ask-opening.tsx`).
+      // At least the room above the field, with a short thread at its
+      // bottom, on the field (#5426). The opening fills it: its crest in the
+      // middle and its rows at the bottom, in thumb reach (`ask-opening.tsx`).
       flexGrow: 1,
+      justifyContent: "flex-end",
     },
     headerRow: {
       flexDirection: "row",

@@ -87,9 +87,7 @@ const saveButton = (tree: ReactTestRenderer) =>
   tree.root.find(
     (node) =>
       (node.type as unknown) === "Pressable" &&
-      node.props.accessibilityState !== undefined &&
-      // The birthday's audience segments (#4959) carry a state too.
-      node.props.accessibilityRole !== "radio",
+      node.props.accessibilityState !== undefined,
   );
 
 /** What the screen hands the sheet when `/v1/users/me` refetches. */
@@ -274,6 +272,47 @@ describe("EditProfileSheet (#3387)", () => {
     });
     expect(screenText(tree)).toContain("Use a year between");
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  // #5282: the birthday's audience is a switch that names what it shares.
+  const shareSwitch = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        typeof node.props.onValueChange === "function" &&
+        node.props.accessibilityLabel === "Share my birthday with my chapter",
+    );
+
+  it("draws no share switch until a month and day are typed (#5282)", () => {
+    const tree = render();
+    expect(shareSwitch(tree)).toHaveLength(0);
+
+    type(tree, "Birthday month, 1 to 12", "3");
+    expect(shareSwitch(tree)).toHaveLength(0);
+    type(tree, "Birthday day", "14");
+    expect(shareSwitch(tree).length).toBeGreaterThan(0);
+    expect(shareSwitch(tree)[0]!.props.value).toBe(false);
+    expect(screenText(tree)).toContain("Only you see it.");
+  });
+
+  it("shares the birthday with the chapter when switched on (#5282)", () => {
+    const tree = render();
+    type(tree, "Birthday month, 1 to 12", "3");
+    type(tree, "Birthday day", "14");
+    act(() => {
+      shareSwitch(tree)[0]!.props.onValueChange(true);
+    });
+    expect(screenText(tree)).toContain(
+      "Members see the day, not the year, on your profile and the chapter calendar.",
+    );
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      birthday_month: 3,
+      birthday_day: 14,
+      birthday_year: null,
+      birthday_visibility: "chapter",
+    });
   });
 
   it("sends a major", () => {

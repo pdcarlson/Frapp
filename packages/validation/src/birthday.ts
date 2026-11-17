@@ -147,15 +147,18 @@ export const BIRTHDAY_COPY = {
   dayLabel: "Day",
   yearLabel: "Year (optional)",
   yearHint: "The year is optional, and nobody else ever sees it.",
-  visibilityLabel: "Who can see it",
+  // A switch that names the thing it shares (#5282, Paul 2026-11-17: "I don't
+  // know what who can see it refers to"; no segmented switchers). On is
+  // `chapter`, off is `nobody`.
+  visibilityLabel: "Share my birthday with my chapter",
   visibility: {
     chapter: "Your chapter",
     nobody: "Only you",
   } satisfies Record<BirthdayVisibility, string>,
   visibilityHint: {
     chapter:
-      "Members of your chapter see the day on your profile and the calendar.",
-    nobody: "Nobody else sees it, and it stays off the calendar.",
+      "Members see the day, not the year, on your profile and the chapter calendar.",
+    nobody: "Only you see it.",
   } satisfies Record<BirthdayVisibility, string>,
   invalid: "Pick a month and a day that exists in it.",
   yearInvalid: `Enter a year from ${BIRTH_YEAR_MIN} to ${BIRTH_YEAR_MAX}, or leave it empty.`,

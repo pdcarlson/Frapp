@@ -429,6 +429,26 @@ export class AttendanceService {
       chapterId,
       now.toISOString(),
     );
+    const zoned =
+      event.check_in_zone !== null && event.check_in_zone !== undefined;
+
+    // ── The host checks themselves in with one tap (2026-11-17) ─────────
+    //
+    // The officer whose own screen is showing the code for this event skips
+    // the code and the location checks for their own check-in. The phone
+    // showing the QR is theirs, so they cannot scan it, and typing the code
+    // off their own screen was the flow Paul rejected. Scoped to a live
+    // screen of their own, not to `events:update`: an officer who isn't
+    // hosting checks in like any member, so the permission alone never
+    // turns into a remote check-in. Their screen reported where it is within
+    // the last minute or so (`reportCheckInScreen`, gated on
+    // `events:update`), which is the same presence a member proves by being
+    // near it. Unlike `markByHand`, this is a check-in and earns the event's
+    // points, as it does for every member in the room.
+    if (screens.some((screen) => screen.reported_by === userId)) {
+      return this.recordCheckIn(event, userId, now);
+    }
+
     const hasCode =
       options.token !== undefined || options.manualCode !== undefined;
     if (screensRequireCode(screens) && !hasCode) {
@@ -440,8 +460,6 @@ export class AttendanceService {
     // a screen that stored its location. Only then may a scanned link last
     // past one spare window (`check-in-token.ts`), because only then does a
     // forwarded link still fail.
-    const zoned =
-      event.check_in_zone !== null && event.check_in_zone !== undefined;
     const anchors = screens.filter(isLocatedScreen);
     const located = zoned || anchors.length > 0;
 
@@ -542,6 +560,16 @@ export class AttendanceService {
       }
     }
 
+    return this.recordCheckIn(event, userId, now);
+  }
+
+  /** The write every accepted check-in ends in. */
+  private async recordCheckIn(
+    event: Event,
+    userId: string,
+    now: Date,
+  ): Promise<EventAttendance> {
+    const eventId = event.id;
     const checkInTime = now.toISOString();
 
     // Insert the attendance row and award the event's ATTENDANCE points

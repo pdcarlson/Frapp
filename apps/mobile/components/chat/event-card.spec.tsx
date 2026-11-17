@@ -392,7 +392,7 @@ describe("EventCard — Check in", () => {
     });
   });
 
-  it("says to use the camera, and turns Check in into Enter code, once the officer's screen wants the code (#4532)", async () => {
+  it("says to use the camera, and turns Check in into Scan code, once the officer's screen wants the code (#4532)", async () => {
     vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
     checkIn.mockRejectedValue({
       statusCode: 403,
@@ -403,10 +403,10 @@ describe("EventCard — Check in", () => {
     expect(screenText(tree)).toContain(
       "Point your phone's camera at the code on the officer's screen to check in.",
     );
-    await press(tree, "Enter code");
+    await press(tree, "Scan code");
     expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
       pathname: "/check-in",
-      params: { eventId: "evt-1" },
+      params: { eventId: "evt-1", scan: "1" },
     });
   });
 
