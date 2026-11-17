@@ -5,7 +5,7 @@ import { Frame, paint } from "@/components/glyph-recipe";
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
  * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
- * all read, try again, share, and back. Share also leads a labelled button (setup's
+ * all read, try again, share, back, and List / Grid's two layouts. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
  * detail strokes, with no silhouette fill, from `glyph-recipe.tsx`'s `Frame`
