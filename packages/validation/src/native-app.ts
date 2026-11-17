@@ -1,4 +1,10 @@
-import { PRODUCTION_APP_ORIGIN } from "./invite-token";
+/**
+ * The production dashboard origin, as `invite-token`'s `PRODUCTION_APP_ORIGIN`
+ * (the spec pins the two together). Written out rather than imported because
+ * scripts load this file by path with Node's type stripping, which can't
+ * resolve an extensionless import.
+ */
+const PRODUCTION_ORIGIN = "https://app.frapp.live";
 
 /**
  * Where the native app lives, and how a web page sends someone to it (#4002):
@@ -64,7 +70,7 @@ export function nativeAppForOrigin(
   } catch {
     parsed = null;
   }
-  return parsed === PRODUCTION_APP_ORIGIN
+  return parsed === PRODUCTION_ORIGIN
     ? PRODUCTION_NATIVE_APP
     : STAGING_NATIVE_APP;
 }

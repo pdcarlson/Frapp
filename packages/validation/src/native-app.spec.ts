@@ -4,6 +4,8 @@ import {
   extractInviteToken,
   nativeAppForOrigin,
   openAppUrl,
+  PRODUCTION_APP_ORIGIN,
+  PRODUCTION_NATIVE_APP,
   STAGING_NATIVE_APP,
   openInAppUrl,
   phonePlatform,
@@ -87,5 +89,11 @@ describe("nativeAppForOrigin (2026-11-17)", () => {
     expect(openInAppUrl("android", "abc", STAGING_NATIVE_APP)).toBe(
       "intent://join?token=abc#Intent;scheme=frapp-staging;package=live.frapp.mobile.staging;end",
     );
+  });
+});
+
+describe("the production origin nativeAppForOrigin checks", () => {
+  it("is the invite link's production origin", () => {
+    expect(nativeAppForOrigin(PRODUCTION_APP_ORIGIN)).toBe(PRODUCTION_NATIVE_APP);
   });
 });
