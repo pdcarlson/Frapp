@@ -24,6 +24,9 @@ import {
   describeRepeatPattern,
   describeSeriesLength,
   formatRepeatRule,
+  formatTaskRepeatRule,
+  nextTaskRepeatDate,
+  parseTaskRepeatRule,
   nthWeekdayPhrase,
   parseRepeatRule,
   advanceRepeatRule,
@@ -35,6 +38,8 @@ import {
   type RepeatFrequency,
   type RecurrenceRule,
   type RepeatRule,
+  type TaskRepeatEnd,
+  type TaskRepeatRule,
   type WeekdayCode,
   type ZonedCalendarDay,
 } from "./recurrence";
@@ -100,7 +105,8 @@ export interface RepeatDraft {
    * `null` meets on the first meeting's day.
    */
   monthDay: number | null;
-  endKind: "count" | "until";
+  /** How it ends. `never` is a repeating task's only (#5119). */
+  endKind: "count" | "until" | "never";
   /** "After N meetings", as typed. */
   countInput: string;
   /** "On" date, `YYYY-MM-DD` in the series' zone; `""` until picked. */
@@ -444,6 +450,10 @@ export function repeatRuleOf(
     };
   }
 
+  if (draft.endKind === "never") {
+    // Only a task's control offers it; an event series must end.
+    return { ok: false, field: "until", error: "Choose how the series ends." };
+  }
   let end: RepeatRule["end"];
   if (draft.endKind === "count") {
     const count = wholeNumber(draft.countInput);
@@ -720,4 +730,207 @@ export function repeatRuleForEdit(
     };
   }
   return repeatRuleOf(repeatEditDraft(draft, series), anchor);
+}
+
+// ---------------------------------------------------------------------------
+// Repeating tasks (#5119)
+// ---------------------------------------------------------------------------
+
+/**
+ * A task's Repeat control: the event control's draft, with one more way to
+ * end, "Never", and that is where a new task starts. A task series makes one
+ * copy at a time, so an open end writes nothing ahead
+ * (`spec/behavior/tasks.md` § Repeating tasks).
+ */
+export function noTaskRepeatDraft(
+  timeZone: string = localTimeZone(),
+): RepeatDraft {
+  return { ...noRepeatDraft(timeZone), endKind: "never" };
+}
+
+/** A stored task rule read into the control, to prefill an edit. */
+export function taskRepeatDraftFromRule(
+  rule: string | null | undefined,
+  timeZone: string = localTimeZone(),
+): RepeatDraft {
+  const parsed = parseTaskRepeatRule(rule);
+  const base = noTaskRepeatDraft(timeZone);
+  if (!parsed || !rule) return base;
+  return {
+    ...base,
+    preset: parsed.freq,
+    intervalInput: String(parsed.interval),
+    byDay: parsed.byDay.length > 0 ? [...parsed.byDay] : null,
+    monthlyBy: parsed.nthWeekday
+      ? parsed.nthWeekday.n === -1
+        ? "last"
+        : "nth"
+      : "date",
+    monthDay: parsed.monthDay,
+    timeZone: parsed.timeZone,
+    endKind: parsed.end.kind,
+    countInput:
+      parsed.end.kind === "count"
+        ? String(parsed.end.count)
+        : String(REPEAT_DEFAULT_COUNT[parsed.freq]),
+    until: parsed.end.kind === "until" ? parsed.end.until : "",
+    source: rule,
+  };
+}
+
+/**
+ * The `recurrence_rule` a task's draft makes, its first copy due at `first`,
+ * or why it can't be saved. Unlike an event's: never a legacy token (no
+ * shipped build reads a task's rule), "Never" is an end, and an end date must
+ * leave a copy after the first.
+ */
+export function taskRepeatRuleOf(
+  draft: RepeatDraft,
+  first: Date,
+): RepeatRuleResult {
+  if (draft.preset === "NONE") return { ok: true, rule: null };
+  if (draft.pristine && draft.source) return { ok: true, rule: draft.source };
+
+  const interval = wholeNumber(draft.intervalInput);
+  if (interval === null || interval < 1 || interval > MAX_REPEAT_INTERVAL) {
+    return {
+      ok: false,
+      field: "interval",
+      error: `Repeat every 1 to ${MAX_REPEAT_INTERVAL}.`,
+    };
+  }
+
+  let end: TaskRepeatEnd;
+  if (draft.endKind === "never") {
+    end = { kind: "never" };
+  } else if (draft.endKind === "count") {
+    const count = wholeNumber(draft.countInput);
+    if (count === null || count < 2 || count > MAX_SERIES_MEETINGS) {
+      return {
+        ok: false,
+        field: "count",
+        error: `Repeat 2 to ${MAX_SERIES_MEETINGS} times.`,
+      };
+    }
+    end = { kind: "count", count };
+  } else {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.until)) {
+      return { ok: false, field: "until", error: "Choose an end date." };
+    }
+    end = { kind: "until", until: draft.until };
+  }
+
+  const day = zonedCalendarDay(first, draft.timeZone);
+  const monthlyBy = monthlyByFor(draft, monthlyChoices(draft, first));
+  const structured: TaskRepeatRule = {
+    freq: draft.preset,
+    interval,
+    byDay: draft.preset === "WEEKLY" ? repeatDays(draft, first) : [],
+    nthWeekday:
+      draft.preset === "MONTHLY" && monthlyBy !== "date"
+        ? {
+            n: monthlyBy === "last" ? -1 : (weekOfMonth(day).n as NthWeek),
+            day: day.weekday,
+          }
+        : null,
+    monthDay:
+      draft.preset === "MONTHLY" && monthlyBy === "date"
+        ? monthDayFor(draft, day)
+        : null,
+    end,
+    timeZone: draft.timeZone,
+  };
+  const rule = formatTaskRepeatRule(structured);
+  const firstDay = dayString(first, draft.timeZone);
+  if (!nextTaskRepeatDate(rule, firstDay, firstDay)) {
+    return {
+      ok: false,
+      field: "until",
+      error:
+        "The end date leaves no task after the first. Choose a later end date.",
+    };
+  }
+  return { ok: true, rule };
+}
+
+/**
+ * How a task's draft repeats, in a line: "Every Monday", or the preset's
+ * name while the draft can't be read yet. `Doesn't repeat` for none.
+ */
+export function taskRepeatSummary(draft: RepeatDraft, first: Date): string {
+  if (draft.preset === "NONE") return REPEAT_PRESET_LABELS.NONE;
+  const result = taskRepeatRuleOf(draft, first);
+  return (
+    (result.ok && result.rule
+      ? describeRepeatPattern(result.rule, first)
+      : null) ?? REPEAT_PRESET_LABELS[draft.preset]
+  );
+}
+
+/**
+ * The line under a task's Repeat control: a problem to fix, or how long it
+ * runs ("Repeats until you stop it." / "4 times, the last on Dec 7.").
+ * `null` for a task that doesn't repeat.
+ */
+export function taskRepeatCaption(
+  draft: RepeatDraft,
+  first: Date,
+): { text: string; problem: boolean } | null {
+  const result = taskRepeatRuleOf(draft, first);
+  if (!result.ok) return { text: result.error, problem: true };
+  if (!result.rule) return null;
+  const parsed = parseTaskRepeatRule(result.rule);
+  if (!parsed || parsed.end.kind === "never") {
+    return { text: "Repeats until you stop it.", problem: false };
+  }
+  const firstDay = dayString(first, draft.timeZone);
+  let count = 1;
+  let last = firstDay;
+  for (let at = firstDay; count < MAX_SERIES_MEETINGS * 4; count++) {
+    const next = nextTaskRepeatDate(result.rule, firstDay, at);
+    if (!next) break;
+    last = at = next;
+  }
+  return {
+    text: `${count} times, the last on ${shortDay(last, first, draft.timeZone)}.`,
+    problem: false,
+  };
+}
+
+/** `YYYY-MM-DD` as "Dec 7", with the year when it isn't `ref`'s. */
+function shortDay(day: string, ref: Date, timeZone: string): string {
+  const at = new Date(`${day}T12:00:00Z`);
+  const sameYear = day.slice(0, 4) === dayString(ref, timeZone).slice(0, 4);
+  return at.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+/** What a task read says about its series (`TaskSeriesSummaryDto`). */
+export interface TaskSeriesLine {
+  recurrence_rule: string;
+  next_due_date: string;
+  ended: boolean;
+}
+
+/**
+ * How a copy of a repeating task says it repeats (#5119): the pattern
+ * ("Every Monday"), and with `next`, the next copy's day ("Every Monday ·
+ * next Nov 24"). `first` is the copy's own due, which a by-date monthly
+ * rule's day falls back to. `null` for a task with no live series.
+ */
+export function taskSeriesLine(
+  series: TaskSeriesLine | null | undefined,
+  first: Date,
+  options: { next?: boolean } = {},
+): string | null {
+  if (!series || series.ended) return null;
+  const pattern = describeRepeatPattern(series.recurrence_rule, first);
+  if (!pattern) return null;
+  if (!options.next) return pattern;
+  const tz = parseTaskRepeatRule(series.recurrence_rule)?.timeZone;
+  return `${pattern} · next ${shortDay(series.next_due_date, first, tz ?? localTimeZone())}`;
 }
