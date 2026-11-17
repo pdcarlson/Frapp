@@ -29,7 +29,25 @@ export interface GoogleDriveItem {
    * Only `getItem` asks Google for them: a listing's items always carry [].
    */
   parents?: string[];
+  /**
+   * Who has access, by permission id, as far as Google shows them to the
+   * service account. `anyoneWithLink` or `anyone` means anyone with the link
+   * can open it (#5434). Only `getItem` asks for them; empty when Google
+   * doesn't say.
+   */
+  permissionIds?: string[];
+  /** In the owner's trash. Only `getItem` asks; a listing leaves trash out. */
+  trashed?: boolean;
 }
+
+/**
+ * The permission ids Drive gives "anyone with the link" and "public on the
+ * web" (#5434): a file carrying one is open to whoever has its link.
+ */
+export const GOOGLE_DRIVE_LINK_PERMISSION_IDS: ReadonlySet<string> = new Set([
+  'anyoneWithLink',
+  'anyone',
+]);
 
 export type GoogleDriveErrorKind =
   /** The item is gone, or was never shared with the service account (404). */
@@ -67,16 +85,24 @@ export interface IGoogleDriveApi {
    * can put it there.
    */
   proofCode(subject: string): string | null;
-  /** One item by id, with its Description and parents. */
-  getItem(id: string): Promise<GoogleDriveItem>;
+  /**
+   * One item by id, with its Description, parents and permission ids.
+   * `resourceKey` is the `resourcekey` some older link-shared files need.
+   */
+  getItem(id: string, resourceKey?: string | null): Promise<GoogleDriveItem>;
   /** A folder's children, not trashed, every page. */
   listChildren(folderId: string): Promise<GoogleDriveItem[]>;
   /** A stored file's bytes; refuses past `maxBytes` with `too_large`. */
-  download(fileId: string, maxBytes: number): Promise<Uint8Array>;
+  download(
+    fileId: string,
+    maxBytes: number,
+    resourceKey?: string | null,
+  ): Promise<Uint8Array>;
   /** A Google Doc, Sheet or Slides exported as `mimeType`. */
   exportAs(
     fileId: string,
     mimeType: string,
     maxBytes: number,
+    resourceKey?: string | null,
   ): Promise<Uint8Array>;
 }

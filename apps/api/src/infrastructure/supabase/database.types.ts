@@ -31,6 +31,7 @@ import type {
   ChapterDocumentStar,
   ChapterDocumentType,
   ChapterDriveConnection,
+  ChapterDriveLink,
   ChapterDuesConfig,
   ChapterGoalRow,
   ChapterGroup,
@@ -197,6 +198,7 @@ export interface Database {
       chapter_document_types: TableDefinition<ChapterDocumentType>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_drive_connections: TableDefinition<ChapterDriveConnection>;
+      chapter_drive_links: TableDefinition<ChapterDriveLink>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;
       chapter_group_members: TableDefinition<ChapterGroupMember>;
@@ -433,6 +435,14 @@ export interface Database {
       claim_chapter_drive_syncs: {
         Args: { p_now: string; p_limit: number; p_lease_seconds: number };
         Returns: ChapterDriveConnection[];
+      };
+      /**
+       * `20261117224309` (#5434) — linked Google Drive files to check next,
+       * each leased; `returns setof chapter_drive_links`.
+       */
+      claim_chapter_drive_links: {
+        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
+        Returns: ChapterDriveLink[];
       };
       /**
        * `20261112165050` (#720) — sources that need indexing, each with its

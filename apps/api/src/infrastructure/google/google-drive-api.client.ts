@@ -26,7 +26,7 @@ const LIST_MAX_PAGES = 10;
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 const ITEM_FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink';
 /** One item read on its own also brings what the connect check reads. */
-const GET_ITEM_FIELDS = `${ITEM_FIELDS},description,parents`;
+const GET_ITEM_FIELDS = `${ITEM_FIELDS},description,parents,permissionIds,trashed`;
 /** 8 characters, 40 bits. */
 const CODE_LENGTH = 8;
 const CONFIG_REASONS = new Set(['accessNotConfigured', 'SERVICE_DISABLED']);
@@ -78,12 +78,16 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     return `frapp-${code.toLowerCase()}`;
   }
 
-  async getItem(id: string): Promise<GoogleDriveItem> {
+  async getItem(
+    id: string,
+    resourceKey?: string | null,
+  ): Promise<GoogleDriveItem> {
     const body = await this.json(
       `/files/${encodeURIComponent(id)}?${new URLSearchParams({
         fields: GET_ITEM_FIELDS,
         supportsAllDrives: 'true',
       }).toString()}`,
+      resourceKeyHeader(id, resourceKey),
     );
     return toItem(body);
   }
@@ -114,10 +118,15 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     return items;
   }
 
-  async download(fileId: string, maxBytes: number): Promise<Uint8Array> {
+  async download(
+    fileId: string,
+    maxBytes: number,
+    resourceKey?: string | null,
+  ): Promise<Uint8Array> {
     return this.bytes(
       `/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
       maxBytes,
+      resourceKeyHeader(fileId, resourceKey),
     );
   }
 
@@ -125,20 +134,28 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     fileId: string,
     mimeType: string,
     maxBytes: number,
+    resourceKey?: string | null,
   ): Promise<Uint8Array> {
     return this.bytes(
       `/files/${encodeURIComponent(fileId)}/export?${new URLSearchParams({
         mimeType,
       }).toString()}`,
       maxBytes,
+      resourceKeyHeader(fileId, resourceKey),
     );
   }
 
-  private async json(path: string): Promise<unknown> {
+  private async json(
+    path: string,
+    extra: Record<string, string> = {},
+  ): Promise<unknown> {
     const response = await this.send(
       `${DRIVE_API}${path}`,
       {
-        headers: { Authorization: `Bearer ${await this.accessToken()}` },
+        headers: {
+          ...extra,
+          Authorization: `Bearer ${await this.accessToken()}`,
+        },
       },
       TIMEOUT_MS,
     );
@@ -146,11 +163,18 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     return response.json();
   }
 
-  private async bytes(path: string, maxBytes: number): Promise<Uint8Array> {
+  private async bytes(
+    path: string,
+    maxBytes: number,
+    extra: Record<string, string> = {},
+  ): Promise<Uint8Array> {
     const response = await this.send(
       `${DRIVE_API}${path}`,
       {
-        headers: { Authorization: `Bearer ${await this.accessToken()}` },
+        headers: {
+          ...extra,
+          Authorization: `Bearer ${await this.accessToken()}`,
+        },
       },
       TRANSFER_TIMEOUT_MS,
     );
@@ -257,6 +281,19 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
   }
 }
 
+/**
+ * Google's header for a file a link opens only with its resource key (some
+ * files shared by link before 2021). Empty without one.
+ */
+function resourceKeyHeader(
+  id: string,
+  resourceKey: string | null | undefined,
+): Record<string, string> {
+  return resourceKey
+    ? { 'X-Goog-Drive-Resource-Keys': `${id}/${resourceKey}` }
+    : {};
+}
+
 function transferReason(error: unknown): string {
   return error instanceof Error && error.name === 'TimeoutError'
     ? 'timeout'
@@ -293,6 +330,10 @@ function toItem(raw: unknown): GoogleDriveItem {
     description: typeof file.description === 'string' ? file.description : null,
     parents: Array.isArray(file.parents)
       ? file.parents.filter((id): id is string => typeof id === 'string')
+      : [],
+    trashed: file.trashed === true,
+    permissionIds: Array.isArray(file.permissionIds)
+      ? file.permissionIds.filter((id): id is string => typeof id === 'string')
       : [],
   };
 }

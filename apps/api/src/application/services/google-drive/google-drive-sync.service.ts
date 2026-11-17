@@ -230,6 +230,7 @@ export class GoogleDriveSyncService {
           chapterId,
           connection.created_at,
         ),
+        await this.documents.findLinkedDriveFileIds(chapterId),
       );
     // Folders first: a rename re-files the copies in it, so they are read
     // after.
@@ -345,6 +346,12 @@ export class GoogleDriveSyncService {
     startedAt: number,
     /** Folders other chapters connected first: never read into this one. */
     elsewhere: ReadonlySet<string>,
+    /**
+     * Files the chapter added by their own link (#5434): already in
+     * Documents, and the link's to keep, so the folder neither copies them a
+     * second time nor counts them.
+     */
+    linked: ReadonlySet<string>,
   ): Promise<{
     planned: PlannedFile[];
     folders: PlannedFolder[];
@@ -430,6 +437,7 @@ export class GoogleDriveSyncService {
           queue.push({ id: item.id, depth: next.depth + 1 });
           continue;
         }
+        if (linked.has(item.id)) continue;
         const file = planFile(item, next.id);
         if (!file || planned.length >= DRIVE_MAX_FILES) {
           skipped += 1;

@@ -6,15 +6,32 @@ import {
   type IChapterDriveRepository,
 } from '#domain/repositories/chapter-drive.repository.interface';
 import {
+  CHAPTER_DRIVE_LINK_REPOSITORY,
+  type IChapterDriveLinkRepository,
+} from '#domain/repositories/chapter-drive-link.repository.interface';
+import {
   GoogleDriveSyncService,
   type DriveSyncOutcome,
 } from '../services/google-drive/google-drive-sync.service';
+import {
+  GoogleDriveLinkService,
+  type DriveLinkOutcome,
+} from '../services/google-drive/google-drive-link.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** Folders taken per tick, across every chapter. */
 export const GOOGLE_DRIVE_SYNC_BATCH = 6;
 /** Folders synced at once within a tick. */
 const CONCURRENCY = 2;
+/**
+ * Linked files checked per tick (#5434). A check is one metadata call, plus a
+ * download only when the file changed, so far more fit in a tick than folders.
+ */
+export const GOOGLE_DRIVE_LINK_BATCH = 40;
+/** Linked files checked at once within a tick. */
+const LINK_CONCURRENCY = 4;
+/** A claimed link's lease: one download is capped at 90 seconds. */
+const LINK_LEASE_SECONDS = 10 * 60;
 /**
  * How long a claimed folder is this replica's. Longer than a pass can take, so
  * two replicas never copy one folder at once: a pass stops listing folders at
@@ -43,6 +60,9 @@ export class GoogleDriveSyncSweepService {
     @Inject(CHAPTER_DRIVE_REPOSITORY)
     private readonly repo: IChapterDriveRepository,
     private readonly sync: GoogleDriveSyncService,
+    @Inject(CHAPTER_DRIVE_LINK_REPOSITORY)
+    private readonly linkRepo: IChapterDriveLinkRepository,
+    private readonly links: GoogleDriveLinkService,
   ) {}
 
   @ReportedCron(CronExpression.EVERY_MINUTE)
@@ -50,7 +70,9 @@ export class GoogleDriveSyncSweepService {
     if (this.running) return;
     this.running = true;
     try {
-      await this.sweep(new Date());
+      const now = new Date();
+      await this.sweep(now);
+      await this.sweepLinks(now);
     } finally {
       this.running = false;
     }
@@ -88,6 +110,48 @@ export class GoogleDriveSyncSweepService {
       }
     };
     await Promise.all(Array.from({ length: CONCURRENCY }, work));
+    return tally;
+  }
+
+  /**
+   * Files added by link (#5434): each due one is checked against Drive and
+   * copied again when it changed. A link is due 15 minutes after its last
+   * check, or at once after Sync now.
+   */
+  async sweepLinks(
+    now: Date,
+  ): Promise<Record<DriveLinkOutcome | 'error', number>> {
+    const tally: Record<DriveLinkOutcome | 'error', number> = {
+      unchanged: 0,
+      updated: 0,
+      no_access: 0,
+      rate_limited: 0,
+      kept: 0,
+      gone: 0,
+      error: 0,
+    };
+    if (!this.links.isAvailable()) return tally;
+    const queue = await this.linkRepo.claim(
+      now,
+      GOOGLE_DRIVE_LINK_BATCH,
+      LINK_LEASE_SECONDS,
+    );
+    const work = async (): Promise<void> => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        try {
+          tally[await this.links.process(next, now)] += 1;
+        } catch (error) {
+          tally.error += 1;
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'google-drive-link-sync',
+            message: `Google Drive link check broke for link ${next.id}; it is tried again in five minutes`,
+            error,
+          });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: LINK_CONCURRENCY }, work));
     return tally;
   }
 }

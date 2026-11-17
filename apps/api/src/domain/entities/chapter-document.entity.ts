@@ -46,6 +46,15 @@ export interface ChapterDocument {
    */
   drive_held_folder_id: string | null;
   /**
+   * Set on a document added by its Drive link (#5434;
+   * `spec/behavior/chapter-docs.md` § Google Drive file by link), null on an
+   * upload or a folder copy. `no_access` once Google answers that Frapp can't
+   * see the file any more; the copy stays as it was.
+   */
+  drive_link_status: 'active' | 'no_access' | null;
+  /** When a linked document last matched its Drive file. */
+  drive_synced_at: string | null;
+  /**
    * Who can see it (#3642): `null` is the same as its folder; a list of
    * `tier:`, `role:` and `group:` entries narrows the folder's, since a member
    * must pass both (`document-access.ts`).
