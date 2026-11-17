@@ -333,7 +333,7 @@ export default function PreferencesScreen() {
       : !isAuthenticated
         ? "Saved on this device only. Sign in to change the settings on your account."
         : !chapterId
-          ? "Category switches turn on once you choose a chapter."
+          ? "Category switches turn on once your chapter is confirmed."
           : categorySync === "retry" || quietHoursSync === "retry"
             ? "Couldn't reach the server. Change a setting again to retry."
             : categorySync === "pending" || quietHoursSync === "pending"

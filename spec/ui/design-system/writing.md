@@ -1001,7 +1001,7 @@ Once synced it shows nothing: the steady state needs no line.
 | Reading this device's copy | — | `Loading your saved preferences…` |
 | This device's copy was unreadable | — | `Saved preferences were unreadable and have been reset to defaults.` |
 | Signed out | — | `Saved on this device only. Sign in to change the settings on your account.` |
-| No chapter (category switches disabled, #5104) | — | `Category switches turn on once you choose a chapter.` |
+| No chapter (category switches disabled, #5104) | — | `Category switches turn on once your chapter is confirmed.` |
 | A read or write failed | — | `Couldn't reach the server. Change a setting again to retry.` |
 | A write in flight | — | `Saving…` |
 | A read in flight, nothing being written | — | `Loading your preferences…` |

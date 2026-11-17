@@ -154,6 +154,7 @@ vi.mock("@/lib/use-notification-preferences-sync", () => ({
     setQuietHoursEnabled: vi.fn(),
     categories: defaultNotificationCategoryState(),
     setCategory: vi.fn(),
+    categoriesEditable: true,
     quietHoursWindow: { start: "22:00", end: "07:00", tz: "America/New_York" },
     setQuietHoursWindow: vi.fn(),
     isHydrated: true,
