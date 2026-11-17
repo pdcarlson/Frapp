@@ -33,6 +33,25 @@ export const LANDMARKS = [
       ),
   },
   {
+    // An event's pre-start reminder claim keys on the UTC *date* of
+    // start_time, so a same-day reschedule only earns a new reminder because
+    // this trigger deletes the old claim (#1550). Pinned with its WHEN clause:
+    // without it every save of an event inside the window (a name or location
+    // edit) would re-send "starts in N minutes"; without the trigger the
+    // reschedule is silently never reminded. Neither shows up as an error.
+    name: "moving an event's start_time releases its EVENT_REMINDER claim",
+    sql: `select pg_get_triggerdef(t.oid) as def
+            from pg_trigger t
+           where t.tgrelid = 'public.events'::regclass
+             and t.tgname = 'events_release_reminder_claims'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      /AFTER UPDATE OF start_time/i.test(rows[0].def ?? "") &&
+      /old\.start_time IS DISTINCT FROM new\.start_time/i.test(
+        rows[0].def ?? "",
+      ),
+  },
+  {
     // Pins an index the **initial schema** owns, not one any later migration
     // added — stated plainly because the reverse would be the more useful-
     // sounding lie. The pre-event reminder sweep filters `events` on a bounded

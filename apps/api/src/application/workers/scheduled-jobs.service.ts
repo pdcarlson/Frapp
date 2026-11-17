@@ -726,13 +726,10 @@ export class ScheduledJobsService {
    * so the claim does not outlive the tick and an event that gains its first
    * required member later in the window is still reminded about.
    *
-   * **Known limit: a same-UTC-day reschedule is not re-armed.** The claim key's
-   * date component is `scheduled_notification_dispatches.due_date`, a `date`
-   * column, so moving an event from 14:00 to 20:00 on the same day reuses the
-   * key and the second claim loses — the member's only reminder named the old
-   * time. Moving it across a UTC day boundary does re-arm. The separate "event
-   * updated" push softens this but does not replace the reminder. Widening the
-   * key needs a schema change shared with three other sweeps; tracked in #1550.
+   * **A reschedule re-arms it.** The claim key's date component is a `date`,
+   * so a move within one UTC day would reuse the key; the
+   * `events_release_reminder_claims` trigger deletes the claim whenever
+   * `start_time` changes (#1550), so the next tick claims for the new time.
    */
   private async notifyEventStartingSoon(
     event: SweepUpcomingEventRow,
