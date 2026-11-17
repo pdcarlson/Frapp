@@ -143,4 +143,15 @@ describe('BillingController', () => {
     expect(billingService.createCheckoutSession).not.toHaveBeenCalled();
     expect(billingService.createPortalSession).not.toHaveBeenCalled();
   });
+
+  it('refuses an off-dashboard cancel_url even when success_url is valid', async () => {
+    await expect(
+      controller.createCheckout('chapter-123', {
+        customer_email: 'treasurer@school.edu',
+        success_url: 'http://localhost:3000/settings?checkout=success',
+        cancel_url: 'https://example.com/cancelled',
+      }),
+    ).rejects.toThrow('cancel_url must be a Frapp dashboard address.');
+    expect(billingService.createCheckoutSession).not.toHaveBeenCalled();
+  });
 });

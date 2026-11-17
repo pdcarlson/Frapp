@@ -79,7 +79,7 @@ describe('NotificationService', () => {
       findByUserIds: jest.fn(),
       findById: jest.fn(),
       findByToken: jest.fn(),
-      updateDeviceName: jest.fn(),
+      markRegistered: jest.fn(),
       delete: jest.fn(),
       deleteByToken: jest.fn(),
     };
@@ -151,6 +151,7 @@ describe('NotificationService', () => {
     token: 'ExponentPushToken[xxx]',
     device_name: 'iPhone',
     created_at: '2026-02-27T00:00:00.000Z',
+    last_registered_at: '2026-02-27T00:00:00.000Z',
   };
 
   const basePreference: NotificationPreference = {
@@ -1518,15 +1519,20 @@ describe('NotificationService', () => {
       expect(String(warn.mock.calls[0][0])).not.toContain('ExponentPushToken');
     });
 
-    it(`keeps a member's newest ${MAX_PUSH_TOKENS_PER_USER} devices, dropping the oldest`, async () => {
+    it(`keeps the ${MAX_PUSH_TOKENS_PER_USER} devices registered most recently, dropping the rest`, async () => {
       mockPushTokenRepo.findByToken.mockResolvedValue(null);
       mockPushTokenRepo.create.mockResolvedValue(basePushToken);
+      // pt-0 was stored first but re-registered last (the phone in daily
+      // use), so it stays; pt-1 and pt-2 were registered longest ago.
       const rows = Array.from(
         { length: MAX_PUSH_TOKENS_PER_USER + 2 },
         (_, i) => ({
           ...basePushToken,
           id: `pt-${i}`,
           created_at: new Date(Date.UTC(2026, 10, 1 + i)).toISOString(),
+          last_registered_at: new Date(
+            Date.UTC(2026, 10, i === 0 ? 30 : 1 + i),
+          ).toISOString(),
         }),
       );
       mockPushTokenRepo.findByUser.mockResolvedValue(rows);
@@ -1534,12 +1540,39 @@ describe('NotificationService', () => {
       await service.registerPushToken('u-1', 'ExponentPushToken[new]');
 
       expect(mockPushTokenRepo.delete).toHaveBeenCalledTimes(2);
-      expect(mockPushTokenRepo.delete).toHaveBeenCalledWith('pt-0', 'u-1');
       expect(mockPushTokenRepo.delete).toHaveBeenCalledWith('pt-1', 'u-1');
+      expect(mockPushTokenRepo.delete).toHaveBeenCalledWith('pt-2', 'u-1');
+      expect(mockPushTokenRepo.delete).not.toHaveBeenCalledWith('pt-0', 'u-1');
     });
 
-    it('should return existing token when same user re-registers', async () => {
+    it('returns the stored registration when trimming to the cap fails, and logs it without the token', async () => {
+      mockPushTokenRepo.findByToken.mockResolvedValue(null);
+      mockPushTokenRepo.create.mockResolvedValue(basePushToken);
+      mockPushTokenRepo.findByUser.mockRejectedValue(new Error('db down'));
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      const result = await service.registerPushToken(
+        'u-1',
+        'ExponentPushToken[xxx]',
+      );
+
+      expect(result).toEqual(basePushToken);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0][0]);
+      expect(line).toContain('push_token_cap_failed');
+      expect(line).toContain('u-1');
+      expect(line).not.toContain('ExponentPushToken');
+    });
+
+    it('stamps the registration time when the same user re-registers, without touching the label', async () => {
+      const stamped = {
+        ...basePushToken,
+        last_registered_at: '2026-11-17T12:00:00.000Z',
+      };
       mockPushTokenRepo.findByToken.mockResolvedValue(basePushToken);
+      mockPushTokenRepo.markRegistered.mockResolvedValue(stamped);
 
       const result = await service.registerPushToken(
         'u-1',
@@ -1547,15 +1580,22 @@ describe('NotificationService', () => {
       );
 
       expect(mockPushTokenRepo.create).not.toHaveBeenCalled();
-      expect(mockPushTokenRepo.updateDeviceName).not.toHaveBeenCalled();
-      expect(result).toEqual(basePushToken);
+      expect(mockPushTokenRepo.markRegistered).toHaveBeenCalledWith(
+        basePushToken.id,
+        'u-1',
+        expect.any(String),
+        undefined,
+      );
+      const now = mockPushTokenRepo.markRegistered.mock.calls[0][2];
+      expect(Number.isNaN(Date.parse(now))).toBe(false);
+      expect(result).toEqual(stamped);
     });
 
     it('fills the device name on an existing row that has none (#4563)', async () => {
       const unlabelled = { ...basePushToken, device_name: null };
       const labelled = { ...basePushToken, device_name: 'ios 26.1 · iPhone' };
       mockPushTokenRepo.findByToken.mockResolvedValue(unlabelled);
-      mockPushTokenRepo.updateDeviceName.mockResolvedValue(labelled);
+      mockPushTokenRepo.markRegistered.mockResolvedValue(labelled);
 
       const result = await service.registerPushToken(
         'u-1',
@@ -1563,9 +1603,10 @@ describe('NotificationService', () => {
         'ios 26.1 · iPhone',
       );
 
-      expect(mockPushTokenRepo.updateDeviceName).toHaveBeenCalledWith(
+      expect(mockPushTokenRepo.markRegistered).toHaveBeenCalledWith(
         basePushToken.id,
         'u-1',
+        expect.any(String),
         'ios 26.1 · iPhone',
       );
       expect(mockPushTokenRepo.create).not.toHaveBeenCalled();
@@ -1576,7 +1617,7 @@ describe('NotificationService', () => {
       const before = { ...basePushToken, device_name: 'ios 26.1 · iPhone' };
       const after = { ...basePushToken, device_name: 'ios 26.2 · iPhone' };
       mockPushTokenRepo.findByToken.mockResolvedValue(before);
-      mockPushTokenRepo.updateDeviceName.mockResolvedValue(after);
+      mockPushTokenRepo.markRegistered.mockResolvedValue(after);
 
       const result = await service.registerPushToken(
         'u-1',
@@ -1584,18 +1625,19 @@ describe('NotificationService', () => {
         'ios 26.2 · iPhone',
       );
 
-      expect(mockPushTokenRepo.updateDeviceName).toHaveBeenCalledWith(
+      expect(mockPushTokenRepo.markRegistered).toHaveBeenCalledWith(
         basePushToken.id,
         'u-1',
+        expect.any(String),
         'ios 26.2 · iPhone',
       );
       expect(result).toEqual(after);
     });
 
-    it('returns the row as read when it was deleted before the label update', async () => {
+    it('returns the row as read when it was deleted before the re-register write', async () => {
       const unlabelled = { ...basePushToken, device_name: null };
       mockPushTokenRepo.findByToken.mockResolvedValue(unlabelled);
-      mockPushTokenRepo.updateDeviceName.mockResolvedValue(null);
+      mockPushTokenRepo.markRegistered.mockResolvedValue(null);
 
       const result = await service.registerPushToken(
         'u-1',
@@ -1606,8 +1648,9 @@ describe('NotificationService', () => {
       expect(result).toEqual(unlabelled);
     });
 
-    it('leaves an existing row alone when its device name already matches', async () => {
+    it('stamps the time but leaves the label alone when it already matches', async () => {
       mockPushTokenRepo.findByToken.mockResolvedValue(basePushToken);
+      mockPushTokenRepo.markRegistered.mockResolvedValue(basePushToken);
 
       const result = await service.registerPushToken(
         'u-1',
@@ -1615,7 +1658,12 @@ describe('NotificationService', () => {
         basePushToken.device_name ?? undefined,
       );
 
-      expect(mockPushTokenRepo.updateDeviceName).not.toHaveBeenCalled();
+      expect(mockPushTokenRepo.markRegistered).toHaveBeenCalledWith(
+        basePushToken.id,
+        'u-1',
+        expect.any(String),
+        undefined,
+      );
       expect(result).toEqual(basePushToken);
     });
 

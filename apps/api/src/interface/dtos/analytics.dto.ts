@@ -101,7 +101,7 @@ export class IdentityResponseDto {
     nullable: true,
     type: String,
     description:
-      'Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this.',
+      'Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`) and the caller is a member of it, otherwise null. Same helper as analytics events. Clients must not compute this.',
   })
   chapter_group_id: string | null;
 }

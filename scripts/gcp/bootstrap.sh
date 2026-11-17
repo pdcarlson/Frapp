@@ -278,7 +278,10 @@ fi
 # and the two OAuth callbacks' code and state (#5268). Their rows are left
 # out of the project's _Default log bucket. The API's own request log still
 # records those requests, by path only, so status and latency stay visible.
-# An org-level sink that copies logs elsewhere would need the same exclusion.
+# This covers the project's own _Default sink only. An organization-level
+# aggregated sink that routes this project's logs to a central logging
+# project (Google Cloud Setup can create one) keeps the full URLs until it
+# is given the same exclusion; this script doesn't manage org-level sinks.
 CAPABILITY_LOG_EXCLUSION="frapp-capability-urls"
 CAPABILITY_LOG_FILTER='(resource.type="http_load_balancer" OR log_id("run.googleapis.com/requests")) AND (httpRequest.requestUrl:"/v1/calendar-feed/feed.ics" OR httpRequest.requestUrl:"/v1/discord/connect/callback" OR httpRequest.requestUrl:"/v1/google-calendar/callback")'
 step "Keeping calendar feed tokens and OAuth callback codes out of Google's request logs"
