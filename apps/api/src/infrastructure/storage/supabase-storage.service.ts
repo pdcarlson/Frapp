@@ -277,6 +277,7 @@ export class SupabaseStorageService implements IStorageProvider {
         createdAt: parseInstant(
           entry.created_at satisfies string | null | undefined,
         ),
+        ...objectSize(entry),
       }));
   }
 
@@ -344,6 +345,19 @@ export class SupabaseStorageService implements IStorageProvider {
       offset += entries.length;
     }
   }
+}
+
+/**
+ * `{ sizeBytes }` when the listing carried the object's size. Storage reports
+ * it as `metadata.size`; anything else is left out rather than read as 0, so
+ * a caller that checks size never mistakes "unknown" for "empty".
+ */
+function objectSize(entry: StorageListEntry): { sizeBytes?: number } {
+  const size: unknown = (entry.metadata as Record<string, unknown> | null)
+    ?.size;
+  return typeof size === 'number' && Number.isFinite(size) && size >= 0
+    ? { sizeBytes: size }
+    : {};
 }
 
 /**

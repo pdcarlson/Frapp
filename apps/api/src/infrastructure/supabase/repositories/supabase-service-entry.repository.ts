@@ -1,10 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-  TablesUpdate,
-} from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import {
   ServiceEntry,
@@ -81,21 +77,39 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return created;
   }
 
-  async update(
+  async countByProofPath(
+    chapterId: string,
+    proofPath: string,
+  ): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('service_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('proof_path', proofPath);
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
+  }
+
+  async rejectIfPending(
     id: string,
     chapterId: string,
-    data: TablesUpdate<'service_entries'>,
-  ): Promise<ServiceEntry> {
-    const { data: updated, error } = await this.supabase
+    reviewerId: string,
+    reviewComment: string | null,
+  ): Promise<ServiceEntry | null> {
+    const { data, error } = await this.supabase
       .from('service_entries')
-      .update(data)
+      .update({
+        status: 'REJECTED',
+        reviewed_by: reviewerId,
+        review_comment: reviewComment,
+      })
       .eq('id', id)
       .eq('chapter_id', chapterId)
+      .eq('status', 'PENDING')
       .select()
-      .single();
-
+      .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
-    return updated;
+    return data;
   }
 
   async approveAtomic(
@@ -117,13 +131,19 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return rows.length > 0 ? rows[0] : null;
   }
 
-  async delete(id: string, chapterId: string): Promise<void> {
-    const { error } = await this.supabase
+  async deleteIfPending(
+    id: string,
+    chapterId: string,
+  ): Promise<ServiceEntry | null> {
+    const { data, error } = await this.supabase
       .from('service_entries')
       .delete()
       .eq('id', id)
-      .eq('chapter_id', chapterId);
-
+      .eq('chapter_id', chapterId)
+      .eq('status', 'PENDING')
+      .select()
+      .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
+    return data;
   }
 }

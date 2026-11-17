@@ -18720,7 +18720,7 @@
     },
     "/v1/backwork/drafts/{id}/fill": {
       "post": {
-        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
+        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.",
         "operationId": "BackworkFillController_fill_v1",
         "parameters": [
           {
@@ -18748,6 +18748,9 @@
           },
           "404": {
             "description": "AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone."
+          },
+          "409": {
+            "description": "Another fill of this draft is still running."
           },
           "default": {
             "description": "Error",
@@ -27747,7 +27750,8 @@
           },
           "file_hash": {
             "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
+            "description": "SHA-256 hash of the uploaded file, as 64 lowercase hex characters",
+            "pattern": "^[0-9a-f]{64}$"
           },
           "is_redacted": {
             "type": "boolean",

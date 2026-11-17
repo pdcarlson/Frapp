@@ -5603,7 +5603,7 @@ export interface paths {
         put?: never;
         /**
          * Propose fields for one of the caller's drafts from its redacted text
-         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.
          */
         post: operations["BackworkFillController_fill_v1"];
         delete?: never;
@@ -8629,7 +8629,7 @@ export interface components {
             tags?: string[] | null;
             /** @description Storage path returned from upload-url */
             storage_path: string;
-            /** @description SHA-256 hash of the uploaded file */
+            /** @description SHA-256 hash of the uploaded file, as 64 lowercase hex characters */
             file_hash: string;
             /** @default false */
             is_redacted: boolean;
@@ -24429,6 +24429,13 @@ export interface operations {
             };
             /** @description AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another fill of this draft is still running. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

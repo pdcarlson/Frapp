@@ -88,14 +88,73 @@ describe('SupabaseServiceEntryRepository — tenant scope', () => {
     expect(foreign).toBeNull();
   });
 
-  it('update leaves another chapter entry untouched', async () => {
-    await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.update(ENTRY_B, CHAPTER_B, { status: 'APPROVED' }),
+  it('rejectIfPending leaves another chapter entry untouched', async () => {
+    const rejected = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.rejectIfPending(ENTRY_B, CHAPTER_B, USER_SHARED, 'No receipt'),
     );
 
+    expect(rejected?.status).toBe('REJECTED');
     const rows = harness.rows('service_entries');
-    expect(rows.find((e) => e.id === ENTRY_B)?.status).toBe('APPROVED');
+    expect(rows.find((e) => e.id === ENTRY_B)?.review_comment).toBe(
+      'No receipt',
+    );
     expect(rows.find((e) => e.id === ENTRY_A)?.status).toBe('PENDING');
+  });
+
+  /** The seed with some entries changed, in a fresh harness. */
+  const reseed = (change: (entry: Record<string, unknown>) => void) => {
+    const tables = seed();
+    tables.service_entries.forEach(change);
+    harness = createTenantHarness({ tables });
+    repo = new SupabaseServiceEntryRepository(harness.client);
+  };
+
+  it('rejectIfPending changes nothing on an entry no longer PENDING', async () => {
+    reseed((entry) => {
+      entry.status = 'APPROVED';
+    });
+
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.rejectIfPending(ENTRY_B, CHAPTER_B, USER_SHARED, null),
+      ),
+    ).resolves.toBeNull();
+    expect(
+      harness.rows('service_entries').find((e) => e.id === ENTRY_B)?.status,
+    ).toBe('APPROVED');
+  });
+
+  it('deleteIfPending deletes a PENDING entry in the caller chapter only', async () => {
+    const deleted = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.deleteIfPending(ENTRY_B, CHAPTER_B),
+    );
+    expect(deleted?.id).toBe(ENTRY_B);
+    expect(harness.rows('service_entries').map((e) => e.id)).toEqual([ENTRY_A]);
+  });
+
+  it('deleteIfPending keeps an entry no longer PENDING', async () => {
+    reseed((entry) => {
+      entry.status = 'APPROVED';
+    });
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteIfPending(ENTRY_B, CHAPTER_B),
+      ),
+    ).resolves.toBeNull();
+    expect(harness.rows('service_entries')).toHaveLength(2);
+  });
+
+  it('countByProofPath counts only the caller chapter entries', async () => {
+    const path = 'chapters/x/service/p/proof.pdf';
+    reseed((entry) => {
+      entry.proof_path = path;
+    });
+
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.countByProofPath(CHAPTER_B, path),
+      ),
+    ).resolves.toBe(1);
   });
 
   it('approveAtomic and leaderboard pass the chapter to their RPCs', async () => {

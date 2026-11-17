@@ -384,6 +384,79 @@ describe('SupabaseBackworkResourceRepository — drafts', () => {
     expect(theirs?.draft_fields).toEqual({ title: 'Their draft' });
   });
 
+  it('lets one AI fill hold a draft at a time, until it releases or goes stale', async () => {
+    const now = new Date('2026-11-17T12:00:00.000Z');
+    const stale = new Date(now.getTime() - 5 * 60_000);
+    const claim = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.claimAiFill(MINE_B, CHAPTER_B, USER_SHARED, now, stale),
+    );
+    expect(claim).toBe(now.toISOString());
+
+    // A second fill a moment later finds the claim and gets nothing.
+    const later = new Date(now.getTime() + 1_000);
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.claimAiFill(
+          MINE_B,
+          CHAPTER_B,
+          USER_SHARED,
+          later,
+          new Date(later.getTime() - 5 * 60_000),
+        ),
+      ),
+    ).resolves.toBeNull();
+
+    // Chapter A's twin is untouched.
+    expect(
+      harness.rows('backwork_resources').find((r) => r.id === MINE_A)
+        ?.ai_fill_started_at,
+    ).toBeUndefined();
+
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.releaseAiFill(MINE_B, CHAPTER_B, claim!),
+    );
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.claimAiFill(MINE_B, CHAPTER_B, USER_SHARED, later, stale),
+      ),
+    ).resolves.toBe(later.toISOString());
+
+    // Ten minutes on, a claim nobody released is taken over.
+    const muchLater = new Date(now.getTime() + 10 * 60_000);
+    await expect(
+      harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.claimAiFill(
+          MINE_B,
+          CHAPTER_B,
+          USER_SHARED,
+          muchLater,
+          new Date(muchLater.getTime() - 5 * 60_000),
+        ),
+      ),
+    ).resolves.toBe(muchLater.toISOString());
+
+    // A release of the stale claim leaves the new one in place.
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.releaseAiFill(MINE_B, CHAPTER_B, later.toISOString()),
+    );
+    expect(
+      harness.rows('backwork_resources').find((r) => r.id === MINE_B)
+        ?.ai_fill_started_at,
+    ).toBe(muchLater.toISOString());
+  });
+
+  it("never claims someone else's draft or a published row for an AI fill", async () => {
+    const now = new Date('2026-11-17T12:00:00.000Z');
+    const stale = new Date(now.getTime() - 5 * 60_000);
+    for (const id of [THEIRS_B, PUBLISHED_B]) {
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, () =>
+          repo.claimAiFill(id, CHAPTER_B, USER_SHARED, now, stale),
+        ),
+      ).resolves.toBeNull();
+    }
+  });
+
   it('publishes a draft once, stamped with the time it was published', async () => {
     const row = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.publishDraft(MINE_B, CHAPTER_B, USER_SHARED, published),

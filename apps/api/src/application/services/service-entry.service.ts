@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -131,7 +132,10 @@ export class ServiceEntryService {
   /**
    * Proof paths are client-echoed from the upload-url flow, so re-validate
    * server-side before persisting (`assertUploadedPathUnder`): inside the
-   * active chapter's service-proof prefix, and naming an uploaded object.
+   * active chapter's service-proof prefix, naming an uploaded object, and not
+   * already another entry's proof. Each upload mints a fresh path, so a path
+   * in use means the same receipt sent twice; refusing it keeps one file to
+   * one entry, which is what lets deleting an entry delete its file.
    */
   private async assertValidProofPath(
     chapterId: string,
@@ -149,6 +153,13 @@ export class ServiceEntryService {
         missing: 'proof_path does not reference an uploaded proof file',
       },
     );
+    if (
+      (await this.serviceEntryRepo.countByProofPath(chapterId, proofPath)) > 0
+    ) {
+      throw new ConflictException(
+        'This receipt is already on another service entry. Add the photo or file again.',
+      );
+    }
   }
 
   async getProofDownloadUrl(
@@ -567,11 +578,17 @@ export class ServiceEntryService {
       throw new BadRequestException('Only PENDING entries can be rejected');
     }
 
-    const updated = await this.serviceEntryRepo.update(id, chapterId, {
-      status: 'REJECTED',
-      reviewed_by: reviewerId,
-      review_comment: reviewComment ?? null,
-    });
+    // Conditional on PENDING in the write itself, like approval: an approval
+    // that landed after the read above keeps its entry and its points.
+    const updated = await this.serviceEntryRepo.rejectIfPending(
+      id,
+      chapterId,
+      reviewerId,
+      reviewComment ?? null,
+    );
+    if (!updated) {
+      throw new BadRequestException('Only PENDING entries can be rejected');
+    }
 
     try {
       await this.notificationService.notifyUser(entry.user_id, chapterId, {
@@ -615,14 +632,35 @@ export class ServiceEntryService {
       );
     }
 
-    // Purge the proof object with the row (file-first, matching Backwork and
-    // chapter documents) so deleted entries don't orphan personal photos in
-    // the private bucket. Legacy free-text paths never reference an object
-    // this chapter owns, so only prefix-valid paths are deleted.
-    if (entry.proof_path?.startsWith(serviceProofPrefix(chapterId))) {
-      await this.storageProvider.deleteFile(SERVICE_BUCKET, entry.proof_path);
+    // The row first, and only while it is still PENDING: an approval that
+    // landed after the read above keeps its entry and its receipt.
+    const deleted = await this.serviceEntryRepo.deleteIfPending(id, chapterId);
+    if (!deleted) {
+      throw new BadRequestException('Only PENDING entries can be deleted');
     }
 
-    await this.serviceEntryRepo.delete(id, chapterId);
+    // Then the proof object, so deleted entries don't orphan personal photos
+    // in the private bucket. Legacy free-text paths never reference an object
+    // this chapter owns, so only prefix-valid paths are deleted, and a file
+    // another entry still points at (rows from before a proof path was one
+    // entry's only) is kept. A failed delete is logged rather than thrown:
+    // the entry is already gone, and the member asked for exactly that.
+    const proofPath = deleted.proof_path;
+    if (!proofPath?.startsWith(serviceProofPrefix(chapterId))) return;
+    try {
+      if (
+        (await this.serviceEntryRepo.countByProofPath(chapterId, proofPath)) > 0
+      ) {
+        return;
+      }
+      await this.storageProvider.deleteFile(SERVICE_BUCKET, proofPath);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'service-entry-proof-delete',
+        message: `Could not delete proof file for deleted service entry ${id}`,
+        error,
+      });
+    }
   }
 }

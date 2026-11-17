@@ -41,3 +41,12 @@ POST /v1/tasks removed the required property 'photo_required' from the response 
 POST /v1/tasks removed the required property 'proof_photo_path' from the response with the '201' status
 POST /v1/tasks removed the required property 'reference_photo_path' from the response with the '201' status
 GET /v1/tasks/{id}/photo-url api path removed without deprecation
+
+# The backwork confirm now takes file_hash only as a SHA-256 in lowercase hex, which is what the web
+# app's sha256Hex has always sent. Only the web upload sheet and bulk upload confirm a backwork
+# file (useConfirmBackworkUpload); the phone has no backwork upload. At a5a513da,
+# `git grep 'useConfirmBackworkUpload\|backwork/upload-url' a5a513da -- apps/mobile` finds no
+# caller (the hook the binaries bundle from packages/hooks defines it, unused). The shipped SHAs
+# could not be read in the shallow checkout this was written in: re-run that grep at each
+# before merging.
+POST /v1/backwork added the pattern '^[0-9a-f]{64}$' to the request property 'file_hash'

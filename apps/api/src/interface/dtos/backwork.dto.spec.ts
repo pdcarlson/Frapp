@@ -7,6 +7,7 @@ import { MAX_BACKWORK_ZIP_FILES } from '@repo/validation';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
   BackworkDownloadUrlsQueryDto,
+  ConfirmBackworkUploadDto,
   UpdateBackworkDraftsDto,
 } from './backwork.dto';
 
@@ -80,4 +81,38 @@ describe('UpdateBackworkDraftsDto', () => {
       await expect(transform(body)).rejects.toThrow(BadRequestException);
     },
   );
+});
+
+/** The confirm body, through the production pipe options. */
+describe('ConfirmBackworkUploadDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'body',
+    metatype: ConfirmBackworkUploadDto,
+    data: '',
+  };
+  const body = (file_hash: unknown) => ({
+    storage_path: 'chapters/c/backwork/r/a.pdf',
+    file_hash,
+  });
+  const sha256 = 'a'.repeat(32) + '0123456789abcdef'.repeat(2);
+
+  it('takes a SHA-256 as 64 lowercase hex characters', async () => {
+    await expect(pipe.transform(body(sha256), metadata)).resolves.toMatchObject(
+      { file_hash: sha256 },
+    );
+  });
+
+  it.each([
+    ['empty', ''],
+    ['short', 'abc123'],
+    ['uppercase', sha256.toUpperCase()],
+    ['not hex', 'g'.repeat(64)],
+    ['too long', `${sha256}0`],
+    ['not a string', 42],
+  ])('refuses a file_hash that is %s', async (_label, hash) => {
+    await expect(pipe.transform(body(hash), metadata)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
 });

@@ -49,10 +49,10 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
-import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { safeObjectFilename, storedFilename } from '#domain/constants/storage';
 import { hasValue } from '#domain/utils/backwork-fill';
+import { assertUploadedPathUnder } from './chapter-upload';
 import {
   applyNicknameEdit,
   courseEditRefusal,
@@ -194,6 +194,14 @@ function draftFieldsFrom(input: BackworkFieldsInput): BackworkDraftFields {
 /** How long the link a draft's pages are read from stays good. */
 const DRAFT_FILE_URL_SECONDS = 300;
 
+/**
+ * How long an AI fill's claim on a draft holds before another fill may take
+ * it over. Well past a real fill (one download of at most 25 MB, a text read
+ * and one model call), so it only matters when a fill was cut off by a
+ * restart and never released its claim.
+ */
+export const AI_FILL_CLAIM_STALE_MS = 5 * 60_000;
+
 @Injectable()
 export class BackworkService {
   private readonly logger = new Logger(BackworkService.name);
@@ -247,43 +255,32 @@ export class BackworkService {
     return { signedUrl, storagePath, resourceId };
   }
 
-  /** A storage path a client sent: inside this chapter's backwork folder, with no way out of it. */
-  private assertChapterStoragePath(chapterId: string, storagePath: string) {
-    if (!storagePath.startsWith(`chapters/${chapterId}/backwork/`)) {
-      throw new BadRequestException(
-        'storage_path must be within the chapter backwork folder',
-      );
-    }
-    // A prefix check is not containment — relative segments satisfy it and
-    // still climb out, and this value is persisted and later handed to
-    // getSignedDownloadUrl/deleteFile. The storage layer rejects them too, but
-    // this write path must not rely on that alone: it is what turns any future
-    // gap in that guard into a cross-bucket read of a service-role-signed URL.
-    //
-    // `assertSafeStoragePath` is domain-layer code and throws a plain `Error`;
-    // this catch is what turns that into the `BadRequestException` (400) API
-    // consumers have always seen on an unsafe path.
-    try {
-      assertSafeStoragePath(
-        storagePath,
-        'storage_path must not contain relative path segments',
-      );
-    } catch (error) {
-      throw new BadRequestException((error as Error).message);
-    }
-  }
-
   /**
-   * A path a client names for a new row's file: inside the chapter's folder,
-   * and not already another row's file. Without the second check a member
-   * could point a draft at a published resource's object (every path is in
-   * the library list) and then delete it by deleting the draft.
+   * A path a client names for a new row's file: inside the chapter's folder
+   * with no way out of it, naming a file that was actually uploaded, and not
+   * already another row's file. Without the last check a member could point
+   * a draft at a published resource's object (every path is in the library
+   * list) and then delete it by deleting the draft. Without the upload check
+   * a row could name a file that never arrived, and every later read of it
+   * would fail.
    */
   private async assertUnusedStoragePath(
     chapterId: string,
     storagePath: string,
   ) {
-    this.assertChapterStoragePath(chapterId, storagePath);
+    await assertUploadedPathUnder(
+      this.storageProvider,
+      BACKWORK_BUCKET,
+      `chapters/${chapterId}/backwork/`,
+      storagePath,
+      {
+        field: 'storage_path',
+        outsidePrefix:
+          'storage_path must be within the chapter backwork folder',
+        missing:
+          "We couldn't find the uploaded file. Upload it again, then save it.",
+      },
+    );
     if (
       (await this.resourceRepo.countByStoragePath(chapterId, storagePath)) > 0
     ) {
@@ -445,15 +442,75 @@ export class BackworkService {
    * Refuses a draft uploaded as-is, whose stored file is the original, so
    * no caller can hand an unredacted file to a model by mistake. Null when
    * the file is gone.
+   *
+   * The stored size is read first, and a file over `maxBytes` comes back
+   * `too_large` without being downloaded: a backwork upload may be up to
+   * 100 MB, four times what the text extractor opens, and reading it into
+   * memory only to skip it costs the server for nothing.
    */
-  async redactedDraftFile(draft: BackworkResource): Promise<Uint8Array | null> {
+  async redactedDraftFile(
+    draft: BackworkResource,
+    maxBytes: number,
+  ): Promise<{ bytes: Uint8Array } | 'too_large' | null> {
     if (!draft.is_redacted) {
       throw new Error(`Backwork draft ${draft.id} was uploaded as-is`);
     }
-    return this.storageProvider.downloadFile(
+    const folder = draft.storage_path.slice(
+      0,
+      draft.storage_path.lastIndexOf('/'),
+    );
+    const stored = (
+      await this.storageProvider.listObjects(BACKWORK_BUCKET, folder)
+    ).find((object) => object.path === draft.storage_path);
+    if (!stored) return null;
+    if (stored.sizeBytes === undefined) {
+      // Storage always reports a size today; if that changes, the fill keeps
+      // working and the extractor's own cap still applies after the download.
+      this.logger.warn(
+        `Backwork draft ${draft.id}: storage reported no size for its file`,
+      );
+    } else if (stored.sizeBytes > maxBytes) {
+      return 'too_large';
+    }
+    const bytes = await this.storageProvider.downloadFile(
       BACKWORK_BUCKET,
       draft.storage_path,
     );
+    return bytes ? { bytes } : null;
+  }
+
+  /**
+   * Claims one of the caller's drafts for an AI fill, so only one fill reads
+   * its file at a time, across every API instance. Returns a release to call
+   * when the fill ends, or null when another fill holds the draft. A claim
+   * older than `AI_FILL_CLAIM_STALE_MS` is taken over, so a fill cut off by a
+   * restart never holds the draft for good.
+   */
+  async claimAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    now: Date = new Date(),
+  ): Promise<(() => Promise<void>) | null> {
+    const claim = await this.resourceRepo.claimAiFill(
+      id,
+      chapterId,
+      uploaderId,
+      now,
+      new Date(now.getTime() - AI_FILL_CLAIM_STALE_MS),
+    );
+    if (!claim) return null;
+    return async () => {
+      try {
+        await this.resourceRepo.releaseAiFill(id, chapterId, claim);
+      } catch (error) {
+        // The claim goes stale on its own; a failed release only makes the
+        // next fill of this draft wait for that.
+        this.logger.warn(
+          `Backwork draft ${id}: couldn't release its AI fill claim: ${(error as Error)?.message ?? String(error)}`,
+        );
+      }
+    };
   }
 
   /**

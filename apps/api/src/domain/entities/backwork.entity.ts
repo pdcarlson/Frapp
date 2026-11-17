@@ -109,4 +109,10 @@ export interface BackworkResource {
    * left out of every chapter-wide read. Null once published.
    */
   draft_fields: BackworkDraftFields | null;
+  /**
+   * Set while an AI fill is reading this draft's file (#5233), so a second
+   * fill of the same draft waits its turn; null otherwise. Optional because a
+   * database without `20261117162505` has no such column.
+   */
+  ai_fill_started_at?: string | null;
 }

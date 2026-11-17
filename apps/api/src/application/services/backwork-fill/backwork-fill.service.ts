@@ -1,5 +1,11 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  DOCUMENT_TEXT_EXTRACT_MAX_BYTES,
   DOCUMENT_TEXT_EXTRACTOR,
   type IDocumentTextExtractor,
 } from '#domain/adapters/document-text-extractor.interface';
@@ -61,10 +67,15 @@ export type BackworkFillResult =
  *    checked before the file is read, so a member who said No costs nothing.
  * 2. The draft: the caller's own only. One uploaded as-is is refused, since
  *    its stored file is the original; one with every field already set is
- *    marked `nothing_found` without reading its file.
+ *    marked `nothing_found` without reading its file, and one already marked
+ *    `unreadable` is answered as it stands, since its file hasn't changed
+ *    (a check that swaps the file in clears the mark).
  * 3. The redacted file's text layer, which holds only the words outside its
- *    redaction boxes. A file with too little text (a scan) or too large to
- *    open is marked `unreadable` without a model call.
+ *    redaction boxes, read by one fill at a time per draft (a second request
+ *    while one runs is refused, 409). A file over the extractor's size cap is
+ *    marked `unreadable` from its stored size, without being downloaded; one
+ *    with too little text (a scan) is marked `unreadable` without a model
+ *    call.
  * 4. One structured call, given the chapter's departments, courses and
  *    professors so it can use their spelling.
  * 5. The answer is checked (`checkBackworkFill`) and put on the draft, never
@@ -108,15 +119,50 @@ export class BackworkFillService {
     if (!draft) throw new NotFoundException('Draft not found');
     if (!draft.is_redacted) return { status: 'not_redacted' };
     if (draft.draft_fields?.pages_unchecked) return { status: 'not_checked' };
+    if (draft.draft_fields?.ai_fill === 'unreadable') {
+      return { status: 'unreadable', filled: [], draft };
+    }
     if (!backworkDraftHasEmptyFields(draft.draft_fields ?? {})) {
       return this.record(chapterId, userId, draftId, 'nothing_found', {}, []);
     }
 
     // 3.
-    const bytes = await this.backwork.redactedDraftFile(draft);
-    if (!bytes) throw new NotFoundException('Draft not found');
+    const release = await this.backwork.claimAiFill(
+      draftId,
+      chapterId,
+      userId,
+      input.now,
+    );
+    if (!release) {
+      throw new ConflictException(
+        'This draft is already being filled in. Wait a moment and look again.',
+      );
+    }
+    try {
+      return await this.readAndFill(draft, input, currentYear);
+    } finally {
+      await release();
+    }
+  }
+
+  /** Steps 3 to 5, while this request holds the draft's fill claim. */
+  private async readAndFill(
+    draft: BackworkResource,
+    input: { chapterId: string; userId: string; signal?: AbortSignal },
+    currentYear: number,
+  ): Promise<BackworkFillResult> {
+    const { chapterId, userId } = input;
+    const draftId = draft.id;
+    const stored = await this.backwork.redactedDraftFile(
+      draft,
+      DOCUMENT_TEXT_EXTRACT_MAX_BYTES,
+    );
+    if (!stored) throw new NotFoundException('Draft not found');
+    if (stored === 'too_large') {
+      return this.record(chapterId, userId, draftId, 'unreadable', {}, []);
+    }
     const extracted = await this.extractor.extract({
-      bytes,
+      bytes: stored.bytes,
       contentType: 'application/pdf',
       fileName: 'backwork.pdf',
     });
