@@ -13,7 +13,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 const zonesOf = (count: number) =>
   selectActiveZones(
-    Array.from({ length: count }, (_, i) => ({ id: `z${i}`, name: `Zone ${i}` })),
+    Array.from({ length: count }, (_, i) => ({
+      id: `z${i}`,
+      name: `Zone ${i}`,
+    })),
   );
 
 function sheetProps(count: number) {
@@ -49,5 +52,58 @@ describe("ZonePickerSheet sizing", () => {
     const props = sheetProps(9);
     expect(props.enableDynamicSizing).toBe(false);
     expect(props.snapPoints).toEqual(["70%"]);
+  });
+
+  it("sizes six zones to content: one threshold with every pick-one sheet (#5318)", () => {
+    expect(sheetProps(6).enableDynamicSizing).toBe(true);
+    expect(sheetProps(7).enableDynamicSizing).toBe(false);
+  });
+});
+
+describe("ZonePickerSheet rows (#5318)", () => {
+  function renderSheet(selectedZoneId: string | null, onSelect = vi.fn()) {
+    const dismiss = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ZonePickerSheet
+            ref={React.createRef<never>()}
+            zones={zonesOf(2)}
+            selectedZoneId={selectedZoneId}
+            onSelect={onSelect}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { present: vi.fn(), dismiss }
+              : null,
+        },
+      );
+    });
+    const rows = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        typeof node.props.onPress === "function",
+    );
+    return { tree, rows, onSelect, dismiss };
+  }
+
+  it("reports the picked zone as checked, for a screen reader", () => {
+    const { tree, rows } = renderSheet("z1");
+    expect(rows.map((row) => row.props.accessibilityState)).toEqual([
+      { checked: false },
+      { checked: true },
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("picks a zone and closes itself", () => {
+    const { tree, rows, onSelect, dismiss } = renderSheet(null);
+    act(() => rows[0]!.props.onPress());
+    expect(onSelect).toHaveBeenCalledWith("z0");
+    expect(dismiss).toHaveBeenCalled();
+    act(() => tree.unmount());
   });
 });
