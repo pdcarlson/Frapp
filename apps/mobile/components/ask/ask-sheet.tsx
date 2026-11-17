@@ -22,6 +22,7 @@ import {
 import {
   useAsk,
   useAskStatus,
+  useAskStarter,
   useAskSuggestions,
   useViewerDisplayName,
   useViewerUserId,
@@ -65,7 +66,7 @@ import {
   useFrappTheme,
 } from "@/lib/theme";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
-import { useAskStarter } from "@/lib/ask/starter-seen";
+import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
 
 /**
  * Ask Frapp on the phone (`spec/ui/mobile/screens.md` s17;
@@ -235,10 +236,12 @@ export const AskSheet = forwardRef<
   const { suggestions } = useAskSuggestions({ enabled: shownOpen });
   const displayName = useViewerDisplayName();
   const viewerId = useViewerUserId();
-  const starter = useAskStarter({
+  const opening = useAskStarter({
     userId: viewerId,
     open: shownOpen,
     empty: exchanges.length === 0,
+    canAct,
+    store: ASK_STARTER_STORE,
   });
 
   const [draft, setDraft] = useState(initialDraft ?? "");
@@ -428,7 +431,8 @@ export const AskSheet = forwardRef<
           ) : (
             <AskOpening
               displayName={displayName}
-              starter={starter}
+              mode={opening.mode}
+              onStarterShown={opening.starterShown}
               canAct={canAct}
               suggestions={suggestions}
               onPick={pick}

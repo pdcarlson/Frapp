@@ -18,6 +18,7 @@ import {
   askGreeting,
   type AskSuggestion,
 } from "@repo/validation";
+import type { AskOpeningMode } from "@repo/hooks";
 import { AskQuestionBubble } from "@/components/ask/ask-turn";
 import { FrappCrest } from "@/components/frapp-crest";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -45,14 +46,20 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export function AskOpening({
   displayName,
-  starter,
+  mode,
+  onStarterShown,
   canAct,
   suggestions,
   onPick,
 }: {
   displayName: string | null;
-  /** This is the member's first open: draw the starter exchange. */
-  starter: boolean;
+  /**
+   * `starter` on the member's first open, `greeting` otherwise, and
+   * `deciding` while the phone's record is read (`useAskStarter`).
+   */
+  mode: AskOpeningMode;
+  /** The starter is on screen: the record may now say it was seen. */
+  onStarterShown: () => void;
   /** Frapp can take at least one action for this member. */
   canAct: boolean;
   suggestions: readonly AskSuggestion[];
@@ -64,7 +71,17 @@ export function AskOpening({
   // Read once: a greeting that turned from afternoon to evening under the
   // member's eyes would be a strange thing to watch.
   const [now] = useState(() => new Date());
-  const compact = keyboardUp && !starter;
+  const starter = mode === "starter";
+  const compact = keyboardUp;
+  // Recorded once it is really drawn, and again if what it says changes
+  // (Frapp could act for the member after all).
+  useEffect(() => {
+    if (starter) onStarterShown();
+  }, [starter, canAct, onStarterShown]);
+
+  // Nothing while the record is read, so the greeting never flashes before
+  // the starter; it is a frame or two.
+  if (mode === "deciding") return <View style={styles.root} />;
 
   return (
     <View style={styles.root}>
@@ -74,8 +91,8 @@ export function AskOpening({
         accessibilityLabel={`${ASK_COPY.name}. ${starter ? ASK_STARTER.hello(displayName) : askGreeting(now, displayName)}`}
         style={[
           styles.hero,
-          compact ? styles.heroCompact : null,
           starter ? styles.heroStarter : null,
+          compact ? styles.heroCompact : null,
         ]}
       >
         <GlowingCrest height={compact ? 44 : starter ? 64 : 88} />

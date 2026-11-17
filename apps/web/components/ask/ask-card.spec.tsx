@@ -76,6 +76,13 @@ function Card(props: Partial<Parameters<typeof AskCard>[0]>) {
 
 const open = (isOpen = true) => render(<Card open={isOpen} />);
 
+/** Opened, once the opening has read this browser's record and drawn. */
+async function openSettled() {
+  const view = open();
+  await screen.findByText(/^Good (morning|afternoon|evening)|^Hey /);
+  return view;
+}
+
 const DONE = {
   id: "turn-1",
   question: "When is the budget vote?",
@@ -129,7 +136,7 @@ describe("AskCard", () => {
     state.exchanges = [];
     state.savedUntil = null;
     // Every open but the first-open spec's is a later one (#4904).
-    window.localStorage.setItem(STARTER_SEEN, "1");
+    window.localStorage.setItem(STARTER_SEEN, "act");
     state.permissions = ["ai:use"];
     state.actions = null;
     state.suggestions = [];
@@ -158,9 +165,9 @@ describe("AskCard", () => {
       request: true,
     };
 
-    it("offers what the server built from the member's own account, and no preset", () => {
+    it("offers what the server built from the member's own account, and no preset", async () => {
       state.suggestions = [EVENT];
-      open();
+      await openSettled();
       expect(
         screen.getAllByRole("button").map((button) => button.textContent),
       ).toContain(EVENT.text);
@@ -168,8 +175,8 @@ describe("AskCard", () => {
       expect(screen.getAllByRole("listitem")).toHaveLength(1);
     });
 
-    it("opens plain for a member with nothing to ask about: the crest, the greeting and the field (#4904)", () => {
-      open();
+    it("opens plain for a member with nothing to ask about: the crest, the greeting and the field (#4904)", async () => {
+      await openSettled();
       expect(
         screen.getByText(/^Good (morning|afternoon|evening), Marcus\.$/),
       ).toBeInTheDocument();
@@ -185,9 +192,9 @@ describe("AskCard", () => {
       ).toBeInTheDocument();
     });
 
-    it("opens a member's first time on the exchange that says what Frapp can do, once", async () => {
+    it("opens a member's first time on the exchange that says what Frapp can do, once, the card staying mounted as AskHost keeps it", async () => {
       window.localStorage.removeItem(STARTER_SEEN);
-      const first = open();
+      const view = render(<Card open />);
       expect(
         await screen.findByText("Hey Marcus, I'm Frapp."),
       ).toBeInTheDocument();
@@ -195,13 +202,23 @@ describe("AskCard", () => {
       expect(screen.getByText(ASK_STARTER.answer)).toBeInTheDocument();
       expect(screen.queryByText(ASK_STARTER.answer_act)).toBeNull();
       expect(state.ask).not.toHaveBeenCalled();
-      first.unmount();
-      open();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(screen.queryByText(ASK_STARTER.answer)).toBeNull();
+      // Recorded once drawn, as seen without the line about acting.
+      await waitFor(() =>
+        expect(window.localStorage.getItem(STARTER_SEEN)).toBe("ask"),
+      );
+      view.rerender(<Card open={false} />);
+      view.rerender(<Card open />);
       expect(
-        screen.getByText(/^Good (morning|afternoon|evening), Marcus\.$/),
+        await screen.findByText(/^Good (morning|afternoon|evening), Marcus\.$/),
       ).toBeInTheDocument();
+      expect(screen.queryByText(ASK_STARTER.answer)).toBeNull();
+    });
+
+    it("draws nothing of the opening while this browser's record is read, so the greeting never flashes first", () => {
+      window.localStorage.removeItem(STARTER_SEEN);
+      open();
+      expect(screen.queryByText(/^Good (morning|afternoon|evening)/)).toBeNull();
+      expect(screen.queryByText("Hey Marcus, I'm Frapp.")).toBeNull();
     });
 
     it("reads them only once the card is open", () => {
@@ -216,7 +233,7 @@ describe("AskCard", () => {
     it("sends a tapped question as a suggestion, never as words the member typed", async () => {
       state.permissions = ["ai:use", "ai:act"];
       state.suggestions = [EVENT, REQUEST];
-      open();
+      await openSettled();
       await userEvent
         .setup()
         .click(screen.getByRole("button", { name: EVENT.text }));
@@ -229,7 +246,7 @@ describe("AskCard", () => {
     it("sends the one request like typed words, so it comes back as a card", async () => {
       state.permissions = ["ai:use", "ai:act"];
       state.suggestions = [EVENT, REQUEST];
-      open();
+      await openSettled();
       await userEvent
         .setup()
         .click(screen.getByRole("button", { name: REQUEST.text }));
@@ -583,7 +600,7 @@ describe("a member Frapp can act for (#718)", () => {
     state.ask.mockReset().mockResolvedValue(undefined);
     state.exchanges = [];
     state.savedUntil = null;
-    window.localStorage.setItem(STARTER_SEEN, "1");
+    window.localStorage.setItem(STARTER_SEEN, "act");
     state.permissions = ["ai:use", "ai:act"];
     state.actions = null;
     state.suggestions = [];

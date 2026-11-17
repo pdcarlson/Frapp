@@ -9,6 +9,7 @@ import {
 import { useCallback } from "react";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { displayNameOrNull } from "./display-names";
 import { usePermissionPreview } from "./permission-preview";
 
 /**
@@ -71,7 +72,7 @@ export function useViewerDisplayName(options?: {
     data && typeof data === "object" && "display_name" in data
       ? (data as { display_name?: unknown }).display_name
       : null;
-  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+  return displayNameOrNull(typeof raw === "string" ? raw : null);
 }
 
 export function useUpdateUser() {

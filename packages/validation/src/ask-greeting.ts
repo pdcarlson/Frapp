@@ -11,10 +11,44 @@
  * never sent as an earlier turn (`spec/behavior/ai.md` § What Ask opens with).
  */
 
-/** A member's first name: the first word of their display name. */
+/**
+ * The name the API stores when sign-in carried none
+ * (`displayNameForSync` in `apps/api/src/application/services/auth.service.ts`).
+ */
+const PLACEHOLDER_NAME = "Member";
+
+/**
+ * A member's first name: the first word of their display name. `null` when
+ * the name is the API's placeholder, or reads as the email address it was
+ * made from ("marcus.ellison", "jlee42"), which a greeting would get wrong:
+ * the greeting then goes without a name.
+ */
 export function askFirstName(displayName: string | null | undefined): string | null {
-  const first = displayName?.trim().split(/\s+/)[0] ?? "";
-  return first.length > 0 ? first : null;
+  const name = displayName?.trim() ?? "";
+  if (name.length === 0 || name === PLACEHOLDER_NAME) return null;
+  const first = name.split(/\s+/)[0] ?? name;
+  if (!name.includes(" ") && /[.@_\d]/.test(first)) return null;
+  return first;
+}
+
+/**
+ * What a member's device remembers of the first-open starter: shown, and
+ * whether it was shown with the line about asking Frapp to do things.
+ */
+export type AskStarterSeen = "ask" | "act";
+
+/**
+ * Whether Ask opens on the starter: never seen, or seen before Frapp could
+ * act for this member and it can now, so a member who gains that is told
+ * once (#4904). `undefined` is a record that could not be read: never, since
+ * a starter that can't be remembered would open Ask every time.
+ */
+export function askStarterDue(
+  seen: AskStarterSeen | null | undefined,
+  canAct: boolean,
+): boolean {
+  if (seen === undefined) return false;
+  return seen === null || (seen === "ask" && canAct);
 }
 
 /**

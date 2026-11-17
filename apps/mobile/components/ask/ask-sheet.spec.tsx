@@ -5,6 +5,7 @@ import { ActionSheetIOS } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
+import { useReducedMotion, withRepeat } from "react-native-reanimated";
 import * as WebBrowser from "expo-web-browser";
 import type { AskExchange } from "@repo/hooks";
 import {
@@ -45,10 +46,9 @@ const hooks = vi.hoisted(() => ({
   suggestions: [] as Array<{ kind: string; text: string; request: boolean }>,
   suggestionsEnabled: [] as boolean[],
   starter: false,
+  starterShown: vi.fn(),
 }));
-vi.mock("@/lib/ask/starter-seen", () => ({
-  useAskStarter: () => hooks.starter,
-}));
+// When the starter is due is `useAskStarter`'s own spec, in `@repo/hooks`.
 vi.mock("@/lib/ai/availability", () => ({
   useMayAct: () => hooks.mayAct,
   useActActions: (options: { enabled: boolean }) => {
@@ -101,6 +101,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => ({ data: { id: "me" } }),
   useViewerUserId: () => "me",
   useViewerDisplayName: () => "Marcus Ellison",
+  useAskStarter: () => ({
+    mode: hooks.starter ? "starter" : "greeting",
+    starterShown: hooks.starterShown,
+  }),
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -287,6 +291,7 @@ beforeEach(() => {
   hooks.suggestions = [EVENT];
   hooks.suggestionsEnabled = [];
   hooks.starter = false;
+  hooks.starterShown.mockClear();
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -349,8 +354,9 @@ describe("AskSheet", () => {
     expect(text).toContain(ASK_STARTER.answer);
     expect(text).not.toContain(ASK_STARTER.answer_act);
     expect(text).toContain(EVENT.text);
-    // The starter is never sent.
+    // The starter is never sent, and is recorded once it is drawn.
     expect(hooks.ask).not.toHaveBeenCalled();
+    expect(hooks.starterShown).toHaveBeenCalled();
   });
 
   it("sends a tapped question as a suggestion, and the one request like typed words", async () => {
@@ -405,6 +411,21 @@ describe("AskSheet", () => {
       savedNoticeShown: true,
       suggested: true,
     });
+  });
+
+  it("holds the crest's glow still with Reduce Motion on, and lets it breathe otherwise", () => {
+    vi.mocked(withRepeat).mockClear();
+    open(render());
+    expect(withRepeat).toHaveBeenCalled();
+
+    vi.mocked(withRepeat).mockClear();
+    vi.mocked(useReducedMotion).mockReturnValue(true);
+    try {
+      open(render());
+      expect(withRepeat).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(useReducedMotion).mockReturnValue(false);
+    }
   });
 
   it("keeps every turn of the conversation on screen, oldest first", () => {

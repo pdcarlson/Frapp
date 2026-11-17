@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-native-async-storage/async-storage", () => ({ default: {} }));
 
-import { claimAskStarter } from "./starter-seen";
+import { askStarterStore } from "./starter-seen";
 
 function memory() {
   const kept = new Map<string, string>();
@@ -15,22 +15,26 @@ function memory() {
   };
 }
 
-describe("Ask's first-open starter (#4904)", () => {
-  it("is shown once per member on this phone", async () => {
+describe("where the phone keeps Ask's first-open starter (#4904)", () => {
+  it("keeps it per member, with whether Frapp could act", async () => {
     const storage = memory();
-    expect(await claimAskStarter("ana", storage)).toBe(true);
-    expect(await claimAskStarter("ana", storage)).toBe(false);
+    const store = askStarterStore(storage);
+    expect(await store.read("ana")).toBeNull();
+    expect(await store.write("ana", "ask")).toBe(true);
+    expect(await store.read("ana")).toBe("ask");
     // A second account on the same phone gets its own first open.
-    expect(await claimAskStarter("ben", storage)).toBe(true);
+    expect(await store.read("ben")).toBeNull();
+    // Anything else on the key is no record.
+    storage.kept.set("frapp.mobile.ask-starter-seen:cy", "1");
+    expect(await store.read("cy")).toBeNull();
   });
 
-  it("is never shown when the phone can't read or can't keep the record", async () => {
-    const unreadable = memory();
-    unreadable.getItem.mockRejectedValue(new Error("locked"));
-    expect(await claimAskStarter("ana", unreadable)).toBe(false);
-
-    const unwritable = memory();
-    unwritable.setItem.mockRejectedValue(new Error("full"));
-    expect(await claimAskStarter("ana", unwritable)).toBe(false);
+  it("answers, never throws, when the phone can't read or keep it", async () => {
+    const broken = memory();
+    broken.getItem.mockRejectedValue(new Error("locked"));
+    broken.setItem.mockRejectedValue(new Error("full"));
+    const store = askStarterStore(broken);
+    expect(await store.read("ana")).toBeUndefined();
+    expect(await store.write("ana", "act")).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import {
   useAsk,
   useAskStatus,
   useAskSuggestions,
+  useAskStarter,
   useMyPermissions,
   useViewerDisplayName,
   useViewerUserId,
@@ -23,7 +24,10 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskTurn } from "@/components/ask/ask-answer";
-import { AskOpening, useAskStarter } from "@/components/ask/ask-opening";
+import {
+  ASK_STARTER_STORE,
+  AskOpening,
+} from "@/components/ask/ask-opening";
 import { useSharedAskCardEdits } from "@/components/ask/ask-in-channel";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import {
@@ -148,10 +152,12 @@ export function AskCard({
   const { suggestions } = useAskSuggestions({ enabled: open });
   const displayName = useViewerDisplayName();
   const viewerId = useViewerUserId();
-  const starter = useAskStarter({
+  const opening = useAskStarter({
     userId: viewerId,
     open,
     empty: exchanges.length === 0,
+    canAct,
+    store: ASK_STARTER_STORE,
   });
   // What was changed on waiting cards, kept while the card is closed, and
   // shared with the same card drawn in a channel it was asked from.
@@ -404,7 +410,8 @@ export function AskCard({
                   ) : (
                     <AskOpening
                       displayName={displayName}
-                      starter={starter}
+                      mode={opening.mode}
+                      onStarterShown={opening.starterShown}
                       canAct={canAct}
                       suggestions={suggestions}
                       onPick={pick}

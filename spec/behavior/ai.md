@@ -375,7 +375,9 @@ Until then the empty panel offered three fixed questions and, for an officer, on
 - **The first open says what Frapp can do, once.**
   On a member's first open on a phone or in a browser, the greeting gives way to an exchange that has already happened: their own bubble asking "What can you do?" and Frapp's answer under it (where answers come from and that each links to its source; for a member Frapp can act for, that they can ask for things to be done and nothing changes until they confirm).
   It is the product's own copy (`ASK_STARTER` in `@repo/validation`), not a model's: nothing is sent, it needs no Frapp AI consent, and it is never among the earlier turns sent with a question.
-  It is kept per member on the device; a device that can't read or keep that record never shows it, so it can't come back on every open.
+  The device keeps, per member, that the starter was drawn, and whether it carried the line about having things done: it is recorded only once it is on screen, so an open that never drew it (a question sent as Ask opened, Ask closed at once) leaves it due, and it is shown once more to a member Frapp can act for who saw it before it could.
+  Once the conversation has had a turn, New conversation brings back the greeting, not the starter.
+  A device that can't read the record never shows it, so it can't come back on every open; one that can't keep it doesn't show it again until Ask is reloaded.
 
 - **Built from the member's own account, with no model call.**
   When Ask opens, the server reads what this member's account holds right now and returns at most three questions and at most one request (`GET /v1/ai/ask/suggestions`).
