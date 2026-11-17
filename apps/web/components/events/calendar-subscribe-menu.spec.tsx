@@ -215,7 +215,10 @@ describe("CalendarSubscribeMenu", () => {
       await userEvent.click(row);
 
       await waitFor(() =>
-        expect(startSpy).toHaveBeenCalledWith({ client: "web" }),
+        expect(startSpy).toHaveBeenCalledWith({
+          client: "web",
+          webReturn: "events",
+        }),
       );
     });
 
@@ -288,9 +291,9 @@ describe("CalendarSubscribeMenu", () => {
       expect(confirmSpy).toHaveBeenCalledTimes(1);
       expect(window.location.search).toBe("?event=e1");
       await waitFor(() =>
-        expect(toastSpy).toHaveBeenCalledWith({
-          description: expect.stringMatching(/Google Calendar connected/),
-        }),
+        expect(toastSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Google Calendar connected" }),
+        ),
       );
     });
 

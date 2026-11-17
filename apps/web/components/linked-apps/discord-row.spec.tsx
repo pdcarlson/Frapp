@@ -58,13 +58,15 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: state.toast }),
 }));
 
-const { DiscordHistoryCard, DISCORD_LINK_OUTCOME_MESSAGES, linkedMessage } =
-  await import("./discord-history-card");
+const { DiscordRow, DISCORD_LINK_OUTCOME_MESSAGES, linkedMessage } =
+  await import("./discord-row");
 
 function renderCard(client = new QueryClient()) {
   return render(
     <QueryClientProvider client={client}>
-      <DiscordHistoryCard />
+      <ul>
+        <DiscordRow />
+      </ul>
     </QueryClientProvider>,
   );
 }
@@ -134,7 +136,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("DiscordHistoryCard (#2878)", () => {
+describe("DiscordRow (#2878, #5407)", () => {
   it("offers to link when nothing is linked, and sends the browser to Discord", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });
@@ -166,7 +168,12 @@ describe("DiscordHistoryCard (#2878)", () => {
     renderCard(client);
 
     expect(screen.getByText("jkslayer")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Unlink" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discord options" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Unlink" }),
+    );
     expect(state.unlink).toHaveBeenCalledTimes(1);
     expect(state.toast).toHaveBeenCalledWith({
       description:
@@ -192,19 +199,49 @@ describe("DiscordHistoryCard (#2878)", () => {
     const theirs = openTimeline(client, "chan-theirs", "1100000000000000002");
     renderCard(client);
 
-    await userEvent.click(screen.getByRole("button", { name: "Unlink" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discord options" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Unlink" }),
+    );
 
     await waitFor(() => expect(mine).toHaveBeenCalledTimes(1));
     expect(theirs).not.toHaveBeenCalled();
   });
 
-  it("says linking is unavailable rather than offering a button that fails", () => {
+  it("draws no row while linking isn't offered, rather than a button that fails", () => {
     state.link.data = { ...state.link.data, available: false };
     renderCard();
     expect(
       screen.queryByRole("button", { name: "Link Discord account" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/isn.t available right now/)).toBeInTheDocument();
+    expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+  });
+
+  it("draws the state: a check once linked, greyed until then", () => {
+    const { container, rerender } = renderCard();
+    expect(
+      container
+        .querySelector("[data-linked-state]")
+        ?.getAttribute("data-linked-state"),
+    ).toBe("off");
+    expect(
+      screen.getByRole("img", { name: "Not connected" }),
+    ).toBeInTheDocument();
+    state.link.data = {
+      ...state.link.data,
+      linked: true,
+      discord_username: "jkslayer",
+    };
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ul>
+          <DiscordRow />
+        </ul>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("img", { name: "Connected" })).toBeInTheDocument();
   });
 
   it("confirms a returning handshake once and strips it from the address bar", async () => {

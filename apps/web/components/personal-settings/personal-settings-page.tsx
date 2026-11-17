@@ -23,7 +23,8 @@ import {
 } from "@/components/personal-settings/personal-settings-sections";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import { ChatDensityControl } from "@/components/profile/chat-density-control";
-import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
+import { LinkedAppsSection } from "@/components/linked-apps/linked-apps-section";
+import { CalendarSection } from "@/components/personal-settings/calendar-section";
 import { ProfileSection } from "@/components/profile/profile-section";
 import {
   SettingsNavRail,
@@ -68,13 +69,11 @@ function PersonalSettingsContent() {
       (s) =>
         s.group === group &&
         isPersonalSettingsSectionShown(s.value, aiAvailable),
-    ).map(
-      (s) => ({
-        value: s.value,
-        label: s.label,
-        href: personalSettingsHref(s.value),
-      }),
-    ),
+    ).map((s) => ({
+      value: s.value,
+      label: s.label,
+      href: personalSettingsHref(s.value),
+    })),
   }));
 
   /*
@@ -137,8 +136,10 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
       return <BlockedMembersCard />;
     case "invoices":
       return <MyInvoicesSection />;
-    case "discord":
-      return <DiscordHistoryCard />;
+    case "apps":
+      return <LinkedAppsSection />;
+    case "calendar":
+      return <CalendarSection />;
   }
 }
 

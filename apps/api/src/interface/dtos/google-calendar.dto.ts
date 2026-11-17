@@ -57,6 +57,15 @@ export class StartGoogleCalendarConnectDto {
   @IsString()
   @MaxLength(512)
   return_url?: string;
+
+  @ApiPropertyOptional({
+    enum: ['events', 'linked_apps', 'calendar'],
+    description:
+      'For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar.',
+  })
+  @IsOptional()
+  @IsIn(['events', 'linked_apps', 'calendar'])
+  web_return?: 'events' | 'linked_apps' | 'calendar';
 }
 
 export class GoogleCalendarConnectDto {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   CalendarPlus,
   ChevronDown,
@@ -10,19 +10,9 @@ import {
 } from "lucide-react";
 import {
   calendarAppLinks,
-  errorCopy,
-  GOOGLE_CALENDAR_RETURN_COPY,
-  GOOGLE_CALENDAR_RETURN_PARAMS,
-  googleCalendarDisconnectCopy,
   googleCalendarFootnote,
-  readGoogleCalendarReturn,
-  useActiveChapterId,
   useCalendarFeedLink,
-  useConfirmGoogleCalendarConnect,
-  useDisconnectGoogleCalendar,
-  useGoogleCalendarStatus,
   useResetCalendarFeedLink,
-  useStartGoogleCalendarConnect,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +24,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/lib/hooks/use-toast";
+import {
+  useGoogleCalendarConnection,
+  useGoogleCalendarReturn,
+} from "@/lib/events/google-calendar-connect";
 
 /**
  * "Subscribe" on the Events toolbar (#3322): puts the chapter's events, and
@@ -66,44 +60,14 @@ export function CalendarSubscribeMenu() {
   const [open, setOpen] = useState(false);
   const link = useCalendarFeedLink({ enabled: open });
   const reset = useResetCalendarFeedLink();
-  const google = useGoogleCalendarStatus();
-  const startGoogle = useStartGoogleCalendarConnect();
-  const disconnectGoogle = useDisconnectGoogleCalendar();
+  const google = useGoogleCalendarConnection("events");
   const { confirm, confirmDialog } = useConfirmDialog();
   const { toast } = useToast();
   const apps = link.data ? calendarAppLinks(link.data) : null;
-  const googleConnect = google.data?.available ? google.data : null;
+  const googleConnect = google.status.data?.available
+    ? google.status.data
+    : null;
   useGoogleCalendarReturn();
-
-  async function connectGoogle() {
-    try {
-      const url = await startGoogle.mutateAsync({ client: "web" });
-      window.location.assign(url);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        description: errorCopy(error, "Couldn't open Google. Try again."),
-      });
-    }
-  }
-
-  async function disconnectGoogleCalendar() {
-    const ok = await confirm({
-      ...googleCalendarDisconnectCopy(googleConnect?.google_email),
-      confirmLabel: "Disconnect",
-      tone: "destructive",
-    });
-    if (!ok) return;
-    try {
-      await disconnectGoogle.mutateAsync();
-      toast({ description: "Google Calendar disconnected." });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        description: errorCopy(error, "Couldn't disconnect. Try again."),
-      });
-    }
-  }
 
   async function copyLink() {
     if (!link.data) return;
@@ -112,7 +76,8 @@ export function CalendarSubscribeMenu() {
       // undefined and the call throws before any promise exists.
       await navigator.clipboard.writeText(link.data.url);
       toast({
-        description: "Link copied. Paste it where your calendar app adds a calendar by URL.",
+        description:
+          "Link copied. Paste it where your calendar app adds a calendar by URL.",
       });
     } catch {
       toast({
@@ -134,7 +99,9 @@ export function CalendarSubscribeMenu() {
     if (!ok) return;
     try {
       await reset.mutateAsync();
-      toast({ description: "Link reset. Subscribe again to keep your calendar." });
+      toast({
+        description: "Link reset. Subscribe again to keep your calendar.",
+      });
     } catch {
       toast({
         variant: "destructive",
@@ -182,8 +149,8 @@ export function CalendarSubscribeMenu() {
             </DropdownMenuItem>
           ) : googleConnect ? (
             <DropdownMenuItem
-              disabled={startGoogle.isPending}
-              onSelect={() => void connectGoogle()}
+              disabled={google.connecting}
+              onSelect={() => void google.connect()}
             >
               Google Calendar
               {googleConnect.status === "needs_reconnect" ? (
@@ -223,8 +190,8 @@ export function CalendarSubscribeMenu() {
           <DropdownMenuSeparator />
           {googleConnect?.connected ? (
             <DropdownMenuItem
-              disabled={disconnectGoogle.isPending}
-              onSelect={() => void disconnectGoogleCalendar()}
+              disabled={google.disconnecting}
+              onSelect={() => void google.disconnect()}
             >
               <Unlink aria-hidden="true" />
               Disconnect Google Calendar
@@ -243,63 +210,7 @@ export function CalendarSubscribeMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
       {confirmDialog}
+      {google.confirmDialog}
     </>
   );
-}
-
-/**
- * Finishes a Google sign-in when Google sends the member back to Events.
- *
- * Read once, on mount, and stripped from the address bar at once: the code is
- * a one-time credential, and a URL is the most-copied place a value can sit.
- * The confirm runs as soon as a chapter is active, exactly once (the ref is
- * cleared first, so React's development double-invoke can't spend it twice).
- */
-function useGoogleCalendarReturn() {
-  const chapterId = useActiveChapterId();
-  const confirmConnect = useConfirmGoogleCalendarConnect().mutateAsync;
-  const { toast } = useToast();
-  const pending = useRef<{ code: string; state: string } | null>(null);
-  const handled = useRef(false);
-
-  useEffect(() => {
-    if (handled.current) return;
-    handled.current = true;
-    const url = new URL(window.location.href);
-    const outcome = readGoogleCalendarReturn(url.searchParams);
-    if (!outcome) return;
-    if (outcome.kind === "confirm") {
-      pending.current = { code: outcome.code, state: outcome.state };
-    } else {
-      toast({
-        variant: outcome.kind === "denied" ? undefined : "destructive",
-        description: GOOGLE_CALENDAR_RETURN_COPY[outcome.kind],
-      });
-    }
-    for (const param of GOOGLE_CALENDAR_RETURN_PARAMS) {
-      url.searchParams.delete(param);
-    }
-    window.history.replaceState(null, "", url.toString());
-  }, [toast]);
-
-  useEffect(() => {
-    const finish = pending.current;
-    if (!finish || !chapterId) return;
-    pending.current = null;
-    confirmConnect(finish)
-      .then(() =>
-        toast({
-          description:
-            "Google Calendar connected. Your events show up there within a minute.",
-        }),
-      )
-      .catch((error: unknown) =>
-        toast({
-          variant: "destructive",
-          description: errorCopy(error, GOOGLE_CALENDAR_RETURN_COPY.failed, {
-            serverWritesForMembers: true,
-          }),
-        }),
-      );
-  }, [chapterId, confirmConnect, toast]);
 }

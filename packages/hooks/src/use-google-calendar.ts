@@ -115,6 +115,12 @@ export function useGoogleCalendarStatus(options: { enabled?: boolean } = {}) {
 }
 
 /**
+ * The web screen a sign-in comes back to (#5407): the one it started on, so
+ * the member lands on the row that now reads Connected.
+ */
+export type GoogleCalendarWebReturn = "events" | "linked_apps" | "calendar";
+
+/**
  * Start a sign-in. Resolves to Google's consent page: web sends the browser
  * there, and the phone opens it in an auth session that returns to
  * `returnUrl`, the app's own `frapp://` address.
@@ -124,13 +130,15 @@ export function useStartGoogleCalendarConnect() {
   return useMutation({
     mutationKey: ["google-calendar", "connect"],
     mutationFn: async (
-      input: { client: "web" } | { client: "mobile"; returnUrl: string },
+      input:
+        | { client: "web"; webReturn?: GoogleCalendarWebReturn }
+        | { client: "mobile"; returnUrl: string },
     ): Promise<string> => {
       const result = await client.POST("/v1/google-calendar/connect", {
         body:
           input.client === "mobile"
             ? { client: "mobile", return_url: input.returnUrl }
-            : { client: "web" },
+            : { client: "web", web_return: input.webReturn ?? "events" },
       });
       throwUnlessOk(result);
       return result.data!.authorize_url;
