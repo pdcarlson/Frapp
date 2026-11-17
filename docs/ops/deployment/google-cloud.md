@@ -34,7 +34,7 @@ Organization roles are granted only to these Google Groups, plus the domain-wide
 
 The whole `frapp.live` domain can also create projects and billing accounts.
 
-Project roles are granted per project. `pdcarlson@frapp.live` owns `signet-frapp` and `frapp-67722`, and is the only Owner of each. If that account is ever locked out, a member of `gcp-organization-admins@frapp.live` can grant access again from the organization. The service accounts each project's runbook lists (for example [`cloud-run.md` § Identities](cloud-run.md#identities)) hold the rest.
+Project roles are granted per project. `pdcarlson@frapp.live` owns `signet-frapp` and `frapp-67722`, and is the only Owner of each. That account is a single point of failure: every admin group above holds only it, so if it is locked out, the way back is Google Workspace's super admin account recovery, not another member. A second, break-glass admin is planned under #5323. The service accounts each project's runbook lists (for example [`cloud-run.md` § Identities](cloud-run.md#identities)) hold the rest.
 
 ## Organization policies that bite
 
@@ -61,6 +61,6 @@ Its consent screen was **External** before the move, and Google's documentation 
 
 Nothing in this project depends on the owner's personal account since 2026-11-17 (#5323):
 
-- **User support email** on the consent screen is the Google Group `support@frapp.live` ("Frapp support", owner `pdcarlson@frapp.live`), which accepts mail from outside the organization. The dropdown offers only the signed-in account and groups it manages, which is why it's a group. Allowing outside mail first needed the Workspace setting "Group owners can allow incoming email from outside the organization" (Admin console → Apps → Google Workspace → Groups for Business → Sharing settings). The developer contact is `team@frapp.live`. The brand stayed verified after the save (screenshot, 17:22Z).
+- **User support email** on the consent screen is the Google Group `support@frapp.live` ("Frapp support", owner `pdcarlson@frapp.live`), which accepts mail from outside the organization. The dropdown offers only the signed-in account and groups it manages, which is why it's a group. Allowing outside mail first needed the Workspace setting "Group owners can allow incoming email from outside the organization" (Admin console → Apps → Google Workspace → Groups for Business → Sharing settings). The developer contact is `team@frapp.live`. The brand stayed verified after the save (screenshot, 17:22Z). Nobody has re-read Branding or Audience since the two changes below.
 - **IAM:** the personal account's Owner role was removed (17:24Z). The organization only admits frapp.live accounts, so it can't be granted back without a policy exception.
-- **Search Console:** `pdcarlson@frapp.live` verified the Domain property `frapp.live` with its own TXT record, and the personal account was unverified ([`vercel.md` § 4.4](vercel.md#44-dns-records-squarespace-domains)). Brand verification needs a project Owner to be a verified owner of the domain, which `pdcarlson@frapp.live` now is on both sides.
+- **Search Console:** `pdcarlson@frapp.live` is a verified owner of the Domain property `frapp.live`, and the owner reported unverifying the personal account ([`vercel.md` § 4.4](vercel.md#44-dns-records-squarespace-domains)). Brand verification needs a project Owner to be a verified owner of the domain, which `pdcarlson@frapp.live` now is on both sides.
