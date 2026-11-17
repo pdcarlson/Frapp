@@ -52,17 +52,11 @@ Cloud Run sets `PORT` itself and rejects it as a variable, so the deploy skips t
 
 The API reads every value from its environment, as on Render. The read-at-boot path from #2506 is gone: Paul dropped it on 2026-11-16 for a sync, because Infisical's free plan can't stop a boot-time identity from reading every environment ([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)).
 
-**Vertex AI signs in without a key file.** On Cloud Run, `GOOGLE_VERTEX_PROJECT` alone is enough: with `GOOGLE_VERTEX_CREDENTIALS_JSON` unset, the API calls Vertex as `frapp-api-runtime`, which the setup script lets call Vertex AI in its own project (`roles/aiplatform.user`). Anywhere else, boot still refuses the project without a key. Staging's `GOOGLE_VERTEX_PROJECT` is already the nonprod project (checked in Infisical on 2026-11-16), and production's should be the prod project. Keep staging's key file in Infisical until Render stops serving staging, because Render still needs it. Then delete it from Infisical, and delete the key in the nonprod project (**IAM → Service accounts → Keys**).
+**Vertex AI signs in without a key file.** On Cloud Run, `GOOGLE_VERTEX_PROJECT` alone is enough: with `GOOGLE_VERTEX_CREDENTIALS_JSON` unset, the API calls Vertex as `frapp-api-runtime`, which the setup script lets call Vertex AI in its own project (`roles/aiplatform.user`). Anywhere else, boot still refuses the project without a key. Staging's `GOOGLE_VERTEX_PROJECT` is already the nonprod project (checked in Infisical on 2026-11-16), and production's should be the prod project. Keep staging's key file in Infisical until Render stops serving staging, because Render still needs it. Then delete it from Infisical, and delete the key in the nonprod project (**IAM → Service accounts → Keys**). Then remove `nonprod`'s exception to the key-file policy ([`google-cloud.md` § Organization policies that bite](google-cloud.md#organization-policies-that-bite)).
 
 ## Projects
 
-The frapp.live organization (`1033325313086`) holds these, read from the console on 2026-11-16. Billing is upgraded from the free trial, with a $100 monthly budget alert.
-
-| Project | Id | Used for |
-| --- | --- | --- |
-| nonprod | `cs-project-6vw9f5xp` | Staging API. Also holds staging's Vertex AI. |
-| prod | `cs-project-nyit2x59` | Production API. |
-| development, central-logging-monitoring | `cs-project-un3otdnn`, `cs-project-cob1stf1` | Created with the organization. Not used by the API. |
+Staging runs in `nonprod` (`cs-project-6vw9f5xp`) and production in `prod` (`cs-project-nyit2x59`), both in the frapp.live organization. The organization's folders, the other projects, billing and who holds which role are in [`google-cloud.md`](google-cloud.md).
 
 ## Setup, once per project
 

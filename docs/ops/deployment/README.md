@@ -89,6 +89,7 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
 | [Vercel](vercel.md) | Web and landing: CI-driven deploys, env scopes, DNS, `vercel.json` pins. |
 | [Render (API)](render.md) | API services, health check, in-process workers and scheduled jobs. |
 | [Cloud Run (API)](cloud-run.md) | The API's move to Google Cloud Run (#5228): projects, identities, secrets, one-time setup. |
+| [Google Cloud organization](google-cloud.md) | The frapp.live organization: folders, every project, admin groups, organization policies, audit logs, and the sign-in project's move (#5323). |
 | [Mobile (EAS)](mobile.md) | EAS profiles, env vars, and store-bound configuration. |
 | [Integrations](integrations.md) | Stripe (test/live, and what customers see) and the Discord archive-importer bot. |
 | [Launch checklist](launch.md) | Staging/production checklist and hobby-tier cost notes. |

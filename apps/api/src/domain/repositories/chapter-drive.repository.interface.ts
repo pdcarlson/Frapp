@@ -28,6 +28,24 @@ export interface IChapterDriveRepository {
     connected_by: string;
     who_can_see: string[] | null;
   }): Promise<ChapterDriveConnection>;
+  /**
+   * Whether any of `folderIds` already feeds another chapter: another
+   * chapter's live connected folder, or a folder a live connection's sync
+   * copied in (#5185).
+   */
+  folderTakenElsewhere(
+    chapterId: string,
+    folderIds: string[],
+  ): Promise<boolean>;
+  /**
+   * The folders other chapters connected before `connectedAt` and still
+   * have live. The first chapter to connect a folder keeps it: a later
+   * connection whose tree holds it skips it (#5185).
+   */
+  folderIdsConnectedEarlierElsewhere(
+    chapterId: string,
+    connectedAt: string,
+  ): Promise<Set<string>>;
   /** Makes the chapter's live connection due now. False when there is none. */
   markDue(chapterId: string, now: Date): Promise<boolean>;
   /** Turns the chapter's live connection `disconnecting`. False when none. */
