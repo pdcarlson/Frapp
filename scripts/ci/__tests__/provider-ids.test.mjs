@@ -169,17 +169,6 @@ describe("Cloud Run (#5228)", () => {
         "staging",
       ],
       ["no image to build", onCloudRun((c) => (delete c.apiImage, c)), "staging"],
-      [
-        "production on Cloud Run",
-        onCloudRun(
-          (c) => (
-            (c.environments.production.apiHost = "cloud-run"),
-            (c.environments.production.cloudRun = cloudRun({ projectId: "prod-456" })),
-            c
-          ),
-        ),
-        "production",
-      ],
     ];
     for (const [label, text, name] of refusals) {
       assert.throws(() => parseProviderIds(text, name), Error, label);
@@ -192,7 +181,7 @@ describe("Cloud Run (#5228)", () => {
     assert.equal(staging.gcpProjectId, "cs-project-6vw9f5xp");
     assert.equal(staging.gcpRegion, "us-east4");
     const production = providerIdsFor("production");
-    assert.equal(production.apiHost, "render");
+    assert.equal(production.apiHost, "cloud-run");
     assert.equal(production.gcpProjectId, "cs-project-nyit2x59");
     assert.equal(production.gcpRegion, "us-east5");
   });
