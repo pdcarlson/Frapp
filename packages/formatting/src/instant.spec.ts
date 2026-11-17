@@ -18,7 +18,7 @@
  * because member-level coverage is redundant.
  */
 import { describe, expect, it } from "vitest";
-import { parseInstant } from "./instant";
+import { parseInstant, readInstant } from "./instant";
 import {
   parseBareDateLocalNoon,
   parseInstantOrBareLocalNoon,
@@ -78,5 +78,22 @@ describe("parseInstant", () => {
     expect(parseBareDateLocalNoon("2026-13-45")).toBeNull();
     expect(parseInstant("2026-13-45")).toBeNull();
     expect(parseInstantOrBareLocalNoon("2026-13-45")).toBeNull();
+  });
+});
+
+describe("readInstant (#4976)", () => {
+  it("passes a valid Date through and refuses an Invalid Date", () => {
+    const at = new Date("2026-08-12T18:30:00Z");
+    expect(readInstant(at)).toBe(at);
+    expect(readInstant(new Date(Number.NaN))).toBeNull();
+  });
+
+  it("reads a string as parseInstant does, which still refuses a Date", () => {
+    expect(readInstant("2026-08-12T18:30:00Z")?.toISOString()).toBe(
+      "2026-08-12T18:30:00.000Z",
+    );
+    expect(readInstant("not a date")).toBeNull();
+    expect(readInstant(null)).toBeNull();
+    expect(parseInstant(new Date("2026-08-12T18:30:00Z"))).toBeNull();
   });
 });
