@@ -1,1 +1,1 @@
-On iPhone, a message sent while autocorrect was about to fix a word no longer comes back into the box with the fix applied.
+On iPhone, a message sent just as autocorrect was fixing a word no longer comes back into the box with the fix applied.

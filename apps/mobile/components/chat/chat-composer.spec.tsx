@@ -20,7 +20,11 @@ vi.mock("@/lib/chapter-branding", async () => {
 });
 import { FrappThemeProvider } from "@/lib/theme";
 import { FrappCrest } from "@/components/frapp-crest";
-import { ChatComposer, type ChatComposerProps } from "./chat-composer";
+import {
+  ChatComposer,
+  type ChatComposerProps,
+  type ComposerContext,
+} from "./chat-composer";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 
 /**
@@ -743,9 +747,9 @@ describe("ChatComposer clears the box on send", () => {
       canSend: true,
       placeholder: "Message",
     };
-    const node = (value: string) => (
+    const node = (value: string, context?: ComposerContext) => (
       <FrappThemeProvider>
-        <ChatComposer {...props} value={value} />
+        <ChatComposer {...props} value={value} context={context} />
       </FrappThemeProvider>
     );
     let tree!: ReactTestRenderer;
@@ -758,7 +762,8 @@ describe("ChatComposer clears the box on send", () => {
       });
     });
     const input = () => tree.root.findByType("TextInput" as never);
-    const rerender = (value: string) => act(() => tree.update(node(value)));
+    const rerender = (value: string, context?: ComposerContext) =>
+      act(() => tree.update(node(value, context)));
     // The tap, then the send empties the draft, as the screen's does.
     act(() => byLabel(tree, "Send message")!.props.onPress());
     rerender("");
@@ -906,6 +911,86 @@ describe("ChatComposer clears the box on send", () => {
       const { props, type } = sendFrom("Thanks all");
       type("Thanks ");
       expect(props.onChangeText).toHaveBeenLastCalledWith("Thanks ");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away a one-word copy, corrected or with a trailing space", () => {
+    vi.useFakeTimers();
+    try {
+      const typo = sendFrom("thnaks");
+      act(() => vi.advanceTimersByTime(1500));
+      typo.type("Thanks");
+      expect(typo.props.onChangeText).not.toHaveBeenCalled();
+
+      const spaced = sendFrom("Thanks ");
+      spaced.type("Thanks ");
+      expect(spaced.props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away a copy where autocorrect changed an earlier word", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("There going to be lat");
+      type("Their going to be late");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a short first word or a dictated next message after a short send", () => {
+    vi.useFakeTimers();
+    try {
+      const prediction = sendFrom("Ok thanks");
+      prediction.type("Ok ");
+      expect(prediction.props.onChangeText).toHaveBeenLastCalledWith("Ok ");
+
+      const dictated = sendFrom("Sounds good");
+      dictated.type("Sounds great, see you then");
+      expect(dictated.props.onChangeText).toHaveBeenLastCalledWith(
+        "Sounds great, see you then",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts the clear retries over after turning a copy away", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear, type } = sendFrom("So we wouldn't need to do thsy");
+      act(() => vi.advanceTimersByTime(1600));
+      const before = clear.mock.calls.length;
+      type("So we wouldn't need to do that");
+      // A frame, then 100 and 300ms from the copy, not from the send.
+      act(() => vi.advanceTimersByTime(320));
+      expect(clear.mock.calls.length - before).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes every change to an edit opened just after a send", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type, rerender } = sendFrom(
+        "So we wouldn't need to do thsy ",
+      );
+      rerender("So we wouldn't need to do thsy", {
+        kind: "edit",
+        title: "Editing message",
+        preview: null,
+        onCancel: vi.fn(),
+      });
+      type("So we wouldn't need to do that");
+      expect(props.onChangeText).toHaveBeenLastCalledWith(
+        "So we wouldn't need to do that",
+      );
     } finally {
       vi.useRealTimers();
     }
