@@ -299,6 +299,7 @@ export default function PreferencesScreen() {
     setQuietHoursEnabled,
     categories,
     setCategory,
+    categoriesEditable,
     quietHoursWindow,
     setQuietHoursWindow,
     isHydrated,
@@ -332,7 +333,7 @@ export default function PreferencesScreen() {
       : !isAuthenticated
         ? "Saved on this device only. Sign in to change the settings on your account."
         : !chapterId
-          ? "Category switches sync once you choose a chapter."
+          ? "Category switches turn on once you choose a chapter."
           : categorySync === "retry" || quietHoursSync === "retry"
             ? "Couldn't reach the server. Change a setting again to retry."
             : categorySync === "pending" || quietHoursSync === "pending"
@@ -440,6 +441,7 @@ export default function PreferencesScreen() {
               <Toggle
                 value={categories[category.key]}
                 onValueChange={(value) => setCategory(category.key, value)}
+                disabled={!categoriesEditable}
                 accessibilityLabel={category.label}
               />
             }

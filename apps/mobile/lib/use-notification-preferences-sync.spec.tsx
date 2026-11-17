@@ -462,6 +462,7 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.isAuthenticated).toBe(true);
       expect(result.current.categorySync).toBe("synced");
     });
+    expect(result.current.categoriesEditable).toBe(true);
 
     act(() => {
       result.current.setCategory("points", false);
@@ -1004,6 +1005,37 @@ describe("useNotificationPreferencesSync", () => {
     });
   });
 
+  it("holds the category switches while signed in with no chapter (#5104)", async () => {
+    mockState.secureStoreToken = "test-token";
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { ok: true }, error: null });
+    const client = createMockClient({ PATCH: patch });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, null, makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    // Preferences are chapter-scoped and the chapter's first read replaces the
+    // mirror wholesale, so a flip here could only be dropped. The screen
+    // disables the switches, and the setter writes nothing if called anyway.
+    expect(result.current.categoriesEditable).toBe(false);
+    const before = result.current.categories.points;
+
+    act(() => {
+      result.current.setCategory("points", !before);
+    });
+
+    expect(result.current.categories.points).toBe(before);
+    expect(patch).not.toHaveBeenCalled();
+    expect(persistedPreferences()?.categories?.points).not.toBe(!before);
+  });
+
   it("does not call the server when toggling without auth", async () => {
     const patch = vi
       .fn()
@@ -1022,6 +1054,9 @@ describe("useNotificationPreferencesSync", () => {
       result.current.setCategory("points", false);
     });
 
+    // Signed out the switches stay live: the screen says they are saved on
+    // this device only, which is what happens.
+    expect(result.current.categoriesEditable).toBe(true);
     expect(result.current.categories.points).toBe(false);
     expect(patch).not.toHaveBeenCalled();
 
