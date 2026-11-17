@@ -13,6 +13,7 @@ import {
   type AskStep,
   type AskStreamEvent,
   type AskUnavailableReason,
+  askStepKind,
 } from '@repo/validation';
 import {
   LanguageModelError,
@@ -56,6 +57,7 @@ import {
   type AgentLoopEvent,
   type AgentLoopOutcome,
 } from './agent/agent-loop.service';
+import { askStepEnded } from './agent/agent-step';
 import { agentTurnTrace, type AgentTurnEnd } from './agent/agent-turn-trace';
 import {
   AGENT_PROPOSE_TOOLS,
@@ -863,7 +865,11 @@ export class AskService {
             reads: [...reads],
             tool: part.name,
             label: part.reading,
+            call: part.call,
+            kind: askStepKind(part.name),
           });
+        } else if (part.type === 'read') {
+          yield event(askStepEnded(part));
         } else outcome = part.outcome;
       }
     } finally {

@@ -16,7 +16,9 @@ import {
   ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
   askLeftOutLine,
-  askReadLine,
+  askStepsOn,
+  type AskStreamEvent,
+  type AskWorkStep,
   askSourceMetaLine,
   askUnavailableLine,
   type AskAnswer,
@@ -156,6 +158,39 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
       typeof node.type === "string" && node.props.accessibilityLabel === label,
   );
 
+const READS: AskStreamEvent[] = [
+  { v: 1, type: "status", step: "searching" },
+  {
+    v: 1,
+    type: "status",
+    step: "reading",
+    tool: "search_messages",
+    label: "Searching messages",
+    call: 1,
+    kind: "chat",
+  },
+  {
+    v: 1,
+    type: "step",
+    call: 1,
+    tool: "search_messages",
+    outcome: "found",
+    found: 3,
+    names: ["#exec-board"],
+  },
+  {
+    v: 1,
+    type: "status",
+    step: "reading",
+    tool: "events",
+    label: "Reading the events calendar",
+    call: 2,
+    kind: "events",
+  },
+];
+const stepsAfter = (events: AskStreamEvent[]): AskWorkStep[] =>
+  events.reduce<AskWorkStep[]>(askStepsOn, []);
+
 describe("AskTurn", () => {
   it("shows what the member typed above what came back", () => {
     const text = screenText(render(exchange({ answer: answer() })));
@@ -181,39 +216,40 @@ describe("AskTurn", () => {
     ).not.toContain("the card");
   });
 
-  it("names the step under the streamed words while it works", () => {
+  it("lists each step while it works: what it did, its state and what it found (#5427)", () => {
     const tree = render(
-      exchange({ phase: "working", step: "reading", preview: "Dues are" }),
+      exchange({ phase: "working", step: "reading", steps: stepsAfter(READS) }),
     );
-    const text = screenText(tree);
-    expect(text).toContain("Dues are");
-    expect(text).toContain(ASK_COPY.steps.reading);
+    expect(
+      byLabel(tree, "Searched messages, done, 3 messages in #exec-board"),
+    ).toHaveLength(1);
+    expect(
+      byLabel(tree, "Reading the events calendar, in progress"),
+    ).toHaveLength(1);
+    expect(screenText(tree)).toContain("3 messages in #exec-board");
   });
 
-  it("says what is being read, and that a card is being worked out", () => {
-    const reading = render(
+  it("folds the steps at the answer's first word, and opens them on a press", () => {
+    const tree = render(
       exchange({
         phase: "working",
-        step: "reading",
-        stepDetail: { reads: ["events", "my_tasks"], found: 3 },
+        step: "writing",
+        preview: "Dues are",
+        steps: stepsAfter([...READS, { v: 1, type: "status", step: "writing" }]),
       }),
     );
-    expect(screenText(reading)).toContain(
-      "Reading the events calendar, your tasks and 3 sources",
-    );
-    const proposing = render(exchange({ phase: "working", step: "proposing" }));
-    expect(screenText(proposing)).toContain(ASK_COPY.steps.proposing);
+    expect(screenText(tree)).toContain("Dues are");
+    expect(screenText(tree)).not.toContain("3 messages in #exec-board");
+    const [row] = byLabel(tree, "Worked through 2 steps");
+    expect(row!.props.accessibilityState).toEqual({ expanded: false });
+    act(() => row!.props.onPress());
+    expect(screenText(tree)).toContain("3 messages in #exec-board");
   });
 
-  it("says nothing under a turn that has not been sent yet", () => {
+  it("draws no steps for a turn that has not been sent yet", () => {
     // The AI question is still open: no search has started.
-    const tree = render(exchange({ phase: "working", step: null }));
+    const tree = render(exchange({ phase: "working", step: null, steps: [] }));
     expect(screenText(tree)).not.toContain(ASK_COPY.steps.searching);
-  });
-
-  it("falls back to the searching line for a step this build doesn't know", () => {
-    const tree = render(exchange({ phase: "working", step: "pondering" }));
-    expect(screenText(tree)).toContain(ASK_COPY.steps.searching);
   });
 
   it("offers Try again only for a failure that may not repeat", () => {
@@ -579,23 +615,19 @@ describe("under an answer", () => {
     expect(byLabel(miss, ASK_COPY.copy_answer)).toHaveLength(0);
   });
 
-  it("says what Frapp read, after the answer and before its sources", () => {
+  it("keeps the folded steps above a finished answer, and no read line", () => {
     const tree = render(
       exchange({
         answer: answer(),
         askId: "ask-1",
-        read: { reads: ["events"], found: 2 },
+        steps: stepsAfter([...READS, { v: 1, type: "status", step: "writing" }]),
       }),
     );
     const text = screenText(tree);
-    const line = askReadLine({ reads: ["events"], found: 2 })!;
-    expect(text).toContain(line);
-    expect(text.indexOf("Ana is treasurer")).toBeLessThan(text.indexOf(line));
-    expect(text.indexOf(line)).toBeLessThan(text.lastIndexOf("Bylaws"));
-    // And no line when the server named nothing it read.
-    expect(screenText(render(exchange({ answer: answer() })))).not.toMatch(
-      /Read the /,
+    expect(text.indexOf("Worked through 2 steps")).toBeLessThan(
+      text.indexOf("Ana is treasurer"),
     );
+    expect(text).not.toMatch(/Read the /);
   });
 });
 

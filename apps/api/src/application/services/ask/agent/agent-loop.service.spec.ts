@@ -149,6 +149,62 @@ async function run(loop: AgentLoopService, given: AgentLoopInput) {
 }
 
 describe('AgentLoopService', () => {
+  it('says each read ended as it settles, so a quick read is not held behind a slow one (#5427)', async () => {
+    let finishSlow: (result: AgentToolResult) => void = () => undefined;
+    const slow = tool(
+      'read_channel',
+      () => new Promise<AgentToolResult>((resolve) => (finishSlow = resolve)),
+    );
+    const quick = tool('events', () =>
+      Promise.resolve(found({ sources: [], entities: [] })),
+    );
+    const { loop } = build([
+      round({ toolCalls: [call('read_channel'), call('events')] }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const seen: AgentLoopEvent[] = [];
+    const turn = loop.run(input({ tools: [slow, quick] }));
+    for (;;) {
+      const next = await turn.next();
+      if (next.done) break;
+      seen.push(next.value);
+      // The quick read's end arrives while the slow one is still out.
+      if (next.value.type === 'read' && next.value.name === 'events') {
+        finishSlow(found());
+      }
+    }
+
+    const order = seen
+      .filter((event) => event.type === 'tool' || event.type === 'read')
+      .map((event) =>
+        event.type === 'read'
+          ? `read ${event.call} ${event.outcome} ${event.sources.length}`
+          : `tool ${event.call}`,
+      );
+    expect(order).toEqual(['tool 1', 'tool 2', 'read 2 ok 0', 'read 1 ok 1']);
+  });
+
+  it('says a read failed, with nothing it found (#5427)', async () => {
+    const broken = tool('search_messages', () =>
+      Promise.reject(new Error('down')),
+    );
+    const { loop } = build([
+      round({ toolCalls: [call('search_messages')] }),
+      round({ text: 'Done.' }),
+    ]);
+
+    const { events } = await run(loop, input({ tools: [broken] }));
+
+    expect(events.find((event) => event.type === 'read')).toEqual({
+      type: 'read',
+      call: 1,
+      name: 'search_messages',
+      outcome: 'failed',
+      sources: [],
+    });
+  });
+
   it('runs what the model asks for, hands the result back as sources, and ends on the answer', async () => {
     const search = tool('search_messages');
     const answer = round({
@@ -196,12 +252,21 @@ describe('AgentLoopService', () => {
         ],
       },
     ]);
-    expect(events.map((event) => event.type)).toEqual(['tool', 'end']);
+    expect(events.map((event) => event.type)).toEqual(['tool', 'read', 'end']);
     expect(events[0]).toEqual({
       type: 'tool',
+      call: 1,
       name: 'search_messages',
       reading: 'Reading search_messages',
       effect: 'read',
+    });
+    // How the read ended, with what it returned, before the next round (#5427).
+    expect(events[1]).toMatchObject({
+      type: 'read',
+      call: 1,
+      name: 'search_messages',
+      outcome: 'ok',
+      sources: [{ id: 'message:m1' }],
     });
     expect(outcome).toMatchObject({
       stop: 'answered',
@@ -231,6 +296,7 @@ describe('AgentLoopService', () => {
       'text',
       'discard',
       'tool',
+      'read',
       'text',
       'text',
       'end',
@@ -627,10 +693,18 @@ describe('AgentLoopService', () => {
       round({ text: 'never' }),
     ]);
 
-    const { outcome } = await run(loop, input({ tools: [search] }));
+    const { events, outcome } = await run(loop, input({ tools: [search] }));
 
     expect(outcome?.stop).toBe('unavailable');
     expect(outcome?.result).toEqual(unavailable);
+    // The read still says it ended, as one that failed (#5427).
+    expect(events.find((event) => event.type === 'read')).toEqual({
+      type: 'read',
+      call: 1,
+      name: 'search_messages',
+      outcome: 'failed',
+      sources: [],
+    });
     expect(gateway.streamAgentRound).toHaveBeenCalledTimes(1);
   });
 
@@ -751,10 +825,13 @@ describe('AgentLoopService: cards', () => {
     );
     expect(events[0]).toEqual({
       type: 'tool',
+      call: 1,
       name: 'create_task',
       reading: 'Working out the task',
       effect: 'propose',
     });
+    // A card is the turn's, not a read: nothing says it ended.
+    expect(events.some((event) => event.type === 'read')).toBe(false);
     // The model reads the tool's line and no source: a card is not a fact.
     expect(prompts[1].rounds[0].results).toEqual([
       { callId: 'call-create_task', sources: [], note: 'A card is ready.' },

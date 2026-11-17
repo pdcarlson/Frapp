@@ -20,9 +20,7 @@ import {
   askLeftOutLine,
   askOffersThinkHarder,
   askPostedSourceTitle,
-  askReadLine,
   askSourceChip,
-  askStepLine,
   askUnavailableLine,
   askUnavailableOffersRetry,
   type AskAnswer,
@@ -40,6 +38,7 @@ import {
   onPlainClick,
 } from "@/components/ask/ask-entity-text";
 import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
+import { AskSteps } from "@/components/ask/ask-steps";
 import {
   askSourceBackworkId,
   askSourceHref,
@@ -85,22 +84,21 @@ export function AskQuestionBubble({ children }: { children: string }) {
  * answer. Each opens its source: the document in the viewer, the minutes,
  * the message in its channel, or the page live data came from.
  *
- * **Nothing above the fold moves while it works.** The step line ("Searching
- * your chapter's sources") sits under the text, so text streams in above it
- * and the question never shifts. The streamed text is a preview: the server
- * decides what stands after the model stops, and `done` replaces it
- * (`ask.ts`).
+ * **Nothing above the fold moves while it works.** What Frapp is doing is a
+ * list of steps (`ask-steps.tsx`, #5427) that only grows at the end of the
+ * thread and folds into one row at the answer's first word, before any of
+ * the answer is under it. The streamed text is a preview: the server decides
+ * what stands after the model stops, and `done` replaces it (`ask.ts`).
  *
  * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
  * just needs to be better hierarchy", "report shouldn't be so obvious", and
- * the conversation "should feel more agentic"). Under the words, in the step
- * line's place and in its quiet tone, a line says what Frapp read to write
- * them ("Read the events calendar and 3 sources"), the way ChatGPT keeps
- * "Thought for 12s" and Perplexity its count of sources. Then the source
- * chips. Last, two small muted icons, Copy and Report, as ChatGPT, Claude and
- * Gemini end an answer with a row of quiet icons. "Report this" was a
- * labelled button there, the only control under every answer, and read as
- * the thing to do next.
+ * the conversation "should feel more agentic"). Above the words, the folded
+ * steps say what Frapp did, as Perplexity's "Completed 2 steps" and Claude's
+ * tool rows do (until #5427 one line under the words said what it read).
+ * Then the source chips. Last, small muted icons, Copy and Report, as
+ * ChatGPT, Claude and Gemini end an answer with a row of quiet icons.
+ * "Report this" was a labelled button there, the only control under every
+ * answer, and read as the thing to do next.
  */
 export function AskTurn({
   exchange,
@@ -194,19 +192,20 @@ export function AskReply({
 }) {
   return (
     <div aria-live="polite" className="space-y-3">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <p className="whitespace-pre-wrap text-sm text-foreground">
-              {exchange.preview}
-            </p>
-          ) : null}
-          {exchange.step ? (
-            <p className="text-caption text-muted-foreground">
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </p>
-          ) : null}
-        </>
+      {/* What Frapp did, as steps: live while it reads, folded into one
+          row from the answer's first word (#5427). */}
+      <AskSteps
+        steps={exchange.steps}
+        folded={
+          exchange.phase !== "working" ||
+          exchange.step === "writing" ||
+          exchange.preview !== ""
+        }
+      />
+      {exchange.phase === "working" && exchange.preview ? (
+        <p className="whitespace-pre-wrap text-sm text-foreground">
+          {exchange.preview}
+        </p>
       ) : null}
       {exchange.phase === "failed" && exchange.failure ? (
         <div className="space-y-2">
@@ -236,7 +235,6 @@ export function AskReply({
         <>
           <AskAnswerBody
             answer={exchange.answer}
-            readLine={askReadLine(exchange.read)}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
             onRetry={onRetry}
@@ -402,15 +400,12 @@ function CopyAnswer({ text }: { text: string }) {
 
 function AskAnswerBody({
   answer,
-  readLine,
   busy,
   onAnswerConsent,
   onRetry,
   onFollowMessage,
 }: {
   answer: AskAnswer;
-  /** What Frapp read to write it (`askReadLine`), or null. */
-  readLine: string | null;
   busy: boolean;
   onAnswerConsent: () => void;
   /** Asks the same question again in this turn's place. */
@@ -476,10 +471,6 @@ function AskAnswerBody({
         <p className="text-caption text-muted-foreground">
           {ASK_COPY.own_words}
         </p>
-      ) : null}
-      {/* Where the step line was while it worked, in the same tone. */}
-      {readLine ? (
-        <p className="text-caption text-muted-foreground">{readLine}</p>
       ) : null}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
