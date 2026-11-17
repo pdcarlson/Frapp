@@ -127,6 +127,8 @@ export const MEETING_LIST_COPY = {
 
 /** Reading and posting minutes. */
 export const MEETING_COPY = {
+  /** The row that opens posted minutes' transcript (#5410). */
+  transcript: "Transcript",
   missingTitle: "These minutes aren't here",
   missingBody: "They were deleted, or they aren't shared with you.",
   loadFailedTitle: "Couldn't load the minutes",

@@ -390,6 +390,22 @@ function LoadedMinutes({
           </View>
         ) : null}
 
+        {/* Posted minutes keep their recording's transcript (#5410). */}
+        {!transcript && meeting.transcript ? (
+          <View style={styles.transcript}>
+            <ListSection>
+              <ListRow
+                label={MEETING_COPY.transcript}
+                value={transcriptOpen ? "Hide" : "Show"}
+                onPress={() => setTranscriptOpen((open) => !open)}
+              />
+            </ListSection>
+            {transcriptOpen ? (
+              <TranscriptLines transcript={meeting.transcript} />
+            ) : null}
+          </View>
+        ) : null}
+
         {/* Under the minutes, so its arrival after the read moves nothing
             the member is reading. */}
         {suggested > 0 ? (

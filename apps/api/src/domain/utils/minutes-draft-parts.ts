@@ -156,7 +156,11 @@ export function mergeParts(
     officer_reports: lines(parts.map((part) => part.officer_reports)),
     old_business: lines(parts.map((part) => part.old_business)),
     new_business: lines(parts.map((part) => part.new_business)),
-    discussion_log: lines(parts.map((part) => part.discussion_log)),
+    // Topic blocks keep their blank line between parts.
+    discussion_log: parts
+      .map((part) => part.discussion_log.trim())
+      .filter((text) => text.length > 0)
+      .join('\n\n'),
     open_questions: [...questions],
     conflicts: parts.flatMap((part) => part.conflicts ?? []),
   };

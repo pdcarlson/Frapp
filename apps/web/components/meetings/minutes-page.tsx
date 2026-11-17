@@ -57,6 +57,7 @@ import {
   type MeetingSectionKey,
   type MeetingTextSection,
   type MeetingType,
+  parseMinutesNotes,
 } from "@repo/validation";
 import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -783,6 +784,19 @@ function Minutes({
           </section>
         ))}
 
+        {!editing && meeting.transcript?.trim() ? (
+          // The whole recording, kept with posted minutes (#5410): the
+          // record of what was said, for reading through or asking Frapp AI.
+          <details className="group space-y-2 border-t border-border pt-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Transcript
+            </summary>
+            <p className="mt-2 max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
+              {meeting.transcript}
+            </p>
+          </details>
+        ) : null}
+
         {editing ? (
           <section aria-labelledby={`${ids}-type`} className="space-y-2">
             <h3 id={`${ids}-type`} className="text-sm font-semibold">
@@ -982,30 +996,50 @@ function ActionItemsView({
 }
 
 /**
- * A section written one item per line (the discussion log, reports,
- * announcements, business), as rows. A line that opens with its topic
- * ("Rusty Pipes afterparty: ...", "Treasurer: ...") shows the topic in bold,
- * so the body of the meeting can be skimmed.
+ * A section written one item per line (the notes, reports, announcements,
+ * business). The notes come as an outline, a topic over its "- " points,
+ * and draw as one: the topic in bold, its points as a list under it, the
+ * way Granola lays out meeting notes. A plain line that opens with its
+ * topic ("Treasurer: ...") shows the topic in bold, so it can be skimmed.
  */
 function LinesView({ text }: { text: string }) {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const lines = parseMinutesNotes(text);
   return (
-    <ul role="list" className="space-y-2 text-sm leading-relaxed">
+    <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
       {lines.map((line, index) => {
-        const head = /^([^:.]{2,60}):\s+(.+)$/.exec(line);
+        if (line.kind === "topic") {
+          return (
+            <li
+              key={index}
+              className="break-words pt-3 font-semibold first:pt-0"
+            >
+              {line.text}
+            </li>
+          );
+        }
+        if (line.kind === "point") {
+          return (
+            <li
+              key={index}
+              className={`flex gap-2 break-words ${line.depth ? "pl-5" : ""}`}
+            >
+              <span aria-hidden className="select-none text-muted-foreground">
+                {line.depth ? "◦" : "•"}
+              </span>
+              <span className="min-w-0">{line.text}</span>
+            </li>
+          );
+        }
         return (
           <li key={index} className="break-words">
-            {head ? (
+            {line.head ? (
               <>
-                <span className="font-semibold">{head[1]}</span>
+                <span className="font-semibold">{line.head}</span>
                 {": "}
-                {head[2]}
+                {line.text}
               </>
             ) : (
-              line
+              line.text
             )}
           </li>
         );

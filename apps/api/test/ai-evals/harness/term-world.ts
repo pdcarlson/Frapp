@@ -1181,6 +1181,7 @@ export function createTermWorld(
         posted_at: held,
         created_at: held,
         updated_at: held,
+        transcript: null,
       };
       return { meeting, content };
     });

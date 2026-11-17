@@ -66,6 +66,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: null,
   created_at: V1,
   updated_at: V1,
+  transcript: null,
   ...overrides,
 });
 
@@ -520,6 +521,7 @@ describe('MeetingDraftService', () => {
             due_date: null,
           },
         ],
+        discussion_log: '',
       });
       expect(drafts.row?.status).toBe('applied');
       expect(result).toEqual({
@@ -695,7 +697,7 @@ describe('MeetingDraftService', () => {
       const state = await service.state(CHAPTER, MEETING, SECRETARY);
       expect(state.status).toBe('ready');
       expect(state.content?.decisions).toHaveLength(1);
-      expect(state.content).not.toHaveProperty('discussion_log');
+      expect(state.content).not.toHaveProperty('officer_reports');
     });
 
     it('writes nothing for a request the officer replaced or cleared', async () => {

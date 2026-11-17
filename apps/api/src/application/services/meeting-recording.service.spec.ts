@@ -45,6 +45,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: null,
   created_at: AT,
   updated_at: AT,
+  transcript: null,
   ...overrides,
 });
 

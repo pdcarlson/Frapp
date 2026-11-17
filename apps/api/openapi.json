@@ -26822,6 +26822,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "transcript": {
+            "type": "string",
+            "nullable": true,
+            "description": "The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording."
+          },
           "can_edit": {
             "type": "boolean"
           },
@@ -26847,6 +26852,7 @@
           "updated_by",
           "posted_by",
           "created_at",
+          "transcript",
           "can_edit",
           "can_delete"
         ]

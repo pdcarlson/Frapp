@@ -125,7 +125,7 @@ describe('drafting a long meeting in parts', () => {
       },
     ]);
     expect(merged.summary).toBe('First hour. Second hour.');
-    expect(merged.discussion_log).toBe('Rush.\nFormal.');
+    expect(merged.discussion_log).toBe('Rush.\n\nFormal.');
     expect(merged.decisions.map((d) => d.text)).toEqual([
       'Approved the DJ.',
       'Raised dues.',

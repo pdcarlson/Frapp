@@ -71,7 +71,7 @@ const NOT_READABLE_NOTE =
 export class ReadMinutesTool implements AgentReadTool<Args> {
   readonly name = 'read_minutes';
   readonly description =
-    "Reads one meeting's posted minutes in full: the summary, announcements, decisions with their votes, and action items with who owns each and when it is due. Takes the id of a minutes source from list_meetings or search_records.";
+    "Reads one meeting's posted minutes in full: the summary, decisions with their votes, action items with who owns each and when it is due, the notes topic by topic, and the transcript of its recording when it has one. Takes the id of a minutes source from list_meetings or search_records.";
   readonly reading = 'Reading the minutes';
   readonly permission = SystemPermissions.MEMBERS_VIEW;
   readonly module = 'meetings';
@@ -139,6 +139,22 @@ export class ReadMinutesTool implements AgentReadTool<Args> {
         date: meeting.event_start_time,
         target: { type: 'meeting', meeting_id: meeting.id },
         text,
+        chat: false,
+        authorIds: [],
+        audience: { type: 'meeting', id: meeting.id },
+      });
+    }
+    // The transcript goes last: it is the longest, so a cut takes it first,
+    // and search_records still finds passages from it (#5410).
+    if (meeting.transcript?.trim()) {
+      sources.push({
+        id: `meeting:${meeting.id}:transcript`,
+        kind: 'minutes',
+        title,
+        detail: 'Transcript',
+        date: meeting.event_start_time,
+        target: { type: 'meeting', meeting_id: meeting.id },
+        text: meeting.transcript,
         chat: false,
         authorIds: [],
         audience: { type: 'meeting', id: meeting.id },

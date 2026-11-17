@@ -188,13 +188,17 @@ describe("the phone's recorder", () => {
   });
 
   it("says each state in whole words: no emoji, no abbreviations, no internals", () => {
-    const lines = Object.values(MEETING_RECORDER_COPY).map((value) =>
+    const lines = Object.values(MEETING_RECORDER_COPY).flatMap((value) =>
       typeof value === "function"
-        ? (value as (a: never, b: never) => string)(
-            1_048_576 as never,
-            (28 * 1_048_576) as never,
-          )
-        : value,
+        ? [
+            (value as (a: never, b: never) => string)(
+              1_048_576 as never,
+              (28 * 1_048_576) as never,
+            ),
+          ]
+        : typeof value === "object"
+          ? Object.values(value as Record<string, string>)
+          : [value],
     );
     for (const line of lines) {
       expect(line).not.toMatch(/\p{Extended_Pictographic}/u);

@@ -8,6 +8,7 @@ import {
   meetingDueLabel,
   meetingSectionLabel,
   meetingVoteLine,
+  parseMinutesNotes,
   shownMeetingSections,
   type MeetingContent,
   type MeetingSectionKey,
@@ -167,7 +168,46 @@ function Section({
       </>
     );
   }
-  return <Text style={styles.text}>{content[sectionKey]}</Text>;
+  // The notes come as an outline: a topic over its "- " points, drawn the
+  // way web draws them (`minutes-page.tsx` LinesView).
+  return (
+    <View style={styles.lines}>
+      {parseMinutesNotes(content[sectionKey]).map((line, index) => {
+        if (line.kind === "topic") {
+          return (
+            <Text
+              key={index}
+              accessibilityRole="header"
+              style={[styles.topic, index > 0 && styles.topicGap]}
+            >
+              {line.text}
+            </Text>
+          );
+        }
+        if (line.kind === "point") {
+          return (
+            <View
+              key={index}
+              style={[styles.item, line.depth ? styles.subItem : null]}
+            >
+              <Text style={styles.bullet}>{line.depth ? "◦" : "•"}</Text>
+              <View style={styles.itemText}>
+                <Text style={styles.text}>{line.text}</Text>
+              </View>
+            </View>
+          );
+        }
+        return (
+          <Text key={index} style={styles.text}>
+            {line.head ? (
+              <Text style={styles.topic}>{`${line.head}: `}</Text>
+            ) : null}
+            {line.text}
+          </Text>
+        );
+      })}
+    </View>
+  );
 }
 
 function createStyles(tokens: SignetTokens) {
@@ -200,6 +240,20 @@ function createStyles(tokens: SignetTokens) {
     },
     itemText: {
       flex: 1,
+    },
+    lines: {
+      gap: tokens.spacing.xs,
+    },
+    topic: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      fontWeight: "600",
+    },
+    topicGap: {
+      marginTop: tokens.spacing.sm,
+    },
+    subItem: {
+      paddingLeft: tokens.spacing.lg,
     },
   });
 }

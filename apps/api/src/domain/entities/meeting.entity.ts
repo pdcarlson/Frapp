@@ -27,6 +27,12 @@ export interface Meeting {
   posted_at: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * The recording's transcript, copied on when the minutes are posted
+   * (#5410). Null for minutes with no recording, and while a draft (the
+   * transcript is then on its `meeting_recordings` row).
+   */
+  transcript: string | null;
 }
 
 /** A chapter's minutes template (`meeting_templates`). */

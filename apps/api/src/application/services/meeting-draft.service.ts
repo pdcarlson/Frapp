@@ -53,6 +53,11 @@ import {
 } from '#domain/utils/minutes-draft';
 import { mergeParts, partRequests } from '#domain/utils/minutes-draft-parts';
 import {
+  MinutesNotesOutputSchema,
+  buildMinutesNotesPrompt,
+  notesOutline,
+} from '#domain/utils/minutes-notes';
+import {
   ReviewedMinutesSchema,
   applyReview,
   buildReviewPrompt,
@@ -75,6 +80,7 @@ import { aiConsentRefusal } from './ai/ai-consent-refusal';
 
 /** The catalog task, and the AI run kind, for a draft from notes. */
 const MINUTES_DRAFT_TASK = 'minutes.draft';
+const MINUTES_NOTES_TASK = 'minutes.notes';
 const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
 
 /** What the editor reads about a meeting's draft from notes. */
@@ -741,8 +747,23 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         context,
       );
     // Pass 1: every candidate, from the notes or from each part of a long
-    // transcript side by side.
+    // transcript side by side. Beside it, the notes pass writes the meeting
+    // up topic by topic from every source read whole (`minutes-notes.ts`).
     const parts = partRequests(request) ?? [request];
+    const notesRun = this.gateway
+      .generateObject(
+        MINUTES_NOTES_TASK,
+        {
+          ...buildMinutesNotesPrompt(request),
+          schema: MinutesNotesOutputSchema,
+          signal,
+        },
+        context,
+      )
+      .catch((error: unknown) => {
+        if (signal?.aborted) throw error;
+        return null;
+      });
     const results = await Promise.all(parts.map(draftOf));
     const outputs: MeetingDraftOutput[] = [];
     const usages: LanguageModelUsage[] = [];
@@ -751,6 +772,23 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       outputs.push(result.value);
       usages.push(result.usage);
     }
+    const noted = await notesRun;
+    const notes = noted?.status === 'ok' ? noted.value : null;
+    if (noted?.status === 'ok') usages.push(noted.usage);
+    /**
+     * The notes pass's summary and notes over the draft's own, when it
+     * wrote them. Without it (a failure, a refusal, the spend cap) the
+     * draft's own stand, so a draft is never lost to it.
+     */
+    const withNotes = (draft: MeetingDraftOutput): MeetingDraftOutput => {
+      if (!notes) return draft;
+      const outline = notesOutline(notes);
+      return {
+        ...draft,
+        summary: notes.summary.trim() || draft.summary,
+        discussion_log: outline || draft.discussion_log,
+      };
+    };
 
     // Pass 2: the editor's read over the whole meeting
     // (`minutes-draft-review.ts`). Several note-takers' conflicts are settled
@@ -775,7 +813,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       usages.push(reviewed.usage);
       return {
         status: 'ok',
-        value: applyReview(outputs, reviewed.value),
+        value: withNotes(applyReview(outputs, reviewed.value)),
         usage: usageOf(usages),
       };
     }
@@ -786,7 +824,10 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     const merged = mergeParts(outputs);
     return {
       status: 'ok',
-      value: { ...merged, decisions: dropProcedure(merged.decisions) },
+      value: withNotes({
+        ...merged,
+        decisions: dropProcedure(merged.decisions),
+      }),
       usage: usageOf(usages),
     };
   }

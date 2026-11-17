@@ -361,8 +361,8 @@ describe('AiGatewayService', () => {
       expect(h.requests[0]).toMatchObject({
         kind: 'structured',
         system: 'Draft minutes.',
-        maxOutputTokens: 16_000,
-        effort: 'medium',
+        maxOutputTokens: 32_000,
+        effort: 'high',
         schema: {
           type: 'object',
           properties: {
@@ -427,7 +427,7 @@ describe('AiGatewayService', () => {
         outcome: 'invalid_output',
         inputTokens: 900,
         outputTokens: 16_000,
-        costMicroUsd: 161_800,
+        costMicroUsd: 323_600,
       });
     });
 

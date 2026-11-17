@@ -386,6 +386,13 @@ export class MeetingDto extends MeetingSummaryDto {
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   posted_by: string | null;
   @ApiProperty({ format: 'date-time' }) created_at: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording.',
+  })
+  transcript: string | null;
   @ApiProperty() can_edit: boolean;
   @ApiProperty() can_delete: boolean;
 }

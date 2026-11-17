@@ -104,6 +104,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: null,
   created_at: '2026-11-10T02:00:00.000Z',
   updated_at: '2026-11-10T02:00:00.000Z',
+  transcript: null,
   ...overrides,
 });
 
@@ -940,6 +941,7 @@ describe('MeetingService', () => {
         'summary',
         'decisions',
         'action_items',
+        'discussion_log',
         'attendees',
         'announcements',
       ]);
