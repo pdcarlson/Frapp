@@ -8,8 +8,10 @@ import {
   View,
 } from "react-native";
 import Animated, {
+  Easing,
   FadeIn,
   FadeOut,
+  interpolate,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -39,7 +41,10 @@ import {
   floatingTabBarBottom,
   floatingTabBarTop,
   setAskBarShown,
+  setBarFolded,
+  useBarFolded,
 } from "@/lib/floating-chrome";
+import { useScreenReaderOn } from "@/lib/screen-reader";
 import { selectionHaptic } from "@/lib/haptics";
 import { useOverlayPresence } from "@/lib/overlay-presence";
 import type { QuickActionKey } from "@/lib/quick-actions";
@@ -58,6 +63,9 @@ export const TAB_ROUTES = ["index", "activity", "events", "you"] as const;
 const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
 /** The drawn row inside the pill, and the active tab's capsule. */
 const TAB_HEIGHT = FLOATING_TAB_BAR.height - 12;
+/** How long the fold takes; Reduce Motion makes it a quick crossfade. */
+const FOLD_MS = 320;
+const FOLD_MS_REDUCED = 120;
 
 /**
  * The tab bar (owner pick 2026-11-06, after Bevel's): a glass pill holding the
@@ -102,6 +110,8 @@ export function GlassTabBar({
   });
 
   const focusedRoute = state.routes[state.index];
+  const focusedOptions = descriptors[focusedRoute.key]?.options ?? {};
+  const focusedLabel = focusedOptions.title ?? focusedRoute.name;
   useActivityRereadOnTab(focusedRoute.key, focusedRoute.name === "activity");
 
   // Open on the tab it was opened from: moving to another tab closes it. The
@@ -154,6 +164,25 @@ export function GlassTabBar({
     return () => setAskBarShown(false);
   }, [hasAsk]);
 
+  // The fold (#4904, Paul's direction A, 2026-11-17): reading down a tab
+  // screen folds the four tabs to the current one, a round the size of the
+  // +, and brings the Ask Frapp bar down into the row between them, Bevel's
+  // three pieces and iOS 26's own minimised tab bar. Any move back up opens
+  // it (`useBarScroll`). Only with the Ask bar to bring down, never while the
+  // + panel is open, and never under a screen reader, which keeps every tab
+  // a labelled control.
+  const screenReader = useScreenReaderOn();
+  const foldOn = useBarFolded() && hasAsk && !open && !screenReader;
+  const fold = useSharedValue(0);
+  useEffect(() => {
+    fold.set(
+      withTiming(foldOn ? 1 : 0, {
+        duration: reduceMotion ? FOLD_MS_REDUCED : FOLD_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+  }, [foldOn, reduceMotion, fold]);
+
   const runAction = useCallback(
     (key: QuickActionKey) => {
       closePanel();
@@ -177,6 +206,36 @@ export function GlassTabBar({
     ? askBarBottom + FLOATING_ASK_BAR.height + FLOATING_TAB_BAR.actionGap
     : aboveBar;
 
+  // Where each piece sits, open and folded.
+  const row = FLOATING_TAB_BAR.height;
+  const pillOpen = width - FLOATING_TAB_BAR.side - pillRight;
+  const askLeftFolded = FLOATING_TAB_BAR.side + row + FLOATING_TAB_BAR.actionGap;
+  const askOpenWidth = width - FLOATING_TAB_BAR.side * 2;
+  const askFoldedWidth = width - askLeftFolded * 2;
+  const pillStyle = useAnimatedStyle(() => ({
+    width: interpolate(fold.get(), [0, 1], [pillOpen, row]),
+  }));
+  const tabsStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(fold.get(), [0, 0.5], [1, 0], "clamp"),
+  }));
+  const currentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(fold.get(), [0.5, 1], [0, 1], "clamp"),
+  }));
+  const askStyle = useAnimatedStyle(() => ({
+    left: interpolate(
+      fold.get(),
+      [0, 1],
+      [FLOATING_TAB_BAR.side, askLeftFolded],
+    ),
+    width: interpolate(fold.get(), [0, 1], [askOpenWidth, askFoldedWidth]),
+    bottom: interpolate(fold.get(), [0, 1], [askBarBottom, barBottom]),
+    height: interpolate(
+      fold.get(),
+      [0, 1],
+      [FLOATING_ASK_BAR.height, row],
+    ),
+  }));
+
   const plusStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${45 * turn.get()}deg` }],
   }));
@@ -191,16 +250,9 @@ export function GlassTabBar({
         <Animated.View
           entering={FadeIn.duration(150)}
           exiting={FadeOut.duration(120)}
-          style={[
-            styles.askBar,
-            {
-              left: FLOATING_TAB_BAR.side,
-              right: FLOATING_TAB_BAR.side,
-              bottom: askBarBottom,
-            },
-          ]}
+          style={[styles.askBar, askStyle]}
         >
-          <AskBar onPress={ask} />
+          <AskBar onPress={ask} folded={foldOn} />
         </Animated.View>
       ) : null}
       {open ? (
@@ -279,15 +331,12 @@ export function GlassTabBar({
         </Animated.View>
       ) : null}
 
-      <View
+      <Animated.View
         accessibilityRole="tablist"
         style={[
           styles.pillFrame,
-          {
-            left: FLOATING_TAB_BAR.side,
-            right: pillRight,
-            bottom: barBottom,
-          },
+          { left: FLOATING_TAB_BAR.side, bottom: barBottom },
+          pillStyle,
         ]}
       >
         {/* GlassSurface clips to its own radius, so the pill's goes on it
@@ -295,7 +344,12 @@ export function GlassTabBar({
         <GlassSurface
           style={[StyleSheet.absoluteFill, { borderRadius: PILL_RADIUS }]}
         />
-        <View style={styles.tabs}>
+        <Animated.View
+          style={[styles.tabs, tabsStyle]}
+          pointerEvents={foldOn ? "none" : "auto"}
+          accessibilityElementsHidden={foldOn}
+          importantForAccessibility={foldOn ? "no-hide-descendants" : "auto"}
+        >
           {TAB_ROUTES.map((name) => {
             const route = state.routes.find(
               (candidate) => candidate.name === name,
@@ -370,9 +424,36 @@ export function GlassTabBar({
               </Pressable>
             );
           })}
-        </View>
-      </View>
+        </Animated.View>
+        {/* Folded, the pill is the current tab alone; a tap opens the tabs
+            again. */}
+        <Animated.View
+          style={[StyleSheet.absoluteFill, currentStyle]}
+          pointerEvents={foldOn ? "auto" : "none"}
+        >
+          <Pressable
+            testID="tab-folded"
+            accessibilityRole="button"
+            accessibilityLabel={`${focusedLabel}, show all tabs`}
+            accessibilityElementsHidden={!foldOn}
+            importantForAccessibility={foldOn ? "auto" : "no-hide-descendants"}
+            onPress={() => {
+              selectionHaptic();
+              setBarFolded(false);
+            }}
+            style={styles.folded}
+          >
+            {focusedOptions.tabBarIcon?.({
+              focused: true,
+              color: accent,
+              size: 24,
+            })}
+          </Pressable>
+        </Animated.View>
+      </Animated.View>
 
+      {/* The + keeps its place and size in every state, so whatever it
+          opens can change without the bar moving. */}
       <GlassSurface
         style={[
           styles.plus,
@@ -436,6 +517,7 @@ function growFromPlus() {
 const styles = StyleSheet.create({
   scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
   askBar: { position: "absolute" },
+  folded: { flex: 1, alignItems: "center", justifyContent: "center" },
   noticeRow: {
     position: "absolute",
     left: FLOATING_TAB_BAR.side,
