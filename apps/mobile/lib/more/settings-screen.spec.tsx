@@ -44,6 +44,8 @@ const state = vi.hoisted(() => ({
   permissions: [] as string[],
   pushReason: null as string | null,
   quietHoursEnabled: false,
+  // `null` is a signed-in member whose token names no chapter (#5104).
+  chapterId: "chapter-1" as string | null,
   getPushPermission: (() =>
     new Promise(() => undefined)) as () => Promise<PushStatus | null>,
   isPushChannelBlocked: (async () => false) as () => Promise<boolean>,
@@ -154,14 +156,14 @@ vi.mock("@/lib/use-notification-preferences-sync", () => ({
     setQuietHoursEnabled: vi.fn(),
     categories: defaultNotificationCategoryState(),
     setCategory: vi.fn(),
-    categoriesEditable: true,
+    categoriesEditable: state.chapterId !== null,
     quietHoursWindow: { start: "22:00", end: "07:00", tz: "America/New_York" },
     setQuietHoursWindow: vi.fn(),
     isHydrated: true,
     hydrationRecovered: false,
     persistenceFailed: false,
     isAuthenticated: true,
-    chapterId: "chapter-1",
+    chapterId: state.chapterId,
     quietHoursSync: "synced",
     categorySync: "synced",
   }),
@@ -234,6 +236,7 @@ beforeEach(() => {
   state.permissions = [];
   state.pushReason = null;
   state.quietHoursEnabled = false;
+  state.chapterId = "chapter-1";
   state.getPushPermission = () => new Promise(() => undefined);
   state.isPushChannelBlocked = async () => false;
   state.requestPushPermission.mockReset().mockResolvedValue(true);
@@ -362,6 +365,37 @@ describe("Settings copy", () => {
 
     expect(text).not.toContain("Billing");
     expect(text).toContain("Tasks");
+  });
+
+  it("holds the category switches, and says so, until a chapter is confirmed (#5104)", () => {
+    const categorySwitches = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Switch" &&
+          NOTIFICATION_CATEGORIES.some(
+            (category) => category.label === node.props.accessibilityLabel,
+          ),
+      );
+
+    const withChapter = render();
+    expect(categorySwitches(withChapter).length).toBeGreaterThan(0);
+    for (const node of categorySwitches(withChapter)) {
+      expect(node.props.disabled).toBe(false);
+    }
+
+    state.chapterId = null;
+    const noChapter = render();
+    expect(categorySwitches(noChapter).length).toBeGreaterThan(0);
+    for (const node of categorySwitches(noChapter)) {
+      expect(node.props.disabled).toBe(true);
+    }
+    const text = screenText(noChapter);
+    expect(text).toContain(
+      "Category switches turn on once your chapter is confirmed.",
+    );
+    // A flip here was only ever kept on this device and then dropped, so
+    // nothing may promise it syncs later.
+    expect(text).not.toContain("sync");
   });
 
   it("says nothing about sync once the preferences are synced", () => {
