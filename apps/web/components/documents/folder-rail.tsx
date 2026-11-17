@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -25,7 +25,10 @@ import {
   PinGlyph,
   StarGlyph,
 } from "@/components/documents/resources-glyphs";
-import type { FolderManagement } from "@/components/documents/folder-management";
+import {
+  splitPinned,
+  type FolderManagement,
+} from "@/components/documents/folder-management";
 import { useFolderOpen } from "@/components/documents/use-folder-open";
 import type { DocumentMarks } from "@/components/documents/use-document-marks";
 import {
@@ -135,31 +138,17 @@ export function FolderRail({
     the drawing nests (`document-folder-tree.ts` says which folder goes
     where, the phone's chips run the same rule).
   */
-  const tree = useMemo(() => buildFolderTree(railFolders), [railFolders]);
+  /*
+    Built over the chapter's arrangement, pinned first (`splitPinned`), so
+    the folders under one parent draw in the order Move up and Move down
+    save, and a pinned one leads its siblings as pinned folders lead the rail.
+  */
+  const tree = useMemo(() => {
+    const { pinned, rest } = splitPinned(railFolders);
+    return buildFolderTree([...pinned, ...rest]);
+  }, [railFolders]);
   const nested = tree.some((node) => node.children.length > 0);
   const { isOpen, setOpen } = useFolderOpen();
-  /*
-    Opening a folder from anywhere else (a card, a file's folder) opens the
-    folders above it, so the lit row is never hidden in a closed branch.
-    Closing one afterwards is the member's call.
-  */
-  const openedFor = useRef<string | null>(null);
-  useEffect(() => {
-    // Once per choice: a refetch rebuilds the tree, and must not reopen a
-    // folder the member closed since.
-    if (!activeFolder) {
-      openedFor.current = null;
-      return;
-    }
-    if (openedFor.current === activeFolder) return;
-    if (!railFolders.some((entry) => entry.name === activeFolder)) return;
-    openedFor.current = activeFolder;
-    const keys = folderAncestors(tree, activeFolder).flatMap((name) => {
-      const folder = railFolders.find((entry) => entry.name === name);
-      return folder ? [openKey(folder)] : [];
-    });
-    if (keys.length > 0) setOpen(keys, true);
-  }, [activeFolder, tree, railFolders, setOpen]);
 
   /*
     The three tiers (#3934, `chapter-docs.md` § Pinned and starred): pinned
@@ -188,13 +177,39 @@ export function FolderRail({
     ].filter((group) => group.nodes.length > 0);
   })();
 
+  /*
+    The folder on screen is never hidden in a closed branch: the folders
+    drawn above it stay open whatever was picked, however it was chosen (a
+    card, the viewer, a refetch that moved it out of Starred). Nothing is
+    saved for that, so leaving the folder puts the member's own picks back.
+    Closing one of them chooses it instead, as the way out of what is under it.
+  */
+  const revealed = new Set(
+    folderAncestors(
+      groups.flatMap((group) => group.nodes),
+      activeFolder ?? "",
+    ).map(openKey),
+  );
+  /*
+    Before a Star or Pin moves a folder between tiers, the folders above it
+    in the tree open, so it lands somewhere drawn and its button, and focus,
+    are still there (`useKeepFocus`).
+  */
+  const revealInTree = (name: string) => {
+    const keys = folderAncestors(tree, name).map(openKey);
+    if (keys.length > 0) setOpen(keys, true);
+  };
+
   const branch = {
     activeFolder,
     setActiveFolder,
     editing,
     nested,
-    isOpen,
+    isOpen: (key: string, startsOpen: boolean) =>
+      revealed.has(key) || isOpen(key, startsOpen),
     setOpen,
+    revealed,
+    revealInTree,
     gate,
     management,
     marks,
@@ -311,6 +326,10 @@ type BranchProps = {
   nested: boolean;
   isOpen: (key: string, startsOpen: boolean) => boolean;
   setOpen: (keys: readonly string[], open: boolean) => void;
+  /** Folders held open because the folder on screen is under them. */
+  revealed: ReadonlySet<string>;
+  /** Opens the folders above `name` in the tree before it changes tier. */
+  revealInTree: (name: string) => void;
   gate: SubscriptionGate;
   management: FolderManagement;
   marks: DocumentMarks;
@@ -338,8 +357,8 @@ function FolderBranch({
         /*
           Move up and Move down step past the nearest folder beside this one
           at its own level, in its own tier: the tree draws each level in the
-          stored order, and a pinned folder always sorts before the rest, so
-          a step past one in the other tier would change nothing.
+          arrangement's order, pinned first, so a step past one in the other
+          tier would change nothing.
         */
         const pinned = !!folder.pinned_at;
         const sameTier = (other: FolderNode) =>
@@ -353,7 +372,12 @@ function FolderBranch({
               depth={depth}
               hasChildren={hasChildren}
               open={open}
-              onToggle={() => branch.setOpen([key], !open)}
+              onToggle={() => {
+                if (open && branch.revealed.has(key)) {
+                  branch.setActiveFolder(folder.name);
+                }
+                branch.setOpen([key], !open);
+              }}
               active={branch.activeFolder === folder.name}
               onSelect={() => {
                 branch.setActiveFolder(folder.name);
@@ -395,6 +419,7 @@ function FolderItem({
   nested,
   moveBefore,
   moveAfter,
+  revealInTree,
   gate,
   management,
   marks,
@@ -413,6 +438,7 @@ function FolderItem({
   moveBefore: string | null;
   /** The folder Move down steps past, or null when it can't move down. */
   moveAfter: string | null;
+  revealInTree: (name: string) => void;
   gate: SubscriptionGate;
   management: FolderManagement;
   marks: DocumentMarks;
@@ -447,13 +473,18 @@ function FolderItem({
             : undefined
         }
       >
+        {/*
+          16px, tucked into the row's own padding: the rail is about 200px,
+          and a wider column cut flat names that used to fit ("Meeting
+          Minutes"). A finger gets 32 by 44.
+        */}
         {hasChildren ? (
           <button
             type="button"
             onClick={onToggle}
             aria-expanded={open}
             aria-label={`${open ? "Close" : "Open"} ${folder.name}`}
-            className={`flex h-9 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-card-hover hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-8 ${FOCUS_RING_OFFSET}`}
+            className={`-mr-1 flex h-9 w-4 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-card-hover hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-8 ${FOCUS_RING_OFFSET}`}
           >
             <ChevronRight
               aria-hidden
@@ -461,7 +492,7 @@ function FolderItem({
             />
           </button>
         ) : nested ? (
-          <span aria-hidden className="w-6 shrink-0 pointer-coarse:w-8" />
+          <span aria-hidden className="-mr-1 w-4 shrink-0 pointer-coarse:w-8" />
         ) : null}
         <button
           type="button"
@@ -502,6 +533,7 @@ function FolderItem({
             {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${id}` }}
             onClick={() => {
               remember(`star:${id}`);
+              revealInTree(folder.name);
               marks.toggleStar({ kind: "folder", id }, folder.name);
             }}
             {...gate.controlProps()}
@@ -541,6 +573,7 @@ function FolderItem({
               {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${id}` }}
               onClick={() => {
                 remember(`pin:${id}`);
+                revealInTree(folder.name);
                 void marks.setPinned(
                   { kind: "folder", id },
                   folder.name,

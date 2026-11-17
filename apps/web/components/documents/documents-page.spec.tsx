@@ -13,6 +13,7 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
 import { ConnectionPill } from "@/components/shared/connection-pill";
 import { cardFilledContainers } from "@/tests/card-surfaces";
+import { folderOpenStorageKey } from "@/components/documents/use-folder-open";
 
 const {
   mockCurrentChapter,
@@ -1943,6 +1944,77 @@ describe("DocumentsPage folder tree (#5337)", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps each member's picks apart, and each chapter's", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Close Town in Fiji" }));
+    const keys = Object.keys(window.localStorage).filter((key) =>
+      key.startsWith("frapp.documents.folders-open."),
+    );
+    expect(keys).toEqual([folderOpenStorageKey("auth-1", "chap-1")]);
+    expect(folderOpenStorageKey("auth-1", "chap-1")).not.toBe(
+      folderOpenStorageKey("auth-2", "chap-1"),
+    );
+    expect(folderOpenStorageKey("auth-1", "chap-1")).not.toBe(
+      folderOpenStorageKey("auth-1", "chap-2"),
+    );
+  });
+
+  it("never hides the folder on screen, and closing the folder above it chooses that one", async () => {
+    foldersQuery.data = [
+      FIJI[0]!,
+      FIJI[1]!,
+      { ...FIJI[2]!, pinned_at: "2026-11-17T00:00:00Z" },
+      FIJI[3]!,
+      { id: "t-5", name: "Town in Fiji / Rush / 2024 / Flyers", sort_order: 4 },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    const rail = screen.getByRole("navigation", { name: "Folders" });
+    // 2024 is pinned, so it leads the rail; choosing it opens it to Flyers.
+    await user.click(
+      within(rail).getByRole("button", { name: /^2024\s*Town in Fiji \/ Rush$/ }),
+    );
+    await user.click(within(rail).getByRole("button", { name: /^Flyers$/ }));
+    // Closing the folder above the one on screen chooses it instead.
+    await user.click(
+      within(rail).getByRole("button", {
+        name: "Close Town in Fiji / Rush / 2024",
+      }),
+    );
+    expect(within(rail).queryByRole("button", { name: /^Flyers$/ })).toBeNull();
+    // Only 2024's own open and close were saved: nothing was opened above
+    // it for showing Flyers.
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(folderOpenStorageKey("auth-1", "chap-1"))!,
+      ),
+    ).toEqual({ "t-3": false });
+  });
+
+  it("opens the folders above a nested starred folder before its star moves it back", async () => {
+    foldersQuery.data = [
+      ...FIJI,
+      { id: "t-5", name: "Town in Fiji / Rush / 2024 / Flyers", sort_order: 4 },
+    ];
+    stars.value = { folder_ids: ["t-3"], document_ids: [] };
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    const rail = screen.getByRole("navigation", { name: "Folders" });
+    // Unstarring 2024 sends it back under Rush, which starts closed: the
+    // folders above it open first, so its star (and focus) stay put.
+    await user.click(
+      within(rail).getByRole("button", {
+        name: "Unstar Town in Fiji / Rush / 2024",
+      }),
+    );
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(folderOpenStorageKey("auth-1", "chap-1"))!,
+      ),
+    ).toMatchObject({ "t-1": true, "t-2": true });
+  });
+
   it("puts a folder whose parent the member can't see under the nearest one they can", () => {
     foldersQuery.data = [FIJI[0]!, FIJI[2]!, FIJI[3]!];
     render(<DocumentsPage />);
@@ -1978,15 +2050,16 @@ describe("DocumentsPage folder tree (#5337)", () => {
     await user.click(
       screen.getByRole("button", { name: "Move Town in Fiji / Formal up" }),
     );
-    // Formal steps past Rush and everything under it: 0, Formal, Rush, 2024.
+    // Formal and Rush trade places; 2024, under Rush, isn't rewritten, so a
+    // move past a synced folder with hundreds below it is still two writes.
     await waitFor(() =>
       expect(mockUpdateFolder).toHaveBeenCalledWith({
         id: "t-4",
         sort_order: 1,
       }),
     );
-    expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "t-2", sort_order: 2 });
-    expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "t-3", sort_order: 3 });
+    expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "t-2", sort_order: 3 });
+    expect(mockUpdateFolder).toHaveBeenCalledTimes(2);
     expect(
       screen.getByRole("button", { name: "Move Town in Fiji / Rush up" }),
     ).toBeDisabled();

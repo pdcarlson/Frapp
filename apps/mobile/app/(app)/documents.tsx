@@ -42,6 +42,7 @@ import {
 import {
   buildFolderTree,
   folderLevel,
+  folderPlace,
   liftMarkedFolders,
   type FolderTreeNode,
 } from "@repo/hooks/document-folder-tree";
@@ -409,6 +410,18 @@ export default function DocumentsScreen() {
     const on = folder === entry.name;
     const holdsFolders =
       !back && node.children.length > 0 && node !== chipLevel.level;
+    /*
+      A pinned or starred folder lifted to the top row, away from the folder
+      it sits in, says which folder that is ("Flyers · 2024"), so two
+      "Flyers" read apart, as web's rail and both apps' cards do (#5337).
+    */
+    const where =
+      !back && chipLevel.level === null && node.parentName
+        ? node.parentName
+        : null;
+    const label = where
+      ? `${node.label} · ${folderPlace(where, folderNames).label}`
+      : node.label;
     const marked =
       !!entry.pinned_at || starredFolders.has(entry.id) || !!entry.who_can_see;
     const mark = back ? (
@@ -430,7 +443,7 @@ export default function DocumentsScreen() {
     ) : undefined;
     return {
       value: entry.name,
-      label: node.label,
+      label,
       mark,
       trailing: holdsFolders ? (
         <ForwardGlyph
@@ -440,9 +453,13 @@ export default function DocumentsScreen() {
       ) : undefined,
       accessibilityLabel: back
         ? `Back to ${node.label}`
-        : holdsFolders
-          ? `${node.label}, holds folders`
-          : undefined,
+        : [
+            node.label,
+            where ? `in ${where}` : null,
+            holdsFolders ? "holds folders" : null,
+          ]
+            .filter(Boolean)
+            .join(", ") || undefined,
       onLongPress: () => openActions(folderTarget(entry)),
       longPressLabel: canManage ? "Star or pin" : "Star or unstar",
     };
@@ -971,6 +988,9 @@ export default function DocumentsScreen() {
 
       {folders.length > 0 ? (
         <FilterChips
+          // A new row for each level, so it starts at its back chip rather
+          // than keeping the scroll the last level was at (#5337).
+          key={chipLevel.level?.folder.name ?? "top"}
           accessibilityLabel="Filter by folder"
           scroll
           selected={folder}

@@ -1,4 +1,4 @@
-import { folderPlace } from "@repo/hooks/document-folder-tree";
+import { folderCardText } from "@repo/hooks/document-folder-tree";
 import { StyleSheet, Text, View } from "react-native";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
@@ -138,24 +138,18 @@ function CardList({
           as web's cards and the folder chips do (#5337): a synced folder's
           whole path would truncate before its own name.
         */
-        const place =
+        const card =
           item.kind === "folder"
-            ? folderPlace(item.folder.name, folderNames)
+            ? folderCardText(item.folder.name, item.count, folderNames)
             : null;
-        const title = place
-          ? place.label
+        const title = card
+          ? card.title
           : item.kind === "document"
             ? item.doc.title
             : "";
-        const files =
-          item.kind === "folder"
-            ? `${item.count} ${item.count === 1 ? "file" : "files"}`
-            : "";
         const meta =
           item.kind === "folder"
-            ? place?.parentName
-              ? `In ${place.parentName} · ${files}`
-              : `Folder · ${files}`
+            ? (card?.meta ?? "")
             : [
                 item.doc.document_type,
                 formatDay(item.doc.created_at || null)
@@ -179,7 +173,7 @@ function CardList({
             onCard
             accessibilityRole="button"
             accessibilityLabel={
-              place?.parentName ? `${title}, in ${place.parentName}` : title
+              card?.where ? `${title}, in ${card.where}` : title
             }
             accessibilityValue={limited ? { text: LIMITED_LABEL } : undefined}
             accessibilityHint={

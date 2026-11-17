@@ -249,5 +249,7 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
+// The " / " a Drive-synced folder's path is joined with (#5337).
+export * from "./document-folders";
 // Point-in-polygon, shared by the API's geofence check and the phone's s10 screen.
 export * from "./zone-geometry";

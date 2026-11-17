@@ -1532,6 +1532,26 @@ describe("Documents folder tree (#5337)", () => {
     expect(rowLabels(tree)).toEqual(["Rush schedule"]);
   });
 
+  it("names where a pinned folder lives when it leads the top row, and on its card", () => {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS.map((entry) =>
+      entry.id === "t-3"
+        ? { ...entry, pinned_at: "2026-11-17T00:00:00.000Z" }
+        : entry,
+    );
+    starRows = { folder_ids: [], document_ids: [] };
+    const tree = render();
+    const top = folderChips(tree).props.chips as {
+      label: string;
+      accessibilityLabel?: string;
+    }[];
+    expect(top[1]).toMatchObject({
+      label: "2024 · Rush",
+      accessibilityLabel: "2024, in Town in Fiji / Rush",
+    });
+    expect(screenText(tree)).toContain("In Town in Fiji / Rush · 1 file");
+  });
+
   it("keeps a folder that holds none among its siblings, and steps back out", () => {
     const tree = loaded();
     act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush / 2024"));

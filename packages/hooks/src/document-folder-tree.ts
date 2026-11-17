@@ -1,3 +1,5 @@
+import { DOCUMENT_FOLDER_PATH_SEPARATOR as FOLDER_PATH_SEPARATOR } from "@repo/validation";
+
 /**
  * Documents' folders drawn as a tree (#5337, Shawn's pick of option C).
  *
@@ -10,7 +12,7 @@
  *
  * A folder sits under another only when the other is a folder this member
  * has: its parent is the longest name that is its own name cut at a
- * {@link FOLDER_PATH_SEPARATOR}. Nothing is invented, so:
+ * `DOCUMENT_FOLDER_PATH_SEPARATOR` (" / "). Nothing is invented, so:
  *
  * - every row is a real folder that opens its own files, never a heading;
  * - a folder whose parent the member can't see, or that sync left out, sits
@@ -24,9 +26,6 @@
  * Kept free of React, like `document-library.ts`, so both apps run the same
  * rule over plain rows.
  */
-
-/** What Drive sync joins a folder's path with (`folderPath` in the API's `google-drive-sync.service.ts`). */
-export const FOLDER_PATH_SEPARATOR = " / ";
 
 export type FolderTreeNode<F> = {
   folder: F;
@@ -114,39 +113,30 @@ export function folderPlace(
   };
 }
 
-/**
- * The names of every folder above `name` in the tree, nearest last: the
- * folders to open so `name` shows. Empty for a top-level folder or one not in
- * the tree.
- */
-export function folderAncestors<F extends { name: string }>(
-  tree: readonly FolderTreeNode<F>[],
+/** The nodes from the top down to `name`'s, or null when it isn't drawn. */
+function pathTo<F extends { name: string }>(
+  forest: readonly FolderTreeNode<F>[],
   name: string,
-): string[] {
-  const path: string[] = [];
-  const walk = (nodes: readonly FolderTreeNode<F>[]): boolean => {
-    for (const node of nodes) {
-      if (node.folder.name === name) return true;
-      path.push(node.folder.name);
-      if (walk(node.children)) return true;
-      path.pop();
-    }
-    return false;
-  };
-  return walk(tree) ? path : [];
-}
-
-/** Finds the node for `name`, wherever it sits. */
-export function findFolderNode<F extends { name: string }>(
-  tree: readonly FolderTreeNode<F>[],
-  name: string,
-): FolderTreeNode<F> | null {
-  for (const node of tree) {
-    if (node.folder.name === name) return node;
-    const found = findFolderNode(node.children, name);
-    if (found) return found;
+): FolderTreeNode<F>[] | null {
+  for (const node of forest) {
+    if (node.folder.name === name) return [node];
+    const below = pathTo(node.children, name);
+    if (below) return [node, ...below];
   }
   return null;
+}
+
+/**
+ * The folders drawn above `name`, outermost first: the ones to keep open so
+ * `name` shows. `forest` is what is drawn (the tiers from
+ * {@link liftMarkedFolders}, or the tree), so a pinned folder lifted to the
+ * top has none. Empty for a top-level folder or one not drawn.
+ */
+export function folderAncestors<F extends { name: string }>(
+  forest: readonly FolderTreeNode<F>[],
+  name: string,
+): F[] {
+  return (pathTo(forest, name) ?? []).slice(0, -1).map((node) => node.folder);
 }
 
 /**
@@ -221,21 +211,34 @@ export function folderLevel<F extends { name: string }>(
 } {
   const top = { level: null, up: null, items: forest };
   if (selected === null) return top;
-  const path: FolderTreeNode<F>[] = [];
-  const walk = (nodes: readonly FolderTreeNode<F>[]): boolean => {
-    for (const node of nodes) {
-      path.push(node);
-      if (node.folder.name === selected || walk(node.children)) return true;
-      path.pop();
-    }
-    return false;
-  };
-  if (!walk(forest)) return top;
+  const path = pathTo(forest, selected);
+  if (!path) return top;
   const node = path[path.length - 1]!;
   const levelAt = node.children.length > 0 ? path.length - 1 : path.length - 2;
   const level = path[levelAt];
   if (!level) return top;
   return { level, up: path[levelAt - 1] ?? null, items: level.children };
+}
+
+/**
+ * A folder card's title and meta line (#3934 cards, #5337), both apps: its own
+ * name, and where it sits when it sits under another folder the member has,
+ * since a synced folder's whole path would truncate before its own name.
+ */
+export function folderCardText(
+  name: string,
+  fileCount: number,
+  names: ReadonlySet<string>,
+): { title: string; meta: string; where: string | null } {
+  const place = folderPlace(name, names);
+  const files = `${fileCount} ${fileCount === 1 ? "file" : "files"}`;
+  return {
+    title: place.label,
+    meta: place.parentName
+      ? `In ${place.parentName} · ${files}`
+      : `Folder · ${files}`,
+    where: place.parentName,
+  };
 }
 
 /**

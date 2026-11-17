@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildFolderTree,
-  findFolderNode,
+  folderCardText,
   folderAncestors,
   folderLevel,
   folderPlace,
@@ -56,10 +56,10 @@ describe("buildFolderTree", () => {
 
   it("names each folder's parent for a row drawn away from its place", () => {
     const tree = buildFolderTree(FIJI);
-    expect(
-      findFolderNode(tree, "Town in Fiji / Rush / 2024 / Flyers")?.parentName,
-    ).toBe("Town in Fiji / Rush / 2024");
-    expect(findFolderNode(tree, "Bylaws")?.parentName).toBeNull();
+    expect(tree[0]!.children[0]!.children[0]!.children[0]!.parentName).toBe(
+      "Town in Fiji / Rush / 2024",
+    );
+    expect(tree[1]!.parentName).toBeNull();
   });
 
   it("puts a folder whose parent the member can't see under the nearest one they can, reading the rest of its name", () => {
@@ -114,17 +114,28 @@ describe("buildFolderTree", () => {
     ]);
   });
 
-  it("finds the folders to open so one shows", () => {
+  it("finds the folders to open so one shows, among those drawn", () => {
     const tree = buildFolderTree(FIJI);
-    expect(
-      folderAncestors(tree, "Town in Fiji / Rush / 2024 / Flyers"),
-    ).toEqual([
+    const above = (forest: FolderTreeNode<F>[], name: string) =>
+      folderAncestors(forest, name).map((folder) => folder.name);
+    expect(above(tree, "Town in Fiji / Rush / 2024 / Flyers")).toEqual([
       "Town in Fiji",
       "Town in Fiji / Rush",
       "Town in Fiji / Rush / 2024",
     ]);
-    expect(folderAncestors(tree, "Bylaws")).toEqual([]);
-    expect(folderAncestors(tree, "Not a folder")).toEqual([]);
+    expect(above(tree, "Bylaws")).toEqual([]);
+    expect(above(tree, "Not a folder")).toEqual([]);
+    // Pinned Rush is drawn at the top of Pinned: only what is under it there counts.
+    const tiers = liftMarkedFolders(
+      tree,
+      (folder) => folder.name === "Town in Fiji / Rush",
+      () => false,
+    );
+    const drawn = [...tiers.pinned, ...tiers.starred, ...tiers.rest];
+    expect(above(drawn, "Town in Fiji / Rush")).toEqual([]);
+    expect(above(drawn, "Town in Fiji / Rush / 2024")).toEqual([
+      "Town in Fiji / Rush",
+    ]);
   });
 });
 
@@ -260,5 +271,21 @@ describe("folderLevel", () => {
     expect(names(folderLevel(forest, "Bylaws"))).toEqual(
       names(folderLevel(forest, null)),
     );
+  });
+});
+
+describe("folderCardText", () => {
+  const names = new Set(FIJI.map((folder) => folder.name));
+  it("titles a card by the folder's own name and says where it sits", () => {
+    expect(folderCardText("Town in Fiji / Rush", 1, names)).toEqual({
+      title: "Rush",
+      meta: "In Town in Fiji · 1 file",
+      where: "Town in Fiji",
+    });
+    expect(folderCardText("Bylaws", 3, names)).toEqual({
+      title: "Bylaws",
+      meta: "Folder · 3 files",
+      where: null,
+    });
   });
 });

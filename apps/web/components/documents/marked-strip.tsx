@@ -2,7 +2,7 @@
 
 import { formatDay } from "@repo/formatting";
 import type { MarkedItem as LibraryMarkedItem } from "@repo/hooks/document-library";
-import { folderPlace } from "@repo/hooks/document-folder-tree";
+import { folderCardText } from "@repo/hooks/document-folder-tree";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -120,18 +120,14 @@ function MarkedCard({
     rail's Pinned and Starred rows do (#5337): a synced folder's whole path
     ("Town in Fiji / Rush / 2024") would truncate before its own name.
   */
-  const place =
-    item.kind === "folder" ? folderPlace(item.folder.name, folderNames) : null;
-  const starred = marks.isStarred(target);
-  const files =
+  const card =
     item.kind === "folder"
-      ? `${item.count} ${item.count === 1 ? "file" : "files"}`
-      : "";
+      ? folderCardText(item.folder.name, item.count, folderNames)
+      : null;
+  const starred = marks.isStarred(target);
   const meta =
     item.kind === "folder"
-      ? place?.parentName
-        ? `In ${place.parentName} · ${files}`
-        : `Folder · ${files}`
+      ? (card?.meta ?? "")
       : [
           item.doc.document_type,
           `Uploaded ${formatDay(item.doc.created_at)}`,
@@ -184,7 +180,7 @@ function MarkedCard({
         )}
         <span className="block min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
-            <span className="truncate">{place ? place.label : name}</span>
+            <span className="truncate">{card ? card.title : name}</span>
             {limited ? <LimitedMark className="text-muted" /> : null}
           </span>
           <span className="block truncate text-caption text-muted">{meta}</span>

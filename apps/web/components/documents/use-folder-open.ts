@@ -1,37 +1,53 @@
 import { useCallback, useState } from "react";
-import { useViewerUserId } from "@repo/hooks";
+import { useTenantScope } from "@/lib/tenancy/scope";
 
 /**
  * Which folders in the rail's tree this person has opened or closed (#5337),
- * kept in this browser under their id, as List / Grid is (`lib/list-layout.ts`):
- * one member's tidy rail isn't anyone else's, and a laptop keeps its own.
+ * kept in this browser under their id and the chapter's, as List / Grid keeps
+ * its pick (`lib/list-layout.ts`): one member's tidy rail isn't anyone
+ * else's, a laptop keeps its own, and a folder name in one chapter says
+ * nothing about another's.
  *
  * Only the folders someone opened or closed are stored, by folder id (a
  * rename keeps it); every other folder takes its starting state
  * (`folderStartsOpen`). Best-effort: a private window or blocked site data
- * reads empty and keeps picks for the tab's life.
+ * reads empty and keeps picks for the tab's life, and so does a pick made
+ * before the viewer and chapter are known, which then stands until that
+ * folder's own stored pick says otherwise.
  */
-export function folderOpenStorageKey(userId: string): string {
-  return `frapp.documents.folders-open.${userId}`;
+export function folderOpenStorageKey(
+  userId: string,
+  chapterId: string,
+): string {
+  return `frapp.documents.folders-open.${userId}.${chapterId}`;
 }
 
-function readStored(
-  userId: string | null | undefined,
-): Record<string, boolean> {
-  if (!userId) return {};
+type Picks = Record<string, boolean>;
+
+function readStored(key: string | null): Picks {
+  if (!key) return {};
   try {
-    const raw = window.localStorage.getItem(folderOpenStorageKey(userId));
+    const raw = window.localStorage.getItem(key);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {};
     }
-    const out: Record<string, boolean> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "boolean") out[key] = value;
+    const out: Picks = {};
+    for (const [folder, value] of Object.entries(parsed)) {
+      if (typeof value === "boolean") out[folder] = value;
     }
     return out;
   } catch {
     return {};
+  }
+}
+
+function writeStored(key: string | null, picks: Picks): void {
+  if (!key) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(picks));
+  } catch {
+    // Kept in memory for the tab's life.
   }
 }
 
@@ -40,18 +56,27 @@ export function useFolderOpen(): {
   isOpen: (key: string, startsOpen: boolean) => boolean;
   setOpen: (keys: readonly string[], open: boolean) => void;
 } {
-  const userId = useViewerUserId();
-  const [picks, setPicks] = useState<Record<string, boolean>>(() =>
-    readStored(userId),
-  );
+  const scope = useTenantScope();
+  const storageKey = scope
+    ? folderOpenStorageKey(scope.userId, scope.chapterId)
+    : null;
+  const [picks, setPicks] = useState<Picks>(() => readStored(storageKey));
   /*
-    The viewer's id can arrive after the first render; read their picks then,
-    while rendering, React's pattern for state that follows a prop.
+    The scope can arrive after the first render, or change with the chapter;
+    read that scope's picks then, while rendering, React's pattern for state
+    that follows a prop. Picks made before any scope was known join them.
   */
-  const [readFor, setReadFor] = useState(userId);
-  if (readFor !== userId) {
-    setReadFor(userId);
-    setPicks(readStored(userId));
+  const [readFor, setReadFor] = useState(storageKey);
+  if (readFor !== storageKey) {
+    setReadFor(storageKey);
+    const stored = readStored(storageKey);
+    if (readFor === null && storageKey) {
+      const merged = { ...picks, ...stored };
+      writeStored(storageKey, merged);
+      setPicks(merged);
+    } else {
+      setPicks(stored);
+    }
   }
 
   const isOpen = useCallback(
@@ -65,20 +90,11 @@ export function useFolderOpen(): {
         if (keys.every((key) => current[key] === open)) return current;
         const next = { ...current };
         for (const key of keys) next[key] = open;
-        if (userId) {
-          try {
-            window.localStorage.setItem(
-              folderOpenStorageKey(userId),
-              JSON.stringify(next),
-            );
-          } catch {
-            // Kept in memory for the tab's life.
-          }
-        }
+        writeStored(storageKey, next);
         return next;
       });
     },
-    [userId],
+    [storageKey],
   );
 
   return { isOpen, setOpen };

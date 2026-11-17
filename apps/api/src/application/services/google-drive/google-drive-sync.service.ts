@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { isAllowedUploadMime, MAX_UPLOAD_BYTES } from '@repo/validation';
+import {
+  DOCUMENT_FOLDER_PATH_SEPARATOR,
+  isAllowedUploadMime,
+  MAX_UPLOAD_BYTES,
+} from '@repo/validation';
 import {
   GOOGLE_DRIVE_API,
   GOOGLE_DRIVE_FOLDER_MIME,
@@ -717,7 +721,8 @@ function place(
  */
 export function folderPath(parent: string | null, path: string[]): string {
   const own = path[path.length - 1] ?? '';
-  const full = parent === null ? own : `${parent} / ${own}`;
+  const full =
+    parent === null ? own : `${parent}${DOCUMENT_FOLDER_PATH_SEPARATOR}${own}`;
   if (full.length <= FOLDER_NAME_MAX || path.length < 2) {
     return full.slice(0, FOLDER_NAME_MAX).trim();
   }
@@ -726,18 +731,24 @@ export function folderPath(parent: string | null, path: string[]): string {
   const head = path[0].slice(0, 40).trim();
   const tail: string[] = [];
   for (let i = path.length - 1; i > 0; i -= 1) {
-    const candidate = [head, ELLIPSIS, path[i], ...tail].join(' / ');
+    const candidate = [head, ELLIPSIS, path[i], ...tail].join(
+      DOCUMENT_FOLDER_PATH_SEPARATOR,
+    );
     // Room is left for a " (2)", so a number never cuts its own name.
     if (candidate.length > SHORTENED_MAX) break;
     tail.unshift(path[i]);
   }
   if (tail.length === 0) {
     // Its own name alone is too long to fit beside the head: it is cut.
-    return [head, ELLIPSIS, own].join(' / ').slice(0, SHORTENED_MAX).trim();
+    return [head, ELLIPSIS, own]
+      .join(DOCUMENT_FOLDER_PATH_SEPARATOR)
+      .slice(0, SHORTENED_MAX)
+      .trim();
   }
   // Nothing was dropped between the head and the tail: no "…" is needed.
-  if (tail.length === path.length - 1) return [head, ...tail].join(' / ');
-  return [head, ELLIPSIS, ...tail].join(' / ');
+  if (tail.length === path.length - 1)
+    return [head, ...tail].join(DOCUMENT_FOLDER_PATH_SEPARATOR);
+  return [head, ELLIPSIS, ...tail].join(DOCUMENT_FOLDER_PATH_SEPARATOR);
 }
 
 /** `wanted`, or `wanted (2)` and up when another folder has the name. */
