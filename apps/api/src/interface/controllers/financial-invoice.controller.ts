@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -111,7 +112,7 @@ export class FinancialInvoiceController {
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const invoice = await this.invoiceService.findById(id, chapterId);
     if (invoice.user_id === userId) {
@@ -149,7 +150,7 @@ export class FinancialInvoiceController {
   async update(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateFinancialInvoiceDto,
   ) {
     return invoiceForViewer(
@@ -170,7 +171,7 @@ export class FinancialInvoiceController {
   async transitionStatus(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: TransitionInvoiceStatusDto,
   ) {
     return invoiceForViewer(
@@ -193,7 +194,7 @@ export class FinancialInvoiceController {
   async createPaymentIntent(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.invoiceService.createPaymentIntent(id, chapterId, userId);
   }
@@ -203,7 +204,7 @@ export class FinancialInvoiceController {
   @ApiOperation({ summary: 'Get transactions for an invoice' })
   async getInvoiceTransactions(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.invoiceService.getInvoiceTransactions(id, chapterId);
   }

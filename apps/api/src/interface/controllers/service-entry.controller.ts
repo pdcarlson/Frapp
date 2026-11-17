@@ -6,6 +6,7 @@ import {
   Get,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -142,7 +143,7 @@ export class ServiceEntryController {
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const entry = await this.serviceEntryService.findById(id, chapterId);
     const isAdmin = await this.rbacService.memberHasAnyPermission(
@@ -198,7 +199,7 @@ export class ServiceEntryController {
   async getProofUrl(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -277,7 +278,7 @@ export class ServiceEntryController {
   async review(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') reviewerId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewServiceEntryDto,
   ) {
     if (dto.status === 'APPROVED') {
@@ -308,7 +309,7 @@ export class ServiceEntryController {
   async delete(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,
