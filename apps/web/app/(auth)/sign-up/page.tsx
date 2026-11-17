@@ -239,9 +239,8 @@ export default function SignUpPage() {
       fallback={
         <AuthScreen
           title="Create your account"
-          toggle={
-            <AuthModeToggle current="sign-up" redirectTo={resolveRedirectPath(null)} />
-          }
+          // Inert until the search params are known (#3797).
+          toggle={<AuthModeToggle current="sign-up" redirectTo={null} />}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-up form…</span>
