@@ -277,21 +277,18 @@ describe('InviteService', () => {
 
   /**
    * The row the repository returns for one create input: the input's token,
-   * chapter, role, expiry and sender, unused and with no address.
+   * chapter, role, expiry, sender and address, unused.
    */
   function storedInvite(data: Partial<Invite>, id: string): Invite {
-    return {
+    return inviteRow({
       id,
       token: data.token!,
       chapter_id: data.chapter_id!,
       role: data.role!,
       expires_at: data.expires_at!,
       created_by: data.created_by!,
-      used_at: null,
-      created_at: '2024-01-01',
-      email: null,
-      revoked_at: null,
-    };
+      email: data.email ?? null,
+    });
   }
 
   /** The chapter's seeded Member role, as the redeem tests resolve it. */
@@ -452,6 +449,11 @@ describe('InviteService', () => {
         expect.objectContaining({ status: 'pending' }),
       );
       expect(result.invites[0]).not.toHaveProperty('created_by');
+      // The inviter's list names who each invite went to.
+      expect(result.invites.map((invite) => invite.email)).toEqual([
+        'a@example.com',
+        'b@example.com',
+      ]);
       expect(result.failed).toEqual([]);
     });
 
@@ -477,18 +479,15 @@ describe('InviteService', () => {
         id: string,
         email: string,
         used_at: string | null = null,
-      ) => ({
-        id,
-        token: `tok-${id}`,
-        chapter_id: 'ch-1',
-        role: 'Member',
-        expires_at: '2099-01-01',
-        created_by: 'user-1',
-        used_at,
-        created_at: '2023-12-31',
-        email,
-        revoked_at: null,
-      });
+      ) =>
+        inviteRow({
+          id,
+          token: `tok-${id}`,
+          expires_at: '2099-01-01',
+          used_at,
+          created_at: '2023-12-31',
+          email,
+        });
       mockInviteRepo.findByChapter.mockResolvedValue([
         older('old-a', 'A@example.com'),
         older('old-b', 'b@example.com'),
@@ -1390,16 +1389,11 @@ describe('InviteService', () => {
     }
 
     beforeEach(() => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-      mockInviteRepo.markUsedAtomically.mockResolvedValue(
-        '2026-01-01T00:00:00.000Z',
-      );
-      mockRoleRepo.findByChapter.mockResolvedValue([
-        memberRole,
-        cabinetRole,
-        newMemberRole,
-      ]);
-      mockMemberRepo.create.mockResolvedValue(memberFixture());
+      // Each test names the invite it redeems.
+      arrangeRedeem({
+        roles: [memberRole, cabinetRole, newMemberRole],
+        member: memberFixture(),
+      });
     });
 
     it('grants Member after a custom role that lacks members:view', async () => {
@@ -1513,18 +1507,7 @@ describe('InviteService', () => {
 
   it('should list invites by chapter', async () => {
     const invites: Invite[] = [
-      {
-        id: 'inv-1',
-        token: 'token-1',
-        chapter_id: 'ch-1',
-        role: 'Member',
-        expires_at: '2024-01-02',
-        created_by: 'user-1',
-        used_at: null,
-        created_at: '2024-01-01',
-        email: null,
-        revoked_at: null,
-      },
+      inviteRow({ token: 'token-1', expires_at: '2024-01-02' }),
     ];
     mockInviteRepo.findByChapter.mockResolvedValue(invites);
 
@@ -1549,18 +1532,11 @@ describe('InviteService', () => {
 
   describe('inviteStatus (#3607)', () => {
     const NOW = new Date('2026-11-06T12:00:00.000Z');
-    const base: Invite = {
-      id: 'inv-1',
+    const base: Invite = inviteRow({
       token: 't',
-      chapter_id: 'ch-1',
-      role: 'Member',
       expires_at: '2026-11-07T12:00:00.000Z',
-      created_by: 'user-1',
-      used_at: null,
       created_at: '2026-11-06T11:00:00.000Z',
-      email: null,
-      revoked_at: null,
-    };
+    });
 
     it.each([
       ['pending', base],
@@ -2020,13 +1996,14 @@ describe('InviteService', () => {
     }
 
     beforeEach(() => {
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-      mockInviteRepo.markUsedAtomically.mockResolvedValue(
-        '2026-01-01T00:00:00.000Z',
-      );
-      mockMemberRepo.create.mockResolvedValue(
-        memberFixture({ user_id: 'user-joiner', chapter_id: CHAPTER_ID }),
-      );
+      // Each redeem test names the invite it redeems.
+      arrangeRedeem({
+        roles: tieredChapterRoles(),
+        member: memberFixture({
+          user_id: 'user-joiner',
+          chapter_id: CHAPTER_ID,
+        }),
+      });
     });
 
     it('refuses to redeem a President invite minted before the rule, leaving the token unused', async () => {
