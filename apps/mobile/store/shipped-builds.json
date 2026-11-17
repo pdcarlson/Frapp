@@ -198,6 +198,20 @@
       "build": "16",
       "sha": "6928a0144b5f0a306219c82a9a3d00568403dc4a",
       "recorded": "2026-11-13"
+    },
+    {
+      "platform": "ios",
+      "version": "0.13.0",
+      "build": "28",
+      "sha": "0426149e14550afe0ec891dd2e2129a17ea14001",
+      "recorded": "2026-11-17"
+    },
+    {
+      "platform": "android",
+      "version": "0.13.0",
+      "build": "19",
+      "sha": "0426149e14550afe0ec891dd2e2129a17ea14001",
+      "recorded": "2026-11-17"
     }
   ],
   "dropped": [
