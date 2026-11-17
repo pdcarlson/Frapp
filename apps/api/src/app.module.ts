@@ -2,7 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { SentryModule } from '@sentry/nestjs/setup';
-import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
+import {
+  CustomThrottlerGuard,
+  UNVERIFIED_BEARER_LIMIT,
+  UNVERIFIED_BEARER_THROTTLER,
+  UNVERIFIED_BEARER_TTL_MS,
+} from './interface/guards/custom-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SupabaseModule } from './modules/supabase/supabase.module';
@@ -84,6 +89,13 @@ import { validateEnv } from './config/env.validation';
     ThrottlerModule.forRoot([
       { name: 'read', ttl: 60_000, limit: 100 },
       { name: 'write', ttl: 60_000, limit: 30 },
+      // One counter per address across every route, for requests whose
+      // bearer token did not verify; the guard keeps it off all others.
+      {
+        name: UNVERIFIED_BEARER_THROTTLER,
+        ttl: UNVERIFIED_BEARER_TTL_MS,
+        limit: UNVERIFIED_BEARER_LIMIT,
+      },
     ]),
     ScheduleModule.forRoot(),
     SupabaseModule,

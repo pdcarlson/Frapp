@@ -53,10 +53,10 @@ export interface RequestContext extends Request {
    * marked `@VerifySessionLocally()` (#5043), by verifying the token again
    * itself. It lets that guard start the chapter lookups on a verified `sub`
    * while it checks (#3728), and its presence is a precondition of the local
-   * check, which keeps that check inside the throttler's unknown-`kid` bound.
-   * Absent when the
-   * throttler skipped verification (an unknown `kid` within its retry
-   * interval, no verifier for the `alg`, a route that skips throttling).
+   * check, which keeps that check to tokens whose key the project's JWKS
+   * lists. Absent when the throttler did not verify the token (a `kid` the
+   * JWKS does not list, no verifier for the `alg`, a route that skips
+   * throttling).
    */
   throttlerVerifiedClaims?: JwtPayload;
   appUser?: AppUserContext;

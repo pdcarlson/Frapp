@@ -30,8 +30,48 @@ const PROBE_TIMEOUT_MS = 3000;
 // per probe before TCP/IP headers, which puts the probes at an estimated 60%
 // of an idle instance's ~6.5 MB/hour of billed egress (measured on Render). `/health/ready`
 // never uses this cache: the deploy gate, and anyone checking a recovery,
-// needs a probe taken now.
+// needs a probe taken moments ago, which `READINESS_PROBE_TTL_MS` keeps.
 export const LIVENESS_PROBE_TTL_MS = 60_000;
+
+// How long `/health/ready` reuses its own database and Storage probe. The
+// route is public, and probing per call made every hit, from anyone, two
+// Supabase requests. Five seconds is shorter than any of its callers' own
+// intervals (the uptime monitor's minute, the deploy gate's poll), so each of
+// them still sees a probe taken for it, and an outage or a recovery shows
+// within five seconds.
+export const READINESS_PROBE_TTL_MS = 5_000;
+
+// How long `/health/ready` reuses the Stripe Price check, a call to Stripe's
+// API. A Price is changed by hand in Stripe's dashboard (and the configured id
+// only by a deploy, which starts a new process and checks again at boot), so a
+// result five minutes old is still a true answer for the uptime monitor.
+export const STRIPE_CHECK_TTL_MS = 5 * 60_000;
+
+// One reused probe. The promise is what is cached, so callers arriving while
+// a probe is in flight share it rather than each starting their own. Every
+// probe cached here resolves to its answer (a status, or the Stripe
+// mismatch), so a cached failure is that answer, never a rejection replayed
+// for the whole TTL; a probe that rejects anyway is dropped at once. The age
+// is read off the monotonic clock, so a wall-clock step back cannot stretch
+// the TTL.
+class ProbeCache<T> {
+  private entry: { probedAt: number; result: Promise<T> } | null = null;
+
+  constructor(private readonly ttlMs: number) {}
+
+  get(run: () => Promise<T>): Promise<T> {
+    const now = performance.now();
+    if (this.entry && now - this.entry.probedAt < this.ttlMs) {
+      return this.entry.result;
+    }
+    const entry = { probedAt: now, result: run() };
+    this.entry = entry;
+    void entry.result.catch(() => {
+      if (this.entry === entry) this.entry = null;
+    });
+    return entry.result;
+  }
+}
 
 interface DependencyProbes {
   database: DependencyStatus;
@@ -42,10 +82,14 @@ interface DependencyProbes {
 @Controller({ version: '' })
 export class HealthController {
   private readonly startedAt = Date.now();
-  private liveness: {
-    probedAt: number;
-    probes: Promise<DependencyProbes>;
-  } | null = null;
+  private readonly liveness = new ProbeCache<DependencyProbes>(
+    LIVENESS_PROBE_TTL_MS,
+  );
+  private readonly readiness = new ProbeCache<DependencyProbes>(
+    READINESS_PROBE_TTL_MS,
+  );
+  private readonly stripeCheck =
+    new ProbeCache<StripePriceAccountMismatchError | null>(STRIPE_CHECK_TTL_MS);
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
@@ -79,7 +123,9 @@ export class HealthController {
   })
   @ApiOkResponse({ type: HealthPayloadDto })
   async ready(): Promise<HealthPayloadDto> {
-    const payload = this.buildPayload(await this.probe());
+    const payload = this.buildPayload(
+      await this.readiness.get(() => this.probe()),
+    );
 
     if (payload.status === 'degraded') {
       throw new ServiceUnavailableException({
@@ -96,38 +142,38 @@ export class HealthController {
     // This route is public, so the body names only the error's `category`,
     // never its message (#2999). The service's error log and the Sentry
     // `cause` keep the full detail.
-    try {
-      await this.stripePriceConsistency.assertConfiguredPrice();
-    } catch (err) {
-      if (err instanceof StripePriceAccountMismatchError) {
-        throw new ServiceUnavailableException(
-          {
-            code: 'DEGRADED',
-            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.category}`,
-          },
-          { cause: toReportableError(err) },
-        );
-      }
-      throw err;
+    const mismatch = await this.stripeCheck.get(() => this.checkStripePrice());
+    if (mismatch) {
+      throw new ServiceUnavailableException(
+        {
+          code: 'DEGRADED',
+          message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${mismatch.category}`,
+        },
+        { cause: toReportableError(mismatch) },
+      );
     }
 
     return payload;
   }
 
-  // The promise is what is cached, so callers arriving while a probe is in
-  // flight share it rather than each starting their own. `probe` never
-  // rejects (every arm resolves to a status), so a cached failure is a
-  // reported `'error'`, never a rejection replayed for the whole TTL. The age
-  // is read off the monotonic clock, so a wall-clock step back cannot stretch
-  // the TTL.
   private cachedProbes(): Promise<DependencyProbes> {
-    const now = performance.now();
-    if (this.liveness && now - this.liveness.probedAt < LIVENESS_PROBE_TTL_MS) {
-      return this.liveness.probes;
+    return this.liveness.get(() => this.probe());
+  }
+
+  // The Stripe Price check's answer: the mismatch that should 503 the route,
+  // or null when the Price is fine (or Stripe could not be reached, which the
+  // service logs and lets pass, as at boot). Anything else it throws is not a
+  // verdict and is rethrown.
+  private async checkStripePrice(): Promise<StripePriceAccountMismatchError | null> {
+    try {
+      await this.stripePriceConsistency.assertConfiguredPrice();
+      return null;
+    } catch (err) {
+      if (err instanceof StripePriceAccountMismatchError) {
+        return err;
+      }
+      throw err;
     }
-    const probes = this.probe();
-    this.liveness = { probedAt: now, probes };
-    return probes;
   }
 
   private async probe(): Promise<DependencyProbes> {

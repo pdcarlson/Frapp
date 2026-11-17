@@ -20,7 +20,9 @@ import { Throttle } from '@nestjs/throttler';
  * the existing bucket's limit on the handlers that need it is the same result
  * with no new global state, and it composes with the guard's existing
  * method gating (`write` is already skipped for GET/HEAD/OPTIONS, `read` for
- * everything else) untouched.
+ * everything else) untouched. (The one third throttler the app does register,
+ * `unverified`, is the opposite case: a single counter per address shared by
+ * every route, which no per-route override can express; the guard gates it.)
  *
  * ## Choosing a profile
  *

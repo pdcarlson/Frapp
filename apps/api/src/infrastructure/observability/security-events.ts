@@ -36,6 +36,9 @@ const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> = {
  *  - `claims_rejected`: a bearer token the guard refused itself, on a read
  *    it verifies locally (#5043): `getClaims` refused it, or its `iss`,
  *    `aud`, `role`, `sub` or `exp` did not check out (`failedClaimCheck`).
+ *    Also the throttler's 401 (`authErrorCode` `unverified_limit`), for a
+ *    token it found invalid itself on a request a rate limit refused
+ *    (`custom-throttler.guard.ts`).
  *
  * Any other 401 (the Stripe webhook's signature check) carries no reason.
  */
