@@ -78,6 +78,28 @@ export class SupabaseInviteRepository implements IInviteRepository {
     );
   }
 
+  async findEmailedCreatedAtSince(
+    scope: { chapterId: string } | { createdBy: string },
+    since: Date,
+  ): Promise<string[]> {
+    // At most a day's ceiling of rows plus a batch or two, well under
+    // PostgREST's row cap. The per-inviter read is served by
+    // `idx_invites_emailed_by_creator`, the per-chapter one by
+    // `idx_invites_chapter_id`.
+    const base = this.supabase
+      .from('invites')
+      .select('created_at')
+      .not('email', 'is', null)
+      .gte('created_at', since.toISOString());
+    const { data, error } = await (
+      'chapterId' in scope
+        ? base.eq('chapter_id', scope.chapterId)
+        : base.eq('created_by', scope.createdBy)
+    ).order('created_at', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return (data || []).map((row) => row.created_at);
+  }
+
   async create(inviteData: TablesInsert<'invites'>): Promise<Invite> {
     const { data, error } = await this.supabase
       .from('invites')

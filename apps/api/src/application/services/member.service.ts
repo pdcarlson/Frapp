@@ -33,6 +33,7 @@ import {
 } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { RbacService, type RankContext } from './rbac.service';
+import { memberRankIn } from '#domain/utils/rank-context';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { allowedVisibilities } from './custom-field-visibility';
@@ -1209,13 +1210,10 @@ function rankBlock(
   context: RankContext | null,
 ): 'self' | 'not-below' | null {
   if (!context || member.user_id === actorUserId) return 'self';
-  const { reach, roles, positions } = context;
-  if (reach.memberId === member.id) return 'self';
-  const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
-  const held = member.role_ids
-    .map((id) => byId.get(id.toLowerCase()))
-    .filter((role): role is Role => role !== undefined);
-  return canReach(reach, holderRank(held, positions)) ? null : 'not-below';
+  if (context.reach.memberId === member.id) return 'self';
+  return canReach(context.reach, memberRankIn(context, member))
+    ? null
+    : 'not-below';
 }
 
 /** The rank context, or `null` without a read when `member` is the actor. */

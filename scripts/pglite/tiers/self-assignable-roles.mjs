@@ -12,8 +12,9 @@ import { db, miss } from "../harness.mjs";
 //     unsafe, whoever writes it, and lets the same write through when it also
 //     unmarks the role;
 //   - `self_assign_role` joins only a marked role of the member's own chapter,
-//     never for an alum; leaves any unkeyed role outside the tiers, marked or
-//     not; keeps every other id where it was; and writes nothing for a no-op;
+//     never for an alum; leaves only a marked role too (20261117162907), so a
+//     role an officer gave stays theirs to take off; keeps every other id
+//     where it was; and writes nothing for a no-op;
 //   - it takes the role's lock before the member's, the order `delete_role`
 //     and `set_member_role_ids` take them. PGlite is one connection, so the
 //     lock itself can't be waited on here; the tier checks the function
@@ -172,8 +173,8 @@ console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
       { left, after: await ids(U[0]) },
     );
 
-    // An unmarked role: no joining, but a member who holds it may leave it,
-    // even once it carries a permission.
+    // An unmarked role: no joining, and no leaving either (20261117162907),
+    // even for a member who picked it before an officer unmarked it.
     const closedJoin = await assign(m, R.closed, true);
     check(
       "an unmarked role, however safe, can't be joined",
@@ -188,9 +189,13 @@ console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
     );
     const leftUnmarked = await assign(m, R.intramurals, false);
     check(
-      "a member leaves a role they picked after an officer unmarks it and gives it a permission",
-      leftUnmarked.outcome === "ok" && same(await ids(U[0]), [R.everyone]),
+      "a member can't leave a role once an officer unmarks it",
+      leftUnmarked.outcome === "not_assignable" &&
+        same(await ids(U[0]), [R.everyone, R.intramurals]),
       { leftUnmarked, after: await ids(U[0]) },
+    );
+    await db.exec(
+      `update members set role_ids = array['${R.everyone}'] where user_id = '${U[0]}'`,
     );
 
     // Refusals both ways.

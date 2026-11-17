@@ -389,9 +389,17 @@ export class RbacService {
   /**
    * `POST /v1/roles/:id/join` and `/leave` (#4958): the caller adds a
    * self-assignable role to their own roles, or takes it off. The role must be
-   * marked and safe, checked here for the refusal's words and again by
-   * `self_assign_role` under the role's lock, which answers for a role
-   * unmarked, changed or deleted in between (409, reload).
+   * marked (and so safe) either way, checked here for the refusal's words and
+   * again by `self_assign_role` under the role's lock, which answers for a
+   * role unmarked, changed or deleted in between (409, reload). Leaving needs
+   * the mark too: a role outside the tiers that an officer gave (an event's
+   * audience, a committee) stays until an officer takes it off, since events
+   * that list it count its holders.
+   *
+   * A join or leave that changes the caller's roles writes an audit row, as
+   * other role changes do. It is exec-only, not mirrored to `#chapter-audit`:
+   * a role picker can draw a join from every member in an afternoon, and the
+   * channel is for officers' changes.
    */
   async setOwnSelfAssignableRole(
     chapterId: string,
@@ -400,12 +408,10 @@ export class RbacService {
     join: boolean,
   ): Promise<{ role_ids: string[] }> {
     const role = await this.roleInChapter(roleId, chapterId);
-    // Joining needs the role marked and safe. Leaving needs only a role with
-    // no key outside the tiers, so a member who picked it can drop it after
-    // an officer unmarks it or gives it a permission (#4958 review).
-    const allowed = join
-      ? role.self_assignable === true && !selfAssignableRefusal(role)
-      : !role.system_key && !role.tier_id;
+    // Both need the role marked and safe; the database keeps every marked
+    // role safe, so this re-check only words the refusal.
+    const allowed =
+      role.self_assignable === true && !selfAssignableRefusal(role);
     if (!allowed) {
       throw new ForbiddenException({
         code: NOT_SELF_ASSIGNABLE_CODE,
@@ -442,6 +448,25 @@ export class RbacService {
         code: NOT_SELF_ASSIGNABLE_CODE,
         message:
           'This role changed while you were saving. Reload and try again.',
+      });
+    }
+    const id = role.id.toLowerCase();
+    const holds = (ids: readonly string[]) =>
+      ids.some((held) => held.toLowerCase() === id);
+    if (holds(member.role_ids) !== holds(result.role_ids)) {
+      await this.chapterAuditLogService.record({
+        chapterId,
+        actorUserId: userId,
+        action: join ? 'role_self_joined' : 'role_self_left',
+        targetType: AUDIT_TARGET_TYPE,
+        targetId: role.id,
+        diff: {
+          member_id: {
+            from: join ? null : member.id,
+            to: join ? member.id : null,
+          },
+        },
+        memberVisible: false,
       });
     }
     return { role_ids: result.role_ids };

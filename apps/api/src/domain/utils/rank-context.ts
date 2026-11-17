@@ -59,3 +59,22 @@ export function rankContextFrom(
     positions,
   };
 }
+
+/**
+ * How high `member` ranks among the context's roles: the highest of the live
+ * roles they hold (`role_ids` compared lower-cased, stale ids ignored, as for
+ * the actor above). For the rules that let an officer act only on members
+ * ranked below them (`canReach`).
+ */
+export function memberRankIn(
+  context: Pick<RankContext, 'roles' | 'positions'>,
+  member: Pick<Member, 'role_ids'>,
+): number {
+  const roleById = new Map(
+    context.roles.map((role) => [role.id.toLowerCase(), role] as const),
+  );
+  const held = member.role_ids
+    .map((id) => roleById.get(id.toLowerCase()))
+    .filter((role): role is Role => role !== undefined);
+  return holderRank(held, context.positions);
+}

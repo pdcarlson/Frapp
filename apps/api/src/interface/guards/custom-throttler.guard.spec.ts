@@ -684,6 +684,8 @@ describe('CustomThrottlerGuard', () => {
       cls: new (...args: never[]) => unknown;
       handler: (...args: never[]) => unknown;
       limit: number;
+      /** The window, a minute unless the profile says otherwise. */
+      ttl: number;
     }
 
     /**
@@ -700,7 +702,8 @@ describe('CustomThrottlerGuard', () => {
       cls: new (...args: never[]) => unknown,
       handler: (...args: never[]) => unknown,
       limit: number,
-    ): RouteCase => ({ route: r, cls, handler, limit });
+      ttl = 60_000,
+    ): RouteCase => ({ route: r, cls, handler, limit, ttl });
 
     const RP = ReportController.prototype;
     const IN = InviteController.prototype;
@@ -774,6 +777,13 @@ describe('CustomThrottlerGuard', () => {
         10,
       ),
       route(
+        'POST /chapters/onboard',
+        ChapterController,
+        CP.onboard,
+        5,
+        3_600_000,
+      ),
+      route(
         'POST /service-entries/proof-upload-url',
         ServiceEntryController,
         SE.requestProofUploadUrl,
@@ -842,7 +852,7 @@ describe('CustomThrottlerGuard', () => {
       await overrideGuard.onModuleInit();
     });
 
-    it.each(cases)('$route is capped at $limit/min', async (c) => {
+    it.each(cases)('$route is capped at $limit per $ttl ms', async (c) => {
       await expect(overrideGuard.canActivate(ctxFor(c))).resolves.toBe(true);
 
       // Exactly one bucket runs: the other is method-gated off. Asserting the
@@ -853,9 +863,9 @@ describe('CustomThrottlerGuard', () => {
       // increment(key, ttl, limit, blockDuration, throttlerName)
       expect(increment).toHaveBeenCalledWith(
         expect.any(String),
-        60_000,
+        c.ttl,
         c.limit,
-        60_000,
+        c.ttl,
         bucketFor(c.route.split(' ')[0]),
       );
     });

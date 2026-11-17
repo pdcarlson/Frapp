@@ -121,6 +121,7 @@ describe('ChapterService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findStartedAtByUserSince: jest.fn().mockResolvedValue([]),
       isAnalyticsOptedOut: jest.fn(),
       findWithBirthdayChannel: jest.fn(),
       findForRecapPush: jest.fn(),

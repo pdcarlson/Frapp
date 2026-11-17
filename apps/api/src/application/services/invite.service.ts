@@ -4,6 +4,8 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -32,6 +34,16 @@ import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
 import type { RankContext } from '#domain/utils/rank-context';
 import { inviteRefusal, memberRoleOf } from '#domain/utils/invite-reach';
+import {
+  DAILY_LIMIT_WINDOW_MS,
+  INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+  INVITE_EMAILS_PER_INVITER_PER_DAY,
+} from '#domain/constants/daily-send-limits';
+import {
+  rollingWindowRoom,
+  waitPhrase,
+  type RollingWindowRoom,
+} from '#domain/utils/rolling-window';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -188,6 +200,33 @@ async function mapWithConcurrency<T, R>(
     Array.from({ length: Math.min(limit, items.length) }, worker),
   );
   return results;
+}
+
+/** The emailed-invite ceiling's refusal (429), on top of its sentence. */
+export const INVITE_EMAIL_LIMIT_CODE = 'invite.email_daily_limit';
+
+/**
+ * What the sender reads at the emailed-invite ceiling: which ceiling, how many
+ * are left, when this batch would fit, and that a share link works now. The
+ * clients show it as written (`SERVER_MESSAGE_PATTERNS` in
+ * `@repo/validation`), so it is in the sender's words.
+ */
+export function emailInviteLimitMessage(
+  ceiling: RollingWindowRoom & {
+    who: 'chapter' | 'inviter';
+    limit: number;
+    roomAt: Date;
+  },
+  needed: number,
+  now: Date,
+): string {
+  const left = ceiling.remaining === 0 ? 'none' : String(ceiling.remaining);
+  const first =
+    ceiling.who === 'chapter'
+      ? `Your chapter can email up to ${ceiling.limit} invites in 24 hours and has ${left} left.`
+      : `You can email up to ${ceiling.limit} invites in 24 hours and have ${left} left.`;
+  const these = needed === 1 ? 'this one' : `these ${needed}`;
+  return `${first} You can send ${these} in ${waitPhrase(ceiling.roomAt, now)}, or share an invite link now.`;
 }
 
 /** The seeded Everyone role's name before #4191, which older builds send. */
@@ -440,6 +479,7 @@ export class InviteService {
       createdBy,
     );
     const uniqueEmails = dedupeEmails(emails);
+    await this.assertEmailInviteRoom(chapterId, createdBy, uniqueEmails.length);
 
     // The address rides on the row so the inviter's list can name who each
     // invite went to (`GET /v1/invites`), not show a token.
@@ -509,6 +549,58 @@ export class InviteService {
       invites: invites.map((invite) => toListItem(invite, now)),
       failed,
     };
+  }
+
+  /**
+   * The daily emailed-invite ceilings (`daily-send-limits.ts`): refuses (429)
+   * a batch that would take the chapter, or the sender across all their
+   * chapters, past its count in the last 24 hours, before any token is made
+   * or email sent. Counted from the `invites` rows themselves, so every
+   * replica sees the same count. The refusal says how many are left and when
+   * this batch would fit; share links send no email and stay open meanwhile.
+   *
+   * Two batches checked at once can both fit and together pass the ceiling by
+   * up to one batch; the per-minute throttle on the route bounds that, and
+   * the next batch is refused.
+   */
+  private async assertEmailInviteRoom(
+    chapterId: string,
+    createdBy: string,
+    needed: number,
+  ): Promise<void> {
+    const now = new Date();
+    const since = new Date(now.getTime() - DAILY_LIMIT_WINDOW_MS);
+    const [byChapter, byInviter] = await Promise.all([
+      this.inviteRepo.findEmailedCreatedAtSince({ chapterId }, since),
+      this.inviteRepo.findEmailedCreatedAtSince({ createdBy }, since),
+    ]);
+    const room = (times: string[], limit: number) =>
+      rollingWindowRoom(times, limit, needed, now, DAILY_LIMIT_WINDOW_MS);
+    const chapter = room(byChapter, INVITE_EMAILS_PER_CHAPTER_PER_DAY);
+    const inviter = room(byInviter, INVITE_EMAILS_PER_INVITER_PER_DAY);
+    // The ceiling that frees up last is the one the sender waits on.
+    const binding = [
+      {
+        who: 'chapter' as const,
+        limit: INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+        ...chapter,
+      },
+      {
+        who: 'inviter' as const,
+        limit: INVITE_EMAILS_PER_INVITER_PER_DAY,
+        ...inviter,
+      },
+    ]
+      .filter((c): c is typeof c & { roomAt: Date } => c.roomAt !== null)
+      .sort((a, b) => b.roomAt.getTime() - a.roomAt.getTime())[0];
+    if (!binding) return;
+    throw new HttpException(
+      {
+        code: INVITE_EMAIL_LIMIT_CODE,
+        message: emailInviteLimitMessage(binding, needed, now),
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   /**

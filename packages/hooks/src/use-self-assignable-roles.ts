@@ -23,13 +23,13 @@ import { parseChapterRoles, type ChapterRole } from "./chapter-roles";
 export type PickableRole = ChapterRole & { held: boolean; joinable: boolean };
 
 /**
- * The roles the viewer can join or leave themselves, by name. Joinable: every
+ * The roles the viewer can join or leave themselves, by name: the marked
+ * ones, the only roles the API lets a member join or leave. Joinable: every
  * marked role, unless the viewer is an alum (the API refuses an alum's join,
  * since a picked role an event lists would let them check in past the
- * alumni rule). Leave-only: a role they hold that they can't join but the API
- * still lets them leave, which is any role with no `system_key` outside the
- * tiers, so a role an officer unmarked, or one held when they became an alum,
- * never traps them (`spec/behavior/rbac.md` § Self-assignable roles). The
+ * alumni rule). Leave-only: a marked role an alum holds. A role an officer
+ * gave, or unmarked after the viewer picked it, isn't listed: an officer
+ * takes it off (`spec/behavior/rbac.md` § Self-assignable roles). The
  * viewer's roles come from their membership summary (`GET /v1/chapters`),
  * which every member can read; the roles list needs `members:view`, so
  * `usePickableRoles` reads it only for a viewer who holds that.
@@ -41,29 +41,14 @@ export function selectPickableRoles(
   const held = new Set((heldRoleIds ?? []).map((id) => id.toLowerCase()));
   const alumniRoleId = alumniRoleIdOf(rolesData);
   const isAlum = !!alumniRoleId && held.has(alumniRoleId.toLowerCase());
-  const tiered = tieredRoleIds(rolesData);
   return parseChapterRoles(rolesData)
     .flatMap((role): PickableRole[] => {
+      if (!role.selfAssignable) return [];
       const holds = held.has(role.id.toLowerCase());
-      const joinable = role.selfAssignable && !isAlum;
-      const leavable =
-        holds && !role.system_key && !role.everyone && !tiered.has(role.id);
-      return joinable || leavable ? [{ ...role, held: holds, joinable }] : [];
+      const joinable = !isAlum;
+      return joinable || holds ? [{ ...role, held: holds, joinable }] : [];
     })
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/** The ids of roles placed in a tier; `ChapterRole` doesn't carry the tier. */
-function tieredRoleIds(rolesData: unknown): Set<string> {
-  if (!Array.isArray(rolesData)) return new Set();
-  return new Set(
-    rolesData.flatMap((row: unknown) => {
-      const role = row as { id?: unknown; tier_id?: unknown } | null;
-      return role && typeof role.id === "string" && role.tier_id
-        ? [role.id]
-        : [];
-    }),
-  );
 }
 
 export function usePickableRoles() {

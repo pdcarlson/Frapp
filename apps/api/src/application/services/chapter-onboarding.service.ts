@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
 import {
@@ -26,12 +32,24 @@ import {
   type ICustomFieldRepository,
 } from '#domain/repositories/custom-field.repository.interface';
 import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
+import {
+  CHAPTERS_STARTED_PER_USER_PER_DAY,
+  DAILY_LIMIT_WINDOW_MS,
+} from '#domain/constants/daily-send-limits';
+import { rollingWindowRoom, waitPhrase } from '#domain/utils/rolling-window';
+import {
   CHAPTER_DIRECTORY_REPOSITORY,
   type IChapterDirectoryRepository,
   type NewChapterDirectoryRequest,
 } from '#domain/repositories/chapter-directory.repository.interface';
 
 type Branding = Record<string, unknown>;
+
+/** The daily chapter-start ceiling's refusal (429), on top of its sentence. */
+export const CHAPTER_START_LIMIT_CODE = 'chapter.start_daily_limit';
 
 /**
  * What `onboard` needs from the wizard submit.
@@ -100,9 +118,13 @@ export class ChapterOnboardingService {
     private readonly directoryRepo: IChapterDirectoryRepository,
     private readonly activation: ActivationService,
     private readonly legalAcceptance: LegalAcceptanceService,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
   ) {}
 
   async onboard(userId: string, dto: ChapterOnboardingInput): Promise<Chapter> {
+    await this.assertMayStartChapter(userId);
+
     // The same checkbox is also the founding officer's own acceptance (#2302),
     // recorded on their user row before the chapter and their membership
     // exist, so no member is ever created without one. The chapter-level
@@ -217,6 +239,36 @@ export class ChapterOnboardingService {
     }
 
     return chapter;
+  }
+
+  /**
+   * The daily ceiling on starting chapters (`daily-send-limits.ts`): refuses
+   * (429) an account that started that many in the last 24 hours, before
+   * anything is written. A chapter is a fresh place to send invite email
+   * from, so the emailed-invite ceilings lean on this one too. Nobody running
+   * one chapter, or helping a second one start, meets it.
+   */
+  private async assertMayStartChapter(userId: string): Promise<void> {
+    const now = new Date();
+    const started = await this.chapterRepo.findStartedAtByUserSince(
+      userId,
+      new Date(now.getTime() - DAILY_LIMIT_WINDOW_MS),
+    );
+    const { roomAt } = rollingWindowRoom(
+      started,
+      CHAPTERS_STARTED_PER_USER_PER_DAY,
+      1,
+      now,
+      DAILY_LIMIT_WINDOW_MS,
+    );
+    if (!roomAt) return;
+    throw new HttpException(
+      {
+        code: CHAPTER_START_LIMIT_CODE,
+        message: `You've started ${CHAPTERS_STARTED_PER_USER_PER_DAY} chapters in the last 24 hours, the most allowed. You can start another in ${waitPhrase(roomAt, now)}.`,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   private normalizeBranding(

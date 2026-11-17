@@ -23,7 +23,10 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   AssignPledgeClassesDto,
@@ -90,9 +93,10 @@ export class PledgeClassController {
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async assign(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: AssignPledgeClassesDto,
   ) {
-    return this.pledgeClassService.assign(chapterId, dto.assignments);
+    return this.pledgeClassService.assign(chapterId, userId, dto.assignments);
   }
 
   @Patch(':id')

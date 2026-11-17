@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -8,10 +9,19 @@ import {
 import { PLEDGE_CLASSES_MAX } from '@repo/validation';
 import { PLEDGE_CLASS_REPOSITORY } from '#domain/repositories/pledge-class.repository.interface';
 import type { IPledgeClassRepository } from '#domain/repositories/pledge-class.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
 import type {
   PledgeClass,
   PledgeClassAssignment,
 } from '#domain/entities/pledge-class.entity';
+import type { Member } from '#domain/entities/member.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
+import { canReach } from '#domain/utils/role-rank';
+import { memberRankIn } from '#domain/utils/rank-context';
+import { RbacService } from './rbac.service';
 
 /**
  * A chapter's pledge classes, and each member's class and order number
@@ -21,12 +31,23 @@ import type {
  * in a list; the order number is one integer that works inside a class or
  * chapter-wide; either can be used without the other, and a chapter that uses
  * neither has no rows.
+ *
+ * Every route needs `roles:manage` (the controller). Assigning members also
+ * keeps two rules other member writes keep: an officer sets the class only of
+ * members ranked below them (or their own), as for roles; and a class whose
+ * group a channel list names decides who reads that channel, so moving
+ * anyone into or out of it needs `channels:manage`, as a manual group's
+ * members do (`ChapterGroupService`).
  */
 @Injectable()
 export class PledgeClassService {
   constructor(
     @Inject(PLEDGE_CLASS_REPOSITORY)
     private readonly pledgeClassRepo: IPledgeClassRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(CHAPTER_GROUP_REPOSITORY)
+    private readonly groupRepo: IChapterGroupRepository,
+    private readonly rbac: RbacService,
   ) {}
 
   list(chapterId: string): Promise<PledgeClass[]> {
@@ -107,9 +128,14 @@ export class PledgeClassService {
    * itself (`assign_member_pledge_classes`), so a class deleted or a member
    * removed while an officer is saving refuses the save instead of slipping
    * between a check and the write.
+   *
+   * Only the members whose class or number would change are judged by
+   * {@link assertMayAssign}, so an editor that re-sends a member as they are
+   * is never refused for them.
    */
   async assign(
     chapterId: string,
+    actorUserId: string,
     assignments: PledgeClassAssignment[],
   ): Promise<PledgeClassAssignment[]> {
     // Rebuilt field by field: the payload becomes the RPC's JSON, and a DTO
@@ -122,6 +148,7 @@ export class PledgeClassService {
     if (new Set(wanted.map((a) => a.member_id)).size !== wanted.length) {
       throw new BadRequestException('A member is listed more than once');
     }
+    await this.assertMayAssign(chapterId, actorUserId, wanted);
     const updated = await this.pledgeClassRepo.assignMembers(chapterId, wanted);
     if (updated === 'member_not_found') {
       throw new NotFoundException('Member not found');
@@ -136,9 +163,73 @@ export class PledgeClassService {
     }));
   }
 
+  /**
+   * The rank rule and the channel rule of {@link assign} (see the class
+   * comment), checked against the members as they are now. A listed id that
+   * isn't a member of the chapter is left to the write, which refuses it.
+   */
+  private async assertMayAssign(
+    chapterId: string,
+    actorUserId: string,
+    wanted: readonly PledgeClassAssignment[],
+  ): Promise<void> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    const byId = new Map(members.map((m) => [m.id.toLowerCase(), m]));
+    const lower = (id: string | null) => id?.toLowerCase() ?? null;
+    const changes = wanted.flatMap((a) => {
+      const member = byId.get(a.member_id);
+      if (!member) return [];
+      const from = lower(member.pledge_class_id);
+      const to = lower(a.pledge_class_id);
+      return from !== to || member.order_number !== a.order_number
+        ? [{ member, from, to }]
+        : [];
+    });
+    if (changes.length === 0) return;
+
+    const context = await this.rbac.getRankContext(chapterId, actorUserId);
+    const outOfReach = (member: Member) =>
+      !context.reach.wildcard &&
+      member.id !== context.reach.memberId &&
+      member.user_id !== actorUserId &&
+      !canReach(context.reach, memberRankIn(context, member));
+    if (changes.some(({ member }) => outOfReach(member))) {
+      throw new ForbiddenException(RANK_REFUSAL);
+    }
+
+    const moved = new Set(
+      changes
+        .filter(({ from, to }) => from !== to)
+        .flatMap(({ from, to }) => [from, to])
+        .filter((id): id is string => id !== null),
+    );
+    if (moved.size === 0) return;
+    const groups = (await this.groupRepo.findByChapter(chapterId)).filter(
+      (group) =>
+        group.kind === 'pledge_class' &&
+        group.pledge_class_id !== null &&
+        moved.has(group.pledge_class_id.toLowerCase()),
+    );
+    const named = await Promise.all(
+      groups.map((group) =>
+        this.groupRepo.isNamedOnChannelList(chapterId, group.id),
+      ),
+    );
+    if (!named.some(Boolean)) return;
+    const may = await this.rbac.memberHasAnyPermission(chapterId, actorUserId, [
+      SystemPermissions.CHANNELS_MANAGE,
+    ]);
+    if (!may) throw new ForbiddenException(GATES_A_CHANNEL);
+  }
+
   private nameTaken(name: string): ConflictException {
     return new ConflictException(
       `This chapter already has a class named "${name.trim()}"`,
     );
   }
 }
+
+const RANK_REFUSAL =
+  'You can only set the class of members ranked below you, and your own.';
+const GATES_A_CHANNEL =
+  'A channel uses this class to decide who can see or post in it, so only someone who can manage channels can change who is in it.';

@@ -1,13 +1,31 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { PLEDGE_CLASSES_MAX } from '@repo/validation';
 import { PledgeClassService } from './pledge-class.service';
+import type { RbacService } from './rbac.service';
 import type { IPledgeClassRepository } from '#domain/repositories/pledge-class.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { PledgeClass } from '#domain/entities/pledge-class.entity';
+import type { Member } from '#domain/entities/member.entity';
+import type { ChapterGroup } from '#domain/entities/chapter-group.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { memberFixture } from '#test/helpers/entity-fixtures';
+import {
+  createChapterGroupRepoMock,
+  type ChapterGroupRepoMock,
+} from '#test/helpers/chapter-group-repo.mock';
+import {
+  CHAPTER_ID,
+  MEMBER,
+  ROLE,
+  USER,
+  tieredChapterMembers,
+  tieredRankContext,
+} from '#test/helpers/tiered-chapter.fixture';
 
 const CHAPTER = 'ch-1';
 
@@ -24,6 +42,12 @@ function pledgeClass(id: string, position: number, name = id): PledgeClass {
 
 describe('PledgeClassService', () => {
   let repo: jest.Mocked<IPledgeClassRepository>;
+  let memberRepo: { findByChapter: jest.Mock };
+  let groupRepo: ChapterGroupRepoMock;
+  let rbac: {
+    getRankContext: jest.Mock;
+    memberHasAnyPermission: jest.Mock;
+  };
   let service: PledgeClassService;
 
   beforeEach(() => {
@@ -36,7 +60,28 @@ describe('PledgeClassService', () => {
       delete: jest.fn(),
       assignMembers: jest.fn().mockResolvedValue([]),
     };
-    service = new PledgeClassService(repo);
+    memberRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
+    groupRepo = createChapterGroupRepoMock();
+    rbac = {
+      getRankContext: jest.fn((_chapterId: string, userId: string) =>
+        Promise.resolve(tieredRankContext(userId)),
+      ),
+      // What the fixture's roles hold, `*` included.
+      memberHasAnyPermission: jest.fn(
+        (_chapterId: string, userId: string, permissions: string[]) => {
+          const held = tieredRankContext(userId).reach.permissions;
+          return Promise.resolve(
+            held.has('*') || permissions.some((p) => held.has(p)),
+          );
+        },
+      ),
+    };
+    service = new PledgeClassService(
+      repo,
+      memberRepo as unknown as IMemberRepository,
+      groupRepo,
+      rbac as unknown as RbacService,
+    );
   });
 
   describe('create', () => {
@@ -185,7 +230,7 @@ describe('PledgeClassService', () => {
         { member_id: 'm2', pledge_class_id: null, order_number: 9 },
       ];
 
-      const result = await service.assign(CHAPTER, assignments);
+      const result = await service.assign(CHAPTER, USER.president, assignments);
 
       expect(repo.assignMembers).toHaveBeenCalledTimes(1);
       expect(repo.assignMembers).toHaveBeenCalledWith(CHAPTER, assignments);
@@ -193,7 +238,7 @@ describe('PledgeClassService', () => {
     });
 
     it('takes an order number with no class: a chapter may keep only a chapter-wide number', async () => {
-      await service.assign(CHAPTER, [
+      await service.assign(CHAPTER, USER.president, [
         { member_id: 'm1', pledge_class_id: null, order_number: 41 },
       ]);
 
@@ -204,7 +249,7 @@ describe('PledgeClassService', () => {
       repo.assignMembers.mockResolvedValue('member_not_found');
 
       await expect(
-        service.assign(CHAPTER, [
+        service.assign(CHAPTER, USER.president, [
           { member_id: 'stranger', pledge_class_id: null, order_number: 2 },
         ]),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -214,7 +259,7 @@ describe('PledgeClassService', () => {
       repo.assignMembers.mockResolvedValue('class_not_found');
 
       await expect(
-        service.assign(CHAPTER, [
+        service.assign(CHAPTER, USER.president, [
           { member_id: 'm1', pledge_class_id: 'elsewhere', order_number: 1 },
         ]),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -227,7 +272,7 @@ describe('PledgeClassService', () => {
       'answers 400 when a member is listed twice %s, and writes nothing',
       async (_why, second) => {
         await expect(
-          service.assign(CHAPTER, [
+          service.assign(CHAPTER, USER.president, [
             { member_id: 'm1', pledge_class_id: 'a', order_number: 1 },
             { member_id: second, pledge_class_id: null, order_number: null },
           ]),
@@ -244,11 +289,178 @@ describe('PledgeClassService', () => {
         chapter_id: 'someone-else',
       };
 
-      await service.assign(CHAPTER, [assignment]);
+      await service.assign(CHAPTER, USER.president, [assignment]);
 
       expect(repo.assignMembers).toHaveBeenCalledWith(CHAPTER, [
         { member_id: 'm1', pledge_class_id: 'a', order_number: 1 },
       ]);
+    });
+
+    describe('who may assign whom', () => {
+      const pledge = {
+        id: 'member-pledge',
+        user_id: 'user-pledge',
+        chapter_id: CHAPTER_ID,
+        role_ids: [ROLE.pledge],
+        pledge_class_id: null,
+        order_number: null,
+      } as unknown as Member;
+      const withClass = (
+        member: Member,
+        pledge_class_id: string | null,
+        order_number: number | null = null,
+      ) => ({ ...member, pledge_class_id, order_number });
+      const classGroup = (classId: string): ChapterGroup => ({
+        id: `group-${classId}`,
+        chapter_id: CHAPTER_ID,
+        kind: 'pledge_class',
+        name: classId,
+        color: null,
+        mentionable: true,
+        pledge_class_id: classId,
+        class_year: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      });
+      let members: Member[];
+
+      beforeEach(() => {
+        members = [
+          ...tieredChapterMembers().map((m) => withClass(m, 'class-old', 3)),
+          pledge,
+        ];
+        memberRepo.findByChapter.mockImplementation(() =>
+          Promise.resolve(members),
+        );
+        groupRepo.findByChapter.mockResolvedValue([
+          classGroup('class-old'),
+          classGroup('class-new'),
+        ]);
+      });
+
+      it("lets a recruitment chair put this year's new members in their class", async () => {
+        await service.assign(CHAPTER, USER.riskChair, [
+          {
+            member_id: pledge.id,
+            pledge_class_id: 'class-new',
+            order_number: 1,
+          },
+        ]);
+        expect(repo.assignMembers).toHaveBeenCalled();
+        // No channel names the class, so channels:manage was never asked.
+        expect(rbac.memberHasAnyPermission).not.toHaveBeenCalled();
+      });
+
+      it('refuses a member ranked at or above the officer, and writes nothing', async () => {
+        await expect(
+          service.assign(CHAPTER, USER.riskChair, [
+            {
+              member_id: pledge.id,
+              pledge_class_id: 'class-new',
+              order_number: 1,
+            },
+            {
+              member_id: MEMBER.vicePresident,
+              pledge_class_id: null,
+              order_number: 3,
+            },
+          ]),
+        ).rejects.toThrow(
+          'You can only set the class of members ranked below you, and your own.',
+        );
+        expect(repo.assignMembers).not.toHaveBeenCalled();
+      });
+
+      it('lets an officer set their own class, and the President anyone', async () => {
+        await service.assign(CHAPTER, USER.riskChair, [
+          {
+            member_id: MEMBER.riskChair,
+            pledge_class_id: 'class-new',
+            order_number: 3,
+          },
+        ]);
+        await service.assign(CHAPTER, USER.president, [
+          {
+            member_id: MEMBER.vicePresident,
+            pledge_class_id: 'class-new',
+            order_number: 9,
+          },
+        ]);
+        expect(repo.assignMembers).toHaveBeenCalledTimes(2);
+      });
+
+      it('judges only the members whose class or number would change', async () => {
+        await service.assign(CHAPTER, USER.riskChair, [
+          {
+            member_id: MEMBER.vicePresident.toUpperCase(),
+            pledge_class_id: 'CLASS-OLD',
+            order_number: 3,
+          },
+        ]);
+        expect(repo.assignMembers).toHaveBeenCalled();
+        expect(rbac.getRankContext).not.toHaveBeenCalled();
+      });
+
+      it("needs channels:manage to move someone into a class a channel's list names", async () => {
+        groupRepo.isNamedOnChannelList.mockImplementation(
+          (_chapterId: string, groupId: string) =>
+            Promise.resolve(groupId === 'group-class-new'),
+        );
+        rbac.memberHasAnyPermission.mockResolvedValue(false);
+        await expect(
+          service.assign(CHAPTER, USER.riskChair, [
+            {
+              member_id: MEMBER.riskChair,
+              pledge_class_id: 'class-new',
+              order_number: 3,
+            },
+          ]),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(rbac.memberHasAnyPermission).toHaveBeenCalledWith(
+          CHAPTER,
+          USER.riskChair,
+          [SystemPermissions.CHANNELS_MANAGE],
+        );
+        expect(repo.assignMembers).not.toHaveBeenCalled();
+      });
+
+      it('needs it to move someone out of one too', async () => {
+        groupRepo.isNamedOnChannelList.mockImplementation(
+          (_chapterId: string, groupId: string) =>
+            Promise.resolve(groupId === 'group-class-old'),
+        );
+        rbac.memberHasAnyPermission.mockResolvedValue(false);
+        await expect(
+          service.assign(CHAPTER, USER.riskChair, [
+            {
+              member_id: MEMBER.brother,
+              pledge_class_id: null,
+              order_number: 3,
+            },
+          ]),
+        ).rejects.toThrow(/only someone who can manage channels/);
+      });
+
+      it('lets a channels:manage holder move them, and anyone renumber within a class', async () => {
+        groupRepo.isNamedOnChannelList.mockResolvedValue(true);
+        // The risk chair's tier holds channels:manage.
+        await service.assign(CHAPTER, USER.riskChair, [
+          {
+            member_id: pledge.id,
+            pledge_class_id: 'class-new',
+            order_number: 1,
+          },
+        ]);
+        rbac.memberHasAnyPermission.mockResolvedValue(false);
+        await service.assign(CHAPTER, USER.riskChair, [
+          {
+            member_id: MEMBER.brother,
+            pledge_class_id: 'class-old',
+            order_number: 12,
+          },
+        ]);
+        expect(repo.assignMembers).toHaveBeenCalledTimes(2);
+      });
     });
   });
 });

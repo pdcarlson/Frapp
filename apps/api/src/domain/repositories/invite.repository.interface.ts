@@ -13,6 +13,17 @@ export interface IInviteRepository {
    * address (`InviteService.findPendingForVerifiedEmail`).
    */
   findPendingByEmail(email: string, now: Date): Promise<Invite[]>;
+  /**
+   * When each emailed invite (one with an address) made since `since` was
+   * created: by one chapter, or by one inviter across every chapter. The
+   * daily emailed-invite ceilings count these
+   * (`domain/constants/daily-send-limits.ts`). Used and revoked invites are
+   * never deleted, so every email sent is still counted.
+   */
+  findEmailedCreatedAtSince(
+    scope: { chapterId: string } | { createdBy: string },
+    since: Date,
+  ): Promise<string[]>;
   create(data: Partial<Invite>): Promise<Invite>;
   createMany(data: Partial<Invite>[]): Promise<Invite[]>;
   /**

@@ -75,8 +75,9 @@ export function selfAssignableRefusal(
 /**
  * The member-facing picker's words (#4958), one copy for web and the phone:
  * the onboarding step's title, the line under it and the pickers' hint, and
- * the caption under a role the member holds but can't join again (one an
- * officer stopped offering, or any picked role once they're an alum).
+ * the caption under a role the member holds but can't join again (a marked
+ * role, once they're an alum: a role an officer stopped offering isn't
+ * listed, since only an officer takes it off).
  * `spec/ui/design-system/writing.md` § Pick your roles.
  */
 export const PICK_ROLES_COPY = {

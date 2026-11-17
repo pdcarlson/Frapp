@@ -59,6 +59,20 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data ?? [];
   }
 
+  async findStartedAtByUserSince(
+    userId: string,
+    since: Date,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('created_at')
+      .eq('legal_accepted_by', userId)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.created_at);
+  }
+
   async findForRecapPush(): Promise<ChapterRecapPushTarget[]> {
     const rows = await fetchAllPages(
       (from, to) =>
