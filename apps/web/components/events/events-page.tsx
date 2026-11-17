@@ -41,7 +41,7 @@ import {
   collapseSeries,
   eventSeriesKey,
   isSeriesEvent,
-  seriesCadenceLabel,
+  seriesCadenceOf,
   seriesHeadOf,
   splitByHorizon,
   type EventListEntry,
@@ -855,17 +855,7 @@ export function EventsPage() {
     const isTargeted = eventSetsRolesApart(fields);
     // A series row says how it repeats where a one-time row says only its
     // time: the day heading above already says which day.
-    const seriesKey = series ? eventSeriesKey(event) : null;
-    const head = seriesKey ? seriesHeadOf(seriesKey, events) : null;
-    const cadence = head
-      ? seriesCadenceLabel(
-          head.recurrence_rule,
-          event.start_time,
-          events
-            .filter((candidate) => eventSeriesKey(candidate) === seriesKey)
-            .map((candidate) => candidate.start_time),
-        )
-      : null;
+    const cadence = series ? seriesCadenceOf(events, event) : null;
     const time = formatTimeOfDay(event.start_time) || null;
     // One derived value: the row fill and the checkbox must never disagree
     // about whether the row is selected.
