@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-import React from "react";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 import {
   dropAllKeptDrafts,
   hasKeptDraft,
@@ -21,17 +20,7 @@ import {
 const client = createFrappClient({ baseUrl: "http://localhost" });
 
 function inChapter(chapterId: string, userId = "user-1") {
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <FrappClientProvider
-        client={client}
-        chapterId={chapterId}
-        userId={userId}
-      >
-        {children}
-      </FrappClientProvider>
-    );
-  };
+  return createHookWrapper({ client, chapterId, userId });
 }
 
 afterEach(() => dropAllKeptDrafts());

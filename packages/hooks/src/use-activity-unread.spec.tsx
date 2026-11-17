@@ -1,7 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import {
   activityGroups,
   activityReviewRows,
@@ -13,7 +11,7 @@ import {
   markActivityItemsRead,
   useActivityUnread,
 } from "./use-activity-unread";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const KEY = activityKeys.chapter("chapter-1");
 
@@ -238,24 +236,15 @@ function setup(
     POST?: () => Promise<unknown>;
   } = {},
 ) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  const queryClient = createTestQueryClient();
   queryClient.setQueryData(KEY, data);
   const PUT = vi.fn(calls.PUT ?? (async () => ({})));
   const POST = vi.fn(calls.POST ?? (async () => ({})));
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        { PUT, POST } as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
+  const wrapper = createHookWrapper({
+    client: { PUT, POST },
+    queryClient,
+    chapterId: "chapter-1",
+  });
   return { queryClient, PUT, POST, wrapper };
 }
 

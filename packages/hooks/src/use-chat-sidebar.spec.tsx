@@ -1,8 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   chatSidebarKeys,
   useChatSidebar,
@@ -13,6 +10,7 @@ import {
   useSidebarPreferencesRefetch,
   type ChatSidebar,
 } from "./use-chat-sidebar";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER = "chapter-1";
 const KEY = chatSidebarKeys.chapter(CHAPTER);
@@ -29,21 +27,8 @@ function setup(
   client: Record<string, unknown>,
   chapterId: string | null = CHAPTER,
 ) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
+  const queryClient = createTestQueryClient();
+  const Wrapper = createHookWrapper({ client, queryClient, chapterId });
   return { queryClient, Wrapper };
 }
 
@@ -64,7 +49,9 @@ describe("useChatSidebar", () => {
     const { result } = renderHook(() => useChatSidebar(), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/chat-sidebar", { signal: expect.any(AbortSignal) });
+    expect(GET).toHaveBeenCalledWith("/v1/chat-sidebar", {
+      signal: expect.any(AbortSignal),
+    });
     expect(queryClient.getQueryData(KEY)).toEqual(stored);
   });
 
@@ -446,26 +433,13 @@ describe("sidebar writes", () => {
     const answer = deferred<{ data: ChatSidebar; error: null }>();
     const PUT = vi.fn(() => answer.promise);
     let chapter = CHAPTER;
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
+    const queryClient = createTestQueryClient();
+    const Wrapper = createHookWrapper({
+      client: { GET, PUT },
+      queryClient,
+      // Read on every render, so the switch below reaches the provider.
+      chapterId: () => chapter,
     });
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={
-          { GET, PUT } as unknown as ReturnType<
-            typeof import("@repo/api-sdk").createFrappClient
-          >
-        }
-        chapterId={chapter}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
     const OTHER_KEY = chatSidebarKeys.chapter("chapter-2");
     queryClient.setQueryData(KEY, stored);
     queryClient.setQueryData(OTHER_KEY, { ...stored, pinned_channel_ids: [] });

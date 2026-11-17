@@ -1,33 +1,20 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import React from "react";
 import { localWeekStart } from "./activity-standing";
 import { useActivity } from "./use-activity";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 describe("useActivity", () => {
   it("names the member's own week, so the ring counts the week their calendar shows (#4766)", async () => {
     const client = {
       GET: vi.fn().mockResolvedValue({ data: { unavailable: [] } }),
     };
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+    const queryClient = createTestQueryClient();
+    const wrapper = createHookWrapper({
+      client,
+      queryClient,
+      chapterId: "chapter-1",
     });
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={
-          client as unknown as ReturnType<
-            typeof import("@repo/api-sdk").createFrappClient
-          >
-        }
-        chapterId="chapter-1"
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
 
     const { result } = renderHook(() => useActivity(), { wrapper });
 

@@ -1,16 +1,14 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   useConfirmChapterLogo,
   useRemoveChapterLogo,
   useRequestChapterLogoUploadUrl,
   useUploadChapterLogo,
 } from "./use-chapters";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * The chapter logo hooks (#2591): mint, PUT, confirm, in that order, with
@@ -25,12 +23,7 @@ describe("chapter logo hooks", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
+    queryClient = createTestQueryClient();
     fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -40,18 +33,12 @@ describe("chapter logo hooks", () => {
   });
 
   function wrapper(client: unknown) {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={client as ReturnType<typeof createFrappClient>}
-        chapterId={CHAPTER_ID}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "ChapterLogoWrapper";
-    return Wrapper;
+    return createHookWrapper({
+      client,
+      queryClient,
+      chapterId: CHAPTER_ID,
+      displayName: "ChapterLogoWrapper",
+    });
   }
 
   const upload = {

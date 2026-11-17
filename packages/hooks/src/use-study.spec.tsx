@@ -1,9 +1,6 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
-import type { createFrappClient } from "@repo/api-sdk";
-import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   usePauseStudySession,
   useStartStudySession,
@@ -11,6 +8,7 @@ import {
   useStudySessions,
   useStopStudySession,
 } from "./use-study";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * These pin one property that is invisible until a member switches chapters:
@@ -30,24 +28,11 @@ function makeWrapper(
   chapterId: string,
   displayName: string,
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={mockClient as unknown as ReturnType<typeof createFrappClient>}
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = displayName;
-  return Wrapper;
-}
-
-function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName,
   });
 }
 
@@ -55,7 +40,7 @@ describe("useStudySessions", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
   });
 
   it("scopes its cache entry to the active chapter", async () => {
@@ -128,7 +113,7 @@ describe("useStudySessions", () => {
 
 describe("useStopStudySession", () => {
   it("invalidates the chapter-scoped session list through the bare prefix", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const mockPost = vi
       .fn()
@@ -154,7 +139,7 @@ describe("useStopStudySession", () => {
 
 describe("useStudyHeartbeat", () => {
   it("posts accuracy_meters when the client supplies a reading", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const mockPost = vi
       .fn()
       .mockResolvedValue({ data: { id: "ss-1", status: "ACTIVE" }, error: null });
@@ -180,7 +165,7 @@ describe("useStudyHeartbeat", () => {
   });
 
   it("omits accuracy_meters when the client does not supply one", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const mockPost = vi
       .fn()
       .mockResolvedValue({ data: { id: "ss-1", status: "ACTIVE" }, error: null });
@@ -210,7 +195,7 @@ describe("useStudyHeartbeat", () => {
  */
 describe("a write that ends the session", () => {
   it("refreshes nothing after a routine heartbeat on an ACTIVE session", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const mockPost = vi
       .fn()
@@ -235,7 +220,7 @@ describe("a write that ends the session", () => {
   it.each(["EXPIRED", "LOCATION_INVALID", "PAUSED_EXPIRED"])(
     "refreshes the session list and points when a heartbeat ends it as %s",
     async (status) => {
-      const queryClient = makeQueryClient();
+      const queryClient = createTestQueryClient();
       const invalidate = vi.spyOn(queryClient, "invalidateQueries");
       const mockPost = vi
         .fn()
@@ -259,7 +244,7 @@ describe("a write that ends the session", () => {
   );
 
   it("refreshes points after a start, which may settle an expired pause", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const mockPost = vi
       .fn()
@@ -280,7 +265,7 @@ describe("a write that ends the session", () => {
   });
 
   it("refreshes points only when a pause settles the session", async () => {
-    const queryClient = makeQueryClient();
+    const queryClient = createTestQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const mockPost = vi
       .fn()
