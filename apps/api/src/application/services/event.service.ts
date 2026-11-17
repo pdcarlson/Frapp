@@ -163,10 +163,9 @@ export class EventService {
    * event still reads: the field is advisory, and the server's refusal
    * explains itself, as it did before the field existed.
    *
-   * Per viewer (2026-11-17): a host (`events:update`) checks themselves in
-   * with no code (`AttendanceService.checkIn`), so it is false for them, and
-   * web offers them a plain Check in. Asked only once a screen requires the
-   * code, so most reads cost nothing extra.
+   * Per viewer (2026-11-17): the officer whose own screen is live checks
+   * themselves in with no code (`AttendanceService.checkIn`), so it is false
+   * for them, and web offers them a plain Check in.
    */
   async checkInNeedsCode(
     event: Pick<
@@ -193,12 +192,10 @@ export class EventService {
         event.chapter_id,
         now.toISOString(),
       );
-      if (!screensRequireCode(screens)) return false;
-      return !(await this.rbac.memberHasAnyPermission(
-        event.chapter_id,
-        viewerId,
-        [SystemPermissions.EVENTS_UPDATE],
-      ));
+      if (screens.some((screen) => screen.reported_by === viewerId)) {
+        return false;
+      }
+      return screensRequireCode(screens);
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',

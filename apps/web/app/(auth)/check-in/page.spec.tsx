@@ -12,7 +12,11 @@ const { checkInMutate, ownRowRefetch, sessionUser, searchParams, device } = vi.h
   ownRowRefetch: vi.fn(),
   sessionUser: vi.fn(),
   searchParams: { current: new URLSearchParams() },
-  device: { phone: null as "ios" | "android" | null },
+  device: {
+    phone: null as "ios" | "android" | null,
+    // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+    app: { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" },
+  },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -26,12 +30,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
-  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
-  useNativeApp: () => ({
-    id: "live.frapp.mobile",
-    scheme: "frapp",
-    name: "Frapp",
-  }),
+  useNativeApp: () => device.app,
 }));
 vi.mock("@/lib/auth/rejected-session", () => ({
   getLiveSessionUser: sessionUser,
@@ -87,6 +86,7 @@ beforeEach(() => {
   sessionUser.mockResolvedValue({ id: "u-1", email: "brother@school.edu" });
   searchParams.current = new URLSearchParams(LINK);
   device.phone = null;
+  device.app = { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" };
 });
 
 afterEach(() => {
@@ -122,6 +122,25 @@ describe("web check-in link page", () => {
     expect(
       screen.getByRole("link", { name: "Sign in" }).getAttribute("href"),
     ).toBe(`/sign-in?redirectTo=${encodeURIComponent(`/check-in?${LINK}`)}`);
+  });
+
+  it("opens Frapp Staging from the staging page, with no store button (2026-11-17)", async () => {
+    device.phone = "ios";
+    device.app = {
+      id: "live.frapp.mobile.staging",
+      scheme: "frapp-staging",
+      name: "Frapp Staging",
+    };
+    sessionUser.mockResolvedValue(null);
+    render(<CheckInPage />);
+
+    const open = await screen.findByRole("link", {
+      name: "Open in Frapp Staging",
+    });
+    expect(open.getAttribute("href")).toBe(
+      "frapp-staging://check-in?event=ev-1&t=tok-abc",
+    );
+    expect(screen.queryByRole("link", { name: "Get Frapp" })).toBeNull();
   });
 
   it("hands Android the intent link", async () => {

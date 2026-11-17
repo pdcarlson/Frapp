@@ -25,7 +25,6 @@ import type { Event } from '#domain/entities/event.entity';
 import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
 import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
 import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
-import { SystemPermissions } from '#domain/constants/permissions';
 import { RbacService } from './rbac.service';
 import { attendanceFor, visibleEventOrNotFound } from './event-role-targeting';
 import {
@@ -435,20 +434,18 @@ export class AttendanceService {
 
     // ── The host checks themselves in with one tap (2026-11-17) ─────────
     //
-    // An officer who may host check-in (`events:update`, the mint's and the
-    // screen's gate) skips the code and the location checks below for their
-    // own check-in. The phone showing the QR is theirs, so they cannot scan
-    // it, and a host typing the code off their own screen was the flow Paul
-    // rejected. It grants nothing new: the same permission marks anyone
-    // present by hand (`markByHand`), themselves included. Asked only when a
-    // code or a location would otherwise be required, so a plain event's
-    // check-in costs no extra read.
-    if (
-      (zoned || screens.length > 0) &&
-      (await this.rbac.memberHasAnyPermission(chapterId, userId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ]))
-    ) {
+    // The officer whose own screen is showing the code for this event skips
+    // the code and the location checks for their own check-in. The phone
+    // showing the QR is theirs, so they cannot scan it, and typing the code
+    // off their own screen was the flow Paul rejected. Scoped to a live
+    // screen of their own, not to `events:update`: an officer who isn't
+    // hosting checks in like any member, so the permission alone never
+    // turns into a remote check-in. Their screen reported where it is within
+    // the last minute or so (`reportCheckInScreen`, gated on
+    // `events:update`), which is the same presence a member proves by being
+    // near it. Unlike `markByHand`, this is a check-in and earns the event's
+    // points, as it does for every member in the room.
+    if (screens.some((screen) => screen.reported_by === userId)) {
       return this.recordCheckIn(event, userId, now);
     }
 

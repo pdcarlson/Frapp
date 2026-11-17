@@ -101,7 +101,7 @@ export const ManualCodeSheet = forwardRef<
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onSubmitEditing={submitDisabled ? undefined : onSubmit}
-          placeholder="XXX-00"
+          placeholder="XXX-XX"
           placeholderTextColor={tokens.color.text.muted}
           autoCapitalize="characters"
           autoCorrect={false}

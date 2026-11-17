@@ -1,7 +1,11 @@
 "use client";
 
 import { X } from "lucide-react";
-import { STORE_LISTING_URLS, openAppUrl } from "@repo/validation";
+import {
+  PRODUCTION_NATIVE_APP,
+  STORE_LISTING_URLS,
+  openAppUrl,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { dismissGetTheApp, useGetTheAppDismissed } from "@/lib/get-the-app";
@@ -55,9 +59,12 @@ export function GetTheAppCard() {
           keep using Frapp here.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button asChild variant="tinted" size="sm">
-            <a href={STORE_LISTING_URLS[phone]}>Get the app</a>
-          </Button>
+          {/* The staging app has no store listing (TestFlight, internal track). */}
+          {app.id === PRODUCTION_NATIVE_APP.id ? (
+            <Button asChild variant="tinted" size="sm">
+              <a href={STORE_LISTING_URLS[phone]}>Get the app</a>
+            </Button>
+          ) : null}
           <Button asChild variant="ghost" size="sm">
             <a href={openAppUrl(phone, app)}>Open the app</a>
           </Button>

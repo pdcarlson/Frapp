@@ -57,17 +57,15 @@ describe('EventService', () => {
       );
     });
 
-    it('says no to a host, who checks in without the code (2026-11-17)', async () => {
+    it('says no to the officer whose own screen is live (2026-11-17)', async () => {
       mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
-      mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
       await expect(
         service.checkInNeedsCode(baseEvent, 'officer-1', during),
       ).resolves.toBe(false);
-      expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
-        'ch-1',
-        'officer-1',
-        ['events:update'],
-      );
+      // Another officer who isn't hosting still needs the code.
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'officer-2', during),
+      ).resolves.toBe(true);
     });
 
     it('reads no screens outside the check-in window', async () => {

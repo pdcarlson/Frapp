@@ -1,4 +1,5 @@
 import {
+  PRODUCTION_NATIVE_APP,
   STORE_LISTING_URLS,
   openInAppUrl,
   type NativePlatform,
@@ -55,9 +56,12 @@ export function AppHandoff({
         <Button asChild className="w-full">
           <a href={openInAppUrl(platform, token, app)}>Open in the app</a>
         </Button>
-        <Button asChild variant="secondary" className="w-full">
-          <a href={STORE_LISTING_URLS[platform]}>{STORE_LABEL[platform]}</a>
-        </Button>
+        {/* The staging app has no store listing (TestFlight, internal track). */}
+        {app.id === PRODUCTION_NATIVE_APP.id ? (
+          <Button asChild variant="secondary" className="w-full">
+            <a href={STORE_LISTING_URLS[platform]}>{STORE_LABEL[platform]}</a>
+          </Button>
+        ) : null}
       </div>
       <div className="mt-6">
         <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>

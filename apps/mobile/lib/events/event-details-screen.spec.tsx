@@ -51,6 +51,9 @@ const EVENT: Record<string, unknown> = {
   end_time: new Date(START.getTime() + 60 * 60_000).toISOString(),
   point_value: null,
   is_mandatory: false,
+  // An officer's screen is up, so a member scans (2026-11-17: without one,
+  // and with no zone, the card checks them in with one tap).
+  check_in_needs_code: true,
 };
 
 let event = EVENT;
@@ -406,6 +409,26 @@ describe("Event details layout", () => {
       pathname: "/check-in",
       params: { eventId: "evt-1", scan: "1" },
     });
+  });
+
+  it("checks a member in with one tap when nobody is showing a code (2026-11-17)", () => {
+    event = { ...EVENT, check_in_needs_code: false };
+    checkIn.mockClear();
+    checkIn.mockResolvedValue(undefined);
+    const tree = render();
+    expect(textNode(tree, "Scan code")).toBeUndefined();
+    const [tap] = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.findAll((text) => text.props.children === "Check in").length > 0,
+    );
+    act(() => tap.props.onPress());
+    expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+  });
+
+  it("keeps Scan code for a drawn zone, which needs the location step", () => {
+    event = { ...EVENT, check_in_needs_code: false, check_in_zone: [[0, 0]] };
+    expect(textNode(render(), "Scan code")).toBeDefined();
   });
 
   /** The card's header row: the dot is the View drawn beside the title. */

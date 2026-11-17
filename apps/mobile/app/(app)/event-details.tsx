@@ -8,9 +8,9 @@ import {
   statusLabel,
 } from "@repo/validation";
 import { formatPointsChip } from "@repo/formatting";
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
@@ -36,7 +36,8 @@ import {
   useEventEditGrants,
 } from "@/components/events/new-event-sheet";
 import { type EventEditTarget } from "@/lib/events/edit-event";
-import { useHostSelfCheckIn } from "@/lib/events/use-host-self-check-in";
+import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
+import { SelfCheckInLink } from "@/components/events/self-check-in-link";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
@@ -472,13 +473,19 @@ function CheckInCard({
   // The accent fill marks a card with something to do now.
   const active = (isOpen && !own) || hostable;
   const showScan = canScan && !canHost;
-  const self = useHostSelfCheckIn(event.id);
   // s18 with Scan code's viewport already up: the member tapped Scan code.
-  const openScanner = () =>
-    router.push({
-      pathname: "/check-in",
-      params: { eventId: event.id, scan: "1" },
-    });
+  const openScanner = useCallback(
+    () =>
+      router.push({
+        pathname: "/check-in",
+        params: { eventId: event.id, scan: "1" },
+      }),
+    [event.id, router],
+  );
+  // A drawn zone needs the member's location, which s18 gathers; anything
+  // else checks in from here in one tap unless a code is needed now.
+  const oneTap = !event.hasCheckInZone;
+  const tap = useOneTapCheckIn(event.id, openScanner);
 
   return (
     <View
@@ -530,25 +537,32 @@ function CheckInCard({
             }
           />
           {canScan ? (
-            <>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ busy: self.pending }}
-                disabled={self.pending}
-                onPress={self.checkIn}
-                style={({ pressed }) => [
-                  styles.selfCheckIn,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text style={[styles.selfCheckInText, { color: accent }]}>
-                  {self.pending ? "Checking you in…" : "Check myself in"}
-                </Text>
-              </Pressable>
-              {self.message ? (
-                <Text style={styles.zoneText}>{self.message}</Text>
-              ) : null}
-            </>
+            <SelfCheckInLink
+              accent={accent}
+              pending={tap.pending}
+              message={tap.message}
+              onPress={
+                oneTap
+                  ? tap.checkIn
+                  : () =>
+                      router.push({
+                        pathname: "/check-in",
+                        params: { eventId: event.id },
+                      })
+              }
+            />
+          ) : null}
+        </>
+      ) : showScan && oneTap && !event.checkInNeedsCode ? (
+        <>
+          <SheetPrimaryButton
+            label={tap.pending ? "Checking you in…" : "Check in"}
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
+            onPress={tap.checkIn}
+          />
+          {tap.message ? (
+            <Text style={styles.zoneText}>{tap.message}</Text>
           ) : null}
         </>
       ) : showScan ? (
@@ -748,18 +762,6 @@ function createStyles(tokens: SignetTokens) {
     checkInMeta: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
-    },
-    // A text action under the card's button, centred, at the 44pt floor.
-    selfCheckIn: {
-      minHeight: tokens.touch.minimum,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    selfCheckInText: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pressed: {
-      opacity: 0.7,
     },
     zoneText: {
       color: tokens.color.text.mutedForeground,

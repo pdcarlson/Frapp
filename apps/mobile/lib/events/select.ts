@@ -89,6 +89,12 @@ export interface EventDetail extends EventRow {
    * exact boundary to anyone who asked for the event.
    */
   hasCheckInZone: boolean;
+  /**
+   * Whether a check-in from this viewer now needs the officer's code
+   * (`check_in_needs_code`, #4808): an officer's screen is live and it isn't
+   * the viewer's own. False when the read doesn't say.
+   */
+  checkInNeedsCode: boolean;
   /** The chapter's event type it was made as (#3730), or `null`. */
   event_type_id: string | null;
   /**
@@ -383,6 +389,7 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
+    checkInNeedsCode: data.check_in_needs_code === true,
     event_type_id: str(data, "event_type_id"),
     created_by: str(data, "created_by"),
   };

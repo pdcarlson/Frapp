@@ -1772,41 +1772,22 @@ describe('AttendanceService', () => {
     });
 
     it('checks the host in with one tap: no code, no location (2026-11-17)', async () => {
-      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
-      mockRbac.memberHasAnyPermission.mockResolvedValue(true);
-
       // The phone showing the QR is the host's own, so they can't scan it.
-      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
-        baseAttendance,
-      );
-      expect(mockRbac.memberHasAnyPermission).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-        ['events:update'],
-      );
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
+      await expect(
+        service.checkIn('evt-1', 'officer-1', 'ch-1'),
+      ).resolves.toEqual(baseAttendance);
       expect(mockAttendanceRepo.checkInAtomic).toHaveBeenCalled();
     });
 
-    it('checks a host in at a drawn zone without a location too', async () => {
+    it('asks an officer who is not hosting for the code like anyone else', async () => {
+      // The permission alone is no proof of presence (review, 2026-11-17).
+      mockScreenRepo.findLive.mockResolvedValue([locatedScreen]);
       mockRbac.memberHasAnyPermission.mockResolvedValue(true);
-      mockEventRepo.findById.mockResolvedValue({
-        ...baseEvent,
-        check_in_zone: [
-          { lat: 42.729, lng: -73.679 },
-          { lat: 42.729, lng: -73.677 },
-          { lat: 42.731, lng: -73.677 },
-          { lat: 42.731, lng: -73.679 },
-        ],
-      });
-
-      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
-        baseAttendance,
-      );
-    });
-
-    it('asks nothing of the roles for a plain event, which needs no proof', async () => {
-      await service.checkIn('evt-1', 'user-1', 'ch-1');
-      expect(mockRbac.memberHasAnyPermission).not.toHaveBeenCalled();
+      await expect(
+        service.checkIn('evt-1', 'officer-2', 'ch-1'),
+      ).rejects.toThrow(CHECK_IN_NEEDS_CODE);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
     it('requires the code for an event with a drawn zone too', async () => {

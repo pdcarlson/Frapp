@@ -830,6 +830,16 @@ spike in #4877), so they cost no Expo build. They are signed with the credential
 minutes before a binary reaches the store. The run's summary says what each platform did, and its
 `confirm` job goes red when an upload didn't finish.
 
+Since 2026-11-17 the staging binary claims `app.staging.frapp.live`'s `/join` and `/check-in`
+(`withStagingVariant` in `apps/mobile/app.config.js`), so a staging QR opens Frapp Staging. The
+claim needs three things beyond the build: the `live.frapp.mobile.staging` App ID's provisioning
+profile must include the Associated Domains capability (`eas credentials -p ios --profile staging`
+regenerates it, the way [§ 6.6](#66-store-submission) does for the store app), and the staging web must publish its two
+`.well-known` files, which name the staging app on any non-production Vercel deployment but stay
+404 until `NEXT_PUBLIC_APPLE_TEAM_ID` and `NEXT_PUBLIC_ANDROID_APP_CERT_SHA256` are set in
+Infisical `staging` ([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)). Until
+then a staging QR opens the staging web page, whose Open in Frapp Staging still reaches the app.
+
 Known limits: a staging binary's native crashes are not symbolicated in Sentry, because a local
 build can't read the Secret EAS variable the upload needs; and a native change takes about an hour
 and a half to reach a phone (build, Expo's queue, the store's processing).

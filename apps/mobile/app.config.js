@@ -85,9 +85,12 @@
 // signs in to. `FRAPP_APP_VARIANT=staging`, which only eas.json's `staging`
 // profile sets, gives it its own name, scheme, bundle id and package
 // (STAGING_IDENTITY below; spec/ui/brand-identity.md § 1 lists them beside the
-// production ones). The variant drops the universal-link and App Link claims:
-// those name app.frapp.live, whose `/.well-known` files vouch only for the
-// production app, so the variant would fail verification and never open them.
+// production ones). The variant moves the universal-link and App Link claims
+// to the host of the profile's `EXPO_PUBLIC_APP_URL` (app.staging.frapp.live,
+// 2026-11-17), whose `/.well-known` files vouch for the staging app, so a
+// staging QR opens Frapp Staging; with no such host (unset, localhost, or the
+// production origin) it drops them, since app.frapp.live vouches only for the
+// production app.
 // Two fences keep the pair apart: the variant refuses every EAS profile but
 // `staging` (and that profile refuses to run without it), and it refuses the
 // production API and Supabase origins, so a binary called Frapp Staging can

@@ -360,16 +360,37 @@ describe("Host check-in while the room fills", () => {
   it("checks the host in with one tap, since they can't scan their own code (2026-11-17)", async () => {
     hooks.own = null;
     hooks.checkIn.mockClear();
-    const tree = render();
-    const [self] = tree.root.findAll(
-      (node) =>
-        typeof node.props.onPress === "function" &&
-        node.findAll((text) => text.props.children === "Check myself in")
-          .length > 0,
-    );
-    await act(async () => self.props.onPress());
-    expect(hooks.checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
-    act(() => tree.unmount());
+    // Inside the event's check-in window.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T18:05:00Z"));
+    try {
+      const tree = render();
+      const [self] = tree.root.findAll(
+        (node) =>
+          typeof node.props.onPress === "function" &&
+          node.findAll((text) => text.props.children === "Check myself in")
+            .length > 0,
+      );
+      await act(async () => self.props.onPress());
+      expect(hooks.checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers the host no self check-in outside the window", () => {
+    hooks.own = null;
+    // The code can go up early; the check-in itself can't.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T17:00:00Z"));
+    try {
+      const tree = render();
+      expect(screenText(tree)).not.toContain("Check myself in");
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says the host is in, with no button, once they are", () => {
