@@ -671,6 +671,101 @@ describe("Activity screen (#3897)", () => {
     });
   });
 
+  describe("the week strip and the Calendar row (#5310)", () => {
+    const stripDays = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.testID ?? "").startsWith("activity-strip-day:"),
+      );
+    const dots = (tree: ReactTestRenderer, id: string) =>
+      tree.root
+        .findAll(
+          (node) =>
+            (node.type as unknown) === "View" &&
+            String(node.props.testID ?? "").startsWith(
+              `activity-strip-dot-${id}-`,
+            ),
+        )
+        .map((node) =>
+          String(node.props.testID).slice(`activity-strip-dot-${id}-`.length),
+        );
+
+    it("draws today and six days on, today picked, a quiet day not pressable", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ needs_you: { ...read().needs_you, tasks: [] } }),
+      };
+      const tree = render();
+      const days = stripDays(tree);
+      expect(days).toHaveLength(7);
+      expect(days[0]!.props.accessibilityState).toEqual({
+        selected: true,
+        disabled: true,
+      });
+      expect(days.every((day) => day.props.disabled === true)).toBe(true);
+      expect(days[0]!.props.accessibilityLabel).toMatch(/nothing due$/);
+    });
+
+    it("puts a dot per kind on the day it is due", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            ...read().needs_you,
+            tasks: [
+              task({
+                id: "soon",
+                title: "Agenda",
+                due_date: null,
+                due_at: new Date(Date.now() + 48 * 3_600_000).toISOString(),
+              }),
+            ],
+          },
+          coming_up: [eventIn(48)],
+        }),
+      };
+      const tree = render();
+      const busy = stripDays(tree).find(
+        (day) =>
+          dots(tree, day.props.testID.slice("activity-strip-".length)).length >
+          0,
+      )!;
+      const id = busy.props.testID.slice("activity-strip-".length);
+      expect(dots(tree, id)).toEqual(["events", "tasks"]);
+      expect(busy.props.disabled).toBe(false);
+      expect(busy.props.accessibilityLabel).toMatch(/1 event, 1 task$/);
+    });
+
+    it("shows everything again when a day is pressed under a narrowed list", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [eventIn(48), eventIn(50, { id: "ev-2" })] }),
+      };
+      const tree = render();
+      act(() => weekLine(tree, "tasks").props.onPress());
+      expect(weekLine(tree, "tasks").props.accessibilityState).toEqual({
+        selected: true,
+      });
+      const day = stripDays(tree).find((each) => !each.props.disabled)!;
+      act(() => day.props.onPress());
+      expect(weekLine(tree, "tasks").props.accessibilityState).toEqual({
+        selected: false,
+      });
+      expect(
+        stripDays(tree).find((each) => each.props.testID === day.props.testID)!
+          .props.accessibilityState.selected,
+      ).toBe(true);
+    });
+
+    it("opens the chapter's month from the Calendar row", () => {
+      vi.mocked(useRouter().navigate).mockClear();
+      const tree = render();
+      act(() => pressable(tree, "activity-calendar-row").props.onPress());
+      expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/events");
+    });
+  });
+
   describe("To do, by day (#4766)", () => {
     const busy = () =>
       read({

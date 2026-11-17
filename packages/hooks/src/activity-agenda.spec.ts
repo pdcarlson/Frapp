@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_STRIP_DAYS,
   activityAgenda,
   activityCouldNotLoad,
   activityNarrowedNote,
   activityReview,
+  activityWeekStrip,
   activityWeekSummary,
 } from "./activity-agenda";
 import type { Activity } from "./activity-rows";
@@ -752,5 +754,96 @@ describe("activityReview (#4766)", () => {
     expect(
       activityReview(activity({ unavailable: ["tasks"] }), officer, NOW),
     ).toMatchObject({ unavailable: ["tasks"] });
+  });
+});
+
+describe("activityWeekStrip (#5310)", () => {
+  it("draws today and the six days after it, empty, for a quiet week", () => {
+    const strip = activityWeekStrip(activity(), NOW);
+    expect(strip).toHaveLength(ACTIVITY_STRIP_DAYS);
+    expect(strip.map((day) => day.date.getDate())).toEqual([
+      13, 14, 15, 16, 17, 18, 19,
+    ]);
+    expect(strip.every((day) => day.kinds.length === 0)).toBe(true);
+    expect(strip[0]!.spokenLabel).toMatch(/nothing due$/);
+  });
+
+  it("puts a dot per kind on each day, and none for what is overdue or undated", () => {
+    const data = activity({
+      needs_you: needs({
+        tasks: [
+          task({
+            id: "late",
+            title: "Receipts",
+            status: "OVERDUE",
+            due_date: "2026-11-10",
+          }),
+          task({ id: "t-sun", title: "Agenda", due_at: at(2, 17) }),
+          task({ id: "t-sun-2", title: "Slides", due_at: at(2, 18) }),
+          task({ id: "someday", title: "Retreat plan" }),
+          task({ id: "far", title: "Banquet", due_date: "2026-12-20" }),
+        ],
+        polls: [poll({ message_id: "p1", closes_at: at(1, 12) })],
+        cards: [card({ closes_at: at(2, 9) })],
+      }),
+      coming_up: [
+        event({ id: "tomorrow", name: "Cleanup", start_time: at(1, 10) }),
+        event({ id: "sunday", name: "Chapter", start_time: at(2, 19) }),
+      ],
+    });
+    const strip = activityWeekStrip(data, NOW);
+    expect(strip.map((day) => day.kinds)).toEqual([
+      [],
+      ["events", "answers"],
+      ["events", "tasks", "answers"],
+      [],
+      [],
+      [],
+      [],
+    ]);
+    expect(strip[2]!.count).toBe(4);
+    expect(strip[2]!.spokenLabel).toMatch(
+      /, 1 event, 2 tasks, 1 poll or sign-up$/,
+    );
+    // Overdue leads the agenda, so it is the week card's Next; every dated
+    // day still has a To do section to jump to.
+    expect(strip[1]!.sections).toEqual(["day:1"]);
+    expect(strip[2]!.sections).toEqual(["day:2"]);
+  });
+
+  it("files an open check-in under Now, on today", () => {
+    const data = activity({
+      needs_you: needs({
+        tasks: [task({ id: "today", title: "Agenda", due_at: at(0, 17) })],
+      }),
+      coming_up: [
+        event({
+          id: "live",
+          name: "Walkthrough",
+          start_time: at(0, 11, 50),
+          check_in_open: true,
+        }),
+        event({
+          id: "live-2",
+          name: "Setup",
+          start_time: at(0, 11, 55),
+          check_in_open: true,
+        }),
+      ],
+    });
+    const [today] = activityWeekStrip(data, NOW);
+    expect(today!.kinds).toEqual(["events", "tasks"]);
+    expect(today!.count).toBe(3);
+    // The first open event is the week card's; the other is under Now.
+    expect(today!.sections).toEqual(["now", "day:0"]);
+  });
+
+  it("has no section for a day whose one thing is the week card's", () => {
+    const data = activity({
+      coming_up: [event({ start_time: at(3, 19) })],
+    });
+    const strip = activityWeekStrip(data, NOW);
+    expect(strip[3]!.kinds).toEqual(["events"]);
+    expect(strip[3]!.sections).toEqual([]);
   });
 });
