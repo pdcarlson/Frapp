@@ -389,7 +389,7 @@ export function EventsCalendar({
 
           <View>
             <DayHeading>
-              {formatDayHeading(selectedDay.toISOString(), now) ?? selectedKey}
+              {formatDayHeading(selectedDay, now) ?? selectedKey}
             </DayHeading>
             {dayEvents.length === 0 && dayTasks.length === 0 ? (
               <InlineNote>{emptyNote ?? "Nothing on this day."}</InlineNote>

@@ -9,6 +9,6 @@ export function reminderSetDescription(
   remindAt: Date,
   now: Date = new Date(),
 ): string {
-  const said = formatActedLabel("I'll remind you", remindAt.toISOString(), now);
+  const said = formatActedLabel("I'll remind you", remindAt, now);
   return said ? `${said}.` : "I'll remind you about this message.";
 }

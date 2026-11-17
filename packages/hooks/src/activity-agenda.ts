@@ -410,7 +410,7 @@ function dayLabel(daysAhead: number, now: Date): string {
     now.getDate() + daysAhead,
     12,
   );
-  return formatDayHeading(day.toISOString(), now) ?? "Today";
+  return formatDayHeading(day, now) ?? "Today";
 }
 
 /**

@@ -183,7 +183,7 @@ export function selectNextTask(
  * Exported for the strip's due line too.
  */
 export function formatDayWord(at: Date, now: Date): string {
-  return formatDayHeading(at.toISOString(), now) ?? "";
+  return formatDayHeading(at, now) ?? "";
 }
 
 /** The day in words, then the clock time while it is inside the coming week. */

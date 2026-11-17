@@ -193,7 +193,7 @@ export const RemindSheet = forwardRef<GuardedSheetHandle, RemindSheetProps>(
                   display="compact"
                   themeVariant="dark"
                   accentColor={accent}
-                  accessibilityLabel={`Time, ${formatTimeOfDay(custom.toISOString())}`}
+                  accessibilityLabel={`Time, ${formatTimeOfDay(custom)}`}
                   onValueChange={(_event, clock) => {
                     setNow(new Date());
                     setCustom(withClock(custom, clock));
