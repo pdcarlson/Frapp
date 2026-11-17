@@ -1,14 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   FolderPlus,
   Pencil,
   Trash2,
 } from "lucide-react";
-import { tierByMarks } from "@repo/hooks/document-library";
+import {
+  buildFolderTree,
+  folderAncestors,
+  folderStartsOpen,
+  liftMarkedFolders,
+  type FolderTreeNode,
+} from "@repo/hooks/document-folder-tree";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Can } from "@/components/shared/can";
@@ -22,6 +29,7 @@ import {
   splitPinned,
   type FolderManagement,
 } from "@/components/documents/folder-management";
+import { useFolderOpen } from "@/components/documents/use-folder-open";
 import type { DocumentMarks } from "@/components/documents/use-document-marks";
 import {
   KEEP_FOCUS_ATTRIBUTE,
@@ -72,6 +80,22 @@ function folderRowClassName(isActive: boolean): string {
 const MANAGE_CONTROL =
   "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 disabled:border-transparent disabled:bg-transparent";
 
+/**
+ * How far each level of the tree steps in (#5337), and the deepest level that
+ * still steps: Drive sync reads ten levels, and ten steps would leave a 200px
+ * rail no room for a name, so past the sixth a folder lines up with its
+ * parent's level and the chevrons and order still say where it sits.
+ */
+const INDENT_PX = 12;
+const MAX_INDENT_LEVELS = 6;
+
+/** A folder's key for the open/closed picks: its id, or a derived row's name. */
+function openKey(folder: FolderRow): string {
+  return folder.id ?? `name:${folder.name}`;
+}
+
+type FolderNode = FolderTreeNode<FolderRow>;
+
 export function FolderRail({
   railFolders,
   activeFolder,
@@ -107,36 +131,90 @@ export function FolderRail({
   const { rootRef, remember } = useKeepFocus<HTMLElement>();
 
   /*
+    The tree (#5337, Shawn's pick of option C): a folder named by its path
+    ("Town in Fiji / Rush / 2024", as Drive sync names them) is drawn under
+    its parent, reading its own name, as Google Drive's and Dropbox's
+    sidebars and Notion's page tree draw theirs. The data stays flat; only
+    the drawing nests (`document-folder-tree.ts` says which folder goes
+    where, the phone's chips run the same rule).
+  */
+  /*
+    Built over the chapter's arrangement, pinned first (`splitPinned`), so
+    the folders under one parent draw in the order Move up and Move down
+    save, and a pinned one leads its siblings as pinned folders lead the rail.
+  */
+  const tree = useMemo(() => {
+    const { pinned, rest } = splitPinned(railFolders);
+    return buildFolderTree([...pinned, ...rest]);
+  }, [railFolders]);
+  const nested = tree.some((node) => node.children.length > 0);
+  const { isOpen, setOpen } = useFolderOpen();
+
+  /*
     The three tiers (#3934, `chapter-docs.md` § Pinned and starred): pinned
     for the chapter, then this member's stars, then the rest, each in the
-    officers' order. Edit shows the chapter's arrangement instead, pinned and
-    the rest, because that is what Move up and Move down change for everyone;
-    one officer's stars are not part of it.
+    officers' order. A marked folder takes everything under it to its tier,
+    so a folder shows once (`liftMarkedFolders`). Edit shows the chapter's
+    arrangement instead, pinned and the rest, because that is what Move up
+    and Move down change for everyone; one officer's stars are not part of it.
   */
-  const groups: { label: string | null; folders: FolderRow[] }[] = (() => {
-    if (editing) {
-      const { pinned, rest } = splitPinned(railFolders);
-      if (pinned.length === 0) return [{ label: null, folders: rest }];
-      return [
-        { label: "Pinned", folders: pinned },
-        { label: "Other folders", folders: rest },
-      ].filter((group) => group.folders.length > 0);
-    }
-    const { pinned, starred, rest } = tierByMarks(
-      railFolders,
+  const groups: { label: string | null; nodes: FolderNode[] }[] = (() => {
+    const tiers = liftMarkedFolders(
+      tree,
       (folder) => !!folder.pinned_at,
       (folder) =>
-        !!folder.id && marks.isStarred({ kind: "folder", id: folder.id }),
+        !editing &&
+        !!folder.id &&
+        marks.isStarred({ kind: "folder", id: folder.id }),
     );
-    if (pinned.length === 0 && starred.length === 0) {
-      return [{ label: null, folders: rest }];
+    if (tiers.pinned.length === 0 && tiers.starred.length === 0) {
+      return [{ label: null, nodes: tiers.rest }];
     }
     return [
-      { label: "Pinned", folders: pinned },
-      { label: "Starred", folders: starred },
-      { label: "Other folders", folders: rest },
-    ].filter((group) => group.folders.length > 0);
+      { label: "Pinned", nodes: tiers.pinned },
+      { label: "Starred", nodes: tiers.starred },
+      { label: "Other folders", nodes: tiers.rest },
+    ].filter((group) => group.nodes.length > 0);
   })();
+
+  /*
+    The folder on screen is never hidden in a closed branch: the folders
+    drawn above it stay open whatever was picked, however it was chosen (a
+    card, the viewer, a refetch that moved it out of Starred). Nothing is
+    saved for that, so leaving the folder puts the member's own picks back.
+    Closing one of them chooses it instead, as the way out of what is under it.
+  */
+  const revealed = new Set(
+    folderAncestors(
+      groups.flatMap((group) => group.nodes),
+      activeFolder ?? "",
+    ).map(openKey),
+  );
+  /*
+    Before a Star or Pin moves a folder between tiers, the folders above it
+    in the tree open, so it lands somewhere drawn and its button, and focus,
+    are still there (`useKeepFocus`).
+  */
+  const revealInTree = (name: string) => {
+    const keys = folderAncestors(tree, name).map(openKey);
+    if (keys.length > 0) setOpen(keys, true);
+  };
+
+  const branch = {
+    activeFolder,
+    setActiveFolder,
+    editing,
+    nested,
+    isOpen: (key: string, startsOpen: boolean) =>
+      revealed.has(key) || isOpen(key, startsOpen),
+    setOpen,
+    revealed,
+    revealInTree,
+    gate,
+    management,
+    marks,
+    remember,
+  };
 
   return (
     <nav ref={rootRef} aria-labelledby="doc-folders-label">
@@ -212,21 +290,7 @@ export function FolderRail({
                 {group.label}
               </p>
             ) : null}
-            {group.folders.map((folder, index) => (
-              <FolderItem
-                key={folder.id ?? `derived:${folder.name}`}
-                folder={folder}
-                active={activeFolder === folder.name}
-                onSelect={() => setActiveFolder(folder.name)}
-                editing={editing}
-                first={index === 0}
-                last={index === group.folders.length - 1}
-                gate={gate}
-                management={management}
-                marks={marks}
-                remember={remember}
-              />
-            ))}
+            <FolderBranch nodes={group.nodes} depth={0} {...branch} />
           </div>
         ))}
         {/*
@@ -254,28 +318,127 @@ export function FolderRail({
   );
 }
 
+type BranchProps = {
+  activeFolder: string | null;
+  setActiveFolder: (folder: string | null) => void;
+  editing: boolean;
+  /** Some folder has folders under it, so every row keeps the chevron's column. */
+  nested: boolean;
+  isOpen: (key: string, startsOpen: boolean) => boolean;
+  setOpen: (keys: readonly string[], open: boolean) => void;
+  /** Folders held open because the folder on screen is under them. */
+  revealed: ReadonlySet<string>;
+  /** Opens the folders above `name` in the tree before it changes tier. */
+  revealInTree: (name: string) => void;
+  gate: SubscriptionGate;
+  management: FolderManagement;
+  marks: DocumentMarks;
+  remember: (key: string) => void;
+};
+
 /**
- * One named folder: the row that filters to it, the member's star beside it,
- * and, in Edit, the officer's management line under it.
+ * One level of the tree: its folders, each followed by its own folders when
+ * open. Nested lists, so assistive tech reads each level as a list inside
+ * the one above, as it reads a nested outline.
+ */
+function FolderBranch({
+  nodes,
+  depth,
+  ...branch
+}: BranchProps & { nodes: FolderNode[]; depth: number }) {
+  return (
+    <ul className="space-y-0.5">
+      {nodes.map((node, index) => {
+        const folder = node.folder;
+        const key = openKey(folder);
+        const hasChildren = node.children.length > 0;
+        const open =
+          hasChildren && branch.isOpen(key, folderStartsOpen(nodes.length));
+        /*
+          Move up and Move down step past the nearest folder beside this one
+          at its own level, in its own tier: the tree draws each level in the
+          arrangement's order, pinned first, so a step past one in the other
+          tier would change nothing.
+        */
+        const pinned = !!folder.pinned_at;
+        const sameTier = (other: FolderNode) =>
+          !!other.folder.id && !!other.folder.pinned_at === pinned;
+        const before = nodes.slice(0, index).reverse().find(sameTier);
+        const after = nodes.slice(index + 1).find(sameTier);
+        return (
+          <li key={folder.id ?? `derived:${folder.name}`}>
+            <FolderItem
+              node={node}
+              depth={depth}
+              hasChildren={hasChildren}
+              open={open}
+              onToggle={() => {
+                if (open && branch.revealed.has(key)) {
+                  branch.setActiveFolder(folder.name);
+                }
+                branch.setOpen([key], !open);
+              }}
+              active={branch.activeFolder === folder.name}
+              onSelect={() => {
+                branch.setActiveFolder(folder.name);
+                // As Drive's sidebar does, choosing a folder also opens it.
+                if (hasChildren && !open) branch.setOpen([key], true);
+              }}
+              moveBefore={before?.folder.id ?? null}
+              moveAfter={after?.folder.id ?? null}
+              {...branch}
+            />
+            {open ? (
+              <FolderBranch
+                nodes={node.children}
+                depth={depth + 1}
+                {...branch}
+              />
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * One named folder: the chevron that opens what is under it, the row that
+ * filters to it, the member's star beside it, and, in Edit, the officer's
+ * management line under it.
  */
 function FolderItem({
-  folder,
+  node,
+  depth,
+  hasChildren,
+  open,
+  onToggle,
   active,
   onSelect,
   editing,
-  first,
-  last,
+  nested,
+  moveBefore,
+  moveAfter,
+  revealInTree,
   gate,
   management,
   marks,
   remember,
 }: {
-  folder: FolderRow;
+  node: FolderNode;
+  depth: number;
+  hasChildren: boolean;
+  open: boolean;
+  onToggle: () => void;
   active: boolean;
   onSelect: () => void;
   editing: boolean;
-  first: boolean;
-  last: boolean;
+  nested: boolean;
+  /** The folder Move up steps past, or null when it can't move up. */
+  moveBefore: string | null;
+  /** The folder Move down steps past, or null when it can't move down. */
+  moveAfter: string | null;
+  revealInTree: (name: string) => void;
   gate: SubscriptionGate;
   management: FolderManagement;
   marks: DocumentMarks;
@@ -290,19 +453,62 @@ function FolderItem({
     would save an arrangement the pin is about to contradict.
   */
   const moveBusy = folderBusy || marks.pinBusy;
+  const folder = node.folder;
   const id = folder.id;
   const pinned = !!folder.pinned_at;
   const starred = !!id && marks.isStarred({ kind: "folder", id });
+  /*
+    A folder drawn away from its place in the tree (at the top of Pinned or
+    Starred) says where it lives under its own name, so two "Flyers" read
+    apart, as Drive's Starred list names each item's location.
+  */
+  const where = depth === 0 ? node.parentName : null;
   return (
     <div>
-      <div className="group/folder flex items-center gap-0.5">
+      <div
+        className="group/folder flex items-center gap-0.5"
+        style={
+          depth > 0
+            ? { paddingLeft: Math.min(depth, MAX_INDENT_LEVELS) * INDENT_PX }
+            : undefined
+        }
+      >
+        {/*
+          16px, tucked into the row's own padding: the rail is about 200px,
+          and a wider column cut flat names that used to fit ("Meeting
+          Minutes"). A finger gets 32 by 44.
+        */}
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            aria-label={`${open ? "Close" : "Open"} ${folder.name}`}
+            className={`-mr-1 flex h-9 w-4 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-card-hover hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-8 ${FOCUS_RING_OFFSET}`}
+          >
+            <ChevronRight
+              aria-hidden
+              className={`h-4 w-4 transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            />
+          </button>
+        ) : nested ? (
+          <span aria-hidden className="-mr-1 w-4 shrink-0 pointer-coarse:w-8" />
+        ) : null}
         <button
           type="button"
           onClick={onSelect}
+          title={node.label === folder.name ? undefined : folder.name}
           className={`${folderRowClassName(active)} min-w-0 flex-1`}
         >
           <FolderGlyph className="h-4 w-4 shrink-0" active={active} />
-          <span className="truncate">{folder.name}</span>
+          <span className="min-w-0">
+            <span className="block truncate">{node.label}</span>
+            {where ? (
+              <span className="block truncate text-xs text-muted-foreground">
+                {where}
+              </span>
+            ) : null}
+          </span>
           {folder.who_can_see ? (
             <LimitedMark label="Not everyone can see this folder" />
           ) : null}
@@ -327,6 +533,7 @@ function FolderItem({
             {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${id}` }}
             onClick={() => {
               remember(`star:${id}`);
+              revealInTree(folder.name);
               marks.toggleStar({ kind: "folder", id }, folder.name);
             }}
             {...gate.controlProps()}
@@ -366,6 +573,7 @@ function FolderItem({
               {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${id}` }}
               onClick={() => {
                 remember(`pin:${id}`);
+                revealInTree(folder.name);
                 void marks.setPinned(
                   { kind: "folder", id },
                   folder.name,
@@ -381,8 +589,10 @@ function FolderItem({
               size="icon"
               className={MANAGE_CONTROL}
               aria-label={`Move ${folder.name} up`}
-              onClick={() => void handleMoveFolder(id, -1)}
-              {...gate.controlProps(moveBusy || first)}
+              onClick={() =>
+                moveBefore && void handleMoveFolder(id, moveBefore)
+              }
+              {...gate.controlProps(moveBusy || !moveBefore)}
             >
               <ChevronUp className="h-4 w-4" />
             </Button>
@@ -391,8 +601,8 @@ function FolderItem({
               size="icon"
               className={MANAGE_CONTROL}
               aria-label={`Move ${folder.name} down`}
-              onClick={() => void handleMoveFolder(id, 1)}
-              {...gate.controlProps(moveBusy || last)}
+              onClick={() => moveAfter && void handleMoveFolder(id, moveAfter)}
+              {...gate.controlProps(moveBusy || !moveAfter)}
             >
               <ChevronDown className="h-4 w-4" />
             </Button>

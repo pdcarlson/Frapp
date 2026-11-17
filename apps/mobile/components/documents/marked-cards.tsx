@@ -1,3 +1,4 @@
+import { folderCardText } from "@repo/hooks/document-folder-tree";
 import { StyleSheet, Text, View } from "react-native";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
@@ -36,6 +37,7 @@ export function MarkedCards({
   onOpenFolder,
   onOpenDocument,
   onActions,
+  folderNames,
 }: {
   pinned: readonly MarkedCardItem[];
   starred: readonly MarkedCardItem[];
@@ -51,6 +53,8 @@ export function MarkedCards({
   onOpenFolder: (name: string) => void;
   onOpenDocument: (id: string) => void;
   onActions: (item: MarkedCardItem) => void;
+  /** Every folder the member has, so a deep folder's card reads its own name (#5337). */
+  folderNames: ReadonlySet<string>;
 }) {
   if (pinned.length === 0 && starred.length === 0) return null;
   return (
@@ -69,6 +73,7 @@ export function MarkedCards({
             onOpenFolder={onOpenFolder}
             onOpenDocument={onOpenDocument}
             onActions={onActions}
+            folderNames={folderNames}
           />
         </>
       ) : null}
@@ -86,6 +91,7 @@ export function MarkedCards({
             onOpenFolder={onOpenFolder}
             onOpenDocument={onOpenDocument}
             onActions={onActions}
+            folderNames={folderNames}
           />
         </>
       ) : null}
@@ -104,6 +110,7 @@ function CardList({
   onOpenFolder,
   onOpenDocument,
   onActions,
+  folderNames,
 }: {
   items: readonly MarkedCardItem[];
   accented: boolean;
@@ -115,6 +122,7 @@ function CardList({
   onOpenFolder: (name: string) => void;
   onOpenDocument: (id: string) => void;
   onActions: (item: MarkedCardItem) => void;
+  folderNames: ReadonlySet<string>;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -125,11 +133,23 @@ function CardList({
       {items.map((item) => {
         const key =
           item.kind === "folder" ? `f:${item.folder.id}` : `d:${item.doc.id}`;
-        const title =
-          item.kind === "folder" ? item.folder.name : item.doc.title;
+        /*
+          A folder card reads the folder's own name and says where it sits,
+          as web's cards and the folder chips do (#5337): a synced folder's
+          whole path would truncate before its own name.
+        */
+        const card =
+          item.kind === "folder"
+            ? folderCardText(item.folder.name, item.count, folderNames)
+            : null;
+        const title = card
+          ? card.title
+          : item.kind === "document"
+            ? item.doc.title
+            : "";
         const meta =
           item.kind === "folder"
-            ? `Folder · ${item.count} ${item.count === 1 ? "file" : "files"}`
+            ? (card?.meta ?? "")
             : [
                 item.doc.document_type,
                 formatDay(item.doc.created_at || null)
@@ -152,7 +172,9 @@ function CardList({
             key={key}
             onCard
             accessibilityRole="button"
-            accessibilityLabel={title}
+            accessibilityLabel={
+              card?.where ? `${title}, in ${card.where}` : title
+            }
             accessibilityValue={limited ? { text: LIMITED_LABEL } : undefined}
             accessibilityHint={
               item.kind === "folder"

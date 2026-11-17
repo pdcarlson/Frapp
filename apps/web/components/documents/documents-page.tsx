@@ -163,6 +163,11 @@ function ChapterDocumentsPage() {
       .map((name) => ({ id: null, name, sort_order: null }));
   }, [folders, foldersQuery.isError, documents]);
 
+  const railFolderNames = useMemo(
+    () => new Set(railFolders.map((folder) => folder.name)),
+    [railFolders],
+  );
+
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   // The document open in the viewer (#3849), by id: the viewer reads the row
   // from `visible`, so it steps through the list as shown and closes when the
@@ -516,6 +521,7 @@ function ChapterDocumentsPage() {
               gate={gate}
               onOpenFolder={setActiveFolder}
               onOpenDocument={openDocument}
+              folderNames={railFolderNames}
               isLimited={(item) =>
                 item.kind === "folder"
                   ? item.folder.who_can_see != null

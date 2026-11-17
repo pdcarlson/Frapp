@@ -61,6 +61,10 @@ export interface FilterChip {
   count?: number | null;
   /** A small glyph before the label, e.g. s12's pin or star (#3934). */
   mark?: ReactNode;
+  /** A small glyph after the label, e.g. s12's chevron on a folder that holds folders (#5337). */
+  trailing?: ReactNode;
+  /** What a screen reader says instead of the label, when the glyphs carry meaning. */
+  accessibilityLabel?: string;
   /**
    * A long press's action, e.g. s12's folder actions (#3934). Also offered
    * as a named accessibility action, so it is never press-and-hold only.
@@ -311,6 +315,8 @@ export function FilterChips({
             on={selected === chip.value}
             onPress={() => onSelect(chip.value)}
             mark={chip.mark}
+            trailing={chip.trailing}
+            accessibilityLabel={chip.accessibilityLabel}
             onLongPress={chip.onLongPress}
             longPressLabel={chip.longPressLabel}
             // A count is omitted rather than shown as `· 0` while its query

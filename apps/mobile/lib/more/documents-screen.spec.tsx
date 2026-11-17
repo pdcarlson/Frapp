@@ -1463,6 +1463,117 @@ describe("Documents pinned and starred (#3934)", () => {
  * Grid lays the same rows out two to a line as tiles that take the row's tap
  * and long press, so the layout changes nothing a member can do.
  */
+describe("Documents folder tree (#5337)", () => {
+  // A synced Drive tree, named by path as Drive sync names its folders.
+  const FOLDERS = [
+    { id: "t-1", name: "Town in Fiji", sort_order: 0 },
+    { id: "t-2", name: "Town in Fiji / Rush", sort_order: 1 },
+    { id: "t-3", name: "Town in Fiji / Rush / 2024", sort_order: 2 },
+    { id: "t-4", name: "Town in Fiji / Rush / 2025", sort_order: 3 },
+    { id: "t-5", name: "Town in Fiji / Formal", sort_order: 4 },
+    { id: "t-6", name: "Bylaws", sort_order: 5 },
+  ];
+  const LIBRARY = [
+    {
+      id: "d-1",
+      title: "2024 flyer",
+      folder: "Town in Fiji / Rush / 2024",
+      created_at: "2026-08-12T14:00:00.000Z",
+    },
+    {
+      id: "d-2",
+      title: "Rush schedule",
+      folder: "Town in Fiji / Rush",
+      created_at: "2026-08-13T14:00:00.000Z",
+    },
+  ];
+
+  function loaded() {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS;
+    starRows = { folder_ids: [], document_ids: [] };
+    return render();
+  }
+  const folderChips = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType(FilterChips)
+      .find((chips) => chips.props.accessibilityLabel === "Filter by folder")!;
+  const chips = (tree: ReactTestRenderer) =>
+    (
+      folderChips(tree).props.chips as {
+        value: string | null;
+        label: string;
+        trailing?: unknown;
+        accessibilityLabel?: string;
+      }[]
+    ).map((chip) => chip.accessibilityLabel ?? chip.label);
+  const rowLabels = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ListRow).map((row) => row.props.label as string);
+
+  it("shows the top level, marking a folder that holds folders", () => {
+    expect(chips(loaded())).toEqual([
+      "All",
+      "Town in Fiji, holds folders",
+      "Bylaws",
+    ]);
+  });
+
+  it("steps into a folder that holds folders, its own files one tap away", () => {
+    const tree = loaded();
+    act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush"));
+    expect(chips(tree)).toEqual([
+      "Back to Town in Fiji",
+      "Rush",
+      "2024",
+      "2025",
+    ]);
+    expect(folderChips(tree).props.selected).toBe("Town in Fiji / Rush");
+    // Rush's own files only, not its folders'.
+    expect(rowLabels(tree)).toEqual(["Rush schedule"]);
+  });
+
+  it("names where a pinned folder lives when it leads the top row, and on its card", () => {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS.map((entry) =>
+      entry.id === "t-3"
+        ? { ...entry, pinned_at: "2026-11-17T00:00:00.000Z" }
+        : entry,
+    );
+    starRows = { folder_ids: [], document_ids: [] };
+    const tree = render();
+    const top = folderChips(tree).props.chips as {
+      label: string;
+      accessibilityLabel?: string;
+    }[];
+    expect(top[1]).toMatchObject({
+      label: "2024 · Rush",
+      accessibilityLabel: "2024, in Town in Fiji / Rush",
+    });
+    expect(screenText(tree)).toContain("In Town in Fiji / Rush · 1 file");
+  });
+
+  it("keeps a folder that holds none among its siblings, and steps back out", () => {
+    const tree = loaded();
+    act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush / 2024"));
+    expect(chips(tree)).toEqual([
+      "Back to Town in Fiji",
+      "Rush",
+      "2024",
+      "2025",
+    ]);
+    expect(rowLabels(tree)).toEqual(["2024 flyer"]);
+    act(() => folderChips(tree).props.onSelect("Town in Fiji"));
+    expect(chips(tree)).toEqual([
+      "Back to All",
+      "Town in Fiji",
+      "Rush, holds folders",
+      "Formal",
+    ]);
+    act(() => folderChips(tree).props.onSelect(null));
+    expect(chips(tree)[0]).toBe("All");
+  });
+});
+
 describe("Documents as a grid (#4175)", () => {
   const tiles = (tree: ReactTestRenderer) =>
     tree.root

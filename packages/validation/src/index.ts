@@ -73,6 +73,8 @@ export * from "./discord-export";
 // Which Discord imports may be cleared off the list, shared so the web never
 // offers a Clear the API refuses. See ./discord-import.
 export * from "./discord-import";
+// The " / " a Drive-synced folder's path is joined with (#5337).
+export * from "./document-folders";
 export * from "./error-copy";
 // An event's agenda and attachments (#4934): their limits and shapes, which
 // the API enforces and both editors read.

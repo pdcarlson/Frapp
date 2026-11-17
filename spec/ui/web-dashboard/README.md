@@ -698,6 +698,8 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Edit is not a write and is not gated; the controls it reveals are.
 - **Pinned and starred lead Documents** (#3934, Shawn's idea): cards for what's pinned and starred above the unfiltered All files, Pinned, Starred and Other folders groups in the rail, and a Star and (for `chapter_docs:manage`) a Pin on each row.
   The rules are in [`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred).
+- **The folder rail is a tree** ([#5337](https://github.com/frapplive/Frapp/issues/5337), Shawn's pick, 2026-11-17): a folder named by its path, as Google Drive sync names them, sits under its parent with a chevron to open and close it, reading its own name, as Drive's and Dropbox's sidebars draw theirs.
+  The rules are in [`chapter-docs.md` § Structure](../../behavior/chapter-docs.md#structure) and § Pinned and starred.
 - **Documents is a List or a Grid** ([#4175](https://github.com/pdcarlson/Frapp/issues/4175), Shawn's idea, 2026-11-12).
   The List / Grid switch ([`components.md` § Segmented control](../design-system/components.md)) ends the list's toolbar row, after the Sort chip, where Google Drive keeps its own.
   Grid draws each file as a hairline tile in Drive's shape: a panel naming the file's type (`classifyFile`'s label, not a page preview, which would mean fetching every file), then its title, who uploaded it when, folder, type, effective date and description, with the row's Star, Pin, Download and Delete at its foot.

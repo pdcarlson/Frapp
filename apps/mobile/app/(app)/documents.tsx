@@ -34,12 +34,18 @@ import {
   limitedDocumentCheck,
   markedItems,
   NO_MARK_FILTER,
-  tierByMarks,
   tierRows,
   type DocumentMarkFilter,
   type DocumentSort,
   type FileKind,
 } from "@repo/hooks/document-library";
+import {
+  buildFolderTree,
+  folderLevel,
+  folderPlace,
+  liftMarkedFolders,
+  type FolderTreeNode,
+} from "@repo/hooks/document-folder-tree";
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
@@ -55,6 +61,7 @@ import {
   ChipRow,
   FilterChips,
   SearchField,
+  type FilterChip,
 } from "@/components/filter-chips";
 import {
   DocumentActionsSheet,
@@ -68,7 +75,11 @@ import {
 import { MarkedCards } from "@/components/documents/marked-cards";
 import { DocumentTiles } from "@/components/documents/document-tiles";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
-import { DisclosureGlyph } from "@/components/control-glyphs";
+import {
+  BackGlyph,
+  DisclosureGlyph,
+  ForwardGlyph,
+} from "@/components/control-glyphs";
 import { OptionSheet } from "@/components/option-sheet";
 import { useListLayout } from "@/lib/list-layout";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -360,14 +371,127 @@ export default function DocumentsScreen() {
       }),
     [documents, folders, visible, starredFolders, starredDocuments],
   );
-  const chipFolders = useMemo(() => {
-    const tiers = tierByMarks(
-      folders,
+  /*
+    The folders as a tree (#5337, Shawn's pick of option C), the way web's
+    rail draws them (`document-folder-tree.ts`): a folder named by its path
+    sits under its parent and reads its own name. A sideways chip row can't
+    indent, so the chips show one level at a time and step in and out, as the
+    Files app and Google Drive's phone app walk a tree. The top level runs
+    pinned, then starred, then the rest (#3934), each marked folder bringing
+    what is under it.
+  */
+  const folderForest = useMemo(() => {
+    const tiers = liftMarkedFolders(
+      buildFolderTree(folders),
       (entry) => !!entry.pinned_at,
       (entry) => starredFolders.has(entry.id),
     );
     return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
   }, [folders, starredFolders]);
+  const folderNames = useMemo(
+    () => new Set(folders.map((entry) => entry.name)),
+    [folders],
+  );
+  const chipLevel = useMemo(
+    () => folderLevel(folderForest, folder),
+    [folderForest, folder],
+  );
+  /*
+    A folder chip: its own name, its marks before it, and a chevron after it
+    when it holds folders, so a tap that steps in is expected. A long press
+    opens the folder's Star and Pin sheet (#3934); a folder both pinned and
+    starred wears both marks.
+  */
+  function folderChip(
+    node: FolderTreeNode<(typeof folders)[number]>,
+    back = false,
+  ): FilterChip {
+    const entry = node.folder;
+    const on = folder === entry.name;
+    const holdsFolders =
+      !back && node.children.length > 0 && node !== chipLevel.level;
+    /*
+      A pinned or starred folder lifted to the top row, away from the folder
+      it sits in, says which folder that is ("Flyers · 2024"), so two
+      "Flyers" read apart, as web's rail and both apps' cards do (#5337).
+    */
+    const where =
+      !back && chipLevel.level === null && node.parentName
+        ? node.parentName
+        : null;
+    const label = where
+      ? `${node.label} · ${folderPlace(where, folderNames).label}`
+      : node.label;
+    const marked =
+      !!entry.pinned_at || starredFolders.has(entry.id) || !!entry.who_can_see;
+    const mark = back ? (
+      <BackGlyph color={tokens.color.text.mutedForeground} size={14} />
+    ) : marked ? (
+      <View style={styles.marks}>
+        {entry.who_can_see ? (
+          <LimitedMark
+            color={on ? accentOnPrimary : tokens.color.text.mutedForeground}
+          />
+        ) : null}
+        {entry.pinned_at ? (
+          <PinGlyph color={on ? accentOnPrimary : accent} on size={14} />
+        ) : null}
+        {starredFolders.has(entry.id) ? (
+          <StarGlyph color={on ? accentOnPrimary : accent} on size={14} />
+        ) : null}
+      </View>
+    ) : undefined;
+    return {
+      value: entry.name,
+      label,
+      mark,
+      trailing: holdsFolders ? (
+        <ForwardGlyph
+          color={on ? accentOnPrimary : tokens.color.text.mutedForeground}
+          size={14}
+        />
+      ) : undefined,
+      accessibilityLabel: back
+        ? `Back to ${node.label}`
+        : [
+            node.label,
+            where ? `in ${where}` : null,
+            holdsFolders ? "holds folders" : null,
+          ]
+            .filter(Boolean)
+            .join(", ") || undefined,
+      onLongPress: () => openActions(folderTarget(entry)),
+      longPressLabel: canManage ? "Star or pin" : "Star or unstar",
+    };
+  }
+  /*
+    At the top: All, then the top-level folders. Inside a folder that holds
+    others: a chip back to the level above (All at the top), the folder
+    itself, then its folders, so its own files stay one tap away.
+  */
+  const folderChips: FilterChip[] = chipLevel.level
+    ? [
+        chipLevel.up
+          ? folderChip(chipLevel.up, true)
+          : {
+              value: null,
+              label: "All",
+              mark: (
+                <BackGlyph
+                  color={tokens.color.text.mutedForeground}
+                  size={14}
+                />
+              ),
+              accessibilityLabel: "Back to All",
+            },
+        folderChip(chipLevel.level),
+        ...chipLevel.items.map((node) => folderChip(node)),
+      ]
+    : [
+        { value: null, label: "All" },
+        ...chipLevel.items.map((node) => folderChip(node)),
+      ];
+
   const markFailed =
     markFailure && markFailure.chapterId === (chapterId ?? null)
       ? markFailure.message
@@ -864,52 +988,14 @@ export default function DocumentsScreen() {
 
       {folders.length > 0 ? (
         <FilterChips
+          // A new row for each level, so it starts at its back chip rather
+          // than keeping the scroll the last level was at (#5337).
+          key={chipLevel.level?.folder.name ?? "top"}
           accessibilityLabel="Filter by folder"
           scroll
           selected={folder}
           onSelect={setFolder}
-          chips={[
-            { value: null, label: "All" },
-            // Pinned, then starred, then the rest (#3934); a long press
-            // opens the folder's Star and Pin sheet.
-            // A folder both pinned and starred wears both marks.
-            ...chipFolders.map((entry) => ({
-              value: entry.name,
-              label: entry.name,
-              mark:
-                entry.pinned_at ||
-                starredFolders.has(entry.id) ||
-                entry.who_can_see ? (
-                  <View style={styles.marks}>
-                    {entry.who_can_see ? (
-                      <LimitedMark
-                        color={
-                          folder === entry.name
-                            ? accentOnPrimary
-                            : tokens.color.text.mutedForeground
-                        }
-                      />
-                    ) : null}
-                    {entry.pinned_at ? (
-                      <PinGlyph
-                        color={folder === entry.name ? accentOnPrimary : accent}
-                        on
-                        size={14}
-                      />
-                    ) : null}
-                    {starredFolders.has(entry.id) ? (
-                      <StarGlyph
-                        color={folder === entry.name ? accentOnPrimary : accent}
-                        on
-                        size={14}
-                      />
-                    ) : null}
-                  </View>
-                ) : undefined,
-              onLongPress: () => openActions(folderTarget(entry)),
-              longPressLabel: canManage ? "Star or pin" : "Star or unstar",
-            })),
-          ]}
+          chips={folderChips}
         />
       ) : null}
       {filterRow}
@@ -945,6 +1031,7 @@ export default function DocumentsScreen() {
         <MarkedCards
           pinned={cards.pinned}
           starred={cards.starred}
+          folderNames={folderNames}
           isStarred={(item) =>
             item.kind === "folder"
               ? starredFolders.has(item.folder.id)
