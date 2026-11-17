@@ -174,6 +174,29 @@ import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
  * `BottomSheetScrollView` is a direct child of the sheet for the reason
  * `new-task-sheet.tsx` gives.
  *
+ * ## Why the thread sits on the field, and follows the keyboard (#5426)
+ *
+ * A thread shorter than the room above the field is drawn at the bottom of
+ * that room, on the field, as Messages and ChatGPT's app draw a new
+ * conversation: what was just sent appears where the thumb sent it. Until
+ * #5426 it was drawn at the top, and the first turn replaced an opening that
+ * filled the room and was often scrolled, because the keyboard had shrunk
+ * the room under it. On iOS a scroll view keeps its offset when its content
+ * shrinks (React Native's `updateState` sets the new content size and leaves
+ * the offset alone), so the turn sat above the window and the sheet looked
+ * empty until the keyboard moved (Paul, 2026-11-17). Scrolling to the end
+ * did not rescue it: the scroll is asked for from JavaScript when the new
+ * layout is committed, and reaches the native view on the main queue, where
+ * it can run before the shrunk content is mounted and so measures the old
+ * content. Now the opening and the thread each get their own scroller, so the
+ * first turn arrives in a new one at offset zero, and the content always
+ * fills the room, so a short thread never leaves an offset past its end.
+ *
+ * The keyboard changes the room, not the content, so `onContentSizeChange`
+ * does not see it. The scroller's own layout does: while the member is
+ * reading the newest words, a change in the room scrolls to the end again,
+ * so those words stay above the field as the keyboard opens and closes.
+ *
  * Whether a member has Ask at all is the host's question (`useAiSurfaces`):
  * with the server's AI off, nothing mounts this.
  */
@@ -390,14 +413,22 @@ export const AskSheet = forwardRef<
           </View>
         </View>
         <BottomSheetScrollView
+          // A new scroller when the first turn replaces the opening, and
+          // back: the old one's offset belongs to content that is gone
+          // (#5426, above).
+          key={exchanges.length > 0 ? "thread" : "opening"}
           ref={scroller}
           onAccessibilityEscape={closeSheet}
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            exchanges.length === 0 ? styles.scrollContentOpening : null,
-          ]}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          // The keyboard opening or closing changes the room, not the
+          // content: the newest words stay above the field (#5426).
+          onLayout={() => {
+            if (following.current) {
+              scroller.current?.scrollToEnd?.({ animated: false });
+            }
+          }}
           onScrollBeginDrag={() => {
             dragged.current = true;
           }}
@@ -499,11 +530,11 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: tokens.spacing.sm,
       paddingBottom: tokens.spacing.md,
       gap: tokens.spacing.xl,
-    },
-    scrollContentOpening: {
-      // The opening fills the room above the field: its crest in the middle
-      // and its rows at the bottom, in thumb reach (`ask-opening.tsx`).
+      // At least the room above the field, with a short thread at its
+      // bottom, on the field (#5426). The opening fills it: its crest in the
+      // middle and its rows at the bottom, in thumb reach (`ask-opening.tsx`).
       flexGrow: 1,
+      justifyContent: "flex-end",
     },
     headerRow: {
       flexDirection: "row",
