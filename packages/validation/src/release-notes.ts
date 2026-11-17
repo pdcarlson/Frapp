@@ -131,12 +131,15 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A chapter's AI features now start on, so Ask Frapp, minutes from notes and channel summaries work from day one; the president can turn any of them off in Chapter settings.",
       "Documents shows a chapter's folders as a tree, so folders inside folders, like a synced Google Drive, read the way they do in Drive.",
       "Officers can give a task to everyone: each active member gets their own copy, with their own progress, proof and points.",
+      "Drafted minutes now list what the meeting actually decided, with the amounts and conditions, and leave out procedural votes like moving on to new business.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
       "Your active threads now sit under their channel in the channel list, so you can open one in a click and see at a glance which have new replies.",
       "Tasks can repeat every day, week or month, and a new one appears each time the last one comes due.",
       "The task board shows a task for everyone as one tile, with how many are done and who is left.",
+      "A backwork upload that stops responding now says so and offers Try again, instead of spinning forever.",
+      "Minutes now put decisions and action items right under the summary, tag the action items that are yours, and show the discussion one topic per line.",
     ],
     phone: [
       "Threads you're in now sit under their channel in Chat, as in Discord, instead of in a separate Threads list.",
@@ -147,6 +150,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The bar at the bottom folds into one row while you scroll down a tab, with Ask Frapp beside your current tab, and comes back as you scroll up.",
       "On iPhone, a message sent just as autocorrect was fixing a word no longer comes back into the box with the fix applied.",
       "Documents, the Directory and Tasks switch between list and grid with one button in the top corner.",
+      "The + menu has one New minutes option again: it starts the minutes, or records the meeting from the same sheet.",
     ],
   },
   {
