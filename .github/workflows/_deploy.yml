@@ -38,6 +38,9 @@ on:
       render-deploy-id:
         description: "Production: the Render deploy id this run created, if any"
         value: ${{ jobs.deploy.outputs.render-deploy-id }}
+      cloud-run-revision:
+        description: "The Cloud Run revision this run deployed, if any"
+        value: ${{ jobs.deploy.outputs.cloud-run-revision }}
       replay-outcome:
         description: "Production: check-migration-replay.mjs's replay_outcome"
         value: ${{ jobs.deploy.outputs.replay-outcome }}
@@ -68,7 +71,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    # The steps' own ceilings (staging's API image 30, Render or Cloud Run 20, served commit
+    # The steps' own ceilings (the API image 30, Render or Cloud Run 20, served commit
     # 5, client checks under 5, Vercel READY 30, source maps under 3: 93) plus
     # the installs, builds and production's rehearsal, which took about 5 of the
     # job's 9 minutes on run 36873240684 (2026-10-01, before the API build).
@@ -88,6 +91,7 @@ jobs:
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       render-deploy-id: ${{ steps.render.outputs.deploy_id }}
+      cloud-run-revision: ${{ steps.cloud-run.outputs.revision }}
       replay-outcome: ${{ steps.replay.outputs.outcome }}
       applied: ${{ steps.apply.outcome }}
       sourcemaps: ${{ steps.sourcemaps-staging.outputs.verdicts }}${{ steps.sourcemaps-production.outputs.verdicts }}
@@ -418,9 +422,17 @@ jobs:
       # Hobby, used up on 2026-11-16). This builds the commit's image, pushes it
       # to `api_image` tagged with the commit, and hands on its digest, which an
       # image-backed service (`renderDeploySource: image`) is sent below: a tag
-      # can be pushed again, a digest is one image. Production keeps Render's
-      # build until the owner moves it. Built before anything is applied, so a
-      # failed build ships nothing.
+      # can be pushed again, a digest is one image. Built before anything is
+      # applied, so a failed build ships nothing.
+      #
+      # Production on Cloud Run (#5228) builds the commit here too, as Render
+      # built it before, rather than copying staging's image: the source-map
+      # check below counts only maps uploaded by this run's builds, and
+      # Deploy production can ship a commit staging never deployed. It keeps the
+      # image on the runner for the Cloud Run step and pushes nothing to
+      # `api_image`, which staging's tags stay the only writer of. A dry run
+      # builds it as a rehearsal, without the Sentry token, so no maps go up for
+      # a release that doesn't ship.
       #
       # Staging on Cloud Run (`apiHost: cloud-run`, #5228) deploys this image, so
       # there it must succeed and it gets the Sentry token, as for an
@@ -437,14 +449,16 @@ jobs:
       # never enters the image or its metadata (apps/api/Dockerfile). The base
       # comes from Google's Docker Hub mirror, as in ci.yml's api-docker-build:
       # anonymous Docker Hub pulls from runner IPs hit its rate limit.
-      - name: Build and push the API image (staging)
+      - name: Build the API image
         id: api-image
-        if: inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true'
+        if: (inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && steps.ids.outputs.api_host == 'cloud-run' && inputs.scope != 'migrations-only')
         # A cold build of the whole API, both npm installs included; the
         # script's own bounds (20 and 5 minutes) fire first. Counted in the
         # job's timeout above.
         timeout-minutes: 30
         env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          DRY_RUN: ${{ inputs.dry_run }}
           DEPLOY_SHA: ${{ inputs.sha }}
           API_IMAGE: ${{ steps.ids.outputs.api_image }}
           RENDER_DEPLOY_SOURCE: ${{ steps.ids.outputs.render_deploy_source }}
@@ -453,9 +467,13 @@ jobs:
           GHCR_USER: ${{ github.actor }}
         run: |
           set -euo pipefail
+          # Production builds for its Cloud Run step only (see above).
+          PUSH=true
+          [ "$DEPLOY_ENVIRONMENT" = production ] && PUSH=false
+
           build_and_push() {
             if [ -z "$API_IMAGE" ]; then
-              echo "::error::.github/environments.json names no apiImage to push to."
+              echo "::error::.github/environments.json names no apiImage to tag the build with."
               return 1
             fi
             TAG="$API_IMAGE:$DEPLOY_SHA"
@@ -467,14 +485,14 @@ jobs:
             secret=()
             if [ "$RENDER_DEPLOY_SOURCE" != image ] && [ "$API_HOST" != cloud-run ]; then
               echo "Staging's service is git-backed, so this image is built without SENTRY_AUTH_TOKEN and uploads no source maps; Render's build of the commit does."
+            elif [ "$DRY_RUN" = true ]; then
+              echo "A dry run: this image is built without SENTRY_AUTH_TOKEN, so no source maps go up for a release that doesn't ship."
             elif [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
               secret=(--secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN)
             else
-              echo "::warning::SENTRY_AUTH_TOKEN is not in Infisical staging, so this image uploads no source maps and frapp-api stack traces stay compiled JS."
+              echo "::warning::SENTRY_AUTH_TOKEN is not in Infisical $DEPLOY_ENVIRONMENT, so this image uploads no source maps and frapp-api stack traces stay compiled JS."
             fi
 
-            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
             timeout 20m docker build \
               --file apps/api/Dockerfile \
               --build-arg RENDER_GIT_COMMIT="$DEPLOY_SHA" \
@@ -483,6 +501,13 @@ jobs:
               --label "org.opencontainers.image.revision=$DEPLOY_SHA" \
               --tag "$TAG" \
               .
+            if [ "$PUSH" != true ]; then
+              echo "Built $TAG for the Cloud Run step; nothing pushed to $API_IMAGE."
+              return 0
+            fi
+
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
             timeout 5m docker push --quiet "$TAG"
             REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$TAG" \
               | grep -m1 -xE "${API_IMAGE//./\\.}@sha256:[0-9a-f]{64}" || true)"
@@ -570,8 +595,8 @@ jobs:
             echo "between that step and this summary."
             echo ""
             echo "The config check passed. Its section of this summary lists what it checked in"
-            echo "Infisical \`prod\` and anything it skipped. It can't see whether the Render sync"
-            echo "has copied those values."
+            echo "Infisical \`prod\` and anything it skipped. It can't see whether the Secret Manager"
+            echo "sync has copied those values to the project the API runs in."
             if [ "$SCOPE" != "migrations-only" ]; then
               echo ""
               echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"
@@ -579,9 +604,13 @@ jobs:
               echo "app config currently in Infisical \`prod\`. Nothing was uploaded:"
               echo "no deployment was created and production still serves what it served before."
               echo ""
+              echo "The API image was BUILT too, without \`SENTRY_AUTH_TOKEN\`, and kept on the runner:"
+              echo "nothing was pushed."
+              echo ""
               echo "Still unrehearsed, and reachable only on a real run: the migration apply, the"
-              echo "Render deploy, the served-commit check, the client checks (CORS, the minimum"
-              echo "app version, the attachment-copy function), and the Vercel upload."
+              echo "API deploy (the push to Google's registry, the new revision and its candidate"
+              echo "check), the served-commit check, the client checks (CORS, the minimum app"
+              echo "version, the attachment-copy function), and the Vercel upload."
               echo ""
               echo "One difference inside the build itself: a real run compiles with"
               echo "\`SENTRY_AUTH_TOKEN\` when Infisical \`prod\` holds it, and then uploads source"
@@ -642,18 +671,19 @@ jobs:
           DEPLOY_SHA: ${{ inputs.sha }}
         run: node scripts/ci/deploy-render-production.mjs
 
-      # Staging on Cloud Run (#5228): the image built above, copied to the
-      # project's own registry, deployed as a new revision that takes traffic
-      # only once `candidate.<API host>`, the load balancer's way to it, serves
-      # this commit (deploy-cloud-run.mjs, #5269). API_HEALTHCHECK_URL comes from
-      # Infisical. The
-      # job signs in to Google as the project's deployer with GitHub's OIDC
-      # token, no key; the access token goes to a file the step deletes. Both
-      # scripts run from the trusted copy, so a deploy of a commit from before
-      # them still has them.
-      - name: Deploy the API to Cloud Run (staging)
+      # Either environment on Cloud Run (#5228): the image built above, copied
+      # to the project's own registry, deployed as a new revision that takes
+      # traffic only once `candidate.<API host>`, the load balancer's way to it,
+      # serves this commit (deploy-cloud-run.mjs, #5269). API_HEALTHCHECK_URL
+      # comes from the environment's Infisical. The job signs in to Google as the
+      # project's deployer with GitHub's OIDC token, no key; the access token
+      # goes to a file the step deletes. Both scripts run from the trusted copy,
+      # so a deploy of a commit from before them still has them. Production runs
+      # it where it ran its Render deploy: after the migrations, on every real
+      # run but a migrations-only one.
+      - name: Deploy the API to Cloud Run
         id: cloud-run
-        if: inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'cloud-run'
+        if: steps.ids.outputs.api_host == 'cloud-run' && ((inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only'))
         # Usually under 5: the push, the new revision, its check and the
         # traffic move. Each write's own bound is 10 and each check's 5, but
         # one that slow means something is wrong, so this stops it first.
@@ -670,7 +700,7 @@ jobs:
           CLOUD_RUN_PROVIDER: ${{ steps.ids.outputs.cloud_run_provider }}
           CLOUD_RUN_MIN_INSTANCES: ${{ steps.ids.outputs.cloud_run_min_instances }}
           CLOUD_RUN_MAX_INSTANCES: ${{ steps.ids.outputs.cloud_run_max_instances }}
-          SERVICE_LABEL: frapp-api-staging (Cloud Run)
+          SERVICE_LABEL: ${{ inputs.environment == 'production' && 'frapp-api-prod' || 'frapp-api-staging' }} (Cloud Run)
           # The trusted ref's scripts, like the checks: which tree they run from
           # can't depend on whether the deployed commit predates them.
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
@@ -700,12 +730,13 @@ jobs:
 
       - name: Deploy the commit to Render (production)
         id: render
-        if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}
+        if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' && steps.ids.outputs.api_host == 'render' }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
-          # Production builds no image yet: provider-ids.mjs refuses `image`
-          # for it before anything is applied, and this would too (#2506).
+          # Production pushes no image for Render to pull: provider-ids.mjs
+          # refuses `image` for it before anything is applied, and this would
+          # too (#2506). Production on Cloud Run skips this step.
           RENDER_DEPLOY_SOURCE: ${{ steps.ids.outputs.render_deploy_source }}
           SERVICE_LABEL: frapp-api-prod
           DEPLOY_SHA: ${{ inputs.sha }}

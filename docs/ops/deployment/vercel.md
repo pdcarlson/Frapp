@@ -14,7 +14,7 @@ neither asks Vercel to fetch a commit.
 | Channel | Workflow | Path |
 | --- | --- | --- |
 | Staging (web + landing) | `deploy-staging.yml` (**Deploy staging**), after CI succeeds on `main`, when web or landing changed (#2865) | inject Infisical `staging` → `vercel pull --environment=preview` → `vercel build` on each app's own keys → migrations, API deploy and verify → `vercel deploy --prebuilt` → alias the staging hostnames → delete all but the newest staging deployments |
-| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → migrations, Render deploy and health check → `vercel deploy --prebuilt --prod` |
+| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → migrations, API deploy (Cloud Run since #5228) and health check → `vercel deploy --prebuilt --prod` |
 
 **Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
 2026-09-06).** The team is on Vercel's free plan, whose upload API allows **5000 requests per 24
