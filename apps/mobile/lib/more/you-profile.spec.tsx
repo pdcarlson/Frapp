@@ -10,10 +10,10 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * The profile on the You tab (#3839): its head (photo, name, the stat cards)
- * and its Details, which were s15, the pushed Profile screen. The hub's rows
- * around them are `you-screen.spec.tsx`'s. The two stat cards come from
- * `@repo/hooks` `useMyProfileStats`, mocked whole here: the reads behind them,
+ * The profile on the You tab (#3839): its head (photo and name) and its
+ * Details, which were s15, the pushed Profile screen. The hub's rows around
+ * them are `you-screen.spec.tsx`'s. The points figure and the service hours
+ * come from `@repo/hooks` `useMyProfileStats`, mocked whole here: the reads behind them,
  * including the service read scoped to the viewer (an unscoped one hands a
  * `service:approve` holder the whole chapter's entries as their own), are
  * pinned in `packages/hooks/src/profile-stats.hook.spec.tsx`.
@@ -104,6 +104,7 @@ vi.mock("@/components/profile/profile-photo", () => ({
 }));
 
 import YouScreen from "@/app/(app)/(tabs)/you";
+import { PointsLabel } from "@/components/you/profile-sections";
 
 /** The profile's Details rows, apart from the hub's rows around them. */
 function detailListRows(tree: ReactTestRenderer) {
@@ -236,42 +237,45 @@ describe("Profile tap to edit (#3711)", () => {
       "fails to load",
       { isPending: false, isError: true, data: undefined, refetch: vi.fn() },
     ],
-  ])("draws nothing to edit, and no sheet, while the profile %s", (_state, user) => {
-    currentUser = user;
-    const tree = render();
+  ])(
+    "draws nothing to edit, and no sheet, while the profile %s",
+    (_state, user) => {
+      currentUser = user;
+      const tree = render();
 
-    expect(nameButton(tree)).toHaveLength(0);
-    expect(
-      tree.root.findAll(
-        (node) => (node.type as unknown) === "BottomSheetModal",
-      ),
-    ).toHaveLength(0);
-    tree.unmount();
-  });
+      expect(nameButton(tree)).toHaveLength(0);
+      expect(
+        tree.root.findAll(
+          (node) => (node.type as unknown) === "BottomSheetModal",
+        ),
+      ).toHaveLength(0);
+      tree.unmount();
+    },
+  );
 });
 
 /**
- * The owner's design review, 2026-11-04. The stat cards sit on the same
- * step as the Details list below them, and each Details row is a fact (label
- * quiet, value bright), not a row that opens something.
+ * The owner's design review, 2026-11-04: each Details row is a fact (label
+ * quiet, value bright), not a row that opens something. Since #5281
+ * (2026-11-17) the head has no stat cards.
  */
-describe("Profile stat cards and Details", () => {
-  it("draws the stat cards in the Details list's tone", () => {
+describe("Profile head and Details", () => {
+  it("draws no stat cards under the name (#5281)", () => {
     const tree = render();
-    const label = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Text" && node.props.children === "points",
-    );
-    const card = Object.assign({}, ...[label.parent!.props.style].flat());
-    expect(card.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
+    const text = screenText(tree);
+    expect(text).not.toMatch(/\bservice hrs\b/);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "points",
+      ),
+    ).toHaveLength(0);
     tree.unmount();
   });
 
   it("sets every Details row as a fact row", () => {
     const tree = render();
-    const rows = tree.root
-      .findAllByType(ListRow)
-      .slice(-8);
+    const rows = tree.root.findAllByType(ListRow).slice(-8);
     expect(rows.map((row) => row.props.label)).toEqual([
       "Email",
       "Phone",
@@ -307,11 +311,18 @@ describe("Profile pledge class and order number (#3939)", () => {
   });
 
   function detailRows(tree: ReactTestRenderer) {
-    return detailListRows(tree).map((row) => [row.props.label, row.props.value]);
+    return detailListRows(tree).map((row) => [
+      row.props.label,
+      row.props.value,
+    ]);
   }
 
   it("draws the class and the number after Graduation, in the chapter's words", () => {
-    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    membership = {
+      user_id: "user-1",
+      pledge_class_id: "pc-1",
+      order_number: 14,
+    };
     pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
     const tree = render();
 
@@ -324,7 +335,11 @@ describe("Profile pledge class and order number (#3939)", () => {
   });
 
   it("labels both rows with the chapter's own words, as typed", () => {
-    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    membership = {
+      user_id: "user-1",
+      pledge_class_id: "pc-1",
+      order_number: 14,
+    };
     pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
     vocabulary = { class: "Line", order: "line number" };
     const tree = render();
@@ -337,7 +352,11 @@ describe("Profile pledge class and order number (#3939)", () => {
   });
 
   it("says Loading for the class until the chapter's list answers", () => {
-    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: null };
+    membership = {
+      user_id: "user-1",
+      pledge_class_id: "pc-1",
+      order_number: null,
+    };
     pledgeClasses = undefined;
     const tree = render();
 
@@ -347,7 +366,11 @@ describe("Profile pledge class and order number (#3939)", () => {
 
   // Both reads take `members:view`; without it neither is sent.
   it("asks for neither read, and draws neither row, without members:view", () => {
-    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    membership = {
+      user_id: "user-1",
+      pledge_class_id: "pc-1",
+      order_number: 14,
+    };
     permissions = [];
     const tree = render();
 
@@ -360,7 +383,11 @@ describe("Profile pledge class and order number (#3939)", () => {
   });
 
   it("draws neither, and reads no class list, for a member with none set", () => {
-    membership = { user_id: "user-1", pledge_class_id: null, order_number: null };
+    membership = {
+      user_id: "user-1",
+      pledge_class_id: null,
+      order_number: null,
+    };
     const tree = render();
 
     expect(detailRows(tree).map(([label]) => label)).toEqual([
@@ -375,5 +402,57 @@ describe("Profile pledge class and order number (#3939)", () => {
     ]);
     expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });
     tree.unmount();
+  });
+});
+
+/** #5281: the points figure at the top right of the You tab. */
+describe("PointsLabel (#5281)", () => {
+  function renderLabel(points: number | null, failed = false) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <PointsLabel points={points} failed={failed} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("says nothing while unknown or at zero", () => {
+    expect(renderLabel(null).toJSON()).toBeNull();
+    expect(renderLabel(0).toJSON()).toBeNull();
+  });
+
+  it("reads short on screen and in full to a screen reader", () => {
+    const tree = renderLabel(1240);
+    const text = tree.root.findByProps({ testID: "you-points" });
+    expect(screenText(tree)).toContain(`${(1240).toLocaleString()} pts`);
+    expect(text.props.accessibilityLabel).toBe(
+      `${(1240).toLocaleString()} points`,
+    );
+    expect(screenText(renderLabel(1))).toContain("1 pt");
+  });
+
+  it("shows a negative balance, singular at minus one", () => {
+    expect(screenText(renderLabel(-1))).toContain("-1 pt");
+    expect(screenText(renderLabel(-5))).toContain("-5 pts");
+  });
+
+  it("says a failed read with a dash, not as zero", () => {
+    const tree = renderLabel(null, true);
+    expect(screenText(tree)).toContain("— pts");
+    expect(
+      tree.root.findByProps({ testID: "you-points" }).props.accessibilityLabel,
+    ).toBe("Points couldn't load");
+  });
+
+  it("is never the chapter accent", () => {
+    const tree = renderLabel(60);
+    const style = Object.assign(
+      {},
+      ...[tree.root.findByProps({ testID: "you-points" }).props.style].flat(),
+    );
+    expect(style.color).toBe(signetDarkTokens.color.text.mutedForeground);
   });
 });

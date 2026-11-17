@@ -531,7 +531,8 @@ export function threadPreviewParts(
 }
 
 /**
- * One All threads row's two lines (#4960), one rule for web and the phone:
+ * One All threads row's two lines (#4960) on web, and the phone's thread row
+ * under its channel (#5277), which reads the parent's line alone:
  * the parent and its latest reply, read the way the channel draws them. The
  * API serves the raw parent, so it is normalized first (a GIF or a file-only
  * message reads "GIF" or "Attachment", not "Message"), and the latest reply
@@ -562,6 +563,61 @@ export function memberThreadPreview(
     rootText: root.sender_blocked ? TOMBSTONE_TEXT : replyPreviewText(root),
     reply,
   };
+}
+
+/**
+ * How long a read thread stays under its channel after its last activity
+ * (the newest reply, else the parent). Discord drops a thread from the
+ * channel list when it auto-archives, three days quiet by default; Frapp
+ * never archives a thread, so the list applies the same quiet window.
+ */
+export const SIDEBAR_THREAD_QUIET_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** At most this many threads sit under one channel, newest first. */
+export const SIDEBAR_THREADS_PER_CHANNEL = 5;
+
+/** The fields of a `GET /v1/threads` row the channel list reads. */
+export interface SidebarThreadInput {
+  channel_id: string;
+  unread_count: number;
+  last_reply_at: string | null;
+  root: { created_at: string };
+}
+
+/**
+ * Which of the member's threads sit under each channel in the channel list
+ * (#5277, Paul 2026-11-17, after Discord's): every listed thread with
+ * replies new to the member, uncapped, then read ones active within
+ * {@link SIDEBAR_THREAD_QUIET_MS}, up to {@link SIDEBAR_THREADS_PER_CHANNEL}
+ * a channel in all; newest activity first. "Listed" is `GET /v1/threads`'s
+ * newest 50. A channel with none is absent from the map, so it draws nothing
+ * under it: no empty state. A thread that drops off is still one tap away on
+ * its parent's thread card.
+ */
+export function sidebarThreadsByChannel<T extends SidebarThreadInput>(
+  threads: readonly T[] | undefined,
+  now: number,
+): Map<string, T[]> {
+  const activityOf = (thread: T) =>
+    Date.parse(thread.last_reply_at ?? thread.root.created_at);
+  const byChannel = new Map<string, T[]>();
+  const kept = (threads ?? [])
+    .filter(
+      (thread) =>
+        thread.unread_count > 0 ||
+        now - activityOf(thread) <= SIDEBAR_THREAD_QUIET_MS,
+    )
+    .sort((a, b) => activityOf(b) - activityOf(a));
+  for (const thread of kept) {
+    const rows = byChannel.get(thread.channel_id) ?? [];
+    // A thread with new replies is never cut: it is the only place on the
+    // phone that says so, since its replies don't count toward the channel.
+    if (thread.unread_count === 0 && rows.length >= SIDEBAR_THREADS_PER_CHANNEL)
+      continue;
+    rows.push(thread);
+    byChannel.set(thread.channel_id, rows);
+  }
+  return byChannel;
 }
 
 /**
