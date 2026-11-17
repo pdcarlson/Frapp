@@ -104,7 +104,7 @@ export function formatCheckInOpens(opensAt: Date, now: Date): string {
   const day =
     days > 1 && days < 7
       ? opensAt.toLocaleDateString(undefined, { weekday: "long" })
-      : formatWeekdayDay(opensAt.toISOString(), now);
+      : formatWeekdayDay(opensAt, now);
   return `${day} at ${time}`;
 }
 

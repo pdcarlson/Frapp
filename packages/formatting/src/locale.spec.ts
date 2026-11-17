@@ -78,6 +78,17 @@ describe("formatTimeOfDay", () => {
     expect(formatTimeOfDayShort(new Date(Number.NaN))).toBe("");
   });
 
+  it("its siblings read a Date the same way (#4976)", () => {
+    const at = new Date(2026, 7, 16, 17, 9);
+    const iso = at.toISOString();
+    expect(formatClock(at)).toBe(formatClock(iso));
+    expect(formatLocaleDate(at)).toBe(formatLocaleDate(iso));
+    expect(formatLocaleDateTime(at)).toBe(formatLocaleDateTime(iso));
+    expect(formatClock(new Date(Number.NaN))).toBe("");
+    expect(formatLocaleDate(new Date(Number.NaN))).toBe("—");
+    expect(formatLocaleDateTime(new Date(Number.NaN))).toBe("—");
+  });
+
   it("prints the time of day and never the date", () => {
     const value = new Date(2026, 7, 16, 17, 9).toISOString();
     expect(formatTimeOfDay(value)).toBe(

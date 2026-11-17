@@ -4,10 +4,11 @@
  *
  * Scope, stated exactly. This file does **not** hold the only coverage of
  * `parseInstant` — it cannot, because every member built on it parses through
- * it, so `locale.spec.ts`, `bare-date.spec.ts` and `protected-clusters.spec.ts`
- * all fail on a broken guard too (measured: dropping the non-string clause
- * reddens 5 cases across 3 files, only 1 of them here; dropping the NaN branch
- * reddens 7 across 4, only 2 here). That redundancy is the package working as
+ * it, so `locale.spec.ts`, `bare-date.spec.ts`, `display.spec.ts` and
+ * `protected-clusters.spec.ts` fail on a broken guard too (measured
+ * 2026-11-17, #4976: dropping the non-string clause reddens 8 cases across 4
+ * files, 2 of them here; dropping the NaN branch reddens 15 across 5, 3 here).
+ * That redundancy is the package working as
  * intended and is not something to delete.
  *
  * What this file adds is the primitive's contract stated **directly**, so a
@@ -88,12 +89,11 @@ describe("readInstant (#4976)", () => {
     expect(readInstant(new Date(Number.NaN))).toBeNull();
   });
 
-  it("reads a string as parseInstant does, which still refuses a Date", () => {
+  it("reads anything but a Date as parseInstant does", () => {
     expect(readInstant("2026-08-12T18:30:00Z")?.toISOString()).toBe(
       "2026-08-12T18:30:00.000Z",
     );
     expect(readInstant("not a date")).toBeNull();
     expect(readInstant(null)).toBeNull();
-    expect(parseInstant(new Date("2026-08-12T18:30:00Z"))).toBeNull();
   });
 });
