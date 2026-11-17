@@ -417,7 +417,7 @@ publishing status In production, user type External:
    `https://api.frapp.live/v1/google-calendar/callback`. No JavaScript
    origins on either. The redirect is the API's origin plus that path:
    `API_URL` less any trailing `/v1`, as for Discord. Both are separate from
-   **Frapp Web client 1**, whose secret lives in Supabase: these live in
+   the sign-in Web clients ("Frapp Web (staging)" and "Frapp Web (production)"), whose secrets live in Supabase: these live in
    Infisical.
 4. **Store the values in Infisical**, names only here: in staging, the
    staging client's `GOOGLE_CALENDAR_CLIENT_ID` and
