@@ -1,4 +1,5 @@
 import { throwUnlessOk } from "@repo/api-sdk";
+import { GOOGLE_CALENDAR_SIGN_IN_COPY } from "@repo/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -55,15 +56,17 @@ export function readGoogleCalendarReturn(
 /**
  * What the member reads when a sign-in comes back without connecting (#4676):
  * one copy for the web menu's toast and the phone sheet's alert. The
- * success line stays per client, because each names what it syncs.
+ * success line stays per client, because each names what it syncs. The
+ * expired and failed sentences live in `@repo/validation`, which the API's
+ * confirm refusals read too (#5262).
  */
 export const GOOGLE_CALENDAR_RETURN_COPY: Record<
   Exclude<GoogleCalendarReturn["kind"], "confirm">,
   string
 > = {
   denied: "Google Calendar wasn't connected.",
-  expired: "That Google sign-in expired. Connect Google Calendar again.",
-  failed: "Google didn't finish the sign-in. Connect Google Calendar again.",
+  expired: GOOGLE_CALENDAR_SIGN_IN_COPY.expired,
+  failed: GOOGLE_CALENDAR_SIGN_IN_COPY.failed,
 };
 
 /**
