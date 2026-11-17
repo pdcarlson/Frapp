@@ -132,6 +132,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Documents shows a chapter's folders as a tree, so folders inside folders, like a synced Google Drive, read the way they do in Drive.",
       "Officers can give a task to everyone: each active member gets their own copy, with their own progress, proof and points.",
       "Drafted minutes now list what the meeting actually decided, with the amounts and conditions, and leave out procedural votes like moving on to new business.",
+      "Frapp's entries in the audit log can no longer be deleted, and nothing there can be newly pinned or flagged.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
