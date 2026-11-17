@@ -1682,6 +1682,7 @@ describe('AskService', () => {
               await Promise.resolve();
               yield {
                 type: 'tool',
+                call: 1,
                 name: 'roster',
                 reading: 'Reading the roster',
                 effect: 'read',
@@ -1771,15 +1772,46 @@ describe('AskService', () => {
           { type: 'discard' },
           {
             type: 'tool',
+            call: 1,
             name: 'roster',
             reading: 'Reading the roster',
             effect: 'read',
           },
           {
             type: 'tool',
+            call: 2,
             name: 'my_dues',
             reading: 'Reading your dues',
             effect: 'read',
+          },
+          {
+            type: 'read',
+            call: 2,
+            name: 'my_dues',
+            outcome: 'ok',
+            sources: [],
+          },
+          {
+            type: 'read',
+            call: 1,
+            name: 'roster',
+            outcome: 'ok',
+            // Two consented messages in one channel, on two days.
+            sources: (['2026-11-10', '2026-11-11'] as const).map((day, i) => ({
+              id: `message:m${i}`,
+              kind: 'chat' as const,
+              title: '#exec-board',
+              detail: 'Sam Park',
+              date: `${day}T15:00:00.000Z`,
+              target: {
+                type: 'message' as const,
+                channel_id: 'c-exec',
+                message_id: `m${i}`,
+              },
+              text: 'Sam Park in #exec-board: the budget is $4,200',
+              chat: true,
+              authorIds: ['sam'],
+            })),
           },
           { type: 'text', delta: 'Dana Reyes is ' },
           { type: 'text', delta: 'the treasurer.' },
@@ -1825,6 +1857,8 @@ describe('AskService', () => {
         'searching',
         'reading',
         'reading',
+        'step',
+        'step',
         'writing',
         'text',
         'done',
@@ -1834,9 +1868,35 @@ describe('AskService', () => {
           reads: ['roster', 'my_dues'],
           tool: 'my_dues',
           label: 'Reading your dues',
+          call: 2,
+          kind: 'dues',
         }),
       );
-      expect(events[5]).toEqual(
+      // How the read ended, by its number (#5427).
+      expect(events[4]).toEqual({
+        v: 1,
+        type: 'step',
+        call: 2,
+        tool: 'my_dues',
+        kind: 'dues',
+        outcome: 'nothing',
+        found: 0,
+        names: [],
+      });
+      // Named as the answer's chips name them, through the real service: the
+      // bare channel, once, never the model's dated title, an author or a
+      // line of what was said.
+      expect(events[5]).toEqual({
+        v: 1,
+        type: 'step',
+        call: 1,
+        tool: 'roster',
+        kind: 'people',
+        outcome: 'found',
+        found: 2,
+        names: ['#exec-board'],
+      });
+      expect(events[7]).toEqual(
         expect.objectContaining({ delta: 'Dana Reyes is the treasurer.' }),
       );
       expect(answer.status).toBe('answered');
@@ -2037,6 +2097,7 @@ describe('AskService', () => {
         loop: [
           {
             type: 'tool',
+            call: 1,
             name: 'roster',
             reading: 'Reading the roster',
             effect: 'read',
@@ -2348,6 +2409,7 @@ describe('AskService', () => {
           loop: [
             {
               type: 'tool',
+              call: 1,
               name: 'create_task',
               reading: 'Working out the task',
               effect: 'propose',

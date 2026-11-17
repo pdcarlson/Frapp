@@ -25,9 +25,7 @@ import {
   askLeftOutLine,
   askOffersThinkHarder,
   askPostedSourceTitle,
-  askReadLine,
   askSourceChip,
-  askStepLine,
   askUnavailableLine,
   askUnavailableOffersRetry,
   type AiReportReason,
@@ -46,6 +44,7 @@ import {
   ThumbUpGlyph,
 } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
+import { AskSteps } from "@/components/ask/ask-steps";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectChannels } from "@/lib/chat/channel-list";
 import { selectionHaptic } from "@/lib/haptics";
@@ -75,20 +74,20 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * kind of source it is and its date are in the chip's spoken name, so a
  * thread of several answers stays short.
  *
- * **Nothing above moves while it works.** The step line ("Searching your
- * chapter's sources") sits under the text, so words stream in above it. The
- * streamed text is a preview: the server decides what stands once the model
- * stops, and that replaces it (`ask.ts`).
+ * **Nothing above moves while it works.** What Frapp is doing is a list of
+ * steps (`ask-steps.tsx`, #5427) that only grows at the end of the thread and
+ * folds into one row at the answer's first word, before any of the answer is
+ * under it. The streamed text is a preview: the server decides what stands
+ * once the model stops, and that replaces it (`ask.ts`).
  *
  * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
  * just needs to be better hierarchy", "report shouldn't be so obvious", and
- * the conversation "should feel more agentic"). Under the words, in the step
- * line's place and tone, a line says what Frapp read to write them ("Read
- * the events calendar and 3 sources"), as ChatGPT keeps "Thought for 12s"
- * and Perplexity its count of sources. Then the source chips. Last, two
- * small muted icons, Copy and Report, the row of quiet icons ChatGPT, Claude
- * and Gemini end an answer with. The words "Report this" stood there alone
- * and read as the thing to do next.
+ * the conversation "should feel more agentic"). Above the words, the folded
+ * steps say what Frapp did, as Perplexity's "Completed 2 steps" and Claude's
+ * tool rows do (until #5427 one line under the words said what it read).
+ * Then the source chips. Last, small muted icons, Copy and Report, the row
+ * of quiet icons ChatGPT, Claude and Gemini end an answer with. The words
+ * "Report this" stood there alone and read as the thing to do next.
  *
  * **The member's bubble is the chapter's colour; Frapp's marks are gold.**
  * The bubble takes the solid accent and its contrast-checked text colour
@@ -235,17 +234,18 @@ export function AskReply({
 
   return (
     <View style={styles.reply} accessibilityLiveRegion="polite">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <Text style={styles.answer}>{exchange.preview}</Text>
-          ) : null}
-          {exchange.step ? (
-            <Text style={styles.note}>
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </Text>
-          ) : null}
-        </>
+      {/* What Frapp did, as steps: live while it reads, folded into one
+          row from the answer's first word (#5427). */}
+      <AskSteps
+        steps={exchange.steps}
+        folded={
+          exchange.phase !== "working" ||
+          exchange.step === "writing" ||
+          exchange.preview !== ""
+        }
+      />
+      {exchange.phase === "working" && exchange.preview ? (
+        <Text style={styles.answer}>{exchange.preview}</Text>
       ) : null}
 
       {exchange.phase === "failed" && exchange.failure ? (
@@ -266,7 +266,6 @@ export function AskReply({
       {exchange.phase === "done" && exchange.answer ? (
         <AnswerBody
           answer={exchange.answer}
-          readLine={askReadLine(exchange.read)}
           canOpen={canOpen}
           openingSourceId={openingSourceId ?? null}
           onOpenSource={onOpenSource}
@@ -602,7 +601,6 @@ function ThumbsFollowUp({
 
 function AnswerBody({
   answer,
-  readLine,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -612,8 +610,6 @@ function AnswerBody({
   onOpenChannel,
 }: {
   answer: AskAnswer;
-  /** What Frapp read to write it (`askReadLine`), or null. */
-  readLine: string | null;
   canOpen: (source: AskSource) => boolean;
   openingSourceId: string | null;
   onOpenSource: (source: AskSource) => void;
@@ -713,8 +709,6 @@ function AnswerBody({
       {answer.own_words ? (
         <Text style={styles.note}>{ASK_COPY.own_words}</Text>
       ) : null}
-      {/* Where the step line was while it worked, in the same tone. */}
-      {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
         <View style={styles.sources}>

@@ -37,6 +37,8 @@ export * from "./ask-find";
 export * from "./ask-greeting";
 export * from "./ask-post";
 export * from "./ask-source-chip";
+// Ask's working state as a list of steps (#5427).
+export * from "./ask-steps";
 export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
 export * from "./backwork-courses";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatAiAnswerDate, joinNames } from "./ai-copy";
+import { formatAiAnswerDate } from "./ai-copy";
 import { askMentionQuestion } from "./mentions";
 
 /**
@@ -155,7 +155,9 @@ export type AskRequest = z.infer<typeof AskRequestSchema>;
  * - `proposing`: the member's words were read as something to do, and the
  *   card's details are being looked up.
  *
- * Open on the wire: a build shows a step it does not know as `searching`.
+ * Open on the wire: a build leaves the steps it draws as they were for a step
+ * it does not know. Each becomes a row of the turn's step list
+ * (`askStepsOn`, #5427).
  */
 export const ASK_STEPS = [
   "searching",
@@ -164,27 +166,6 @@ export const ASK_STEPS = [
   "proposing",
 ] as const;
 export type AskStep = (typeof ASK_STEPS)[number];
-
-/** What a `reading` step says is being read. */
-export interface AskStepDetail {
-  /**
-   * The live reads being made, by the read's name (`roster`, `events`,
-   * `my_tasks`): open strings, and a name this build has no words for is
-   * left out of the line.
-   */
-  reads?: readonly string[] | undefined;
-  /**
-   * How many sources the search found for this question: documents, minutes
-   * and conversations, each counted once.
-   */
-  found?: number | undefined;
-  /**
-   * The server's own words for the read that just started ("Searching
-   * #general"), from a server that answers through the tool loop. Shown as
-   * the whole line when present.
-   */
-  label?: string | undefined;
-}
 
 /**
  * How an ask ended.
@@ -386,14 +367,41 @@ export const AskStreamEventSchema = z.discriminatedUnion("type", [
     v: version,
     type: z.literal("status"),
     step: z.string(),
-    /** With `reading`: the live reads being made (`AskStepDetail`). */
+    /** With `reading`: the live reads being made, by name (`ASK_COPY.reads`). */
     reads: z.array(z.string()).optional(),
     /** With `reading`: how many sources the search found. */
     found: z.number().int().nonnegative().optional(),
     /** With `reading`, from the tool loop: the read that just started. */
     tool: z.string().optional(),
-    /** With `tool`: the line to show for it (`AskStepDetail.label`). */
+    /** With `tool`: the server's words for the read ("Searching #general"). */
     label: z.string().optional(),
+    /**
+     * With `tool`: the read's place in the turn, from 1, which the `step`
+     * that ends it repeats (#5427). Reads of one round run together and end
+     * in any order.
+     */
+    call: z.number().int().positive().optional(),
+    /** With `tool`: what kind of thing it reads (`AskStepKind`), for its icon. */
+    kind: z.string().optional(),
+  }),
+  /**
+   * A read the tool loop announced (`status` with `call`) ended, and what it
+   * found (#5427, `ask-steps.ts`). `outcome` is `found`, `nothing` or
+   * `failed`, open on the wire. `found` counts what it returned, after the
+   * consent filter and the size cap. `names` are the chips of up to
+   * `ASK_STEP_NAMES_MAX` distinct things it returned, as the answer's source
+   * chips name them: every one is something the asker can open, never text
+   * from inside a source. A build from before #5427 skips the event.
+   */
+  z.object({
+    v: version,
+    type: z.literal("step"),
+    call: z.number().int().positive(),
+    tool: z.string(),
+    kind: z.string().optional(),
+    outcome: z.string(),
+    found: z.number().int().nonnegative(),
+    names: z.array(z.string()),
   }),
   z.object({ v: version, type: z.literal("text"), delta: z.string() }),
   z.object({ v: version, type: z.literal("done"), answer: AskAnswerSchema }),
@@ -640,6 +648,13 @@ export const ASK_COPY = {
   name: "Ask Frapp",
   close: "Close Ask Frapp",
   placeholder: "Ask Frapp anything",
+  /** A step that ended without finding anything (`ask-steps.ts`, #5427). */
+  step_nothing: "Nothing found",
+  /** A read that failed. Says no more: why is the server's to log. */
+  step_failed: "Couldn't read this",
+  /** The folded steps row's spoken action, open and closed. */
+  steps_show: "Show steps",
+  steps_hide: "Hide steps",
   steps: {
     searching: "Searching your chapter's sources",
     reading: "Reading what it found",
@@ -647,8 +662,8 @@ export const ASK_COPY = {
     proposing: "Working out what that would change",
   } satisfies Record<AskStep, string>,
   /**
-   * What each live read is called in the reading line ("Reading the roster"),
-   * by the read's name. `ask-tools.spec.ts` in the API holds every class in
+   * What each live read of the one-shot path is called in its step
+   * ("Reading the roster", `askStepsOn`), by the read's name. `ask-tools.spec.ts` in the API holds every class in
    * `ASK_TOOL_CLASSES`, the list the server offers from, to an entry here.
    */
   reads: {
@@ -804,67 +819,6 @@ export function replyAskRefusal(
   if (access === "no") return null;
   if (askMentionQuestion(text, names) === null) return null;
   return access === "unknown" ? ASK_COPY.ask_unknown : ASK_COPY.not_in_reply;
-}
-
-/** An own entry only: the key is an open string from the wire. */
-function ownWords(
-  words: Readonly<Record<string, string>>,
-  key: string,
-): string | null {
-  return Object.prototype.hasOwnProperty.call(words, key)
-    ? (words[key] as string)
-    : null;
-}
-
-/** What a `reading` step named, in words: the live reads, then the count of sources. */
-function readParts(detail?: AskStepDetail | null): string[] {
-  const parts = (detail?.reads ?? [])
-    .map((name) => ownWords(ASK_COPY.reads, name))
-    .filter((words): words is string => words !== null);
-  const found = detail?.found ?? 0;
-  if (found > 0) parts.push(found === 1 ? "1 source" : `${found} sources`);
-  return parts;
-}
-
-/**
- * The one line under a working turn: what Frapp is doing at that moment, from
- * the step the server last named (#4701). Web and the phone both draw this,
- * so the words cannot drift.
- *
- * `reading` names what is being read when the server said: the live reads
- * this build has words for, then how many sources the search found ("Reading
- * the events calendar and 3 sources"). A step this build does not know reads
- * as searching, which every turn does first.
- */
-export function askStepLine(
-  step: string | null | undefined,
-  detail?: AskStepDetail | null,
-): string {
-  if (step === "reading") {
-    if (detail?.label) return detail.label;
-    const parts = readParts(detail);
-    return parts.length === 0
-      ? ASK_COPY.steps.reading
-      : `Reading ${joinNames(parts)}`;
-  }
-  // Every other step is its own words, so a step added to `ASK_COPY.steps`
-  // needs nothing here.
-  return (
-    (step ? ownWords(ASK_COPY.steps, step) : null) ?? ASK_COPY.steps.searching
-  );
-}
-
-/**
- * What Frapp read to write a finished answer: the reading line in the past
- * tense ("Read the events calendar and 3 sources"), kept under the answer
- * where the work line was (Paul, 2026-11-13: the conversation "should feel
- * more agentic"). ChatGPT keeps "Thought for 12s" and Perplexity its count of
- * sources the same way. Null when the turn named nothing it read, so a
- * refusal or an answer from the thread alone carries no line.
- */
-export function askReadLine(detail?: AskStepDetail | null): string | null {
-  const parts = readParts(detail);
-  return parts.length === 0 ? null : `Read ${joinNames(parts)}`;
 }
 
 /** A source kind's label, or null for a kind this build does not know. */

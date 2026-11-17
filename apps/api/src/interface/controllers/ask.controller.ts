@@ -158,7 +158,7 @@ export class AskController {
   @ThrottleFanOutWrite()
   @ApiOperation({
     summary: 'Ask a question; the answer is streamed',
-    description: `The response is Server-Sent Events. Each \`data:\` line is one JSON event of the Ask stream format, version ${ASK_STREAM_VERSION}, defined in \`@repo/validation\` (\`AskStreamEventSchema\`): \`start\`, \`status\`, \`text\` deltas, then one \`done\` carrying the checked answer with its citations and sources, or \`error\`. Text deltas are a preview; the answer is what \`done\` carries. A request sent with \`actions\` can end with one \`proposal\` instead of \`done\`, carrying the answer \`POST /v1/ai/act\` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.`,
+    description: `The response is Server-Sent Events. Each \`data:\` line is one JSON event of the Ask stream format, version ${ASK_STREAM_VERSION}, defined in \`@repo/validation\` (\`AskStreamEventSchema\`): \`start\`, \`status\`, \`step\` (how each read ended, from a server that answers through the tool loop), \`text\` deltas, then one \`done\` carrying the checked answer with its citations and sources, or \`error\`. Text deltas are a preview; the answer is what \`done\` carries. A request sent with \`actions\` can end with one \`proposal\` instead of \`done\`, carrying the answer \`POST /v1/ai/act\` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.`,
   })
   @ApiProduces(ASK_STREAM_CONTENT_TYPE)
   @ApiOkResponse({
