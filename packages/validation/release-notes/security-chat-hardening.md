@@ -1,1 +1,1 @@
-The audit log keeps every entry Frapp writes there, so its lines can no longer be pinned, flagged or deleted.
+Frapp's entries in the audit log can no longer be deleted, and nothing there can be newly pinned or flagged.
