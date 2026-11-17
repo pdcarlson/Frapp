@@ -7,6 +7,8 @@ import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import {
+  TASK_AUDIENCE_COPY,
+  TASK_AUDIENCE_EVERYONE,
   TASK_PHOTOS_MAX,
   TASK_TITLE_MAX_LENGTH,
   taskRepeatRuleOf,
@@ -110,6 +112,11 @@ export interface TaskFormProps {
      * series starts with a new task.
      */
     repeats?: boolean;
+    /**
+     * Editing everyone's copy of a task for everyone (#4295 step 3): who
+     * stays Everyone, and photos, which belong to one copy, aren't offered.
+     */
+    group?: boolean;
   };
   /**
    * Opened on a suggested task (#4313) to change it before accepting: Accept
@@ -118,6 +125,13 @@ export interface TaskFormProps {
    * adds them on the task afterwards.
    */
   suggestion?: boolean;
+  /**
+   * Offer Everyone at the top of Assignee (#4295 step 3): the field then
+   * holds `everyone` in place of a user id, and the caller sends it as
+   * `audience` (`taskWhoFields`). Only where a task for everyone can be
+   * made: never the chat + card (no card is posted for one) or an edit.
+   */
+  offerEveryone?: boolean;
 }
 
 /**
@@ -136,6 +150,7 @@ export function TaskForm({
   onDiscard,
   editing,
   suggestion = false,
+  offerEveryone = false,
 }: TaskFormProps) {
   const layout = "card";
   const field = fieldClass(layout);
@@ -163,6 +178,10 @@ export function TaskForm({
   }, []);
   const edit = (patch: Partial<TaskDraft>) =>
     setDraft((previous) => ({ ...previous, ...patch }));
+  // A task for everyone (#4295 step 3) can't repeat or carry photos yet, so
+  // the form hides both and sends neither.
+  const forEveryone = draft.assigneeId === TASK_AUDIENCE_EVERYONE;
+  const offersPhotos = !suggestion && !forEveryone;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -188,7 +207,8 @@ export function TaskForm({
     if (nextMissing.assignee) return assigneeRef.current?.focus();
     if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
     // The Repeat pick (#5119), read against the first due it repeats from.
-    const showRepeat = !suggestion && (!editing || editing.repeats);
+    const showRepeat =
+      !suggestion && !forEveryone && (!editing || editing.repeats);
     const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
     const repeat =
       showRepeat && firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
@@ -197,10 +217,12 @@ export function TaskForm({
       edit({ showMore: true });
       return;
     }
-    const photoProblem = taskPhotosProblem(
-      draft.photoFiles,
-      TASK_PHOTOS_MAX - draft.keptPhotos.length,
-    );
+    const photoProblem = offersPhotos
+      ? taskPhotosProblem(
+          draft.photoFiles,
+          TASK_PHOTOS_MAX - draft.keptPhotos.length,
+        )
+      : null;
     if (photoProblem) {
       setMissing((prev) => ({ ...prev, photo: photoProblem }));
       edit({ showMore: true });
@@ -230,7 +252,7 @@ export function TaskForm({
     try {
       if (beforeSave) {
         const go = await beforeSave(
-          suggestion
+          !offersPhotos
             ? base
             : {
                 ...base,
@@ -238,7 +260,7 @@ export function TaskForm({
                   (photo) => photo.storage_path,
                 ),
               },
-          !suggestion && draft.photoFiles.length > 0,
+          offersPhotos && draft.photoFiles.length > 0,
         );
         if (go !== true) {
           if (typeof go === "string") {
@@ -254,7 +276,7 @@ export function TaskForm({
       // The photos go up first; the write carries their paths (#4635). An
       // edit sends the set as it should stand: the kept ones, then the new.
       let uploaded: string[] = [];
-      if (draft.photoFiles.length > 0) {
+      if (offersPhotos && draft.photoFiles.length > 0) {
         try {
           uploaded = await uploadPhotos(draft.photoFiles);
         } catch (error) {
@@ -272,7 +294,7 @@ export function TaskForm({
       ];
       const result = await onPost({
         ...base,
-        ...(suggestion ? {} : { reference_photo_paths: referencePhotoPaths }),
+        ...(offersPhotos ? { reference_photo_paths: referencePhotoPaths } : {}),
       });
       if (!result.ok) {
         toast({
@@ -294,7 +316,8 @@ export function TaskForm({
     }
   }
 
-  const showRepeat = !suggestion && (!editing || editing.repeats);
+  const showRepeat =
+    !suggestion && !forEveryone && (!editing || editing.repeats);
   const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
   const moreSummary = [
     ...(suggestion
@@ -308,7 +331,7 @@ export function TaskForm({
     ...(suggestion
       ? []
       : [
-          draft.photoFiles.length + draft.keptPhotos.length > 0
+          offersPhotos && draft.photoFiles.length + draft.keptPhotos.length > 0
             ? "Photos"
             : null,
           draft.proofKind === "photo"
@@ -368,7 +391,7 @@ export function TaskForm({
               edit({ assigneeId: value });
               setMissing((prev) => ({ ...prev, assignee: false }));
             }}
-            disabled={gate.controlProps().disabled}
+            disabled={gate.controlProps().disabled || editing?.group}
           >
             <SelectTrigger
               ref={assigneeRef}
@@ -379,6 +402,11 @@ export function TaskForm({
               <SelectValue placeholder="Pick a member" />
             </SelectTrigger>
             <SelectContent>
+              {offerEveryone || editing?.group ? (
+                <SelectItem value={TASK_AUDIENCE_EVERYONE}>
+                  {TASK_AUDIENCE_COPY.everyone}
+                </SelectItem>
+              ) : null}
               {members
                 .filter((member) => member.user_id)
                 .map((member) => (
@@ -393,6 +421,10 @@ export function TaskForm({
           </Select>
           {missing.assignee ? (
             <FieldError>Pick an assignee.</FieldError>
+          ) : draft.assigneeId === TASK_AUDIENCE_EVERYONE ? (
+            <p className="text-caption text-muted-foreground">
+              {TASK_AUDIENCE_COPY.everyoneHint(null)}
+            </p>
           ) : (
             editing?.assigneeNote(draft.assigneeId)
           )}
@@ -488,6 +520,7 @@ export function TaskForm({
           {suggestion ? null : (
             <TaskPhotoFields
               id={ids}
+              withoutPhotos={forEveryone}
               draft={draft}
               taskId={editing?.taskId}
               disabled={posting || gate.controlProps().disabled}

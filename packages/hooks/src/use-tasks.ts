@@ -3,7 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
+import {
+  taskNeedsSignOff,
+  type TaskAudience,
+  type TaskProofKind,
+} from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { invalidatePointReads } from "./use-points";
@@ -59,6 +63,9 @@ interface CachedTask {
   /** The repeating series this task is a copy of (#5119). */
   series_id?: string | null;
   series?: TaskSeriesSummary | null;
+  /** The group task this is one member's copy of (#4295 step 3). */
+  group_id?: string | null;
+  group?: TaskGroupSummary | null;
 }
 
 /** One line of a task's checklist (#4003), as the task reads carry it. */
@@ -455,7 +462,13 @@ export function useCreateTask() {
     mutationFn: async (body: {
       title: string;
       description?: string;
-      assignee_id: string;
+      /** Who it is for. Send this or `audience`. */
+      assignee_id?: string;
+      /**
+       * A task for everyone instead (#4295 step 3): each active member gets
+       * their own copy. It can't repeat or carry photos yet.
+       */
+      audience?: TaskAudience;
       due_date: string;
       /** The moment it is due, when it has a time of day (#4003). */
       due_at?: string;
@@ -490,6 +503,12 @@ export type TaskEditScope = NonNullable<TaskEdit["scope"]>;
 
 /** How a task read says it repeats (#5119); null on a task that doesn't. */
 export type TaskSeriesSummary = components["schemas"]["TaskSeriesSummaryDto"];
+
+/**
+ * How far a group task is (#4295 step 3), on each of its copies; null on a
+ * task given to one person.
+ */
+export type TaskGroupSummary = components["schemas"]["TaskGroupSummaryDto"];
 
 /**
  * An officer edits a task (#4296). Send only the fields that changed; `null`

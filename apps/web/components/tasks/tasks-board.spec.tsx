@@ -1871,3 +1871,90 @@ describe("TasksBoard repeating tasks (#5119)", () => {
     );
   });
 });
+
+describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
+  const copy = (
+    id: string,
+    assignee: string,
+    over: Record<string, unknown> = {},
+  ) => ({
+    ...TASKS[0],
+    id,
+    title: "Fill out the tabling form",
+    assignee_id: assignee,
+    due_date: "2099-11-20",
+    group_id: "group-1",
+    ...over,
+  });
+  const GROUP = [
+    copy("copy-me", ME),
+    copy("copy-other", "u-other", { status: "IN_PROGRESS" }),
+    copy("copy-third", "u-third", {
+      status: "COMPLETED",
+      completed_at: "2026-08-10T00:00:00Z",
+    }),
+  ];
+
+  beforeEach(() => {
+    chapter.active();
+    currentUserRef.current = { id: ME };
+    deleteTaskMutate.mockReset().mockResolvedValue(undefined);
+    tasksRef.current = GROUP;
+  });
+
+  it("draws the open copies as one tile with how many are done", () => {
+    render(<TasksBoard />);
+    const tile = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
+    });
+    expect(within(tile).getByText("1 of 3 done")).toBeInTheDocument();
+    // Not a tile per open copy; the one marked done waits on an officer.
+    expect(
+      screen.getAllByText("Fill out the tabling form", { selector: "p" }),
+    ).toHaveLength(2);
+    expect(
+      within(tile).getByRole("progressbar", { name: /1 of 3 done/ }),
+    ).toHaveAttribute("aria-valuenow", "1");
+  });
+
+  it("lists who's left and where each stands", () => {
+    render(<TasksBoard />);
+    const tile = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
+    });
+    fireEvent.click(
+      within(tile).getByRole("button", { name: /who's left \(2\)/i }),
+    );
+    expect(within(tile).getByText("You")).toBeInTheDocument();
+    expect(within(tile).getByText("Cole Martin")).toBeInTheDocument();
+    expect(within(tile).getByText("In progress")).toBeInTheDocument();
+  });
+
+  it("deletes everyone's copy after asking", async () => {
+    render(<TasksBoard />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete Fill out the tabling form for everyone",
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete for everyone" }),
+    );
+    await waitFor(() =>
+      expect(deleteTaskMutate).toHaveBeenCalledWith({
+        id: "copy-me",
+        scope: "group",
+      }),
+    );
+  });
+
+  it("shows each copy on its own once a filter asks about members", () => {
+    render(<TasksBoard />);
+    fireEvent.click(screen.getByRole("radio", { name: "By person" }));
+    expect(
+      screen.queryByRole("listitem", {
+        name: "Fill out the tabling form, for everyone",
+      }),
+    ).toBeNull();
+  });
+});

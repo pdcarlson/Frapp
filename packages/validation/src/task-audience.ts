@@ -55,3 +55,38 @@ export interface TaskGroupProgress {
   done: number;
   confirmed: number;
 }
+
+/**
+ * A Who or Assignee picker holds one string: a member's user id, or
+ * {@link TASK_AUDIENCE_EVERYONE} for everyone. A user id is a uuid, so the
+ * two never meet. This reads a task or a suggestion into that value.
+ */
+export function taskWhoValue(task: {
+  assignee_id?: string | null;
+  audience?: string | null;
+}): string {
+  return isTaskAudience(task.audience)
+    ? task.audience
+    : (task.assignee_id ?? "");
+}
+
+/** A picker's value as the write sends it: `assignee_id` or `audience`. */
+export function taskWhoFields(
+  value: string,
+): { assignee_id: string } | { audience: TaskAudience } {
+  return isTaskAudience(value) ? { audience: value } : { assignee_id: value };
+}
+
+/**
+ * How many copies a task for everyone would make from a member list: the
+ * members with an account, alumni left out, as the API counts them.
+ */
+export function everyoneCount(
+  members: readonly { user_id?: string | null; is_alumni?: boolean | null }[],
+): number {
+  return new Set(
+    members
+      .filter((member) => member.user_id && !member.is_alumni)
+      .map((member) => member.user_id),
+  ).size;
+}

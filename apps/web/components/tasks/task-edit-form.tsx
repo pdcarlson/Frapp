@@ -8,6 +8,7 @@ import {
   type TaskSubtask,
 } from "@repo/hooks";
 import {
+  TASK_AUDIENCE_EVERYONE,
   TASK_SERIES_SCOPE_COPY,
   noTaskRepeatDraft,
   taskRepeatDraftFromRule,
@@ -164,18 +165,64 @@ export function TaskEditForm({
   assigneeName,
   gate,
   onClose,
+  group = false,
 }: {
   task: EditableTask;
   /** Whom a new pick would replace, for the line under Assignee. */
   assigneeName: string;
   gate: SubscriptionGate;
   onClose: () => void;
+  /**
+   * Edit everyone's copy of a task for everyone (#4295 step 3), from its
+   * group tile: `task` is one copy, read for the fields they share, and the
+   * save goes to every copy not yet confirmed (`scope: "group"`). Who stays
+   * Everyone, and steps and photos, which each copy holds for itself, are
+   * changed on a member's own copy.
+   */
+  group?: boolean;
 }) {
   const updateTask = useUpdateTask();
   const { confirm, confirmDialog } = useConfirmDialog();
   // The scope `beforeSave` settled on, for the write that follows it.
   const scope = useRef<"instance" | "series">("instance");
   const stored = task.stored_status ?? task.status;
+  if (group) {
+    // Read as Everyone, so the form's Assignee never looks changed.
+    const shared: EditableTask = {
+      ...task,
+      assignee_id: TASK_AUDIENCE_EVERYONE,
+      photos: [],
+    };
+    return (
+      <TaskForm
+        initialDraft={taskDraftFromTask(shared)}
+        onDiscard={onClose}
+        onDone={onClose}
+        onPost={async (input) => {
+          const body = taskEditFrom(shared, input);
+          delete body.reference_photo_paths;
+          if (Object.keys(body).length === 0) return { ok: true };
+          try {
+            await updateTask.mutateAsync({
+              id: task.id,
+              body: { ...body, scope: "group" },
+            });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error: getErrorMessage(error, "Retry in a moment."),
+            };
+          }
+        }}
+        editing={{
+          group: true,
+          steps: null,
+          assigneeNote: () => null,
+        }}
+      />
+    );
+  }
   return (
     <>
       {confirmDialog}
