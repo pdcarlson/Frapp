@@ -5,7 +5,6 @@ import {
   BIRTH_YEAR_MIN,
   BIRTHDAY_COPY,
   BIRTHDAY_MONTH_NAMES,
-  BIRTHDAY_VISIBILITIES,
   type BirthdayDraftProblem,
   type BirthdayVisibility,
   daysInBirthdayMonth,
@@ -13,7 +12,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QUIET_LINK } from "@/components/ui/quiet-link";
-import { SegmentedChoice } from "@/components/ui/segmented";
 import {
   Select,
   SelectContent,
@@ -21,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { parseGuardedInt } from "@/lib/utils";
 
 export type BirthdayDraft = {
@@ -30,16 +29,13 @@ export type BirthdayDraft = {
   visibility: BirthdayVisibility;
 };
 
-const VISIBILITY_OPTIONS = BIRTHDAY_VISIBILITIES.map((value) => ({
-  value,
-  label: BIRTHDAY_COPY.visibility[value],
-}));
-
 /**
  * The profile's birthday (#4959): month and day pickers, an optional year that
- * is never shown, and who can see it. Laid out as Facebook's birthday field
- * is (month, day, then year), with the audience beside it rather than behind a
- * menu, so a member always sees who will see it. `nobody` is the default.
+ * is never shown, and a switch that shares it with the chapter. Laid out as
+ * Facebook's birthday field is (month, day, then year). The switch (#5282,
+ * Paul 2026-11-17: no segmented switchers, and "who can see it" didn't say
+ * what "it" was) names what it shares and shows once a month and day are
+ * picked, since it governs nothing without them. `nobody` is the default.
  */
 export function BirthdayFields({
   value,
@@ -157,18 +153,29 @@ export function BirthdayFields({
       >
         {problem ? problem.message : BIRTHDAY_COPY.yearHint}
       </p>
-      <div className="grid gap-2">
-        <SegmentedChoice
-          label={BIRTHDAY_COPY.visibilityLabel}
-          options={VISIBILITY_OPTIONS}
-          value={value.visibility}
-          onChange={(visibility) => onChange({ ...value, visibility })}
-          fill
-        />
-        <p className="text-caption text-muted-foreground">
-          {BIRTHDAY_COPY.visibilityHint[value.visibility]}
-        </p>
-      </div>
+      {value.month !== null && value.day !== null ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="grid gap-1">
+            <Label htmlFor="birthday-share">
+              {BIRTHDAY_COPY.visibilityLabel}
+            </Label>
+            <p
+              id="birthday-share-hint"
+              className="text-caption text-muted-foreground"
+            >
+              {BIRTHDAY_COPY.visibilityHint[value.visibility]}
+            </p>
+          </div>
+          <Switch
+            id="birthday-share"
+            aria-describedby="birthday-share-hint"
+            checked={value.visibility === "chapter"}
+            onCheckedChange={(on) =>
+              onChange({ ...value, visibility: on ? "chapter" : "nobody" })
+            }
+          />
+        </div>
+      ) : null}
       {isSet ? (
         <div>
           <button

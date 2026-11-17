@@ -343,6 +343,15 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     });
   });
 
+  it("draws no share switch while there is no birthday (#5282)", () => {
+    render(<ProfilePanel />);
+    expect(
+      screen.queryByRole("switch", {
+        name: "Share my birthday with my chapter",
+      }),
+    ).toBeNull();
+  });
+
   it("keeps a stored birthday and sends who can see it (#4959)", async () => {
     mocks.userQuery.data = {
       ...mocks.userQuery.data,
@@ -353,7 +362,9 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     } as typeof mocks.userQuery.data;
     render(<ProfilePanel />);
 
-    await userEvent.click(screen.getByRole("radio", { name: "Your chapter" }));
+    await userEvent.click(
+      screen.getByRole("switch", { name: "Share my birthday with my chapter" }),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
 
     await waitFor(() => {

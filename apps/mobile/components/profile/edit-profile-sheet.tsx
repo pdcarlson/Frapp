@@ -4,7 +4,6 @@ import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
   BIRTHDAY_COPY,
-  BIRTHDAY_VISIBILITIES,
   DISPLAY_NAME_MAX_LENGTH,
   MAJOR_MAX_LENGTH,
   parseBirthdayVisibility,
@@ -30,7 +29,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { Segmented } from "@/components/segmented";
+import { Toggle } from "@/components/toggle";
 import {
   applyEdit,
   draftFromProfile,
@@ -48,7 +47,7 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * s15's Edit sheet (#3387): the member's name, phone (#3711), major,
- * graduation year, bio,
+ * graduation year, birthday and whether the chapter sees it (#4959, #5282), bio,
  * and, from their graduation year on, city and company (`showsAfterGraduation`
  * in @repo/validation), saved through `PATCH /v1/users/me`. The photo stays on the screen
  * itself (`components/profile/profile-photo.tsx`), where it already edits.
@@ -101,11 +100,6 @@ const copy = PROFILE_FIELD_COPY;
  * the field's padding, rounded up to the grid (foundations §9).
  */
 const YEAR_FIELD_WIDTH = 96;
-
-const VISIBILITY_OPTIONS = BIRTHDAY_VISIBILITIES.map((value) => ({
-  value,
-  label: BIRTHDAY_COPY.visibility[value],
-}));
 
 /** Matches the web profile form's bio field, which draws three lines. */
 const BIO_LINES = 3;
@@ -164,6 +158,9 @@ export const EditProfileSheet = forwardRef<
     company: original.company,
   });
   const canSave = dirty && !updateUser.isPending;
+  const birthdayVisibility = parseBirthdayVisibility(shown.birthdayVisibility);
+  const birthdayTyped =
+    shown.birthdayMonth.trim() !== "" && shown.birthdayDay.trim() !== "";
 
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
@@ -358,8 +355,7 @@ export const EditProfileSheet = forwardRef<
         </View>
         {rowError(["major", "graduationYear"])}
         {/* The birthday (#4959): month, day and an optional year as digits,
-            then who can see it, beside it rather than behind a menu, the way
-            Facebook's birthday field shows its audience. */}
+            then the switch that shares it with the chapter (#5282). */}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>{BIRTHDAY_COPY.label}</Text>
         </View>
@@ -389,23 +385,30 @@ export const EditProfileSheet = forwardRef<
         {rowError(["birthdayMonth", "birthdayDay", "birthdayYear"]) ?? (
           <Text style={styles.hint}>{BIRTHDAY_COPY.yearHint}</Text>
         )}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>{BIRTHDAY_COPY.visibilityLabel}</Text>
-          <Segmented
-            options={VISIBILITY_OPTIONS}
-            value={parseBirthdayVisibility(shown.birthdayVisibility)}
-            onChange={(next) => edit("birthdayVisibility")(next)}
-            accessibilityLabel={BIRTHDAY_COPY.visibilityLabel}
-            disabled={updateUser.isPending}
-          />
-          <Text style={styles.hint}>
-            {
-              BIRTHDAY_COPY.visibilityHint[
-                parseBirthdayVisibility(shown.birthdayVisibility)
-              ]
-            }
-          </Text>
-        </View>
+        {/* Who sees the birthday (#5282): a switch that names what it
+            shares, drawn once a month and day are typed, since it governs
+            nothing without them. iOS Settings and Slack's profile share a
+            field the same way: one switch, one line of who sees what. */}
+        {birthdayTyped ? (
+          <View style={styles.shareRow}>
+            <View style={styles.shareText}>
+              <Text style={styles.shareLabel}>
+                {BIRTHDAY_COPY.visibilityLabel}
+              </Text>
+              <Text style={styles.hint}>
+                {BIRTHDAY_COPY.visibilityHint[birthdayVisibility]}
+              </Text>
+            </View>
+            <Toggle
+              value={birthdayVisibility === "chapter"}
+              onValueChange={(on) =>
+                edit("birthdayVisibility")(on ? "chapter" : "nobody")
+              }
+              accessibilityLabel={BIRTHDAY_COPY.visibilityLabel}
+              disabled={updateUser.isPending}
+            />
+          </View>
+        ) : null}
         {field("bio", copy.bio.label, {
           placeholder: copy.bio.placeholder,
           multiline: true,
@@ -515,6 +518,20 @@ function createStyles(tokens: SignetTokens, accent: string) {
     hint: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    // A switch row: the label and its line of who sees what, then the switch.
+    shareRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    shareText: {
+      flex: 1,
+      gap: tokens.spacing.xs,
+    },
+    shareLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }
