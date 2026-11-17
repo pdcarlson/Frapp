@@ -47,7 +47,7 @@ export function WhoCanSee(description: string): PropertyDecorator {
   };
 }
 
-const FILE_WHO_CAN_SEE =
+export const FILE_WHO_CAN_SEE =
   "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.";
 const FOLDER_WHO_CAN_SEE =
   "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept.";
@@ -378,6 +378,21 @@ export class ChapterDocumentDto {
       "Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`).",
   })
   drive_held_folder_id: string | null;
+  @ApiProperty({
+    enum: ['active', 'no_access'],
+    nullable: true,
+    description:
+      "Set on a Google Drive file added by its link (#5434), which Frapp keeps matching Drive: `active`, or `no_access` once Google answers that Frapp can't see it any more (the copy stays as it was). Null on an upload or a folder copy.",
+  })
+  drive_link_status: 'active' | 'no_access' | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'date-time',
+    description:
+      'When a linked document last matched its Google Drive file. Null unless `drive_link_status` is set.',
+  })
+  drive_synced_at: string | null;
   @ApiProperty({
     type: [String],
     nullable: true,

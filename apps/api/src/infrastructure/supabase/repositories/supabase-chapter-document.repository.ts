@@ -177,22 +177,53 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .from('chapter_documents')
       .select('*')
       .eq('chapter_id', chapterId)
-      .not('drive_file_id', 'is', null);
+      .not('drive_file_id', 'is', null)
+      .is('drive_link_status', null);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
+  }
+
+  async findByDriveFileId(
+    chapterId: string,
+    driveFileId: string,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('drive_file_id', driveFileId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async findLinkedDriveFileIds(chapterId: string): Promise<Set<string>> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('drive_file_id')
+      .eq('chapter_id', chapterId)
+      .not('drive_link_status', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+    return new Set(
+      (data ?? [])
+        .map((row) => row.drive_file_id)
+        .filter((id): id is string => id !== null),
+    );
   }
 
   async updateDriveCopy(
     id: string,
     chapterId: string,
     patch: TablesUpdate<'chapter_documents'>,
-  ): Promise<void> {
-    const { error } = await this.supabase
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
       .from('chapter_documents')
       .update(patch)
       .eq('id', id)
       .eq('chapter_id', chapterId)
-      .not('drive_file_id', 'is', null);
+      .not('drive_file_id', 'is', null)
+      .select('id');
     if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 }

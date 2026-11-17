@@ -527,33 +527,12 @@ export class ChapterDocumentService {
     );
     if (filed) return this.filedFor(filed, input.uploaded_by);
 
-    // Filing into a folder the uploader can't see would hand them a way to
-    // add to it unseen; a folder that doesn't exist yet is made open below.
-    if (folder !== null) {
-      const existing = await this.folderRepo.findByName(
-        input.chapter_id,
-        folder,
-      );
-      if (
-        existing?.who_can_see &&
-        !canSeeFolder(
-          existing,
-          await this.viewerFor(
-            input.chapter_id,
-            input.uploaded_by,
-            listsInPlay([existing.who_can_see]).groups,
-          ),
-        )
-      ) {
-        throw new ForbiddenException("You can't file into that folder");
-      }
-    }
-    const whoCanSee =
-      (await this.checkedList(
-        input.chapter_id,
-        input.uploaded_by,
-        input.who_can_see,
-      )) ?? null;
+    const whoCanSee = await this.checkedFiling(
+      input.chapter_id,
+      input.uploaded_by,
+      folder,
+      input.who_can_see,
+    );
 
     // Uploading into a folder that was never explicitly created is still
     // allowed — it is how every folder came into being before folders were
@@ -692,9 +671,14 @@ export class ChapterDocumentService {
 
   async delete(id: string, chapterId: string, userId: string): Promise<void> {
     const document = await this.visibleDocument(id, chapterId, userId);
-    // Drive owns a copy: deleting it here would only bring it back on the
-    // next sync (`spec/behavior/chapter-docs.md` § Google Drive folder).
-    if (document.drive_file_id !== null) {
+    // Drive owns a folder copy: deleting it here would only bring it back on
+    // the next sync (`spec/behavior/chapter-docs.md` § Google Drive folder).
+    // A file added by its own link is the chapter's to drop: deleting it
+    // unlinks it (its link row goes with it), and Drive is untouched.
+    if (
+      document.drive_file_id !== null &&
+      document.drive_link_status === null
+    ) {
       throw new ConflictException(
         "This file comes from the chapter's Google Drive folder. Remove it in Google Drive.",
       );
@@ -1004,6 +988,38 @@ export class ChapterDocumentService {
     }
   }
 
+  /**
+   * What filing a new document checks (an upload, or a Drive file added by
+   * link, #5434): that the member sees `folder` (filing into a folder they
+   * can't see would hand them a way to add to it unseen; a folder that
+   * doesn't exist yet is made open by `ensureFolder`), and their list,
+   * as stored.
+   */
+  async checkedFiling(
+    chapterId: string,
+    userId: string,
+    folder: string | null,
+    whoCanSee: string[] | null | undefined,
+  ): Promise<string[] | null> {
+    if (folder !== null) {
+      const existing = await this.folderRepo.findByName(chapterId, folder);
+      if (
+        existing?.who_can_see &&
+        !canSeeFolder(
+          existing,
+          await this.viewerFor(
+            chapterId,
+            userId,
+            listsInPlay([existing.who_can_see]).groups,
+          ),
+        )
+      ) {
+        throw new ForbiddenException("You can't file into that folder");
+      }
+    }
+    return (await this.checkedList(chapterId, userId, whoCanSee)) ?? null;
+  }
+
   /** The chapter's folder named `name`, made if it is missing. */
   async ensureFolder(
     name: string,
@@ -1044,7 +1060,9 @@ export class ChapterDocumentService {
  * Without the trim, `"Governance"` and `" Governance"` are different folders
  * that render identically, and the unique constraint cannot tell them apart.
  */
-function normalizeFolderName(folder: string | null | undefined): string | null {
+export function normalizeFolderName(
+  folder: string | null | undefined,
+): string | null {
   if (folder === null || folder === undefined) return null;
   const trimmed = folder.trim();
   return trimmed === '' ? null : trimmed;

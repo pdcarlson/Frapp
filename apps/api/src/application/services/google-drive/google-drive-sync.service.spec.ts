@@ -81,6 +81,8 @@ const copy = (over: Partial<ChapterDocument>): ChapterDocument => ({
   drive_modified_at: '2026-11-15T00:00:00+00:00',
   drive_url: 'https://drive.google.com/file/d/f1/view',
   drive_held_folder_id: null,
+  drive_link_status: null,
+  drive_synced_at: null,
   who_can_see: null,
   ...over,
 });
@@ -147,6 +149,8 @@ describe('GoogleDriveSyncService', () => {
       create: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue(undefined),
       findDriveCopies: jest.fn().mockResolvedValue([]),
+      findLinkedDriveFileIds: jest.fn().mockResolvedValue(new Set()),
+      findByDriveFileId: jest.fn().mockResolvedValue(null),
       updateDriveCopy: jest.fn().mockResolvedValue(undefined),
       setPinnedAt: jest.fn(),
       setWhoCanSee: jest.fn(),
@@ -326,6 +330,22 @@ describe('GoogleDriveSyncService', () => {
         skipped_count: 3,
         folders_left_out: 0,
       }),
+    );
+  });
+
+  it('leaves a file the chapter added by its own link to the link (#5434)', async () => {
+    tree[ROOT] = [item({ id: 'linked' }), item({ id: 'fresh', name: 'b.pdf' })];
+    documents.findLinkedDriveFileIds.mockResolvedValue(new Set(['linked']));
+
+    await service.process(connection(), NOW);
+
+    expect(documents.create).toHaveBeenCalledTimes(1);
+    expect(documents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ drive_file_id: 'fresh' }),
+    );
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ synced_count: 1, skipped_count: 0 }),
     );
   });
 
