@@ -86,6 +86,8 @@ jobs:
           # to. These come from `.github/environments.json`, the file the
           # production deploy reads its ids from too (#2806).
           RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
+          # Where the API runs: on Cloud Run its commit is /health's (#5228).
+          API_HOST: ${{ steps.ids.outputs.api_host }}
           VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
           VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}

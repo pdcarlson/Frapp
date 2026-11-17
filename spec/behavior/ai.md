@@ -163,8 +163,9 @@ Three gates stand between Frapp's data and a model.
 Each governs a different thing.
 
 1. **The chapter turned the feature on.**
-   The president switches on each family separately: Ask, meeting notes, and chat as a source.
-   Each is off until then.
+   The president switches on each family separately: Ask, meeting notes, chat as a source, and nudges.
+   Each is off until then, except nudges, which are on until the president turns them off.
+   *Changed 2026-11-17 by `pdcarlson` (Paul: "We should turn on nudges on activity by default"):* nudges got their own switch, on by default. Until then a nudge stood behind Ask's switch, so a chapter whose president never turned Ask on got no cards. A nudge reads only the member's own tasks (including words others wrote on them: the description an officer gave it and the note an officer sent it back with) and counts of the chapter's earlier ones, never names, for that member, and still needs gate 2, so a member who hasn't said yes gets no card and nothing is sent for them.
    This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
    An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
@@ -369,6 +370,16 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 Decided 2026-11-13 by Paul (the opening suggestions must come from the member's own account, "not just be like some presets"; suggested follow-ups after an answer are left out for now), built in #4700 on web and the phone.
 Until then the empty panel offered three fixed questions and, for an officer, one fixed request.
 
+- **It opens on the crest and a greeting, not on instructions** (decided 2026-11-17 by Paul, built in #4904 on web and the phone: "You don't have to write it there at the top every single time. That's a big pet peeve of mine").
+  Before the first turn Ask shows the crest in the chapter's colour over a glow of that colour, the day, and a greeting by the device's clock and the member's first name ("Good evening, Marcus."), with the suggestions below as arrow rows just above the field.
+  Until then every open began with "Ask about your chapter" and a paragraph on where answers come from and, for a member Frapp can act for, that it can do things too.
+- **The first open says what Frapp can do, once.**
+  On a member's first open on a phone or in a browser, the greeting gives way to an exchange that has already happened: their own bubble asking "What can you do?" and Frapp's answer under it (where answers come from and that each links to its source; for a member Frapp can act for, that they can ask for things to be done and nothing changes until they confirm).
+  It is the product's own copy (`ASK_STARTER` in `@repo/validation`), not a model's: nothing is sent, it needs no Frapp AI consent, and it is never among the earlier turns sent with a question.
+  The device keeps, per member, that the starter was drawn, and whether it carried the line about having things done: it is recorded only once it is on screen, so an open that never drew it (a question sent as Ask opened, Ask closed at once) leaves it due, and it is shown once more to a member Frapp can act for who saw it before it could.
+  Once the conversation has had a turn, New conversation brings back the greeting, not the starter.
+  A device that can't read the record never shows it, so it can't come back on every open; one that can't keep it doesn't show it again until Ask is reloaded.
+
 - **Built from the member's own account, with no model call.**
   When Ask opens, the server reads what this member's account holds right now and returns at most three questions and at most one request (`GET /v1/ai/ask/suggestions`).
   Nothing is sent to a provider, so it does not need Frapp AI on; Meet Frapp AI is still offered at the first question.
@@ -381,7 +392,7 @@ Until then the empty panel offered three fixed questions and, for an officer, on
 - **Frapp can answer every one it offers.**
   A question is offered only when the live-data tool that answers it is one this member would be offered for a typed question (the same permission and module check), and the minutes question only for minutes that are in the search index now.
 - **No fixed list.**
-  A member with nothing to ask about (a new member in a quiet chapter) sees the two opening lines and the field.
+  A member with nothing to ask about (a new member in a quiet chapter) sees the crest, the greeting and the field (the two opening lines until #4904, 2026-11-17).
   Nothing stands in.
 - **The one request** is offered to a member who can have Frapp make a task, for the event they are asked about when it is two to six days away, and otherwise for the first coming event they are invited to that is: "Make a task for me to get ready for Sunday's event, due Saturday".
   It names the two weekdays and nothing else from the event.
@@ -392,7 +403,7 @@ Until then the empty panel offered three fixed questions and, for an officer, on
   The answer itself does read the tapped question, name included; it can change nothing, and the security doc says what bounds it.
   The request holds no name, so it is sent like typed words and comes back as a card.
 - **They arrive without moving anything.**
-  The list fades in under the opening lines, where nothing sits below it.
+  The list fades in at the bottom, above the field, where nothing sits below it.
   A read that fails drops its own suggestion, never the opening.
 - **A list on screen never changes.**
   It is read when Ask opens and not again while Ask is open.
@@ -1016,10 +1027,14 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
   Every number must be one the facts hold.
   Words that fail any check are replaced whole by Frapp's fixed sentence for that kind, which says only what the task says; so are a refusal, a provider failure and a reached spending limit.
   The member never waits on a card and never reads one nobody could stand behind.
+- **Words someone else wrote go only where the chapter has Ask on.**
+  The task's description (usually the assigner's) and an officer's sent-back note reach the model only while the president has Ask switched on; otherwise the card is written from the title, deadline, steps and counts alone, and its place to start comes from the steps.
+  Decided by Paul, 2026-11-17, when nudges went on by default (#5309): a chapter that never turned any AI on should not send what an officer wrote, who may have said No to Frapp AI themselves.
 - **What people typed is read, never obeyed.**
   The task's title, description, checklist and note go to the model as data in the user turn, and the instructions are the system channel.
   The call has no tools, and what comes back is text for one reader.
-- **It stands behind Ask's switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
+- **It stands behind the chapter's nudges switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
+  The nudges switch is on unless the president turns it off ([Consent](#consent), gate 1; Paul, 2026-11-17). It was Ask's switch until then.
   With either off there is no card, no error and no explanation, because a card is an extra.
   Tasks turned off for the chapter means no card.
 - **Nothing is scheduled and nothing is pushed.**

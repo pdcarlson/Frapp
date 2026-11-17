@@ -1,4 +1,4 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useState, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
@@ -29,6 +29,10 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * Standards line, and one tick. Otter and the iPhone's own call recording
  * both announce a recording to the room before it starts; here the officer
  * does it, because the phone on the table has no voice.
+ *
+ * The +'s Record meeting opens it too (#5287), with the meeting it will
+ * record on a row under the heading (`subject`), so picking the meeting is
+ * never a step of its own.
  */
 export const RecordingNoticeSheet = forwardRef<
   BottomSheetModal,
@@ -37,8 +41,10 @@ export const RecordingNoticeSheet = forwardRef<
     maxSeconds: number;
     /** The officer ticked the box and tapped Start recording. */
     onStart: () => void;
+    /** The meeting being recorded, with a way to change it (the +'s). */
+    subject?: ReactNode;
   }
->(function RecordingNoticeSheet({ maxSeconds, onStart }, ref) {
+>(function RecordingNoticeSheet({ maxSeconds, onStart, subject }, ref) {
   const { tokens } = useFrappTheme();
   const { accent, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -78,6 +84,7 @@ export const RecordingNoticeSheet = forwardRef<
         <Text accessibilityRole="header" style={styles.title}>
           {MEETING_RECORDER_NOTICE.heading}
         </Text>
+        {subject}
         <Text style={styles.text}>{MEETING_RECORDER_NOTICE.rule}</Text>
 
         <View style={styles.script}>

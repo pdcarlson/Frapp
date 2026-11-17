@@ -120,6 +120,17 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-17",
+    title: "New in this update",
+    changes: [
+      "A task due at a time now reminds you about an hour before it's due, saying how long is left, instead of two hours before.",
+    ],
+    phone: [
+      "Threads you're in now sit under their channel in Chat, as in Discord, instead of in a separate Threads list.",
+      "Your points sit quietly at the top of the You tab, and your service and study hours show on their rows instead of in big cards that mostly read zero.",
+    ],
+  },
+  {
     date: "2026-11-16",
     title: "New in this update",
     changes: [

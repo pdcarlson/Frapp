@@ -33,6 +33,8 @@ export * from "./ask-entities";
 export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-find";
+// What Ask opens on: the day, a greeting, the first-open starter (#4904).
+export * from "./ask-greeting";
 export * from "./ask-post";
 export * from "./ask-source-chip";
 export * from "./backwork";
@@ -116,6 +118,8 @@ export * from "./meeting-copy";
 // states and the words each failure shows.
 export * from "./meeting-draft";
 export * from "./meeting-recording";
+// Which meeting new minutes start on: web's New minutes and the phone's + (#5287).
+export * from "./meeting-start";
 // ── Meeting minutes (#4312) ──────────────────────────────────────────────────
 export * from "./meetings";
 // Member nudges (#4781): the one card on Activity the AI writes for a member.

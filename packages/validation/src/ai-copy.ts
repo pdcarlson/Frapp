@@ -17,7 +17,11 @@
  */
 
 /** The president's switches, as the API names them (`AI_CHAPTER_SWITCHES`). */
-export type AiChapterSwitchKey = "meeting_notes" | "ask" | "chat_source";
+export type AiChapterSwitchKey =
+  | "meeting_notes"
+  | "ask"
+  | "chat_source"
+  | "nudges";
 
 export interface AiSwitchCopy {
   key: AiChapterSwitchKey;
@@ -29,7 +33,8 @@ export interface AiSwitchCopy {
 
 /**
  * In the order the settings page draws them: the beta feature first, then
- * Ask and the switch that lets Ask and summaries read channel messages.
+ * Ask and the switch that lets Ask and summaries read channel messages, then
+ * nudges, the one that starts on (Paul, 2026-11-17).
  */
 export const AI_SWITCHES: readonly AiSwitchCopy[] = [
   {
@@ -53,13 +58,19 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
       "Ask Frapp also reads messages in chapter channels, and members can ask for a summary of a channel's new messages or of a thread. Only messages from members who have Frapp AI on. Never direct messages.",
     dependsOn: "ask",
   },
+  {
+    key: "nudges",
+    label: "Nudges on Activity",
+    description:
+      "Frapp puts a short card on a member's Activity when one of their own tasks is coming due, late or sent back, with a place to start, and says thanks when they finish on time. On unless you turn it off.",
+  },
 ];
 
 export const AI_SETTINGS_COPY = {
   title: "AI",
   /** `{providers}` is the sheet's providers, joined with {@link joinNames}. */
   description: (providers: string) =>
-    `These features send chapter information to ${providers}. Each is off until the president turns it on, and each member chooses for themselves whether Frapp AI is on.`,
+    `These features send chapter information to ${providers}. Nudges are on unless the president turns them off; the rest are off until the president turns them on. Each member chooses for themselves whether Frapp AI is on.`,
   presidentOnly: "Only the chapter president can turn these on or off.",
   dependsOnAsk: "Turn on Ask Frapp first.",
   lastChanged: (date: string) => `Last changed ${date}.`,

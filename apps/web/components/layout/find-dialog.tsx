@@ -27,7 +27,12 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
   SEARCH_COMPLETED_EVENT,
 } from "@repo/hooks";
-import { ASK_COPY, ASK_FIND_PLACEHOLDER, canAny } from "@repo/validation";
+import {
+  ASK_COPY,
+  ASK_FIND_PLACEHOLDER,
+  ASK_FIND_ROW_HINT,
+  canAny,
+} from "@repo/validation";
 import { useAskEntry } from "@/components/ask/ask-host";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
@@ -584,7 +589,7 @@ function FindPanel({
             <span className="min-w-0 flex-1 truncate">
               <span className="font-semibold">{ASK_COPY.name}</span>
               <span className="ml-2 text-muted-foreground">
-                {query.trim() || ASK_COPY.empty_title}
+                {query.trim() || ASK_FIND_ROW_HINT}
               </span>
             </span>
             {askActive ? (

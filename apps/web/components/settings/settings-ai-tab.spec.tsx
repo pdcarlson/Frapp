@@ -55,6 +55,7 @@ const settings = (overrides: Record<string, unknown> = {}) => ({
   ask: false,
   meeting_notes: false,
   chat_source: false,
+  nudges: true,
   updated_at: null,
   can_change: true,
   ...overrides,

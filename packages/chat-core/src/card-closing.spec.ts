@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CLOSES_AT_CASES, closesAtHasPassed } from "@repo/formatting";
 import { SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS } from "@repo/validation";
 import {
   CARD_END_PASSED_PROBLEM,
@@ -31,6 +32,32 @@ const row = {
   _status: "confirmed",
   is_deleted: false,
 } as const;
+
+/**
+ * The shared deadline cases (#5242): `CLOSES_AT_CASES` from `@repo/formatting`
+ * also runs through hooks' Activity rows, so a chat card agrees with the
+ * shared boundary on every case, and the guard below keeps `isCardClosed`
+ * calling the shared rule rather than a copy of it.
+ */
+describe("isCardClosed shares the deadline rule (#5242)", () => {
+  it.each(CLOSES_AT_CASES)("%s", (_label, closesAt, now, passed) => {
+    expect(closesAtHasPassed(closesAt, now)).toBe(passed);
+    expect(isCardClosed({ closes_at: closesAt, closed_at: null }, now)).toBe(
+      passed,
+    );
+  });
+});
+
+describe("the deadline rule has one owner (#5242)", () => {
+  it("isCardClosed calls closesAtHasPassed, with no comparison of its own", () => {
+    // The function's own (transpiled) source, so this needs no file access.
+    const body = isCardClosed.toString();
+    // Transpiled, the call reads `(0, import.closesAtHasPassed)(…)`.
+    expect(body).toMatch(/closesAtHasPassed\)?\(/);
+    expect(body).not.toMatch(/getTime\(\)\s*(<=|<|>=|>)/);
+    expect(body).not.toContain("parseInstant(");
+  });
+});
 
 describe("isCardClosed (#4696)", () => {
   it("is closed at its end time itself, as the API's isCardClosed and isPollClosed are", () => {

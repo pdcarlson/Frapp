@@ -52,6 +52,7 @@ const SETTINGS = {
   ask: false,
   meeting_notes: true,
   chat_source: false,
+  nudges: true,
   updated_at: "2026-11-12T03:00:00.000Z",
   can_change: true,
 };
@@ -202,6 +203,7 @@ describe("Meet Frapp AI's answers (#4790)", () => {
     ask: false,
     meeting_notes: false,
     chat_source: false,
+    nudges: true,
     updated_at: null,
     can_change: true,
   };

@@ -18,6 +18,11 @@ import {
   type MinutesAudience,
 } from "@/components/meetings/minutes-audience";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_MEETING_NAME,
+  NEW_MEETING_MINUTES,
+  meetingStartingNow,
+} from "@repo/validation";
 
 /** What a meeting with no event needs before its quiet event can be made. */
 export type OffCalendarMeeting = {
@@ -31,13 +36,8 @@ export type OffCalendarMeeting = {
   roleIds: string[];
 };
 
-/** The name a meeting gets when the officer types none (#5219). */
-export const DEFAULT_MEETING_NAME = "Chapter meeting";
-
 /** The start a past day takes when no earlier event of that name has one. */
 const EVENING_START = "19:00";
-/** How long a meeting with no end typed runs. */
-const DEFAULT_LENGTH_MINUTES = 60;
 /** The longest a meeting runs; the end field lists no further (`TimeField`). */
 export const MAX_LENGTH_MINUTES = 12 * 60;
 
@@ -86,7 +86,7 @@ export function offCalendarSpan(
   const start =
     meeting.startTime ||
     (live && meeting.date === localIsoDate(now)
-      ? floorToFive(localClock(now))
+      ? localClock(new Date(meetingStartingNow(now).start_time))
       : (lastStartOf(meeting.name, events) ?? EVENING_START));
   const startIso = localIso(meeting.date, start);
   if (!startIso) {
@@ -95,7 +95,7 @@ export function offCalendarSpan(
       field: "date",
     };
   }
-  let length = DEFAULT_LENGTH_MINUTES;
+  let length = NEW_MEETING_MINUTES;
   if (meeting.endTime) {
     // 9 PM to 12:30 AM ran past midnight.
     length = timeSpanMinutes(start, meeting.endTime);
@@ -105,11 +105,6 @@ export function offCalendarSpan(
   }
   const end = new Date(Date.parse(startIso) + length * 60_000).toISOString();
   return { start_time: startIso, end_time: end };
-}
-
-function floorToFive(time: string): string {
-  const total = timeSpanMinutes("00:00", time);
-  return addMinutesToTime("00:00", total - (total % 5));
 }
 
 /** When the newest event called `name` started, as `HH:MM` where the reader is. */
@@ -197,7 +192,7 @@ export function OffCalendarMeetingFields({
                 const length =
                   value.startTime && value.endTime
                     ? timeSpanMinutes(value.startTime, value.endTime)
-                    : DEFAULT_LENGTH_MINUTES;
+                    : NEW_MEETING_MINUTES;
                 set({
                   startTime,
                   endTime:

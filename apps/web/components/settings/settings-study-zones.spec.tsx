@@ -21,63 +21,39 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
 
 let searchParams = new URLSearchParams();
 
-vi.mock("@repo/hooks", () => ({
-  // A server with AI off: no AI row (#4308).
-  useAiConsent: () => ({ data: null }),
-  aiAvailableFrom: () => false,
-  isFirstAiReadInFlight: () => false,
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: {
-      permissions: [
-        "chapter-config:view",
-        "chapter-config:manage",
-        "geofences:manage",
-      ],
-    },
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => [
+      "chapter-config:view",
+      "chapter-config:manage",
+      "geofences:manage",
+    ],
+    orgConfig: () => ({ org_archetype: "ifc", enabled_modules: {} }),
   }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useChannels: () => ({ data: [] }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc", enabled_modules: {} },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-  useRoles: () => ({ data: [], isPending: false, isError: false }),
-}));
+);
 
 // Mutable so a test can start with no active chapter, which is how zustand's
 // `persist` cold-starts before it rehydrates.
 let activeChapterId: string | null = "chap-1";
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (
-    selector: (s: { activeChapterId: string | null }) => unknown,
-  ) => selector({ activeChapterId }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(
+    () => activeChapterId,
+  ),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParams,
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(() => searchParams),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 // The zone list's own behavior is study-zones-manager.spec.tsx's; here it
 // only has to show up in the right place.
@@ -106,7 +82,9 @@ describe("Study zones inside Chapter settings", () => {
 
   it("draws the zone list on the Study zones page, with no link out", () => {
     render(<SettingsPage />);
-    expect(screen.getByRole("region", { name: "Zone list" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Zone list" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /study zones/i }),
     ).not.toBeInTheDocument();
@@ -121,7 +99,9 @@ describe("Study zones inside Chapter settings", () => {
       refetch: vi.fn(),
     });
     render(<SettingsPage />);
-    expect(screen.getByRole("region", { name: "Zone list" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Zone list" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText("Couldn't load chapter settings"),
     ).not.toBeInTheDocument();

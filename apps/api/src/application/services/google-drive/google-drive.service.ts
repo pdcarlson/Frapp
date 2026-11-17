@@ -32,6 +32,7 @@ export interface GoogleDriveStatus {
     last_synced_at: string | null;
     synced_count: number;
     skipped_count: number;
+    folders_left_out: number;
     syncing: boolean;
     who_can_see: string[] | null;
   } | null;
@@ -186,6 +187,7 @@ function toStatus(
     last_synced_at: live.last_synced_at,
     synced_count: live.synced_count,
     skipped_count: live.skipped_count,
+    folders_left_out: live.folders_left_out,
     who_can_see: live.who_can_see,
     // Due already (just connected, Sync now, or more to copy) or mid-pass.
     syncing:

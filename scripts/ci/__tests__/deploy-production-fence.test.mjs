@@ -494,7 +494,9 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
   const PLANNED = new Map([["Verify staging serves the commit", "${{ steps.plan.outputs.verify_sha }}"]]);
   const PRODUCTION_CARRIERS = [
     "Check out the commit being deployed",
+    "Build the API image",
     "Build the Vercel production bundles (web + landing)",
+    "Deploy the API to Cloud Run",
     "Deploy the commit to Render (production)",
     "Verify production serves the commit",
     "Deploy the commit to Vercel production (web + landing)",
@@ -533,6 +535,19 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
       "the Render deploy is expected to run after the migration apply",
     );
   });
+
+  // Production's API host since #5228, under the same two rules.
+  it("the Cloud Run deploy passes DEPLOY_SHA, and it runs after the apply", () => {
+    const cloudRun = steps().find((s) => s.name === "Deploy the API to Cloud Run");
+    assert.ok(cloudRun, "the Cloud Run deploy step is missing");
+    assert.equal(cloudRun.env.get("DEPLOY_SHA"), INPUT_SHA);
+
+    const names = steps().map((s) => s.name);
+    assert.ok(
+      names.indexOf("Run migrations (apply)") < names.indexOf("Deploy the API to Cloud Run"),
+      "the Cloud Run deploy is expected to run after the migration apply",
+    );
+  });
 });
 
 // The order is what makes a failure cheap. A `full` release builds both
@@ -550,10 +565,12 @@ describe("production's steps run in the order that fails before it writes", () =
     "Stop the disposable Supabase stack",
     "Run migrations (dry-run)",
     "Assert supabase config was not rewritten by link (before the apply)",
+    "Build the API image",
     "Build the Vercel production bundles (web + landing)",
     "Stop here (dry run only)",
     "Run migrations (apply)",
     "Assert supabase config was not rewritten by link",
+    "Deploy the API to Cloud Run",
     "Deploy the commit to Render (production)",
     "Verify production serves the commit",
     "Check the API answers its clients (production)",
@@ -586,6 +603,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
   const REHEARSED = [
     "Install dependencies",
     "Install Vercel CLI",
+    "Build the API image",
     "Build the Vercel production bundles (web + landing)",
   ];
 
@@ -594,6 +612,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
   const SHIPPING = [
     "Run migrations (apply)",
     "Assert supabase config was not rewritten by link",
+    "Deploy the API to Cloud Run",
     "Deploy the commit to Render (production)",
     "Verify production serves the commit",
     "Check the API answers its clients (production)",

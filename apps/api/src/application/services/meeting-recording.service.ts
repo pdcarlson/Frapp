@@ -144,6 +144,12 @@ const RUN_FAILURES: Partial<
   spend_limit: 'spend_limit',
 };
 
+/** What recording would do for a member, before any minutes exist. */
+export type MeetingRecorderAvailability = Pick<
+  MeetingRecordingState,
+  'available' | 'blocked' | 'max_bytes' | 'max_seconds'
+>;
+
 /**
  * A meeting's uploaded recording, written out as text
  * (`spec/behavior/meetings.md` § Uploading a recording, #712, ADR-28
@@ -197,6 +203,24 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
 
   onModuleInit(): void {
     this.registry.register(this);
+  }
+
+  /**
+   * What recording would do for this member right now, before any minutes
+   * exist (#5287): whether the server can write a recording out, why this
+   * member can't send one yet, and the limits. The phone's + reads it to
+   * decide what Record meeting offers.
+   */
+  async availability(
+    chapterId: string,
+    userId: string,
+  ): Promise<MeetingRecorderAvailability> {
+    const { available, blocked, max_bytes, max_seconds } = await this.stateFor(
+      chapterId,
+      userId,
+      null,
+    );
+    return { available, blocked, max_bytes, max_seconds };
   }
 
   /** Where the meeting's recording stands, for whoever may edit its minutes. */

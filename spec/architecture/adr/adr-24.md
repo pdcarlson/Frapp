@@ -130,7 +130,8 @@ digest 07).
   (#2972). Production runs it from the first Deploy production that carries that change. A plan
   change on the same host can move the count too.)* *(2026-11-17: staging moved to Cloud Run behind a
   Google load balancer, and its count is 2, from Google's documented chain, pending a forged-entry
-  probe (#5269).)* The in-memory throttler and auth-failure counters divide by
+  probe (#5269).)* *(2026-11-17, later: the probe measured 2 with no forged entry and 3 with one,
+  so staging's 2 is measured, not assumed. Production re-measures after its own cutover.)* The in-memory throttler and auth-failure counters divide by
   the number of instances.
 - **The lockstep release pin goes** (#2506). The ledger and a compatibility matrix replace
   `production-release-pin.yml`, so mixed SHAs across surfaces become normal.
