@@ -60,8 +60,9 @@ function movesDay(task: EditableTask, input: TaskInput): boolean {
  * refuses any `due_date` but the open copy's own.
  */
 function seriesBody(body: TaskEdit): TaskEdit {
-  const { due_date: _day, ...rest } = body;
-  return { ...rest, scope: "series" };
+  const rest: TaskEdit = { ...body, scope: "series" };
+  delete rest.due_date;
+  return rest;
 }
 
 /** A copy of a series that still makes copies (#5119). */
