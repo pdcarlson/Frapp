@@ -1,9 +1,8 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import React from "react";
 import { usePendingInvites, useRedeemInvite } from "./use-invites";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 
 /**
  * #3776. The join screen offers the invites emailed to the account's verified
@@ -12,18 +11,7 @@ import { FrappClientProvider } from "./use-frapp-client";
 
 function wrapperFor(client: unknown) {
   const queryClient = new QueryClient();
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as ReturnType<typeof import("@repo/api-sdk").createFrappClient>
-      }
-      chapterId={null}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({ client, queryClient, displayName: "Wrapper" });
 }
 
 const PENDING = [

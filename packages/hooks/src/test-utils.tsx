@@ -29,24 +29,28 @@ export function createTestQueryClient(): QueryClient {
  * `chapterId` defaults to `null`, as `FrappClientProvider` does. A
  * chapter-scoped hook gates its queries on the id and invalidates a key that
  * carries it, so a spec for one must pass the chapter it asserts against, or
- * its queries never run.
+ * its queries never run. `userId` defaults to `null` the same way; a spec for
+ * a hook that scopes by the signed-in user passes one.
  */
 export function createHookWrapper({
   client,
   queryClient = createTestQueryClient(),
   chapterId = null,
+  userId = null,
   displayName = "HookTestWrapper",
 }: {
   /** The stubbed API client: only the verbs the hook under test calls. */
   client: unknown;
   queryClient?: QueryClient;
   chapterId?: string | null;
+  userId?: string | null;
   displayName?: string;
 }) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
       client={client as ReturnType<typeof createFrappClient>}
       chapterId={chapterId}
+      userId={userId}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>

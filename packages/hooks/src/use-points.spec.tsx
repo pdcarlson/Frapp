@@ -76,6 +76,8 @@ describe("useAdjustPoints", () => {
     const client = { POST: post } as unknown as ReturnType<
       typeof createFrappClient
     >;
+    // Not createHookWrapper: this reads `activeChapter` on every render, so a
+    // test can switch chapters under a mounted hook.
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
       <FrappClientProvider client={client} chapterId={activeChapter}>
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

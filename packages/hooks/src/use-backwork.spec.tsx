@@ -1,9 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   useBackworkResources,
   useFetchBackworkResource,
@@ -18,7 +16,7 @@ import {
   useBackworkCourses,
   useSaveBackworkCourse,
 } from "./use-backwork";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 describe("useBackwork hooks", () => {
 const BACKWORK_KEY = ["backwork"];
@@ -39,27 +37,16 @@ const CHAPTER_ID = "chapter-abc";
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
 
   const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-        chapterId={CHAPTER_ID}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-
-    Wrapper.displayName = "BackworkHookWrapper";
-    return Wrapper;
+    return createHookWrapper({
+      client: mockClient,
+      queryClient,
+      chapterId: CHAPTER_ID,
+      displayName: "BackworkHookWrapper",
+    });
   };
 
   describe("useBackworkResources", () => {
@@ -115,14 +102,11 @@ const CHAPTER_ID = "chapter-abc";
       const retrying = new QueryClient({ defaultOptions: { queries: { retry: 3 } } });
       const mockGet = vi.fn().mockResolvedValue({ data: null, error: new Error("Not found") });
       const { result } = renderHook(() => useFetchBackworkResource(), {
-        wrapper: ({ children }: { children: React.ReactNode }) => (
-          <FrappClientProvider
-            client={{ GET: mockGet } as unknown as ReturnType<typeof createFrappClient>}
-            chapterId={CHAPTER_ID}
-          >
-            <QueryClientProvider client={retrying}>{children}</QueryClientProvider>
-          </FrappClientProvider>
-        ),
+        wrapper: createHookWrapper({
+          client: { GET: mockGet },
+          queryClient: retrying,
+          chapterId: CHAPTER_ID,
+        }),
       });
       await expect(result.current("gone")).rejects.toThrow("Not found");
       expect(mockGet).toHaveBeenCalledTimes(1);

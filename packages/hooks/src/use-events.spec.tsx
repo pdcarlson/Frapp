@@ -1,11 +1,10 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { RequestTimeoutError, type createFrappClient } from "@repo/api-sdk";
+import { RequestTimeoutError } from "@repo/api-sdk";
 import { EVENT_CREATE_UNCONFIRMED, useCreateEvent } from "./use-events";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 
 function renderWithClient(client: unknown) {
   const queryClient = new QueryClient({
@@ -23,15 +22,11 @@ function wrapperFor(
     defaultOptions: { mutations: { retry: false } },
   }),
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={client as ReturnType<typeof createFrappClient>}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "EventsHookWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client,
+    queryClient,
+    displayName: "EventsHookWrapper",
+  });
 }
 
 const body = {
