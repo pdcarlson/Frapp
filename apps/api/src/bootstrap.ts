@@ -13,6 +13,7 @@ import {
   type DeploymentEnvironment,
 } from './interface/http/deployment-environment';
 import { createProxyChainTripwire } from './interface/middleware/proxy-chain-tripwire.middleware';
+import { bodyParserErrorMiddleware } from './interface/middleware/body-parser-errors.middleware';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { requestReadsMiddleware } from './interface/middleware/request-reads.middleware';
 import { RequestReadsInterceptor } from './interface/interceptors/request-reads.interceptor';
@@ -253,6 +254,9 @@ export function configureApp(
   (app as NestExpressApplication).useBodyParser('json', {
     limit: JSON_BODY_LIMIT,
   });
+  // Right after both parsers: their refusals answer 400 / 413 with a fixed
+  // message, not 500 or the parser's own text (#4404).
+  app.use(bodyParserErrorMiddleware);
 
   app.useGlobalInterceptors(
     new LoggingInterceptor(),
