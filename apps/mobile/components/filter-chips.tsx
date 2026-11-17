@@ -91,6 +91,7 @@ export function Chip({
   accessibilityLabel,
   accessibilityHint,
   mark,
+  trailing,
   onLongPress,
   longPressLabel,
   onLayout,
@@ -104,6 +105,8 @@ export function Chip({
   accessibilityLabel?: string;
   accessibilityHint?: string;
   mark?: ReactNode;
+  /** A small glyph after the label: a menu chip's chevron (#5278). */
+  trailing?: ReactNode;
   onLongPress?: () => void;
   longPressLabel?: string;
   /** Where the chip landed, for a row that scrolls to its lit chip. */
@@ -149,7 +152,7 @@ export function Chip({
       lifts={!on}
       style={[
         styles.chip,
-        mark ? styles.chipWithMark : null,
+        mark || trailing ? styles.chipWithMark : null,
         on
           ? { backgroundColor: accentPrimary }
           : [
@@ -162,6 +165,7 @@ export function Chip({
       <Text style={[styles.chipText, on ? { color: accentOnPrimary } : null]}>
         {label}
       </Text>
+      {trailing}
     </PressableRow>
   );
 }
