@@ -321,7 +321,7 @@ describe('canAccessChannel', () => {
       expect(check(audit, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread', 'close', 'answer', 'modify'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s even from the wildcard and with no post list',
       (operation) => {
         expect(
@@ -333,6 +333,14 @@ describe('canAccessChannel', () => {
         ).toBe(false);
       },
     );
+
+    // Which change to which line decides a modify there, and the predicate
+    // never sees the line: `ChannelAccessService` applies the audit log's
+    // own rule (`auditLogAllowsChange`).
+    it('lets a reader through to modify, for the line rule to decide', () => {
+      expect(check(audit, EMPTY_ACCESS_HOLDER, 'modify')).toBe(true);
+      expect(needsAccessHolder(audit, 'modify')).toBe(false);
+    });
   });
 
   describe('archived channel (#348)', () => {

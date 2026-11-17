@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUDIT_LOG_READ_ONLY_REFUSAL,
   OFFLINE_COPY,
   SERVER_MESSAGE_COPY,
   STATUS_ERROR_COPY,
@@ -53,6 +54,90 @@ describe("errorCopy", () => {
     expect(
       errorCopy(nest(400, 'File extension ".exe" is not allowed'), FALLBACK),
     ).toBe("That file type isn't supported.");
+  });
+
+  // Chat's refusals for the audit log, a card's length, a DM's members and a
+  // poll card checked on send: the member reads why, not the 403/400 line.
+  it.each([
+    [
+      403,
+      AUDIT_LOG_READ_ONLY_REFUSAL,
+      "The audit log is read-only. Only Frapp posts there, its entries stay, and nothing in it can be flagged or pinned.",
+    ],
+    [
+      400,
+      "This card is too long to post. Shorten it and try again.",
+      "This card is too long to post. Shorten it and try again.",
+    ],
+    [
+      400,
+      "This form is too long to post. Shorten some questions or options and try again.",
+      "This form is too long to post. Shorten some questions or options and try again.",
+    ],
+    [
+      404,
+      "Only members of your chapter can be in a direct message. Check who you picked and try again.",
+      "Only members of your chapter can be in a direct message. Check who you picked and try again.",
+    ],
+    [400, "You can't start a DM with yourself", "You can't message yourself."],
+    [
+      400,
+      "Group DMs require 2 to 10 members",
+      "A group message needs 2 to 10 people.",
+    ],
+    [
+      400,
+      "A group DM holds up to 10 people, you included",
+      "A group message holds up to 10 people, you included.",
+    ],
+    [
+      400,
+      "A poll needs a question and at least two options",
+      "Add a question and at least two options.",
+    ],
+    [400, "A poll needs a question", "Add a question to the poll."],
+    [
+      400,
+      "A poll needs 2 to 10 options",
+      "A poll needs between 2 and 10 options.",
+    ],
+    [
+      400,
+      "A poll question can be at most 500 characters",
+      "A poll question can be at most 500 characters.",
+    ],
+    [
+      400,
+      "An option can be at most 200 characters",
+      "An option can be at most 200 characters.",
+    ],
+    [
+      400,
+      "Each option needs an id and a label",
+      "Give every option some text.",
+    ],
+    [
+      400,
+      "Each option needs its own id",
+      "This poll couldn't be read. Make it again and post it.",
+    ],
+    [
+      400,
+      "Unknown poll choice mode",
+      "This poll couldn't be read. Make it again and post it.",
+    ],
+    [
+      400,
+      "A poll’s end time must be a date and time",
+      "Pick a date and time for the poll to close.",
+    ],
+    [
+      400,
+      "A poll can end at most a year from now",
+      "A poll can close at most a year from now.",
+    ],
+  ])("rewrites chat's %i %s", (status, sentence, copy) => {
+    expect(errorCopy(nest(status, sentence), FALLBACK)).toBe(copy);
   });
 
   it("says what the status means where it means the same everywhere", () => {

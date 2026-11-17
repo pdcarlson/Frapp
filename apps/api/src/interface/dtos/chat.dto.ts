@@ -17,7 +17,7 @@ import {
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { MaxJsonLength } from '../decorators/max-json-length.decorator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHANNEL_ACCESS_ENTRY_PATTERN,
@@ -34,6 +34,7 @@ import {
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
   CHAT_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_FORM_CARD_PAYLOAD_MAX_CHARS,
   CHAT_MESSAGE_METADATA_MAX_CHARS,
   MAX_GROUP_DM_MEMBERS,
 } from '#domain/constants/chat';
@@ -285,8 +286,24 @@ export class UpdateChannelDto {
   activity_excluded?: boolean;
 }
 
+/**
+ * A user id as the API compares it: lowercased, since Postgres answers with
+ * lowercase UUIDs and a DM's members are compared and counted as strings
+ * (`ChatService.getOrCreateDm` / `createGroupDm` lowercase them again).
+ */
+function lowercased({ value }: { value: unknown }): unknown {
+  if (typeof value === 'string') return value.toLowerCase();
+  if (Array.isArray(value)) {
+    return value.map((entry: unknown) =>
+      typeof entry === 'string' ? entry.toLowerCase() : entry,
+    );
+  }
+  return value;
+}
+
 export class CreateDmDto {
   @ApiProperty({ description: 'The other member user ID' })
+  @Transform(lowercased)
   @IsUUID()
   member_id: string;
 }
@@ -343,8 +360,11 @@ export class CreateGroupDmDto {
     maxItems: MAX_GROUP_DM_MEMBERS - 1,
     description: `The other members of the chapter to add, at most ${MAX_GROUP_DM_MEMBERS - 1}: a group DM holds up to ${MAX_GROUP_DM_MEMBERS} people, you included.`,
   })
+  @Transform(lowercased)
   @IsArray()
-  @ArrayMaxSize(MAX_GROUP_DM_MEMBERS - 1)
+  @ArrayMaxSize(MAX_GROUP_DM_MEMBERS - 1, {
+    message: `A group DM holds up to ${MAX_GROUP_DM_MEMBERS} people, you included`,
+  })
   @IsUUID(undefined, { each: true })
   member_ids: string[];
 
@@ -639,13 +659,13 @@ export class SendMessageDto {
   /**
    * Inline card payload for rich kinds (poll, sign-up, form, announcement, …).
    * Checked on send by `ChatService.sendMessage`: a poll, sign-up, form or
-   * role picker card is rebuilt from its known fields, and once checked any
-   * card but a form holds at most {@link CHAT_CARD_PAYLOAD_MAX_CHARS}
-   * characters as JSON (a form is bounded by its own field limits).
+   * role picker card is rebuilt from its known fields, and once checked a
+   * card holds at most {@link CHAT_CARD_PAYLOAD_MAX_CHARS} characters as
+   * JSON, or {@link CHAT_FORM_CARD_PAYLOAD_MAX_CHARS} for a form.
    */
   @ApiPropertyOptional({
     type: Object,
-    description: `A rich card's data. Once checked, at most ${CHAT_CARD_PAYLOAD_MAX_CHARS} characters as JSON for every kind but a form, which its own field limits bound.`,
+    description: `A rich card's data. Once checked, at most ${CHAT_CARD_PAYLOAD_MAX_CHARS} characters as JSON, or ${CHAT_FORM_CARD_PAYLOAD_MAX_CHARS} for a form.`,
   })
   @IsOptional()
   @IsObject()

@@ -219,9 +219,11 @@ export const HEADCOUNT_SLOTS: readonly {
   { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: "Can’t make it", capacity: null },
 ];
 /**
- * How far ahead a sign-up's end time may be set. The API refuses later ones
- * outright; the forms stop a day short of it, so a draft that passes in the
- * form isn't refused by a clock a little ahead on the server.
+ * How far ahead a chat card's end time may be set: a sign-up's, a form's and
+ * a poll's (`normalizeClosesAt` in the API). The API refuses later ones
+ * outright; the forms and web's `/poll` stop a day short of it, so a draft
+ * that passes in the client isn't refused by a clock a little ahead on the
+ * server.
  */
 export const SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS = 366;
 

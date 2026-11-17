@@ -4,6 +4,7 @@ import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
   ChatMessageActionDto,
+  CreateDmDto,
   CreateGroupDmDto,
   GetChannelMessagesQueryDto,
   SendMessageDto,
@@ -248,8 +249,37 @@ describe('CreateGroupDmDto', () => {
     await expect(transform({ member_ids: ids(9) })).resolves.toBeDefined();
   });
 
-  it('refuses ten others', async () => {
-    await expect(transform({ member_ids: ids(10) })).rejects.toBeInstanceOf(
+  it('refuses ten others, in words a member can read', async () => {
+    const refusal = await transform({ member_ids: ids(10) }).catch(
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(BadRequestException);
+    expect(
+      JSON.stringify((refusal as BadRequestException).getResponse()),
+    ).toContain('A group DM holds up to 10 people, you included');
+  });
+
+  // A UUID is the same id in either case; the service compares strings.
+  it('lowercases every id', async () => {
+    const upper = 'AAAAAAAA-AAAA-4AAA-8AAA-00000000000B';
+    await expect(transform({ member_ids: [upper] })).resolves.toMatchObject({
+      member_ids: [upper.toLowerCase()],
+    });
+  });
+});
+
+describe('CreateDmDto', () => {
+  const transform = bodyTransform(CreateDmDto);
+
+  it('lowercases the id', async () => {
+    const upper = 'AAAAAAAA-AAAA-4AAA-8AAA-00000000000B';
+    await expect(transform({ member_id: upper })).resolves.toMatchObject({
+      member_id: upper.toLowerCase(),
+    });
+  });
+
+  it('still refuses something that is not an id', async () => {
+    await expect(transform({ member_id: 'NOT-AN-ID' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });

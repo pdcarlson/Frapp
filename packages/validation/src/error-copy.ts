@@ -10,6 +10,7 @@
  * status's stands in for it.
  */
 import { askPostRefusalCopy } from "./ask-post";
+import { AUDIT_LOG_READ_ONLY_REFUSAL } from "./chat-audit-log";
 import { moduleRefusalFromServerMessage } from "./module-refusal";
 import { subscriptionRefusalFromServerMessage } from "./subscription";
 import {
@@ -232,6 +233,40 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "Only the person who started this poll, or an officer who manages channels, can close it.",
   "Duplicate attachment": "That file is already attached.",
   "You cannot block yourself": "You can't block yourself.",
+  // The audit log (#3909, `ChannelAccessService`): a post, a vote or a
+  // thread reply there, a new pin or flag on any of its lines, or a delete of
+  // one of Frapp's entries.
+  [AUDIT_LOG_READ_ONLY_REFUSAL]:
+    "The audit log is read-only. Only Frapp posts there, its entries stay, and nothing in it can be flagged or pinned.",
+  // A card over its length bound (`ChatService.sendMessage`). Every app's
+  // builder stays well under it, so this reaches a member only from a card
+  // built some other way.
+  "This card is too long to post. Shorten it and try again.":
+    "This card is too long to post. Shorten it and try again.",
+  "This form is too long to post. Shorten some questions or options and try again.":
+    "This form is too long to post. Shorten some questions or options and try again.",
+  // Starting a DM or a group DM (`ChatService.getOrCreateDm` /
+  // `createGroupDm`).
+  "Only members of your chapter can be in a direct message. Check who you picked and try again.":
+    "Only members of your chapter can be in a direct message. Check who you picked and try again.",
+  "You can't start a DM with yourself": "You can't message yourself.",
+  "A group DM holds up to 10 people, you included":
+    "A group message holds up to 10 people, you included.",
+  // A poll card checked on send (`normalizePollCard`). The New poll forms and
+  // `/poll` check the same before sending, so these reach a member only from
+  // an out-of-date client; the lengths are matched by shape below.
+  "A poll needs a question and at least two options":
+    "Add a question and at least two options.",
+  "A poll needs a question": "Add a question to the poll.",
+  "Each option needs an id and a label": "Give every option some text.",
+  "Each option needs its own id":
+    "This poll couldn't be read. Make it again and post it.",
+  "Unknown poll choice mode":
+    "This poll couldn't be read. Make it again and post it.",
+  "A poll’s end time must be a date and time":
+    "Pick a date and time for the poll to close.",
+  "A poll can end at most a year from now":
+    "A poll can close at most a year from now.",
   "This account cannot be blocked": "This account can't be blocked.",
   "This report is no longer open": "Someone already handled this report.",
   // Roles and members
@@ -360,6 +395,20 @@ const SERVER_MESSAGE_PATTERNS: ReadonlyArray<
   [
     /^Poll must have between (\d+) and (\d+) options$/,
     (m) => `A poll needs between ${m[1]} and ${m[2]} options.`,
+  ],
+  // A poll card checked on send (`normalizePollCard`); a form card's option
+  // shares the last sentence.
+  [
+    /^A poll needs (\d+) to (\d+) options$/,
+    (m) => `A poll needs between ${m[1]} and ${m[2]} options.`,
+  ],
+  [
+    /^A poll question can be at most (\d+) characters$/,
+    (m) => `A poll question can be at most ${m[1]} characters.`,
+  ],
+  [
+    /^An option can be at most (\d+) characters$/,
+    (m) => `An option can be at most ${m[1]} characters.`,
   ],
 ];
 

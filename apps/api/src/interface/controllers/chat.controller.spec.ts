@@ -38,6 +38,7 @@ describe('ChatController', () => {
       | 'removePrivateChannelMember'
       | 'sendMessage'
       | 'forwardMessage'
+      | 'createGroupDm'
     >
   >;
   let attachments: jest.Mocked<
@@ -76,6 +77,7 @@ describe('ChatController', () => {
       removePrivateChannelMember: jest.fn(),
       sendMessage: jest.fn(),
       forwardMessage: jest.fn(),
+      createGroupDm: jest.fn(),
     };
 
     mentions = {
@@ -107,6 +109,37 @@ describe('ChatController', () => {
     }).compile();
 
     controller = module.get<ChatController>(ChatController);
+  });
+
+  // The write limit the throttler reads off a handler (`@nestjs/throttler`'s
+  // `THROTTLER:LIMIT` + bucket name), or undefined on the default.
+  const writeLimit = (handler: unknown): number | undefined =>
+    Reflect.getMetadata('THROTTLER:LIMIT' + 'write', handler as object) as
+      number | undefined;
+
+  describe('direct conversations', () => {
+    // Every call adds a conversation to each listed member's list.
+    it('holds creating a group DM to 10 a minute', () => {
+      expect(writeLimit(controller.createGroupDm)).toBe(10);
+    });
+
+    // Get-or-create is how a member reopens a DM, so it keeps the default.
+    it('leaves opening a DM on the default write limit', () => {
+      expect(writeLimit(controller.getOrCreateDm)).toBeUndefined();
+    });
+
+    it('adds the caller to the group and leaves the counting to the service', async () => {
+      service.createGroupDm.mockResolvedValue({} as never);
+      await controller.createGroupDm('ch-1', 'user-1', {
+        member_ids: ['user-2', 'user-1'],
+        name: 'Rush leads',
+      });
+      expect(service.createGroupDm).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1', 'user-2', 'user-1'],
+        'Rush leads',
+      );
+    });
   });
 
   describe('getChannelAccessOptions', () => {

@@ -7332,7 +7332,7 @@ export interface components {
             /** @enum {string} */
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker";
             gif?: components["schemas"]["MessageGifDto"];
-            /** @description A rich card's data. Once checked, at most 16384 characters as JSON for every kind but a form, which its own field limits bound. */
+            /** @description A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form. */
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */

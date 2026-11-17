@@ -3,6 +3,7 @@ import type { BlockState } from "./blocks";
 import {
   MESSAGE_FLAG_OPTIONS,
   canFlagMessage,
+  messageFlagOptions,
   messageFlagCaption,
   messageFlagView,
 } from "./flags";
@@ -112,6 +113,38 @@ describe("canFlagMessage (#3921)", () => {
     expect(canFlagMessage(flagged, "marcus", false)).toBe(true);
     expect(canFlagMessage(flagged, "devin", false)).toBe(true);
     expect(canFlagMessage(flagged, "v", true)).toBe(true);
+  });
+
+  // #3909: nothing in the audit log takes a new flag; one from before can go.
+  describe("in the audit log", () => {
+    it("offers no control on an unflagged line", () => {
+      expect(canFlagMessage(message(), "v", true, true)).toBe(false);
+      expect(
+        canFlagMessage(message({ kind: "system_audit" }), "v", true, true),
+      ).toBe(false);
+    });
+
+    it("offers taking a flag off, an entry from Frapp included", () => {
+      const flagged = { flag: "important", flagged_by: "marcus" };
+      expect(canFlagMessage(message(flagged), "marcus", false, true)).toBe(
+        true,
+      );
+      expect(
+        canFlagMessage(
+          message({ ...flagged, kind: "system_audit" }),
+          "v",
+          true,
+          true,
+        ),
+      ).toBe(true);
+      // Still only who may change it.
+      expect(canFlagMessage(message(flagged), "v", false, true)).toBe(false);
+    });
+
+    it("offers no flag to put on", () => {
+      expect(messageFlagOptions(true)).toEqual([]);
+      expect(messageFlagOptions()).toBe(MESSAGE_FLAG_OPTIONS);
+    });
   });
 
   it("lists Important first", () => {

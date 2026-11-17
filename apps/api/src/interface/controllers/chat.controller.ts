@@ -446,8 +446,12 @@ export class ChatController {
     @CurrentUser('id') userId: string,
     @Body() dto: CreateGroupDmDto,
   ) {
-    const memberIds = Array.from(new Set([userId, ...dto.member_ids]));
-    return this.chatService.createGroupDm(chapterId, memberIds, dto.name);
+    // The service counts each person once, however their id is spelled.
+    return this.chatService.createGroupDm(
+      chapterId,
+      [userId, ...dto.member_ids],
+      dto.name,
+    );
   }
 
   /**

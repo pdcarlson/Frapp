@@ -168,7 +168,7 @@ The optimistic `loading` placeholder stays client-postable — it carries no ass
 ## Announcement gating
 
 `/announce` is for the members on `#announcements`' who-can-post list (in a new chapter, the Exec board and Officers and chairs tiers) and posts to the current chapter's `#announcements`.
-The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel has a who-can-post list and the caller holds no entry on it and not `*` (#3722) (and denies everyone in the audit log, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)).
+The gate is the `operation` parameter on the shared `canAccessChannel` predicate (default `'read'`; the full set is `'read' | 'post' | 'vote' | 'thread' | 'close' | 'answer' | 'modify'`, [`spec/architecture/README.md`](../../architecture/README.md)): for `operation:'post'`, after the read check passes, the predicate denies when the channel has a who-can-post list and the caller holds no entry on it and not `*` (#3722) (and in the audit log denies everyone every operation but `read` and `modify`, the audit log's own line rule deciding a `modify`, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)).
 Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send.
 The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it.
 The client hides the disallowed command for UX, but the server is the trust boundary.
@@ -274,6 +274,9 @@ Comparable apps: Google Forms, Microsoft Forms, Typeform and Slack Workflow form
   The payload is the title, an optional description, and an ordered list of questions, each with an `id`, a `type`, its `title`, `required`, and for a choice question its `options` (`id`, `label`).
   The types are `short_answer`, `paragraph`, `multiple_choice` (pick one), `checkboxes` (pick any), `dropdown` (pick one) and `yes_no`; the limits are `FORM_*` in `@repo/validation`.
   `ChatService.sendMessage` checks the card and stores it rebuilt from its known fields (`normalizeFormCard` in `apps/api/src/domain/utils/form-card-rules.ts`), as it does a sign-up card, because answers are checked against the stored questions.
+  The rebuilt card as a whole is bounded too (2026-11-17), as every card is, since each reader of the channel downloads it: a form at 65,536 characters as JSON (`CHAT_FORM_CARD_PAYLOAD_MAX_CHARS`), every other card at 16,384 (`CHAT_CARD_PAYLOAD_MAX_CHARS`), both in `apps/api/src/domain/constants/chat.ts`.
+  A long rush interest form is about 13,000; a card over its bound is a 400 ("This form is too long to post. Shorten some questions or options and try again.").
+  An outbox retry of a card that committed before these checks is answered as the duplicate, not refused.
   Anyone who can post in the channel can post one; there is no module and no permission.
   The card is answered on a full page it opens, not on the card, so a long questionnaire doesn't crowd the timeline.
   The card shows the title, the question count and the viewer's state: Fill out, or Done with Edit your answers (`formCardAction` in `@repo/chat-core/forms`).

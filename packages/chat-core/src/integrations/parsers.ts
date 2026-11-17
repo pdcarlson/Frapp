@@ -16,6 +16,7 @@ import {
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
   POLL_QUESTION_MAX_LENGTH,
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
   TASK_TITLE_MAX_LENGTH,
 } from "@repo/validation";
 
@@ -89,6 +90,15 @@ export type ParseResult<T> =
 const POLL_DEFAULT_CLOSE_MINUTES = 60 * 24;
 
 /**
+ * The longest `closes=` a `/poll` takes, in minutes. The API refuses a poll
+ * that ends more than {@link SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS} days out; this
+ * stops a day short of that, as the card forms do (`checkCardEnd`), so a
+ * clock a little ahead on the server can't refuse what the parser passed.
+ */
+export const POLL_CLOSES_MAX_MINUTES =
+  (SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS - 1) * 24 * 60;
+
+/**
  * Tokenizer that respects double-quoted spans. `'Foo "bar baz" qux'` →
  * `['Foo', 'bar baz', 'qux']`. Unterminated quotes return `null` so the
  * caller can surface a precise error instead of silently dropping the tail.
@@ -118,7 +128,8 @@ export function tokenizeQuotedArgs(input: string): string[] | null {
  * Parse `/poll "Question" Option1 Option2 [...]`. Question must be quoted (the
  * common "Friday or Saturday" case has internal whitespace). Two options
  * minimum. Optional trailing `closes=<minutes>` token; non-finite values fall
- * back to the default.
+ * back to the default, and more than {@link POLL_CLOSES_MAX_MINUTES} (about a
+ * year) is refused.
  */
 export function parsePollArgs(args: string): ParseResult<PollArgs> {
   const tokens = tokenizeQuotedArgs(args.trim());
@@ -148,6 +159,12 @@ export function parsePollArgs(args: string): ParseResult<PollArgs> {
   for (const token of tokens.slice(1)) {
     if (token.startsWith("closes=")) {
       const parsed = parseNumericArg(token.slice("closes=".length));
+      if (parsed !== null && parsed > POLL_CLOSES_MAX_MINUTES) {
+        return {
+          ok: false,
+          error: "A poll can close at most a year from now",
+        };
+      }
       if (parsed !== null && parsed > 0) closesInMinutes = parsed;
       continue;
     }

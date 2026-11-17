@@ -51,6 +51,14 @@ describe('ChatReportController', () => {
     ]);
   });
 
+  // Each new report notifies every officer who reviews reports, so filing
+  // one is held to 10 a minute (`ThrottleFanOutWrite`), not the default 30.
+  it('holds filing a report to 10 a minute', () => {
+    expect(
+      Reflect.getMetadata('THROTTLER:LIMIT' + 'write', controller.fileReport),
+    ).toBe(10);
+  });
+
   describe('POST :id/remove-message', () => {
     it('requires channels:manage on top of the class floor', () => {
       // The guard ANDs class and handler lists, so the route admits exactly

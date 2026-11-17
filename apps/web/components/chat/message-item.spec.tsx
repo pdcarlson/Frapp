@@ -2245,6 +2245,69 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
   });
 });
 
+// #3909: the audit log's record can't be altered or erased. Frapp's entries
+// offer no Delete, and nothing there offers a new flag; a flag already on a
+// line can still come off, and a member's post from before it was read-only
+// keeps its Delete.
+describe("MessageItem in the audit log (#3909)", () => {
+  const entry = () =>
+    message({
+      sender_id: SYSTEM_SENDER_ID,
+      kind: "system_audit",
+      content: "Role updated",
+    });
+
+  it("offers no Delete on Frapp's entries, even with channels:manage", () => {
+    renderItemWithProps({
+      message: entry(),
+      onDelete: vi.fn(),
+      canManageChannel: true,
+      inAuditLog: true,
+    });
+    expect(
+      screen.queryByRole("button", { name: /delete/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps Delete on a member's own post there", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onDelete: vi.fn(),
+      inAuditLog: true,
+    });
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
+  });
+
+  it("offers no Flag on a line with no flag", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onFlag: vi.fn(),
+      inAuditLog: true,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Flag" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers only Remove flag on a flagged line", async () => {
+    const onFlag = vi.fn();
+    renderItemWithProps({
+      message: { ...entry(), flag: "important", flagged_by: OTHER },
+      onFlag,
+      canManageChannel: true,
+      inAuditLog: true,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Flag" }));
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Remove flag"]);
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Remove flag" }),
+    );
+    expect(onFlag).toHaveBeenCalledWith("msg-1", null);
+  });
+});
+
 describe("MessageItem Forward (#4907)", () => {
   it("offers Forward first behind More, on the viewer's own message too", async () => {
     const onForward = vi.fn();

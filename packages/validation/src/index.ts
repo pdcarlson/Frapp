@@ -49,6 +49,8 @@ export * from "./chapter-config";
 export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
+// The audit log (#3909): what may change on a line already in it.
+export * from "./chat-audit-log";
 export * from "./chat-backgrounds";
 // Catch me up (#3946): a channel's new messages or a thread, summarized.
 export * from "./chat-catch-up";
