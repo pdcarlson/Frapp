@@ -91,18 +91,18 @@ Paul asked on 2026-11-16 for full observability from the first day. Sentry (erro
 - **Audit logs.** Every deploy, traffic move and permission change is in the project's audit log (**Logging → Logs Explorer**, log name `cloudaudit.googleapis.com/activity`), on by default.
 - **Retention and cost.** Logs stay 30 days in the `_Default` bucket. Ingestion is free up to 50 GiB a month per project, far above the API's volume.
 
-**Uptime, alerts and secret reads** come from [`scripts/gcp/observability.sh`](../../../scripts/gcp/observability.sh), run once per project in Cloud Shell after the balancer exists: `bash scripts/gcp/observability.sh <staging|production> <project-id> <alert-email>`. The email is an argument because the repository is public. It makes one email channel, *Frapp alerts*, and sends every alert there. Email is the pager ([`alert-routing.md`](../alert-routing.md)). A rerun updates everything to match the script, so a changed threshold reaches a project by running it again.
+**Uptime, alerts and secret reads** come from [`scripts/gcp/observability.sh`](../../../scripts/gcp/observability.sh), run once per project in Cloud Shell after the balancer exists: `bash scripts/gcp/observability.sh <staging|production> <project-id> <alert-email>`. The email is an argument because the repository is public. It makes one email channel, *Frapp alerts*, and sends every alert there. Email is the pager ([`alert-routing.md`](../alert-routing.md)). A rerun finds each piece by its display name and updates it to match the script (an uptime check on another host is replaced), so a changed threshold reaches a project by running it again. A policy renamed in the script leaves its old copy behind, to delete in **Monitoring → Alerting**.
 
 | What | Fires when |
 |---|---|
 | Uptime check *Frapp API (&lt;env&gt;) /health/ready* | Runs every minute from Google's checker regions, certificate validated. Its policy, *not answering*, fires when more than one region fails. |
 | *5xx burst* | More than 10 responses with a 5xx status in five minutes (Cloud Run's request count). |
-| *container crashed* | Cloud Run's system log shows a non-zero exit, a memory kill or a failed probe. At most one email per five minutes. |
+| *container crashed* | Cloud Run's system log shows a non-zero exit, a kill by signal (an abort, a crash, SIGKILL; not the SIGTERM of a scale-down), a memory kill or a failed probe. At most one email per five minutes. |
 | *memory near the limit* | A container above 85% of its 1 GiB for five minutes. |
-| *error log burst* | More than 20 of the API's own log lines at ERROR or above in five minutes (the log-based metric `frapp_api_error_logs`; the request log's 5xx lines aren't counted twice). |
+| *error log burst* | More than 20 of the API's own log lines at ERROR or above in five minutes (the log-based metric `frapp_api_error_logs`). It leaves out both the request log and the API's own report of each 5xx (`jsonPayload.data.statusCode>=500`), which *5xx burst* already counts, so it sees the errors a response doesn't show, such as a failed push. |
 | Secret Manager data-access audit log | Not an alert: every secret read, by the deploy or the service, lands in `cloudaudit.googleapis.com/data_access`. |
 
-Every policy closes itself a day after its condition clears. Sentry's own uptime and error-spike rules ([`alert-routing.md`](../alert-routing.md)) still run; Google's add what Sentry can't see: a host that doesn't answer at all, crash loops and memory. The thresholds and the crash-log patterns are a first guess, made before any production traffic; tune them in the script if they're noisy or quiet.
+An incident closes once its condition stops being met, and the two bursts count a quiet stretch with no data as over, so the next burst emails again. A log match, or a metric that stopped reporting, closes itself after a day. Sentry's own uptime and error-spike rules ([`alert-routing.md`](../alert-routing.md)) still run; Google's add what Sentry can't see: a host that doesn't answer at all, crash loops and memory. The thresholds and the crash-log patterns are a first guess, made before any production traffic; tune them in the script if they're noisy or quiet.
 
 ## Deploys
 

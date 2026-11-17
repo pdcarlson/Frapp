@@ -12,9 +12,10 @@
 #   bash scripts/gcp/observability.sh production <prod-project-id> <alert-email>
 #
 # The email is an argument, not a constant here, because the repository is
-# public. It is safe to run again: what exists is updated to match, never
-# duplicated, so a rerun is also how a threshold change in this file reaches a
-# project.
+# public. It is safe to run again: what exists is found by its display name
+# and updated to match, never duplicated, so a rerun is also how a threshold
+# change in this file reaches a project. Renaming a policy here leaves the old
+# one behind: delete it in Monitoring, Alerting.
 #
 # What it makes:
 #   - one email notification channel, "Frapp alerts", which every policy uses;
@@ -33,8 +34,6 @@ set -euo pipefail
 # shellcheck source=scripts/gcp/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-STAGING_HOST="api-staging.frapp.live"
-PRODUCTION_HOST="api.frapp.live"
 SERVICE="$CLOUD_RUN_SERVICE"
 
 CHANNEL_NAME="Frapp alerts"
@@ -57,8 +56,8 @@ ENVIRONMENT="$1"
 PROJECT_ID="$2"
 ALERT_EMAIL="$3"
 case "$ENVIRONMENT" in
-  staging) REGION="$GCP_STAGING_REGION"; HOST="$STAGING_HOST"; LABEL="staging" ;;
-  production) REGION="$GCP_PRODUCTION_REGION"; HOST="$PRODUCTION_HOST"; LABEL="production" ;;
+  staging) REGION="$GCP_STAGING_REGION"; HOST="$GCP_STAGING_HOST"; LABEL="staging" ;;
+  production) REGION="$GCP_PRODUCTION_REGION"; HOST="$GCP_PRODUCTION_HOST"; LABEL="production" ;;
   *) usage ;;
 esac
 if [[ ! "$ALERT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
@@ -66,18 +65,10 @@ if [[ ! "$ALERT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; th
   exit 2
 fi
 
-exists() { gc "$@" >/dev/null 2>&1; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-step "Checking project $PROJECT_ID"
-PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)')"
-require_project_for_environment "$ENVIRONMENT" "$PROJECT_ID" "$PROJECT_NAME"
-if ! exists run services describe "$SERVICE" --region="$REGION"; then
-  echo "There is no Cloud Run service $SERVICE in $REGION yet. Let a deploy create it first, then run this again." >&2
-  exit 1
-fi
-echo "\"$PROJECT_NAME\", service $SERVICE in $REGION, host $HOST"
+require_project_with_service "$ENVIRONMENT" "$REGION" "$HOST"
 
 step "Turning on Cloud Monitoring"
 gc services enable monitoring.googleapis.com logging.googleapis.com
@@ -95,20 +86,37 @@ echo "$CHANNEL"
 
 step "Uptime check on https://$HOST/health/ready"
 UPTIME_NAME="Frapp API ($LABEL) /health/ready"
+UPTIME_PERIOD=1   # minutes
+UPTIME_TIMEOUT=10 # seconds
 UPTIME="$(gc monitoring uptime list-configs --filter="displayName=\"$UPTIME_NAME\"" --format='value(name)' | head -n 1)"
+# A check's host can't be changed in place, so one watching another host is
+# replaced.
+if [[ -n "$UPTIME" ]]; then
+  CHECKED_HOST="$(gc monitoring uptime describe "${UPTIME##*/}" --format='value(monitoredResource.labels.host)')"
+  if [[ "$CHECKED_HOST" != "$HOST" ]]; then
+    echo "The check watches $CHECKED_HOST; replacing it."
+    gc monitoring uptime delete "${UPTIME##*/}" >/dev/null
+    UPTIME=""
+  fi
+fi
 if [[ -z "$UPTIME" ]]; then
   UPTIME="$(gc monitoring uptime create "$UPTIME_NAME" --resource-type=uptime-url \
     --resource-labels="host=$HOST,project_id=$PROJECT_ID" --protocol=https --port=443 --path=/health/ready \
-    --validate-ssl=true --status-classes=2xx --period=1 --timeout=10 --format='value(name)')"
+    --validate-ssl=true --status-classes=2xx --period="$UPTIME_PERIOD" --timeout="$UPTIME_TIMEOUT" --format='value(name)')"
+else
+  gc monitoring uptime update "${UPTIME##*/}" --port=443 --path=/health/ready \
+    --validate-ssl=true --set-status-classes=2xx --period="$UPTIME_PERIOD" --timeout="$UPTIME_TIMEOUT" >/dev/null
 fi
 CHECK_ID="${UPTIME##*/}"
 echo "$UPTIME"
 
 step "Log-based metric $ERROR_METRIC (the API's lines at ERROR or above)"
-# The API's own output only: Cloud Run's request log marks every 5xx ERROR
-# too, and the 5xx policy already counts those.
+# The API's own output only, without its 5xx report (AllExceptionsFilter logs
+# each 5xx at ERROR with data.statusCode): Cloud Run's request log marks every
+# 5xx ERROR too, and the 5xx policy already counts them. What is left is the
+# errors a response doesn't show, such as a failed push or a worker's error.
 LOGS="projects/$PROJECT_ID/logs/run.googleapis.com"
-ERROR_FILTER="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$SERVICE\" AND severity>=ERROR AND (logName=\"$LOGS%2Fstdout\" OR logName=\"$LOGS%2Fstderr\")"
+ERROR_FILTER="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$SERVICE\" AND severity>=ERROR AND (logName=\"$LOGS%2Fstdout\" OR logName=\"$LOGS%2Fstderr\") AND NOT jsonPayload.data.statusCode>=500"
 if exists logging metrics describe "$ERROR_METRIC"; then
   gc logging metrics update "$ERROR_METRIC" --log-filter="$ERROR_FILTER" >/dev/null
 else
@@ -116,8 +124,9 @@ else
 fi
 
 # Creates the policy in $WORK/<file>.json, or updates the policy of the same
-# display name. A metric a log-based metric has only just defined can take a
-# minute to be accepted, so a refused create is retried.
+# display name. A log-based metric made a moment ago can take a minute to be
+# accepted, so a create refused over that metric is retried; any other refusal
+# stops the script with Google's message.
 apply_policy() {
   local file="$1" display existing tries=0
   display="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["displayName"])' "$WORK/$file")"
@@ -127,10 +136,14 @@ apply_policy() {
     echo "updated: $display"
     return
   fi
-  until gc monitoring policies create --policy-from-file="$WORK/$file" >/dev/null; do
+  until gc monitoring policies create --policy-from-file="$WORK/$file" >/dev/null 2>"$WORK/create.err"; do
+    cat "$WORK/create.err" >&2
+    if ! grep -q "logging.googleapis.com/user/" "$WORK/create.err"; then
+      exit 1
+    fi
     tries=$((tries + 1))
     if [[ $tries -ge 5 ]]; then
-      echo "Couldn't create \"$display\" after 5 tries. Run this script again in a few minutes." >&2
+      echo "Google still doesn't know the new log metric after 5 tries. Run this script again in a few minutes." >&2
       exit 1
     fi
     echo "Google refused \"$display\"; retrying in 30 seconds."
@@ -141,8 +154,9 @@ apply_policy() {
 
 step "Alert policies"
 # Written by Python so the filters need no shell quoting. Every policy emails
-# the channel, says what to look at, and closes itself a day after its
-# condition clears.
+# the channel and says what to look at. An open incident closes when its
+# condition is no longer met; one left open by a log match, or by a metric
+# that stopped reporting, closes itself after a day (autoClose).
 LABEL="$LABEL" HOST="$HOST" SERVICE="$SERVICE" REGION="$REGION" PROJECT_ID="$PROJECT_ID" \
   CHANNEL="$CHANNEL" CHECK_ID="$CHECK_ID" ERROR_METRIC="$ERROR_METRIC" RUNBOOK="$RUNBOOK" \
   MEMORY_THRESHOLD="$MEMORY_THRESHOLD" FIVE_XX_THRESHOLD="$FIVE_XX_THRESHOLD" \
@@ -156,21 +170,24 @@ revision = f'resource.type="cloud_run_revision" AND resource.label.service_name=
 memory_pct = round(float(e["MEMORY_THRESHOLD"]) * 100)
 
 
-def threshold(display, flt, aligner, reducer, value, duration, period="300s", group_by=None):
+def threshold(display, flt, aligner, reducer, value, duration, period="300s", group_by=None, sparse=False):
     agg = {"alignmentPeriod": period, "perSeriesAligner": aligner, "crossSeriesReducer": reducer}
     if group_by:
         agg["groupByFields"] = group_by
-    return {
-        "displayName": display,
-        "conditionThreshold": {
-            "filter": flt,
-            "aggregations": [agg],
-            "comparison": "COMPARISON_GT",
-            "thresholdValue": value,
-            "duration": duration,
-            "trigger": {"count": 1},
-        },
+    condition = {
+        "filter": flt,
+        "aggregations": [agg],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": value,
+        "duration": duration,
+        "trigger": {"count": 1},
     }
+    if sparse:
+        # A count that writes nothing while all is well (no 5xx, no error
+        # lines): no data means the burst is over, so the incident closes and
+        # the next burst opens a new one instead of landing on an open one.
+        condition["evaluationMissingData"] = "EVALUATION_MISSING_DATA_INACTIVE"
+    return {"displayName": display, "conditionThreshold": condition}
 
 
 def policy(file, display, doc, condition, strategy=None):
@@ -212,23 +229,26 @@ policy(
     threshold(
         f"More than {five_xx} 5xx in 5 minutes",
         f'metric.type="run.googleapis.com/request_count" AND {revision} AND metric.label.response_code_class="5xx"',
-        "ALIGN_SUM", "REDUCE_SUM", five_xx, "0s",
+        "ALIGN_SUM", "REDUCE_SUM", five_xx, "0s", sparse=True,
     ),
 )
 
 # Cloud Run's own system log says when a container exits with an error, is
-# killed for memory, or fails a probe. Exit code 0 (a scale-down) is left out.
+# killed by a signal (Node aborting at its heap limit is signal 6) or for
+# memory, or fails a probe. A clean exit (code 0) and SIGTERM (15), which is
+# how Cloud Run scales down, are left out.
 system_log = f"projects/{project}/logs/run.googleapis.com%2Fvarlog%2Fsystem"
 policy(
     "crash.json",
     "container crashed",
-    "A container exited with an error, ran out of memory, or failed a health probe. "
+    "A container exited with an error, was killed by a signal or for memory, or failed a health probe. "
     "Cloud Run starts a new one, so more than one of these means a crash loop.",
     {
         "displayName": "Crash, memory kill or failed probe in the system log",
         "conditionMatchedLog": {
             "filter": f'{revision.replace("resource.label.", "resource.labels.")} AND logName="{system_log}" '
-            'AND (textPayload=~"Container called exit[(][1-9]" OR textPayload:"Memory limit" OR textPayload:"probe failed")'
+            'AND (textPayload=~"Container called exit[(][1-9]" OR textPayload=~"signal:? ?(4|6|7|8|9|11)([^0-9]|$)" '
+            'OR textPayload:"Memory limit" OR textPayload:"probe failed")'
         },
     },
     strategy={"notificationRateLimit": {"period": "300s"}},
@@ -251,11 +271,12 @@ errors = int(e["ERROR_LOG_THRESHOLD"])
 policy(
     "errors.json",
     "error log burst",
-    f"More than {errors} log lines at ERROR or above in five minutes. Sentry has the stack traces.",
+    f"More than {errors} log lines at ERROR or above in five minutes, not counting the 5xx reports "
+    "(the 5xx burst policy has those). Sentry has the stack traces.",
     threshold(
         f"More than {errors} error lines in 5 minutes",
         f'metric.type="logging.googleapis.com/user/{e["ERROR_METRIC"]}" AND resource.type="cloud_run_revision"',
-        "ALIGN_SUM", "REDUCE_SUM", errors, "0s",
+        "ALIGN_SUM", "REDUCE_SUM", errors, "0s", sparse=True,
     ),
 )
 PY
@@ -266,9 +287,12 @@ done
 # The project's IAM policy carries the audit config. Only the auditConfigs
 # entry for Secret Manager is added; the bindings and the etag go back exactly
 # as read, so a policy changed in between is refused rather than overwritten.
+# Python exits 0 when it added the entry and 3 when it was already on; anything
+# else is a failure, never read as "already on".
 step "Secret Manager data-access audit log"
 gc projects get-iam-policy "$PROJECT_ID" --format=json > "$WORK/iam.json"
-if python3 - "$WORK/iam.json" <<'PY'
+AUDIT=0
+python3 - "$WORK/iam.json" <<'PY' || AUDIT=$?
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -281,17 +305,22 @@ if entry is None:
 have = {c.get("logType") for c in entry.setdefault("auditLogConfigs", [])}
 missing = [t for t in ("ADMIN_READ", "DATA_READ") if t not in have]
 if not missing:
-    sys.exit(1)
+    sys.exit(3)
 entry["auditLogConfigs"].extend({"logType": t} for t in missing)
 with open(path, "w") as f:
     json.dump(policy, f)
 PY
-then
-  gc projects set-iam-policy "$PROJECT_ID" "$WORK/iam.json" >/dev/null
-  echo "Turned on: every secret read is now in cloudaudit.googleapis.com/data_access."
-else
-  echo "Already on."
-fi
+case "$AUDIT" in
+  0)
+    gc projects set-iam-policy "$PROJECT_ID" "$WORK/iam.json" >/dev/null
+    echo "Turned on: every secret read is now in cloudaudit.googleapis.com/data_access."
+    ;;
+  3) echo "Already on." ;;
+  *)
+    echo "Couldn't read the project's IAM policy, so the audit log was left as it was." >&2
+    exit 1
+    ;;
+esac
 
 cat <<DONE
 
