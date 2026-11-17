@@ -176,8 +176,7 @@ export function ScreenShell({
             <ScrollView
               // Folds the floating bar while the member reads down a tab
               // screen (#4904); nothing off the tab bar.
-              onScroll={barScroll}
-              scrollEventThrottle={barScroll ? 16 : undefined}
+              {...barScroll}
               scrollEnabled={scrollEnabled}
               keyboardShouldPersistTaps={keyboardShouldPersistTaps}
               stickyHeaderIndices={

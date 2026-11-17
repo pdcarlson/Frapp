@@ -6,7 +6,13 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import { useFocusEffect } from "expo-router";
+import type {
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollViewProps,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { screenErrorLayout } from "@/components/route-error";
 
@@ -80,27 +86,40 @@ export function useFloatingChrome(): FloatingChrome {
   return useContext(FloatingChromeContext);
 }
 
-/*
- * Whether the Ask Frapp bar is on screen. The tab bar draws it and is a
- * sibling of the tab screens, not a parent, so this is a tiny store rather
- * than context: the tab bar writes it, the screens read it.
+/**
+ * A boolean the tab bar and the tab screens share. They are siblings, not
+ * parent and child, so this is a tiny store rather than context: one side
+ * writes it, the other reads it.
  */
-let askBarShown = false;
-const askBarListeners = new Set<() => void>();
+function createFlagStore() {
+  let value = false;
+  const listeners = new Set<() => void>();
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+  const read = (): boolean => value;
+  return {
+    set(next: boolean): void {
+      if (value === next) return;
+      value = next;
+      for (const listener of listeners) listener();
+    },
+    use(): boolean {
+      return useSyncExternalStore(subscribe, read, read);
+    },
+  };
+}
+
+/** Whether the Ask Frapp bar is on screen: the tab bar writes it. */
+const askBar = createFlagStore();
 
 /** Called by the tab bar when the bar appears or goes. */
 export function setAskBarShown(shown: boolean): void {
-  if (askBarShown === shown) return;
-  askBarShown = shown;
-  for (const listener of askBarListeners) listener();
+  askBar.set(shown);
 }
-
-function subscribeAskBar(listener: () => void): () => void {
-  askBarListeners.add(listener);
-  return () => askBarListeners.delete(listener);
-}
-
-const readAskBarShown = (): boolean => askBarShown;
 
 /**
  * How far the Ask Frapp bar raises whatever floats above the tab bar on this
@@ -109,11 +128,7 @@ const readAskBarShown = (): boolean => askBarShown;
  */
 export function useAskBarLift(): number {
   const { tabBar } = useFloatingChrome();
-  const shown = useSyncExternalStore(
-    subscribeAskBar,
-    readAskBarShown,
-    readAskBarShown,
-  );
+  const shown = askBar.use();
   return tabBar && shown
     ? FLOATING_ASK_BAR.height + FLOATING_ASK_BAR.gap
     : 0;
@@ -158,45 +173,33 @@ export function floatingScreenLayout(
   );
 }
 
-/*
+/**
  * Whether the bar is folded (#4904, Paul's pick of direction A, 2026-11-17:
  * "If you scroll down ... [it] gets shorter ... If you scroll back up ... it
- * comes back ... to full"). Reading down a tab screen folds the tab bar to its
- * current tab and brings the Ask Frapp bar down into the same row; any move
- * back up unfolds it. The screens' scroll views write it and the tab bar reads
- * it, siblings again, so it is a tiny store like the Ask bar's.
+ * comes back ... to full"). Reading down a tab screen folds it and any move
+ * back up unfolds it; the tab screens write it through {@link useBarScroll}
+ * and the tab bar reads it. A tab screen also unfolds it as it gains or loses
+ * focus, so a tab opened at its top, or a sign-out, never starts folded.
  */
-let barFolded = false;
-const barFoldListeners = new Set<() => void>();
+const barFold = createFlagStore();
 
-/** Folds or unfolds the bar. The tab bar also unfolds it on a tab change. */
+/** Folds or unfolds the bar. */
 export function setBarFolded(folded: boolean): void {
-  if (barFolded === folded) return;
-  barFolded = folded;
-  for (const listener of barFoldListeners) listener();
+  barFold.set(folded);
 }
-
-function subscribeBarFold(listener: () => void): () => void {
-  barFoldListeners.add(listener);
-  return () => barFoldListeners.delete(listener);
-}
-
-const readBarFolded = (): boolean => barFolded;
 
 /** Whether the bar is folded now. */
 export function useBarFolded(): boolean {
-  return useSyncExternalStore(subscribeBarFold, readBarFolded, readBarFolded);
+  return barFold.use();
 }
 
-/** Where a list is, and how far it has moved down since it last moved up. */
-export type BarScrollState = { y: number; travel: number };
-
 /**
- * The fold's rule, read on every scroll event: past the first 40pt of a list,
- * 12pt of travel down folds it; any move up, the top (an iPhone's bounce
- * included) or the list's end unfolds it. Kept apart from the hook so it can
- * be tested without a scroll view.
+ * Where a list was at its last event, how far it has moved down since it
+ * last moved up or folded, and its viewport's height.
  */
+export type BarScrollState = { y: number; travel: number; viewport: number };
+
+/** The fold's thresholds, read by {@link barFoldAfterScroll}. */
 export const BAR_FOLD = {
   /** Above this the list is at its top: the bar stays open. */
   top: 40,
@@ -206,37 +209,59 @@ export const BAR_FOLD = {
   end: 4,
 } as const;
 
+/**
+ * The fold's rule, read on every scroll event and kept apart from the hook so
+ * it can be tested without a scroll view: past the first `top` points of a
+ * list, `travel` points of moving down folds the bar; any move up, the top
+ * (an iPhone's bounce included), the list's end, or a list too short to
+ * scroll unfolds it. Travel starts again from 0 after a fold, so a bar some
+ * other screen unfolded takes a fresh `travel` to fold again. `folded` is
+ * `null` when the event changes nothing.
+ */
 export function barFoldAfterScroll(
   state: BarScrollState,
   y: number,
   viewport: number,
   content: number,
 ): { state: BarScrollState; folded: boolean | null } {
-  // A list too short to scroll, or one bouncing past its end, never folds.
   const atEnd = content <= viewport || y + viewport >= content - BAR_FOLD.end;
   if (y < BAR_FOLD.top || atEnd || y < state.y) {
-    return { state: { y, travel: 0 }, folded: false };
+    return { state: { y, travel: 0, viewport }, folded: false };
   }
   // Travel counts from the top's edge, not from the very top.
   const travel = state.travel + y - Math.max(state.y, BAR_FOLD.top);
-  return {
-    state: { y, travel },
-    folded: travel > BAR_FOLD.travel ? true : null,
-  };
+  if (travel > BAR_FOLD.travel) {
+    return { state: { y, travel: 0, viewport }, folded: true };
+  }
+  return { state: { y, travel, viewport }, folded: null };
 }
 
+type BarScrollProps = Pick<
+  ScrollViewProps,
+  "onScroll" | "scrollEventThrottle" | "onContentSizeChange" | "onLayout"
+>;
+
 /**
- * The scroll handler a tab screen's list passes on (`onScroll`, with a
- * `scrollEventThrottle` of 16) so the bar folds while the member reads down
- * it. `undefined` off the tab bar: a pushed screen has no bar to fold.
- * `ScreenShell` passes it for every screen it hosts; a screen with its own
- * list opts in the same way.
+ * What a tab screen's list spreads onto itself so the bar folds while the
+ * member reads down it: the scroll handler (throttled to 16ms), and its
+ * content size and layout, so a list that turns too short to scroll (a
+ * shorter view, rows filtered away) unfolds the bar with no scroll event.
+ * Empty off the tab bar: a pushed screen has no bar to fold. `ScreenShell`
+ * spreads it for every screen it hosts; a screen with its own list opts in
+ * the same way.
  */
-export function useBarScroll():
-  | ((event: NativeSyntheticEvent<NativeScrollEvent>) => void)
-  | undefined {
+export function useBarScroll(): BarScrollProps {
   const { tabBar } = useFloatingChrome();
-  const state = useRef<BarScrollState>({ y: 0, travel: 0 });
+  const state = useRef<BarScrollState>({ y: 0, travel: 0, viewport: 0 });
+  // Gaining or losing focus starts the screen unfolded, with no travel kept.
+  useFocusEffect(
+    useCallback(() => {
+      if (!tabBar) return undefined;
+      state.current = { ...state.current, travel: 0 };
+      setBarFolded(false);
+      return () => setBarFolded(false);
+    }, [tabBar]),
+  );
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, layoutMeasurement, contentSize } =
@@ -252,5 +277,20 @@ export function useBarScroll():
     },
     [],
   );
-  return tabBar ? onScroll : undefined;
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    state.current = {
+      ...state.current,
+      viewport: event.nativeEvent.layout.height,
+    };
+  }, []);
+  const onContentSizeChange = useCallback((_width: number, height: number) => {
+    const { viewport } = state.current;
+    if (viewport > 0 && height <= viewport) {
+      state.current = { ...state.current, travel: 0 };
+      setBarFolded(false);
+    }
+  }, []);
+  return tabBar
+    ? { onScroll, scrollEventThrottle: 16, onContentSizeChange, onLayout }
+    : {};
 }

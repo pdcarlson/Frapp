@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create } from "react-test-renderer";
+import * as expoRouter from "expo-router";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   barFoldAfterScroll,
@@ -135,81 +136,134 @@ describe("the Ask Frapp bar's room", () => {
 describe("the bar's fold on scroll", () => {
   const VIEW = 700;
   const CONTENT = 3000;
-  const start = { y: 0, travel: 0 };
+  const start = { y: 0, travel: 0, viewport: 0 };
 
-  function scrollTo(ys: number[]) {
-    let state = start;
+  function scrollTo(ys: number[], from = start) {
+    let state = from;
     const folds: (boolean | null)[] = [];
     for (const y of ys) {
       const next = barFoldAfterScroll(state, y, VIEW, CONTENT);
       state = next.state;
       folds.push(next.folded);
     }
-    return folds;
+    return { folds, state };
   }
 
-  it("folds after 12pt of reading down, past the list's first 40pt", () => {
-    expect(scrollTo([20, 39])).toEqual([false, false]);
-    expect(scrollTo([45, 50, 58])).toEqual([null, null, true]);
+  it("folds after more than 12pt of reading down, counted from 40pt down the list", () => {
+    expect(scrollTo([20, 39]).folds).toEqual([false, false]);
+    expect(scrollTo([40]).folds).toEqual([null]);
+    // Exactly 12pt past the top's edge is not yet a fold; 13 is.
+    expect(scrollTo([52]).folds).toEqual([null]);
+    expect(scrollTo([53]).folds).toEqual([true]);
+    expect(scrollTo([45, 50, 58]).folds).toEqual([null, null, true]);
+  });
+
+  it("takes a fresh 12pt to fold again once something else opened it", () => {
+    const { state } = scrollTo([100, 200]);
+    expect(state.travel).toBe(0);
+    expect(barFoldAfterScroll(state, 201, VIEW, CONTENT).folded).toBeNull();
   });
 
   it("opens again on any move up, at the top, and where the list ends", () => {
-    expect(scrollTo([100, 200, 199])).toEqual([true, true, false]);
-    expect(scrollTo([100, 200, -20])).toEqual([true, true, false]);
-    expect(scrollTo([100, 2000, CONTENT - VIEW])).toEqual([true, true, false]);
+    expect(scrollTo([100, 200, 199]).folds).toEqual([true, true, false]);
+    expect(scrollTo([100, 200, -20]).folds).toEqual([true, true, false]);
+    expect(scrollTo([100, 2000, CONTENT - VIEW]).folds).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it("counts the list as ended within 4pt of its end", () => {
+    expect(scrollTo([100, CONTENT - VIEW - 3]).folds).toEqual([true, false]);
+    expect(scrollTo([100, CONTENT - VIEW - 5]).folds).toEqual([true, true]);
   });
 
   it("never folds a list too short to scroll", () => {
     expect(barFoldAfterScroll(start, 60, VIEW, 650).folded).toBe(false);
   });
 
-  it("hands a scroll handler only to a screen under the tab bar", () => {
-    let onTab: unknown = null;
-    let pushed: unknown = null;
-    function OnTab() {
-      onTab = useBarScroll();
-      return null;
-    }
-    function Pushed() {
-      pushed = useBarScroll();
-      return null;
-    }
-    act(() => {
-      create(
-        floatingScreenLayout({
-          route: { name: "index" },
-          navigation: { addListener: () => () => {} },
-          children: <OnTab />,
-        }),
-      );
-      create(<Pushed />);
-    });
-    expect(typeof onTab).toBe("function");
-    expect(pushed).toBeUndefined();
-
+  describe("on a screen", () => {
+    const router = expoRouter as unknown as {
+      __refocus: () => void;
+      __blur: () => void;
+    };
+    let props: ReturnType<typeof useBarScroll> = {};
     let folded: boolean | null = null;
-    function Probe() {
+    function OnTab() {
+      props = useBarScroll();
       folded = useBarFolded();
       return null;
     }
-    act(() => {
-      create(<Probe />);
-    });
+    function mountOnTab() {
+      act(() => {
+        create(
+          floatingScreenLayout({
+            route: { name: "index" },
+            navigation: { addListener: () => () => {} },
+            children: <OnTab />,
+          }),
+        );
+      });
+    }
     const scroll = (y: number) =>
       act(() =>
-        (onTab as (event: unknown) => void)({
+        props.onScroll?.({
           nativeEvent: {
             contentOffset: { y },
             layoutMeasurement: { height: VIEW },
             contentSize: { height: CONTENT },
           },
-        }),
+        } as never),
       );
-    scroll(100);
-    scroll(200);
-    expect(folded).toBe(true);
-    scroll(150);
-    expect(folded).toBe(false);
-    act(() => setBarFolded(false));
+    afterEach(() => act(() => setBarFolded(false)));
+
+    it("gives a pushed screen nothing to attach", () => {
+      let pushed: unknown = null;
+      function Pushed() {
+        pushed = useBarScroll();
+        return null;
+      }
+      act(() => {
+        create(<Pushed />);
+      });
+      expect(pushed).toEqual({});
+    });
+
+    it("folds and opens as the member reads down and back up", () => {
+      mountOnTab();
+      expect(props.scrollEventThrottle).toBe(16);
+      scroll(100);
+      scroll(200);
+      expect(folded).toBe(true);
+      scroll(150);
+      expect(folded).toBe(false);
+    });
+
+    it("opens when the screen gains or loses focus, as on a tab change", () => {
+      mountOnTab();
+      scroll(100);
+      scroll(200);
+      expect(folded).toBe(true);
+      act(() => router.__blur());
+      expect(folded).toBe(false);
+      act(() => setBarFolded(true));
+      act(() => router.__refocus());
+      expect(folded).toBe(false);
+    });
+
+    it("opens when the list turns too short to scroll, with no scroll event", () => {
+      mountOnTab();
+      act(() =>
+        props.onLayout?.({
+          nativeEvent: { layout: { height: VIEW } },
+        } as never),
+      );
+      scroll(100);
+      scroll(200);
+      expect(folded).toBe(true);
+      act(() => props.onContentSizeChange?.(400, 500));
+      expect(folded).toBe(false);
+    });
   });
 });
