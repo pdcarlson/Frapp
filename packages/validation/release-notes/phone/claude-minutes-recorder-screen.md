@@ -1,0 +1,1 @@
+Recording a meeting is now one screen: tap Record, pause and stop with two buttons at the bottom, watch it upload and transcribe, then read the draft, your notes and the transcript in place, and play the recording back until the minutes are posted.

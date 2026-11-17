@@ -344,3 +344,31 @@ export function scriptedReview(prompt: string): ReviewedMinutes {
     open_questions: section('open_questions').split('\n').filter(Boolean),
   };
 }
+
+/**
+ * The scripted reply for `minutes.notes` (#5410): each source's own lines as
+ * points under one topic, so the notes outline can be walked locally with
+ * no key. Like the draft's script, it is not a model and proves nothing
+ * about one.
+ */
+export const scriptedMinutesNotes: ScriptedHandler = (request) => {
+  const prompt = request.messages.at(-1)?.content ?? '';
+  const sources = sourcesInPrompt(prompt);
+  const topics = sources
+    .map((source) => ({
+      title:
+        source.kind === 'recording' ? 'From the recording' : 'From the notes',
+      points: source.text
+        .split('\n')
+        .map((line) => line.trim().replace(/^[-*•]\s+/, ''))
+        .filter((line) => line.length > 0)
+        .slice(0, 40)
+        .map((text) => ({ text, details: [] as string[] })),
+    }))
+    .filter((topic) => topic.points.length > 0);
+  const notes = {
+    summary: topics[0]?.points[0]?.text ?? '',
+    topics,
+  };
+  return { text: JSON.stringify(notes), object: notes };
+};

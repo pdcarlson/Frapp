@@ -124,6 +124,8 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    is deleted sooner, as soon as the transcript is written or the transcription fails for good,
    because nothing built reads it after that
    ([`meetings.md` § Retention](../../behavior/meetings.md#retention)).
+   Reverted in #5381 by pdcarlson, 2026-11-17 (Paul picked "Keep audio until minutes are posted"):
+   the audio is kept for playback until the minutes post, and 30 days at most, as this item first said.
 8. **AI text is stored in two cases only.** A member can report an answer or a draft, which keeps
    that one exchange for 30 days, encrypted, for the Frapp team to read. During the beta, one
    chapter can have a 14-day diagnostics window on Ask, with a visible notice. The research that

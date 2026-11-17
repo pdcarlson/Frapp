@@ -60,7 +60,10 @@ export const MEETING_SECTIONS = [
   { key: "summary", label: "Summary", defaultOn: true },
   { key: "decisions", label: "Decisions", defaultOn: true },
   { key: "action_items", label: "Action items", defaultOn: true },
-  { key: "discussion_log", label: "Discussion log", defaultOn: false },
+  // The notes themselves: every topic with its detail. Always on, because
+  // minutes without them lose what was said (Paul, 2026-11-17: "a 7-minute
+  // meeting gets distilled into one sentence ... there's zero detail").
+  { key: "discussion_log", label: "Notes", defaultOn: true },
   { key: "attendees", label: "Attendees", defaultOn: true },
   { key: "announcements", label: "Announcements", defaultOn: true },
   { key: "officer_reports", label: "Officer reports", defaultOn: false },
@@ -79,6 +82,14 @@ export const DEFAULT_MEETING_SECTIONS: readonly MeetingSectionKey[] =
     (section) => section.key,
   );
 
+/**
+ * Sections every chapter's minutes carry, whatever its template says: the
+ * notes by topic are what minutes are for, so no switch turns them off.
+ */
+export const ALWAYS_MEETING_SECTIONS: readonly MeetingSectionKey[] = [
+  "discussion_log",
+];
+
 export function isMeetingSectionKey(
   value: unknown,
 ): value is MeetingSectionKey {
@@ -93,7 +104,10 @@ export function normalizeMeetingSections(
   sections: readonly unknown[] | null | undefined,
 ): MeetingSectionKey[] {
   if (!sections) return [...DEFAULT_MEETING_SECTIONS];
-  const wanted = new Set(sections.filter(isMeetingSectionKey));
+  const wanted = new Set([
+    ...sections.filter(isMeetingSectionKey),
+    ...ALWAYS_MEETING_SECTIONS,
+  ]);
   return MEETING_SECTION_KEYS.filter((key) => wanted.has(key));
 }
 
@@ -108,6 +122,12 @@ export const MEETING_TEXT_SECTIONS = [
 ] as const satisfies readonly MeetingSectionKey[];
 export type MeetingTextSection = (typeof MEETING_TEXT_SECTIONS)[number];
 
+/**
+ * One section's limit. A four-hour meeting's notes can run past it, and the
+ * notes outline is then cut at a whole point (`notesOutline`). Raising it
+ * widens a response field that shipped phone builds read, which the
+ * shipped-contract check refuses, so it waits on #5418.
+ */
 export const MEETING_TEXT_MAX_LENGTH = 20_000;
 export const MEETING_ITEM_TEXT_MAX_LENGTH = 1_000;
 export const MEETING_LIST_MAX_ITEMS = 100;
@@ -240,3 +260,57 @@ export function shownMeetingSections(
 
 export const MEETING_STATUSES = ["draft", "posted"] as const;
 export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+
+/** One line of a notes outline, as the minutes screens draw it. */
+export type MinutesNoteLine =
+  | { kind: "topic"; text: string }
+  | { kind: "point"; depth: 0 | 1; text: string }
+  /** A line that is neither: a paragraph, or an older "Topic: detail" line. */
+  | { kind: "line"; head: string | null; text: string };
+
+const BULLET = /^(\s*)[-•*]\s+(.*)$/;
+/** "Rusty Pipes afterparty: approved for December 5" leads with its topic. */
+const LEADING_TOPIC = /^([^:.]{2,60}):\s+(.+)$/;
+const TOPIC_MAX_LENGTH = 90;
+
+/**
+ * A text section read as the notes outline the drafter writes (a topic on
+ * its own line, its points under it as "- " bullets, two spaces deeper for
+ * a sub-point), so web and phone draw the same structure. Text with no
+ * bullets, typed by hand or written before the outline, reads line by line
+ * as it always did, and so does every section but the notes
+ * (`outline: false`): an officer's report that mixes "Treasurer: ..." lines
+ * with a bullet is not an outline, and its lines are not topics.
+ */
+export function parseMinutesNotes(
+  text: string,
+  { outline = true }: { outline?: boolean } = {},
+): MinutesNoteLine[] {
+  const raw = text.split("\n").filter((line) => line.trim().length > 0);
+  const outlined = outline && raw.some((line) => BULLET.test(line));
+  return raw.map((line): MinutesNoteLine => {
+    const bullet = BULLET.exec(line);
+    if (bullet) {
+      return {
+        kind: "point",
+        depth: (bullet[1] ?? "").replace(/\t/g, "  ").length >= 2 ? 1 : 0,
+        text: (bullet[2] ?? "").trim(),
+      };
+    }
+    const trimmed = line.trim();
+    // "Treasurer: collected $1,200" leads with its topic and says something
+    // after it, so it is a line, not a topic heading, even in an outline.
+    const head = LEADING_TOPIC.exec(trimmed);
+    if (head) {
+      return { kind: "line", head: head[1] ?? null, text: head[2] ?? trimmed };
+    }
+    if (
+      outlined &&
+      trimmed.length <= TOPIC_MAX_LENGTH &&
+      !/[.!?]$/.test(trimmed)
+    ) {
+      return { kind: "topic", text: trimmed.replace(/:$/, "") };
+    }
+    return { kind: "line", head: null, text: trimmed };
+  });
+}

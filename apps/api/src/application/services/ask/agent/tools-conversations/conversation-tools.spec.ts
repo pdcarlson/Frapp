@@ -1553,6 +1553,27 @@ describe('conversation and record tools', () => {
       };
     };
 
+    it('reads the transcript kept with the minutes last, as its own source (#5410)', async () => {
+      const { tool } = build(
+        view({
+          meeting: meeting({
+            transcript:
+              'Speaker 1: Accuracy over cost, use the stronger model.',
+          }),
+        }),
+      );
+      const result = await tool.run({ meeting: `meeting:${MEETING}` }, context);
+      const last = result.sources[result.sources.length - 1];
+      expect(last).toEqual(
+        expect.objectContaining({
+          id: `meeting:${MEETING}:transcript`,
+          detail: 'Transcript',
+          text: 'Speaker 1: Accuracy over cost, use the stronger model.',
+          audience: { type: 'meeting', id: MEETING },
+        }),
+      );
+    });
+
     it('reads the minutes a section a source, with who owns each action item', async () => {
       const { tool, meetings } = build(view());
       const result = await tool.run({ meeting: `meeting:${MEETING}` }, context);

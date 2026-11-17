@@ -176,6 +176,7 @@ function minutes(overrides: Partial<MeetingMinutes> = {}): MeetingMinutes {
     posted_at: "2026-11-10T01:00:00.000Z",
     updated_at: "2026-11-10T01:00:00.000Z",
     created_at: "2026-11-09T23:00:00.000Z",
+    transcript: null,
     content: {
       ...EMPTY,
       summary: "Budget approved.",
@@ -362,7 +363,34 @@ describe("MinutesPage", () => {
     const headings = screen
       .getAllByRole("heading", { level: 3 })
       .map((h) => h.textContent);
-    expect(headings).toEqual(["Summary", "Action items", "Discussion log"]);
+    expect(headings).toEqual(["Summary", "Action items", "Notes"]);
+  });
+
+  it("draws the notes as topics over their points, and keeps the transcript under them (#5410)", () => {
+    loaded(
+      minutes({
+        transcript: "Speaker 1: One join code for Discord.",
+        content: {
+          ...EMPTY,
+          summary: "Paul and Shawn took stock before the pitch.",
+          discussion_log:
+            "Rolling out to the chapter\n- One join code to drop in Discord\n  - 100 members can't be added one by one",
+        },
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("Rolling out to the chapter").className).toContain(
+      "font-semibold",
+    );
+    expect(screen.getByText("One join code to drop in Discord")).toBeTruthy();
+    expect(
+      screen.getByText("100 members can't be added one by one").parentElement!
+        .className,
+    ).toContain("pl-5");
+    expect(screen.getByText("Transcript")).toBeTruthy();
+    expect(
+      screen.getByText("Speaker 1: One join code for Discord."),
+    ).toBeTruthy();
   });
 
   it("lists suggested tasks under posted minutes, and never beside a draft or the editor", () => {

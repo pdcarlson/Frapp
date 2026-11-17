@@ -128,11 +128,11 @@ export interface MinutesDraftPrompt {
 }
 
 /** The most roster lines a prompt carries, and roles named per member. */
-const ROSTER_MAX = 600;
-const ROLES_PER_MEMBER_MAX = 6;
+export const ROSTER_MAX = 600;
+export const ROLES_PER_MEMBER_MAX = 6;
 
 /** Each source is fenced: `<source id="S1" ...>` … `</source>`. */
-const SOURCE_CLOSE = '</source>';
+export const SOURCE_CLOSE = '</source>';
 /**
  * A fence typed into a source would open or end one early. A whole tag on
  * one line goes; an unclosed "<source" loses only that word, so "<Source:
@@ -142,13 +142,27 @@ const FENCE_TAG = /<\/?\s*source\b[^<>\n]*>/gi;
 const FENCE_OPEN = /<\/?\s*source\b/gi;
 
 /** A source's text with every fence-shaped piece taken out. */
-function unfenced(text: string): string {
+export function unfenced(text: string): string {
   return text.replace(FENCE_TAG, '').replace(FENCE_OPEN, '');
 }
 
+/**
+ * How the notes are laid out: a topic on its own line, then its points as
+ * "- " bullets, the way Granola and Wispr Flow write meeting notes (Paul,
+ * 2026-11-17: "break down the discussion into what topics were discussed
+ * ... even when the meetings are short, there's still high amounts of
+ * detail"). The minutes screens on web and phone draw this outline.
+ */
+export const MINUTES_NOTES_FORMAT = [
+  'Write it as an outline, topic by topic, in the order the meeting took them.',
+  'Each topic starts with a line holding only its name, a few words, no bullet and no colon ("Rolling out to the chapter"). Under it, one line per point, each starting with "- ". A point that belongs under another starts with two spaces then "- ". Leave a blank line between topics.',
+  'Capture the detail a member who was not there needs: every idea, proposal, concern, reason, example, number, name, date, amount and plan that was said, who said or asked it when the sources say, and where the topic landed (decided, tabled, sent to a committee, left open). A short meeting still gets several points per topic. Never shrink a topic to one line or to its name. Leave out filler, greetings and small talk.',
+  'Points are short plain statements, not paragraphs. Keep people\u2019s own terms and numbers as they said them.',
+].join(' ');
+
 const SECTION_GUIDE: Readonly<Record<string, string>> = {
   summary:
-    'summary: what the meeting covered, for a member who was not there. Its length follows the meeting: two to five sentences for a short one, a sentence or two for every main topic of a long one.',
+    'summary: the opening paragraph of the notes, two to four sentences: who met, what the meeting was about, and what it settled. The detail goes in discussion_log, not here.',
   announcements:
     'announcements: dates, reminders and news that were announced, one per line.',
   decisions:
@@ -159,8 +173,7 @@ const SECTION_GUIDE: Readonly<Record<string, string>> = {
     'officer_reports: what each officer reported, one officer per line, led by their office.',
   old_business: 'old_business: items carried over from an earlier meeting.',
   new_business: 'new_business: items raised for the first time.',
-  discussion_log:
-    'discussion_log: one line per topic, in the order it came up: what was raised, the main points and positions, and where it landed (decided, tabled, sent to a committee, left open). This is the body of the meeting, so give each topic its substance, not just its name.',
+  discussion_log: `discussion_log: the notes themselves, the body of the minutes. ${MINUTES_NOTES_FORMAT}`,
 };
 
 /** How the meeting's type bends the draft (`meetings.md` § Meeting type metadata). */
@@ -192,7 +205,7 @@ const SYSTEM_RULES = [
   '- quote, on every decision and action item: copy the words of its source where it was settled, character for character, typos and filler included: one line, or for a transcript one or two sentences of it. Never join two lines, never mix two sources, never stitch words from different places, and never quote the roster.',
   `- A source can end with a block headed "${MEETING_NOTES_COPY.answersHeading}". Those lines are the officer’s own answers to questions an earlier draft asked: they are true, they win over anything else the sources say, and a question they answer is not asked again.`,
   '- open_questions: what the officer has to fill in, one short plain sentence each: an action item nobody was named for, a vote with no count, a name that could be two members. Empty when nothing is missing.',
-  '- Write plain full sentences in the past tense. No markdown, no headings, no emojis. Keep amounts and dates as the notes write them.',
+  '- Write plainly, in the past tense. No markdown (no #, no bold, no tables) and no emojis; the only layout is discussion_log\u2019s topic lines and "- " bullets. Keep amounts and dates as the notes write them.',
   '- Fill only the sections you are asked for. Return an empty string or an empty list for every other section.',
 ].join('\n');
 
@@ -786,7 +799,7 @@ function removeWhere<T extends { text: string }>(
 }
 
 /** A value safe inside a double-quoted prompt attribute. */
-function attr(value: string): string {
+export function attr(value: string): string {
   return oneLine(value).replace(/["<>]/g, '');
 }
 
@@ -951,7 +964,7 @@ function realDate(value: string | null): string | null {
     : null;
 }
 
-function weekdayOf(date: string): string {
+export function weekdayOf(date: string): string {
   const at = new Date(`${date}T12:00:00.000Z`);
   return Number.isNaN(at.getTime())
     ? ''
@@ -962,6 +975,6 @@ function clamp(value: string, max: number): string {
   return value.trim().slice(0, max).trim();
 }
 
-function oneLine(value: string): string {
+export function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }

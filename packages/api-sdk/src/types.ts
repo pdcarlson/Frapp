@@ -8334,6 +8334,8 @@ export interface components {
             posted_by: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording. */
+            transcript: string | null;
             can_edit: boolean;
             can_delete: boolean;
         };
@@ -11666,6 +11668,8 @@ export interface components {
             failure_message: string | null;
             /** @description The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes. */
             transcript: string | null;
+            /** @description A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted. */
+            audio_url: string | null;
             speaker_count: number | null;
             /** Format: date-time */
             uploaded_at: string | null;

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -20,7 +20,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can, MAX_MEETING_RECORDING_SECONDS } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
-import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
+import { MicGlyph } from "@/components/control-glyphs";
+import { TextAction } from "@/components/minutes/recorder-controls";
 import { MeetingPickField } from "@/components/minutes/meeting-pick-field";
 import { RecordingNoticeSheet } from "@/components/minutes/recording-notice-sheet";
 import {
@@ -235,7 +236,7 @@ export function useMeetingQuickActions({
    * Whether the member's own draft can be recorded straight away: it has no
    * recording, or only a failed one. Anything else (one uploading from
    * another device, transcribing, or ready) is the minutes screen's to
-   * handle, where Record asks before replacing it.
+   * handle, where the minutes open as they are.
    */
   async function freeToRecord(meetingId: string): Promise<boolean> {
     const { data } = await client.GET("/v1/meetings/{id}/recording", {
@@ -317,9 +318,10 @@ export function useMeetingQuickActions({
 }
 
 /**
- * New minutes from the + (#5287): the meeting, already picked, then Start
- * minutes, which opens them ready for notes, and, where this phone can
- * record, Record, which closes this sheet for the recording notice. A start
+ * New minutes from the + (#5287): the meeting, already picked, then, where
+ * this phone can record, Record, which closes this sheet for the recording
+ * notice, with "Type notes instead" under it; elsewhere Start minutes, which
+ * opens them ready for notes. A start
  * that fails says why in the sheet, which stays open to try again.
  */
 const StartMinutesSheet = forwardRef<
@@ -344,6 +346,18 @@ const StartMinutesSheet = forwardRef<
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
+  async function startTyped() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const failed = await onStart();
+      if (failed) setProblem(failed);
+      else closeSheet();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <BottomSheetModal
       ref={ref}
@@ -362,40 +376,51 @@ const StartMinutesSheet = forwardRef<
         <Text accessibilityRole="header" style={styles.title}>
           {MEETING_START_COPY.newHeading}
         </Text>
+        {/* The meeting comes first, so it is plain what a recording or
+            notes attach to (Paul, 2026-11-17). */}
+        {pick ? (
+          <Text style={styles.label}>{MEETING_START_COPY.forMeeting}</Text>
+        ) : null}
         {pick}
         {problem ? (
           <Text accessibilityLiveRegion="polite" style={styles.problem}>
             {problem}
           </Text>
         ) : null}
-        <SheetPrimaryButton
-          label={MEETING_START_COPY.start}
-          busy={busy}
-          disabled={!pick || !canStart || busy}
-          accent={accent}
-          onAccent={accentOnPrimary}
-          onPress={async () => {
-            setBusy(true);
-            setProblem(null);
-            try {
-              const failed = await onStart();
-              if (failed) setProblem(failed);
-              else closeSheet();
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
         {onRecord ? (
-          <OnboardingSecondaryButton
-            fill
-            label={MEETING_START_COPY.record}
+          // Recording leads where this phone can record (Paul, 2026-11-17:
+          // "replace it for just the record button"); typed notes stay a
+          // quiet word under it.
+          <>
+            <SheetPrimaryButton
+              label={MEETING_START_COPY.record}
+              icon={(color) => <MicGlyph color={color} />}
+              disabled={!pick || !canStart || busy}
+              accent={accent}
+              onAccent={accentOnPrimary}
+              onPress={async () => {
+                if (await onRecord()) closeSheet();
+              }}
+            />
+            <View style={styles.quiet}>
+              <TextAction
+                label={MEETING_START_COPY.typeInstead}
+                color={accent}
+                disabled={!pick || !canStart || busy}
+                onPress={() => void startTyped()}
+              />
+            </View>
+          </>
+        ) : (
+          <SheetPrimaryButton
+            label={MEETING_START_COPY.start}
+            busy={busy}
             disabled={!pick || !canStart || busy}
-            onPress={async () => {
-              if (await onRecord()) closeSheet();
-            }}
+            accent={accent}
+            onAccent={accentOnPrimary}
+            onPress={() => void startTyped()}
           />
-        ) : null}
+        )}
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
@@ -411,6 +436,14 @@ function createStyles(tokens: SignetTokens) {
     title: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    label: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginBottom: -tokens.spacing.xs,
+    },
+    quiet: {
+      alignItems: "center",
     },
     problem: {
       ...typeRole(tokens.typography.role.caption),

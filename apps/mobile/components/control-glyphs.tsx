@@ -456,3 +456,62 @@ export function DragHandleGlyph({
     </Frame>
   );
 }
+
+/**
+ * The recorder's three controls on a meeting's minutes (#5381 follow-up,
+ * Paul 2026-11-17: "maybe instead of using words to describe actions, maybe
+ * you use icons, like a pause button and a play button"), drawn solid as
+ * Voice Memos and Otter draw them: two bars to pause, a triangle to carry on,
+ * a rounded square to stop.
+ */
+export function PauseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M7 5h3v14H7zM14 5h3v14h-3z"
+        fill={color}
+        stroke={color}
+        strokeWidth={1}
+        strokeLinejoin="round"
+      />
+    </Frame>
+  );
+}
+
+export function PlayGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 5.5v13l10.5-6.5z"
+        fill={color}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+    </Frame>
+  );
+}
+
+export function StopGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+        fill={color}
+      />
+    </Frame>
+  );
+}
+
+/** A microphone, leading Record. */
+export function MicGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM19 11a7 7 0 0 1-14 0M12 18v3"
+        {...detail}
+      />
+    </Frame>
+  );
+}

@@ -20,9 +20,12 @@ import { AI_MODEL_CATALOG } from '#domain/constants/ai-model-catalog';
 
 /**
  * The incumbent's price is the catalog's, so the gateway's spend estimate
- * and the bake-off's cost column can't disagree.
+ * and the bake-off's cost column can't disagree. The minutes run on Opus
+ * since #5410; Sonnet, which they ran on before, is read from a task that
+ * still uses it, for the same reason.
  */
 const INCUMBENT = AI_MODEL_CATALOG['minutes.draft'];
+const SONNET = AI_MODEL_CATALOG['minutes.suggest-tasks'];
 
 export interface CandidatePrice {
   /** First day this price applies, `YYYY-MM-DD`. */
@@ -62,6 +65,21 @@ export const BAKE_OFF_CANDIDATES: readonly BakeOffCandidate[] = [
     paid: true,
   },
   {
+    id: SONNET.model,
+    provider: SONNET.provider,
+    model: SONNET.model,
+    prices: [
+      {
+        from: '2026-01-01',
+        inputUsdPerMillionTokens: SONNET.inputUsdPerMillionTokens,
+        outputUsdPerMillionTokens: SONNET.outputUsdPerMillionTokens,
+      },
+    ],
+    priceSource:
+      "The model catalog's price (Anthropic's model table, read 2026-11-11, ADR-28)",
+    paid: true,
+  },
+  {
     id: 'claude-haiku-5-5',
     provider: 'anthropic',
     model: 'claude-haiku-5-5',
@@ -74,21 +92,6 @@ export const BAKE_OFF_CANDIDATES: readonly BakeOffCandidate[] = [
     ],
     priceSource:
       "Anthropic's model table, read 2026-11-11 (ADR-28); 5x above 100k prompt tokens, which no case reaches",
-    paid: true,
-  },
-  {
-    id: 'claude-opus-5-5',
-    provider: 'anthropic',
-    model: 'claude-opus-5-5',
-    prices: [
-      {
-        from: '2026-01-01',
-        inputUsdPerMillionTokens: 4,
-        outputUsdPerMillionTokens: 20,
-      },
-    ],
-    priceSource:
-      "Anthropic's model table as cached 2026-11-03 ($4 in, $20 out; cache reads $0.20, which this estimate does not discount)",
     paid: true,
   },
   {

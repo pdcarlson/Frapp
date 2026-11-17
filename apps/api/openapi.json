@@ -26831,6 +26831,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "transcript": {
+            "type": "string",
+            "nullable": true,
+            "description": "The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording."
+          },
           "can_edit": {
             "type": "boolean"
           },
@@ -26856,6 +26861,7 @@
           "updated_by",
           "posted_by",
           "created_at",
+          "transcript",
           "can_edit",
           "can_delete"
         ]
@@ -36044,6 +36050,11 @@
             "nullable": true,
             "description": "The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes."
           },
+          "audio_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted."
+          },
           "speaker_count": {
             "type": "number",
             "nullable": true
@@ -36094,6 +36105,7 @@
           "failure",
           "failure_message",
           "transcript",
+          "audio_url",
           "speaker_count",
           "uploaded_at",
           "available",

@@ -88,6 +88,20 @@ export function minutesSections(content: MeetingContent): CorpusSection[] {
   return sections;
 }
 
+/**
+ * The recording's transcript, kept with posted minutes (#5410), so Ask can
+ * answer from what was said and not only from what the minutes kept (Paul,
+ * 2026-11-17: "we should be able to query that transcript with the AI").
+ * Speakers are numbered as the transcript numbers them.
+ */
+export function transcriptSection(
+  transcript: string | null | undefined,
+): CorpusSection[] {
+  return transcript?.trim()
+    ? [{ heading: 'Transcript', page: null, text: transcript }]
+    : [];
+}
+
 /** "Exec meeting minutes: Budget review, November 9, 2026". */
 export function minutesTitle(meeting: Meeting): string {
   const type = meetingTypeLabel(meeting.meeting_type, meeting.other_label);
@@ -119,7 +133,10 @@ export class MeetingMinutesCorpusSource implements CorpusSourceAdapter {
     const meeting = await this.meetings.findById(chapterId, sourceId);
     if (!meeting || meeting.status !== 'posted') return { status: 'gone' };
 
-    const sections = minutesSections(readMeetingContent(meeting.content));
+    const sections = [
+      ...minutesSections(readMeetingContent(meeting.content)),
+      ...transcriptSection(meeting.transcript),
+    ];
     if (sections.length === 0) return { status: 'skipped', reason: 'no_text' };
 
     return {

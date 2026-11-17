@@ -49,6 +49,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: '2026-11-10T01:00:00.000Z',
   created_at: '2026-11-10T00:00:00.000Z',
   updated_at: '2026-11-10T01:00:00.000Z',
+  transcript: null,
   ...overrides,
 });
 
@@ -140,6 +141,27 @@ describe('MeetingMinutesCorpusSource', () => {
     await expect(
       setup(meeting({ content: {} })).source.read(CHAPTER, 'meeting-1'),
     ).resolves.toEqual({ status: 'skipped', reason: 'no_text' });
+  });
+
+  it('indexes the transcript kept with posted minutes, so Ask can answer from what was said (#5410)', async () => {
+    const read = await setup(
+      meeting({
+        content: {},
+        transcript: 'Speaker 1: We should have one join code for Discord.',
+      }),
+    ).source.read(CHAPTER, 'meeting-1');
+    expect(read).toEqual({
+      status: 'ok',
+      content: expect.objectContaining({
+        sections: [
+          {
+            heading: 'Transcript',
+            page: null,
+            text: 'Speaker 1: We should have one join code for Discord.',
+          },
+        ],
+      }),
+    });
   });
 
   it('asks the minutes rule once for the whole list, and keeps what it lets in', async () => {

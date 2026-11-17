@@ -69,8 +69,9 @@ export interface IMeetingRecordingRepository {
   releaseAttendeeNotice(chapterId: string, meetingId: string): Promise<void>;
   delete(chapterId: string, meetingId: string): Promise<void>;
   /**
-   * Every row that still names a file, in every chapter, oldest first: what
-   * the audio sweep reads. Rows name a file for minutes, so this is short.
+   * Every row that still names a file and isn't ready, in every chapter,
+   * oldest first: what the audio sweep settles. A ready recording keeps its
+   * file for playback until the minutes are posted.
    */
   listWithAudio(limit: number): Promise<MeetingRecording[]>;
   /**

@@ -102,6 +102,14 @@ type ScreenShellProps = {
    * only closing the keyboard, as the Directory's list does.
    */
   keyboardShouldPersistTaps?: "handled";
+  /**
+   * Controls pinned under the scroll view, at the bottom of the screen, for a
+   * screen whose main action belongs under the thumb (a meeting's minutes:
+   * the recorder's pause and stop, then Post; Paul, 2026-11-17: "why are the
+   * buttons all up at the top, not pushed down to the bottom?"). Off the tab
+   * screens only.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 };
 
@@ -142,6 +150,7 @@ export function ScreenShell({
   overlay,
   scrollEnabled = true,
   keyboardShouldPersistTaps,
+  footer,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -207,6 +216,7 @@ export function ScreenShell({
               </View>
               {body}
             </ScrollView>
+            {footer ? <View style={styles.footer}>{footer}</View> : null}
           </View>
         </SafeAreaView>
       </CoveredByOverlay>
@@ -294,6 +304,17 @@ function createStyles(tokens: SignetTokens) {
     },
     safeArea: {
       flex: 1,
+    },
+    footer: {
+      width: "100%",
+      maxWidth: 880,
+      alignSelf: "center",
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.md,
+      gap: tokens.spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     content: {
       width: "100%",

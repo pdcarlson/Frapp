@@ -30,7 +30,7 @@ const AUDIENCES: Record<string, string[]> = {
   'tools-conversations/list-channels.tool.ts': ['asker'],
   // A record, asked about by its id.
   'tools-conversations/list-meetings.tool.ts': ['meeting'],
-  'tools-conversations/read-minutes.tool.ts': ['meeting'],
+  'tools-conversations/read-minutes.tool.ts': ['meeting', 'meeting'],
   'tools-conversations/search-records.tool.ts': [
     "minutes ? 'meeting' : 'document'",
   ],
