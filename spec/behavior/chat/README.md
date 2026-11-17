@@ -702,7 +702,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   A thread reply pushes its followers only (`following`; never `muted` or `unfollowed`), never more than the channel's level allows them (`decidePush`'s `skip-thread`), except an @mention, which pushes even through a muted thread, as it does through a muted channel.
   A thread reply is never an announcement push, even under an announcement: any reader may write it, so the channel alone would hand every member an URGENT push.
   The push's target carries `threadRootId`; an app that predates threads opens the channel.
-  Presence in the channel still skips the push, as for any message.
+  Presence in the channel still skips the push, as for any message; under an announcement too, since a reply is not an announcement push (§ Two presence topics).
 - **Unread.**
   A thread reply never counts toward its channel's unread badge or Chat home preview (keeping the 2026-11-07 rule that a busy channel adds nothing).
   A thread reply that @mentions you counts toward the channel's mention tally until you read that thread or the channel, whichever comes later, so a client without thread UI cannot strand a badge (§ Read Receipts).
@@ -1036,11 +1036,12 @@ They answer different questions and must not be merged:
 
 | Topic                          | Scope                                  | Read by                                                                                                                                                                                                                     |
 | ------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat:channel:<channelId>`     | Who has _this channel_ open            | The push worker, via service role, to suppress pushes to members already looking (ADR-10)                                                                                                                                   |
+| `chat:channel:<channelId>`     | Who has _this channel_ open            | The push worker, via service role, to suppress pushes to members already looking (ADR-10), except in an announcements channel                                                                                             |
 | `presence:chapter:<chapterId>` | Who is present in the _chapter_ at all | The web Directory, Chat's member list on both apps, the phone's member profile sheet, and the API's `ChapterPresenceReader` for `@here` (§ Role mentions; one service-role join per read, same config as the push worker's) |
 
 The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`.
 Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
+Any reader of a channel may publish on its topic, and the server does not check the `userId` a client puts in its payload, so presence can't prove who is looking. It still quiets every push except a timeline post in an announcements channel (`isAnnouncementChannel`), whatever the post's kind (`decidePush`, 2026-11-17). Elsewhere a forged entry quiets its target's pushes in that channel only while the forger stays joined, and the readers it spares are the reason presence exists (ADR-04); in an announcements channel it could silence the chapter's URGENT push, and announcements are rare enough that a reader who has the channel open loses little by also getting one. @mentions keep the skip on purpose: `@here`, `@everyone`, role mentions and reply pings would otherwise push everyone already reading the channel.
 
 Both are **private** Realtime channels since 2026-09-06 (#1552, migration `20260906203000`), each behind its own predicate on `realtime.messages`: `presence:chapter:<chapterId>` admits any member of the chapter (`realtime_can_read_chapter_scope`);
 `chat:channel:<channelId>` admits exactly the members who may read that channel (`can_read_chat_channel` — PUBLIC to the chapter, PRIVATE/DM/GROUP_DM to `member_ids`, ROLE_GATED by permission — the same predicate `can_read_chat_message` now delegates to), so who is present in a DM is not visible chapter-wide.
