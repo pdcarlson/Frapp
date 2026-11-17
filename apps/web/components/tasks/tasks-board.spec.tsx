@@ -1650,7 +1650,9 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     // No status lane says it, so the tile does.
     expect(within(region("This week")).getByText("In progress")).toBeVisible();
     // A member has nothing to switch or filter.
-    expect(screen.queryByRole("radiogroup", { name: "Whose tasks" })).toBeNull();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Whose tasks" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "Assignee" })).toBeNull();
   });
 
@@ -1795,7 +1797,9 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     const labels = screen
       .getAllByRole("region")
       .map((section) => section.getAttribute("aria-labelledby"))
-      .filter((id): id is string => id?.startsWith("tasks-column-person-") ?? false)
+      .filter(
+        (id): id is string => id?.startsWith("tasks-column-person-") ?? false,
+      )
       .map((id) => document.getElementById(id)?.textContent ?? "");
     expect(labels.map((label) => label.replace(/\d+$/, "").trim())).toEqual([
       "Cole Martin",
@@ -1869,5 +1873,155 @@ describe("TasksBoard repeating tasks (#5119)", () => {
     await waitFor(() =>
       expect(deleteTaskMutate).toHaveBeenCalledWith("task-todo"),
     );
+  });
+});
+
+describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
+  const copy = (
+    id: string,
+    assignee: string,
+    over: Record<string, unknown> = {},
+  ) => ({
+    ...TASKS[0],
+    id,
+    title: "Fill out the tabling form",
+    assignee_id: assignee,
+    due_date: "2099-11-20",
+    group_id: "group-1",
+    ...over,
+  });
+  const GROUP = [
+    copy("copy-me", ME),
+    copy("copy-other", "u-other", { status: "IN_PROGRESS" }),
+    copy("copy-third", "u-third", {
+      status: "COMPLETED",
+      completed_at: "2026-08-10T00:00:00Z",
+    }),
+  ];
+
+  beforeEach(() => {
+    chapter.active();
+    currentUserRef.current = { id: ME };
+    deleteTaskMutate.mockReset().mockResolvedValue(undefined);
+    tasksRef.current = GROUP;
+  });
+
+  it("draws the open copies as one tile with how many are done", () => {
+    render(<TasksBoard />);
+    const tile = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
+    });
+    expect(within(tile).getByText("1 of 3 done")).toBeInTheDocument();
+    // Not a tile per open copy; the one marked done waits on an officer.
+    expect(
+      screen.getAllByText("Fill out the tabling form", { selector: "p" }),
+    ).toHaveLength(2);
+    expect(
+      within(tile).getByRole("progressbar", { name: /1 of 3 done/ }),
+    ).toHaveAttribute("aria-valuenow", "1");
+  });
+
+  it("lists who's left and where each stands", () => {
+    render(<TasksBoard />);
+    const tile = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
+    });
+    fireEvent.click(
+      within(tile).getByRole("button", { name: /who's left \(2\)/i }),
+    );
+    expect(within(tile).getByText("You")).toBeInTheDocument();
+    expect(within(tile).getByText("Cole Martin")).toBeInTheDocument();
+    expect(within(tile).getByText("In progress")).toBeInTheDocument();
+  });
+
+  it("deletes everyone's copy after asking", async () => {
+    render(<TasksBoard />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete Fill out the tabling form for everyone",
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete for everyone" }),
+    );
+    await waitFor(() =>
+      expect(deleteTaskMutate).toHaveBeenCalledWith({
+        id: "copy-me",
+        scope: "group",
+      }),
+    );
+  });
+
+  it("edits everyone's copy, sending the change with the group scope", async () => {
+    updateTaskMutate.mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit Fill out the tabling form for everyone",
+      }),
+    );
+    const editor = screen.getByRole("listitem", {
+      name: "Editing Fill out the tabling form for everyone",
+    });
+    const title = within(editor).getByLabelText("Title");
+    await user.clear(title);
+    await user.type(title, "Fill out the new form");
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateTaskMutate).toHaveBeenCalledWith({
+        id: "copy-me",
+        body: { title: "Fill out the new form", scope: "group" },
+      }),
+    );
+  });
+
+  it("saving the group unchanged sends its fields, to bring every copy level", async () => {
+    updateTaskMutate.mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit Fill out the tabling form for everyone",
+      }),
+    );
+    const editor = screen.getByRole("listitem", {
+      name: "Editing Fill out the tabling form for everyone",
+    });
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateTaskMutate).toHaveBeenCalledTimes(1));
+    const sent = updateTaskMutate.mock.calls[0]![0] as {
+      body: Record<string, unknown>;
+    };
+    expect(sent.body).toMatchObject({
+      title: "Fill out the tabling form",
+      due_date: "2099-11-20",
+      scope: "group",
+    });
+    expect("reference_photo_paths" in sent.body).toBe(false);
+  });
+
+  it("counts the group as the API does, copies on other pages included", () => {
+    tasksRef.current = GROUP.map((task) => ({
+      ...task,
+      group: { total: 20, done: 14, confirmed: 9 },
+    }));
+    render(<TasksBoard />);
+    const tile = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
+    });
+    expect(within(tile).getByText("14 of 20 done")).toBeInTheDocument();
+  });
+
+  it("shows each copy on its own once a filter asks about members", () => {
+    render(<TasksBoard />);
+    fireEvent.click(screen.getByRole("radio", { name: "By person" }));
+    expect(
+      screen.queryByRole("listitem", {
+        name: "Fill out the tabling form, for everyone",
+      }),
+    ).toBeNull();
   });
 });

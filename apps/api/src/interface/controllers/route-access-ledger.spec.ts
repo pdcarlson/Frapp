@@ -59,7 +59,8 @@ interface Route {
 const PUBLIC_ROUTES: Record<string, string> = {
   'HealthController.check':
     'Render and CI health probe; reports dependency status, no data.',
-  'HealthController.ready': 'Readiness probe; same as check, uncached.',
+  'HealthController.ready':
+    'Readiness probe; same as check, reused for seconds rather than a minute.',
   'ClientPolicyController.get':
     'Minimum app version, read before sign-in so an outdated build can be told to update.',
   'WebhookController.handleStripeWebhook':

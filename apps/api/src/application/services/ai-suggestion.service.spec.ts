@@ -780,6 +780,7 @@ describe('AiSuggestionService (#4309)', () => {
         title: 'Task 1',
         description: null,
         assignee_id: ASSIGNEE,
+        audience: null,
         created_by: OFFICER,
         due_date: '2026-11-14',
         due_at: null,

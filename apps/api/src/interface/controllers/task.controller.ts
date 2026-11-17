@@ -44,6 +44,7 @@ import {
   CreateTaskResponseDto,
   CreateTaskSubtaskDto,
   DeleteTaskQueryDto,
+  TaskGroupSummaryDto,
   TaskSeriesSummaryDto,
   TaskSubtaskDto,
   UpdateTaskDto,
@@ -61,8 +62,8 @@ import { VerifySessionLocally } from '../decorators/session-check.decorator';
 @ApiTags('Tasks')
 @ApiBearerAuth()
 // Task reads declare no response schema; the clients type a task's `series`
-// summary (#5119) from this one.
-@ApiExtraModels(TaskSeriesSummaryDto)
+// summary (#5119) and `group` summary (#4295 step 3) from these.
+@ApiExtraModels(TaskSeriesSummaryDto, TaskGroupSummaryDto)
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @RequireModule('tasks')
@@ -105,7 +106,7 @@ export class TaskController {
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.readableTask(chapterId, userId, id);
   }
@@ -160,7 +161,7 @@ export class TaskController {
   async getPhotoUrl(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Param('photoId', new ParseUUIDPipe()) photoId: string,
   ): Promise<TaskPhotoUrlResponseDto> {
     const task = await this.readableTask(chapterId, userId, id);
@@ -179,7 +180,10 @@ export class TaskController {
       body,
       result,
     }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
-      assigned_to_self: result.assignee_id === result.created_by,
+      assigned_to_self:
+        !body?.audience && result.assignee_id === result.created_by,
+      audience: body?.audience ?? 'person',
+      group_size: result.group?.total ?? 1,
       has_due_time: !!result.due_at,
       has_subtasks: (body?.subtasks?.length ?? 0) > 0,
       has_point_reward: (result.point_reward ?? 0) > 0,
@@ -198,7 +202,8 @@ export class TaskController {
       chapter_id: chapterId,
       title: dto.title,
       description: dto.description ?? null,
-      assignee_id: dto.assignee_id,
+      assignee_id: dto.assignee_id ?? null,
+      audience: dto.audience ?? null,
       created_by: createdBy,
       due_date: dto.due_date,
       due_at: dto.due_at ?? null,
@@ -221,10 +226,18 @@ export class TaskController {
   async update(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTaskDto,
   ) {
     const { scope, recurrence_rule, ...edit } = dto;
+    if (scope === 'group') {
+      if (recurrence_rule !== undefined) {
+        throw new BadRequestException(
+          'A repeat rule changes only with scope "series"',
+        );
+      }
+      return this.taskService.updateGroup(id, chapterId, userId, edit);
+    }
     if (scope === 'series') {
       return this.taskSeriesService.update(id, chapterId, userId, {
         ...edit,
@@ -255,7 +268,7 @@ export class TaskController {
   async updateStatus(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTaskStatusDto,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
@@ -284,7 +297,7 @@ export class TaskController {
   async confirmCompletion(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.taskService.confirmCompletion(id, chapterId, userId);
   }
@@ -301,7 +314,7 @@ export class TaskController {
   async rejectCompletion(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RejectTaskCompletionDto,
   ) {
     return this.taskService.rejectCompletion(id, chapterId, dto.comment, {
@@ -316,7 +329,7 @@ export class TaskController {
   @ApiCreatedResponse({ type: TaskSubtaskDto })
   async addSubtask(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateTaskSubtaskDto,
   ): Promise<TaskSubtaskDto> {
     return this.taskService.addSubtask(id, chapterId, dto.title);
@@ -330,8 +343,8 @@ export class TaskController {
   async updateSubtask(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
-    @Param('subtaskId') subtaskId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('subtaskId', ParseUUIDPipe) subtaskId: string,
     @Body() dto: UpdateTaskSubtaskDto,
   ): Promise<TaskSubtaskDto> {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
@@ -354,8 +367,8 @@ export class TaskController {
   @ApiOperation({ summary: 'Remove a subtask (#4003)' })
   async deleteSubtask(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-    @Param('subtaskId') subtaskId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('subtaskId', ParseUUIDPipe) subtaskId: string,
   ) {
     await this.taskService.deleteSubtask(id, subtaskId, chapterId);
     return { success: true };
@@ -365,15 +378,19 @@ export class TaskController {
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({
     summary:
-      'Delete a task; with `scope=series`, stop a repeating task (#5119)',
+      'Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3)',
   })
   async delete(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Query() query: DeleteTaskQueryDto,
   ) {
     if (query.scope === 'series') {
       await this.taskSeriesService.delete(id, chapterId);
+      return { success: true };
+    }
+    if (query.scope === 'group') {
+      await this.taskService.deleteGroup(id, chapterId);
       return { success: true };
     }
     await this.taskService.delete(id, chapterId);

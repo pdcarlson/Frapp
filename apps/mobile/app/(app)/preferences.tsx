@@ -32,6 +32,7 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
 import { ChatLevelSheet } from "@/components/settings/chat-level-sheet";
+import { LinkedAppsSection } from "@/components/settings/linked-apps-section";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
@@ -84,6 +85,12 @@ import {
  *   conversation itself, so a switch that silenced every message at once was
  *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's
  *   docblock in `@repo/validation`.
+ * - **LINKED APPS and SIGN IN are here and are not drawn** (Paul,
+ *   2026-11-17, #5407): Google Calendar, the calendar link, Discord and the
+ *   ways the account signs in, each a row with its state drawn at the end (a
+ *   green check, a grey circle, red once expired), as web's Settings →
+ *   Linked apps. Google Calendar's sign-in comes back here, so the member
+ *   sees the row they tapped turn green.
  * - **AI is here and is not drawn** (Paul, 2026-11-17: "maybe we just make an
  *   AI section ... Frap AI, nudges on activity and ... everything else that
  *   comes along with that"). It holds the member's Frapp AI switch, Nudges on
@@ -299,6 +306,7 @@ export default function PreferencesScreen() {
     setQuietHoursEnabled,
     categories,
     setCategory,
+    categoriesEditable,
     quietHoursWindow,
     setQuietHoursWindow,
     isHydrated,
@@ -332,7 +340,7 @@ export default function PreferencesScreen() {
       : !isAuthenticated
         ? "Saved on this device only. Sign in to change the settings on your account."
         : !chapterId
-          ? "Category switches sync once you choose a chapter."
+          ? "Category switches turn on once your chapter is confirmed."
           : categorySync === "retry" || quietHoursSync === "retry"
             ? "Couldn't reach the server. Change a setting again to retry."
             : categorySync === "pending" || quietHoursSync === "pending"
@@ -440,6 +448,7 @@ export default function PreferencesScreen() {
               <Toggle
                 value={categories[category.key]}
                 onValueChange={(value) => setCategory(category.key, value)}
+                disabled={!categoriesEditable}
                 accessibilityLabel={category.label}
               />
             }
@@ -481,6 +490,8 @@ export default function PreferencesScreen() {
           onPress={() => chatDensitySheetRef.current?.present()}
         />
       </ListSection>
+
+      <LinkedAppsSection />
 
       {/* Only where the server has AI (`AI_ENABLED`): with it off the
           section, like every AI entry, isn't drawn. */}

@@ -24,10 +24,7 @@ import {
 } from "@/components/documents/upload-document-sheet";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { reportRouteError } from "@/components/route-error";
-import {
-  useMeetingQuickActions,
-  type RecordMeetingEntry,
-} from "@/components/quick-actions/meeting-actions";
+import { useMeetingQuickActions } from "@/components/quick-actions/meeting-actions";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { taskCreatedLine } from "@/lib/tasks/create-task";
@@ -69,8 +66,6 @@ export function useQuickActionsHost({
   sheets: ReactNode;
   /** The last create's confirmation, for a few seconds, or `null`. */
   notice: string | null;
-  /** The Record meeting row above the grid, or `null` for this member. */
-  record: RecordMeetingEntry | null;
 } {
   const router = useRouter();
   const chapterId = useActiveChapterId() ?? null;
@@ -245,6 +240,7 @@ export function useQuickActionsHost({
           <NewTaskSheet
             ref={taskRef}
             now={now}
+            offerEveryone
             onCreated={(assigneeName, wasSelf) =>
               confirm(taskCreatedLine(assigneeName, wasSelf))
             }
@@ -292,7 +288,6 @@ export function useQuickActionsHost({
     ask,
     sheets,
     notice: notice?.text ?? null,
-    record: meetings.record,
   };
 }
 

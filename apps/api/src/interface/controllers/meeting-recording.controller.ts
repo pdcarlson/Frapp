@@ -127,7 +127,7 @@ export class MeetingRecordingController {
 
 /**
  * What recording would do for the caller before any minutes exist (#5287).
- * The phone's + asks it once, so Record meeting can say what will happen to
+ * The phone's + asks it once, so New minutes can say what will happen to
  * the audio before the notice is read. Same guards as a meeting's recording:
  * off with 404 `ai.not_available` unless `AI_ENABLED`, and only for
  * `meetings:record` with the module on. Its own path, not under

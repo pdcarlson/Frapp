@@ -41,10 +41,13 @@ vi.mock("@/lib/bulk-upload/hash", async (importOriginal) => {
     },
   };
 });
+const flattenGate = vi.hoisted(() => ({
+  run: async (): Promise<Uint8Array> => new TextEncoder().encode("%PDF flat"),
+}));
 vi.mock("./pdf", () => ({
   loadPdf: async () => ({ numPages: 1, loadingTask: { destroy: async () => undefined } }),
   renderPagePreview: async () => ({ url: "blob:preview", width: 10, height: 10 }),
-  flattenPdf: async () => new TextEncoder().encode("%PDF flat"),
+  flattenPdf: () => flattenGate.run(),
   destroyPdf: async () => undefined,
 }));
 
@@ -96,7 +99,10 @@ const fields = {
   tags: "",
 };
 
+const defaultFlatten = flattenGate.run;
+
 beforeEach(() => {
+  flattenGate.run = defaultFlatten;
   hashGate.hold = null;
   hashGate.calls = 0;
   auth.userId = "u1";
@@ -171,6 +177,34 @@ describe("bulk upload session", { timeout: TEST_TIMEOUT }, () => {
     session.queue.submit(idOf(session, "b.pdf"), { fields, boxes: {}, flatten: false });
     await vi.waitFor(() => expect(statusOf(session, "b.pdf")).toBe("failed"), WAIT);
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "A backwork upload failed" }));
+  });
+
+  // Staging, 2026-11-17: an upload read "Uploading" for 20 minutes with no
+  // error. A flatten that never returns now fails the document with Retry.
+  it("fails a document whose flatten never returns, so it can be retried", async () => {
+    const session = getBulkSession("u1", "c1");
+    bindMutations(session);
+    session.queue.add([pdf("a.pdf")]);
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
+    flattenGate.run = () => new Promise<Uint8Array>(() => undefined);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      session.queue.submit(idOf(session, "a.pdf"), {
+        fields: { ...fields, document_variant: "Student Copy" },
+        boxes: {},
+        flatten: true,
+      });
+      // One page: a minute plus twenty seconds.
+      for (let i = 0; i < 20 && statusOf(session, "a.pdf") !== "failed"; i += 1) {
+        await vi.advanceTimersByTimeAsync(10_000);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    const item = session.queue.getSnapshot().items[0]!;
+    expect(item.status).toBe("failed");
+    expect(item.failedStage).toBe("finish");
+    expect(item.error).toMatch(/stopped partway/);
   });
 
   it("refuses a second copy of a file while the first is in the batch", async () => {

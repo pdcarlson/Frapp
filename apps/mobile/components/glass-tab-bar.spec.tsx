@@ -50,7 +50,6 @@ const quick = vi.hoisted(() => ({
   save: vi.fn(),
   ready: true,
   notice: null as string | null,
-  record: null as null | { detail: string; held: boolean; onPress: () => void },
 }));
 vi.mock("@/components/quick-actions/use-quick-actions", () => ({
   useQuickActions: () => ({
@@ -66,7 +65,6 @@ vi.mock("@/components/quick-actions/quick-actions-host", () => ({
     ask: quick.ask,
     sheets: null,
     notice: quick.notice,
-    record: quick.record,
   }),
 }));
 // Whether this member has Ask is the server's answer (`useAiSurfaces`).
@@ -380,35 +378,6 @@ describe("the +", () => {
     expect(panel(tree.root)).toBeUndefined();
   });
 
-  it("draws no Record meeting row for a member who can't record", () => {
-    const tree = render();
-    act(() => plus(tree.root)!.props.onPress());
-    expect(panel(tree.root).props.header).toBeNull();
-  });
-
-  it("puts Record meeting above the actions, closing the panel before it runs (#5287)", () => {
-    const entry = {
-      detail: "Chapter Meeting is on now",
-      held: false,
-      onPress: vi.fn(),
-    };
-    quick.record = entry;
-    try {
-      const tree = render();
-      act(() => plus(tree.root)!.props.onPress());
-      const header = panel(tree.root).props.header as React.ReactElement<{
-        entry: typeof entry;
-        onPress: () => void;
-      }>;
-      expect(header.props.entry).toBe(entry);
-      act(() => header.props.onPress());
-      expect(panel(tree.root)).toBeUndefined();
-      expect(entry.onPress).toHaveBeenCalledTimes(1);
-    } finally {
-      quick.record = null;
-    }
-  });
-
   it("closes when the member moves to another screen", () => {
     const tree = render();
     act(() => plus(tree.root)!.props.onPress());
@@ -577,9 +546,7 @@ describe("the fold", () => {
   it("folds the tabs to the current one and brings Ask into the row, leaving the + where it was", async () => {
     quick.hasAsk = true;
     const tree = await renderSettled("events");
-    const plusBefore = flat(
-      plus(tree.root)!.parent!.props.style,
-    );
+    const plusBefore = flat(plus(tree.root)!.parent!.props.style);
     act(() => setBarFolded(true));
 
     expect(flat(pill(tree.root).props.style).width).toBe(62);
@@ -631,7 +598,9 @@ describe("the fold", () => {
     act(() => setBarFolded(true));
     vi.useFakeTimers();
     try {
-      act(() => tree.root.findByProps({ testID: "tab-folded" }).props.onPress());
+      act(() =>
+        tree.root.findByProps({ testID: "tab-folded" }).props.onPress(),
+      );
       // Opening: a second quick tap lands on nothing.
       expect(tabs(tree.root).props.pointerEvents).toBe("none");
       act(() => vi.advanceTimersByTime(320));
@@ -688,7 +657,9 @@ describe("the fold", () => {
     expect(flat(pill(tree.root).props.style).width).toBe(
       402 - 14 - (14 + 62 + 10),
     );
-    expect(tree.root.findByProps({ testID: "tab-folded" }).props
-      .accessibilityElementsHidden).toBe(true);
+    expect(
+      tree.root.findByProps({ testID: "tab-folded" }).props
+        .accessibilityElementsHidden,
+    ).toBe(true);
   });
 });

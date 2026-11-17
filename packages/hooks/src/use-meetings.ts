@@ -645,7 +645,7 @@ export type MeetingRecorderAvailability =
 /**
  * Whether a recording made now could be written out, why this member can't
  * send one yet, and the server's limits, before any minutes exist (#5287):
- * the phone's + reads it to decide what Record meeting offers. `null` when
+ * the phone's + reads it to decide whether New minutes offers Record the meeting. `null` when
  * the server has AI off (404) or the member may not record (403), which both
  * mean "can't be written out".
  */

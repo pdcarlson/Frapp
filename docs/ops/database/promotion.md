@@ -231,7 +231,8 @@ before the apply (its `Run migrations (dry-run)` step always runs first) and wha
 it applied.
 
 - [ ] The migration steps of the **Deploy staging** run for your merge commit are green
-- [ ] `GET /health/ready` answers `200`. It probes fresh on every call, while
+- [ ] `GET /health/ready` answers `200`. Its database and Storage probe is at
+      most 5 s old and its `billing:` check at most 5 minutes old, while
       `/health`'s fields can be up to 60 s old
       ([Health Check](../../../spec/behavior/observability.md#health-check)).
       A `503` names each dependency in `message`, and an unrelated Storage or

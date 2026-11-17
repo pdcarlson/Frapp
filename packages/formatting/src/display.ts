@@ -9,8 +9,9 @@
  * `formatLocaleDate` give. The year appears only when the date is outside the
  * current one.
  *
- * Each takes a timestamp or a bare `YYYY-MM-DD` (read at local noon, so a
- * `date` column keeps its calendar day in every zone), and returns `null` for
+ * Each takes a timestamp, a `Date` (the instant it is, #4976), or a bare
+ * `YYYY-MM-DD` (read at local noon, so a `date` column keeps its calendar day
+ * in every zone), and returns `null` for
  * a missing or unparseable value so the caller can leave the fact out rather
  * than print a placeholder (`spec/ui/web-dashboard/README.md`: an absent
  * value is absent, not a glyph).
@@ -24,10 +25,11 @@
 
 import { parseInstantOrBareLocalNoon } from "./bare-date";
 import { dayDelta } from "./calendar-days";
-import { parseInstant } from "./instant";
+import { parseInstant, readInstant } from "./instant";
 import { formatTimeOfDay, formatTimeOfDayShort } from "./locale";
 
 function toDate(value: unknown): Date | null {
+  if (value instanceof Date) return readInstant(value);
   if (typeof value !== "string" || value === "") return null;
   return parseInstantOrBareLocalNoon(value) ?? parseInstant(value);
 }
@@ -55,7 +57,7 @@ function weekdayMonthDay(at: Date, now: Date): string {
 
 /** The clock read off the parsed instant, so a bare date and a timestamp agree. */
 function time(at: Date): string {
-  return formatTimeOfDay(at.toISOString());
+  return formatTimeOfDay(at);
 }
 
 function weekdayName(at: Date): string {
@@ -122,7 +124,7 @@ function withTimes(
   if (dayDelta(from, to) !== 0) {
     return `${day} · ${time(from)} – ${weekdayMonthDay(to, now)} · ${time(to)}`;
   }
-  return `${day} · ${formatTimeOfDayShort(from.toISOString(), to.toISOString())} – ${time(to)}`;
+  return `${day} · ${formatTimeOfDayShort(from, to)} – ${time(to)}`;
 }
 
 /**
@@ -308,18 +310,16 @@ export function formatDueLabel(
 /**
  * When an end time still ahead comes, in the countdown's words led by `verb`:
  * `"Closes tomorrow at 6 PM"` (a form card), `"Ends Friday at 6 PM"` (a
- * sign-up card). `null` unless `value` is a date string still to come (a
- * `Date` included, which `formatDueLabel` can't read): a card past its end
- * says Closed itself. The one adapter both chat cards' end
- * lines take, so neither hands `formatDueLabel` a `Date` (which it answers
- * with `null`) or reads its "Due" prefix on its own (#3926).
+ * sign-up card). `null` unless `value` is a date string or `Date` still to
+ * come: a card past its end says Closed itself. The one adapter both chat cards' end lines take, so neither
+ * reads `formatDueLabel`'s "Due" prefix on its own (#3926).
  */
 export function formatEndsLabel(
   verb: string,
   value: unknown,
   now: Date = new Date(),
 ): string | null {
-  if (typeof value !== "string" || !parseInstant(value)) return null;
+  if (!(value instanceof Date) && !parseInstant(value)) return null;
   const due = formatDueLabel(value, now);
   return due?.startsWith("Due ") ? `${verb} ${due.slice("Due ".length)}` : null;
 }
@@ -334,8 +334,9 @@ export function isDueOverdue(value: unknown, now: Date = new Date()): boolean {
   return formatDueLabel(value, now)?.startsWith("Overdue") ?? false;
 }
 
-/** A full timestamp rather than a bare `YYYY-MM-DD` day. */
+/** A full timestamp (or a `Date`) rather than a bare `YYYY-MM-DD` day. */
 function isInstant(value: unknown): boolean {
+  if (value instanceof Date) return true;
   return typeof value === "string" && value.length > 10;
 }
 

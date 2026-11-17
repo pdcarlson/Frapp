@@ -2,7 +2,8 @@
  * How long a meeting's working material is kept: an officer's notes, a draft
  * request from notes, and a recording with its transcript are all deleted
  * once older than this, posted or not (`spec/behavior/meetings.md`
- * § Retention: a transcript "is kept as the officer's notes are").
+ * § Retention). A transcript copied onto posted minutes is not working
+ * material: it stays with them until they are deleted (#5410).
  *
  * One number for all three sweeps (notes, draft requests and recordings), so
  * their windows can't drift apart.

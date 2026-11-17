@@ -32,6 +32,7 @@ const TASK: Task = {
   completion_note: null,
   series_id: null,
   occurrence_date: null,
+  group_id: null,
   created_at: '2026-11-08T15:00:00.000Z',
 };
 

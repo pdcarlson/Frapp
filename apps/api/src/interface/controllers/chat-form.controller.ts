@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -44,7 +52,7 @@ export class ChatFormController {
   })
   @ApiOkResponse({ type: OwnFormResponseDto })
   async getOwnResponse(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<OwnFormResponseDto> {
@@ -62,7 +70,7 @@ export class ChatFormController {
   })
   @ApiOkResponse({ type: FormResponsesDto })
   async getResponses(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<FormResponsesDto> {
@@ -76,7 +84,7 @@ export class ChatFormController {
   })
   @ApiOkResponse({ type: FormResponseDto })
   async saveResponse(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() body: SaveFormResponseDto,

@@ -20,7 +20,7 @@ Database rollback and restore are their own procedures:
 
 1. Confirm outage scope (`staging` vs `production`).
 2. Check what changed: the last **Deploy staging** / **Deploy production** run, and the service's revisions in Cloud Run ([`cloud-run.md`](deployment/cloud-run.md)).
-3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. It probes fresh; `/health`'s body can be up to 60 s old.
+3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. Its database and Storage probe is at most 5 s old and its `billing:` check at most 5 minutes old; `/health`'s body can be up to 60 s old ([Health Check](../../spec/behavior/observability.md#health-check)).
 4. Inspect the Cloud Run logs for startup/env errors ([`cloud-run.md` § Observability](deployment/cloud-run.md#observability)).
 5. Inspect Sentry for first error spike and root exception.
 

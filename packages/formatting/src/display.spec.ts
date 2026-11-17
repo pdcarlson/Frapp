@@ -317,11 +317,15 @@ describe("formatEndsLabel", () => {
     );
   });
 
-  it("is null for no end time, a Date, or one already past", () => {
-    expect(formatEndsLabel("Ends", undefined, NOW)).toBeNull();
+  it("reads a Date as the instant it is (#4976)", () => {
     expect(
       formatEndsLabel("Ends", new Date("2026-11-05T18:00:00-08:00"), NOW),
-    ).toBeNull();
+    ).toBe("Ends tomorrow at 6 PM");
+  });
+
+  it("is null for no end time, an Invalid Date, or one already past", () => {
+    expect(formatEndsLabel("Ends", undefined, NOW)).toBeNull();
+    expect(formatEndsLabel("Ends", new Date(Number.NaN), NOW)).toBeNull();
     expect(
       formatEndsLabel("Ends", "2026-11-03T18:00:00-08:00", NOW),
     ).toBeNull();
@@ -336,5 +340,48 @@ describe("formatWeekSpan", () => {
     expect(formatWeekSpan(new Date(2026, 10, 29), new Date(2026, 11, 5))).toBe(
       "Nov 29 – Dec 5",
     );
+  });
+});
+
+describe("a Date reads as the instant it is (#4976)", () => {
+  const at = new Date(FRI_5PM);
+  const formatters: Array<[string, (value: unknown) => unknown]> = [
+    ["formatDay", (v) => formatDay(v, NOW)],
+    ["formatWeekdayDay", (v) => formatWeekdayDay(v, NOW)],
+    ["formatDayTime", (v) => formatDayTime(v, NOW)],
+    ["formatRelativeDayTime", (v) => formatRelativeDayTime(v, NOW)],
+    ["formatDayHeading", (v) => formatDayHeading(v, NOW)],
+    ["formatActedLabel", (v) => formatActedLabel("Submitted", v, NOW)],
+    ["formatSentLabel", (v) => formatSentLabel(v, NOW)],
+    ["formatDueLabel", (v) => formatDueLabel(v, NOW)],
+    ["formatDueOn", (v) => formatDueOn(v, NOW)],
+    ["formatTimestampFull", (v) => formatTimestampFull(v)],
+  ];
+
+  it.each(formatters)("%s prints a Date as its ISO string", (_, format) => {
+    expect(format(at)).not.toBeNull();
+    expect(format(at)).toBe(format(FRI_5PM));
+  });
+
+  it.each(formatters)("%s leaves an Invalid Date out", (_, format) => {
+    expect(format(new Date(Number.NaN))).toBeNull();
+  });
+
+  it("formats the ranges from Dates", () => {
+    const end = new Date("2026-11-07T03:00:00.000Z");
+    expect(formatDayTimeRange(at, end, NOW)).toBe(
+      formatDayTimeRange(FRI_5PM, end.toISOString(), NOW),
+    );
+    expect(formatEventWindow(at, end, NOW)).toBe(
+      formatEventWindow(FRI_5PM, end.toISOString(), NOW),
+    );
+    expect(formatRelativeDayTime(at, NOW)).toBe("Friday · 5:00 PM");
+    expect(formatActedLabel("I'll remind you", at, NOW)).toBe(
+      "I'll remind you Friday at 5:00 PM",
+    );
+  });
+
+  it("counts a Date down to its time, not its day", () => {
+    expect(formatDueLabel(at, NOW)).toBe("Due Friday at 5 PM");
   });
 });

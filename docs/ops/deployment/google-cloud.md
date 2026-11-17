@@ -10,7 +10,7 @@ Read with `gcloud` from Cloud Shell on 2026-11-17. The folders, the four admin g
 
 | Folder (id) | Project | Id | Used for |
 | --- | --- | --- | --- |
-| Common (`575917033023`) | Frapp sign-in | `signet-frapp` | Google sign-in's OAuth clients and the verified "Frapp" brand, plus Calendar connect's production client, "Frapp Calendar" (made 2026-11-13; staging's is not made yet) ([§ The sign-in project](#the-sign-in-project)) |
+| Common (`575917033023`) | Frapp sign-in | `signet-frapp` | Google sign-in's OAuth clients and the verified "Frapp" brand, plus Calendar connect's two clients, "Frapp Calendar" for production (made 2026-11-13) and "Frapp Calendar (staging)" (made 2026-11-17) ([§ The sign-in project](#the-sign-in-project)) |
 | Common | Frapp | `frapp-67722` | Firebase: Android push, and the Play upload service account ([`mobile.md`](mobile.md)) |
 | Common | central-logging-monitoring | `cs-project-cob1stf1` | Holds the organization's audit log bucket ([§ Audit logs](#audit-logs)) |
 | Production (`1053187101656`) | prod | `cs-project-nyit2x59` | Production API on Cloud Run, production Vertex AI |

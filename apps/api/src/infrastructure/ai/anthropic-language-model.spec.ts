@@ -51,16 +51,28 @@ function message(overrides: Record<string, unknown>): Anthropic.Message {
   } as unknown as Anthropic.Message;
 }
 
+/**
+ * `generate` reads every answer over a stream (`finalMessage`); `create` is
+ * what the stream was opened with and what it answered.
+ */
+function streamingClient(create: jest.Mock) {
+  return {
+    messages: {
+      stream: jest.fn((params: unknown, options: unknown) => ({
+        finalMessage: () => create(params, options),
+      })),
+    },
+  } as unknown as AnthropicMessagesClient;
+}
+
 function clientReturning(reply: Anthropic.Message) {
   const create = jest.fn().mockResolvedValue(reply);
-  const client = { messages: { create } } as unknown as AnthropicMessagesClient;
-  return { create, model: new AnthropicLanguageModel(client) };
+  return { create, model: new AnthropicLanguageModel(streamingClient(create)) };
 }
 
 function clientThrowing(error: unknown) {
   const create = jest.fn().mockRejectedValue(error);
-  const client = { messages: { create } } as unknown as AnthropicMessagesClient;
-  return new AnthropicLanguageModel(client);
+  return new AnthropicLanguageModel(streamingClient(create));
 }
 
 describe('AnthropicLanguageModel', () => {

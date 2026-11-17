@@ -5,11 +5,7 @@ vi.mock("@repo/hooks", () => ({
   useStartMeeting: vi.fn(),
 }));
 
-import {
-  MEETING_START_COPY,
-  meetingChoices,
-  recordRowDetail,
-} from "./start-minutes";
+import { MEETING_START_COPY, meetingChoices } from "./start-minutes";
 
 const NOW = new Date("2026-11-17T19:20:00");
 const ME = "user-me";
@@ -69,7 +65,6 @@ describe("meetingChoices", () => {
       kind: "event",
       event: expect.objectContaining({ id: "tonight" }),
     });
-    expect(recordRowDetail(choices)).toBe("Chapter Meeting is on now");
     expect(choices.options.map((option) => option.title)).toEqual([
       "Chapter Meeting",
       "Chapter Meeting",
@@ -89,7 +84,6 @@ describe("meetingChoices", () => {
   it("picks a new meeting when nothing is on now", () => {
     const choices = meetingChoices([lastWeek], [], ME, NOW);
     expect(choices.picked).toEqual({ kind: "new" });
-    expect(recordRowDetail(choices)).toBe(MEETING_START_COPY.rowNew);
   });
 
   it("reopens the member's own draft on the meeting on now", () => {
@@ -112,9 +106,6 @@ describe("meetingChoices", () => {
       const choices = meetingChoices([tonight], [held], ME, NOW);
       expect(choices.picked).toBeNull();
       expect(choices.taken?.id).toBe("tonight");
-      expect(recordRowDetail(choices)).toBe(
-        MEETING_START_COPY.rowTaken("Chapter Meeting"),
-      );
       expect(choices.options.map((option) => option.title)).toEqual([
         MEETING_START_COPY.newTitle,
       ]);

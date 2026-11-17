@@ -1,9 +1,11 @@
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { describe, expect, it, test } from "vitest";
 import {
   channelAllowsThreadReplies,
   channelAllowsThreads,
   messageCanStartThread,
   canActOnMessage,
+  canChangeMessagePin,
   canDeleteMessage,
   canEditMessage,
   canReportMessage,
@@ -90,6 +92,49 @@ describe("canDeleteMessage", () => {
       false,
     );
     expect(canDeleteMessage({ sender_id: null }, VIEWER, false)).toBe(false);
+  });
+
+  // #3909: Frapp's entries in the audit log are never deleted, whoever asks;
+  // a member's post there from before it was read-only still is.
+  describe("in the audit log", () => {
+    const entry = {
+      sender_id: SYSTEM_SENDER_ID,
+      kind: "system_audit" as const,
+    };
+
+    it("withholds it on Frapp's entries, even with channels:manage", () => {
+      expect(canDeleteMessage(entry, VIEWER, true, true)).toBe(false);
+    });
+
+    it("still offers it on a member's post, by the usual rule", () => {
+      const post = { sender_id: VIEWER, kind: "text" as const };
+      expect(canDeleteMessage(post, VIEWER, false, true)).toBe(true);
+      expect(
+        canDeleteMessage({ ...post, sender_id: "user-2" }, VIEWER, true, true),
+      ).toBe(true);
+      expect(
+        canDeleteMessage({ ...post, sender_id: "user-2" }, VIEWER, false, true),
+      ).toBe(false);
+    });
+
+    it("leaves a Frapp notice elsewhere to channels:manage", () => {
+      expect(canDeleteMessage(entry, VIEWER, true)).toBe(true);
+    });
+  });
+});
+
+describe("canChangeMessagePin", () => {
+  it("is a channels:manage holder's control", () => {
+    expect(canChangeMessagePin({ is_pinned: false }, true)).toBe(true);
+    expect(canChangeMessagePin({ is_pinned: true }, true)).toBe(true);
+    expect(canChangeMessagePin({ is_pinned: false }, false)).toBe(false);
+  });
+
+  // #3909: nothing in the audit log takes a new pin; one from before can go.
+  it("in the audit log, only takes a pin off", () => {
+    expect(canChangeMessagePin({ is_pinned: false }, true, true)).toBe(false);
+    expect(canChangeMessagePin({ is_pinned: true }, true, true)).toBe(true);
+    expect(canChangeMessagePin({ is_pinned: true }, false, true)).toBe(false);
   });
 });
 

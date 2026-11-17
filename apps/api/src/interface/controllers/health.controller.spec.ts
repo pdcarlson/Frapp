@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
-import { HealthController, LIVENESS_PROBE_TTL_MS } from './health.controller';
+import {
+  HealthController,
+  LIVENESS_PROBE_TTL_MS,
+  READINESS_PROBE_TTL_MS,
+  STRIPE_CHECK_TTL_MS,
+} from './health.controller';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { AllExceptionsFilter } from '../filters/all-exceptions.filter';
 import { StripePriceConsistencyService } from '../../infrastructure/billing/stripe-price-consistency.service';
@@ -315,7 +320,7 @@ describe('HealthController', () => {
 
     // The deploy gate reads this path, so a healthy /health result cached a
     // moment ago must not hide an outage that started since.
-    it('probes on every call, ignoring a fresh /health result', async () => {
+    it('probes for itself, ignoring a fresh /health result', async () => {
       await controller.check();
       dbError = { message: 'connection refused' };
 
@@ -323,6 +328,100 @@ describe('HealthController', () => {
         ServiceUnavailableException,
       );
       expect(supabase.from).toHaveBeenCalledTimes(2);
+    });
+
+    // The route is public, so its cost per hit is bounded: the database and
+    // Storage probe is reused for a few seconds, the Stripe call for
+    // minutes. Both short enough that the uptime monitor and the deploy gate
+    // each still see an answer taken for them.
+    describe('reuse', () => {
+      beforeEach(() => jest.useFakeTimers());
+      afterEach(() => jest.useRealTimers());
+
+      it('reuses one dependency probe inside READINESS_PROBE_TTL_MS, then probes again', async () => {
+        await controller.ready();
+        jest.advanceTimersByTime(READINESS_PROBE_TTL_MS - 1000);
+        dbError = { message: 'connection refused' };
+        await expect(controller.ready()).resolves.toMatchObject({
+          status: 'ok',
+        });
+        expect(supabase.from).toHaveBeenCalledTimes(1);
+
+        jest.advanceTimersByTime(1000);
+        await expect(controller.ready()).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+        expect(supabase.from).toHaveBeenCalledTimes(2);
+      });
+
+      it('keeps a degraded probe only as long, so a recovery shows within the TTL', async () => {
+        dbError = { message: 'connection refused' };
+        await expect(controller.ready()).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+        dbError = null;
+        jest.advanceTimersByTime(READINESS_PROBE_TTL_MS);
+        await expect(controller.ready()).resolves.toMatchObject({
+          status: 'ok',
+        });
+      });
+
+      it('calls Stripe once per STRIPE_CHECK_TTL_MS, keeping a mismatch as long', async () => {
+        const mismatch = new StripePriceAccountMismatchError(
+          'price_inactive_one',
+          'configured Price is inactive',
+          { code: 'price_inactive' },
+        );
+        stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(
+          mismatch,
+        );
+        await expect(controller.ready()).rejects.toThrow(
+          ServiceUnavailableException,
+        );
+        jest.advanceTimersByTime(STRIPE_CHECK_TTL_MS - 1000);
+        stripePriceConsistency.assertConfiguredPrice.mockResolvedValue(
+          undefined,
+        );
+        await expect(controller.ready()).rejects.toMatchObject({
+          cause: mismatch,
+        });
+        expect(
+          stripePriceConsistency.assertConfiguredPrice,
+        ).toHaveBeenCalledTimes(1);
+
+        jest.advanceTimersByTime(1000);
+        await expect(controller.ready()).resolves.toMatchObject({
+          status: 'ok',
+        });
+        expect(
+          stripePriceConsistency.assertConfiguredPrice,
+        ).toHaveBeenCalledTimes(2);
+      });
+
+      it('does not keep an unexpected Stripe failure: the next call checks again', async () => {
+        stripePriceConsistency.assertConfiguredPrice.mockRejectedValueOnce(
+          new Error('unexpected'),
+        );
+        await expect(controller.ready()).rejects.toThrow('unexpected');
+        await expect(controller.ready()).resolves.toMatchObject({
+          status: 'ok',
+        });
+        expect(
+          stripePriceConsistency.assertConfiguredPrice,
+        ).toHaveBeenCalledTimes(2);
+      });
+
+      it('shares one probe and one Stripe call between concurrent callers', async () => {
+        await Promise.all([
+          controller.ready(),
+          controller.ready(),
+          controller.ready(),
+        ]);
+        expect(supabase.from).toHaveBeenCalledTimes(1);
+        expect(
+          stripePriceConsistency.assertConfiguredPrice,
+        ).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('throws ServiceUnavailableException when storage is unreachable', async () => {

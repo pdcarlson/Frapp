@@ -6,14 +6,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 
 /**
- * The +'s Record meeting and New minutes (#5287), as the secretary uses
- * them: the row is there only where the minutes screen's own Record would
- * be, it names the meeting it will use, the AI question comes before the
- * notice, and Start recording starts the minutes, opens them and starts the
- * recorder. A meeting already holding someone else's minutes is joined,
- * not split; the member's own draft with a recording is opened, not
- * overwritten; and a calendar that can't be read says so. The pick itself
- * is `lib/minutes/start-minutes.spec.ts`'s.
+ * The +'s New minutes (#5287), as the secretary uses it: one entry that
+ * starts the minutes or, where the minutes screen's own Record would be,
+ * starts them recording. The AI question comes before the notice, and
+ * Start recording starts the minutes, opens them and starts the recorder.
+ * The member's own draft with a recording is opened, not overwritten; a
+ * phone already recording offers no second one; and a calendar that can't
+ * be read says so. The pick itself is `lib/minutes/start-minutes.spec.ts`'s.
  */
 const NOW = Date.now();
 const iso = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
@@ -45,6 +44,12 @@ const data = vi.hoisted(() => ({
     onPress: () => Promise<void>;
     disabled?: boolean;
   },
+  recordButton: null as null | {
+    onPress: () => Promise<void>;
+    disabled?: boolean;
+  },
+  sheetClose: vi.fn(),
+  pickChange: null as null | ((choice: unknown) => void),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -156,7 +161,10 @@ vi.mock("@gorhom/bottom-sheet", async () => {
 });
 // The picker is `meeting-pick-field`'s own; here it is a stand-in.
 vi.mock("@/components/minutes/meeting-pick-field", () => ({
-  MeetingPickField: () => null,
+  MeetingPickField: (props: { onChange: (choice: unknown) => void }) => {
+    data.pickChange = props.onChange;
+    return null;
+  },
 }));
 vi.mock("@/lib/sheet-scrollables", () => ({
   BottomSheetScrollView: (props: { children: React.ReactNode }) => (
@@ -175,11 +183,27 @@ vi.mock("@/components/sheet-scaffold", () => ({
   SheetGrabber: () => null,
   SheetScrim: () => null,
   useSheetBackgroundStyle: () => ({}),
-  useSheetClose: () => vi.fn(),
+  useSheetClose: () => data.sheetClose,
+  // Record leads where the phone can record; Start minutes otherwise.
   SheetPrimaryButton: (props: {
+    label: string;
     onPress: () => Promise<void>;
     disabled?: boolean;
   }) => {
+    if (props.label === "Record") keepRecordButton(props);
+    else keepStartButton(props);
+    return null;
+  },
+}));
+function keepRecordButton(props: {
+  onPress: () => Promise<void>;
+  disabled?: boolean;
+}) {
+  data.recordButton = props;
+}
+// Under Record, typed notes are a quiet word that starts the minutes.
+vi.mock("@/components/minutes/recorder-controls", () => ({
+  TextAction: (props: { onPress: () => Promise<void>; disabled?: boolean }) => {
     keepStartButton(props);
     return null;
   },
@@ -227,6 +251,7 @@ beforeEach(() => {
   data.hasRecorder = true;
   data.noticeProps = null;
   data.startButton = null;
+  data.recordButton = null;
   data.eventsError = false;
   data.recordingStatus = "none";
   data.consent.mockResolvedValue(true);
@@ -237,110 +262,27 @@ beforeEach(() => {
   });
 });
 
-describe("the Record meeting row", () => {
-  it("names the meeting on now", () => {
-    data.events = [
-      {
-        id: "e1",
-        name: "Chapter Meeting",
-        start_time: iso(-10),
-        end_time: iso(90),
-      },
-    ];
-    render();
-    expect(latest.record?.detail).toBe("Chapter Meeting is on now");
-  });
+/** +, New minutes, then Record on its sheet. */
+async function record() {
+  act(() => latest.newMinutes());
+  await act(async () => data.recordButton?.onPress());
+}
 
-  it("says it starts a new meeting when nothing is on", () => {
-    render();
-    expect(latest.record?.detail).toBe("Starts a new meeting, today");
-  });
-
-  it("follows the clock, not the last read: a meeting that starts later is found once it's on", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      vi.setSystemTime(NOW);
-      data.events = [
-        {
-          id: "e1",
-          name: "Chapter Meeting",
-          start_time: iso(60),
-          end_time: iso(120),
-        },
-      ];
-      const tree = render();
-      expect(latest.record?.detail).toBe("Starts a new meeting, today");
-      vi.setSystemTime(NOW + 65 * 60_000);
-      act(() =>
-        tree.update(
-          <FrappThemeProvider>
-            <Harness />
-          </FrappThemeProvider>,
-        ),
-      );
-      expect(latest.record?.detail).toBe("Chapter Meeting is on now");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("names a meeting on now that already has someone else's minutes, and opens its event", () => {
-    data.events = [
-      {
-        id: "e1",
-        name: "Chapter Meeting",
-        start_time: iso(-10),
-        end_time: iso(90),
-      },
-    ];
-    data.meetings = [
-      {
-        id: "m-theirs",
-        event_id: "e1",
-        status: "draft",
-        created_by: "president",
-      },
-    ];
-    render();
-    expect(latest.record?.detail).toBe(
-      "Chapter Meeting already has minutes. Open the event to take notes.",
-    );
-    act(() => latest.record?.onPress());
-    expect(router().push).toHaveBeenCalledWith({
-      pathname: "/event-details",
-      params: { id: "e1" },
-    });
-    expect(data.noticePresent).not.toHaveBeenCalled();
-  });
-
-  it("says when the calendar couldn't be read, and asks again on a tap", async () => {
-    data.eventsError = true;
-    render();
-    expect(latest.record?.detail).toMatch(/^Couldn't read the calendar/);
-    await act(async () => latest.record?.onPress());
-    expect(data.refetchEvents).toHaveBeenCalled();
-    expect(confirm).toHaveBeenCalledWith(
-      expect.stringMatching(/^Couldn't read the calendar/),
-    );
-    expect(data.noticePresent).not.toHaveBeenCalled();
-  });
-
+describe("Record, on New minutes", () => {
   it.each([
-    ["no meetings:record", () => (data.permissions = [])],
-    ["the module off", () => (data.meetingsOn = false)],
-    ["no drafting", () => (data.meetingNotes = false)],
     ["no transcription", () => (data.available = false)],
     ["AI off on the server", () => (data.available = null)],
     ["the chapter's switch off", () => (data.blocked = "chapter_off")],
     ["a build with no microphone", () => (data.hasRecorder = false)],
-  ])("is not offered with %s", (_why, set) => {
+  ])("is not offered with %s, though New minutes is", (_why, set) => {
     set();
     render();
-    expect(latest.record).toBeNull();
+    act(() => latest.newMinutes());
+    expect(data.startButton).not.toBeNull();
+    expect(data.recordButton).toBeNull();
   });
 
-  it("opens the recording the phone holds instead of starting one", () => {
-    data.available = false;
+  it("is not offered while the phone already holds a recording", () => {
     data.state = {
       phase: "recording",
       subject: { meetingId: "m-held", eventName: "Exec", maxSeconds: 3600 },
@@ -348,37 +290,30 @@ describe("the Record meeting row", () => {
       paused: null,
     };
     render();
-    expect(latest.record).toMatchObject({ held: true });
-    expect(latest.record?.detail).toMatch(/^Recording 12:04/);
-    act(() => latest.record?.onPress());
-    expect(router().push).toHaveBeenCalledWith({
-      pathname: "/minutes-details",
-      params: { id: "m-held" },
-    });
-    expect(data.noticePresent).not.toHaveBeenCalled();
+    act(() => latest.newMinutes());
+    expect(data.recordButton).toBeNull();
   });
-});
 
-describe("recording from the +", () => {
   it("asks the AI question first, then shows the notice", async () => {
     data.blocked = "consent_required";
     render();
-    await act(async () => latest.record?.onPress());
+    await record();
     expect(data.consent).toHaveBeenCalled();
     expect(data.noticePresent).toHaveBeenCalledTimes(1);
   });
 
-  it("stops at a No on the AI question", async () => {
+  it("stops at a No on the AI question, leaving New minutes open", async () => {
     data.blocked = "consent_required";
     data.consent.mockResolvedValue(false);
     render();
-    await act(async () => latest.record?.onPress());
+    await record();
     expect(data.noticePresent).not.toHaveBeenCalled();
+    expect(data.sheetClose).not.toHaveBeenCalled();
   });
 
   it("starts the minutes, opens them and starts the recorder on Start", async () => {
     render();
-    await act(async () => latest.record?.onPress());
+    await record();
     expect(data.noticeProps?.maxSeconds).toBe(3600);
     await act(async () => data.noticeProps?.onStart());
     expect(data.start).toHaveBeenCalledWith(
@@ -397,6 +332,27 @@ describe("recording from the +", () => {
     );
   });
 
+  it("records the meeting the officer picked with Change, not the +'s own pick", async () => {
+    render();
+    act(() => latest.newMinutes());
+    act(() =>
+      data.pickChange?.({
+        kind: "event",
+        event: {
+          id: "e-exec",
+          name: "Exec Meeting",
+          start_time: iso(-7 * 24 * 60),
+          end_time: iso(-7 * 24 * 60 + 60),
+        },
+      }),
+    );
+    await act(async () => data.recordButton?.onPress());
+    await act(async () => data.noticeProps?.onStart());
+    expect(data.start).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: "e-exec" }),
+    );
+  });
+
   it("records into the member's own draft on the meeting on now", async () => {
     data.events = [
       {
@@ -410,7 +366,7 @@ describe("recording from the +", () => {
       { id: "m-mine", event_id: "e1", status: "draft", created_by: "me" },
     ];
     render();
-    await act(async () => latest.record?.onPress());
+    await record();
     await act(async () => data.noticeProps?.onStart());
     expect(data.start).not.toHaveBeenCalled();
     expect(data.clearRefusal).toHaveBeenCalled();
@@ -439,7 +395,7 @@ describe("recording from the +", () => {
         { id: "m-mine", event_id: "e1", status: "draft", created_by: "me" },
       ];
       render();
-      await act(async () => latest.record?.onPress());
+      await record();
       await act(async () => data.noticeProps?.onStart());
       expect(data.recorderStart).not.toHaveBeenCalled();
       expect(router().push).toHaveBeenCalledWith({
@@ -463,22 +419,19 @@ describe("recording from the +", () => {
     ];
     data.start.mockRejectedValue({ code: "meeting.already_started" });
     render();
-    await act(async () => latest.record?.onPress());
+    await record();
     await act(async () => data.noticeProps?.onStart());
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("Someone else started minutes"),
     );
     expect(data.refetchMeetings).toHaveBeenCalled();
     expect(data.recorderStart).not.toHaveBeenCalled();
-    expect(latest.record?.detail).toBe(
-      "Chapter Meeting already has minutes. Open the event to take notes.",
-    );
   });
 
   it("says why when the minutes can't start, and records nothing", async () => {
     data.start.mockRejectedValue(new Error("boom"));
     render();
-    await act(async () => latest.record?.onPress());
+    await record();
     await act(async () => data.noticeProps?.onStart());
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("Couldn't start"),
@@ -488,6 +441,23 @@ describe("recording from the +", () => {
 });
 
 describe("New minutes", () => {
+  it("reads no calendar until it is asked for", () => {
+    render();
+    expect(data.minutesPresent).not.toHaveBeenCalled();
+  });
+
+  it("says when the calendar couldn't be read, and asks again", () => {
+    data.eventsError = true;
+    render();
+    act(() => latest.newMinutes());
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/^Couldn't read the calendar/),
+    );
+    expect(data.minutesPresent).not.toHaveBeenCalled();
+    act(() => latest.newMinutes());
+    expect(data.refetchEvents).toHaveBeenCalled();
+  });
+
   it("starts the picked meeting and opens it, without the notice or the microphone", async () => {
     data.available = false;
     render();

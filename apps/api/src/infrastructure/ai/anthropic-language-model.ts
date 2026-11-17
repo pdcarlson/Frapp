@@ -59,11 +59,18 @@ export class AnthropicLanguageModel implements ILanguageModel {
     return new AnthropicLanguageModel(new Anthropic({ apiKey }));
   }
 
+  /**
+   * One answer, read over a stream. A call that may write tens of thousands
+   * of tokens (the minutes notes: 32,000 on the strongest model) is refused
+   * by the SDK as a plain request ("Streaming is required for operations
+   * that may take longer than 10 minutes"), and a long silent connection is
+   * the kind a proxy drops, so every call streams and waits for the end.
+   */
   async generate(request: LanguageModelRequest): Promise<LanguageModelResult> {
     try {
-      const message = await this.client.messages.create(this.params(request), {
-        signal: request.signal,
-      });
+      const message = await this.client.messages
+        .stream(this.params(request), { signal: request.signal })
+        .finalMessage();
       return this.toResult(request, message);
     } catch (error) {
       throw toLanguageModelError(error);

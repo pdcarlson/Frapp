@@ -889,11 +889,12 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | ----- | ------- | ----------- | ----- |
 | My account | Notifications | _(none)_ | Quiet hours (`user_settings`) |
 | My account | Appearance and chat | `appearance` | Chat density, kept on the browser. No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
+| My account | Linked apps | `apps` | One row per connected app, each marked with a green check when connected, greyed when not and red once expired (#5407): Google Calendar and Discord for the active chapter, then the ways the account signs in (email, Google, Apple, read from Supabase Auth). `?section=discord` opens it. The API's Discord link handshake and Google's sign-in return here |
+| My account | Calendar | `calendar` | The Google Calendar row again, with the subscription link (Copy link, made only on that tap, and the Apple, Outlook and Reset menu) |
 | My account | Account | `account` | Replay the tour, sign out, delete account |
 | My account | AI | `ai` | One Frapp AI switch: on opens Meet Frapp AI, off turns it off ([`ai.md` § Consent](../../behavior/ai.md#consent); #4790). Listed only while the server has AI; the rail waits for that answer |
 | In _chapter name_ | Chapter alerts | `alerts` | Chat messages (All messages / Mentions and DMs only, [#4124](https://github.com/pdcarlson/Frapp/issues/4124)), then the active chapter's notification categories |
 | In _chapter name_ | Blocked members | `blocked` | The active chapter's block list |
-| In _chapter name_ | Discord history | `discord` | The member's Discord link for the chapter's import; the API's link handshake returns here |
 
 "My account" follows the person into every chapter; "In _chapter name_" changes with the chapter switcher.
 The decision listed blocked members under the account; they sit in the chapter group because `GET /v1/chat/blocks` is the active chapter's list.

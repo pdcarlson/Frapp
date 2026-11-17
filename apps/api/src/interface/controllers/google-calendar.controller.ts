@@ -90,6 +90,7 @@ export class GoogleCalendarController {
       userId,
       dto.client,
       dto.return_url ?? null,
+      dto.web_return,
     );
   }
 

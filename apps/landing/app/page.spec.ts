@@ -321,6 +321,37 @@ describe("landing page structure", () => {
     }
   });
 
+  it("draws the app's check-in card, not the retired Scan QR button (#4768)", () => {
+    // The app's open check-in card says to scan the officer's code here or
+    // with the phone's camera, over a quieter Scan code text action
+    // (`apps/mobile/app/(app)/event-details.tsx`, `CheckInCard`). The boards
+    // still draw a gold "Scan QR to check in" button the app no longer has.
+    // The hint is asserted against the app's source too, so a change to what
+    // the app says fails here until the frame follows it.
+    const hint =
+      "Scan the code on the officer&apos;s screen, here or with your phone&apos;s camera.";
+    const app = flatten(
+      readFileSync(
+        join(landingRoot, "../mobile/app/(app)/event-details.tsx"),
+        "utf8",
+      ),
+    );
+    expect(app, "the app's check-in hint changed: redraw the frame").toContain(
+      hint,
+    );
+    expect(app).toContain("Scan code");
+    const frame = flatten(homeSource("event-frame.tsx"));
+    expect(frame).not.toMatch(/Scan QR/i);
+    expect(frame).toContain(hint);
+    // Scan code is a text action, never a filled button, under the hint.
+    const action =
+      /<span className="(?![^"]*\bbg-)[^"]*">\s*Scan code\s*<\/span>/.exec(
+        frame,
+      );
+    expect(action, "Scan code is not an unfilled span").not.toBeNull();
+    expect(frame.indexOf(hint)).toBeLessThan(action?.index ?? -1);
+  });
+
   describe("the chat thread draws chat's compact layout, not the retired bubbles", () => {
     // `components.md` § Chat messages (#2873): chat has had no bubbles on web
     // or mobile since 2026-09-29, so the frame that pictures it can't draw any
@@ -453,8 +484,12 @@ describe("landing page structure", () => {
     // hands the section the trial URL rather than plain sign-up, which ends on
     // /chat instead of /billing.
     expect(flatten(pricing)).toMatch(/>\s*Start 14-day trial\s*</);
-    expect(renderedPage).toMatch(/<PricingSection\b[^>]*\btrialUrl=\{trialUrl\}/);
-    expect(renderedPage).toMatch(/\{[^}]*\btrialUrl\b[^}]*\}\s*=\s*landingAuthUrls\(\)/);
+    expect(renderedPage).toMatch(
+      /<PricingSection\b[^>]*\btrialUrl=\{trialUrl\}/,
+    );
+    expect(renderedPage).toMatch(
+      /\{[^}]*\btrialUrl\b[^}]*\}\s*=\s*landingAuthUrls\(\)/,
+    );
   });
 });
 

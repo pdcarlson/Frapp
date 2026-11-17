@@ -10,17 +10,20 @@ import {
   useDiscordAuthorLink,
   useUnlinkDiscordAuthor,
 } from "@repo/hooks";
-import { NestedError, NestedLoading } from "@/components/shared/nested-states";
-import { ProfileSection } from "@/components/profile/profile-section";
+import { MoreHorizontal, RotateCcw, Unlink } from "lucide-react";
+import { discordLinkedState } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
+import { DiscordMark } from "@/components/linked-apps/brand-marks";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
-import { InlineNote } from "@/components/shared/inline-note";
 import { refreshTimelinesForDiscordAuthor } from "@/lib/chat/discord-author-reads";
-
-const DISCORD_HISTORY_TITLE = "Discord history";
-const DISCORD_HISTORY_DESCRIPTION =
-  "If your chapter imported its Discord server, link the Discord account you used there. Your old messages then show under your name in this chapter, and you can delete them like any message of yours.";
 
 /**
  * What `?discord=<code>` means when Discord sends the browser back here.
@@ -47,9 +50,10 @@ export function linkedMessage(count: number): string {
 }
 
 /**
- * Settings → Discord history (`/preferences?section=discord`, #2878): a member links their own Discord
- * account so the chapter's imported Discord history they wrote is attributed
- * to them.
+ * Discord's row on Settings → Linked apps (`/preferences?section=apps`,
+ * #2878, #5407): a member links their own Discord account so the chapter's
+ * imported Discord history they wrote is attributed to them. It was the
+ * Discord history section until Linked apps gathered every linked account.
  *
  * Linking is a round trip through Discord's sign-in. Discord sends the browser
  * back here with `?discord=pending&handshake=<token>`, and this card spends the
@@ -64,7 +68,7 @@ export function linkedMessage(count: number): string {
  * accounts' imported messages is refetched (`refreshTimelinesForDiscordAuthor`, #4543):
  * chat stays mounted beside this page.
  */
-export function DiscordHistoryCard() {
+export function DiscordRow() {
   const chapterId = useActiveChapterId();
   const link = useDiscordAuthorLink();
   const begin = useBeginDiscordAuthorLink();
@@ -203,70 +207,65 @@ export function DiscordHistoryCard() {
     }
   }
 
-  let body: React.ReactNode;
-  if (!chapterId) {
-    body = (
-      <InlineNote>Pick a chapter to link your Discord account.</InlineNote>
+  // No row before a chapter is active (the link is the chapter's), while the
+  // status is unread, or where the server doesn't offer linking. A failed
+  // read draws the row with a retry rather than "Not linked", which would
+  // be a claim.
+  if (!chapterId) return null;
+  const busy = confirm.isPending || begin.isPending || unlink.isPending;
+  if (link.isError) {
+    return (
+      <LinkedAppRow
+        icon={<DiscordMark />}
+        name="Discord"
+        state={{ tone: "off", detail: "Couldn't load your Discord link" }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Try loading your Discord link again"
+          onClick={() => void link.refetch()}
+        >
+          <RotateCcw aria-hidden="true" />
+        </Button>
+      </LinkedAppRow>
     );
-  } else if (confirm.isPending) {
-    body = <NestedLoading message="Linking your Discord account" lines={1} />;
-  } else if (link.isPending) {
-    body = <NestedLoading message="Loading your Discord link" lines={1} />;
-  } else if (link.isError || !link.data) {
-    body = (
-      <NestedError
-        title="Couldn't load your Discord link"
-        description="Check your connection and try again."
-        onRetry={() => void link.refetch()}
-      />
-    );
-  } else if (link.data.linked) {
-    body = (
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="min-w-0 text-sm">
-          Linked
-          {link.data.discord_username ? (
-            <>
-              {" "}
-              as{" "}
-              <span className="font-semibold">
-                {link.data.discord_username}
-              </span>
-            </>
-          ) : null}
-          . Your imported messages in this chapter show under your name.
-        </p>
+  }
+  const state = confirm.isPending
+    ? { tone: "off" as const, detail: "Linking…" }
+    : discordLinkedState(link.data);
+  if (!state) return null;
+
+  return (
+    <LinkedAppRow icon={<DiscordMark />} name="Discord" state={state}>
+      {state.tone === "connected" ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="Discord options">
+              <MoreHorizontal aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={busy}
+              onSelect={() => void removeLink()}
+            >
+              <Unlink aria-hidden="true" />
+              Unlink
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
         <Button
           variant="secondary"
           size="toolbar"
-          disabled={unlink.isPending}
-          onClick={() => void removeLink()}
+          aria-label="Link Discord account"
+          disabled={busy}
+          onClick={() => void startLink()}
         >
-          Unlink
+          Link
         </Button>
-      </div>
-    );
-  } else if (!link.data.available) {
-    body = (
-      <p className="text-sm text-muted-foreground">
-        Linking a Discord account isn&apos;t available right now.
-      </p>
-    );
-  } else {
-    body = (
-      <Button disabled={begin.isPending} onClick={() => void startLink()}>
-        Link Discord account
-      </Button>
-    );
-  }
-
-  return (
-    <ProfileSection
-      id="discord-history"
-      title={DISCORD_HISTORY_TITLE}
-      hint={DISCORD_HISTORY_DESCRIPTION}
-    >
-      {body}
-    </ProfileSection>
+      )}
+    </LinkedAppRow>
   );
 }

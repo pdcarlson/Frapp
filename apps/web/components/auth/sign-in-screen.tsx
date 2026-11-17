@@ -389,9 +389,8 @@ export function SignInScreen() {
       fallback={
         <AuthScreen
           title={SIGN_IN_TITLE}
-          toggle={
-            <AuthModeToggle current="sign-in" redirectTo={resolveRedirectPath(null)} />
-          }
+          // Inert until the search params are known (#3797).
+          toggle={<AuthModeToggle current="sign-in" redirectTo={null} />}
           footer={<SignInFooterPending />}
         >
           <div role="status" aria-busy="true" aria-live="polite">

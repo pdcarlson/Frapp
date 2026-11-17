@@ -417,7 +417,7 @@ export class ChapterDocumentController {
   async updateFolder(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDocumentFolderDto,
   ) {
     return this.chapterDocumentService.updateFolder(id, chapterId, userId, {
@@ -435,7 +435,7 @@ export class ChapterDocumentController {
   async deleteFolder(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.chapterDocumentService.deleteFolder(id, chapterId, userId);
     return { success: true };
@@ -515,7 +515,7 @@ export class ChapterDocumentController {
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.chapterDocumentService.findById(id, chapterId, userId);
   }
@@ -526,7 +526,7 @@ export class ChapterDocumentController {
   async delete(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.chapterDocumentService.delete(id, chapterId, userId);
     return { success: true };

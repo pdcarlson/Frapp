@@ -121,6 +121,24 @@ describe("MessageActionsSheet — Flag (#3921)", () => {
     expect(onFlag).toHaveBeenCalledWith("m1", null);
   });
 
+  // #3909: nothing in the audit log takes a new flag; one already there can
+  // come off.
+  it("offers only the current flag, to take it off, in the audit log", () => {
+    const onFlag = vi.fn();
+    const tree = render(
+      { ...BASE, flag: { current: "important", removeOnly: true } },
+      onFlag,
+    );
+    const chips = flagChips(tree);
+    expect(chips.map((chip) => chip.props.accessibilityLabel)).toEqual([
+      "Important",
+    ]);
+
+    act(() => chips[0]!.props.onPress());
+
+    expect(onFlag).toHaveBeenCalledWith("m1", null);
+  });
+
   it("draws no Flag row where the viewer may not flag, or with no handler", () => {
     expect(flagChips(render(BASE, vi.fn()))).toHaveLength(0);
     expect(

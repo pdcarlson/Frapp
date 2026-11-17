@@ -7,7 +7,10 @@ import {
 import { scriptedChatCatchUp } from './scripted-chat-catch-up';
 import type { ScriptedReplies } from './scripted-language-model';
 import { scriptedMemberNudge } from './scripted-member-nudge';
-import { scriptedMinutesDraft } from './scripted-minutes-draft';
+import {
+  scriptedMinutesDraft,
+  scriptedMinutesNotes,
+} from './scripted-minutes-draft';
 
 /**
  * The canned replies the scripted adapter gives in the running app, by task.
@@ -29,5 +32,6 @@ export const SCRIPTED_REPLIES: ScriptedReplies = {
   'ask.answer': scriptedAskAnswer,
   'chat.catch-up': scriptedChatCatchUp,
   'minutes.draft': scriptedMinutesDraft,
+  'minutes.notes': scriptedMinutesNotes,
   'nudges.write': scriptedMemberNudge,
 };

@@ -79,6 +79,11 @@ export function messageFlagCaption(view: MessageFlagView): string {
  * send, not one of `UNFLAGGABLE_KINDS`), and either it has no flag yet or
  * they may change the one it has.
  *
+ * In the audit log (`inAuditLog`, #3909) nothing takes a new flag
+ * (`auditLogAllowsChange` in `@repo/validation`, which the API enforces), so
+ * the menu shows only on a line that already has one, a Frapp entry
+ * included, and offers only taking it off ({@link messageFlagOptions}).
+ *
  * A flag value a newer server added reads as no flag here (`normalizeRow`),
  * so this can offer the menu on such a row to someone the server then
  * refuses with a toast. Accepted: it needs a version skew, and refusing is
@@ -99,9 +104,13 @@ export function canFlagMessage(
   >,
   viewerId: string | null,
   canManageChannel: boolean,
+  inAuditLog = false,
 ): boolean {
   if (!viewerId || !canActOnMessage(message)) return false;
-  if (message.sender_blocked || UNFLAGGABLE_KINDS.has(message.kind)) {
+  if (inAuditLog) {
+    if (message.flag == null || message.sender_blocked) return false;
+    if (message.kind === "loading") return false;
+  } else if (message.sender_blocked || UNFLAGGABLE_KINDS.has(message.kind)) {
     return false;
   }
   return canChangeMessageFlag(
@@ -117,10 +126,12 @@ export function canFlagMessage(
 
 /**
  * Rows the menu is not offered on. A `loading` row is a placeholder, and a
- * `#chapter-audit` line is a log entry, not something said. An `imported`
- * Discord row is dropped by the Realtime channel handler, so a flag put on
- * one would reach nobody else's open timeline until a reload (#3921 review).
- * The server still accepts all three; this is the client's offer only.
+ * `system_audit` line is a notice from Frapp, not something said. An
+ * `imported` Discord row is dropped by the Realtime channel handler, so a
+ * flag put on one would reach nobody else's open timeline until a reload
+ * (#3921 review). This is the client's offer only: outside the audit log the
+ * server accepts a flag on any of them, and in the audit log it takes no new
+ * flag on any line.
  */
 const UNFLAGGABLE_KINDS: ReadonlySet<string> = new Set([
   "loading",
@@ -136,3 +147,13 @@ export const MESSAGE_FLAG_OPTIONS: ReadonlyArray<{
   flag,
   label: CHAT_MESSAGE_FLAG_LABELS[flag],
 }));
+
+/**
+ * The flags a row's menu offers to put on: every one, or none in the audit
+ * log (#3909), where the menu only takes a flag off.
+ */
+export function messageFlagOptions(
+  inAuditLog = false,
+): typeof MESSAGE_FLAG_OPTIONS {
+  return inAuditLog ? [] : MESSAGE_FLAG_OPTIONS;
+}

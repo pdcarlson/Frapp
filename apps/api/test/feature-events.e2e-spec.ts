@@ -84,7 +84,7 @@ describe('Feature events (e2e)', () => {
     capture.mockReset().mockResolvedValue(undefined);
     isAnalyticsOptedOut.mockReset().mockResolvedValue(false);
     updateStatus.mockReset().mockResolvedValue({
-      id: 'task-1',
+      id: '7c4f1f0e-3b2a-4c5d-9e8f-1a2b3c4d5e6f',
       status: 'COMPLETED',
     });
   });
@@ -94,7 +94,7 @@ describe('Feature events (e2e)', () => {
 
   const moveTask = () =>
     request(app.getHttpServer())
-      .patch('/v1/tasks/task-1/status')
+      .patch('/v1/tasks/7c4f1f0e-3b2a-4c5d-9e8f-1a2b3c4d5e6f/status')
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', CHAPTER_ID)
       .set('Origin', 'http://localhost:3000')

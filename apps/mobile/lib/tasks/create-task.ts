@@ -28,7 +28,12 @@ import {
  */
 
 import type { EditableCardTask, LiveTaskPhoto } from "@repo/hooks";
-import { TASK_SUBTASKS_MAX, type TaskProofKind } from "@repo/validation";
+import {
+  TASK_SUBTASKS_MAX,
+  taskWhoFields,
+  type TaskAudience,
+  type TaskProofKind,
+} from "@repo/validation";
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
 
 export interface NewTaskDraft {
@@ -202,7 +207,13 @@ export function parsePointReward(value: string): PointsParse {
 
 export interface ValidatedNewTask {
   title: string;
-  assignee_id: string;
+  /** Who it is for; absent on a task for everyone. */
+  assignee_id?: string;
+  /**
+   * A task for everyone (#4295 step 3): each active member gets their own
+   * copy. Set in place of `assignee_id` when the picker holds Everyone.
+   */
+  audience?: TaskAudience;
   due_date: string;
   /** The moment it is due, when the draft has a time. */
   due_at?: string;
@@ -246,7 +257,8 @@ export function validateNewTask(
 
   const body: ValidatedNewTask = {
     title,
-    assignee_id: draft.assigneeId,
+    // The picker holds a member's id or Everyone (`taskWhoFields`).
+    ...taskWhoFields(draft.assigneeId),
     due_date: draft.dueDate,
   };
   if (draft.dueTime) {
@@ -342,7 +354,7 @@ export function taskEditBody(
 ): TaskEditBody {
   const body: TaskEditBody = {};
   if (next.title !== task.title) body.title = next.title;
-  if (next.assignee_id !== task.assigneeId) {
+  if (next.assignee_id && next.assignee_id !== task.assigneeId) {
     body.assignee_id = next.assignee_id;
   }
   const dueAt = next.due_at ?? null;

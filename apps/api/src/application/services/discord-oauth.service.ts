@@ -80,13 +80,14 @@ const OAUTH_STATE_TTL_MS = 15 * 60_000;
 export const DEFAULT_RETURN_PATH = '/discord-import';
 
 /**
- * Where a member's link handshake returns (#2878): the Discord history section
- * of the web personal Settings page that started it, which confirms the parked
- * account from the member's own session. It was `/profile` until that section
- * moved (#3856). A handshake lives minutes, so one minted before the move and
- * finished after it lands on `/profile` unspent, and the member links again.
+ * Where a member's link handshake returns (#2878): the Linked apps section of
+ * the web personal Settings page that started it, which confirms the parked
+ * account from the member's own session. It was `/profile` until #3856, then
+ * `?section=discord` until Linked apps took the Discord row (#5407); the web
+ * still resolves `discord` to Linked apps, so a handshake minted before the
+ * move is spent where it lands.
  */
-export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=discord';
+export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=apps';
 
 /**
  * How long the browser has to activate what the callback parked.

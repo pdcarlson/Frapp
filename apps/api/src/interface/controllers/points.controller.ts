@@ -1,10 +1,11 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Query,
   Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -107,7 +108,7 @@ export class PointsController {
   @ApiOperation({ summary: 'Get point summary for a member' })
   async getMember(
     @CurrentChapterId() chapterId: string,
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Query() query: PointsWindowQueryDto,
   ) {
     const window: PointsWindow = query.window ?? 'all';

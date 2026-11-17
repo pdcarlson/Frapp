@@ -16,8 +16,8 @@ import {
 import { selectAllEventRows, type EventRow } from "@/lib/events/select";
 
 /**
- * Starting minutes on the phone: which meeting the +'s Record meeting and
- * New minutes start on (#5287; `spec/behavior/meetings.md` § Recording in the
+ * Starting minutes on the phone: which meeting the +'s New minutes starts
+ * on, for notes or a recording, (#5287; `spec/behavior/meetings.md` § Recording in the
  * app, § Writing minutes by hand), and the one start call they and the event
  * screen's Write minutes share. Every set of minutes belongs to an event
  * (#4935), one per event.
@@ -44,18 +44,15 @@ const RECENT_DAYS = 14;
 const MAX_OPTIONS = 6;
 
 export const MEETING_START_COPY = {
-  record: "Record meeting",
-  newHeading: "Start minutes",
+  record: "Record",
+  typeInstead: "Type notes instead",
+  forMeeting: "Meeting",
+  newHeading: "New minutes",
   change: "Change",
   pickHeading: "Which meeting?",
   onNow: "On now",
   newTitle: DEFAULT_MEETING_NAME,
   newDetail: "Not on the calendar · today, starting now",
-  rowOnNow: (name: string) => `${name} is on now`,
-  rowNew: "Starts a new meeting, today",
-  rowFinding: "Finding the meeting on now",
-  rowTaken: (name: string) =>
-    `${name} already has minutes. Open the event to take notes.`,
   takenNote: (name: string) =>
     `${name} already has minutes, so pick another meeting or take notes from the event.`,
   readFailed:
@@ -63,7 +60,7 @@ export const MEETING_START_COPY = {
   start: "Start minutes",
   yours: "Your draft",
   hasRecording: (name: string) =>
-    `${name} already has a recording. Its minutes are open: record again from there.`,
+    `${name} already has a recording, so its minutes are open as they are.`,
 } as const;
 
 /** The minutes this member could open as theirs, by event. */
@@ -189,14 +186,6 @@ export function choiceLabel(
         ? MEETING_START_COPY.onNow
         : meetingWhenLabel(choice.event.start_time, now),
   };
-}
-
-/** What the Record meeting row says about the meeting it will use. */
-export function recordRowDetail(choices: MeetingChoices): string {
-  if (choices.taken) return MEETING_START_COPY.rowTaken(choices.taken.name);
-  return choices.picked?.kind === "event"
-    ? MEETING_START_COPY.rowOnNow(choices.picked.event.name)
-    : MEETING_START_COPY.rowNew;
 }
 
 /** A start that didn't happen, with the line to show. */

@@ -9,6 +9,8 @@ import { codeOf, statusOf } from "@repo/api-sdk";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_SUGGESTION_COPY,
+  TASK_AUDIENCE_COPY,
+  TASK_AUDIENCE_EVERYONE,
   TASK_PHOTOS_MAX,
   TASK_PROOF_KIND_HINTS,
   TASK_PROOF_KIND_LABELS,
@@ -191,6 +193,12 @@ export interface NewTaskSheetProps {
    * (`key` on its id).
    */
   suggestion?: TaskSuggestionSeed;
+  /**
+   * Offer Everyone first in Assign to (#4295 step 3): each active member
+   * gets their own copy. For a new task or a suggestion only; a chat's +
+   * posts one card for one member, and an edit keeps its one member.
+   */
+  offerEveryone?: boolean;
   /** Fired when the sheet has closed, however it closed. */
   onClosed?: () => void;
   /**
@@ -343,6 +351,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       onClosed,
       suggestion,
       keptDraft,
+      offerEveryone = false,
     },
     ref,
   ) {
@@ -529,8 +538,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // officer picks: defaulting it to them would be a guess.
     const effectiveAssigneeId =
       assigneeId ?? (suggestion ? null : viewerUserId);
+    // A task for everyone can't carry photos yet (#4295 step 3), so the
+    // photo picker steps aside and none are sent; proof still applies.
+    const forEveryone =
+      offerEveryone && effectiveAssigneeId === TASK_AUDIENCE_EVERYONE;
     const assignee = roster.find((row) => row.userId === effectiveAssigneeId);
-    const assigneeName = assignee?.name ?? null;
+    const assigneeName = forEveryone
+      ? TASK_AUDIENCE_COPY.everyone
+      : (assignee?.name ?? null);
     const assigneeIsViewer =
       effectiveAssigneeId !== null && effectiveAssigneeId === viewerUserId;
     /**
@@ -542,14 +557,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
      * task to themselves — and the post-create confirmation, which compares ids,
      * would then contradict the field.
      */
-    const assigneeLabel = assigneeIsViewer
-      ? (assigneeName ?? "You")
-      : (assigneeName ??
-        (effectiveAssigneeId
-          ? memberFallbackLabel(effectiveAssigneeId)
-          : suggestion
-            ? AI_SUGGESTION_COPY.who
-            : "Member"));
+    const assigneeLabel = forEveryone
+      ? TASK_AUDIENCE_COPY.everyone
+      : assigneeIsViewer
+        ? (assigneeName ?? "You")
+        : (assigneeName ??
+          (effectiveAssigneeId
+            ? memberFallbackLabel(effectiveAssigneeId)
+            : suggestion
+              ? AI_SUGGESTION_COPY.who
+              : "Member"));
 
     // See the header: a relative chip re-reads today, a held date stays put.
     //
@@ -778,8 +795,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           });
           return;
         }
+        // A chat card is for one member; this route never offers Everyone.
+        const { assignee_id } = body;
+        if (!assignee_id) {
+          handlers.onError(new Error("A chat task needs one member."));
+          return;
+        }
         setPosting(true);
-        void postToChannel(body)
+        void postToChannel({ ...body, assignee_id })
           .catch((cause: unknown): DispatchResult => ({
             ok: false,
             error: "Couldn't create task",
@@ -836,7 +859,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           // A sheet closed and reopened since is the member's new visit, and
           // the create doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
-          onCreated?.(assigneeName, wasSelf);
+          // "Assigned to everyone." for a task for everyone.
+          onCreated?.(forEveryone ? "everyone" : assigneeName, wasSelf);
           if (posted) onPosted?.(posted);
         },
         onError: (error: unknown) => {
@@ -868,6 +892,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           setSubmitFailed(true);
         },
       };
+      // A task for everyone sends no photos, even ones picked before
+      // Everyone was chosen.
+      if (forEveryone) {
+        dispatchBody(body, sentFrom, handlers);
+        return;
+      }
       // Photos already up (or none picked) send in this tap; any still on
       // the device go up first.
       const uploaded = pickedPhotos.flatMap((photo) =>
@@ -889,6 +919,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       body,
       canSubmit,
       visit,
+      forEveryone,
       pickedPhotos,
       attachPhotos,
       uploadPicked,
@@ -1036,27 +1067,31 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 <View style={styles.group}>
                   <Text style={styles.groupLabel}>Photos</Text>
                   <Text style={styles.note}>
-                    What the job looks like (optional, up to {TASK_PHOTOS_MAX}).
+                    {forEveryone
+                      ? TASK_AUDIENCE_COPY.noPhotos
+                      : `What the job looks like (optional, up to ${TASK_PHOTOS_MAX}).`}
                   </Text>
-                  <TaskPhotoPicker
-                    taskId={editing?.id}
-                    kept={keptPhotos}
-                    picked={pickedPhotos.map(({ image }) => image)}
-                    onRemoveKept={(photoId) =>
-                      setKeptPhotos((current) =>
-                        current.filter((photo) => photo.id !== photoId),
-                      )
-                    }
-                    onRemovePicked={(index) =>
-                      setPickedPhotos((current) =>
-                        current.filter((_, i) => i !== index),
-                      )
-                    }
-                    onAdd={() => void addPhotos()}
-                    disabled={pending}
-                    adding={addingPhotos}
-                  />
-                  {photoProblem ? (
+                  {forEveryone ? null : (
+                    <TaskPhotoPicker
+                      taskId={editing?.id}
+                      kept={keptPhotos}
+                      picked={pickedPhotos.map(({ image }) => image)}
+                      onRemoveKept={(photoId) =>
+                        setKeptPhotos((current) =>
+                          current.filter((photo) => photo.id !== photoId),
+                        )
+                      }
+                      onRemovePicked={(index) =>
+                        setPickedPhotos((current) =>
+                          current.filter((_, i) => i !== index),
+                        )
+                      }
+                      onAdd={() => void addPhotos()}
+                      disabled={pending}
+                      adding={addingPhotos}
+                    />
+                  )}
+                  {photoProblem && !forEveryone ? (
                     <Text style={styles.error}>{photoProblem}</Text>
                   ) : null}
                 </View>
@@ -1102,6 +1137,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               </Text>
               <Text style={styles.assigneeHint}>assignee</Text>
             </Pressable>
+
+            {forEveryone ? (
+              <Text style={styles.note}>
+                {TASK_AUDIENCE_COPY.everyoneHint(null)}
+              </Text>
+            ) : null}
 
             {restarts ? (
               <Text style={styles.note}>
@@ -1205,6 +1246,28 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                   autoCorrect={false}
                   style={styles.field}
                 />
+                {offerEveryone && search.trim().length === 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: forEveryone }}
+                    accessibilityHint={TASK_AUDIENCE_COPY.everyoneHint(null)}
+                    onPress={() => {
+                      setAssigneeId(TASK_AUDIENCE_EVERYONE);
+                      setSearch("");
+                      pickerRef.current?.dismiss();
+                    }}
+                    style={styles.pickerRow}
+                  >
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {initialsFor(TASK_AUDIENCE_COPY.everyone)}
+                      </Text>
+                    </View>
+                    <Text style={styles.fieldValue} numberOfLines={1}>
+                      {TASK_AUDIENCE_COPY.everyone}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             }
             ListEmptyComponent={

@@ -38,7 +38,9 @@ describe("mobile observability wiring", () => {
       "components/ask/ask-turn.tsx",
       "components/ask/ask-proposal.tsx",
       "lib/ask/source-route.ts",
-      "components/minutes/notes-draft-sheet.tsx",
+      "components/minutes/notes-panel.tsx",
+      "components/minutes/transcript-lines.tsx",
+      "lib/minutes/playback/use-playback.ts",
     ]) {
       const text = source(file);
       expect(text).not.toMatch(/posthog/i);

@@ -993,9 +993,10 @@ describe('PollService', () => {
 
     it('tallies a poll whose id reaches the route in non-canonical case', async () => {
       // Regression: the tally is keyed on the id the database returned, never
-      // on the route parameter. `polls/:messageId` has no `ParseUUIDPipe`, and
-      // Postgres compares `uuid` case-insensitively while PostgREST renders it
-      // canonically lower-case — so an upper-case id matches the row in
+      // on the route parameter. `ParseUUIDPipe` on `polls/:messageId` accepts
+      // any case and passes the raw string through, and Postgres compares
+      // `uuid` case-insensitively while PostgREST renders it canonically
+      // lower-case — so an upper-case id matches the row in
       // `findById` and matches the votes in the RPC, then arrives back
       // lower-cased. Comparing it to the raw parameter dropped every row and
       // rendered a real poll as every option at zero.

@@ -553,6 +553,8 @@ export interface MessageTimelineProps {
   /** "Remind me about this" (#4957); see `MessageItemProps`. */
   onRemind?: (messageId: string, remindAt: Date) => void;
   canManageChannel?: boolean;
+  /** The channel is the audit log (#3909); see `MessageItemProps`. */
+  inAuditLog?: boolean;
   /** A row's Report and Block (#2687); see `MessageItemProps`. */
   onReport?: (message: ChatMessage) => void;
   onBlock?: (message: ChatMessage) => void;
@@ -651,6 +653,7 @@ export const MessageTimeline = forwardRef<
     onToggleBookmark,
     onRemind,
     canManageChannel,
+    inAuditLog,
     onReport,
     onBlock,
     onForward,
@@ -1424,6 +1427,7 @@ export const MessageTimeline = forwardRef<
                   onToggleBookmark={onToggleBookmark}
                   onRemind={onRemind}
                   canManageChannel={canManageChannel}
+                  inAuditLog={inAuditLog}
                   onReport={onReport}
                   onBlock={onBlock}
                   onForward={onForward}

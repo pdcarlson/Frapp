@@ -3,7 +3,8 @@
  *
  * These are the C1–C3 consolidations: identical `toLocaleString` /
  * `toLocaleDateString` wrappers that differed only in input-guard width.
- * They assume the input is already a parseable instant (ISO timestamp).
+ * Each takes an ISO timestamp or a `Date` (the instant it is, #4976) and
+ * treats anything else, an `Invalid Date` included, as missing.
  *
  * Do **not** fold the protected clusters into these:
  * - stopwatch padding (`formatPaddedStopwatch` / `formatTimer`)
@@ -19,7 +20,7 @@
  * generics for those behaviors.
  */
 
-import { parseInstant } from "./instant";
+import { readInstant } from "./instant";
 
 /**
  * Full locale datetime, or `"—"` when the value is missing / unparseable.
@@ -27,7 +28,7 @@ import { parseInstant } from "./instant";
  * Widest input guard of the nine web copies this replaced (`unknown`).
  */
 export function formatLocaleDateTime(value: unknown): string {
-  const parsed = parseInstant(value);
+  const parsed = readInstant(value);
   return parsed ? parsed.toLocaleString() : "—";
 }
 
@@ -39,7 +40,7 @@ export function formatLocaleDateTime(value: unknown): string {
  * `parseBareDateLocalMidnight` for those.
  */
 export function formatLocaleDate(value: unknown): string {
-  const parsed = parseInstant(value);
+  const parsed = readInstant(value);
   return parsed ? parsed.toLocaleDateString() : "—";
 }
 
@@ -53,7 +54,7 @@ export function formatLocaleDate(value: unknown): string {
  * and a missing timestamp should not paint an em dash.
  */
 export function formatClock(value: unknown): string {
-  const parsed = parseInstant(value);
+  const parsed = readInstant(value);
   if (!parsed) return "";
   return parsed.toLocaleString(undefined, {
     hour: "numeric",
@@ -97,6 +98,7 @@ function clockParts(at: Date): Intl.DateTimeFormatPart[] {
 
 /**
  * Chat's time of day, `"5:09 PM"` (locale-dependent), or `""` when missing.
+ * Takes an ISO timestamp or a `Date` (#4976).
  *
  * What a run's author line prints, on web and mobile alike. It carries no date
  * on purpose: in the compact chat layout the date lives only in the day
@@ -105,7 +107,7 @@ function clockParts(at: Date): Intl.DateTimeFormatPart[] {
  * removed.
  */
 export function formatTimeOfDay(value: unknown): string {
-  const parsed = parseInstant(value);
+  const parsed = readInstant(value);
   if (!parsed) return "";
   // `Intl` separates the day period with a narrow no-break space (U+202F);
   // `Date#toLocaleTimeString`, which this used to call, prints a plain one in
@@ -133,9 +135,9 @@ function dayPeriodOf(at: Date): string | undefined {
  * the short form.
  */
 export function formatTimeOfDayShort(value: unknown, since?: unknown): string {
-  const parsed = parseInstant(value);
+  const parsed = readInstant(value);
   if (!parsed) return "";
-  const anchor = parseInstant(since);
+  const anchor = readInstant(since);
   if (anchor && dayPeriodOf(anchor) !== dayPeriodOf(parsed)) {
     return formatTimeOfDay(value);
   }

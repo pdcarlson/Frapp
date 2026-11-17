@@ -16,7 +16,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-import { Type } from 'class-transformer';
+import { MaxJsonLength } from '../decorators/max-json-length.decorator';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHANNEL_ACCESS_ENTRY_PATTERN,
@@ -31,6 +32,16 @@ import {
   type ChatMessageFlag,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+import {
+  CHAT_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_FORM_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_MESSAGE_METADATA_MAX_CHARS,
+  MAX_GROUP_DM_MEMBERS,
+} from '#domain/constants/chat';
+import {
+  MESSAGE_ACTION_PAYLOAD_MAX_CHARS,
+  MESSAGE_ACTION_TYPE_PATTERN,
+} from '#domain/utils/message-action-types';
 import { MAX_GIF_EDGE } from '#domain/adapters/gif-search.interface';
 import {
   CHAT_MESSAGE_KINDS,
@@ -275,8 +286,24 @@ export class UpdateChannelDto {
   activity_excluded?: boolean;
 }
 
+/**
+ * A user id as the API compares it: lowercased, since Postgres answers with
+ * lowercase UUIDs and a DM's members are compared and counted as strings
+ * (`ChatService.getOrCreateDm` / `createGroupDm` lowercase them again).
+ */
+function lowercased({ value }: { value: unknown }): unknown {
+  if (typeof value === 'string') return value.toLowerCase();
+  if (Array.isArray(value)) {
+    return value.map((entry: unknown) =>
+      typeof entry === 'string' ? entry.toLowerCase() : entry,
+    );
+  }
+  return value;
+}
+
 export class CreateDmDto {
   @ApiProperty({ description: 'The other member user ID' })
+  @Transform(lowercased)
   @IsUUID()
   member_id: string;
 }
@@ -323,8 +350,21 @@ export class ChannelMemberDto {
 }
 
 export class CreateGroupDmDto {
-  @ApiProperty({ type: [String] })
+  /**
+   * The other people in the group, each a member of the caller's chapter
+   * (404 otherwise). The caller is added and may be left out; a group DM
+   * holds up to {@link MAX_GROUP_DM_MEMBERS} people, the caller included.
+   */
+  @ApiProperty({
+    type: [String],
+    maxItems: MAX_GROUP_DM_MEMBERS - 1,
+    description: `The other members of the chapter to add, at most ${MAX_GROUP_DM_MEMBERS - 1}: a group DM holds up to ${MAX_GROUP_DM_MEMBERS} people, you included.`,
+  })
+  @Transform(lowercased)
   @IsArray()
+  @ArrayMaxSize(MAX_GROUP_DM_MEMBERS - 1, {
+    message: `A group DM holds up to ${MAX_GROUP_DM_MEMBERS} people, you included`,
+  })
   @IsUUID(undefined, { each: true })
   member_ids: string[];
 
@@ -616,8 +656,17 @@ export class SendMessageDto {
   @Type(() => MessageGifDto)
   gif?: MessageGifDto;
 
-  /** Inline card payload for rich kinds (event, poll, task, …). */
-  @ApiPropertyOptional({ type: Object })
+  /**
+   * Inline card payload for rich kinds (poll, sign-up, form, announcement, …).
+   * Checked on send by `ChatService.sendMessage`: a poll, sign-up, form or
+   * role picker card is rebuilt from its known fields, and once checked a
+   * card holds at most {@link CHAT_CARD_PAYLOAD_MAX_CHARS} characters as
+   * JSON, or {@link CHAT_FORM_CARD_PAYLOAD_MAX_CHARS} for a form.
+   */
+  @ApiPropertyOptional({
+    type: Object,
+    description: `A rich card's data. Once checked, at most ${CHAT_CARD_PAYLOAD_MAX_CHARS} characters as JSON, or ${CHAT_FORM_CARD_PAYLOAD_MAX_CHARS} for a form.`,
+  })
   @IsOptional()
   @IsObject()
   payload?: Record<string, any>;
@@ -639,16 +688,22 @@ export class SendMessageDto {
   thread_root_id?: string;
 
   /**
-   * Free-form client annotations, persisted verbatim onto the message row.
-   * `@IsObject` is the type check `payload` above already carries — without it
-   * this was the one request-DTO property in the API with a gate but no
-   * constraint, so a caller could store a bare string or array in a column the
-   * readers treat as an object. Overall size stays bounded by the body parser's
-   * default 100 kB JSON limit.
+   * Free-form client annotations, persisted onto the message row (less the
+   * keys only the server writes). `@IsObject` is the type check `payload`
+   * above already carries — without it this was the one request-DTO property
+   * in the API with a gate but no constraint, so a caller could store a bare
+   * string or array in a column the readers treat as an object. Capped at
+   * {@link CHAT_MESSAGE_METADATA_MAX_CHARS} characters as JSON: every reader
+   * of the channel downloads it, and the body parser's limit (1 MB on this
+   * route) is no bound for that. No app sends any today.
    */
-  @ApiPropertyOptional({ type: Object })
+  @ApiPropertyOptional({
+    type: Object,
+    description: `Client annotations, at most ${CHAT_MESSAGE_METADATA_MAX_CHARS} characters as JSON.`,
+  })
   @IsOptional()
   @IsObject()
+  @MaxJsonLength(CHAT_MESSAGE_METADATA_MAX_CHARS)
   metadata?: Record<string, any>;
 
   /**
@@ -710,24 +765,38 @@ export class ForwardMessageDto {
 }
 
 /**
- * Per-user reaction / vote / RSVP / card-action. Writes to
- * `chat_message_actions` (Chunk 02). For `action_type === "vote"` the
- * server UPSERTS — same row, replaced `payload` — so a poll vote can
- * be changed without thrashing the Realtime subscription.
+ * Per-user reaction / vote / sign-up claim. Writes to `chat_message_actions`
+ * (Chunk 02). For `action_type === "vote"` the server UPSERTS — same row,
+ * replaced `payload` — so a poll vote can be changed without thrashing the
+ * Realtime subscription.
+ *
+ * `action_type` is one of the three the apps send
+ * (`MESSAGE_ACTION_TYPE_PATTERN`); it was free-form, and every reader of the
+ * channel loads every row with the message.
  */
 export class ChatMessageActionDto {
   @ApiProperty({
     description:
-      'Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions.',
+      'Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400.',
+    // No `pattern` in the schema: the shipped-build contract check reads a
+    // new one as a break, though every shipped app sends only these three.
+    maxLength: 50,
   })
   @IsString()
   @MinLength(1)
   @MaxLength(50)
+  @Matches(MESSAGE_ACTION_TYPE_PATTERN, {
+    message: 'action_type must be vote, signup, or reaction:<emoji>',
+  })
   action_type: string;
 
-  @ApiPropertyOptional({ type: Object })
+  @ApiPropertyOptional({
+    type: Object,
+    description: `The vote or claim (\`{ option_id }\` or \`{ slot_ids, note? }\`), at most ${MESSAGE_ACTION_PAYLOAD_MAX_CHARS} characters as JSON. A reaction carries none and any sent is not stored.`,
+  })
   @IsOptional()
   @IsObject()
+  @MaxJsonLength(MESSAGE_ACTION_PAYLOAD_MAX_CHARS)
   payload?: Record<string, any>;
 }
 

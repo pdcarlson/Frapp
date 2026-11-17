@@ -1,5 +1,6 @@
 import type { MeetingDraftOutput } from '@repo/validation';
 import { sourcesInPrompt } from '#domain/utils/minutes-draft';
+import type { ReviewedMinutes } from '#domain/utils/minutes-draft-review';
 import type { ScriptedHandler } from './scripted-language-model';
 
 /**
@@ -20,6 +21,10 @@ import type { ScriptedHandler } from './scripted-language-model';
  */
 export const scriptedMinutesDraft: ScriptedHandler = (request) => {
   const prompt = request.messages.at(-1)?.content ?? '';
+  if (prompt.includes(REVIEW_MARK)) {
+    const reviewed = scriptedReview(prompt);
+    return { text: JSON.stringify(reviewed), object: reviewed };
+  }
   const draft = draftFrom(sourcesInPrompt(prompt), rosterNamesIn(prompt));
   return { text: JSON.stringify(draft), object: draft };
 };
@@ -278,3 +283,92 @@ function short(text: string): string {
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
+
+/** The review pass's candidate list opens with this line (`minutes-draft-review.ts`). */
+const REVIEW_MARK =
+  'Candidates (D = decision, A = action item), in meeting order:';
+
+/**
+ * The review pass, scripted: every candidate kept as the first pass wrote
+ * it, with its vote and owner, and each section the parts' own lines joined.
+ * Enough to walk the flow locally; it merges and drops nothing.
+ */
+export function scriptedReview(prompt: string): ReviewedMinutes {
+  const decisions: ReviewedMinutes['decisions'] = [];
+  const actionItems: ReviewedMinutes['action_items'] = [];
+  for (const match of prompt.matchAll(/^([DA]\d+) \(part \d+\) (.*)$/gm)) {
+    const [, id, rest] = match;
+    const text = rest.replace(/\s*\[[^\]]*\]/g, '').trim();
+    if (id.startsWith('D')) {
+      const vote = /\[vote (\d+)-(\d+)-(\d+)\]/.exec(rest);
+      decisions.push({
+        from: [id],
+        text,
+        vote: vote
+          ? { for: +vote[1], against: +vote[2], abstain: +vote[3] }
+          : null,
+      });
+    } else {
+      const owner = /\[owner: ([^\]]+)\]/.exec(rest);
+      const due = /\[due (\d{4}-\d{2}-\d{2})\]/.exec(rest);
+      actionItems.push({
+        from: [id],
+        text,
+        owner: owner ? owner[1] : null,
+        due_date: due ? due[1] : null,
+      });
+    }
+  }
+  const accounts = prompt.slice(prompt.indexOf('What each part covered:'));
+  const section = (key: string) =>
+    [
+      ...accounts.matchAll(
+        new RegExp(
+          `(?:^|\\n)${key}:\\n([\\s\\S]*?)(?=\\n[a-z_]+:\\n|\\nPart \\d+ of|(?![\\s\\S]))`,
+          'g',
+        ),
+      ),
+    ]
+      .map((m) => m[1].trim())
+      .filter(Boolean)
+      .join('\n');
+  return {
+    decisions,
+    action_items: actionItems,
+    summary: section('summary').replace(/\n/g, ' '),
+    announcements: section('announcements'),
+    officer_reports: section('officer_reports'),
+    old_business: section('old_business'),
+    new_business: section('new_business'),
+    discussion_log: section('discussion_log'),
+    open_questions: section('open_questions').split('\n').filter(Boolean),
+  };
+}
+
+/**
+ * The scripted reply for `minutes.notes` (#5410): each source's own lines as
+ * points under one topic, so the notes outline can be walked locally with
+ * no key. Like the draft's script, it is not a model and proves nothing
+ * about one.
+ */
+export const scriptedMinutesNotes: ScriptedHandler = (request) => {
+  const prompt = request.messages.at(-1)?.content ?? '';
+  const sources = sourcesInPrompt(prompt);
+  const topics = sources
+    .map((source) => ({
+      title:
+        source.kind === 'recording' ? 'From the recording' : 'From the notes',
+      points: source.text
+        .split('\n')
+        .map((line) => line.trim().replace(/^[-*•]\s+/, ''))
+        .filter((line) => line.length > 0)
+        .slice(0, 40)
+        .map((text) => ({ text, details: [] as string[] })),
+    }))
+    .filter((topic) => topic.points.length > 0);
+  const notes = {
+    summary: topics[0]?.points[0]?.text ?? '',
+    topics,
+  };
+  return { text: JSON.stringify(notes), object: notes };
+};

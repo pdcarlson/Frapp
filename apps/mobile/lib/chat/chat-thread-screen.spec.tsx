@@ -3132,7 +3132,10 @@ describe("chat thread flags from the actions sheet", () => {
     const tree = render();
     const sheet = openSheetOn(tree);
 
-    expect(sheet.props.target.flag).toEqual({ current: null });
+    expect(sheet.props.target.flag).toEqual({
+      current: null,
+      removeOnly: false,
+    });
     act(() =>
       (sheet.props.onFlag as (id: string, f: string | null) => void)(
         "m1",
@@ -3157,6 +3160,7 @@ describe("chat thread flags from the actions sheet", () => {
     tree = render();
     expect(openSheetOn(tree).props.target.flag).toEqual({
       current: "important",
+      removeOnly: false,
     });
     act(() => tree.unmount());
   });

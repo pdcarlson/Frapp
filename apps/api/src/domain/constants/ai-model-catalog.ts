@@ -72,6 +72,18 @@ export type AiTokenCatalogEntry =
 
 export type AiCatalogEntry = AiTokenCatalogEntry | TranscriptionCatalogEntry;
 
+/**
+ * The strongest model, for work where a weaker answer costs the chapter
+ * more than the tokens do: the minutes (Paul, 2026-11-17: "I would rather
+ * do a good job first and figure out how to optimize tokens later").
+ */
+const CLAUDE_OPUS = {
+  provider: 'anthropic',
+  model: 'claude-opus-5-5',
+  inputUsdPerMillionTokens: 4,
+  outputUsdPerMillionTokens: 20,
+} as const;
+
 const CLAUDE_SONNET = {
   provider: 'anthropic',
   model: 'claude-sonnet-5-5',
@@ -82,11 +94,24 @@ const CLAUDE_SONNET = {
 export const AI_MODEL_CATALOG = {
   /** An officer's notes in, minutes in the chapter's template out (#4312). */
   'minutes.draft': {
-    ...CLAUDE_SONNET,
+    ...CLAUDE_OPUS,
     family: 'meetings',
     kind: 'structured',
-    maxOutputTokens: 16_000,
-    effort: 'medium',
+    maxOutputTokens: 32_000,
+    effort: 'high',
+  },
+  /**
+   * The meeting written up as notes, topic by topic, from every source read
+   * whole (#5410, `minutes-notes.ts`). Its own pass, beside the draft's
+   * extraction, so the notes are written by something whose only job is
+   * the notes.
+   */
+  'minutes.notes': {
+    ...CLAUDE_OPUS,
+    family: 'meetings',
+    kind: 'structured',
+    maxOutputTokens: 32_000,
+    effort: 'high',
   },
   /**
    * Tasks proposed from a minutes draft, each with the line it came from.

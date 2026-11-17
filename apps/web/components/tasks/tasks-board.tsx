@@ -6,9 +6,11 @@ import {
   Camera,
   CheckCircle2,
   Link2,
+  ChevronDown,
   Pencil,
   Trash2,
   Undo2,
+  Users,
 } from "lucide-react";
 import {
   isFirstAiReadInFlight,
@@ -49,6 +51,7 @@ import {
   nextUpLine,
 } from "@repo/formatting";
 import {
+  TASK_AUDIENCE_COPY,
   TASK_SERIES_SCOPE_COPY,
   can,
   taskNeedsSignOff,
@@ -142,6 +145,27 @@ type Task = {
   created_at: string;
   /** How it repeats, on a copy of a repeating task (#5119). */
   series?: TaskSeriesLine | null;
+  /** The task for everyone this is one member's copy of (#4295 step 3). */
+  group_id?: string | null;
+  /** A task for everyone's progress over all its copies, as the API counts it. */
+  group?: { total: number; done: number } | null;
+};
+
+/**
+ * A task for everyone on the chapter's status board (#4295 step 3): its
+ * copies still to finish drawn as one tile, "14 of 20 done", the way Google
+ * Classroom shows one assignment with its turned-in count rather than a row
+ * per student. A copy marked done leaves it for Waiting on an officer, where
+ * it is confirmed like any task.
+ */
+type GroupTileData = {
+  id: string;
+  /** One open copy, read for what every copy shares. */
+  sample: Task;
+  /** The copies still to finish, soonest due first. */
+  open: Task[];
+  total: number;
+  done: number;
 };
 
 /*
@@ -187,7 +211,14 @@ type TaskGroup = {
   label: string;
   empty: string;
   tasks: Task[];
+  /** Tasks for everyone drawn in this lane, ahead of its tasks. */
+  groupTiles?: GroupTileData[];
 };
+
+/** Not marked done yet: what a group tile still counts as open. */
+function isOpenStatus(status: TaskStatus): boolean {
+  return status !== "COMPLETED";
+}
 
 /**
  * Whose tasks the page shows (#4295 step 5). A member's read holds only their
@@ -487,19 +518,69 @@ export function TasksBoard() {
     } else {
       // The four status lanes. A Status filter keeps its own lane alone (or
       // none, for Confirmed, which lives under the lanes).
+      // A task for everyone's open copies fold into one tile (#4295 step 3),
+      // in Overdue once any copy is, otherwise in To do, where it was made.
+      // A filter shows copies one by one, since it asks about members.
+      const tiles = new Map<string, GroupTileData>();
+      if (!filtering) {
+        for (const task of tasks) {
+          if (!task.group_id) continue;
+          const tile = tiles.get(task.group_id) ?? {
+            id: task.group_id,
+            sample: task,
+            open: [],
+            total: 0,
+            done: 0,
+          };
+          tile.total += 1;
+          if (isOpenStatus(task.status)) tile.open.push(task);
+          else tile.done += 1;
+          tiles.set(task.group_id, tile);
+        }
+      }
+      const folded = (task: Task) =>
+        !!task.group_id &&
+        isOpenStatus(task.status) &&
+        tiles.has(task.group_id);
+      const openTiles = [...tiles.values()].filter(
+        (tile) => tile.open.length > 0,
+      );
+      for (const tile of openTiles) {
+        tile.open.sort(compareTasksByDue);
+        tile.sample = tile.open[0]!;
+        // The API's count covers every copy, loaded on this page or not.
+        if (tile.sample.group) {
+          tile.total = tile.sample.group.total;
+          tile.done = tile.sample.group.done;
+        }
+      }
+      const overdueTile = (tile: GroupTileData) =>
+        tile.open.some((task) => task.status === "OVERDUE");
       drawn = COLUMNS.filter(
         (column) => statusFilter === null || column.status === statusFilter,
       ).map((column) => ({
         id: column.status.toLowerCase(),
         label: column.label,
         empty: column.empty,
-        tasks: live.filter((task) => task.status === column.status),
+        tasks: live.filter(
+          (task) => task.status === column.status && !folded(task),
+        ),
+        groupTiles:
+          column.status === "TODO"
+            ? openTiles.filter((tile) => !overdueTile(tile))
+            : column.status === "OVERDUE"
+              ? openTiles.filter(overdueTile)
+              : [],
       }));
     }
-    for (const group of drawn) group.tasks.sort(compareTasksByDue);
+    for (const group of drawn) {
+      group.tasks.sort(compareTasksByDue);
+      group.groupTiles?.sort((a, b) => compareTasksByDue(a.sample, b.sample));
+    }
     return { groups: drawn, confirmed: recent, shown: pool.length };
   }, [
     tasks,
+    filtering,
     view,
     groupBy,
     assigneeFilter,
@@ -626,6 +707,19 @@ export function TasksBoard() {
     });
   }
 
+  /** Delete everyone's copy of a task for everyone (#4295 step 3). */
+  async function removeGroup(tile: GroupTileData) {
+    const confirmed = await confirm({
+      title: `Delete "${tile.sample.title}" for everyone?`,
+      description:
+        "Every member's copy goes, including ones already marked done. This can't be undone.",
+      confirmLabel: "Delete for everyone",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
+    await deleteConfirmed(tile.sample, "group");
+  }
+
   async function removeTask(task: Task) {
     // A copy of a live series asks which, as the event editors do (#5119):
     // this copy, or stop the repeat (its open copy goes only if untouched).
@@ -655,18 +749,23 @@ export function TasksBoard() {
   async function deleteConfirmed(task: Task, scope: TaskEditScope) {
     try {
       await deleteTask.mutateAsync(
-        scope === "series" ? { id: task.id, scope } : task.id,
+        scope === "instance" ? task.id : { id: task.id, scope },
       );
       toast(
-        scope === "series"
+        scope === "group"
           ? {
-              title: "Stopped repeating",
-              description: `${task.title} won't repeat. Tasks already done or overdue stay.`,
-            }
-          : {
               title: "Task deleted",
-              description: `${task.title} was removed.`,
-            },
+              description: `${task.title} was removed for everyone.`,
+            }
+          : scope === "series"
+            ? {
+                title: "Stopped repeating",
+                description: `${task.title} won't repeat. Tasks already done or overdue stay.`,
+              }
+            : {
+                title: "Task deleted",
+                description: `${task.title} was removed.`,
+              },
       );
     } catch (error) {
       toastFailure({
@@ -928,12 +1027,37 @@ export function TasksBoard() {
                     aria-labelledby={labelId}
                     className="min-w-0 space-y-3"
                   >
-                    <SectionLabel id={labelId} count={group.tasks.length}>
+                    <SectionLabel
+                      id={labelId}
+                      count={
+                        group.tasks.length + (group.groupTiles?.length ?? 0)
+                      }
+                    >
                       {group.label}
                     </SectionLabel>
                     {headsTodo ? addRow : null}
+                    {group.groupTiles && group.groupTiles.length > 0 ? (
+                      <ul className={taskListClassName(layout)}>
+                        {group.groupTiles.map((tile) => (
+                          <GroupTaskCard
+                            key={tile.id}
+                            layout={layout}
+                            tile={tile}
+                            nameOf={(id) =>
+                              id === myUserId
+                                ? "You"
+                                : (membersByUserId.get(id) ??
+                                  memberFallbackLabel(id))
+                            }
+                            gate={gate}
+                            onDelete={() => void removeGroup(tile)}
+                          />
+                        ))}
+                      </ul>
+                    ) : null}
                     {group.tasks.length === 0 ? (
-                      headsTodo && canManage ? null : (
+                      (group.groupTiles?.length ?? 0) > 0 ||
+                      (headsTodo && canManage) ? null : (
                         <p className="text-sm text-muted-foreground">
                           {group.empty}
                         </p>
@@ -1202,18 +1326,7 @@ function TaskCard({
         {task.point_reward ? (
           <Badge className="ml-1">{formatPointsChip(task.point_reward)}</Badge>
         ) : null}
-        {task.proof_kind &&
-        task.proof_kind !== "none" &&
-        status !== "COMPLETED" ? (
-          <Badge variant="outline" className="ml-1 gap-1">
-            {task.proof_kind === "photo" ? (
-              <Camera className="h-3 w-3" aria-hidden="true" />
-            ) : (
-              <Link2 className="h-3 w-3" aria-hidden="true" />
-            )}
-            {task.proof_kind === "photo" ? "Photo required" : "Link required"}
-          </Badge>
-        ) : null}
+        {status !== "COMPLETED" ? <ProofBadge kind={task.proof_kind} /> : null}
         {showStatus && !sentBack && status === "IN_PROGRESS" ? (
           <Badge variant="outline" className="ml-1">
             {TASK_STATUS_LABELS.IN_PROGRESS}
@@ -1423,5 +1536,211 @@ function TaskCard({
         ) : null}
       </Can>
     </li>
+  );
+}
+
+/**
+ * A task for everyone on the chapter's board (#4295 step 3): one tile for
+ * its copies still to finish, with how many are done, the way Google
+ * Classroom lists an assignment with its turned-in count. "Who's left"
+ * opens the members still to finish and where each stands. Edit and Delete
+ * act on everyone's copy; a member's own copy is changed from By person.
+ */
+function GroupTaskCard({
+  layout,
+  tile,
+  nameOf,
+  gate,
+  onDelete,
+}: {
+  layout: ListLayout;
+  tile: GroupTileData;
+  nameOf: (userId: string) => string;
+  gate: SubscriptionGate;
+  onDelete: () => void;
+}) {
+  const [whoOpen, setWhoOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const task = tile.sample;
+  const isRow = layout === "list";
+  const due = taskDueClause(task);
+  const whoId = `group-task-${tile.id}-who`;
+  const progress = tile.total > 0 ? tile.done / tile.total : 0;
+
+  if (editing) {
+    return (
+      <li
+        aria-label={`Editing ${task.title} for everyone`}
+        className={cn(
+          "rounded-[14px] border border-ring/60 p-3",
+          isRow && "my-2",
+        )}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.stopPropagation();
+            setEditing(false);
+          }
+        }}
+      >
+        <TaskEditForm
+          group
+          task={task}
+          assigneeName={TASK_AUDIENCE_COPY.everyone}
+          gate={gate}
+          onClose={() => setEditing(false)}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li
+      aria-label={`${task.title}, for everyone`}
+      className={isRow ? "py-3" : "rounded-[14px] border border-border p-3"}
+    >
+      <div className={cn(isRow && "flex items-start gap-3 @xl:gap-4")}>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">{task.title}</p>
+          {task.description ? (
+            <p
+              className={cn(
+                "mt-1 text-caption text-muted-foreground",
+                isRow ? "line-clamp-1" : "line-clamp-2",
+              )}
+            >
+              {task.description}
+            </p>
+          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-muted-foreground">
+            {due ? (
+              <>
+                <span
+                  className={due.overdue ? "text-destructive-text" : undefined}
+                >
+                  {due.text}
+                </span>
+                <span aria-hidden="true">·</span>
+              </>
+            ) : null}
+            <span className="inline-flex items-center gap-1">
+              <Users className="h-3 w-3" aria-hidden="true" />
+              {TASK_AUDIENCE_COPY.everyone}
+            </span>
+            {task.point_reward ? (
+              <Badge className="ml-1">
+                {formatPointsChip(task.point_reward)}
+              </Badge>
+            ) : null}
+            <ProofBadge kind={task.proof_kind} />
+          </div>
+          <div className="mt-3 grid gap-1.5">
+            <div className="flex items-center justify-between gap-2 text-caption">
+              <span className="font-medium text-foreground">
+                {TASK_AUDIENCE_COPY.progress(tile.done, tile.total)}
+              </span>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={whoOpen}
+                aria-controls={whoId}
+                onClick={() => setWhoOpen((open) => !open)}
+              >
+                {`Who's left (${tile.open.length})`}
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform",
+                    whoOpen && "rotate-180",
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-border"
+              role="progressbar"
+              aria-label={`${task.title}: ${TASK_AUDIENCE_COPY.progress(tile.done, tile.total)}`}
+              aria-valuemin={0}
+              aria-valuemax={tile.total}
+              aria-valuenow={tile.done}
+            >
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </div>
+          </div>
+          {whoOpen ? (
+            <ul id={whoId} className="mt-2 grid gap-1 text-caption">
+              {tile.open.map((copy) => (
+                <li
+                  key={copy.id}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span className="min-w-0 truncate text-foreground">
+                    {nameOf(copy.assignee_id)}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0",
+                      copy.status === "OVERDUE"
+                        ? "text-destructive-text"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {isSentBack(copy)
+                      ? TASK_NEEDS_CHANGES_LABEL
+                      : TASK_STATUS_LABELS[copy.status]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <Can permission="tasks:manage">
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              isRow ? "justify-end" : "mt-3 justify-end",
+            )}
+          >
+            <Button
+              size="toolbar"
+              variant="ghost"
+              className="w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+              aria-label={`Edit ${task.title} for everyone`}
+              {...gate.controlProps()}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              size="toolbar"
+              variant="ghost"
+              className="w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+              aria-label={`Delete ${task.title} for everyone`}
+              {...gate.controlProps()}
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </Can>
+      </div>
+    </li>
+  );
+}
+
+/** What Mark done needs, on a tile: nothing for a task that asks for none. */
+function ProofBadge({ kind }: { kind?: string | null }) {
+  if (kind !== "photo" && kind !== "link") return null;
+  return (
+    <Badge variant="outline" className="ml-1 gap-1">
+      {kind === "photo" ? (
+        <Camera className="h-3 w-3" aria-hidden="true" />
+      ) : (
+        <Link2 className="h-3 w-3" aria-hidden="true" />
+      )}
+      {kind === "photo" ? "Photo required" : "Link required"}
+    </Badge>
   );
 }

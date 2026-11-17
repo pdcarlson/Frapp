@@ -98,7 +98,10 @@ export const MEETING_RECORDING_STATUSES = [
   "uploading",
   /** Uploaded; the transcript is being written. */
   "transcribing",
-  /** The transcript is written and the audio is deleted. */
+  /**
+   * The transcript is written. The audio is kept for playback until the
+   * minutes are posted (Paul, 2026-11-17).
+   */
   "ready",
   "failed",
 ] as const;
@@ -181,7 +184,7 @@ export const MEETING_RECORDING_NOTICE = {
   confirmLabel:
     "Everyone in the room was told this meeting was being recorded, and nobody objected.",
   whatHappens:
-    "The recording goes to an AI provider to be written out as text. It is deleted as soon as the transcript is written, and Frapp tells the members who were at the meeting that it was uploaded.",
+    "The recording goes to an AI provider to be written out as text. The audio is kept for the secretary to play back until the minutes are posted, then deleted, and Frapp tells the members who were at the meeting that it was uploaded.",
   standards:
     "Never upload a Standards hearing. Those minutes are written by hand.",
   unconfirmed:
@@ -192,7 +195,7 @@ export const MEETING_RECORDING_NOTICE = {
 export const MEETING_RECORDING_NOTIFICATION = {
   title: "Meeting recording uploaded",
   body: (eventName: string) =>
-    `A recording of ${eventName} was uploaded to write the minutes. It is deleted once it is transcribed. Tell the secretary if you object.`,
+    `A recording of ${eventName} was uploaded to write the minutes. It is deleted once the minutes are posted. Tell the secretary if you object.`,
 } as const;
 
 /** One stretch of speech, as a transcription provider returns it. */
@@ -351,20 +354,34 @@ function sizeLabel(bytes: number): string {
  * them, so each fits in three lines of caption.
  */
 export const MEETING_RECORDER_COPY = {
-  record: "Record the meeting",
+  record: "Record",
   offer:
     "Set the phone on the table and record. Frapp writes it out as your notes.",
   checking: "Getting the microphone ready",
   recording: "Recording",
   recordingHint:
-    "Frapp keeps recording with the screen locked. Tap Stop when the meeting ends.",
+    "Frapp keeps recording with the screen locked. Stop when the meeting ends.",
   paused: "Paused",
-  pausedHint: "Nothing is being recorded. Tap Resume to carry on.",
+  pausedHint: "Nothing is being recorded until you carry on.",
   interruptedHint:
-    "A call or another app took the microphone, so nothing is being recorded. Tap Resume to carry on.",
-  pause: "Pause",
-  resume: "Resume",
+    "A call or another app took the microphone, so nothing is being recorded until you carry on.",
   stop: "Stop",
+  /** The round controls' names, said by a screen reader. */
+  pauseControl: "Pause recording",
+  resumeControl: "Carry on recording",
+  stopControl: "Stop recording",
+  savingTitle: "Saving",
+  uploadingTitle: "Uploading",
+  transcribingTitle: "Transcribing",
+  readyTitle: "Transcript ready",
+  /** After Stop, the four steps to a draft, ticked off as they finish. */
+  steps: {
+    recorded: "Recorded",
+    uploaded: "Uploaded",
+    transcribed: "Transcribed",
+    drafted: "Drafted",
+  },
+  transcriptRow: (seconds: number) => `Transcript, ${lengthInWords(seconds)}`,
   stopTitle: "Stop recording?",
   stopBody: "The recording is uploaded and written out as your notes.",
   saving: "Saving the recording",
@@ -407,16 +424,15 @@ export const MEETING_RECORDER_COPY = {
     "A recording is being uploaded from another device. It shows here once it arrives.",
   transcribing: (seconds: number) =>
     `Transcribing ${lengthInWords(seconds)} of audio. This takes a few minutes, and you can leave.`,
-  stopTranscribing: "Stop",
+  stopTranscribing: "Cancel",
   stopTranscribingTitle: "Stop transcribing?",
   stopTranscribingBody: "The recording is removed. Nothing is written out.",
   ready: (seconds: number) =>
-    `The transcript is ready (${lengthInWords(seconds)}), and the recording has been deleted. Speakers are numbered, not named.`,
-  openNotes: "Open your notes",
-  recordAgain: "Record again",
-  replaceTitle: "Record again?",
-  replaceBody:
-    "The earlier transcript is removed, and the next draft reads the new one.",
+    `From ${lengthInWords(seconds)} of audio. Speakers are numbered, not named. The audio is deleted when the minutes are posted.`,
+  /** The play control's names, said by a screen reader. */
+  playAudio: "Play the recording",
+  pauseAudio: "Pause the recording",
+  audioGone: "The recording can't be played right now.",
   /** The bar shown on every other screen while the phone records. */
   bar: (eventName: string) => `Recording ${eventName}`,
   barPaused: (eventName: string) => `Recording paused: ${eventName}`,

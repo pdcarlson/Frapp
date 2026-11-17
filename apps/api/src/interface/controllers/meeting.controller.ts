@@ -76,6 +76,7 @@ function dtoOf(view: MeetingView): MeetingDto {
     updated_by: view.meeting.updated_by,
     posted_by: view.meeting.posted_by,
     created_at: view.meeting.created_at,
+    transcript: view.meeting.transcript ?? null,
     can_edit: view.can_edit,
     can_delete: view.can_delete,
   };

@@ -1318,7 +1318,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get or create a 1-on-1 DM channel */
+        /**
+         * Get or create a 1-on-1 DM channel
+         * @description A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.
+         */
         post: operations["ChatController_getOrCreateDm_v1"];
         delete?: never;
         options?: never;
@@ -1335,7 +1338,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a group DM channel */
+        /**
+         * Create a group DM channel
+         * @description Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.
+         */
         post: operations["ChatController_createGroupDm_v1"];
         delete?: never;
         options?: never;
@@ -1790,7 +1796,10 @@ export interface paths {
         /** List chat message reports for this chapter */
         get: operations["ChatReportController_listReports_v1"];
         put?: never;
-        /** Report a chat message (idempotent while a report stays open) */
+        /**
+         * Report a chat message (idempotent while a report stays open)
+         * @description Limited to 10 a minute per member: each report notifies every officer who reviews them.
+         */
         post: operations["ChatReportController_fileReport_v1"];
         delete?: never;
         options?: never;
@@ -3392,7 +3401,7 @@ export interface paths {
         get: operations["TaskController_getOne_v1"];
         put?: never;
         post?: never;
-        /** Delete a task; with `scope=series`, stop a repeating task (#5119) */
+        /** Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3) */
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
@@ -7174,6 +7183,7 @@ export interface components {
             member_id: string;
         };
         CreateGroupDmDto: {
+            /** @description The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included. */
             member_ids: string[];
             name?: string;
         };
@@ -7328,10 +7338,12 @@ export interface components {
             /** @enum {string} */
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker";
             gif?: components["schemas"]["MessageGifDto"];
+            /** @description A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form. */
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
             thread_root_id?: string;
+            /** @description Client annotations, at most 16384 characters as JSON. */
             metadata?: Record<string, never>;
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
@@ -7432,8 +7444,9 @@ export interface components {
             flag: "important" | "funny" | "interesting" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
-            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions. */
+            /** @description Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400. */
             action_type: string;
+            /** @description The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored. */
             payload?: Record<string, never>;
         };
         ReactionDto: {
@@ -8249,7 +8262,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8312,7 +8325,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -8321,6 +8334,8 @@ export interface components {
             posted_by: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording. */
+            transcript: string | null;
             can_edit: boolean;
             can_delete: boolean;
         };
@@ -8862,6 +8877,18 @@ export interface components {
             /** @description Whether the series has stopped making copies: its rule ran out, an officer ended it, or its assignee left. */
             ended: boolean;
         };
+        TaskGroupSummaryDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            audience: "everyone";
+            /** @description How many copies the group has. */
+            total: number;
+            /** @description How many copies are marked done, waiting on an officer or confirmed. */
+            done: number;
+            /** @description How many copies are confirmed, or needed no sign-off when marked done. */
+            confirmed: number;
+        };
         RequestTaskPhotoUploadUrlDto: {
             /** @description Original filename (a JPEG, PNG, GIF or WebP) */
             filename: string;
@@ -8883,8 +8910,13 @@ export interface components {
         CreateTaskDto: {
             title: string;
             description?: string;
-            /** @description User ID of the assignee */
-            assignee_id: string;
+            /** @description User ID of the assignee. Send this or `audience`, exactly one of them. */
+            assignee_id?: string;
+            /**
+             * @description A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.
+             * @enum {string}
+             */
+            audience?: "everyone";
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
             /**
@@ -8977,12 +9009,19 @@ export interface components {
              * @description A copy’s day in its series’ pattern; null otherwise.
              */
             occurrence_date: string | null;
+            /**
+             * Format: uuid
+             * @description The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person.
+             */
+            group_id: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
             /** @description The reference photos added with the task, in order. Task reads and status writes carry `photos` too. */
             photos: components["schemas"]["TaskPhotoDto"][];
+            /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
+            group?: components["schemas"]["TaskGroupSummaryDto"];
         };
         UpdateTaskDto: {
             title?: string;
@@ -9005,10 +9044,10 @@ export interface components {
              */
             proof_kind?: "none" | "photo" | "link";
             /**
-             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).
+             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` ("Everyone’s copy") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it.
              * @enum {string}
              */
-            scope?: "instance" | "series";
+            scope?: "instance" | "series" | "group";
             /** @description With `scope: series` only: a new rule, counted from the open copy, or null to stop repeating after it. Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone. */
             recurrence_rule?: string | null;
         };
@@ -9064,9 +9103,14 @@ export interface components {
             description: string | null;
             /**
              * Format: uuid
-             * @description Null when no name or role was said for it: the screen shows "Who?".
+             * @description Null when no name or role was said for it, or when it is for everyone: the screen shows "Who?" or "Everyone".
              */
             assignee_id: string | null;
+            /**
+             * @description Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy.
+             * @enum {string|null}
+             */
+            audience: "everyone" | null;
             /** Format: date */
             due_date: string | null;
             /** Format: date-time */
@@ -9181,9 +9225,14 @@ export interface components {
             description?: string | null;
             /**
              * Format: uuid
-             * @description Who the task is for. Required to accept when none was suggested.
+             * @description Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`.
              */
             assignee_id?: string | null;
+            /**
+             * @description A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`.
+             * @enum {string|null}
+             */
+            audience?: "everyone" | null;
             /** @description Due date (YYYY-MM-DD). Required to accept when none was suggested. */
             due_date?: string | null;
             /**
@@ -11534,6 +11583,11 @@ export interface components {
              * @example frapp://google-calendar
              */
             return_url?: string;
+            /**
+             * @description For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar.
+             * @enum {string}
+             */
+            web_return?: "events" | "linked_apps" | "calendar";
         };
         GoogleCalendarConnectDto: {
             /** @description Google’s consent page for this sign-in. Good for ten minutes. */
@@ -11614,6 +11668,8 @@ export interface components {
             failure_message: string | null;
             /** @description The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes. */
             transcript: string | null;
+            /** @description A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted. */
+            audio_url: string | null;
             speaker_count: number | null;
             /** Format: date-time */
             uploaded_at: string | null;
@@ -19419,8 +19475,8 @@ export interface operations {
     TaskController_delete_v1: {
         parameters: {
             query?: {
-                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. */
-                scope?: "instance" | "series";
+                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3). */
+                scope?: "instance" | "series" | "group";
             };
             header?: never;
             path: {

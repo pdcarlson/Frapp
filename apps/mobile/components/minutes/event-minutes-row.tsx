@@ -15,6 +15,8 @@ import {
 import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import { useAiSurfaces } from "@/lib/ai/availability";
+import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
+import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { useMeetingsOn } from "@/lib/minutes/meetings-on";
 import {
   MinutesStartError,
@@ -29,9 +31,10 @@ import { NoteTakerSheet } from "@/components/minutes/note-taker-sheet";
  *
  * - Minutes the viewer may read: one row that opens them.
  * - None yet, for an officer who records minutes (`meetings:record`) on a
- *   chapter with drafting from notes: Write minutes, which starts them in one
- *   tap with the type the event's name suggests and opens them, ready for
- *   notes. Without drafting there is nothing to write them with on a phone
+ *   chapter with drafting from notes: Record minutes where this phone can
+ *   record (it starts them and opens them asking to record, notice first),
+ *   else Write minutes, which starts them in one tap with the type the
+ *   event's name suggests and opens them, ready for notes. Without drafting there is nothing to write them with on a phone
  *   (the section editor is on the web), so the row is not offered and no
  *   empty draft is left behind.
  * - Someone else's unposted minutes this member may take notes on (an
@@ -59,6 +62,12 @@ export function EventMinutesRow({
     enabled: on && !!eventId && canDraft,
     eventId,
   });
+  // Where this phone can record and holds no recording now, the row records
+  // (Paul, 2026-11-17: "replace it for just the record button"): the minutes
+  // open and ask to record, notice first. The server's own offer is checked
+  // there, and without it they open ready for notes.
+  const { state: recorderState, recorder } = useMeetingRecorder();
+  const records = !!recorder && recorderMeetingId(recorderState) === null;
   const notesSheet = useRef<BottomSheetModal>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -89,8 +98,11 @@ export function EventMinutesRow({
   if (!minutes && canDraft && takingQuery.isPending) return null;
   if (!minutes && !(canRecord && canDraft)) return null;
 
-  const open = (id: string) =>
-    router.push({ pathname: "/minutes-details", params: { id } });
+  const open = (id: string, record = false) =>
+    router.push({
+      pathname: "/minutes-details",
+      params: record ? { id, record: "1" } : { id },
+    });
 
   async function write() {
     setProblem(null);
@@ -100,7 +112,7 @@ export function EventMinutesRow({
         kind: "event",
         event: { id: eventId, name: eventName },
       });
-      open(meeting.id);
+      open(meeting.id, records);
     } catch (error) {
       if (error instanceof MinutesStartError && error.alreadyStarted) {
         void meetingsQuery.refetch();
@@ -127,7 +139,7 @@ export function EventMinutesRow({
           />
         ) : (
           <ListRow
-            label={MEETING_ENTRY_COPY.write}
+            label={records ? MEETING_ENTRY_COPY.record : MEETING_ENTRY_COPY.write}
             description={MEETING_ENTRY_COPY.none}
             busy={start.isPending}
             onPress={() => void write()}

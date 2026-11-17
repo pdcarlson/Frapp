@@ -353,7 +353,7 @@ export function RecordingUpload({
   } else if (state.status === "ready") {
     line = {
       tone: "quiet",
-      text: `The transcript is ready (${lengthInWords(state.duration_seconds ?? 0)}${speakersLabel(state.speaker_count)}), and the draft reads it with everyone's notes. Speakers are numbered, not named, and the recording has been deleted.`,
+      text: `The transcript is ready (${lengthInWords(state.duration_seconds ?? 0)}${speakersLabel(state.speaker_count)}), and the draft reads it with everyone's notes. Speakers are numbered, not named. The recording is kept for playback until the minutes are posted.`,
     };
     action = { label: "Upload another", does: "upload" };
   } else if (state.status === "failed") {

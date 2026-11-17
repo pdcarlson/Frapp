@@ -667,7 +667,7 @@ export function EventsPage() {
         ? [
             {
               eventId,
-              message: `Check-in hasn't closed yet; it closes ${formatRelativeDayTime(closesAt.toISOString(), now)}.`,
+              message: `Check-in hasn't closed yet; it closes ${formatRelativeDayTime(closesAt, now)}.`,
             },
           ]
         : [];

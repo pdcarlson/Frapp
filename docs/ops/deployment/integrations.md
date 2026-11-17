@@ -277,7 +277,7 @@ link to somebody else's Discord admin and end up reading that server. Do not
 "simplify" the flow by binding on the callback.
 
 **Members linking their own Discord account use the same application and the
-same redirect URI.** Settings → Discord history (`/preferences?section=discord`, #2878) sends a member
+same redirect URI.** Settings → Linked apps (`/preferences?section=apps`, #2878) sends a member
 through Discord's sign-in with the `identify` scope alone and comes back to the
 same `/v1/discord/connect/callback`, so it needs no extra portal setup: once
 the bot path is available, so is linking. It parks and confirms for the same
@@ -425,7 +425,8 @@ publishing status In production, user type External:
    `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per environment, made with
    `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
    to boot on a partial set. Redeploy the API after the sync reaches Secret Manager: each
-   deploy pins the secret versions it finds.
+   deploy pins the secret versions it finds (on staging, a re-run doesn't:
+   [`cloud-run.md` § Deploys](cloud-run.md#deploys)).
 
 **Verify after setup.** `GET /v1/google-calendar` (signed in, any chapter)
 answers `"available": true`. Then connect from the web Subscribe menu: Google's

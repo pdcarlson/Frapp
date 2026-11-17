@@ -207,6 +207,23 @@ describe('ChatReactionService', () => {
       created_at: '2026-01-01T12:00:00.000Z',
     };
 
+    // A reaction is its emoji and nothing else; every reader loads the row.
+    it('stores no payload on a reaction, whatever the request carried', async () => {
+      mockActionRepo.create.mockResolvedValue(baseAction);
+
+      await reactions.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'reaction:👍', payload: { note: 'x'.repeat(1_000) } },
+        null,
+      );
+
+      expect(mockActionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action_type: 'reaction:👍', payload: {} }),
+      );
+    });
+
     // #4695: a claim and a vote are writes, so a channel nobody can write in
     // (an archived group DM, the audit log) refuses them, as it refuses Close.
     describe('in a channel nobody writes in (#4695)', () => {

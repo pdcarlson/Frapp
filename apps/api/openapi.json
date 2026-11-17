@@ -3974,6 +3974,7 @@
     },
     "/v1/channels/dm": {
       "post": {
+        "description": "A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.",
         "operationId": "ChatController_getOrCreateDm_v1",
         "parameters": [],
         "requestBody": {
@@ -4014,6 +4015,7 @@
     },
     "/v1/channels/group-dm": {
       "post": {
+        "description": "Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.",
         "operationId": "ChatController_createGroupDm_v1",
         "parameters": [],
         "requestBody": {
@@ -5626,6 +5628,7 @@
     },
     "/v1/chat/reports": {
       "post": {
+        "description": "Limited to 10 a minute per member: each report notifies every officer who reviews them.",
         "operationId": "ChatReportController_fileReport_v1",
         "parameters": [],
         "requestBody": {
@@ -11514,12 +11517,13 @@
             "name": "scope",
             "required": false,
             "in": "query",
-            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay.",
+            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3).",
             "schema": {
               "type": "string",
               "enum": [
                 "instance",
-                "series"
+                "series",
+                "group"
               ]
             }
           }
@@ -11544,7 +11548,7 @@
             "bearer": []
           }
         ],
-        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119)",
+        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3)",
         "tags": [
           "Tasks"
         ]
@@ -23329,6 +23333,8 @@
         "type": "object",
         "properties": {
           "member_ids": {
+            "maxItems": 9,
+            "description": "The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included.",
             "type": "array",
             "items": {
               "type": "string"
@@ -23828,7 +23834,8 @@
             "$ref": "#/components/schemas/MessageGifDto"
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form."
           },
           "reply_to_id": {
             "type": "string"
@@ -23838,7 +23845,8 @@
             "format": "uuid"
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "Client annotations, at most 16384 characters as JSON."
           },
           "mention_picks": {
             "type": "array",
@@ -24138,10 +24146,12 @@
         "properties": {
           "action_type": {
             "type": "string",
-            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions."
+            "description": "Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400.",
+            "maxLength": 50
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored."
           }
         },
         "required": [
@@ -26554,15 +26564,15 @@
             "items": {
               "type": "string",
               "enum": [
-                "attendees",
                 "summary",
-                "announcements",
                 "decisions",
                 "action_items",
+                "discussion_log",
+                "attendees",
+                "announcements",
                 "officer_reports",
                 "old_business",
-                "new_business",
-                "discussion_log"
+                "new_business"
               ]
             }
           }
@@ -26785,15 +26795,15 @@
             "items": {
               "type": "string",
               "enum": [
-                "attendees",
                 "summary",
-                "announcements",
                 "decisions",
                 "action_items",
+                "discussion_log",
+                "attendees",
+                "announcements",
                 "officer_reports",
                 "old_business",
-                "new_business",
-                "discussion_log"
+                "new_business"
               ]
             }
           },
@@ -26821,6 +26831,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "transcript": {
+            "type": "string",
+            "nullable": true,
+            "description": "The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording."
+          },
           "can_edit": {
             "type": "boolean"
           },
@@ -26846,6 +26861,7 @@
           "updated_by",
           "posted_by",
           "created_at",
+          "transcript",
           "can_edit",
           "can_delete"
         ]
@@ -28451,6 +28467,40 @@
           "ended"
         ]
       },
+      "TaskGroupSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ]
+          },
+          "total": {
+            "type": "number",
+            "description": "How many copies the group has."
+          },
+          "done": {
+            "type": "number",
+            "description": "How many copies are marked done, waiting on an officer or confirmed."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "How many copies are confirmed, or needed no sign-off when marked done."
+          }
+        },
+        "required": [
+          "id",
+          "audience",
+          "total",
+          "done",
+          "confirmed"
+        ]
+      },
       "RequestTaskPhotoUploadUrlDto": {
         "type": "object",
         "properties": {
@@ -28512,7 +28562,14 @@
           },
           "assignee_id": {
             "type": "string",
-            "description": "User ID of the assignee"
+            "description": "User ID of the assignee. Send this or `audience`, exactly one of them."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
           },
           "due_date": {
             "type": "string",
@@ -28568,7 +28625,6 @@
         },
         "required": [
           "title",
-          "assignee_id",
           "due_date"
         ]
       },
@@ -28726,6 +28782,12 @@
             "nullable": true,
             "description": "A copy’s day in its series’ pattern; null otherwise."
           },
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -28740,6 +28802,14 @@
             "items": {
               "$ref": "#/components/schemas/TaskPhotoDto"
             }
+          },
+          "group": {
+            "description": "On a task for everyone: its group, as task reads carry it (#4295 step 3).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskGroupSummaryDto"
+              }
+            ]
           }
         },
         "required": [
@@ -28763,6 +28833,7 @@
           "completion_note",
           "series_id",
           "occurrence_date",
+          "group_id",
           "created_at",
           "photos"
         ]
@@ -28817,9 +28888,10 @@
             "type": "string",
             "enum": [
               "instance",
-              "series"
+              "series",
+              "group"
             ],
-            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`)."
+            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` (\"Everyone’s copy\") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it."
           },
           "recurrence_rule": {
             "type": "string",
@@ -28982,7 +29054,15 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Null when no name or role was said for it: the screen shows \"Who?\"."
+            "description": "Null when no name or role was said for it, or when it is for everyone: the screen shows \"Who?\" or \"Everyone\"."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "nullable": true,
+            "description": "Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy."
           },
           "due_date": {
             "type": "string",
@@ -29010,6 +29090,7 @@
           "title",
           "description",
           "assignee_id",
+          "audience",
           "due_date",
           "due_at",
           "subtasks"
@@ -29316,7 +29397,15 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Who the task is for. Required to accept when none was suggested."
+            "description": "Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "nullable": true,
+            "description": "A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`."
           },
           "due_date": {
             "type": "string",
@@ -35713,6 +35802,15 @@
             "type": "string",
             "description": "For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.",
             "example": "frapp://google-calendar"
+          },
+          "web_return": {
+            "type": "string",
+            "enum": [
+              "events",
+              "linked_apps",
+              "calendar"
+            ],
+            "description": "For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar."
           }
         },
         "required": [
@@ -35952,6 +36050,11 @@
             "nullable": true,
             "description": "The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes."
           },
+          "audio_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted."
+          },
           "speaker_count": {
             "type": "number",
             "nullable": true
@@ -36002,6 +36105,7 @@
           "failure",
           "failure_message",
           "transcript",
+          "audio_url",
           "speaker_count",
           "uploaded_at",
           "available",

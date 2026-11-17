@@ -49,6 +49,8 @@ export * from "./chapter-config";
 export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
+// The audit log (#3909): what may change on a line already in it.
+export * from "./chat-audit-log";
 export * from "./chat-backgrounds";
 // Catch me up (#3946): a channel's new messages or a thread, summarized.
 export * from "./chat-catch-up";
@@ -222,6 +224,8 @@ export * from "./study-zone-shape";
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
 export * from "./subscription";
+// Tasks for everyone: one group task, a copy each (#4295 step 3).
+export * from "./task-audience";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
 export * from "./thumbhash";

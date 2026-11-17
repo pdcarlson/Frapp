@@ -80,7 +80,9 @@ vi.mock("@/components/ai/report-ai-sheet", () => ({
   }),
 }));
 
-import { NotesDraftSheet } from "./notes-draft-sheet";
+import { NotesPanel, type NotesPanelHandle } from "./notes-panel";
+
+let panel = React.createRef<NotesPanelHandle>();
 
 function draftState(over: Partial<MeetingDraftState> = {}): MeetingDraftState {
   return {
@@ -116,8 +118,8 @@ function element(
 ) {
   return (
     <FrappThemeProvider>
-      <NotesDraftSheet
-        ref={React.createRef<never>()}
+      <NotesPanel
+        ref={panel}
         meetingId="m1"
         eventStart="2026-11-09T23:00:00Z"
         state={state}
@@ -149,15 +151,21 @@ const button = (tree: ReactTestRenderer, label: string) =>
   )[0];
 const field = (tree: ReactTestRenderer) =>
   tree.root.findAll(
-    (node) => (node.type as unknown) === "BottomSheetTextInput",
+    (node) => (node.type as unknown) === "TextInput",
   )[0];
 const press = (tree: ReactTestRenderer, label: string) =>
   act(async () => button(tree, label).props.onPress());
+/** Draft minutes sits in the screen's pinned footer, which calls the panel. */
+const draft = () =>
+  act(async () => {
+    void panel.current?.draft();
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
   // Typed notes outlive the sheet (#5041); each spec starts with none kept.
   dropAllKeptDrafts();
+  panel = React.createRef<NotesPanelHandle>();
   getVersion.mockResolvedValue("v1");
   hooks.request.mockResolvedValue({});
   hooks.discard.mockResolvedValue({});
@@ -175,19 +183,11 @@ describe("a recording's transcript, a source of its own (#4935)", () => {
   it("is read by the draft beside the notes, never put into the box", () => {
     const tree = render(draftState(), false, recordingState());
     expect(field(tree).props.value).toBe("");
-    expect(
-      tree.root.findAll(
-        (node) =>
-          drawnText(node) ===
-          MEETING_NOTE_TAKERS_COPY.alsoReads(["the recording"]),
-      ).length,
-    ).toBeGreaterThan(0);
-    expect(button(tree, MEETING_NOTE_TAKERS_COPY.draftAll)).toBeDefined();
   });
 
   it("drafts with no notes of the officer's own when the recording is ready", async () => {
-    const tree = render(draftState(), false, recordingState());
-    await press(tree, MEETING_NOTE_TAKERS_COPY.draftAll);
+    render(draftState(), false, recordingState());
+    await draft();
     expect(hooks.request).toHaveBeenCalledWith({
       id: "m1",
       body: expect.not.objectContaining({ notes: expect.anything() }),
@@ -268,19 +268,17 @@ describe("Notes disagreed (#4935)", () => {
   });
 });
 
-describe("NotesDraftSheet", () => {
+describe("NotesPanel", () => {
   it("checks the notes when Draft is pressed, not while they are typed", async () => {
     const tree = render(draftState());
-    expect(screenText(tree)).toContain(MEETING_NOTES_COPY.idle);
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(screenText(tree)).toContain(MEETING_NOTES_COPY.empty);
     expect(hooks.request).not.toHaveBeenCalled();
 
     const long = "x".repeat(MEETING_NOTES_MAX_LENGTH + 1);
     act(() => field(tree).props.onChangeText(long));
     // Typing clears the last problem and raises none of its own.
-    expect(screenText(tree)).toContain(MEETING_NOTES_COPY.idle);
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(screenText(tree)).toContain(
       MEETING_NOTES_COPY.tooLong(MEETING_NOTES_MAX_LENGTH, long.length),
     );
@@ -290,7 +288,7 @@ describe("NotesDraftSheet", () => {
   it("sends the notes against the version read just now, with the meeting's local day", async () => {
     const tree = render(draftState());
     act(() => field(tree).props.onChangeText("  Budget passed 12-3.  "));
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(confirm).not.toHaveBeenCalled();
     expect(hooks.request).toHaveBeenCalledWith({
       id: "m1",
@@ -309,7 +307,7 @@ describe("NotesDraftSheet", () => {
       MEETING_DRAFT_FAILURE_COPY.consent_required,
     );
     act(() => field(tree).props.onChangeText("Notes"));
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
     expect(hooks.request).not.toHaveBeenCalled();
     expect(field(tree).props.value).toBe("Notes");
@@ -323,12 +321,12 @@ describe("NotesDraftSheet", () => {
     );
     act(() => field(tree).props.onChangeText("Notes"));
     // Yes on the sheet, then Cancel on "replace what's written?".
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(screenText(tree)).not.toContain(
       MEETING_DRAFT_FAILURE_COPY.consent_required,
     );
     // And the next press doesn't ask again.
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
   });
 
@@ -336,9 +334,9 @@ describe("NotesDraftSheet", () => {
     hooks.request.mockRejectedValueOnce({ code: "ai.consent.required" });
     const tree = render(draftState());
     act(() => field(tree).props.onChangeText("Notes"));
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(gate.ensureConsent).not.toHaveBeenCalled();
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
     expect(hooks.request).toHaveBeenCalledTimes(2);
   });
@@ -347,7 +345,7 @@ describe("NotesDraftSheet", () => {
     gate.ensureConsent.mockRejectedValue(new Error("offline"));
     const tree = render(draftState({ blocked: "consent_required" } as never));
     act(() => field(tree).props.onChangeText("Notes"));
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(screenText(tree)).toContain(MEETING_NOTES_COPY.consentCheckFailed);
   });
 
@@ -355,7 +353,7 @@ describe("NotesDraftSheet", () => {
     confirm.mockResolvedValue(false);
     const tree = render(draftState(), true);
     act(() => field(tree).props.onChangeText("Notes"));
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(confirm).toHaveBeenCalledWith(
       expect.objectContaining({ title: MEETING_NOTES_COPY.replaceTitle }),
     );
@@ -366,7 +364,7 @@ describe("NotesDraftSheet", () => {
     getVersion.mockResolvedValue(null);
     const tree = render(draftState());
     act(() => field(tree).props.onChangeText("Notes"));
-    await press(tree, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(hooks.request).not.toHaveBeenCalled();
     expect(screenText(tree)).toContain(MEETING_NOTES_COPY.startFailed);
   });
@@ -456,7 +454,7 @@ describe("NotesDraftSheet", () => {
  * Notes are stored only once a draft is asked for, so what was typed before
  * then outlives the minutes screen (#5041): a back swipe used to lose it.
  */
-describe("NotesDraftSheet's kept notes (#5041)", () => {
+describe("NotesPanel's kept notes (#5041)", () => {
   const type = (tree: ReactTestRenderer, text: string) =>
     act(() => field(tree).props.onChangeText(text));
   const leave = (tree: ReactTestRenderer) => act(() => tree.unmount());
@@ -480,7 +478,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
   it("gives them up once the draft is asked for, and keeps what is typed after", async () => {
     const first = render(draftState());
     type(first, "Budget passed.");
-    await press(first, MEETING_NOTES_COPY.draft);
+    await draft();
     expect(hooks.request).toHaveBeenCalled();
     leave(first);
     // The server holds them now, and a later visit opens on them.
@@ -492,7 +490,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
   it("keeps what is typed in the same visit after the ask lands", async () => {
     const first = render(draftState());
     type(first, "Budget passed.");
-    await press(first, MEETING_NOTES_COPY.draft);
+    await draft();
     type(first, "Budget passed. Social on Friday.");
     leave(first);
     const second = render(draftState({ notes: "Budget passed." }));
@@ -504,7 +502,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     hooks.request.mockReturnValueOnce(new Promise(() => {}));
     const first = render(draftState());
     type(first, "Budget passed.");
-    await press(first, MEETING_NOTES_COPY.draft);
+    await draft();
     leave(first);
     const calls = hooks.request.mock.calls.length;
 
@@ -512,7 +510,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     expect(field(during).props.value).toBe("Budget passed.");
     expect(field(during).props.editable).toBe(false);
     // Nothing offers the same ask again while the first is out.
-    expect(screenText(during)).not.toContain(MEETING_NOTES_COPY.draft);
+    expect(screenText(during)).not.toContain(MEETING_NOTES_COPY.draftAgain);
     expect(hooks.request.mock.calls.length).toBe(calls);
     leave(during);
   });
@@ -526,7 +524,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     );
     const first = render(draftState());
     type(first, "Budget passed.");
-    await press(first, MEETING_NOTES_COPY.draft);
+    await draft();
     leave(first);
     const during = render(draftState());
 
@@ -550,7 +548,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     );
     const first = render(draftState());
     type(first, "Budget passed.");
-    await press(first, MEETING_NOTES_COPY.draft);
+    await draft();
     leave(first);
 
     await act(async () => fail(new Error("offline")));
@@ -570,7 +568,7 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     // A trailing newline, as a multiline box often has: the server stores
     // the notes trimmed.
     type(first, "Budget passed.\n");
-    await press(first, MEETING_NOTES_COPY.draft);
+    await draft();
     leave(first);
     const during = render(draftState());
 

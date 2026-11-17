@@ -69,6 +69,9 @@ const MEETING_TRANSCRIPTION_VERSION = 'meetings.transcribe@v1';
 /** The private bucket a recording waits in (`20261112210000_meeting_recordings.sql`). */
 export const MEETING_AUDIO_BUCKET = 'meeting-audio';
 
+/** How long a playback link works: long enough to listen through a check. */
+const PLAYBACK_LINK_SECONDS = 60 * 60;
+
 /**
  * How long an upload may stay unfinished before it reads as failed. Two
  * hundred megabytes on a slow connection is well inside it.
@@ -107,6 +110,11 @@ export interface MeetingRecordingState {
   failure_message: string | null;
   /** One line per speaker turn, only while `ready`. */
   transcript: string | null;
+  /**
+   * A short-lived link to play the recording back, only while `ready` and
+   * the audio is still kept (until the minutes are posted).
+   */
+  audio_url: string | null;
   speaker_count: number | null;
   uploaded_at: string | null;
   /**
@@ -168,8 +176,12 @@ export type MeetingRecorderAvailability = Pick<
  * the AI sheet, and a file that is not audio Frapp takes or is too large or
  * too long.
  *
- * The audio is deleted as soon as the transcript is written or the
- * transcription has failed for good. Neither the audio, its link, the file's
+ * The audio is kept beside the transcript until the minutes are posted, so
+ * the officer can play it back while checking the draft (Paul, 2026-11-17,
+ * "Keep audio until minutes are posted"): posting drops the row and the
+ * sweep deletes the file within half an hour; the 30-day retention sweep
+ * ends it in any case. It is deleted at once when the transcription fails
+ * for good, or the recording is removed or replaced. Neither the audio, its link, the file's
  * name nor the transcript is ever in a log, an error or an event.
  */
 @Injectable()
@@ -491,6 +503,8 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
    *    deletes its file;
    * 3. any file in the bucket that no row names is deleted: what a posted,
    *    deleted or replaced meeting, a removed member or a failed delete left.
+   *    A ready recording's file is named by its row, kept for playback until
+   *    posting drops the row.
    *
    * Resolves to how many files it deleted.
    */
@@ -505,8 +519,8 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
         }
       } else if (recording.status === 'transcribing') {
         await this.settled(recording);
-      } else if (recording.storage_path) {
-        // Ended, with a file a failed delete left behind.
+      } else if (recording.status !== 'ready' && recording.storage_path) {
+        // Failed, with a file a failed delete left behind.
         await this.deleteAudio(recording.storage_path);
         await this.recordings.step(
           recording.chapter_id,
@@ -709,16 +723,16 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
         transcript: wholeLines(formatted.text, MEETING_NOTES_MAX_LENGTH),
         speaker_count: formatted.speakerCount,
         duration_seconds: measured,
-        storage_path: null,
         provider_job_id: null,
         finished_at: new Date().toISOString(),
       },
     );
-    // Written or not (the officer may have uploaded again or removed it),
-    // this upload's audio has no further use, here or at the provider. The
-    // provider's copy goes only now, after the transcript is stored: a try
-    // that died before this line reads the same job again.
-    await this.deleteAudio(path);
+    // Written, the audio stays beside the transcript for playback until the
+    // minutes are posted. Not written (the officer uploaded again or removed
+    // it), it has no further use. The provider's copy goes either way, only
+    // now that the transcript is stored: a try that died before this line
+    // reads the same job again.
+    if (!written) await this.deleteAudioUnlessNamed(path);
     if (jobId) {
       await this.transcription.discard(MEETING_TRANSCRIPTION_TASK, jobId);
     }
@@ -806,9 +820,11 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       },
     );
     // The path and the job are this upload's alone, so both go even when the
-    // row was replaced, or removed by the minutes being posted.
+    // row was replaced, or removed by the minutes being posted. The one
+    // exception is a row that still names the path: a try of the same upload
+    // that finished first and kept the audio for playback.
     if (recording.storage_path) {
-      await this.deleteAudio(recording.storage_path);
+      await this.deleteAudioUnlessNamed(recording.storage_path);
     }
     if (recording.provider_job_id) {
       await this.transcription.discard(
@@ -817,6 +833,17 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       );
     }
     return ended;
+  }
+
+  /**
+   * Deletes a file no recording names any more. A ready recording keeps its
+   * audio for playback, so a try that lost the race to it (two tries of one
+   * run after a lost lease) must not take its file.
+   */
+  private async deleteAudioUnlessNamed(path: string): Promise<void> {
+    const named = await this.recordings.pathsStillNamed([path]);
+    if (named.includes(path)) return;
+    await this.deleteAudio(path);
   }
 
   /** Deleting a file that is already gone is not an error; a real one waits for the sweep. */
@@ -920,6 +947,24 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     );
   }
 
+  /** A link to play a ready recording back, or null when there is none. */
+  private async playbackUrl(
+    recording: MeetingRecording,
+  ): Promise<string | null> {
+    if (recording.status !== 'ready' || !recording.storage_path) return null;
+    try {
+      return await this.storage.getSignedDownloadUrl(
+        MEETING_AUDIO_BUCKET,
+        recording.storage_path,
+        PLAYBACK_LINK_SECONDS,
+      );
+    } catch {
+      // The transcript still shows; only playback is missing.
+      this.logger.warn('Could not sign a meeting playback link');
+      return null;
+    }
+  }
+
   private async stateFor(
     chapterId: string,
     userId: string,
@@ -948,6 +993,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
         failure: null,
         failure_message: null,
         transcript: null,
+        audio_url: null,
         speaker_count: null,
         uploaded_at: null,
         ...base,
@@ -968,6 +1014,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       failure,
       failure_message: failure ? MEETING_RECORDING_FAILURE_COPY[failure] : null,
       transcript: recording.status === 'ready' ? recording.transcript : null,
+      audio_url: await this.playbackUrl(recording),
       speaker_count: recording.speaker_count,
       uploaded_at: recording.created_at,
       ...base,

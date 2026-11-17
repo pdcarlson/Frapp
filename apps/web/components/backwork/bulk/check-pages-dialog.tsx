@@ -171,10 +171,11 @@ function CheckPages({
         const body = await flattenWithinCap(doc, boxes, flattenPdf);
         const storagePath = await storePdf(body, flattenedFileName(draftLabel(draft)), {
           requestUpload: (request) => requestUpload.mutateAsync(request),
-          put: ({ signedUrl, body: blob }) =>
+          put: ({ signedUrl, body: blob, signal }) =>
             putSignedUpload({
               signedUrl,
               body: blob,
+              signal,
               contentType: "application/pdf",
               upsert: true,
               describeRejection: () => "The file didn't upload.",

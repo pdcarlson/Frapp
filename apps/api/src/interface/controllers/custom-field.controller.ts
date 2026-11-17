@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -75,7 +76,7 @@ export class CustomFieldController {
   @ApiOperation({ summary: 'Update a custom field (audit-logged)' })
   @ApiOkResponse({ type: CustomFieldDto })
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateCustomFieldDto,
@@ -88,7 +89,7 @@ export class CustomFieldController {
   @ApiOperation({ summary: 'Delete a custom field (audit-logged)' })
   @ApiOkResponse({ type: RemoveCustomFieldResponseDto })
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {

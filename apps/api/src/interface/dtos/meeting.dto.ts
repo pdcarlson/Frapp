@@ -386,6 +386,13 @@ export class MeetingDto extends MeetingSummaryDto {
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   posted_by: string | null;
   @ApiProperty({ format: 'date-time' }) created_at: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording.',
+  })
+  transcript: string | null;
   @ApiProperty() can_edit: boolean;
   @ApiProperty() can_delete: boolean;
 }
@@ -743,6 +750,13 @@ export class MeetingRecordingDto {
       'The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes.',
   })
   transcript: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted.',
+  })
+  audio_url: string | null;
   @ApiProperty({ type: Number, nullable: true })
   speaker_count: number | null;
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
@@ -775,7 +789,7 @@ export class MeetingRecordingDto {
 
 /**
  * What recording would do for the caller before any minutes exist (#5287):
- * the phone's + reads it to decide what Record meeting offers.
+ * the phone's + reads it to decide whether New minutes offers Record the meeting.
  */
 export class MeetingRecorderAvailabilityDto {
   @ApiProperty({

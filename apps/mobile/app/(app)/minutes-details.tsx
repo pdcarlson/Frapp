@@ -1,7 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { statusOf } from "@repo/api-sdk";
 import {
   useAiSuggestions,
@@ -18,6 +23,7 @@ import {
   MEETING_COPY,
   MEETING_LIST_COPY,
   MEETING_NOTES_COPY,
+  MEETING_RECORDER_COPY,
   isMeetingContentEmpty,
   meetingDayLabel,
   meetingTypeLabel,
@@ -30,13 +36,18 @@ import type { BackTarget } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import { MinutesBody } from "@/components/minutes/minutes-body";
-import { NotesDraftSheet } from "@/components/minutes/notes-draft-sheet";
 import {
-  RecordingRow,
-  RecordingRowPlaceholder,
-} from "@/components/minutes/recording-row";
+  NotesPanel,
+  type NotesPanelHandle,
+} from "@/components/minutes/notes-panel";
+import {
+  RecorderControls,
+  RecorderStage,
+  useMeetingRecorderRow,
+} from "@/components/minutes/recorder";
+import { RecordingPlayer } from "@/components/minutes/recording-player";
+import { TranscriptLines } from "@/components/minutes/transcript-lines";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
-import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
@@ -49,6 +60,10 @@ import { StatusChip } from "@/components/status-chip";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
+import {
+  recorderBusy,
+  recordingPipeline,
+} from "@/lib/minutes/recorder/row-view";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -60,18 +75,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * **Everyone reads.** The page is the minutes as a document: the event's
  * name, what kind of meeting and when, then each section.
  *
- * **An officer who may edit a draft finishes it here.** The secretary's phone
- * is what they had in the meeting, so the two things they do right after are
- * on it: draft the minutes from their notes (`NotesDraftSheet`, shown only
- * where the server offers drafting), and post. Changing a section's wording
- * by hand is on the web, and the page says so in one line, because the web's
- * editor (decisions with vote counts, action items with owners and due days)
- * is a form built for a keyboard and has no phone twin yet.
- *
- * **And records the meeting here** (§ Recording in the app): above Draft
- * minutes, where the server offers transcription, `RecordingRow` is the
- * recorder for this meeting. The transcript becomes the notes the draft is
- * written from.
+ * **An officer who may edit a draft takes and finishes it here, on one
+ * screen** (Paul, 2026-11-17: "I don't want a pop-up sheet for everything").
+ * From the top: the recorder's stage (a big running clock while it records,
+ * then four steps ticking off to a draft), the minutes to review once they
+ * are in, and the officer's own notes, typed in place. The one action of the
+ * moment is pinned at the bottom: pause and stop while recording, Post once
+ * there is something to post, Draft minutes for typed notes, Record the
+ * meeting to begin. A finished transcript drafts by itself, so after Stop
+ * the minutes arrive without another press. Changing a section's wording by
+ * hand is still on the web (the phone has no section editor yet).
  *
  * Posting asks nothing first, as on the web (Paul, 2026-11-16), though it
  * tells every invited member once.
@@ -88,8 +101,13 @@ export default function MinutesDetailsScreen() {
 }
 
 function MinutesDetailsScreenBody() {
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    record?: string | string[];
+  }>();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
+  const record =
+    (Array.isArray(params.record) ? params.record[0] : params.record) === "1";
   const meetingQuery = useMeeting(id || null);
 
   if (!id) {
@@ -128,6 +146,7 @@ function MinutesDetailsScreenBody() {
   return (
     <LoadedMinutes
       meeting={meetingQuery.data}
+      autoRecord={record}
       refetch={async () => (await meetingQuery.refetch()).data ?? null}
     />
   );
@@ -135,9 +154,12 @@ function MinutesDetailsScreenBody() {
 
 function LoadedMinutes({
   meeting,
+  autoRecord,
   refetch,
 }: {
   meeting: MeetingMinutes;
+  /** Opened by the event's or the +'s Record: ask to record straight away. */
+  autoRecord: boolean;
   refetch: () => Promise<MeetingMinutes | null>;
 }) {
   const { tokens } = useFrappTheme();
@@ -145,9 +167,11 @@ function LoadedMinutes({
   const styles = createStyles(tokens);
   const router = useRouter();
   const names = useMemberDisplayNames();
-  const notesRef = useRef<BottomSheetModal>(null);
+  const notesRef = useRef<NotesPanelHandle>(null);
   const post = usePostMeeting();
   const [problem, setProblem] = useState<string | null>(null);
+  const [draftable, setDraftable] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const isDraft = meeting.status === "draft";
   const finishing = isDraft && meeting.can_edit;
@@ -161,9 +185,6 @@ function LoadedMinutes({
   });
   const draftState = (notesOffered ? draftQuery.data : null) ?? null;
   const drafting = draftState?.status === "drafting";
-  // The Draft button holds its place while its read is out, so Post never
-  // moves under a thumb and the line below never says "web" and then changes.
-  const draftLoading = finishing && notesOffered && draftQuery.isPending;
 
   // The recorder is offered with drafting, which is what a transcript is for,
   // and only where the server can transcribe.
@@ -173,14 +194,26 @@ function LoadedMinutes({
   const recordingState =
     (finishing && notesOffered ? recordingQuery.data : null) ?? null;
   const recorderOffered = recordingState?.available === true;
-  // A recording this phone holds for this meeting always has its row here,
-  // whatever the server says or hasn't said yet (its read out or failed, the
-  // minutes posted meanwhile): the pill steps aside on this screen, so
-  // without the row an open microphone would have no Stop anywhere.
-  const heldHere = recorderMeetingId(useMeetingRecorder().state) === meeting.id;
-  const recordingLoading =
-    finishing && notesOffered && recordingQuery.isPending && !heldHere;
   const { ensureConsent, consentSheet } = useAiConsentGate();
+  const recorder = useMeetingRecorderRow({
+    meetingId: meeting.id,
+    eventName: meeting.event_name,
+    server: recorderOffered ? recordingState : null,
+    ensureConsent,
+    autoRecord,
+  });
+  // A recording this phone holds for this meeting always has its controls
+  // here, whatever the server says or hasn't said yet: the pill steps aside
+  // on this screen, so without them an open microphone would have no Stop.
+  const recorderState = useMeetingRecorder().state;
+  const heldHere = recorderMeetingId(recorderState) === meeting.id;
+  const recorderShown = (recorderOffered || heldHere) && recorder.shown;
+  const busy = recorderBusy(meeting.id, recorderState, recordingState);
+  const transcript =
+    recordingState?.status === "ready" ? recordingState.transcript : null;
+  const steps = recordingPipeline(meeting.id, recorderState, recordingState, {
+    drafting,
+  });
 
   // The tasks suggested from these minutes, for someone who could accept
   // them. Read only once the minutes are posted, which is what makes them.
@@ -232,6 +265,47 @@ function LoadedMinutes({
     meeting.other_label,
   );
 
+  // The one thing at the bottom (Paul, 2026-11-17): the recorder's controls
+  // while it records or needs the officer, else Post once the minutes have
+  // words, else Draft minutes once there is something to draft from, else
+  // the recorder's quieter steps (Record, Open Settings after a refusal),
+  // which never stand in the way of posting.
+  const recorderFooter =
+    recorderShown && (recorder.view.live || recorder.primary) ? (
+      <RecorderControls row={recorder} />
+    ) : null;
+  const recordLeads = recorder.primary?.does === "record";
+  const recorderLeads =
+    !!recorder.view.live ||
+    (!!recorder.primary &&
+      recorder.primary.does !== "record" &&
+      recorder.primary.does !== "open_settings");
+  let footer: ReactNode = null;
+  if (finishing || heldHere) {
+    if (recorderFooter && recorderLeads) footer = recorderFooter;
+    else if (finishing && !busy && !drafting && !empty) {
+      footer = (
+        <SheetPrimaryButton
+          label={MEETING_COPY.post}
+          busy={post.isPending}
+          disabled={post.isPending}
+          onPress={() => void handlePost()}
+          accent={accent}
+          onAccent={accentOnPrimary}
+        />
+      );
+    } else if (finishing && draftState && draftable && !busy && !drafting) {
+      footer = (
+        <SheetPrimaryButton
+          label={MEETING_NOTES_COPY.draft}
+          onPress={() => void notesRef.current?.draft()}
+          accent={accent}
+          onAccent={accentOnPrimary}
+        />
+      );
+    } else if (recorderFooter) footer = recorderFooter;
+  }
+
   return (
     <>
       <ScreenShell
@@ -239,6 +313,22 @@ function LoadedMinutes({
         title={meeting.event_name}
         subtitle={`${type} meeting, ${meetingWhenLabel(meeting.event_start_time)}`}
         refresh={refresh}
+        keyboardShouldPersistTaps="handled"
+        footer={
+          footer || problem ? (
+            <>
+              {problem ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[styles.meta, styles.problem]}
+                >
+                  {problem}
+                </Text>
+              ) : null}
+              {footer}
+            </>
+          ) : undefined
+        }
       >
         <View style={styles.stateRow}>
           {isDraft ? (
@@ -253,11 +343,75 @@ function LoadedMinutes({
           )}
         </View>
 
-        <MinutesBody
-          meeting={meeting}
-          content={content}
-          nameFor={names.nameFor}
-        />
+        {recorderShown ? <RecorderStage row={recorder} steps={steps} /> : null}
+
+        {/* The minutes themselves: the draft to review once it is in. While
+            the recorder works and nothing is written there is nothing to
+            show, so the stage above has the screen. */}
+        {empty && finishing && (busy || recordLeads || drafting) ? null : (
+          <MinutesBody
+            meeting={meeting}
+            content={content}
+            nameFor={names.nameFor}
+          />
+        )}
+
+        {/* Nothing to write with here: no drafting, so no notes or recorder. */}
+        {finishing && empty && !notesOffered ? (
+          <Text style={styles.meta}>{MEETING_COPY.writeOnWeb}</Text>
+        ) : null}
+
+        {finishing && draftState ? (
+          <NotesPanel
+            ref={notesRef}
+            meetingId={meeting.id}
+            eventStart={meeting.event_start_time}
+            state={draftState}
+            hasContent={!empty}
+            recording={recorderOffered ? recordingState : null}
+            getVersion={async () => (await refetch())?.updated_at ?? null}
+            onSettled={() => void refetch()}
+            autoDraft={!!transcript && empty}
+            onDraftable={setDraftable}
+          />
+        ) : null}
+
+        {transcript && recordingState ? (
+          <View style={styles.transcript}>
+            {recordingState.audio_url ? (
+              <RecordingPlayer
+                url={recordingState.audio_url}
+                durationSeconds={recordingState.duration_seconds ?? 0}
+              />
+            ) : null}
+            <ListSection>
+              <ListRow
+                label={MEETING_RECORDER_COPY.transcriptRow(
+                  recordingState.duration_seconds ?? 0,
+                )}
+                value={transcriptOpen ? "Hide" : "Show"}
+                onPress={() => setTranscriptOpen((open) => !open)}
+              />
+            </ListSection>
+            {transcriptOpen ? <TranscriptLines transcript={transcript} /> : null}
+          </View>
+        ) : null}
+
+        {/* Posted minutes keep their recording's transcript (#5410). */}
+        {!transcript && meeting.transcript ? (
+          <View style={styles.transcript}>
+            <ListSection>
+              <ListRow
+                label={MEETING_COPY.transcript}
+                value={transcriptOpen ? "Hide" : "Show"}
+                onPress={() => setTranscriptOpen((open) => !open)}
+              />
+            </ListSection>
+            {transcriptOpen ? (
+              <TranscriptLines transcript={meeting.transcript} />
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Under the minutes, so its arrival after the read moves nothing
             the member is reading. */}
@@ -276,73 +430,8 @@ function LoadedMinutes({
             />
           </ListSection>
         ) : null}
-
-        {finishing || heldHere ? (
-          <View style={styles.actions}>
-            {(recorderOffered && recordingState) || heldHere ? (
-              <RecordingRow
-                meetingId={meeting.id}
-                eventName={meeting.event_name}
-                server={recorderOffered ? recordingState : null}
-                ensureConsent={ensureConsent}
-                onOpenNotes={() => notesRef.current?.present()}
-              />
-            ) : recordingLoading ? (
-              <RecordingRowPlaceholder />
-            ) : null}
-            {finishing ? (
-              <>
-                {draftState || draftLoading ? (
-                  <OnboardingSecondaryButton
-                    fill
-                    label={
-                      drafting
-                        ? MEETING_NOTES_COPY.drafting
-                        : MEETING_NOTES_COPY.draft
-                    }
-                    disabled={!draftState}
-                    onPress={() => notesRef.current?.present()}
-                  />
-                ) : null}
-                <SheetPrimaryButton
-                  label={MEETING_COPY.post}
-                  busy={post.isPending}
-                  disabled={post.isPending || drafting || empty}
-                  accessibilityHint={
-                    empty ? MEETING_COPY.nothingWritten : undefined
-                  }
-                  onPress={() => void handlePost()}
-                  accent={accent}
-                  onAccent={accentOnPrimary}
-                />
-                {/* One line, always there for a draft's editor, that carries a
-                    failed post in its place, so nothing moves when one fails. */}
-                <Text
-                  accessibilityLiveRegion="polite"
-                  style={[styles.meta, problem ? styles.problem : null]}
-                >
-                  {problem ??
-                    (empty && !draftState && !draftLoading
-                      ? MEETING_COPY.writeOnWeb
-                      : MEETING_COPY.editOnWeb)}
-                </Text>
-              </>
-            ) : null}
-          </View>
-        ) : null}
       </ScreenShell>
-      {finishing && draftState ? (
-        <NotesDraftSheet
-          ref={notesRef}
-          meetingId={meeting.id}
-          eventStart={meeting.event_start_time}
-          state={draftState}
-          hasContent={!empty}
-          recording={recorderOffered ? recordingState : null}
-          getVersion={async () => (await refetch())?.updated_at ?? null}
-          onSettled={() => void refetch()}
-        />
-      ) : null}
+      {recorder.sheets}
       {consentSheet}
     </>
   );
@@ -379,8 +468,8 @@ function createStyles(tokens: SignetTokens) {
     problem: {
       color: tokens.color.semantic.destructiveText,
     },
-    actions: {
-      gap: tokens.spacing.md,
+    transcript: {
+      gap: tokens.spacing.sm,
     },
     skeleton: {
       gap: tokens.spacing.md,

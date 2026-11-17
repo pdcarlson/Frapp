@@ -27,6 +27,14 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
   enabled: undefined as boolean | undefined,
   taking: [] as { meeting_id: string; author_name: string; joined: boolean }[],
+  recorder: null as object | null,
+  recorderState: { phase: "idle", refusal: null } as Record<string, unknown>,
+}));
+vi.mock("@/lib/minutes/recorder/session", () => ({
+  useMeetingRecorder: () => ({
+    state: state.recorderState,
+    recorder: state.recorder,
+  }),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -85,6 +93,8 @@ beforeEach(() => {
   state.permissions = ["meetings:record"];
   state.canDraft = true;
   state.taking = [];
+  state.recorder = null;
+  state.recorderState = { phase: "idle", refusal: null };
 });
 
 describe("EventMinutesRow", () => {
@@ -159,5 +169,29 @@ describe("EventMinutesRow", () => {
     expect(state.refetch).toHaveBeenCalled();
     expect(screenText(tree)).toContain(MEETING_ENTRY_COPY.alreadyStartedBody);
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("records where this phone can: starts them and opens them asking to record", async () => {
+    state.recorder = {};
+    state.start.mockResolvedValue({ id: "m9" });
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_ENTRY_COPY.record);
+    expect(screenText(tree)).not.toContain(MEETING_ENTRY_COPY.write);
+    await act(async () => rows(tree)[0].props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/minutes-details",
+      params: { id: "m9", record: "1" },
+    });
+  });
+
+  it("offers Write, not a second recording, while the phone already records", () => {
+    state.recorder = {};
+    state.recorderState = {
+      phase: "recording",
+      subject: { meetingId: "m2", eventName: "Other", maxSeconds: 7200 },
+      seconds: 10,
+      paused: null,
+    };
+    expect(screenText(render())).toContain(MEETING_ENTRY_COPY.write);
   });
 });
