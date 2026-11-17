@@ -207,6 +207,9 @@ describe("ProfilePhoto", () => {
     expect(options.options).toEqual(["Choose photo", "Remove photo", "Cancel"]);
     expect(options.destructiveButtonIndex).toBe(1);
     expect(options.cancelButtonIndex).toBe(2);
+    // No title on iOS; Android's dialog has one (#5168 pins both).
+    expect(options.title).toBeUndefined();
+    expect(options.userInterfaceStyle).toBe("dark");
 
     await pickSheetOption("Choose photo");
     expect(state.pick).toHaveBeenCalledTimes(1);
@@ -246,6 +249,15 @@ describe("ProfilePhoto", () => {
       expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
       const labels = alertButtons().map((button) => button.text);
       expect(labels).toEqual(["Cancel", "Remove photo", "Choose photo"]);
+      const [title, , buttons, extra] = vi.mocked(Alert.alert).mock.calls[0]!;
+      expect(title).toBe("Profile photo");
+      expect(buttons![0]).toEqual({ text: "Cancel", style: "cancel" });
+      expect(buttons!.map((button) => button.style)).toEqual([
+        "cancel",
+        "destructive",
+        undefined,
+      ]);
+      expect(extra).toEqual({ cancelable: true });
 
       // Remove photo still confirms before anything is removed.
       act(() => {
@@ -307,7 +319,9 @@ describe("ProfilePhoto", () => {
     expect(circle.borderColor).toBe(signetDarkTokens.color.border.hairline);
     expect(circle.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     for (const colour of ["#CB9FFF", "#251A33"]) {
-      expect(JSON.stringify(initials.parent!.props.style)).not.toContain(colour);
+      expect(JSON.stringify(initials.parent!.props.style)).not.toContain(
+        colour,
+      );
       expect(JSON.stringify(initials.props.style)).not.toContain(colour);
     }
   });

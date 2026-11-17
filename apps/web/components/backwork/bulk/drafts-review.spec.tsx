@@ -35,6 +35,11 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("./check-pages-dialog", () => ({
+  CheckPagesDialog: ({ draft }: { draft: BackworkDraft | null }) =>
+    draft ? <p>Checking {draft.id}</p> : null,
+}));
+
 import { DraftsReview, DraftsWaitingNote } from "./drafts-review";
 
 const draft = (id: string, fields: BackworkDraft["draft_fields"], is_redacted = true): BackworkDraft => ({
@@ -310,5 +315,48 @@ describe("Backwork drafts waiting note", () => {
     state.drafts = [];
     rerender(<DraftsWaitingNote />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  describe("drafts saved without opening them (#5252)", () => {
+    beforeEach(() => {
+      state.drafts = [
+        draft("a", { title: "Midterm 1" }),
+        draft("u", { title: "Quiz 3", pages_unchecked: true }),
+      ];
+      state.draftsError = false;
+      state.publish.mockReset().mockResolvedValue({ published: [], failed: [] });
+      state.fill.mockReset().mockResolvedValue({ status: "nothing_found", draft: null });
+    });
+
+    it("asks for a page check instead of publishing it, and leaves it out of Publish", async () => {
+      render(<DraftsReview />);
+      expect(screen.getByText(/1 draft was saved without opening it/)).toBeInTheDocument();
+      const publish = screen.getByRole("button", { name: "Publish 1 checked" });
+      fireEvent.click(publish);
+      await waitFor(() => expect(state.publish).toHaveBeenCalledWith(["a"]));
+
+      fireEvent.click(screen.getByRole("button", { name: /Check pages/ }));
+      expect(screen.getByText("Checking u")).toBeInTheDocument();
+    });
+
+    it("never sends it to the AI fill", async () => {
+      render(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledWith("a"));
+      expect(state.fill).not.toHaveBeenCalledWith("u");
+    });
+
+    it("fills it once its pages are checked", async () => {
+      const { rerender } = render(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledWith("a"));
+      state.drafts = [state.drafts[0]!, draft("u", { title: "Quiz 3" })];
+      rerender(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledWith("u"));
+    });
+
+    it("has nothing to publish when every draft waits for its check", () => {
+      state.drafts = [draft("u", { title: "Quiz 3", pages_unchecked: true })];
+      render(<DraftsReview />);
+      expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
+    });
   });
 });

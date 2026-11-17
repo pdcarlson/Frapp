@@ -11,14 +11,12 @@ import type { PendingPollPicks } from "@repo/chat-core/polls";
 import {
   CLOSE_SIGNUP_LABEL,
   SIGNUP_CLAIM_ACTION_TYPE,
-  canCloseSignup,
   canExportSignup,
   castSignupClaim,
   headcountAnswerPayload,
   headcountNotePayload,
   type PendingHeadcount,
   isHeadcountSignup,
-  isSignupClosed,
   readSignupPayload,
   signupDeadlineLine,
   signupCardEyebrow,
@@ -31,6 +29,7 @@ import {
   signupSlotStatus,
   tallySignups,
 } from "@repo/chat-core/signups";
+import { canCloseCard, isCardClosed } from "@repo/chat-core/card-closing";
 import { cardExportFilenamePrefix } from "@repo/chat-core/form-responses";
 import {
   actorLabel,
@@ -129,12 +128,12 @@ export function SignupCard(props: SignupCardProps) {
     );
   }
 
-  const closed = isSignupClosed(payload, now);
+  const closed = isCardClosed(payload, now);
   const headcount = isHeadcountSignup(payload);
   const canClaim = isConfirmed && !!viewerId && !closed;
   const showClose =
     !!onCloseSignup &&
-    canCloseSignup(message, payload, viewerId, now, canManageChannels);
+    canCloseCard(message, payload, viewerId, now, canManageChannels);
   const showExport =
     tally.people > 0 && canExportSignup(message, viewerId, canManageChannels);
   const deadline = signupDeadlineLine(payload, now);

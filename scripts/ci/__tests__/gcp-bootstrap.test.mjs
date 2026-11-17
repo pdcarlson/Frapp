@@ -110,4 +110,7 @@ test("--infisical-org-id names the sync account with the suffix Infisical requir
   assert.ok(r.calls.some((c) => c.includes("service-accounts create infisical-df92581a-0fe9")));
   const grant = r.calls.find((c) => c.includes("roles/iam.serviceAccountTokenCreator")) ?? "";
   assert.match(grant, /infisical-us@infisical-us\.iam\.gserviceaccount\.com/);
+  // Infisical lists a project for a sync only once it can see Secret Manager is on there.
+  const viewer = r.calls.find((c) => c.includes("roles/serviceusage.serviceUsageViewer")) ?? "";
+  assert.match(viewer, /serviceAccount:infisical-df92581a-0fe9@nonprod-123\.iam\.gserviceaccount\.com/);
 });

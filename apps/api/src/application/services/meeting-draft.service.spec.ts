@@ -33,6 +33,7 @@ import { MeetingDraftService } from './meeting-draft.service';
 import type { MeetingService } from './meeting.service';
 import type { MeetingNotesService } from './meeting-notes.service';
 import type { MinutesSource } from '#domain/utils/minutes-draft';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import type { RbacService } from './rbac.service';
 
 const CHAPTER = 'ch-1';
@@ -224,7 +225,7 @@ class FakeNotes {
 }
 
 interface Setup {
-  reply?: ScriptedReply;
+  reply?: ScriptedReply | ((request: LanguageModelRequest) => ScriptedReply);
   consent?: Awaited<ReturnType<IAiConsentCheck['check']>>;
   spend?: Awaited<ReturnType<IAiSpendReservation['reserve']>>;
   stored?: Meeting;
@@ -239,6 +240,7 @@ function setup(options: Setup = {}) {
   const model = new ScriptedLanguageModel({
     'minutes.draft': (request) => {
       seen.push(request);
+      if (typeof options.reply === 'function') return options.reply(request);
       return (
         options.reply ?? { text: JSON.stringify(DRAFTED), object: DRAFTED }
       );
@@ -521,6 +523,51 @@ describe('MeetingDraftService', () => {
       });
     });
 
+    it('drafts a long meeting in parts, keeps every part, and writes one summary over them', async () => {
+      const filler = Array.from(
+        { length: 1500 },
+        (_, i) => `Talked about the house, point ${i}.`,
+      ).join('\n');
+      const whole = { summary: 'The whole meeting, start to end.' };
+      const { ask, work, meetings, seen } = setup({
+        reply: (request) =>
+          request.system?.includes('from summaries of its parts')
+            ? { text: JSON.stringify(whole), object: whole }
+            : { text: JSON.stringify(DRAFTED), object: DRAFTED },
+      });
+      await ask(`${NOTES}\n${filler}\n${NOTES}`);
+      await work();
+
+      // Two parts side by side, then the summary over them.
+      expect(seen).toHaveLength(3);
+      expect(seen[0].messages[0].content).toContain('This is part 1 of 2');
+      expect(seen[1].messages[0].content).toContain('This is part 2 of 2');
+      expect(seen[2].messages[0].content).toContain(
+        'Part 1: The chapter approved a DJ for formal.',
+      );
+      const [, , , save] = meetings.update.mock.calls[0];
+      expect(save.content.summary).toBe('The whole meeting, start to end.');
+      // Both parts drafted the same items: they are kept once.
+      expect(save.content.decisions).toHaveLength(1);
+      expect(save.content.action_items).toHaveLength(2);
+    });
+
+    it('ends a long draft as a whole when one part fails', async () => {
+      const filler = Array.from(
+        { length: 1500 },
+        (_, i) => `Talked about the house, point ${i}.`,
+      ).join('\n');
+      const { ask, work, meetings } = setup({
+        reply: (request) =>
+          request.messages[0].content.includes('This is part 2 of 2')
+            ? { text: 'not json', object: undefined }
+            : { text: JSON.stringify(DRAFTED), object: DRAFTED },
+      });
+      await ask(`${NOTES}\n${filler}`);
+      await expect(work()).rejects.toBeInstanceOf(AiRunFailure);
+      expect(meetings.update).not.toHaveBeenCalled();
+    });
+
     it('tells the editor what to check the draft against', async () => {
       const { ask, work, service } = setup();
       await ask();
@@ -793,6 +840,10 @@ describe('MeetingDraftService', () => {
     expect(deleted).toBe(3);
     expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
       '2026-11-12T00:00:00.000Z',
+    );
+    // The same window as the notes and recording sweeps, not a copy of it (#5200).
+    expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
+      meetingRetentionCutoff(now).toISOString(),
     );
     expect(notes.deleteExpired).toHaveBeenCalledWith(now);
   });

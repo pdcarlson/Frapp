@@ -177,8 +177,12 @@ secret as an environment variable. Infisical stays the one place a value changes
 value, and neither does GitHub. Until the cutover finishes, the two Render syncs above still feed the
 Render services.
 
-Planned, and not live yet (the sync account comes from
-[`scripts/gcp/bootstrap.sh`](../../../scripts/gcp/bootstrap.sh) `--infisical-org-id`):
+Both run since 2026-11-16, through the App Connections `gcp-nonprod` and `gcp-prod` (Service
+Account Impersonation of the account [`scripts/gcp/bootstrap.sh`](../../../scripts/gcp/bootstrap.sh)
+`--infisical-org-id` creates). Each overwrote its destination on the first sync, syncs automatically,
+and has secret deletion protection on, so a value removed in Infisical stays in Secret Manager: a
+deployed revision pins a secret's version, and deleting the secret would stop a new copy of that
+revision from starting.
 
 | Name | Infisical env | Path | Destination |
 | ---- | ------------- | ---- | ----------- |

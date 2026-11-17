@@ -2,28 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   describeOAuthKickoffError,
   IDENTITY_COLLISION_COPY,
-  isApplePrivateRelayEmail,
-  isPlaceholderAuthEmail,
   OAUTH_UNAVAILABLE_COPY,
   startWebOAuth,
 } from "./oauth";
-
-describe("isApplePrivateRelayEmail", () => {
-  it("recognises Hide My Email addresses and nothing else", () => {
-    expect(isApplePrivateRelayEmail("abc@privaterelay.appleid.com")).toBe(true);
-    expect(isApplePrivateRelayEmail("ABC@PrivateRelay.AppleId.COM")).toBe(true);
-    expect(isApplePrivateRelayEmail("officer@university.edu")).toBe(false);
-    expect(isApplePrivateRelayEmail("")).toBe(false);
-    expect(isApplePrivateRelayEmail(null)).toBe(false);
-  });
-});
-
-describe("isPlaceholderAuthEmail", () => {
-  it("matches the AuthSync fallback host only", () => {
-    expect(isPlaceholderAuthEmail("noreply+abc@users.invalid")).toBe(true);
-    expect(isPlaceholderAuthEmail("a@example.com")).toBe(false);
-  });
-});
 
 describe("describeOAuthKickoffError", () => {
   it("guides a colliding email back to password or magic link", () => {

@@ -92,6 +92,8 @@ export interface SentUpload {
   uploaded: UploadedImage;
   title: string;
   folder: string | null;
+  /** Who can see it (#5216): `null` follows its folder. */
+  whoCanSee: string[] | null;
 }
 
 export type DocumentUploadResult =
@@ -323,13 +325,14 @@ const DOCUMENT_GATE_COPY: GateCopy = {
  */
 export async function uploadDocumentPhoto(
   image: PickedImage,
-  draft: { title: string; folder: string | null },
+  draft: { title: string; folder: string | null; whoCanSee?: string[] | null },
   mutations: DocumentUploadMutations,
   sent?: SentUpload,
 ): Promise<DocumentUploadResult> {
   const retry = sent?.image === image ? sent : undefined;
   const title = retry ? retry.title : documentTitle(draft.title, image);
   const folder = retry ? retry.folder : draft.folder;
+  const whoCanSee = retry ? retry.whoCanSee : (draft.whoCanSee ?? null);
   let stored = retry?.uploaded;
   if (!stored) {
     const put = await uploadPickedImageGated(
@@ -352,6 +355,9 @@ export async function uploadDocumentPhoto(
       // The phone sheet has no date row, so it files under the upload day,
       // which is the web panel's default (Paul, 2026-11-16).
       effective_date: localIsoDate(new Date()),
+      // A list only when the uploader chose one (#5216); left out, the file
+      // follows its folder.
+      ...(whoCanSee !== null ? { who_can_see: whoCanSee } : {}),
     });
     return { status: "uploaded", title };
   } catch (error) {
@@ -361,7 +367,7 @@ export async function uploadDocumentPhoto(
       reason:
         reason ?? definitiveRefusalMessage(error) ?? DOCUMENT_UPLOAD_FAILED,
       final: reason !== null,
-      sent: { image, uploaded: stored, title, folder },
+      sent: { image, uploaded: stored, title, folder, whoCanSee },
     };
   }
 }

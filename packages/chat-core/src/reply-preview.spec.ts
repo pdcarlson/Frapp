@@ -91,9 +91,13 @@ describe("replyPreviewText", () => {
   });
 
   it("stays fast on a hostile body", () => {
-    const started = performance.now();
-    replyPreviewText(preview({ content: "[".repeat(10_000) }));
-    expect(performance.now() - started).toBeLessThan(20);
+    // The link pattern backtracks quadratically on unmatched `[`, so only the
+    // start of a body is flattened. Checked by what is read, not by a clock,
+    // which false-fails on a loaded runner: nothing past the cap reaches the
+    // preview.
+    expect(replyPreviewText(preview({ content: "[".repeat(10_000) }))).toBe(
+      "[".repeat(500),
+    );
   });
 
   it("leaves bare asterisks alone rather than eating them", () => {

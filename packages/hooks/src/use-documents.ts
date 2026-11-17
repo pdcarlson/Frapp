@@ -3,6 +3,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import {
+  selectChannelAccessOptions,
+  type ChannelAccessOption,
+} from "./channel-access";
 
 /**
  * List documents, optionally narrowed to a folder or a title search.
@@ -153,6 +157,39 @@ export function useDocumentAccessOptions(options?: { enabled?: boolean }) {
     staleTime: 300_000,
     enabled: options?.enabled ?? true,
   });
+}
+
+/**
+ * What a document "Who can see" field offers (#3642 piece 1,
+ * `chapter-docs.md` § Who can see), read off `useDocumentAccessOptions` and
+ * shared by web's dialogs and the phone's upload sheet: the chapter's tiers,
+ * roles and groups, as a channel's list offers them, and the tiers every
+ * list the caller writes keeps (their own and those above). `canLimit` is
+ * false while those load, when they fail, and for a caller outside every
+ * tier, who may not set a list (but may lift one: the API takes `null`).
+ */
+export function documentAccessChoices(query: {
+  data?: { options?: unknown; always?: string[] | null } | undefined;
+  isSuccess: boolean;
+  isError: boolean;
+}) {
+  const options: ChannelAccessOption[] = selectChannelAccessOptions(
+    query.data?.options,
+  );
+  const locked = query.data?.always ?? null;
+  // Decided by the data held, not the last fetch: a background refetch that
+  // fails leaves good options cached, and the field stays as it was.
+  const loaded = query.data !== undefined;
+  return {
+    options,
+    optionsState: loaded
+      ? ("ready" as const)
+      : query.isError
+        ? ("error" as const)
+        : ("loading" as const),
+    locked: locked ?? [],
+    canLimit: loaded && locked !== null,
+  };
 }
 
 /**

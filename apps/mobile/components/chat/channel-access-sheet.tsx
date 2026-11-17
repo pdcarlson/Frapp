@@ -53,6 +53,22 @@ export interface ChannelAccessSheetProps {
   onChange: (next: string[] | null) => void;
   options: readonly ChannelAccessOption[];
   optionsState: "ready" | "loading" | "error";
+  /**
+   * The open choice's name when `null` means something other than
+   * everyone: a document file's "Same as folder" (#5216).
+   */
+  everyoneLabel?: string;
+  /** The line under the switch for the open choice, in its own words. */
+  everyoneLine?: string;
+  /**
+   * Entries every list this member writes keeps: a document list keeps the
+   * setter's tier and those above (#5216). They start a new list, join a
+   * stored one at its first tick, as the API adds them on save, and can't
+   * be unticked.
+   */
+  locked?: readonly string[];
+  /** Who passes every list, said under the switch; the President by default. */
+  alwaysLine?: string;
 }
 
 /**
@@ -103,6 +119,10 @@ function ChannelAccessBody({
   onChange,
   options,
   optionsState,
+  everyoneLabel,
+  everyoneLine,
+  locked = [],
+  alwaysLine,
   onDone,
 }: ChannelAccessSheetProps & { onDone: () => void }) {
   const { tokens } = useFrappTheme();
@@ -124,12 +144,24 @@ function ChannelAccessBody({
     options.filter((option) => !option.hidden).length >
       CHANNEL_ACCESS_SEARCH_FROM;
 
+  const lockedSet = new Set(locked);
+  const modeOptions = everyoneLabel
+    ? MODE_OPTIONS.map((option) =>
+        option.value === "everyone"
+          ? { ...option, label: everyoneLabel }
+          : option,
+      )
+    : MODE_OPTIONS;
+
   function toggle(entry: string) {
     const current = value ?? [];
+    if (lockedSet.has(entry) && current.includes(entry)) return;
     onChange(
-      current.includes(entry)
-        ? current.filter((held) => held !== entry)
-        : (normalizeChannelAccessList([...current, entry]) ?? []),
+      normalizeChannelAccessList(
+        current.includes(entry)
+          ? [...locked, ...current.filter((held) => held !== entry)]
+          : [...locked, ...current, entry],
+      ) ?? [],
     );
   }
 
@@ -141,9 +173,11 @@ function ChannelAccessBody({
         doneAccent={brand.accent}
       />
       <Segmented
-        options={MODE_OPTIONS}
+        options={modeOptions}
         value={mode}
-        onChange={(next: Mode) => onChange(next === "everyone" ? null : [])}
+        onChange={(next: Mode) =>
+          onChange(next === "everyone" ? null : [...locked])
+        }
         accessibilityLabel={title}
       />
       <Text
@@ -156,6 +190,7 @@ function ChannelAccessBody({
           value,
           options,
           optionsState === "ready",
+          { everyone: everyoneLine, always: alwaysLine },
         )}
       </Text>
       {searchable ? (
@@ -208,12 +243,19 @@ function ChannelAccessBody({
         }
         const { option } = item;
         const on = chosen.has(option.entry);
+        const fixed = on && lockedSet.has(option.entry);
         const reach = peopleCount(option.user_ids.length);
         return (
           <Pressable
             accessibilityRole="checkbox"
             accessibilityLabel={`${option.name}, ${reach}`}
-            accessibilityState={{ checked: on }}
+            accessibilityHint={
+              fixed
+                ? "Always on a list you set: your tier and those above."
+                : undefined
+            }
+            accessibilityState={{ checked: on, disabled: fixed }}
+            disabled={fixed}
             onPress={() => toggle(option.entry)}
             style={({ pressed }) => [
               styles.row,

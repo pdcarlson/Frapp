@@ -1,9 +1,8 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
 import { isSearchRunnable, useSearch } from "./use-search";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const SEARCH_ENDPOINT = "/v1/search";
 
@@ -20,30 +19,19 @@ const createWrapper = (
   queryClient: QueryClient,
   mockClient: unknown,
   chapterId: string | null = "chapter-a",
-) => {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "UseSearchTestWrapper";
-  return Wrapper;
-};
+) =>
+  createHookWrapper({
+    queryClient,
+    client: mockClient,
+    chapterId,
+    displayName: "UseSearchTestWrapper",
+  });
 
 describe("useSearch", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("returns search payload when the API request succeeds", async () => {

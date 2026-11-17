@@ -62,9 +62,14 @@ export function eventTypeHooks(types: unknown[] = EVENT_TYPES) {
   };
 }
 
-/** Every hook `EventsPage` and what it renders call, with `overrides` on top. */
-export function eventsPageHooks(overrides: Record<string, unknown> = {}) {
+/**
+ * Every hook `EventsPage` and what it renders call, with `overrides` on top.
+ * The real shared Google Calendar module comes first, so the Subscribe menu
+ * reads its copy (#4676); the stubs below override its hooks.
+ */
+export async function eventsPageHooks(overrides: Record<string, unknown> = {}) {
   return {
+    ...(await import("@repo/hooks/use-google-calendar")),
     // A viewer with no roles: the event's default decides (#4132). The rule
     // itself is the hook's own spec.
     useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>

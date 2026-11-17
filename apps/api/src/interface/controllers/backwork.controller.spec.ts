@@ -35,6 +35,8 @@ describe('BackworkController', () => {
     deleteCourse: jest.fn(),
     findById: jest.fn(),
     delete: jest.fn(),
+    draftFileUrl: jest.fn(),
+    checkDraft: jest.fn(),
   };
 
   const mockRbacService = { memberHasAnyPermission: jest.fn() };
@@ -136,6 +138,52 @@ describe('BackworkController', () => {
         ...dto,
       });
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('draft page check (#5252)', () => {
+    const hash = 'a'.repeat(64);
+
+    it('hands the re-flattened file to the check', async () => {
+      mockBackworkService.checkDraft.mockResolvedValue({ id: 'd1' });
+
+      await controller.checkDraft('ch-1', 'user-1', 'd1', {
+        storage_path: 'chapters/ch-1/backwork/r2/a.pdf',
+        file_hash: hash,
+      });
+
+      expect(mockBackworkService.checkDraft).toHaveBeenCalledWith(
+        'd1',
+        'ch-1',
+        'user-1',
+        { storage_path: 'chapters/ch-1/backwork/r2/a.pdf', file_hash: hash },
+      );
+    });
+
+    it('marks it checked as it is when no file is sent', async () => {
+      mockBackworkService.checkDraft.mockResolvedValue({ id: 'd1' });
+
+      await controller.checkDraft('ch-1', 'user-1', 'd1', {});
+
+      expect(mockBackworkService.checkDraft).toHaveBeenCalledWith(
+        'd1',
+        'ch-1',
+        'user-1',
+        undefined,
+      );
+    });
+
+    it("answers with a link to the caller's own draft's file", async () => {
+      mockBackworkService.draftFileUrl.mockResolvedValue('https://x');
+
+      await expect(
+        controller.draftFileUrl('ch-1', 'user-1', 'd1'),
+      ).resolves.toEqual({ url: 'https://x' });
+      expect(mockBackworkService.draftFileUrl).toHaveBeenCalledWith(
+        'd1',
+        'ch-1',
+        'user-1',
+      );
     });
   });
 

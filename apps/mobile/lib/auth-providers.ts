@@ -2,8 +2,6 @@ import { describeOAuthError } from "@repo/hooks/auth-error-copy";
 
 export type OAuthProvider = "apple" | "google";
 
-const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
-
 // Mobile s01 keeps the password and magic-link form behind "Continue with
 // email" (#3349), so these name that button rather than controls that aren't
 // on screen when an OAuth kickoff fails. Web's copy lives in
@@ -13,24 +11,6 @@ export const IDENTITY_COLLISION_COPY =
 
 export const OAUTH_UNAVAILABLE_COPY =
   "This sign-in method isn't available yet. Tap Continue with email to use your password or a magic link.";
-
-/**
- * Shown on s01 wherever a Continue with Apple button is: an invited member who
- * signs in with Apple's Hide My Email can still redeem an invite sent to a
- * university address, because redeem binds the signed-in user, not the
- * invite's email (`spec/behavior/onboarding.md`). The store's App Review notes
- * rely on this line (`apps/mobile/store/README.md`).
- */
-export const OAUTH_MEMBERSHIP_HINT =
-  "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.";
-
-export function isApplePrivateRelayEmail(
-  email: string | null | undefined,
-): boolean {
-  if (!email) return false;
-  const host = email.split("@")[1]?.toLowerCase();
-  return host === APPLE_PRIVATE_RELAY_HOST;
-}
 
 /**
  * An email link (magic link or confirmation) that was opened after it expired,

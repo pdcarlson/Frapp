@@ -48,6 +48,18 @@ const goalReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
 let chapterModules: Record<string, boolean> = {};
+/** False while `useCurrentChapter` hasn't answered (#5281's slow-read case). */
+let chapterLoaded = true;
+/** What `useMyProfileStats` answers (#5281); its reads are its own spec's. */
+let profileStats = {
+  points: null as number | null,
+  serviceHours: null as string | null,
+  serviceMinutes: null as number | null,
+  hasChapter: true,
+  visible: true,
+  pointsFailed: false,
+  serviceFailed: false,
+};
 const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 
 // `@repo/validation`'s beta list, emptied so these specs draw You as a
@@ -70,6 +82,7 @@ vi.mock("@/lib/account/own-status", () => ({
 }));
 
 vi.mock("@/components/you/profile-sections", () => ({
+  PointsLabel: "PointsLabel",
   ProfileHead: "ProfileHead",
   ProfileDetails: "ProfileDetails",
   ProfileSkeleton: "ProfileSkeleton",
@@ -120,16 +133,19 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: invoices };
   },
   useCurrentUser: () => currentUser,
+  useMyProfileStats: () => profileStats,
   useCurrentChapter: () => ({
-    data: {
-      name: "FIJI Tau Nu",
-      enabled_modules: chapterModules,
-      theme_palette: {
-        "--signet-accent-text": "#7FB2FF",
-        "--signet-accent-primary": "#2D7BFF",
-        "--signet-accent-on-primary": "#FFFFFF",
-      },
-    },
+    data: !chapterLoaded
+      ? undefined
+      : {
+          name: "FIJI Tau Nu",
+          enabled_modules: chapterModules,
+          theme_palette: {
+            "--signet-accent-text": "#7FB2FF",
+            "--signet-accent-primary": "#2D7BFF",
+            "--signet-accent-on-primary": "#FFFFFF",
+          },
+        },
   }),
 }));
 
@@ -261,8 +277,12 @@ describe("You tab clock (#2101)", () => {
 
     tick();
 
-    expect(screenText(tree)).toContain("0.0 hrs");
+    // A new week with nothing studied and no goal says nothing (#5281).
     expect(screenText(tree)).not.toContain("2.0 hrs");
+    const study = tree.root
+      .findAllByType(ListRow)
+      .find((row) => row.props.label === "Study hours");
+    expect(study?.props.value).toBeNull();
   });
 
   it("reads the week against the member's study goal when the chapter sets one (#1062)", () => {
@@ -279,6 +299,34 @@ describe("You tab clock (#2101)", () => {
     ];
     try {
       expect(screenText(render())).toContain("4.0 / 6.0 hrs");
+    } finally {
+      studyGoal = null;
+    }
+  });
+
+  it("says nothing for a week that would draw as 0.0 hrs (#5281)", () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 18, 0, 0));
+    sessions = [
+      {
+        id: "session-1",
+        status: "COMPLETED",
+        start_time: new Date(2026, 9, 3, 10, 0).toISOString(),
+        end_time: new Date(2026, 9, 3, 10, 2).toISOString(),
+        total_foreground_minutes: 2,
+      },
+    ];
+    const study = render()
+      .root.findAllByType(ListRow)
+      .find((row) => row.props.label === "Study hours");
+    expect(study?.props.value).toBeNull();
+  });
+
+  it("keeps 0.0 against a goal, which says how far there is to go (#5281)", () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 18, 0, 0));
+    studyGoal = 360;
+    sessions = [];
+    try {
+      expect(screenText(render())).toContain("0.0 / 6.0 hrs");
     } finally {
       studyGoal = null;
     }
@@ -713,5 +761,123 @@ describe("You tab anatomy (#1048, #3839)", () => {
       pathname: "/(auth)/chapter-picker",
       params: { from: "you" },
     });
+  });
+});
+
+/**
+ * #5281 (Paul, 2026-11-17): points and service hours stop taking a card each.
+ * Points is a quiet figure at the top right; service hours is the Service
+ * hours row's value. Both say nothing at zero or with their module off.
+ */
+describe("You tab points and service hours (#5281)", () => {
+  const baseStats = { ...profileStats };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 12, 0, 0));
+    currentUser = LOADED_USER;
+    permissions = [];
+    events = [];
+    sessions = undefined;
+    invoices = [];
+    notifications = [];
+    chapterModules = {};
+    profileStats = { ...baseStats };
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+    profileStats = { ...baseStats };
+    chapterModules = {};
+    chapterLoaded = true;
+  });
+
+  const pointsLabel = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "PointsLabel" ||
+        (typeof node.type === "function" && node.type.name === "PointsLabel"),
+    );
+  const serviceRow = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType(ListRow)
+      .find((row) => row.props.label === "Service hours");
+
+  it("hands the points to the title's corner, and nothing with Points off", () => {
+    profileStats.points = 60;
+    const on = pointsLabel(render());
+    expect(on).toHaveLength(1);
+    expect(on[0]!.props.points).toBe(60);
+
+    chapterModules = { points: false };
+    expect(pointsLabel(render())).toHaveLength(0);
+  });
+
+  it("draws no points for a viewer who can't read them", () => {
+    profileStats.points = 60;
+    profileStats.visible = false;
+    expect(pointsLabel(render())).toHaveLength(0);
+  });
+
+  it("puts approved service hours on their row, and nothing at zero", () => {
+    profileStats.serviceMinutes = 150;
+    profileStats.serviceHours = "2.5";
+    expect(serviceRow(render())?.props.value).toBe("2.5 hrs");
+
+    profileStats.serviceMinutes = 0;
+    profileStats.serviceHours = "0";
+    const zero = serviceRow(render());
+    // The row stays at zero: it is where a member logs hours.
+    expect(zero).toBeDefined();
+    expect(zero?.props.value).toBeNull();
+  });
+
+  it("draws no corner figure at zero, and a dash when the read failed", () => {
+    profileStats.points = 0;
+    expect(pointsLabel(render())).toHaveLength(0);
+
+    profileStats.points = null;
+    profileStats.pointsFailed = true;
+    const failed = pointsLabel(render());
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.props.failed).toBe(true);
+  });
+
+  it("shows a negative balance: a fine is something the member needs to see", () => {
+    profileStats.points = -5;
+    expect(pointsLabel(render())[0]?.props.points).toBe(-5);
+  });
+
+  it("formats service hours as Study's row does, singular at one hour", () => {
+    profileStats.serviceMinutes = 60;
+    profileStats.serviceHours = "1";
+    expect(serviceRow(render())?.props.value).toBe("1.0 hr");
+  });
+
+  it("says nothing for a total that would draw as zero", () => {
+    profileStats.serviceMinutes = 2;
+    profileStats.serviceHours = "0.0";
+    expect(serviceRow(render())?.props.value).toBeNull();
+  });
+
+  it("gives the Service hours row a dash when its read failed", () => {
+    profileStats.serviceFailed = true;
+    expect(serviceRow(render())?.props.value).toBe("—");
+  });
+
+  it("hides nothing while the chapter hasn't loaded: its modules count as on", () => {
+    chapterLoaded = false;
+    profileStats.points = 60;
+    const tree = render();
+    expect(pointsLabel(tree)).toHaveLength(1);
+    expect(serviceRow(tree)).toBeDefined();
+  });
+
+  it("drops the Service hours row for a chapter with the module off", () => {
+    chapterModules = { hours: false };
+    expect(serviceRow(render())).toBeUndefined();
   });
 });

@@ -327,6 +327,7 @@ describe("Invite members", () => {
       "Cancel",
     ]);
     expect(options.destructiveButtonIndex).toBe(2);
+    expect(options.userInterfaceStyle).toBe("dark");
 
     await act(async () => pick(1));
     expect(emailInvites).toHaveBeenCalledWith({
@@ -400,11 +401,20 @@ describe("Invite members", () => {
     try {
       const tree = render();
       act(() => rowFor(tree, "pledge@school.edu").props.onPress());
-      const buttons = alert.mock.calls[0][2] as { text: string }[];
+      const buttons = alert.mock.calls[0][2] as {
+        text: string;
+        style?: string;
+      }[];
       expect(buttons.map((b) => b.text)).toEqual([
         "Share link",
         "Send again",
         "Revoke invite",
+      ]);
+      expect(alert.mock.calls[0][0]).toBe("pledge@school.edu");
+      expect(buttons.map((b) => b.style)).toEqual([
+        "default",
+        "default",
+        "destructive",
       ]);
       expect(alert.mock.calls[0][3]).toEqual({ cancelable: true });
       tree.unmount();

@@ -6,17 +6,8 @@ import {
   describeOAuthKickoffError,
   FINISH_FAILED_COPY,
   IDENTITY_COLLISION_COPY,
-  isApplePrivateRelayEmail,
   OAUTH_UNAVAILABLE_COPY,
 } from "./auth-providers";
-
-describe("isApplePrivateRelayEmail", () => {
-  it("recognises Hide My Email and rejects chapter addresses", () => {
-    expect(isApplePrivateRelayEmail("n@privaterelay.appleid.com")).toBe(true);
-    expect(isApplePrivateRelayEmail("officer@university.edu")).toBe(false);
-    expect(isApplePrivateRelayEmail(null)).toBe(false);
-  });
-});
 
 describe("describeOAuthKickoffError", () => {
   it("maps a colliding identity back to password or magic link", () => {

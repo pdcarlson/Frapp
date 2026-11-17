@@ -1,6 +1,6 @@
 import { parseInstant } from "@repo/formatting";
 import { moduleRefusalFromServerMessage } from "@repo/validation";
-import { canActOnMessage, isOwnMessage } from "./message-actions";
+import { canCloseCard, isCardClosed } from "./card-closing";
 import type { ChatMessage } from "./types";
 import {
   POLL_VOTE_ACTION_TYPE,
@@ -188,26 +188,13 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
 }
 
 /**
- * Whether a poll card takes no more votes: its creator closed it early
- * (`closed_at`, #3794), or its deadline has passed. The API refuses a vote on
- * either (`ChatReactionService`); this is the same answer for the cards to
- * draw. A card with no deadline (#3896), or one that doesn't parse, never
- * closes on its own, as on the server.
- */
-export function isPollCardClosed(payload: PollPayload, now: number): boolean {
-  if (payload.closed_at) return true;
-  const deadline = parseInstant(payload.closes_at);
-  return deadline ? deadline.getTime() < now : false;
-}
-
-/**
  * The card's eyebrow on both clients: "Poll", "Poll · Closed", or, for an
  * open poll with no deadline (#3896), "Poll · No end date", so a member can
  * tell it won't close by itself. A timed, open poll reads plain "Poll", as it
  * always has.
  */
 export function pollCardEyebrow(payload: PollPayload, now: number): string {
-  if (isPollCardClosed(payload, now)) return "Poll · Closed";
+  if (isCardClosed(payload, now)) return "Poll · Closed";
   return parseInstant(payload.closes_at) ? "Poll" : "Poll · No end date";
 }
 
@@ -218,7 +205,8 @@ export function pollCardEyebrow(payload: PollPayload, now: number): string {
  * viewer may close it. Its creator may (`isOwnMessage`), whatever their
  * permissions now, and so may a member who holds `channels:manage`, so a poll
  * with no deadline whose creator lost `polls:create` or left can still end
- * with its tally kept (#4046). The API enforces all of it
+ * with its tally kept (#4046). That is every card's Close rule
+ * (`canCloseCard`) plus the module gate. The API enforces all of it
  * (`PollService.close`); this only keeps the card honest.
  */
 export function canClosePoll(
@@ -229,10 +217,7 @@ export function canClosePoll(
   gates: { pollsGate: PollsGate; canManageChannels: boolean },
 ): boolean {
   return (
-    (isOwnMessage(message, viewerId) ||
-      (gates.canManageChannels && !!viewerId)) &&
-    canActOnMessage(message) &&
-    !isPollCardClosed(payload, now) &&
+    canCloseCard(message, payload, viewerId, now, gates.canManageChannels) &&
     gates.pollsGate === "on"
   );
 }

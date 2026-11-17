@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MESSAGE_MARKDOWN_ELEMENTS, remarkBareUrls } from "./markdown";
+import { countingReads } from "./test/counting-reads";
 
 interface Node {
   type: string;
@@ -395,9 +396,10 @@ describe("remarkBareUrls", () => {
       const next = i + unit.length < content.length ? " http://a" : " ";
       children.push(at(text(next), i + 11, i + 11 + next.length));
     }
-    const started = performance.now();
-    run({ type: "root", children: [{ type: "paragraph", children }] }, content);
-    expect(performance.now() - started).toBeLessThan(300);
+    // Counted, not timed: a clock bound false-fails on a loaded runner.
+    const { body, reads } = countingReads(content);
+    run({ type: "root", children: [{ type: "paragraph", children }] }, body);
+    expect(reads()).toBeLessThan(10 * content.length);
   });
 
   it("stays linear on a body of URLs split at emphasis", () => {
@@ -416,9 +418,9 @@ describe("remarkBareUrls", () => {
         ),
       );
     }
-    const started = performance.now();
-    run({ type: "root", children: [{ type: "paragraph", children }] }, content);
-    expect(performance.now() - started).toBeLessThan(300);
+    const { body, reads } = countingReads(content);
+    run({ type: "root", children: [{ type: "paragraph", children }] }, body);
+    expect(reads()).toBeLessThan(10 * content.length);
   });
 
   it("walks a tree far deeper than the depth cap without recursing", () => {

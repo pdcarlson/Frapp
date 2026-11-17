@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 // Only the ref's type: the field is `SearchField`, at the top of the screen as
@@ -42,7 +42,15 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { BACK_TO_CHAT } from "@/components/back-row";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
+import {
+  ChannelListSkeleton,
+  ChannelRow,
+  DIRECT_AVATAR_SIZE,
+} from "@/components/chat/channel-row";
+import {
+  ChannelThreadRows,
+  useChannelThreads,
+} from "@/components/chat/channel-thread-rows";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
@@ -116,6 +124,10 @@ export default function MessagesScreen() {
     return memberId ? avatarTintFor(memberId) : null;
   };
   const channelsQuery = useChannels();
+  // A group DM's active threads sit under its row, as a channel's do on Chat
+  // home (#5277).
+  const { byChannel: threadsByChannel, query: memberThreadsQuery } =
+    useChannelThreads();
   const unread = useShownUnreadCounts();
   const unreadQuery = unread.query;
   const latestQuery = useChannelLatestMessages();
@@ -147,6 +159,7 @@ export default function MessagesScreen() {
     unreadQuery,
     latestQuery,
     notificationPrefsQuery,
+    memberThreadsQuery,
   ]);
 
   const direct = useMemo(
@@ -269,31 +282,43 @@ export default function MessagesScreen() {
     }
   }
 
-  function renderConversation(channel: ChannelSummary) {
+  // Thread rows go under the list's rows, not under a search result (#5277).
+  function renderConversation(
+    channel: ChannelSummary,
+    { withThreads = true }: { withThreads?: boolean } = {},
+  ) {
     const counts = unreadByChannelId?.get(channel.id);
     const name = titleOf(channel);
     return (
-      <ChannelRow
-        key={channel.id}
-        name={name}
-        isDirect
-        avatarUrl={avatarOf(channel)}
-        avatarTint={tintOf(channel)}
-        preview={previewOf(channel)}
-        isMuted={mutedChannelIds?.has(channel.id) ?? false}
-        unreadCount={counts?.unreadCount ?? 0}
-        mentionCount={counts?.mentionCount ?? 0}
-        onPress={() => openChannel(channel.id)}
-        onHide={
-          canHideConversation(channel)
-            ? () =>
-                confirmHideConversation({
-                  name,
-                  run: () => leaveChannel.mutateAsync(channel.id),
-                })
-            : undefined
-        }
-      />
+      <Fragment key={channel.id}>
+        <ChannelRow
+          name={name}
+          isDirect
+          avatarUrl={avatarOf(channel)}
+          avatarTint={tintOf(channel)}
+          preview={previewOf(channel)}
+          isMuted={mutedChannelIds?.has(channel.id) ?? false}
+          unreadCount={counts?.unreadCount ?? 0}
+          mentionCount={counts?.mentionCount ?? 0}
+          onPress={() => openChannel(channel.id)}
+          onHide={
+            canHideConversation(channel)
+              ? () =>
+                  confirmHideConversation({
+                    name,
+                    run: () => leaveChannel.mutateAsync(channel.id),
+                  })
+              : undefined
+          }
+        />
+        <ChannelThreadRows
+          threads={withThreads ? threadsByChannel.get(channel.id) : undefined}
+          channelLabel={name}
+          nameFor={nameFor}
+          viewerId={viewerId}
+          markWidth={DIRECT_AVATAR_SIZE}
+        />
+      </Fragment>
     );
   }
 
@@ -366,7 +391,9 @@ export default function MessagesScreen() {
           {searching ? (
             <>
               <View style={styles.rows}>
-                {found.conversations.map(renderConversation)}
+                {found.conversations.map((channel) =>
+                  renderConversation(channel, { withThreads: false }),
+                )}
               </View>
               {found.members.length > 0 ? (
                 <>
@@ -410,7 +437,9 @@ export default function MessagesScreen() {
             </InlineNote>
           ) : (
             <>
-              <View style={styles.rows}>{listed.map(renderConversation)}</View>
+              <View style={styles.rows}>
+                {listed.map((channel) => renderConversation(channel))}
+              </View>
               {hidden.length > 0 ? (
                 <>
                   <StickyHeader>

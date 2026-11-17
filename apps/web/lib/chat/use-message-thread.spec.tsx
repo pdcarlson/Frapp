@@ -195,9 +195,16 @@ describe("useMessageThread", () => {
       ).toBeGreaterThanOrEqual(2),
     );
 
+    const beforeLive = mocks.backfillThreadReplies.mock.calls.length;
     act(() => mocks.emit("live"));
-    // Going live reads the gap once more, then the beat stops.
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    // Going live reads the gap once more, then the beat stops. Wait for that
+    // read itself, not a fixed time a loaded runner can outlast, so the count
+    // is taken after it.
+    await waitFor(() =>
+      expect(mocks.backfillThreadReplies.mock.calls.length).toBeGreaterThan(
+        beforeLive,
+      ),
+    );
     const settled = mocks.backfillThreadReplies.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(mocks.backfillThreadReplies.mock.calls.length).toBe(settled);

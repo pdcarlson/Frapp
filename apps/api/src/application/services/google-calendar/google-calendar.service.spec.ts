@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { GOOGLE_CALENDAR_SIGN_IN_COPY } from '@repo/validation';
 import { GoogleCalendarService } from './google-calendar.service';
 import type { GoogleCalendarSyncService } from './google-calendar-sync.service';
 import { openRefreshToken } from './google-calendar-token';
@@ -340,9 +341,14 @@ describe('GoogleCalendarService', () => {
       const { service, repo, google } = setup();
       repo.consumeState.mockResolvedValue(null as never);
 
-      await expect(
-        service.confirm(CHAPTER, USER, STATE, 'code-1'),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      const confirming = service.confirm(CHAPTER, USER, STATE, 'code-1');
+      await expect(confirming).rejects.toBeInstanceOf(BadRequestException);
+      // The clients show this sentence as it is, beside their own ?gcal=expired
+      // copy, so both read the one shared constant (#5262).
+      await expect(confirming).rejects.toHaveProperty(
+        'message',
+        GOOGLE_CALENDAR_SIGN_IN_COPY.expired,
+      );
       expect(google.exchangeCode).not.toHaveBeenCalled();
     });
 
@@ -352,9 +358,12 @@ describe('GoogleCalendarService', () => {
         new GoogleCalendarApiError('failed', 400, 'invalid_request'),
       );
 
-      await expect(
-        service.confirm(CHAPTER, USER, STATE, 'code-1'),
-      ).rejects.toBeInstanceOf(BadGatewayException);
+      const confirming = service.confirm(CHAPTER, USER, STATE, 'code-1');
+      await expect(confirming).rejects.toBeInstanceOf(BadGatewayException);
+      await expect(confirming).rejects.toHaveProperty(
+        'message',
+        GOOGLE_CALENDAR_SIGN_IN_COPY.failed,
+      );
       expect(repo.create).not.toHaveBeenCalled();
     });
 

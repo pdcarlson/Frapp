@@ -25,7 +25,8 @@ export type DraftAutofillStop = "consent" | "chapter_off" | "off";
  * list, and drafts from an earlier visit are filled too.
  *
  * A draft uploaded as-is is never sent: its stored file is the original, and
- * the API refuses it too. A draft is asked about once per visit: a refusal or
+ * the API refuses it too. Nor is one whose pages wait for its uploader's check
+ * (#5252); it is filled once they have checked them. A draft is asked about once per visit: a refusal or
  * a bad answer leaves it as it was, for the member to fill by hand. A 429
  * puts it back in line and pauses the fill for a moment. A 403 or a 404 for AI stops
  * every fill, since the next answer would be the same.
@@ -50,7 +51,13 @@ export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: bool
     if (room <= 0) return;
     const next = drafts
       .filter(
-        (draft) => draft.is_redacted && !draft.draft_fields?.ai_fill && !tried.current.has(draft.id),
+        (draft) =>
+          draft.is_redacted &&
+          !draft.draft_fields?.ai_fill &&
+          // Saved without anyone looking at its pages (#5252): read only
+          // once its uploader has checked them, as the API insists too.
+          !draft.draft_fields?.pages_unchecked &&
+          !tried.current.has(draft.id),
       )
       .slice(0, room);
     if (next.length === 0) return;

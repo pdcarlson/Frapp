@@ -71,6 +71,12 @@ export interface BackworkDraftFields {
   ai_filled?: string[];
   /** How the last AI fill ended, when one ran. */
   ai_fill?: BackworkAiFillOutcome;
+  /**
+   * Saved with its suggested boxes without anyone looking at its pages (bulk
+   * upload's "Save the rest", #5252). Until the uploader checks them, the AI
+   * fill doesn't read the draft and it can't be published.
+   */
+  pages_unchecked?: true;
 }
 
 /**

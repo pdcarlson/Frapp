@@ -536,7 +536,7 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     const build = step(BUILD);
     // Skipped where the check would skip: no source, nothing to build.
     assert.equal(build.if, `\${{ inputs.scope != 'migrations-only' && hashFiles('${BOOT_CHECK_SOURCE}') != '' }}`);
-    assert.match(build.body, /run: npx --no-install turbo run build --filter=api$/m);
+    assert.match(build.body, /run: (env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN )?npx --no-install turbo run build --filter=api$/m);
     assert.doesNotMatch(build.body, /secrets\./);
     assert.ok(at("Install dependencies") < at(BUILD), "it builds before the install");
     assert.ok(at(BUILD) < at("Move the workspace to the trusted ref"), "it builds in the trusted window");
@@ -605,7 +605,9 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     const staging = step(CHECKS[0]);
     assert.equal(staging.if, "inputs.environment == 'staging'");
     assert.equal(staging.env.get("CHECK_API_BOOT"), "${{ steps.plan.outputs.deploy }}");
-    assert.equal(step("Deploy the commit to Render (staging)").if, "steps.plan.outputs.deploy == 'true'");
+    // Render or Cloud Run, whichever the environment's apiHost names (#5228).
+    assert.equal(step("Deploy the commit to Render (staging)").if, "steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'render'");
+    assert.match(step("Deploy the API to Cloud Run (staging)").if, /steps\.plan\.outputs\.deploy == 'true' && steps\.ids\.outputs\.api_host == 'cloud-run'/);
     assert.equal(staging.env.get("DEPLOYS_FUNCTIONS"), "${{ steps.plan.outputs.plan != 'stale' }}");
     assert.match(step("Deploy the Edge Functions (staging)").if, /steps\.plan\.outputs\.plan != 'stale'/);
     assert.equal(staging.env.get("VERIFIES_API"), "${{ steps.plan.outputs.verify_sha != '' }}");

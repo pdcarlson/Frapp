@@ -1,4 +1,5 @@
 import { throwUnlessOk } from "@repo/api-sdk";
+import { GOOGLE_CALENDAR_SIGN_IN_COPY } from "@repo/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -50,6 +51,52 @@ export function readGoogleCalendarReturn(
   }
   if (outcome === "denied" || outcome === "expired") return { kind: outcome };
   return outcome ? { kind: "failed" } : null;
+}
+
+/**
+ * What the member reads when a sign-in comes back without connecting (#4676):
+ * one copy for the web menu's toast and the phone sheet's alert. The
+ * success line stays per client, because each names what it syncs. The
+ * expired and failed sentences live in `@repo/validation`, which the API's
+ * confirm refusals read too (#5262).
+ */
+export const GOOGLE_CALENDAR_RETURN_COPY: Record<
+  Exclude<GoogleCalendarReturn["kind"], "confirm">,
+  string
+> = {
+  denied: "Google Calendar wasn't connected.",
+  expired: GOOGLE_CALENDAR_SIGN_IN_COPY.expired,
+  failed: GOOGLE_CALENDAR_SIGN_IN_COPY.failed,
+};
+
+/**
+ * The line under the Subscribe menu or sheet: how fresh each calendar stays.
+ * `connection` is the status when Google is offered, null when it isn't.
+ */
+export function googleCalendarFootnote(
+  connection: Pick<GoogleCalendarStatus, "connected" | "google_email"> | null,
+): string {
+  if (connection?.connected && connection.google_email) {
+    return `Google Calendar is connected as ${connection.google_email} and updates within minutes. Other calendar apps check on their own schedule.`;
+  }
+  return connection
+    ? "Google Calendar updates within minutes once connected. Other calendar apps check on their own schedule."
+    : "Your calendar app checks for changes on its own schedule. Google Calendar can take several hours.";
+}
+
+/** The Disconnect confirm, naming the account when it's known. */
+export function googleCalendarDisconnectCopy(
+  account: string | null | undefined,
+): {
+  title: string;
+  description: string;
+} {
+  return {
+    title: "Disconnect Google Calendar?",
+    description: `Frapp's calendar is removed from ${
+      account ? `your Google account (${account})` : "your Google account"
+    }. Your other calendars aren't touched.`,
+  };
 }
 
 export function useGoogleCalendarStatus(options: { enabled?: boolean } = {}) {
