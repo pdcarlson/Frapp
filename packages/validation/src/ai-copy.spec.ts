@@ -41,11 +41,8 @@ describe("AI copy", () => {
   it("names the companies and that Continue turns it on, in one line", () => {
     // Apple 5.1.2(i): Continue is an explicit yes only because the line
     // above it says who it works with and what Continue does.
-    expect(FRAPP_AI_COPY.disclosure("Anthropic and Google", false)).toBe(
+    expect(FRAPP_AI_COPY.disclosure("Anthropic and Google")).toBe(
       "Frapp AI works with Anthropic and Google. Continuing turns it on for your account.",
-    );
-    expect(FRAPP_AI_COPY.disclosure("Anthropic and Google", true)).toMatch(
-      /for you and your chapter\.$/,
     );
   });
 

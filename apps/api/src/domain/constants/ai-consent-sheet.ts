@@ -86,8 +86,8 @@ export const AI_CONSENT_SHEET = {
 
 /**
  * The president's switches (`spec/behavior/ai.md` § Consent, gate 1), as the
- * API names them. Each is off until the president turns it on, except those
- * in {@link AI_SWITCHES_ON_BY_DEFAULT}.
+ * API names them. Each is on until the president turns it off
+ * ({@link AI_SWITCHES_ON_BY_DEFAULT}, #5294).
  */
 export const AI_CHAPTER_SWITCHES = [
   'ask',
@@ -100,11 +100,16 @@ export type AiChapterSwitch = (typeof AI_CHAPTER_SWITCHES)[number];
 
 /**
  * Switches that are on for a chapter whose president never changed them:
- * nudge cards (Paul, 2026-11-17: "We should turn on nudges on activity by
- * default"). The column's default is true too, so a chapter that has a row
- * reads the same. A card still needs the member's own yes (gate 2).
+ * all of them. Nudge cards first (#5315, Paul, 2026-11-17: "We should turn
+ * on nudges on activity by default"), then the rest (#5294, the same day: "I
+ * would like more AI stuff on by default"). The columns default to true and
+ * every chapter has a row from creation, so a stored row reads the same. A
+ * member's own yes (gate 2) still gates everything sent for them.
  */
 export const AI_SWITCHES_ON_BY_DEFAULT: ReadonlySet<AiChapterSwitch> = new Set([
+  'ask',
+  'meeting_notes',
+  'chat_source',
   'nudges',
 ]);
 

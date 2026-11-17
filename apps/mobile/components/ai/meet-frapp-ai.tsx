@@ -66,11 +66,9 @@ const POINT_GLYPHS: Record<FrappAiPoint["key"], (color: string) => ReactNode> =
 /** The screen's body: the three lines, and the one that names the companies. */
 export function MeetFrappAiBody({
   providers,
-  forChapter,
   error,
 }: {
   providers: readonly string[];
-  forChapter: boolean;
   /** Why a Continue didn't save, in the disclosure's place under it. */
   error?: string | null;
 }) {
@@ -91,7 +89,7 @@ export function MeetFrappAiBody({
         ))}
       </View>
       <Text style={styles.disclosure}>
-        {FRAPP_AI_COPY.disclosure(joinNames(providers), forChapter)}{" "}
+        {FRAPP_AI_COPY.disclosure(joinNames(providers))}{" "}
         <Text
           accessibilityRole="link"
           style={styles.link}
@@ -150,15 +148,14 @@ export function MeetFrappAiActions({
 /**
  * The screen as a beat of an onboarding flow (s03, chapter setup). `show` is
  * true once the server is known to have AI and the member has never
- * answered, or when their Continue would also turn on a chapter whose
- * switches were never set (a founder who already said yes on another
- * chapter still gets the choice for this one); `settled` once that is known
- * either way, so the host can decide its beats. Continue turns it on; Not now records a No. Either answer moves
+ * answered; `settled` once that is known either way, so the host can decide
+ * its beats. (A founder used to be shown it again to turn a new chapter's
+ * switches on; they start on since #5294.) Continue turns it on; Not now records a No. Either answer moves
  * on: a save that fails on Not now is left for the next open to ask again,
  * and one that fails on Continue keeps the member here with the reason.
  */
-export function useMeetFrappAiStep(options?: { includeChapter?: boolean }) {
-  const choice = useFrappAiChoice(options);
+export function useMeetFrappAiStep() {
+  const choice = useFrappAiChoice();
   const [error, setError] = useState<string | null>(null);
   const [answering, setAnswering] = useState(false);
 
@@ -180,8 +177,8 @@ export function useMeetFrappAiStep(options?: { includeChapter?: boolean }) {
     setError(null);
     setAnswering(true);
     try {
-      // A member who already said yes is here only for the chapter's
-      // switches: Not now leaves those off and keeps their own yes.
+      // Never a No over a Yes already given (an answer from another device
+      // that landed while the screen was up).
       if (choice.consent?.answer !== "yes") await choice.notNow();
     } catch {
       // Unanswered still: the next open asks once more.
@@ -191,14 +188,9 @@ export function useMeetFrappAiStep(options?: { includeChapter?: boolean }) {
   }, [choice]);
 
   return {
-    settled:
-      choice.consentFailed ||
-      (choice.consent !== undefined && choice.chapterSettled),
-    show:
-      shouldMeetFrappAi(choice.consent) ||
-      (!!choice.consent && choice.forChapter),
+    settled: choice.consentFailed || choice.consent !== undefined,
+    show: shouldMeetFrappAi(choice.consent),
     providers: choice.providers,
-    forChapter: choice.forChapter,
     error,
     answering,
     turnOn,
@@ -290,11 +282,7 @@ export const MeetFrappAiSheet = forwardRef<
         <Text accessibilityRole="header" style={styles.sheetTitle}>
           {FRAPP_AI_COPY.title}
         </Text>
-        <MeetFrappAiBody
-          providers={choice.providers}
-          forChapter={choice.forChapter}
-          error={error}
-        />
+        <MeetFrappAiBody providers={choice.providers} error={error} />
         <View style={styles.sheetActions}>
           <MeetFrappAiActions
             busy={pending === "on"}

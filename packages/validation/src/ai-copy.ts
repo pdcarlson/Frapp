@@ -73,9 +73,9 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     key: "nudges",
     label: "Nudges on Activity",
     description:
-      "Frapp puts a short card on a member's Activity when one of their own tasks is coming due, late or sent back, with a place to start, and says thanks when they finish on time. On unless you turn it off.",
+      "Frapp puts a short card on a member's Activity when one of their own tasks is coming due, late or sent back, with a place to start, and says thanks when they finish on time.",
     short:
-      "A short card on a member's Activity when one of their tasks could use a word. On unless you turn it off.",
+      "A short card on a member's Activity when one of their tasks could use a word.",
   },
 ];
 
@@ -124,7 +124,7 @@ export const AI_SETTINGS_COPY = {
    * They stay on Meet Frapp AI, where the member's yes is given.
    */
   description:
-    "Nudges are on unless the president turns them off; the rest are off until the president turns them on. Each member chooses for themselves whether Frapp AI is on.",
+    "Each is on unless the president turns it off, and each member chooses for themselves whether Frapp AI is on.",
   /** The phone's footnote under the switches in Chapter settings. */
   phoneFootnote:
     "Each member also chooses for themselves whether Frapp AI is on.",
@@ -165,14 +165,12 @@ export const FRAPP_AI_COPY = {
   ] as readonly FrappAiPoint[],
   /**
    * The one line that makes Continue an explicit yes (Apple 5.1.2(i)): who
-   * it works with, and that Continue turns it on. `forChapter` is a
-   * president whose chapter has never had its AI switches set: their
-   * Continue turns them on too, and the line says so.
+   * it works with, and that Continue turns it on. It names only the
+   * member's account: the chapter's switches start on (#5294), so it no
+   * longer has a "for you and your chapter" form.
    */
-  disclosure: (providers: string, forChapter: boolean) =>
-    forChapter
-      ? `Frapp AI works with ${providers}. Continuing turns it on for you and your chapter.`
-      : `Frapp AI works with ${providers}. Continuing turns it on for your account.`,
+  disclosure: (providers: string) =>
+    `Frapp AI works with ${providers}. Continuing turns it on for your account.`,
   privacyLink: "Privacy policy",
   continue: "Continue",
   notNow: "Not now",

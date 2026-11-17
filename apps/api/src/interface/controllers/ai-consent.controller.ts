@@ -119,7 +119,7 @@ export class AiChapterSettingsController {
   @ApiOperation({
     summary: 'Get the chapter’s AI switches',
     description:
-      'Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. Nudges are on until the president turns them off; the rest are off until the president turns them on. `can_change` says whether the caller is the president, who alone may change them.',
+      'Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. All on until the president turns one off; `updated_at` is null until then. `can_change` says whether the caller is the president, who alone may change them.',
   })
   @ApiOkResponse({ type: AiChapterSettingsDto })
   @ApiNotFoundResponse(AI_OFF)

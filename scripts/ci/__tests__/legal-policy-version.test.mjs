@@ -48,6 +48,8 @@
 //   Nudge notes on by default (2026-11-17, #5309) is the owner's material
 //   change: Privacy moved to November 2026 and the constant to 2026-11, so
 //   every member accepts again once.
+//   Every AI feature on by default (2026-11-17, #5294) was ruled non-material
+//   by the owner the same day, so it moved only the Privacy pin.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -86,7 +88,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "November 2026",
-    fingerprint: "d75538dfa7ae9591",
+    fingerprint: "4add259f8fb540e1",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

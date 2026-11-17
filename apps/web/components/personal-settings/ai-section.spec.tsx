@@ -25,7 +25,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     consentFailed: false,
     readConsent: () => Promise.resolve(state.consent ?? null),
     providers: ["Anthropic", "Google"],
-    forChapter: false,
     turnOn: state.turnOn,
     notNow: state.notNow,
     pending: false,

@@ -162,9 +162,10 @@ That is the model's judgment, given the context, not a ranking rule.
 Three gates stand between Frapp's data and a model.
 Each governs a different thing.
 
-1. **The chapter turned the feature on.**
-   The president switches on each family separately: Ask, meeting notes, chat as a source, and nudges.
-   Each is off until then, except nudges, which are on until the president turns them off.
+1. **The chapter has the feature on.**
+   The president switches each family separately: Ask, meeting notes, chat as a source, and nudges.
+   Each is on from the chapter's creation until the president turns it off (Paul, 2026-11-17, [#5294](https://github.com/pdcarlson/Frapp/issues/5294): "I would like more AI stuff on by default"; until then each was off until the president turned it on, except nudges, as below).
+   With Ask on from the start, the chapter's records are indexed from the start; nothing a member wrote or asked is sent without their own yes (gate 2).
    *Changed 2026-11-17 by `pdcarlson` (Paul: "We should turn on nudges on activity by default"):* nudges got their own switch, on by default. Until then a nudge stood behind Ask's switch, so a chapter whose president never turned Ask on got no cards. A nudge reads only the member's own tasks (including words others wrote on them: the description an officer gave it and the note an officer sent it back with) and counts of the chapter's earlier ones, never names, for that member, and still needs gate 2, so a member who hasn't said yes gets no card and nothing is sent for them.
    This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
    An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
@@ -218,7 +219,7 @@ How the first two gates are kept (#4308, #4790):
   An answer names the version the member was shown, and an answer to a version that is no longer current is refused, so a Yes never covers a company the member was not told about.
   Each version's answer is kept.
 - **A refused call says why.**
-  A route answers `ai.consent.required` when the member has not said yes, so the app shows Meet Frapp AI, and `ai.chapter_off` when the president has not turned the feature on, so the app hides it.
+  A route answers `ai.consent.required` when the member has not said yes, so the app shows Meet Frapp AI, and `ai.chapter_off` when the president has turned the feature off, so the app hides it.
 - **Who may use AI at all is also a permission.**
   `ai:use` is in every starting tier of a chapter created from #4308 on, so every active member holds it and Alumni do not ([`rbac.md`](rbac.md)).
   Chapters created before that grant it from the Roles page.
@@ -239,10 +240,9 @@ Only while the server has AI: every place waits for `GET /v1/ai/consent`, which 
 - **In personal Settings**, as one Frapp AI switch, captioned with what it does.
   The companies are not named there (Paul, 2026-11-17, #5292: "that lives in the privacy policy"), and the phone's AI section links the privacy policy.
   Turning it on opens Meet Frapp AI, so the yes is given where the companies are named and the policy is linked; turning it off is immediate.
-- **A president whose chapter never set its switches** (none on, none ever changed) turns the chapter's three switches on with the same Continue, and the screen's line says "for you and your chapter".
-  A chapter whose switches someone already set is left as it is.
-  Paul, 2026-11-13: "why not just get these features going from the start so you don't have to like go in and add stuff".
-  Added 2026-11-13 (#4790, the building session's, Paul's to change).
+- **A president's Continue covers only their own account.**
+  From 2026-11-13 (#4790) a president whose chapter never set its switches turned them on with the same Continue, and the screen's line said "for you and your chapter" (Paul: "why not just get these features going from the start so you don't have to like go in and add stuff").
+  Since #5294 (2026-11-17) the switches start on, so that path and its wording are gone.
 - The words are `FRAPP_AI_COPY` in `@repo/validation`, shared by web and mobile; the companies come from the server.
 
 A No is therefore not a promise that nothing about the member reaches a model.

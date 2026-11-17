@@ -94,8 +94,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useFrappAiChoice: () => ({
     consent: state.aiConsent,
     providers: ["Anthropic", "Google"],
-    forChapter: false,
-    chapterSettled: true,
     notNow: aiNotNow,
     turnOn: vi.fn(),
     pending: false,

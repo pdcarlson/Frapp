@@ -188,7 +188,7 @@ export class AiConsentService implements IAiConsentCheck {
   ): Promise<Set<string>> {
     if (authorIds.length === 0) return new Set();
     const settings = await this.consents.findChapterSettings(chapterId);
-    if (settings?.chat_source_enabled !== true) return new Set();
+    if (!switchOn(settings, 'chat_source')) return new Set();
     return new Set(
       await this.consents.findAcceptedUserIds(
         authorIds,
@@ -297,8 +297,9 @@ export class AiConsentService implements IAiConsentCheck {
       await this.consents.saveChapterSettings(
         chapterId,
         restore,
-        existing?.updated_by ?? actor.userId,
-        existing ? new Date(existing.updated_at) : new Date(),
+        // A row nobody had changed goes back as never changed (#5294).
+        existing ? existing.updated_by : null,
+        existing?.updated_at ? new Date(existing.updated_at) : null,
       );
       throw error;
     }

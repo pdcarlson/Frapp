@@ -18,8 +18,6 @@ const choice = vi.hoisted(() => ({
   consentFailed: false,
   readConsent: vi.fn(),
   providers: ["Anthropic", "Google"],
-  forChapter: false,
-  chapterSettled: true,
   turnOn: vi.fn(),
   notNow: vi.fn(),
   pending: false,
@@ -70,8 +68,6 @@ const sheetNode = (tree: ReactTestRenderer) =>
 
 beforeEach(() => {
   choice.consent = CONSENT;
-  choice.forChapter = false;
-  choice.chapterSettled = true;
   choice.readConsent.mockReset();
   choice.readConsent.mockImplementation(() => Promise.resolve(choice.consent));
   choice.turnOn.mockReset();
@@ -87,10 +83,9 @@ describe("MeetFrappAiSheet", () => {
     const tree = render(<MeetFrappAiSheet />);
     const text = screenText(tree);
     expect(text).toContain(FRAPP_AI_COPY.title);
-    for (const point of FRAPP_AI_COPY.points) expect(text).toContain(point.text);
-    expect(text).toContain(
-      FRAPP_AI_COPY.disclosure("Anthropic and Google", false),
-    );
+    for (const point of FRAPP_AI_COPY.points)
+      expect(text).toContain(point.text);
+    expect(text).toContain(FRAPP_AI_COPY.disclosure("Anthropic and Google"));
     expect(text).toContain(FRAPP_AI_COPY.privacyLink);
   });
 
@@ -126,20 +121,10 @@ describe("MeetFrappAiSheet", () => {
     });
   });
 
-  it("tells a president whose chapter never set its switches that it covers the chapter", () => {
-    choice.forChapter = true;
-    const tree = render(<MeetFrappAiSheet />);
-    expect(screenText(tree)).toContain(
-      FRAPP_AI_COPY.disclosure("Anthropic and Google", true),
-    );
-  });
-
   it("turns it on with Continue and records Not now", async () => {
     const onAnswered = vi.fn();
     const tree = render(<MeetFrappAiSheet onAnswered={onAnswered} />);
-    await act(async () =>
-      button(tree, FRAPP_AI_COPY.continue).props.onPress(),
-    );
+    await act(async () => button(tree, FRAPP_AI_COPY.continue).props.onPress());
     expect(choice.turnOn).toHaveBeenCalledTimes(1);
     expect(onAnswered).toHaveBeenLastCalledWith(true);
     await act(async () => button(tree, FRAPP_AI_COPY.notNow).props.onPress());
@@ -151,9 +136,7 @@ describe("MeetFrappAiSheet", () => {
     choice.turnOn.mockRejectedValue(new Error("offline"));
     const onAnswered = vi.fn();
     const tree = render(<MeetFrappAiSheet onAnswered={onAnswered} />);
-    await act(async () =>
-      button(tree, FRAPP_AI_COPY.continue).props.onPress(),
-    );
+    await act(async () => button(tree, FRAPP_AI_COPY.continue).props.onPress());
     expect(onAnswered).not.toHaveBeenCalled();
     expect(screenText(tree)).toMatch(/try again/i);
   });
@@ -174,24 +157,6 @@ describe("useMeetFrappAiStep", () => {
     expect(step().current.show).toBe(true);
     choice.consent = { ...CONSENT, answer: "no" };
     expect(step().current.show).toBe(false);
-  });
-
-  it("offers a founder who already said yes the new chapter's switches, and Not now keeps their yes", async () => {
-    choice.consent = { ...CONSENT, answer: "yes" };
-    choice.forChapter = true;
-    const ref = step();
-    expect(ref.current.show).toBe(true);
-    await act(async () => {
-      await ref.current.notNow();
-    });
-    expect(choice.notNow).not.toHaveBeenCalled();
-  });
-
-  it("waits for the chapter's switches before it is settled", () => {
-    choice.chapterSettled = false;
-    expect(step().current.settled).toBe(false);
-    choice.chapterSettled = true;
-    expect(step().current.settled).toBe(true);
   });
 });
 
@@ -214,9 +179,7 @@ describe("useAiConsentGate", () => {
     const asked = gate.ensureConsent();
     await act(async () => {});
     expect(modal.present).toHaveBeenCalledTimes(1);
-    await act(async () =>
-      button(tree, FRAPP_AI_COPY.continue).props.onPress(),
-    );
+    await act(async () => button(tree, FRAPP_AI_COPY.continue).props.onPress());
     await expect(asked).resolves.toBe(true);
   });
 
