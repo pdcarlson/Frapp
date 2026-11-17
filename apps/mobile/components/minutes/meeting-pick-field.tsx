@@ -11,7 +11,7 @@ import {
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** Two choices are the same meeting: the same event, or both new. */
-export function sameChoice(a: MeetingChoice, b: MeetingChoice): boolean {
+function sameChoice(a: MeetingChoice, b: MeetingChoice): boolean {
   if (a.kind === "new" || b.kind === "new") return a.kind === b.kind;
   return a.event.id === b.event.id;
 }

@@ -39,12 +39,12 @@ export type OffCalendarMeeting = {
 /** The start a past day takes when no earlier event of that name has one. */
 const EVENING_START = "19:00";
 /** The longest a meeting runs; the end field lists no further (`TimeField`). */
-export const MAX_LENGTH_MINUTES = 12 * 60;
+const MAX_LENGTH_MINUTES = 12 * 60;
 
 type EventTimes = { name: string; start_time: string };
 
 /** A local `YYYY-MM-DD` and `HH:MM` as an instant, or null. */
-export function localIso(date: string, time: string): string | null {
+function localIso(date: string, time: string): string | null {
   if (!date || !time) return null;
   const at = new Date(`${date}T${time}`);
   return Number.isNaN(at.getTime()) ? null : at.toISOString();
