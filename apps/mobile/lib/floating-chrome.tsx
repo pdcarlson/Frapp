@@ -42,7 +42,8 @@ export const FLOATING_TAB_BAR = {
 
 /**
  * The Ask Frapp bar: a glass capsule the width of the tab bar and its +,
- * sitting just above them on the four tab screens (#4702, Paul 2026-11-13:
+ * sitting just above them on the four tab screens, and in their row while
+ * the bar is folded ({@link useBarFolded}, #4904) (#4702, Paul 2026-11-13:
  * "in a bar above the normal liquid glass bottom, not only when you open the
  * plus menu"). Only a member who has Ask gets one (`useAiSurfaces`), so
  * everything that floats above the tab bar asks {@link useAskBarLift} how far

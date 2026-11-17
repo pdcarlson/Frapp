@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import {
-  AccessibilityInfo,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -38,6 +32,7 @@ import {
 } from "@/lib/chat/messages-swipe";
 import { isTourDue } from "@/lib/onboarding/tour";
 import { useOverlayOpen } from "@/lib/overlay-presence";
+import { readScreenReaderOn } from "@/lib/screen-reader";
 import { createSwipeClaim, SwipeClaimProvider } from "@/lib/swipe-claim";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -168,7 +163,7 @@ export function MessagesSwipeArea({
       }
       void (async () => {
         const [screenReader, tourDue, record] = await Promise.all([
-          screenReaderOn(),
+          readScreenReaderOn(),
           isTourDue(viewerId),
           readMessagesHint(viewerId),
         ]);
@@ -387,20 +382,6 @@ function createHintSession(now: () => number = () => Date.now()) {
       return translationX - origin;
     },
   };
-}
-
-/**
- * Whether a screen reader is on; an unanswered check counts as on. Not asked
- * on web, where react-native-web answers `true` for every browser: web is
- * the dev and capture build, never a member's phone.
- */
-async function screenReaderOn(): Promise<boolean> {
-  if (Platform.OS === "web") return false;
-  try {
-    return await AccessibilityInfo.isScreenReaderEnabled();
-  } catch {
-    return true;
-  }
 }
 
 /** The label's height: the small control size (foundations.md §2). */

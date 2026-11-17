@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
+import { withTiming } from "react-native-reanimated";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -601,6 +602,62 @@ describe("the fold", () => {
       402 - 14 - (14 + 62 + 10),
     );
     expect(askPlaced(tree.root)).toMatchObject({ left: 14, height: 48 });
+  });
+
+  it("keeps Activity's count in sight while folded: the number on its own round, a dot on another", async () => {
+    quick.hasAsk = true;
+    activity.data = { needs_you_count: 3, unavailable: [] };
+    const onActivity = await renderSettled("activity");
+    act(() => setBarFolded(true));
+    expect(
+      onActivity.root.findAllByProps({ testID: "tab-folded-badge" }),
+    ).toHaveLength(1);
+    act(() => onActivity.unmount());
+
+    const onCalendar = await renderSettled("events");
+    act(() => setBarFolded(true));
+    expect(
+      onCalendar.root.findAllByProps({ testID: "tab-folded-dot" }),
+    ).toHaveLength(1);
+    expect(
+      onCalendar.root.findByProps({ testID: "tab-folded" }).props
+        .accessibilityLabel,
+    ).toMatch(/^Calendar, show all tabs, Activity: /);
+  });
+
+  it("gives the tabs back their touches only once they are back in place", async () => {
+    quick.hasAsk = true;
+    const tree = await renderSettled();
+    act(() => setBarFolded(true));
+    vi.useFakeTimers();
+    try {
+      act(() => tree.root.findByProps({ testID: "tab-folded" }).props.onPress());
+      // Opening: a second quick tap lands on nothing.
+      expect(tabs(tree.root).props.pointerEvents).toBe("none");
+      act(() => vi.advanceTimersByTime(320));
+      expect(tabs(tree.root).props.pointerEvents).toBe("auto");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves in 320ms, and at once with Reduce Motion on, read live", async () => {
+    quick.hasAsk = true;
+    const timing = vi.mocked(withTiming);
+    timing.mockClear();
+    await renderSettled();
+    act(() => setBarFolded(true));
+    expect(timing.mock.calls.at(-1)?.[1]).toMatchObject({ duration: 320 });
+
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(
+      true,
+    );
+    act(() => setBarFolded(false));
+    const reduced = await renderSettled();
+    timing.mockClear();
+    act(() => setBarFolded(true));
+    expect(timing.mock.calls.at(-1)?.[1]).toMatchObject({ duration: 0 });
+    act(() => reduced.unmount());
   });
 
   it("doesn't fold for a member without Ask: there is nothing to bring down", async () => {

@@ -12,6 +12,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   interpolate,
+  ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -45,6 +46,7 @@ import {
   useBarFolded,
 } from "@/lib/floating-chrome";
 import { useScreenReaderOn } from "@/lib/screen-reader";
+import { useReduceMotion } from "@/lib/use-reduce-motion";
 import { selectionHaptic } from "@/lib/haptics";
 import { useOverlayPresence } from "@/lib/overlay-presence";
 import type { QuickActionKey } from "@/lib/quick-actions";
@@ -63,9 +65,8 @@ export const TAB_ROUTES = ["index", "activity", "events", "you"] as const;
 const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
 /** The drawn row inside the pill, and the active tab's capsule. */
 const TAB_HEIGHT = FLOATING_TAB_BAR.height - 12;
-/** How long the fold takes; Reduce Motion makes it a quick crossfade. */
+/** How long the fold takes. With Reduce Motion on it changes at once. */
 const FOLD_MS = 320;
-const FOLD_MS_REDUCED = 120;
 
 /**
  * The tab bar (owner pick 2026-11-06, after Bevel's): a glass pill holding the
@@ -75,7 +76,9 @@ const FOLD_MS_REDUCED = 120;
  *
  * Above both, for a member who has Ask, sits the Ask Frapp bar
  * (`ask/ask-bar.tsx`, #4702): on all four tabs, not inside the + panel, where
- * it was until 2026-11-13. The open panel covers it.
+ * it was until 2026-11-13. The open panel covers it. While the member reads
+ * down a tab screen the bar folds and the Ask bar joins the tabs' row (#4904,
+ * below).
  *
  * Drawn as the navigator's whole `tabBar`, over the screens rather than under
  * them: the root fills the window and lets touches through everywhere it draws
@@ -173,15 +176,27 @@ export function GlassTabBar({
   // a labelled control.
   const screenReader = useScreenReaderOn();
   const foldOn = useBarFolded() && hasAsk && !open && !screenReader;
+  // Followed live: Reanimated's own reading is the setting at launch.
+  const reduceFold = useReduceMotion();
   const fold = useSharedValue(0);
   useEffect(() => {
     fold.set(
       withTiming(foldOn ? 1 : 0, {
-        duration: reduceMotion ? FOLD_MS_REDUCED : FOLD_MS,
+        duration: reduceFold ? 0 : FOLD_MS,
         easing: Easing.out(Easing.cubic),
+        reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [foldOn, reduceMotion, fold]);
+  }, [foldOn, reduceFold, fold]);
+  // The tabs take touches again only once they are back in place, so a
+  // second quick tap on the folded round can't land on a half-drawn tab.
+  const [tabsLive, setTabsLive] = useState(true);
+  if (foldOn && tabsLive) setTabsLive(false);
+  useEffect(() => {
+    if (foldOn || tabsLive) return;
+    const timer = setTimeout(() => setTabsLive(true), reduceFold ? 0 : FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [foldOn, tabsLive, reduceFold]);
 
   const runAction = useCallback(
     (key: QuickActionKey) => {
@@ -314,7 +329,12 @@ export function GlassTabBar({
           entering={FadeIn.duration(150)}
           exiting={FadeOut.duration(200)}
           pointerEvents="none"
-          style={[styles.noticeRow, { bottom: aboveAskBar }]}
+          style={[
+            styles.noticeRow,
+            // Folded, the Ask bar is in the tab bar's row: the notice sits
+            // above that row.
+            { bottom: foldOn ? aboveBar : aboveAskBar },
+          ]}
         >
           <GlassSurface style={styles.notice}>
             {/* Read out by the host's announceForAccessibility, on both
@@ -346,7 +366,7 @@ export function GlassTabBar({
         />
         <Animated.View
           style={[styles.tabs, tabsStyle]}
-          pointerEvents={foldOn ? "none" : "auto"}
+          pointerEvents={tabsLive ? "auto" : "none"}
           accessibilityElementsHidden={foldOn}
           importantForAccessibility={foldOn ? "no-hide-descendants" : "auto"}
         >
@@ -434,7 +454,13 @@ export function GlassTabBar({
           <Pressable
             testID="tab-folded"
             accessibilityRole="button"
-            accessibilityLabel={`${focusedLabel}, show all tabs`}
+            accessibilityLabel={
+              needsYou
+                ? focusedRoute.name === "activity"
+                  ? `${focusedLabel}, ${needsYou.spoken}, show all tabs`
+                  : `${focusedLabel}, show all tabs, Activity: ${needsYou.spoken}`
+                : `${focusedLabel}, show all tabs`
+            }
             accessibilityElementsHidden={!foldOn}
             importantForAccessibility={foldOn ? "auto" : "no-hide-descendants"}
             onPress={() => {
@@ -448,6 +474,38 @@ export function GlassTabBar({
               color: accent,
               size: 24,
             })}
+            {/* Activity's count stays in sight while folded: the number on
+                Activity's own round, a dot on any other. */}
+            {needsYou ? (
+              focusedRoute.name === "activity" ? (
+                <View
+                  testID="tab-folded-badge"
+                  pointerEvents="none"
+                  style={[
+                    styles.badge,
+                    { backgroundColor: tokens.color.gold.house },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.badgeText,
+                      { color: tokens.color.gold.onHouse },
+                    ]}
+                  >
+                    {needsYou.label}
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  testID="tab-folded-dot"
+                  pointerEvents="none"
+                  style={[
+                    styles.foldedDot,
+                    { backgroundColor: tokens.color.gold.house },
+                  ]}
+                />
+              )
+            ) : null}
           </Pressable>
         </Animated.View>
       </Animated.View>
@@ -518,6 +576,14 @@ const styles = StyleSheet.create({
   scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
   askBar: { position: "absolute" },
   folded: { flex: 1, alignItems: "center", justifyContent: "center" },
+  foldedDot: {
+    position: "absolute",
+    top: 12,
+    right: 14,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
   noticeRow: {
     position: "absolute",
     left: FLOATING_TAB_BAR.side,

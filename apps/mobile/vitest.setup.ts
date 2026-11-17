@@ -426,7 +426,8 @@ vi.mock("react-native-reanimated", () => {
           value: updater()[key as keyof T],
         }),
       }),
-    withTiming: <T>(value: T) => value,
+    // A spec can read what an animation was asked for (the tab bar fold).
+    withTiming: vi.fn(<T>(value: T) => value),
     withRepeat: vi.fn(<T>(value: T) => value),
     cancelAnimation: vi.fn(),
     useReducedMotion: vi.fn(() => false),

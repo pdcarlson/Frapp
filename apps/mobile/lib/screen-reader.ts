@@ -2,25 +2,43 @@ import { useEffect, useState } from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 
 /**
- * Whether VoiceOver or TalkBack is on, followed live. `true` while the first
- * read is out and when it fails, so a control that hides itself under a
- * screen reader errs toward staying put. Web has no screen reader API: false.
+ * Whether VoiceOver or TalkBack is on now. A read that fails counts as on, so
+ * whatever steps aside for a screen reader errs toward stepping aside. Web
+ * says no: react-native-web answers true in every browser, which would make
+ * every web build look screen-read.
+ */
+export async function readScreenReaderOn(): Promise<boolean> {
+  if (Platform.OS === "web") return false;
+  try {
+    return await AccessibilityInfo.isScreenReaderEnabled();
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * {@link readScreenReaderOn}, followed live. On until the first read
+ * answers, so the tab bar's fold (#4904) never hides labelled tabs from a
+ * screen reader in the moment before it knows; a change heard before that
+ * read answers is newer than it, as `use-reduce-motion.ts` does it.
  */
 export function useScreenReaderOn(): boolean {
   const [on, setOn] = useState(Platform.OS !== "web");
   useEffect(() => {
     if (Platform.OS === "web") return;
-    let live = true;
-    AccessibilityInfo.isScreenReaderEnabled().then(
-      (enabled) => live && setOn(enabled),
-      () => live && setOn(true),
-    );
+    let heard = false;
     const subscription = AccessibilityInfo.addEventListener(
       "screenReaderChanged",
-      (enabled: boolean) => setOn(enabled),
+      (enabled: boolean) => {
+        heard = true;
+        setOn(enabled);
+      },
     );
+    void readScreenReaderOn().then((enabled) => {
+      if (!heard) setOn(enabled);
+    });
     return () => {
-      live = false;
+      heard = true;
       subscription.remove();
     };
   }, []);
