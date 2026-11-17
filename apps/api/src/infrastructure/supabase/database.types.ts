@@ -429,20 +429,20 @@ export interface Database {
         Returns: AiRun[];
       };
       /**
-       * `20261116164304` (#5157) — Google Drive folders to sync or clean up
-       * next, each leased; `returns setof chapter_drive_connections`.
-       */
-      claim_chapter_drive_syncs: {
-        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
-        Returns: ChapterDriveConnection[];
-      };
-      /**
        * `20261117224309` (#5434) — linked Google Drive files to check next,
        * each leased; `returns setof chapter_drive_links`.
        */
       claim_chapter_drive_links: {
         Args: { p_now: string; p_limit: number; p_lease_seconds: number };
         Returns: ChapterDriveLink[];
+      };
+      /**
+       * `20261116164304` (#5157) — Google Drive folders to sync or clean up
+       * next, each leased; `returns setof chapter_drive_connections`.
+       */
+      claim_chapter_drive_syncs: {
+        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
+        Returns: ChapterDriveConnection[];
       };
       /**
        * `20261112165050` (#720) — sources that need indexing, each with its
