@@ -20,9 +20,7 @@ import {
   askLeftOutLine,
   askOffersThinkHarder,
   askPostedSourceTitle,
-  askReadLine,
   askSourceChip,
-  askStepLine,
   askUnavailableLine,
   askUnavailableOffersRetry,
   type AskAnswer,
@@ -40,6 +38,7 @@ import {
   onPlainClick,
 } from "@/components/ask/ask-entity-text";
 import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
+import { AskSteps } from "@/components/ask/ask-steps";
 import {
   askSourceBackworkId,
   askSourceHref,
@@ -194,19 +193,20 @@ export function AskReply({
 }) {
   return (
     <div aria-live="polite" className="space-y-3">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <p className="whitespace-pre-wrap text-sm text-foreground">
-              {exchange.preview}
-            </p>
-          ) : null}
-          {exchange.step ? (
-            <p className="text-caption text-muted-foreground">
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </p>
-          ) : null}
-        </>
+      {/* What Frapp did, as steps: live while it reads, folded into one
+          row from the answer's first word (#5427). */}
+      <AskSteps
+        steps={exchange.steps}
+        folded={
+          exchange.phase !== "working" ||
+          exchange.step === "writing" ||
+          exchange.preview !== ""
+        }
+      />
+      {exchange.phase === "working" && exchange.preview ? (
+        <p className="whitespace-pre-wrap text-sm text-foreground">
+          {exchange.preview}
+        </p>
       ) : null}
       {exchange.phase === "failed" && exchange.failure ? (
         <div className="space-y-2">
@@ -236,7 +236,6 @@ export function AskReply({
         <>
           <AskAnswerBody
             answer={exchange.answer}
-            readLine={askReadLine(exchange.read)}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
             onRetry={onRetry}
@@ -402,15 +401,12 @@ function CopyAnswer({ text }: { text: string }) {
 
 function AskAnswerBody({
   answer,
-  readLine,
   busy,
   onAnswerConsent,
   onRetry,
   onFollowMessage,
 }: {
   answer: AskAnswer;
-  /** What Frapp read to write it (`askReadLine`), or null. */
-  readLine: string | null;
   busy: boolean;
   onAnswerConsent: () => void;
   /** Asks the same question again in this turn's place. */
@@ -476,10 +472,6 @@ function AskAnswerBody({
         <p className="text-caption text-muted-foreground">
           {ASK_COPY.own_words}
         </p>
-      ) : null}
-      {/* Where the step line was while it worked, in the same tone. */}
-      {readLine ? (
-        <p className="text-caption text-muted-foreground">{readLine}</p>
       ) : null}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (

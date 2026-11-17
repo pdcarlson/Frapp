@@ -14,9 +14,46 @@ import {
   ASK_COPY,
   ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
-  askReadLine,
+  askStepsOn,
   type AskAnswer,
+  type AskStreamEvent,
+  type AskWorkStep,
 } from "@repo/validation";
+
+/** A turn's steps after these events, as the hook keeps them. */
+const stepsAfter = (events: AskStreamEvent[]): AskWorkStep[] =>
+  events.reduce<AskWorkStep[]>(askStepsOn, []);
+
+const READS: AskStreamEvent[] = [
+  { v: 1, type: "status", step: "searching" },
+  {
+    v: 1,
+    type: "status",
+    step: "reading",
+    tool: "search_messages",
+    label: "Searching messages",
+    call: 1,
+    kind: "chat",
+  },
+  {
+    v: 1,
+    type: "step",
+    call: 1,
+    tool: "search_messages",
+    outcome: "found",
+    found: 3,
+    names: ["#exec-board"],
+  },
+  {
+    v: 1,
+    type: "status",
+    step: "reading",
+    tool: "events",
+    label: "Reading the events calendar",
+    call: 2,
+    kind: "events",
+  },
+];
 
 const backwork = vi.hoisted(() => ({
   fetch: vi.fn<(id: string) => Promise<{ downloadUrl: string }>>(async () => ({
@@ -360,27 +397,6 @@ describe("AskTurn", () => {
     expect(screen.getByRole("button", { name: REPORT })).toBeInTheDocument();
   });
 
-  it("says what Frapp read under a finished answer, before its sources", () => {
-    show(exchange({ askId: "a-1", read: { reads: ["events"], found: 3 } }));
-    const line = screen.getByText(
-      askReadLine({ reads: ["events"], found: 3 })!,
-    );
-    const sources = screen.getByRole("list", { name: ASK_COPY.sources });
-    expect(
-      line.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      sources.compareDocumentPosition(
-        screen.getByRole("button", { name: REPORT }),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it("draws no read line when the server named nothing it read", () => {
-    show(exchange({ askId: "a-1" }));
-    expect(screen.queryByText(/^Read /)).toBeNull();
-  });
-
   it("paints the member's own words in the chapter's colour", () => {
     show(exchange());
     expect(
@@ -569,45 +585,68 @@ describe("AskTurn", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the step under the streamed text while it works", () => {
+  it("lists each step while it works: what it did, its state and what it found (#5427)", () => {
     show(
       exchange({
         phase: "working",
         step: "reading",
+        steps: stepsAfter(READS),
+        answer: null,
+      }),
+    );
+    const rows = screen.getAllByRole("listitem");
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Searched messages, done, 3 messages in #exec-board",
+      "Reading the events calendar, in progress",
+    ]);
+    expect(screen.queryByRole("button", { expanded: false })).toBeNull();
+  });
+
+  it("folds the steps at the answer's first word, and opens them on a tap", async () => {
+    show(
+      exchange({
+        phase: "working",
+        step: "writing",
+        steps: stepsAfter([...READS, { v: 1, type: "status", step: "writing" }]),
         preview: "Quorum is",
         answer: null,
       }),
     );
     expect(screen.getByText("Quorum is")).toBeInTheDocument();
-    expect(screen.getByText(ASK_COPY.steps.reading)).toBeInTheDocument();
+    expect(screen.queryAllByRole("listitem")).toEqual([]);
+    const row = screen.getByRole("button", {
+      name: `Worked through 2 steps. ${ASK_COPY.steps_show}`,
+    });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
 
-  it("says what is being read, and that a card is being worked out", () => {
+  it("keeps the folded steps above a finished answer, and no read line under it", () => {
     show(
       exchange({
-        phase: "working",
-        step: "reading",
-        stepDetail: { reads: ["events", "my_tasks"], found: 3 },
-        answer: null,
+        askId: "a-1",
+        steps: stepsAfter([
+          ...READS,
+          { v: 1, type: "done", answer: ANSWER } as AskStreamEvent,
+        ]),
       }),
     );
+    const row = screen.getByRole("button", { name: /^Worked through 2 steps/ });
+    const sources = screen.getByRole("list", { name: ASK_COPY.sources });
     expect(
-      screen.getByText("Reading the events calendar, your tasks and 3 sources"),
-    ).toBeInTheDocument();
-    cleanup();
-    show(exchange({ phase: "working", step: "proposing", answer: null }));
-    expect(screen.getByText(ASK_COPY.steps.proposing)).toBeInTheDocument();
+      row.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByText(/^Read /)).toBeNull();
   });
 
-  it("says nothing under a turn that has not been sent yet", () => {
-    // The AI question is still open: no search has started.
-    show(exchange({ phase: "working", step: null, answer: null }));
+  it("draws no steps for a turn that has not been sent yet, or read nothing", () => {
+    show(exchange({ phase: "working", step: null, steps: [], answer: null }));
     expect(screen.queryByText(ASK_COPY.steps.searching)).toBeNull();
-  });
-
-  it("falls back to a step it knows for one it does not", () => {
-    show(exchange({ phase: "working", step: "pondering", answer: null }));
-    expect(screen.getByText(ASK_COPY.steps.searching)).toBeInTheDocument();
+    cleanup();
+    show(exchange({ askId: "a-1" }));
+    expect(screen.queryByRole("button", { name: /Worked through/ })).toBeNull();
   });
 
   it("offers the AI sheet when the member has not answered it", async () => {

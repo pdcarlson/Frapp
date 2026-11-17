@@ -170,12 +170,30 @@ export type AgentLoopEvent =
   | { type: 'text'; delta: string }
   /** The round's words came before a call: they were not the answer. */
   | { type: 'discard' }
-  /** A tool is about to run. `propose`: a card is being worked out. */
+  /**
+   * A tool is about to run. `propose`: a card is being worked out. `call`
+   * numbers the turn's calls from 1, so the `read` that ends it can say which
+   * one it was: the calls of a round run together and end in any order.
+   */
   | {
       type: 'tool';
+      call: number;
       name: string;
       reading: string;
       effect: 'read' | 'propose';
+    }
+  /**
+   * A read announced by `tool` ended (#5427): how, and what it returned, as
+   * the turn keeps it (chat already past the consent filter, the size cap
+   * applied). Sent as each read settles, before the round's next call. A
+   * propose call has none: its card is the turn's.
+   */
+  | {
+      type: 'read';
+      call: number;
+      name: string;
+      outcome: AgentCallTrace['outcome'];
+      sources: readonly AgentSource[];
     }
   | { type: 'end'; outcome: AgentLoopOutcome };
 
@@ -347,6 +365,8 @@ export class AgentLoopService {
       // In order, so "the first ten" is the first ten the model asked for,
       // and announced one by one. The reads themselves run together.
       const pending: Promise<RanCall>[] = [];
+      // Each pending read's number, when it was announced as one (`tool`).
+      const announced: (number | null)[] = [];
       for (const call of result.toolCalls) {
         const tool = offered.get(call.name);
         if (callsRun >= limits.calls) {
@@ -355,12 +375,15 @@ export class AgentLoopService {
               notRun(call, 'over_limit', 'The limit on reads was reached.'),
             ),
           );
+          announced.push(null);
           continue;
         }
         callsRun += 1;
+        announced.push(tool?.effect === 'read' ? callsRun : null);
         if (tool) {
           yield {
             type: 'tool',
+            call: callsRun,
             name: tool.name,
             reading: tool.reading,
             effect: tool.effect,
@@ -397,8 +420,40 @@ export class AgentLoopService {
       }
       // Every call is waited for, even when one of them ends the turn: a
       // card saved beside a read that was refused is still the member's to
-      // see, so it is counted before the turn ends.
-      const settled = await Promise.allSettled(pending);
+      // see, so it is counted before the turn ends. Each announced read says
+      // how it ended as soon as it settles, so a quick read is not shown
+      // working until the slowest of its round is back (#5427).
+      const settled = new Array<PromiseSettledResult<RanCall>>(
+        pending.length,
+      );
+      const waiting = new Map(
+        pending.map((read, index) => [
+          index,
+          read.then(
+            (value) => ({ index, value, ok: true as const }),
+            (reason: unknown) => ({ index, reason, ok: false as const }),
+          ),
+        ]),
+      );
+      while (waiting.size > 0) {
+        const done = await Promise.race(waiting.values());
+        waiting.delete(done.index);
+        if (!done.ok) {
+          settled[done.index] = { status: 'rejected', reason: done.reason };
+          continue;
+        }
+        settled[done.index] = { status: 'fulfilled', value: done.value };
+        const number = announced[done.index];
+        if (number != null && !input.signal?.aborted) {
+          yield {
+            type: 'read',
+            call: number,
+            name: done.value.trace.tool,
+            outcome: done.value.trace.outcome,
+            sources: done.value.sources,
+          };
+        }
+      }
       let failed: { why: unknown } | null = null;
       for (const call of settled) {
         if (call.status === 'fulfilled') {

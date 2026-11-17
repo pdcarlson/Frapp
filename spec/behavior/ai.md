@@ -318,10 +318,10 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**
-  Text appears as it is written, over one line that says what Frapp is doing.
+  Text appears as it is written, under the folded list of what Frapp did (next bullet).
   The server decides what stands after the model stops, and the checked answer replaces the preview.
-- **The line under a working turn says what the server is really doing** (changed in #4701 by pdcarlson, 2026-11-13: until then it was one of three fixed lines, "Searching your chapter's sources", "Reading what it found" and "Writing", whatever was read, and a turn that ended in a card said "Searching" until the card arrived).
-  Each line is sent when that work starts, and none is shown for work that did not happen:
+- **A working turn shows what the server is really doing** (changed in #4701 by pdcarlson, 2026-11-13: until then it was one of three fixed lines, "Searching your chapter's sources", "Reading what it found" and "Writing", whatever was read, and a turn that ended in a card said "Searching" until the card arrived; changed again in #5427 by pdcarlson, 2026-11-17, Paul's pick of direction A: one line became a list of steps, below).
+  Each step is sent when that work starts, and none is shown for work that did not happen. Until #5427 each was one line that replaced the last, in these words:
   - "Searching your chapter's sources" from the moment the question is sent: the index is searched and the question is read for which live records it needs.
     While the member is still answering the AI question ([Consent](#consent)) the turn says nothing, because nothing has been sent.
   - "Reading the events calendar and 3 sources" once that is back: the live records picked for this question, by name (the roster, the events calendar, your points, the points standings, your dues, your tasks), then how many sources the search found, each document, set of minutes or conversation counted once.
@@ -334,9 +334,20 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   - A turn answered through the tool loop (`ASK_AGENT=on`) reads in several steps, and each read sends its own line, a fixed phrase per tool such as "Searching messages" or "Looking at your channels".
     The clients show that line whole in place of "Reading …" (drawn since #4904, 2026-11-13).
 
-  The line sits where the sources go when the answer lands, so nothing above it moves.
-  The words are one function in `@repo/validation` (`askStepLine`), read by web and the phone.
-  A build that does not know a step shows the searching line; one that does not know a record's name leaves it out.
+  Since #5427 (Paul, 2026-11-17: "we write instead of show") these are not one line but a short list, one row per step, shown as each happens:
+  - **Each read is its own row**, with an icon for what it reads (chat, documents and minutes, a document, minutes, events, attendance, people, tasks, points, dues, hours, backwork), its words, and its state: working, done, nothing found, or could not read.
+    Under a row that ended goes what it found: how many messages and in which channel ("3 messages in #exec-board"), or up to three things it found by name as chips ("Budget 2026"), with a count when it found more.
+    The one-shot path's search is one row ("Searched your chapter's sources", with how many sources), and each live read it picked another; a card being worked out is one row too.
+  - **The server says how each read ended.** A tool-loop read is numbered when it starts (`status` with `call`, and the kind of thing it reads), and a `step` event with the same number says, as soon as that read is back, whether it found anything, how many things and up to three of their names.
+    Only what the answer's own source chips would show is named: the title of something the read returned as the asker, so something they can open.
+    Chat is named by its channel, after the consent filter, never by its author or its words; a read's arguments (what the model searched for) and the text of what it read are never sent.
+    Nothing in a step goes back to the model.
+  - **From the answer's first word the list folds** into one row, "Worked through 6 steps" with the icons of the kinds it read, or a single step's own words ("Read the events calendar"); a tap opens it again.
+    The folded row stays above the finished answer and replaces the past-tense "Read …" line that sat under it from #4702.
+    A turn that read nothing (a greeting answered in Frapp's own words) draws no list.
+  - **Nothing moves under the reader:** the list only grows at its bottom, the end of the thread, and folds before any answer text is under it. If Frapp writes and then reads again, the row stays folded and its count goes up.
+  The rules are one set of functions in `@repo/validation` (`ask-steps.ts`), read by web and the phone.
+  A build from before #5427 skips the `step` event and the new keys and shows its one line as before; a build that does not know a kind draws the plain mark.
   A turn the member walked away from (the panel closed, or a new question sent) stops at its next wait: nothing more is read, written or kept for it.
 - **Sources open.**
   Each cited sentence carries a numbered marker, and each source is a chip under the answer with the same number and its name;
@@ -358,7 +369,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 > The loop is built, and on everywhere but production since 2026-11-15 (staging is where it is tested). Production answers through it only with `ASK_AGENT=on`, and "How an answer is made" above describes what members get until the one-shot path is deleted.
 > Through the loop, the model is offered the reads this member may use (since 2026-11-13: seven that find and read channels, documents and minutes, #4900, and fifteen that read people, tasks, events, attendance, points, hours and dues, #4901), calls them with arguments, and may read again on what it found: at most six model calls and ten reads a turn, or ten and sixteen, with longer to read and the model working harder, when the member asks Frapp to think harder (`effort: more`, read since 2026-11-13;
 > the button is #4904's).
-> The line under a working turn names each read as it starts.
+> The working turn shows each read as it starts and what it found when it ends (#5427).
 > Through the loop a card can also come from what Frapp read (built 2026-11-13, [Asking Frapp to do something](#asking-frapp-to-do-something)).
 > Everything else on this page holds: reads run as the asker, chat only from members who said yes, who is asking is context and never a source, and no answer without a checked source.
 > The rules that changed to allow it are in [`ai-prompt-injection.md` § The tool loop](../../docs/security/ai-prompt-injection.md#the-tool-loop-added-2026-11-13-epic-4898).

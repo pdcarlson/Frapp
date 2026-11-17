@@ -1682,6 +1682,7 @@ describe('AskService', () => {
               await Promise.resolve();
               yield {
                 type: 'tool',
+                call: 1,
                 name: 'roster',
                 reading: 'Reading the roster',
                 effect: 'read',
@@ -1771,15 +1772,24 @@ describe('AskService', () => {
           { type: 'discard' },
           {
             type: 'tool',
+            call: 1,
             name: 'roster',
             reading: 'Reading the roster',
             effect: 'read',
           },
           {
             type: 'tool',
+            call: 2,
             name: 'my_dues',
             reading: 'Reading your dues',
             effect: 'read',
+          },
+          {
+            type: 'read',
+            call: 2,
+            name: 'my_dues',
+            outcome: 'ok',
+            sources: [],
           },
           { type: 'text', delta: 'Dana Reyes is ' },
           { type: 'text', delta: 'the treasurer.' },
@@ -1825,6 +1835,7 @@ describe('AskService', () => {
         'searching',
         'reading',
         'reading',
+        'step',
         'writing',
         'text',
         'done',
@@ -1834,9 +1845,22 @@ describe('AskService', () => {
           reads: ['roster', 'my_dues'],
           tool: 'my_dues',
           label: 'Reading your dues',
+          call: 2,
+          kind: 'dues',
         }),
       );
-      expect(events[5]).toEqual(
+      // How the read ended, by its number (#5427).
+      expect(events[4]).toEqual({
+        v: 1,
+        type: 'step',
+        call: 2,
+        tool: 'my_dues',
+        kind: 'dues',
+        outcome: 'nothing',
+        found: 0,
+        names: [],
+      });
+      expect(events[6]).toEqual(
         expect.objectContaining({ delta: 'Dana Reyes is the treasurer.' }),
       );
       expect(answer.status).toBe('answered');
@@ -2037,6 +2061,7 @@ describe('AskService', () => {
         loop: [
           {
             type: 'tool',
+            call: 1,
             name: 'roster',
             reading: 'Reading the roster',
             effect: 'read',
@@ -2348,6 +2373,7 @@ describe('AskService', () => {
           loop: [
             {
               type: 'tool',
+              call: 1,
               name: 'create_task',
               reading: 'Working out the task',
               effect: 'propose',

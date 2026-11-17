@@ -25,9 +25,7 @@ import {
   askLeftOutLine,
   askOffersThinkHarder,
   askPostedSourceTitle,
-  askReadLine,
   askSourceChip,
-  askStepLine,
   askUnavailableLine,
   askUnavailableOffersRetry,
   type AiReportReason,
@@ -46,6 +44,7 @@ import {
   ThumbUpGlyph,
 } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
+import { AskSteps } from "@/components/ask/ask-steps";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectChannels } from "@/lib/chat/channel-list";
 import { selectionHaptic } from "@/lib/haptics";
@@ -235,17 +234,18 @@ export function AskReply({
 
   return (
     <View style={styles.reply} accessibilityLiveRegion="polite">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <Text style={styles.answer}>{exchange.preview}</Text>
-          ) : null}
-          {exchange.step ? (
-            <Text style={styles.note}>
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </Text>
-          ) : null}
-        </>
+      {/* What Frapp did, as steps: live while it reads, folded into one
+          row from the answer's first word (#5427). */}
+      <AskSteps
+        steps={exchange.steps}
+        folded={
+          exchange.phase !== "working" ||
+          exchange.step === "writing" ||
+          exchange.preview !== ""
+        }
+      />
+      {exchange.phase === "working" && exchange.preview ? (
+        <Text style={styles.answer}>{exchange.preview}</Text>
       ) : null}
 
       {exchange.phase === "failed" && exchange.failure ? (
@@ -266,7 +266,6 @@ export function AskReply({
       {exchange.phase === "done" && exchange.answer ? (
         <AnswerBody
           answer={exchange.answer}
-          readLine={askReadLine(exchange.read)}
           canOpen={canOpen}
           openingSourceId={openingSourceId ?? null}
           onOpenSource={onOpenSource}
@@ -602,7 +601,6 @@ function ThumbsFollowUp({
 
 function AnswerBody({
   answer,
-  readLine,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -612,8 +610,6 @@ function AnswerBody({
   onOpenChannel,
 }: {
   answer: AskAnswer;
-  /** What Frapp read to write it (`askReadLine`), or null. */
-  readLine: string | null;
   canOpen: (source: AskSource) => boolean;
   openingSourceId: string | null;
   onOpenSource: (source: AskSource) => void;
@@ -714,7 +710,6 @@ function AnswerBody({
         <Text style={styles.note}>{ASK_COPY.own_words}</Text>
       ) : null}
       {/* Where the step line was while it worked, in the same tone. */}
-      {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />
       {answer.sources.length > 0 ? (
         <View style={styles.sources}>

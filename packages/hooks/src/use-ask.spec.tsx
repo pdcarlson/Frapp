@@ -96,6 +96,40 @@ const refusedWith = (error: { statusCode: number; code?: string }) => ({
 });
 
 describe("applyAskEvent", () => {
+  it("keeps the turn's steps: each read, how it ended, and all of them once the answer starts (#5427)", () => {
+    let exchange = applyAskEvent(WORKING, { v, type: "status", step: "searching" });
+    exchange = applyAskEvent(exchange, {
+      v,
+      type: "status",
+      step: "reading",
+      tool: "events",
+      label: "Reading the events calendar",
+      call: 1,
+      kind: "events",
+    });
+    exchange = applyAskEvent(exchange, {
+      v,
+      type: "step",
+      call: 1,
+      tool: "events",
+      outcome: "found",
+      found: 1,
+      names: ["Spring Formal"],
+    });
+    exchange = applyAskEvent(exchange, { v, type: "text", delta: "April" });
+    exchange = applyAskEvent(exchange, { v, type: "status", step: "writing" });
+    expect(exchange.steps).toEqual([
+      {
+        key: "call:1",
+        kind: "events",
+        label: "Reading the events calendar",
+        state: "done",
+        found: 1,
+        names: ["Spring Formal"],
+      },
+    ]);
+  });
+
   it("names the step, then gathers the text as a preview", () => {
     let exchange = applyAskEvent(WORKING, { v, type: "status", step: "writing" });
     exchange = applyAskEvent(exchange, { v, type: "text", delta: "Quorum " });
@@ -107,40 +141,9 @@ describe("applyAskEvent", () => {
     });
   });
 
-  it("keeps what a step says is being read, and only for that step", () => {
-    const reading = applyAskEvent(WORKING, {
-      v,
-      type: "status",
-      step: "reading",
-      reads: ["events"],
-      found: 2,
-    });
-    expect(reading).toMatchObject({
-      step: "reading",
-      stepDetail: { reads: ["events"], found: 2 },
-    });
-    const writing = applyAskEvent(reading, { v, type: "status", step: "writing" });
-    expect(writing.stepDetail).toEqual({
-      reads: undefined,
-      found: undefined,
-      label: undefined,
-    });
-    // The tool loop's own line for a read rides along (#4904).
-    const labelled = applyAskEvent(reading, {
-      v,
-      type: "status",
-      step: "reading",
-      tool: "search_messages",
-      label: "Searching #general",
-    });
-    expect(labelled.stepDetail?.label).toBe("Searching #general");
-    expect(
-      applyAskEvent(reading, { v, type: "done", answer: ANSWER }).stepDetail,
-    ).toBeNull();
-  });
-
-  it("remembers what was read for the finished answer, through the steps after it", () => {
-    let exchange = applyAskEvent(WORKING, {
+  it("keeps the one-shot path's reads as steps once the answer lands", () => {
+    let exchange = applyAskEvent(WORKING, { v, type: "status", step: "searching" });
+    exchange = applyAskEvent(exchange, {
       v,
       type: "status",
       step: "reading",
@@ -149,13 +152,11 @@ describe("applyAskEvent", () => {
     });
     exchange = applyAskEvent(exchange, { v, type: "status", step: "writing" });
     exchange = applyAskEvent(exchange, { v, type: "done", answer: ANSWER });
-    // The step line is gone with the work; what was read stays with the turn.
-    expect(exchange.stepDetail).toBeNull();
-    expect(exchange.read).toEqual({ reads: ["events"], found: 2 });
-    // A turn the server never named a read for has none.
-    expect(
-      applyAskEvent(WORKING, { v, type: "done", answer: ANSWER }).read,
-    ).toBeUndefined();
+    expect(exchange.step).toBeNull();
+    expect(exchange.steps?.map((step) => [step.key, step.state, step.found])).toEqual([
+      ["search", "done", 2],
+      ["read:events", "done", 0],
+    ]);
   });
 
   it("replaces the preview with the checked answer on done", () => {

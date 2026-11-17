@@ -14,13 +14,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { codeOf, throwUnlessOk, type components } from "@repo/api-sdk";
 import {
   ASK_COPY,
+  ASK_STREAM_VERSION,
   askHistory,
   createAskStreamReader,
   type AskAnswer,
   type AskEffort,
-  type AskStepDetail,
+  askStepsOn,
   type AskStreamEvent,
   type AskSuggestion,
+  type AskWorkStep,
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
 import type { ActResponse } from "./use-act";
@@ -222,14 +224,12 @@ export interface AskExchange {
    * while a working turn has not been sent yet (the AI question is open).
    */
   step: string | null;
-  /** What that step said is being read, for the line under the turn. */
-  stepDetail?: AskStepDetail | null;
   /**
-   * What the turn's `reading` step named, kept once the answer lands, for
-   * the line under it ("Read the events calendar and 3 sources",
-   * `askReadLine`). Absent for a turn that never reached that step.
+   * The turn's steps, as a list (#5427, `askStepsOn`): each read with its
+   * kind, its state and what it found. Kept once the answer lands, for the
+   * folded "Worked through N steps" row. Absent before the stream begins.
    */
-  read?: AskStepDetail | null;
+  steps?: readonly AskWorkStep[];
   /** The text as it streams. A preview: `answer` replaces it. */
   preview: string;
   answer: AskAnswer | null;
@@ -253,6 +253,13 @@ export interface AskExchange {
   /** `more` when this is the answer to Think harder (#4904). */
   effort?: AskEffort;
 }
+
+/** A turn's steps from the moment its question is sent: the search, working. */
+const SEARCHING_STEPS: readonly AskWorkStep[] = askStepsOn([], {
+  v: ASK_STREAM_VERSION,
+  type: "status",
+  step: "searching",
+});
 
 /** An answer no stream was opened for: the server refused before it began. */
 function unavailable(reason: string): AskAnswer {
@@ -283,27 +290,22 @@ export function applyAskEvent(
 ): AskExchange {
   // `done`, `proposal` and `error` are final: a late delta never reopens a turn.
   if (exchange.phase !== "working") return exchange;
+  const next = applyToTurn(exchange, event);
+  // Text is most of a stream and moves no step.
+  return event.type === "text"
+    ? next
+    : { ...next, steps: askStepsOn(exchange.steps ?? [], event) };
+}
+
+function applyToTurn(exchange: AskExchange, event: AskStreamEvent): AskExchange {
   switch (event.type) {
+    case "step":
+      return exchange;
     case "start":
       return { ...exchange, askId: event.ask_id };
     case "status":
-      return {
-        ...exchange,
-        step: event.step,
-        // Each step replaces the last one's detail, so "3 sources" never
-        // outlives the step that counted them.
-        // `label` is the tool loop's own line for the read that just
-        // started ("Searching messages"); `askStepLine` shows it whole.
-        stepDetail: {
-          reads: event.reads,
-          found: event.found,
-          label: event.label,
-        },
-        // What was read is also what the finished answer says it read.
-        ...(event.step === "reading"
-          ? { read: { reads: event.reads, found: event.found } }
-          : {}),
-      };
+      // What each step read is kept in `steps` (`askStepsOn`).
+      return { ...exchange, step: event.step };
     case "text":
       return { ...exchange, preview: exchange.preview + event.delta };
     case "done":
@@ -311,7 +313,6 @@ export function applyAskEvent(
         ...exchange,
         phase: "done",
         step: null,
-        stepDetail: null,
         preview: "",
         answer: event.answer,
       };
@@ -320,7 +321,6 @@ export function applyAskEvent(
         ...exchange,
         phase: "done",
         step: null,
-        stepDetail: null,
         preview: "",
         // The shape `POST /v1/ai/act` answers with; open on the wire, and
         // the card shows a status it does not know as the generic line.
@@ -332,7 +332,6 @@ export function applyAskEvent(
         ...exchange,
         phase: "failed",
         step: null,
-        stepDetail: null,
         preview: "",
         failure: { message: ASK_COPY.failed, retryable: event.retryable },
       };
@@ -344,7 +343,6 @@ function failed(exchange: AskExchange, message: string): AskExchange {
     ...exchange,
     phase: "failed",
     step: null,
-    stepDetail: null,
     preview: "",
     failure: { message, retryable: true },
   };
@@ -660,6 +658,8 @@ function useAskConversation(): AskConversation {
           // Nothing is being searched while the AI question is still on
           // screen, so the turn says nothing until the request is sent.
           step: options?.gate ? null : "searching",
+          // The search is the first step, drawn from the moment it is sent.
+          steps: options?.gate ? [] : SEARCHING_STEPS,
           preview: "",
           answer: null,
           proposal: null,
@@ -687,13 +687,16 @@ function useAskConversation(): AskConversation {
               ...current,
               phase: "done",
               step: null,
-              stepDetail: null,
               answer: unavailable("consent_required"),
             }));
             return;
           }
           if (abort.signal.aborted) return;
-          update((current) => ({ ...current, step: "searching" }));
+          update((current) => ({
+            ...current,
+            step: "searching",
+            steps: SEARCHING_STEPS,
+          }));
         }
         if (replaced) {
           // One word, and a count that fails is dropped.
@@ -747,7 +750,6 @@ function useAskConversation(): AskConversation {
                   ...current,
                   phase: "done",
                   step: null,
-                  stepDetail: null,
                   answer: unavailable(reason),
                 }
               : failed(current, errorCopy(result.error, ASK_COPY.failed)),
