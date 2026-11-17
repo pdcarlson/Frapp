@@ -48,9 +48,8 @@
 //   Nudge notes on by default (2026-11-17, #5309) is the owner's material
 //   change: Privacy moved to November 2026 and the constant to 2026-11, so
 //   every member accepts again once.
-//   Every AI feature on by default (2026-11-17, #5294) moved only the Privacy
-//   pin, pending the owner's ruling in its PR: if material, the constant takes
-//   the next suffix, 2026-11.2, since November 2026 is already the date.
+//   Every AI feature on by default (2026-11-17, #5294) was ruled non-material
+//   by the owner the same day, so it moved only the Privacy pin.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
