@@ -6,6 +6,7 @@ import {
 import { moduleDisabledMessage } from '@repo/validation';
 import { ChatReactionService } from './chat-reaction.service';
 import {
+  baseChannel,
   baseMessage,
   createChatServiceFixture,
   type ChatServiceFixture,
@@ -23,6 +24,7 @@ import type {
 // Moved out of `chat.service.spec.ts` with the methods (#1380).
 describe('ChatReactionService', () => {
   let reactions: ChatReactionService;
+  let mockChannelRepo: ChatServiceFixture['mockChannelRepo'];
   let mockMessageRepo: ChatServiceFixture['mockMessageRepo'];
   let mockActionRepo: ChatServiceFixture['mockActionRepo'];
   let mockReactionRepo: ChatServiceFixture['mockReactionRepo'];
@@ -33,6 +35,7 @@ describe('ChatReactionService', () => {
   beforeEach(async () => {
     ({
       reactions,
+      mockChannelRepo,
       mockMessageRepo,
       mockActionRepo,
       mockReactionRepo,
@@ -203,6 +206,111 @@ describe('ChatReactionService', () => {
       payload: {},
       created_at: '2026-01-01T12:00:00.000Z',
     };
+
+    // #4695: a claim and a vote are writes, so a channel nobody can write in
+    // (an archived group DM, the audit log) refuses them, as it refuses Close.
+    describe('in a channel nobody writes in (#4695)', () => {
+      const signupCard: ChatMessage = {
+        ...baseMessage,
+        kind: 'signup',
+        payload: {
+          title: 'Sober drivers',
+          slots: [{ id: 'fri', label: 'Friday', capacity: 2 }],
+        },
+      };
+      const pollCard: ChatMessage = {
+        ...baseMessage,
+        kind: 'poll',
+        payload: {
+          question: 'Formal venue?',
+          options: [
+            { id: 'opt-a', label: 'The Lodge' },
+            { id: 'opt-b', label: 'Riverside' },
+          ],
+          closes_at: null,
+        },
+      };
+      const frozen = {
+        'an archived group DM': {
+          ...baseChannel,
+          type: 'GROUP_DM' as const,
+          member_ids: ['user-1'],
+          archived_at: '2026-11-01T00:00:00.000Z',
+        },
+        'the audit log': { ...baseChannel, is_audit_log: true },
+      };
+
+      // Who can post doesn't decide a card vote: a poll in #announcements is
+      // for everyone who reads it, as the card offers it.
+      it('still takes a vote from a reader who may not post in the channel', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          who_can_post: ['role-officer'],
+        });
+        mockMessageRepo.findById.mockResolvedValue(pollCard);
+        mockActionRepo.create.mockResolvedValue(baseAction);
+
+        await expect(
+          reactions.recordMessageAction(
+            'msg-1',
+            'ch-1',
+            'user-1',
+            { action_type: 'vote', payload: { option_id: 'opt-a' } },
+            null,
+          ),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
+
+      describe.each(Object.entries(frozen))('%s', (_, channel) => {
+        beforeEach(() => {
+          mockChannelRepo.findById.mockResolvedValue(channel);
+        });
+
+        it('refuses a sign-up claim', async () => {
+          mockMessageRepo.findById.mockResolvedValue(signupCard);
+
+          await expect(
+            reactions.recordMessageAction(
+              'msg-1',
+              'ch-1',
+              'user-1',
+              { action_type: 'signup', payload: { slot_ids: ['fri'] } },
+              null,
+            ),
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it('refuses an in-chat poll vote', async () => {
+          mockMessageRepo.findById.mockResolvedValue(pollCard);
+
+          await expect(
+            reactions.recordMessageAction(
+              'msg-1',
+              'ch-1',
+              'user-1',
+              { action_type: 'vote', payload: { option_id: 'opt-a' } },
+              null,
+            ),
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockActionRepo.create).not.toHaveBeenCalled();
+        });
+
+        it('still takes an emoji reaction, which is not a card write', async () => {
+          mockActionRepo.create.mockResolvedValue(baseAction);
+
+          await expect(
+            reactions.recordMessageAction(
+              'msg-1',
+              'ch-1',
+              'user-1',
+              { action_type: 'reaction:👍' },
+              null,
+            ),
+          ).resolves.toMatchObject({ deduplicated: false });
+        });
+      });
+    });
 
     describe('sign-up card claims (#3926)', () => {
       const signupMessage: ChatMessage = {

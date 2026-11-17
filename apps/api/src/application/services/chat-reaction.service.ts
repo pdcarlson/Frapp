@@ -30,6 +30,7 @@ import {
 } from '#domain/repositories/chat.repository.interface';
 import type { ChatMessageAction } from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
+import type { ChannelOperation } from '#domain/utils/channel-access';
 import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import { ChatBlockService } from './chat-block.service';
 import { isFromBlockedSender } from './chat-block-mask';
@@ -88,6 +89,22 @@ const SIGNUPS_CLOSED = 'Sign-ups are closed';
  * Split out of `ChatService` (#1380). It shares only the message-access check
  * and the block list with the send path, and never writes a message.
  */
+/**
+ * The channel operation a card action is checked as (#4695). A poll vote and
+ * a sign-up claim are `'answer'`, as a form's answers are: refused in an
+ * archived channel and in the audit log, where the card can't be closed
+ * either, but open to every reader, as the cards on web and the phone offer
+ * them. A vote is not `'vote'`, which would also apply who can post and so
+ * refuse a member a poll in `#announcements` that the card lets them tap.
+ * An emoji reaction stays a `'read'`.
+ */
+function cardActionOperation(actionType: string): ChannelOperation {
+  return actionType === CARD_VOTE_ACTION_TYPE ||
+    actionType === SIGNUP_ACTION_TYPE
+    ? 'answer'
+    : 'read';
+}
+
 @Injectable()
 export class ChatReactionService {
   constructor(
@@ -180,6 +197,7 @@ export class ChatReactionService {
       messageId,
       chapterId,
       userId,
+      cardActionOperation(input.action_type),
     );
 
     // A deleted message takes no reaction, vote or card response, as it takes
