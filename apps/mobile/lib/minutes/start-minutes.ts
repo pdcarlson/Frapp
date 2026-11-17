@@ -44,18 +44,13 @@ const RECENT_DAYS = 14;
 const MAX_OPTIONS = 6;
 
 export const MEETING_START_COPY = {
-  record: "Record meeting",
+  record: "Record the meeting",
   newHeading: "Start minutes",
   change: "Change",
   pickHeading: "Which meeting?",
   onNow: "On now",
   newTitle: DEFAULT_MEETING_NAME,
   newDetail: "Not on the calendar · today, starting now",
-  rowOnNow: (name: string) => `${name} is on now`,
-  rowNew: "Starts a new meeting, today",
-  rowFinding: "Finding the meeting on now",
-  rowTaken: (name: string) =>
-    `${name} already has minutes. Open the event to take notes.`,
   takenNote: (name: string) =>
     `${name} already has minutes, so pick another meeting or take notes from the event.`,
   readFailed:
@@ -189,14 +184,6 @@ export function choiceLabel(
         ? MEETING_START_COPY.onNow
         : meetingWhenLabel(choice.event.start_time, now),
   };
-}
-
-/** What the Record meeting row says about the meeting it will use. */
-export function recordRowDetail(choices: MeetingChoices): string {
-  if (choices.taken) return MEETING_START_COPY.rowTaken(choices.taken.name);
-  return choices.picked?.kind === "event"
-    ? MEETING_START_COPY.rowOnNow(choices.picked.event.name)
-    : MEETING_START_COPY.rowNew;
 }
 
 /** A start that didn't happen, with the line to show. */

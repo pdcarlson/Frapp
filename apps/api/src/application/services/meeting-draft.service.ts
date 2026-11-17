@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import type { LanguageModelUsage } from '#domain/adapters/language-model.interface';
 import {
   BadRequestException,
@@ -52,11 +51,13 @@ import {
   readableSources,
   type MinutesSource,
 } from '#domain/utils/minutes-draft';
+import { mergeParts, partRequests } from '#domain/utils/minutes-draft-parts';
 import {
-  buildSummaryPrompt,
-  mergeParts,
-  partRequests,
-} from '#domain/utils/minutes-draft-parts';
+  ReviewedMinutesSchema,
+  applyReview,
+  buildReviewPrompt,
+  dropProcedure,
+} from '#domain/utils/minutes-draft-review';
 import { MeetingService } from './meeting.service';
 import { MeetingNotesService } from './meeting-notes.service';
 import { RbacService } from './rbac.service';
@@ -164,10 +165,11 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   readonly runPermissions = [SystemPermissions.MEETINGS_RECORD];
   /**
    * An officer is waiting on the page: two tries. A long meeting is drafted
-   * in parts side by side and then summarized, so a try gets four minutes.
+   * in parts side by side and then read over as a whole, so a try gets most
+   * of the five-minute lease (`AI_RUN_LEASE_MS`).
    */
   readonly maxAttempts = 2;
-  readonly timeoutMs = 240_000;
+  readonly timeoutMs = 280_000;
 
   constructor(
     @Inject(MEETING_DRAFT_REPOSITORY)
@@ -735,9 +737,9 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         },
         context,
       );
-    const parts = partRequests(request);
-    if (!parts) return draftOf(request);
-
+    // Pass 1: every candidate, from the notes or from each part of a long
+    // transcript side by side.
+    const parts = partRequests(request) ?? [request];
     const results = await Promise.all(parts.map(draftOf));
     const outputs: MeetingDraftOutput[] = [];
     const usages: LanguageModelUsage[] = [];
@@ -746,27 +748,39 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       outputs.push(result.value);
       usages.push(result.usage);
     }
-    const merged = mergeParts(outputs);
-    if (request.sections.includes('summary')) {
-      const summary = await this.gateway.generateObject(
-        MINUTES_DRAFT_TASK,
-        {
-          ...buildSummaryPrompt(
-            request,
-            outputs.map((output) => output.summary),
-          ),
-          promptVersion: MEETING_DRAFT_PROMPT_VERSION,
-          schema: PartsSummarySchema,
-          signal,
-        },
-        context,
-      );
-      // Without it the parts' summaries stand, one after another.
-      if (summary.status === 'ok' && summary.value.summary.trim()) {
-        merged.summary = summary.value.summary.trim();
-      }
+
+    // Pass 2: the editor's read over the whole meeting
+    // (`minutes-draft-review.ts`). Several note-takers' conflicts are settled
+    // by the first pass and pass through untouched.
+    const reviewed = await this.gateway.generateObject(
+      MINUTES_DRAFT_TASK,
+      {
+        ...buildReviewPrompt(request, outputs),
+        schema: ReviewedMinutesSchema,
+        signal,
+      },
+      context,
+    );
+    if (reviewed.status === 'ok') {
+      usages.push(reviewed.usage);
+      return {
+        status: 'ok',
+        value: applyReview(outputs, reviewed.value),
+        usage: usageOf(usages),
+      };
     }
-    return { status: 'ok', value: merged, usage: usageOf(usages) };
+    // A refusal or a closed gate ends the draft as the first pass would
+    // have; a review that only failed to come back leaves the first pass's
+    // draft, with procedure taken out, rather than nothing.
+    if (reviewed.status === 'unavailable' || reviewed.status === 'refused') {
+      return reviewed;
+    }
+    const merged = mergeParts(outputs);
+    return {
+      status: 'ok',
+      value: { ...merged, decisions: dropProcedure(merged.decisions) },
+      usage: usageOf(usages),
+    };
   }
 
   /** The chapter's switch and the member's answer, for this task. */
@@ -1006,9 +1020,6 @@ function meetingDateOf(meeting: Meeting, fromClient?: string): string {
   const apart = Math.abs(noon.getTime() - Date.parse(meeting.event_start_time));
   return apart <= 36 * 60 * 60 * 1000 ? fromClient : utcDay;
 }
-
-/** What the summary over a long meeting's parts returns. */
-const PartsSummarySchema = z.object({ summary: z.string() });
 
 /** The parts' token counts together, as the one draft they make. */
 function usageOf(usages: readonly LanguageModelUsage[]): LanguageModelUsage {

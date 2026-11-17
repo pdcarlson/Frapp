@@ -20,6 +20,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can, MAX_MEETING_RECORDING_SECONDS } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
+import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { MeetingPickField } from "@/components/minutes/meeting-pick-field";
 import { RecordingNoticeSheet } from "@/components/minutes/recording-notice-sheet";
 import {
@@ -34,7 +35,6 @@ import {
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
-import { recordingBarView } from "@/lib/minutes/recorder/row-view";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { useMeetingsOn } from "@/lib/minutes/meetings-on";
 import {
@@ -42,7 +42,6 @@ import {
   MinutesStartError,
   choiceLabel,
   meetingChoices,
-  recordRowDetail,
   useStartMinutesFor,
   type MeetingChoice,
   type MeetingChoices,
@@ -50,15 +49,6 @@ import {
 } from "@/lib/minutes/start-minutes";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
-
-/** What the +'s Record meeting row shows, or nothing for this member. */
-export type RecordMeetingEntry = {
-  /** The second line: the meeting it will use, or what the recorder is doing. */
-  detail: string;
-  /** The phone holds a recording, so the row opens it instead of starting one. */
-  held: boolean;
-  onPress: () => void;
-};
 
 type SheetKey = "record" | "minutes";
 
@@ -70,30 +60,31 @@ type SheetKey = "record" | "minutes";
 const REQUEST_LIVES_MS = 8000;
 
 /**
- * The +'s meeting actions (#5287; `spec/ui/mobile/navigation.md` § Quick
- * actions): the Record meeting row above the grid, and New minutes in it.
- * Paul, 2026-11-17: "the huge one is there's no way for me to record ...
- * minutes on my phone."
+ * The +'s meeting action (#5287; `spec/ui/mobile/navigation.md` § Quick
+ * actions): New minutes, one entry for taking notes and for recording.
+ * Paul, 2026-11-17: "I don't need a full red record meeting minutes option
+ * in the plus menu. Just let it be the normal new minutes option. Why have
+ * 2 options?" (it replaced a red Record meeting row above the grid that he
+ * had picked that morning).
  *
- * Both pick the meeting by themselves (the one on now, else a new one
- * today; `meetingChoices`) and carry it on their sheet with Change, so the
- * shortest way to record is +, Record meeting, the tick, Start recording:
- * the notice always comes first (`meetings.md` § Recording notice), and the
- * meeting rides on it rather than taking a step. Start recording starts the
- * minutes, opens them and starts the recorder.
+ * New minutes picks the meeting by itself (the one on now, else a new one
+ * today; `meetingChoices`) and carries it on its sheet with Change. The
+ * sheet starts the minutes, or, where this phone can record, starts them
+ * recording: the notice always comes first (`meetings.md` § Recording
+ * notice) with the same meeting on it, and Start recording there starts
+ * the minutes, opens them and starts the recorder. So the shortest way to
+ * record is +, New minutes, Record, Start recording.
  *
- * When the meeting on now already has someone else's minutes, the row says
- * so and opens the event, where Take notes is (#4935), rather than start a
- * second meeting beside it. When it is the member's own draft and that
- * draft already has a recording, the minutes open and the officer records
- * again from their row, which asks first, as it always has.
+ * When the member's own draft on that meeting already has a recording, the
+ * minutes open and the officer records again from their row, which asks
+ * first, as it always has.
  *
- * Record meeting is offered where the minutes screen's own Record is: the
- * member holds `meetings:record`, the module is on, the chapter drafts from
- * notes, this server can write a recording out, and this build has a
- * microphone. Recording where it can't be written out is #5289. While the
- * phone holds a recording the row is always there, says what it is doing
- * and opens it, so a second recording is never started from here.
+ * Record is offered where the minutes screen's own Record is: the member
+ * holds `meetings:record`, the module is on, the chapter drafts from notes,
+ * this server can write a recording out, and this build has a microphone.
+ * Recording where it can't be written out is #5289. While the phone holds a
+ * recording, Record isn't offered, so a second recording is never started
+ * from here; the recording's own pill opens it.
  */
 export function useMeetingQuickActions({
   confirm,
@@ -101,7 +92,6 @@ export function useMeetingQuickActions({
   /** Says something above the bar for a few seconds (the host's notice). */
   confirm: (text: string) => void;
 }): {
-  record: RecordMeetingEntry | null;
   newMinutes: () => void;
   sheets: ReactNode;
 } {
@@ -121,12 +111,11 @@ export function useMeetingQuickActions({
     availability.data?.available === true &&
     availability.data.blocked !== "chapter_off";
 
-  // The calendar and the minutes are read once the member could use them:
-  // for the Record row's second line, or when New minutes is asked for. Not
-  // with the tab bar for everyone, so a member who never records never reads
+  // The calendar and the minutes are read once New minutes is asked for,
+  // not with the tab bar, so a member who never takes minutes never reads
   // every event.
   const [asked, setAsked] = useState(false);
-  const wanted = mayStart && (recordable || asked);
+  const wanted = mayStart && asked;
   const eventsQuery = useEvents({ enabled: wanted });
   const meetingsQuery = useMeetings({ enabled: wanted });
   const viewerId = useViewerUserId();
@@ -165,7 +154,6 @@ export function useMeetingQuickActions({
   const handled = useRef(0);
 
   const heldId = recorderMeetingId(state);
-  const held = heldId ? recordingBarView(state) : null;
   const maxSeconds =
     availability.data?.max_seconds ?? MAX_MEETING_RECORDING_SECONDS;
   const ready = choices !== null;
@@ -190,9 +178,9 @@ export function useMeetingQuickActions({
   const refetchEvents = eventsQuery.refetch;
   const refetchMeetings = meetingsQuery.refetch;
   const present = useCallback(
-    (sheet: SheetKey) => {
+    (sheet: SheetKey, keepPick = false) => {
       setAsked(true);
-      setChanged(null);
+      if (!keepPick) setChanged(null);
       if (readFailed) {
         void refetchEvents();
         void refetchMeetings();
@@ -203,22 +191,14 @@ export function useMeetingQuickActions({
   );
 
   const newMinutes = useCallback(() => present("minutes"), [present]);
-  const takenId = choices?.taken?.id ?? null;
   const consentNeeded = availability.data?.blocked === "consent_required";
   const refetchAvailability = availability.refetch;
 
-  async function recordPress() {
-    if (heldId) {
-      router.push({ pathname: "/minutes-details", params: { id: heldId } });
-      return;
-    }
-    // The meeting on now has someone else's minutes: its event screen has
-    // Open minutes and Take notes, so the officer joins them.
-    if (takenId) {
-      router.push({ pathname: "/event-details", params: { id: takenId } });
-      return;
-    }
-    // The AI question comes before the notice (§ Recording in the app).
+  /**
+   * Record, from New minutes: the AI question first when it is owed
+   * (§ Recording in the app), then the notice, on the meeting the sheet had.
+   */
+  async function recordFromSheet() {
     if (consentNeeded) {
       try {
         if (!(await ensureConsent())) return;
@@ -227,22 +207,8 @@ export function useMeetingQuickActions({
       }
       void refetchAvailability();
     }
-    present("record");
+    present("record", true);
   }
-
-  const record: RecordMeetingEntry | null = held
-    ? { detail: held.label, held: true, onPress: () => void recordPress() }
-    : recordable
-      ? {
-          detail: choices
-            ? recordRowDetail(choices)
-            : readFailed
-              ? MEETING_START_COPY.readFailed
-              : MEETING_START_COPY.rowFinding,
-          held: false,
-          onPress: () => void recordPress(),
-        }
-      : null;
 
   /** Starts or opens the minutes, or the line to show when it can't. */
   async function startFor(
@@ -338,18 +304,20 @@ export function useMeetingQuickActions({
           pick={pick}
           canStart={choice !== null}
           onStart={async () => (choice ? startMinutes(choice) : null)}
+          onRecord={recordable && !heldId ? recordFromSheet : null}
         />
       ) : null}
     </>
   );
 
-  return { record, newMinutes, sheets };
+  return { newMinutes, sheets };
 }
 
 /**
- * New minutes from the + (#5287): the meeting, already picked, and Start
- * minutes. No notice and no microphone; the minutes open ready for notes. A
- * start that fails says why in the sheet, which stays open to try again.
+ * New minutes from the + (#5287): the meeting, already picked, then Start
+ * minutes, which opens them ready for notes, and, where this phone can
+ * record, Record, which closes this sheet for the recording notice. A start
+ * that fails says why in the sheet, which stays open to try again.
  */
 const StartMinutesSheet = forwardRef<
   BottomSheetModal,
@@ -358,8 +326,10 @@ const StartMinutesSheet = forwardRef<
     canStart: boolean;
     /** Resolves to the line to show when the start failed, else null. */
     onStart: () => Promise<string | null>;
+    /** Starts them recording instead, or null where this phone can't. */
+    onRecord: (() => void) | null;
   }
->(function StartMinutesSheet({ pick, canStart, onStart }, ref) {
+>(function StartMinutesSheet({ pick, canStart, onStart, onRecord }, ref) {
   const { tokens } = useFrappTheme();
   const { accent, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -410,6 +380,17 @@ const StartMinutesSheet = forwardRef<
             }
           }}
         />
+        {onRecord ? (
+          <OnboardingSecondaryButton
+            fill
+            label={MEETING_START_COPY.record}
+            disabled={!pick || !canStart || busy}
+            onPress={() => {
+              closeSheet();
+              onRecord();
+            }}
+          />
+        ) : null}
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
