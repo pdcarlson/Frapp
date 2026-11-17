@@ -198,10 +198,11 @@ describe('configureApp', () => {
         requestId: expect.stringMatching(/^req_/),
       });
 
+      // An unexpected token: V8's own message would quote this text.
       const malformed = await request(app.getHttpServer())
         .post('/v1/echo')
         .set('content-type', 'application/json')
-        .send('{"text":"secret-body-text"');
+        .send('password=secret-body-text');
       expect(malformed.status).toBe(400);
       expect(malformed.body).toEqual({
         statusCode: 400,
@@ -210,7 +211,26 @@ describe('configureApp', () => {
         requestId: expect.stringMatching(/^req_/),
       });
       expect(JSON.stringify(malformed.body)).not.toContain('secret-body-text');
-      expect(malformed.body.requestId).toMatch(/^req_/);
+    });
+
+    // Nest adds its form parser at init, after anything registered here, so
+    // `configureApp` registers it itself, ahead of the error mapping.
+    it('answers 413 for a form body over the limit', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .type('form')
+        .send(`text=${'x'.repeat(160_000)}`);
+      expect(res.status).toBe(413);
+      expect(res.body.requestId).toMatch(/^req_/);
+    });
+
+    it('answers 415 for a JSON body in a charset the parser does not read', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .set('content-type', 'application/json; charset=latin1')
+        .send('{"text":"x"}');
+      expect(res.status).toBe(415);
+      expect(res.body.requestId).toMatch(/^req_/);
     });
   });
 

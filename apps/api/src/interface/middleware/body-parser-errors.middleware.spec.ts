@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  HttpException,
-  PayloadTooLargeException,
-} from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { bodyParserErrorMiddleware } from './body-parser-errors.middleware';
 
@@ -31,31 +27,21 @@ function run(error: unknown): unknown {
 
 describe('bodyParserErrorMiddleware (#4404)', () => {
   it.each([
-    [
-      'entity.parse.failed',
-      400,
-      BadRequestException,
-      'Request body is not valid JSON',
-    ],
-    [
-      'entity.too.large',
-      413,
-      PayloadTooLargeException,
-      'Request body is too large',
-    ],
-  ])(
-    'turns %s into a %d with a fixed message',
-    (type, status, Expected, message) => {
-      const mapped = run(parserError(type, status));
+    ['entity.parse.failed', 400, 'Request body is not valid JSON'],
+    ['entity.too.large', 413, 'Request body is too large'],
+    ['parameters.too.many', 413, 'Request body has too many parameters'],
+    ['charset.unsupported', 415, 'Request body charset is not supported'],
+    ['request.aborted', 400, 'Request was aborted'],
+  ])('turns %s into a %d with a fixed message', (type, status, message) => {
+    const mapped = run(parserError(type, status));
 
-      expect(mapped).toBeInstanceOf(Expected);
-      const exception = mapped as HttpException;
-      expect(exception.getStatus()).toBe(status);
-      expect(exception.message).toBe(message);
-      expect(JSON.stringify(exception.getResponse())).not.toContain('hunter2');
-      expect(exception.cause).toBeUndefined();
-    },
-  );
+    expect(mapped).toBeInstanceOf(HttpException);
+    const exception = mapped as HttpException;
+    expect(exception.getStatus()).toBe(status);
+    expect(exception.message).toBe(message);
+    expect(JSON.stringify(exception.getResponse())).not.toContain('hunter2');
+    expect(exception.cause).toBeUndefined();
+  });
 
   // Narrow on purpose: anything else stays the server fault it is.
   it.each([
@@ -71,7 +57,10 @@ describe('bodyParserErrorMiddleware (#4404)', () => {
       'a parser type with a string status',
       parserError('entity.parse.failed', '400'),
     ],
-    ['another body-parser type', parserError('encoding.unsupported', 415)],
+    [
+      "a parser fault of the server's own",
+      parserError('stream.encoding.set', 500),
+    ],
     ['an inherited type name', parserError('toString', 400)],
     ['a non-object', 'boom'],
   ])('passes %s on unchanged', (_name, error) => {

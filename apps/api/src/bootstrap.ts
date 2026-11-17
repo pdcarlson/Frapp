@@ -254,8 +254,14 @@ export function configureApp(
   (app as NestExpressApplication).useBodyParser('json', {
     limit: JSON_BODY_LIMIT,
   });
-  // Right after both parsers: their refusals answer 400 / 413 with a fixed
-  // message, not 500 or the parser's own text (#4404).
+  // Nest's own form parser, registered here rather than left to `init()`,
+  // which adds it after everything below (it skips a parser by this name that
+  // is already in place). Same options as Nest's default.
+  (app as NestExpressApplication).useBodyParser('urlencoded', {
+    extended: true,
+  });
+  // After every parser: their refusals answer 4xx with a fixed message, not
+  // 500 or the parser's own text (#4404).
   app.use(bodyParserErrorMiddleware);
 
   app.useGlobalInterceptors(
