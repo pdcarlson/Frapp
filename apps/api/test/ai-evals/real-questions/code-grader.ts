@@ -50,6 +50,19 @@ export const TOOL_ALIASES: Readonly<Record<string, string>> = {
 const has = (haystack: string, needle: string): boolean =>
   haystack.toLowerCase().includes(needle.toLowerCase());
 
+/**
+ * An answer's words as the member reads them (#5429): bold, italic and code
+ * delimiters out, and a list's `- ` lead out, so they count as no word and
+ * split no name or fact. The clients draw it with `@repo/chat-core`, which
+ * the API doesn't depend on.
+ */
+export function readAs(text: string): string {
+  return text
+    .replace(/\*\*|__|`/g, '')
+    .replace(/(^|[\s(])\*(?=\S)([^*\n]*?\S)\*/g, '$1$2')
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, '');
+}
+
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -159,7 +172,8 @@ export function gradeRealQuestion(
 ): EvalViolation[] {
   const { expect } = question;
   const violations: EvalViolation[] = [];
-  const text = answer.text;
+  // Graded as the member reads it: answers are markdown since #5429.
+  const text = readAs(answer.text);
 
   for (const fact of expect.facts) {
     if (!fact.some((way) => has(text, way))) {

@@ -33,8 +33,12 @@ interface Sentence {
   end: number;
 }
 
-/** A terminator, any closing quotes or brackets, then space or the end. */
-const SENTENCE_END = /[.!?]+["')\]]*(?=\s|$)|\n+/g;
+/**
+ * A terminator, any closing quotes, brackets or emphasis (`**`, `_`: an
+ * answer is markdown since #5429, so `**Dues are $50.**` ends where its bold
+ * does), then space or the end.
+ */
+const SENTENCE_END = /[.!?]+["')\]*_]*(?=\s|$)|\n+/g;
 
 function sentences(text: string): Sentence[] {
   const found: Sentence[] = [];

@@ -1022,3 +1022,83 @@ describe("AskTurn", () => {
     });
   });
 });
+
+describe("an answer's markdown (#5429)", () => {
+  const markdown =
+    "Bring three things:\n\n- **Photos.** For the slideshow.\n- Tickets";
+
+  it("draws bold as bold and a list as lines, with the markers where the server put them", () => {
+    const { container } = show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: markdown,
+          citations: [{ source: 0, at: markdown.indexOf(" For"), quote: "" }],
+        },
+      }),
+    );
+    expect(container.textContent).not.toContain("**");
+    const bold = container.querySelector("strong");
+    expect(bold?.textContent).toBe("Photos.");
+    // The marker stands right after the bold, on its sentence.
+    // The marker comes before the source chip of the same name.
+    const [marker] = screen.getAllByRole("link", {
+      name: /^Source 1: Bylaws/,
+    });
+    expect(bold?.contains(marker!)).toBe(false);
+    expect(
+      bold!.compareDocumentPosition(marker!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.textContent).toContain("• Tickets");
+  });
+
+  it("draws a link in an answer as its words, never as a link", () => {
+    const { container } = show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: "Pay at [the dues page](https://example.test/pay?d=1).",
+          citations: [],
+        },
+      }),
+    );
+    expect(container.textContent).toContain("Pay at the dues page.");
+    expect(container.querySelector('a[href*="example.test"]')).toBeNull();
+    expect(container.textContent).not.toContain("example.test");
+  });
+
+  it("copies the words without the asterisks", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    show(
+      exchange({
+        askId: "a-1",
+        answer: {
+          ...ANSWER,
+          text: "**Photos.** Bring a camera.",
+          citations: [],
+        },
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: ASK_COPY.copy_answer }),
+    );
+    expect(writeText).toHaveBeenCalledWith("Photos. Bring a camera.");
+  });
+
+  it("never shows a half-written bold while it streams", () => {
+    const { container } = show(
+      exchange({
+        phase: "working",
+        step: "searching",
+        preview: "Bring **Pho",
+        answer: null,
+      }),
+    );
+    expect(container.textContent).toContain("Bring Pho");
+    expect(container.textContent).not.toContain("*");
+  });
+});

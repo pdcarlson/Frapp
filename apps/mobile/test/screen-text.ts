@@ -13,13 +13,25 @@ import type { ReactTestInstance, ReactTestRenderer } from "react-test-renderer";
 export const screenText = (tree: ReactTestRenderer) =>
   tree.root
     .findAllByType("Text" as never)
-    .map((node) =>
-      [node.props.children]
-        .flat(Infinity)
-        .filter((part) => typeof part === "string" || typeof part === "number")
-        .join(""),
-    )
+    .map(ownText)
     .join("\n");
+
+/**
+ * The strings a `Text` draws itself: its rendered children, through the
+ * components between them (a markdown body's paragraph, #5429), but not a
+ * nested `Text`, which is listed on its own.
+ */
+function ownText(node: ReactTestInstance): string {
+  return node.children
+    .map((child) =>
+      typeof child === "string"
+        ? child
+        : typeof child.type === "string"
+          ? ""
+          : ownText(child),
+    )
+    .join("");
+}
 
 /**
  * What one rendered element draws, the `Text`s nested inside it included, as

@@ -5,10 +5,9 @@ import {
   StyleSheet,
   Text,
   View,
-  type StyleProp,
-  type TextStyle,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { askPlainWords } from "@repo/chat-core/ask-markdown";
 import { useAskThumbs, useChannels, type AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -20,8 +19,6 @@ import {
   ASK_POST_COPY,
   askAnswerEntities,
   askFeedbackReportReason,
-  askAnswerSegments,
-  askEntityParts,
   askLeftOutLine,
   askOffersThinkHarder,
   askPostedSourceTitle,
@@ -43,6 +40,7 @@ import {
   ThumbDownGlyph,
   ThumbUpGlyph,
 } from "@/components/control-glyphs";
+import { AskMarkdown, AskPreviewMarkdown } from "@/components/ask/ask-markdown";
 import { IconButton } from "@/components/icon-button";
 import { AskSteps } from "@/components/ask/ask-steps";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -245,7 +243,7 @@ export function AskReply({
         }
       />
       {exchange.phase === "working" && exchange.preview ? (
-        <Text style={styles.answer}>{exchange.preview}</Text>
+        <AskPreviewMarkdown text={exchange.preview} style={styles.answer} />
       ) : null}
 
       {exchange.phase === "failed" && exchange.failure ? (
@@ -373,7 +371,8 @@ function AnswerActions({
   if (!text && !report && !thumbs) return null;
   const copy = () => {
     if (!text) return;
-    void Clipboard.setStringAsync(text).then(
+    // The words as read, without the markdown's delimiters (#5429).
+    void Clipboard.setStringAsync(askPlainWords(text)).then(
       () => {
         if (!mounted.current) return;
         selectionHaptic();
@@ -599,6 +598,13 @@ function ThumbsFollowUp({
   );
 }
 
+/** A marker's spoken name for a source, as its chip names it. */
+const sourceChipName = (source: AskSource) => askSourceChip(source).name;
+/** A posted answer's source, named as the post lists it. */
+const postedSourceName = (source: AskSource) => source.title;
+/** A posted answer carries no names to draw. */
+const NO_ENTITIES: readonly AskEntity[] = [];
+
 function AnswerBody({
   answer,
   canOpen,
@@ -661,38 +667,20 @@ function AnswerBody({
 
   const entities = askAnswerEntities(answer);
   const words = (canOpenChannel: (channelId: string) => boolean) => (
-    <Text style={styles.answer}>
-      {askAnswerSegments(answer).map((segment, position) => {
-        if (segment.type === "text") {
-          return (
-            <EntityText
-              key={position}
-              text={segment.text}
-              entities={entities}
-              mentionStyle={styles.mention}
-              canOpenChannel={canOpenChannel}
-              onOpenChannel={onOpenChannel}
-            />
-          );
-        }
-        const source = answer.sources[segment.citation.source];
-        if (!source) return null;
-        const number = segment.citation.source + 1;
-        const opens = canOpen(source);
-        return (
-          <Text
-            key={position}
-            accessibilityRole={opens ? "link" : undefined}
-            accessibilityLabel={`Source ${number}: ${askSourceChip(source).name}`}
-            onPress={opens ? () => onOpenSource(source) : undefined}
-            style={styles.marker}
-          >
-            {/* No-break spaces: the marker wraps whole, with the sentence it ends. */}
-            {`\u00A0${number}\u00A0`}
-          </Text>
-        );
-      })}
-    </Text>
+    <AskMarkdown
+      text={answer.text}
+      citations={answer.citations}
+      sources={answer.sources}
+      entities={entities}
+      sourceName={sourceChipName}
+      canOpen={canOpen}
+      onOpenSource={onOpenSource}
+      canOpenChannel={canOpenChannel}
+      onOpenChannel={onOpenChannel}
+      style={styles.answer}
+      markerStyle={styles.marker}
+      mentionStyle={styles.mention}
+    />
   );
 
   return (
@@ -724,60 +712,6 @@ function AnswerBody({
           ))}
         </View>
       ) : null}
-    </>
-  );
-}
-
-/**
- * A run of an answer's text with the people and channels it names drawn the
- * way chat draws a mention (#4904; `message-markdown.tsx`), as Discord and
- * Slack mark a name inside a sentence. Which names count is the server's
- * call (`askEntityParts`): a name that is not in `entities` is ordinary
- * text. Web's twin is `ask-entity-text.tsx`.
- *
- * A member is a highlight. A channel is also a link into that channel, when
- * the reader has it; one they cannot open stays the plain words.
- */
-function EntityText({
-  text,
-  entities,
-  mentionStyle,
-  canOpenChannel,
-  onOpenChannel,
-}: {
-  text: string;
-  entities: readonly AskEntity[];
-  mentionStyle: StyleProp<TextStyle>;
-  canOpenChannel: (channelId: string) => boolean;
-  onOpenChannel?: (channelId: string) => void;
-}) {
-  return (
-    <>
-      {askEntityParts(text, entities).map((part, position) => {
-        if (part.type === "text") {
-          return <Text key={position}>{part.text}</Text>;
-        }
-        if (part.type === "member") {
-          return (
-            <Text key={position} style={mentionStyle}>
-              {part.text}
-            </Text>
-          );
-        }
-        if (!onOpenChannel || !canOpenChannel(part.id)) {
-          return <Text key={position}>{part.text}</Text>;
-        }
-        return (
-          <Text
-            key={position}
-            accessibilityRole="link"
-            onPress={() => onOpenChannel(part.id)}
-            style={mentionStyle}
-          >
-            {part.text}
-          </Text>
-        );
-      })}
     </>
   );
 }
@@ -837,10 +771,6 @@ export function AskPostedBody({
     date: source.date,
     target: source.target,
   }));
-  const segments = askAnswerSegments({
-    text,
-    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
-  });
   const notes: string[] = [
     ...(posted.truncated ? [ASK_COPY.truncated] : []),
     ...(posted.sources.some((source) => source.limited)
@@ -849,28 +779,18 @@ export function AskPostedBody({
   ];
   return (
     <View style={styles.reply}>
-      <Text style={styles.answer}>
-        {segments.map((segment, position) => {
-          if (segment.type === "text") {
-            return <Text key={position}>{segment.text}</Text>;
-          }
-          const source = sources[segment.citation.source];
-          if (!source) return null;
-          const number = segment.citation.source + 1;
-          const opens = canOpen(source);
-          return (
-            <Text
-              key={position}
-              accessibilityRole={opens ? "link" : undefined}
-              accessibilityLabel={`Source ${number}: ${source.title}`}
-              onPress={opens ? () => onOpenSource(source) : undefined}
-              style={styles.marker}
-            >
-              {`\u00A0${number}\u00A0`}
-            </Text>
-          );
-        })}
-      </Text>
+      <AskMarkdown
+        text={text}
+        citations={posted.citations}
+        sources={sources}
+        entities={NO_ENTITIES}
+        sourceName={postedSourceName}
+        canOpen={canOpen}
+        onOpenSource={onOpenSource}
+        style={styles.answer}
+        markerStyle={styles.marker}
+        mentionStyle={styles.mention}
+      />
       {sources.length > 0 ? (
         <View style={styles.sources}>
           {sources.map((source, index) => (

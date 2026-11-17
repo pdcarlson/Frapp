@@ -69,8 +69,11 @@ const STRONG_UNDERSCORE = new RegExp(
   NOT_FLANKED_BEFORE + "__(?=\\S)([^_]{0,300}?\\S)__" + NOT_FLANKED_AFTER,
   "gu",
 );
+// Not half of a `__` either: in `a__b__c` nothing is emphasis.
 const EMPHASIS_UNDERSCORE = new RegExp(
-  NOT_FLANKED_BEFORE + "_(?=\\S)([^_]{0,300}?\\S)_" + NOT_FLANKED_AFTER,
+  NOT_FLANKED_BEFORE +
+    "(?<!_)_(?=\\S)([^_]{0,300}?\\S)_(?!_)" +
+    NOT_FLANKED_AFTER,
   "gu",
 );
 const ESCAPED_CHAR = new RegExp(
@@ -99,8 +102,16 @@ const ESCAPED_CHAR = new RegExp(
  * regressed.
  */
 function flattenMarkdown(text: string): string {
+  return flattenMessageMarkdown(text.slice(0, PREVIEW_SOURCE_LIMIT));
+}
+
+/**
+ * `flattenMarkdown` without the preview's length cap: the whole text as a
+ * reader sees it. Ask's Copy reads it too (`askPlainWords`, #5429), so a
+ * copied answer and a quoted message flatten by one rule.
+ */
+export function flattenMessageMarkdown(text: string): string {
   return text
-    .slice(0, PREVIEW_SOURCE_LIMIT)
     .replace(
       /\\([\\`*_[\]()#+\-.!>])/g,
       (_match, char: string) =>
