@@ -80,6 +80,17 @@ export interface TaskFormProps {
    * with the draft; anything else is done, and the host reports a warning.
    */
   onPost: (input: TaskInput) => Promise<DispatchResult>;
+  /**
+   * Runs once the form is valid, before any photo is uploaded, with the
+   * write as it stands minus photo paths and whether new photos are on it:
+   * a step that can still back out (the scope prompt on a repeating task,
+   * #5119). `true` goes on; `false` stays open and says nothing; a string
+   * stays open and says it.
+   */
+  beforeSave?: (
+    input: TaskInput,
+    hasNewPhotos: boolean,
+  ) => Promise<boolean | string>;
   onDone: () => void;
   onDiscard: () => void;
   /**
@@ -120,6 +131,7 @@ export function TaskForm({
   initialDraft,
   onDraftChange,
   onPost,
+  beforeSave,
   onDone,
   onDiscard,
   editing,
@@ -177,7 +189,7 @@ export function TaskForm({
     if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
     // The Repeat pick (#5119), read against the first due it repeats from.
     const showRepeat = !suggestion && (!editing || editing.repeats);
-    const firstDue = firstDueOf(draft.dueDate);
+    const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
     const repeat =
       showRepeat && firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
     if (repeat && !repeat.ok) {
@@ -194,8 +206,51 @@ export function TaskForm({
       edit({ showMore: true });
       return;
     }
+    // The write as it stands, photos aside, for `beforeSave` and `onPost`.
+    const base: TaskInput = {
+      title: trimmed,
+      description: draft.description.trim() || undefined,
+      assignee_id: draft.assigneeId,
+      // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
+      ...dueEntryFields(draft.dueDate),
+      subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
+      point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
+      ...(suggestion ? {} : { proof_kind: draft.proofKind }),
+      // A new task sends a rule only when it repeats; an edit sends the
+      // rule as it should stand, null for "Doesn't repeat" (#5119).
+      ...(repeat?.ok
+        ? editing
+          ? { recurrence_rule: repeat.rule }
+          : repeat.rule
+            ? { recurrence_rule: repeat.rule }
+            : {}
+        : {}),
+    };
     setPosting(true);
     try {
+      if (beforeSave) {
+        const go = await beforeSave(
+          suggestion
+            ? base
+            : {
+                ...base,
+                reference_photo_paths: draft.keptPhotos.map(
+                  (photo) => photo.storage_path,
+                ),
+              },
+          !suggestion && draft.photoFiles.length > 0,
+        );
+        if (go !== true) {
+          if (typeof go === "string") {
+            toast({
+              title: "Couldn't save the task",
+              description: go,
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+      }
       // The photos go up first; the write carries their paths (#4635). An
       // edit sends the set as it should stand: the kept ones, then the new.
       let uploaded: string[] = [];
@@ -216,34 +271,10 @@ export function TaskForm({
         ...uploaded,
       ];
       const result = await onPost({
-        title: trimmed,
-        description: draft.description.trim() || undefined,
-        assignee_id: draft.assigneeId,
-        // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
-        ...dueEntryFields(draft.dueDate),
-        subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
-        point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
-        ...(suggestion
-          ? {}
-          : {
-              reference_photo_paths: referencePhotoPaths,
-              proof_kind: draft.proofKind,
-            }),
-        // A new task sends a rule only when it repeats; an edit sends the
-        // rule as it should stand, null for "Doesn't repeat" (#5119).
-        ...(repeat?.ok
-          ? editing
-            ? { recurrence_rule: repeat.rule }
-            : repeat.rule
-              ? { recurrence_rule: repeat.rule }
-              : {}
-          : {}),
+        ...base,
+        ...(suggestion ? {} : { reference_photo_paths: referencePhotoPaths }),
       });
       if (!result.ok) {
-        // An empty error is a choice the officer backed out of (the scope
-        // prompt of a repeating task's edit, #5119): the form stays open and
-        // nothing failed.
-        if (result.error === "") return;
         toast({
           title: suggestion
             ? "Couldn't accept the suggestion"
@@ -264,7 +295,7 @@ export function TaskForm({
   }
 
   const showRepeat = !suggestion && (!editing || editing.repeats);
-  const firstDue = firstDueOf(draft.dueDate);
+  const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
   const moreSummary = [
     ...(suggestion
       ? []

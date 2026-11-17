@@ -146,7 +146,7 @@ export function AddTaskRow({
       dueRef.current?.focus();
       return;
     }
-    const firstDue = firstDueOf(draft.due_date);
+    const firstDue = firstDueOf(draft.due_date, draft.repeat.timeZone);
     const repeat = firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
     if (repeat && !repeat.ok) {
       setMissing((prev) => ({ ...prev, repeat: repeat.error }));
@@ -312,7 +312,7 @@ export function AddTaskRow({
         forTasks
         idPrefix="add-task-repeat"
         draft={draft.repeat}
-        start={firstDueOf(draft.due_date)}
+        start={firstDueOf(draft.due_date, draft.repeat.timeZone)}
         showLength
         disabled={busy}
         onChange={(repeat) => {

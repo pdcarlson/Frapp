@@ -12,6 +12,7 @@ import {
   taskRepeatSummary,
   taskSaveScope,
   taskSeriesLine,
+  TASK_SERIES_SCOPE_COPY,
 } from "./repeat-draft";
 
 const NY = "America/New_York";
@@ -130,25 +131,81 @@ describe("taskSeriesLine (#5119)", () => {
 });
 
 describe("taskSaveScope (#5119)", () => {
-  const copy = {
-    due_date: "2026-11-16",
-    series: { ended: false },
-  };
+  const copy = { status: "TODO", series: { ended: false } };
+  const plain = { movesDay: false, changesOther: true };
 
-  it("asks on a copy of a live series", () => {
-    expect(taskSaveScope(copy, { due_date: "2026-11-16" })).toBe("ask");
-    expect(taskSaveScope(copy, {})).toBe("ask");
+  it("asks on the copy still to come", () => {
+    expect(taskSaveScope(copy, plain)).toEqual({ kind: "ask" });
   });
 
-  it("takes the series for a Repeat change, the copy for a new day", () => {
-    expect(taskSaveScope(copy, { recurrence_rule: null })).toBe("series");
-    expect(taskSaveScope(copy, { due_date: "2026-11-18" })).toBe("instance");
+  it("takes the series for a Repeat change on its own", () => {
+    expect(
+      taskSaveScope(copy, {
+        recurrence_rule: null,
+        movesDay: false,
+        changesOther: false,
+      }),
+    ).toEqual({ kind: "series" });
+  });
+
+  it("refuses a Repeat change saved with other changes or a new day", () => {
+    for (const edit of [
+      { recurrence_rule: null, movesDay: false, changesOther: true },
+      { recurrence_rule: null, movesDay: true, changesOther: false },
+    ]) {
+      expect(taskSaveScope(copy, edit)).toEqual({
+        kind: "refuse",
+        message: TASK_SERIES_SCOPE_COPY.repeatAlone,
+      });
+    }
+  });
+
+  it("keeps an overdue or done copy to itself, and its Repeat to the next", () => {
+    for (const status of ["OVERDUE", "COMPLETED"]) {
+      expect(taskSaveScope({ ...copy, status }, plain)).toEqual({
+        kind: "instance",
+      });
+      expect(
+        taskSaveScope(
+          { ...copy, status },
+          { recurrence_rule: null, movesDay: false, changesOther: false },
+        ),
+      ).toEqual({
+        kind: "refuse",
+        message: TASK_SERIES_SCOPE_COPY.repeatFromNext,
+      });
+    }
+  });
+
+  it("moves one copy's day without asking", () => {
+    expect(taskSaveScope(copy, { movesDay: true, changesOther: true })).toEqual(
+      { kind: "instance" },
+    );
   });
 
   it("never asks on a task with no live series", () => {
-    expect(taskSaveScope({ due_date: "2026-11-16" }, {})).toBe("instance");
-    expect(taskSaveScope({ ...copy, series: { ended: true } }, {})).toBe(
-      "instance",
+    expect(taskSaveScope({ status: "TODO" }, plain)).toEqual({
+      kind: "instance",
+    });
+    expect(taskSaveScope({ ...copy, series: { ended: true } }, plain)).toEqual({
+      kind: "instance",
+    });
+  });
+});
+
+describe("taskRepeatCaption's end date (#5119)", () => {
+  it("says the date of a far end rather than counting to it", () => {
+    const draft = editRepeatDraft(
+      pickRepeatEnd(
+        pickRepeatPreset(noTaskRepeatDraft(NY), "DAILY"),
+        "until",
+        FIRST,
+      ),
+      { until: "2028-12-31" },
     );
+    expect(taskRepeatCaption(draft, FIRST)).toEqual({
+      text: "Repeats until Dec 31, 2028.",
+      problem: false,
+    });
   });
 });

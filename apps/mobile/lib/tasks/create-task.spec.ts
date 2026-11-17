@@ -275,6 +275,7 @@ describe("editing a task (#4296)", () => {
         subtasks: [],
         photos: [photo("a"), { ...photo("b"), kind: "proof" }],
         proof_kind: "link",
+        series: null,
       }),
     ).toEqual({
       id: "t",

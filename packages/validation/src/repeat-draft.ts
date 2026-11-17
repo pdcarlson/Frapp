@@ -440,7 +440,49 @@ export function repeatRuleOf(
 ): RepeatRuleResult {
   if (draft.preset === "NONE") return { ok: true, rule: null };
   if (draft.pristine && draft.source) return { ok: true, rule: draft.source };
+  if (draft.endKind === "never") {
+    // Only a task's control offers it; an event series must end.
+    return { ok: false, field: "until", error: "Choose how the series ends." };
+  }
+  const built = repeatPatternOf(draft, start, "meetings");
+  if (!built.ok) return built;
+  const end = built.end;
+  if (end.kind === "never") {
+    return { ok: false, field: "until", error: "Choose how the series ends." };
+  }
+  const structured: RepeatRule = { ...built.pattern, end };
+  const rule =
+    legacyTokenFor(structured, start, built.day) ??
+    formatRepeatRule(structured);
 
+  const problem = checkSeriesLength(rule, start);
+  if (problem) return { ok: false, field: "until", error: problem };
+  return { ok: true, rule };
+}
+
+/**
+ * What an event's and a task's Repeat control share (#5119): the interval
+ * and end read from the draft and checked, and the pattern built on the
+ * first meeting's (or task's) day in the draft's zone. One builder, so the
+ * same picks make the same rule on both. `counted` names what a count
+ * counts, for its error.
+ */
+function repeatPatternOf(
+  draft: RepeatDraft,
+  start: Date,
+  counted: "meetings" | "times",
+):
+  | {
+      ok: true;
+      pattern: Omit<RepeatRule, "end">;
+      end: TaskRepeatEnd;
+      day: ZonedCalendarDay;
+    }
+  | { ok: false; field: RepeatField; error: string } {
+  const preset = draft.preset;
+  if (preset === "NONE") {
+    return { ok: false, field: "interval", error: "Choose how it repeats." };
+  }
   const interval = wholeNumber(draft.intervalInput);
   if (interval === null || interval < 1 || interval > MAX_REPEAT_INTERVAL) {
     return {
@@ -450,18 +492,19 @@ export function repeatRuleOf(
     };
   }
 
+  let end: TaskRepeatEnd;
   if (draft.endKind === "never") {
-    // Only a task's control offers it; an event series must end.
-    return { ok: false, field: "until", error: "Choose how the series ends." };
-  }
-  let end: RepeatRule["end"];
-  if (draft.endKind === "count") {
+    end = { kind: "never" };
+  } else if (draft.endKind === "count") {
     const count = wholeNumber(draft.countInput);
     if (count === null || count < 2 || count > MAX_SERIES_MEETINGS) {
       return {
         ok: false,
         field: "count",
-        error: `A series holds 2 to ${MAX_SERIES_MEETINGS} meetings.`,
+        error:
+          counted === "meetings"
+            ? `A series holds 2 to ${MAX_SERIES_MEETINGS} meetings.`
+            : `Repeat 2 to ${MAX_SERIES_MEETINGS} times.`,
       };
     }
     end = { kind: "count", count };
@@ -474,30 +517,28 @@ export function repeatRuleOf(
 
   const day = zonedCalendarDay(start, draft.timeZone);
   const monthlyBy = monthlyByFor(draft, monthlyChoices(draft, start));
-  const structured: RepeatRule = {
-    freq: draft.preset,
-    interval,
-    byDay: draft.preset === "WEEKLY" ? repeatDays(draft, start) : [],
-    nthWeekday:
-      draft.preset === "MONTHLY" && monthlyBy !== "date"
-        ? {
-            n: monthlyBy === "last" ? -1 : (weekOfMonth(day).n as NthWeek),
-            day: day.weekday,
-          }
-        : null,
-    monthDay:
-      draft.preset === "MONTHLY" && monthlyBy === "date"
-        ? monthDayFor(draft, day)
-        : null,
+  return {
+    ok: true,
+    day,
     end,
-    timeZone: draft.timeZone,
+    pattern: {
+      freq: preset,
+      interval,
+      byDay: preset === "WEEKLY" ? repeatDays(draft, start) : [],
+      nthWeekday:
+        preset === "MONTHLY" && monthlyBy !== "date"
+          ? {
+              n: monthlyBy === "last" ? -1 : (weekOfMonth(day).n as NthWeek),
+              day: day.weekday,
+            }
+          : null,
+      monthDay:
+        preset === "MONTHLY" && monthlyBy === "date"
+          ? monthDayFor(draft, day)
+          : null,
+      timeZone: draft.timeZone,
+    },
   };
-  const rule =
-    legacyTokenFor(structured, start, day) ?? formatRepeatRule(structured);
-
-  const problem = checkSeriesLength(rule, start);
-  if (problem) return { ok: false, field: "until", error: problem };
-  return { ok: true, rule };
 }
 
 /**
@@ -790,57 +831,9 @@ export function taskRepeatRuleOf(
 ): RepeatRuleResult {
   if (draft.preset === "NONE") return { ok: true, rule: null };
   if (draft.pristine && draft.source) return { ok: true, rule: draft.source };
-
-  const interval = wholeNumber(draft.intervalInput);
-  if (interval === null || interval < 1 || interval > MAX_REPEAT_INTERVAL) {
-    return {
-      ok: false,
-      field: "interval",
-      error: `Repeat every 1 to ${MAX_REPEAT_INTERVAL}.`,
-    };
-  }
-
-  let end: TaskRepeatEnd;
-  if (draft.endKind === "never") {
-    end = { kind: "never" };
-  } else if (draft.endKind === "count") {
-    const count = wholeNumber(draft.countInput);
-    if (count === null || count < 2 || count > MAX_SERIES_MEETINGS) {
-      return {
-        ok: false,
-        field: "count",
-        error: `Repeat 2 to ${MAX_SERIES_MEETINGS} times.`,
-      };
-    }
-    end = { kind: "count", count };
-  } else {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.until)) {
-      return { ok: false, field: "until", error: "Choose an end date." };
-    }
-    end = { kind: "until", until: draft.until };
-  }
-
-  const day = zonedCalendarDay(first, draft.timeZone);
-  const monthlyBy = monthlyByFor(draft, monthlyChoices(draft, first));
-  const structured: TaskRepeatRule = {
-    freq: draft.preset,
-    interval,
-    byDay: draft.preset === "WEEKLY" ? repeatDays(draft, first) : [],
-    nthWeekday:
-      draft.preset === "MONTHLY" && monthlyBy !== "date"
-        ? {
-            n: monthlyBy === "last" ? -1 : (weekOfMonth(day).n as NthWeek),
-            day: day.weekday,
-          }
-        : null,
-    monthDay:
-      draft.preset === "MONTHLY" && monthlyBy === "date"
-        ? monthDayFor(draft, day)
-        : null,
-    end,
-    timeZone: draft.timeZone,
-  };
-  const rule = formatTaskRepeatRule(structured);
+  const built = repeatPatternOf(draft, first, "times");
+  if (!built.ok) return built;
+  const rule = formatTaskRepeatRule({ ...built.pattern, end: built.end });
   const firstDay = dayString(first, draft.timeZone);
   if (!nextTaskRepeatDate(rule, firstDay, firstDay)) {
     return {
@@ -883,16 +876,24 @@ export function taskRepeatCaption(
   if (!parsed || parsed.end.kind === "never") {
     return { text: "Repeats until you stop it.", problem: false };
   }
+  if (parsed.end.kind === "until") {
+    // An end date can be years away and isn't capped for tasks, so it says
+    // the date rather than stepping every copy to count them.
+    return {
+      text: `Repeats until ${shortDay(parsed.end.until, first, draft.timeZone)}.`,
+      problem: false,
+    };
+  }
+  // A count is at most MAX_SERIES_MEETINGS: step the parsed rule to its last.
   const firstDay = dayString(first, draft.timeZone);
-  let count = 1;
   let last = firstDay;
-  for (let at = firstDay; count < MAX_SERIES_MEETINGS * 4; count++) {
-    const next = nextTaskRepeatDate(result.rule, firstDay, at);
+  for (let n = 1; n < parsed.end.count; n++) {
+    const next = nextTaskRepeatDate(parsed, firstDay, last);
     if (!next) break;
-    last = at = next;
+    last = next;
   }
   return {
-    text: `${count} times, the last on ${shortDay(last, first, draft.timeZone)}.`,
+    text: `${parsed.end.count} times, the last on ${shortDay(last, first, draft.timeZone)}.`,
     problem: false,
   };
 }
@@ -948,30 +949,57 @@ export const TASK_SERIES_SCOPE_COPY = {
   deleteTitle: "Delete a repeating task",
   deleteMessage:
     "Delete this task only, or stop it repeating? Tasks that are done or overdue stay.",
-  /** Stopping the repeat, in a delete prompt's confirm button. */
-  stopRepeating: "Stop repeating",
+  /** A Repeat change from a copy that isn't the one still to come. */
+  repeatFromNext:
+    "Change how it repeats from its next task, the one still to come.",
+  /** A Repeat change saved with other changes. */
+  repeatAlone:
+    "Save the repeat change on its own first, then make your other changes.",
 } as const;
 
 /**
- * Which scope an edit of a task takes (#5119): `instance` for a task that
- * isn't a copy of a live series, or for a move to another day (one copy
- * moves; the schedule stays); `series` for a Repeat change, which is about
- * the series; `ask` for anything else on a copy of a live series.
+ * What saving an edit of a task does (#5119), decided before anything is
+ * uploaded or written:
+ *
+ * - `instance` for a task that isn't a copy of a live series; for a copy
+ *   that isn't the one still to come (overdue, or marked done), since "All
+ *   upcoming tasks" changes the series and its next copy, not that one; and
+ *   for a move to another day (one copy moves; the schedule stays).
+ * - `series` for a Repeat change on the copy still to come, which is about
+ *   the series. Only on its own: with other changes it is `refuse`d, so a
+ *   rename never lands on every copy unasked.
+ * - `ask` for anything else on the copy still to come.
+ *
+ * `movesDay` is the caller's: whether the due's day changed, both read in
+ * the same zone (a time change read in another zone isn't a move).
  */
 export function taskSaveScope(
   task: {
-    due_date: string;
+    /** The display status: `OVERDUE` once past due. */
+    status: string;
     series?: { ended: boolean } | null;
   },
-  edit: { due_date?: string | null; recurrence_rule?: string | null },
-): "instance" | "series" | "ask" {
-  if (!task.series || task.series.ended) return "instance";
-  if (edit.recurrence_rule !== undefined) return "series";
-  if (
-    edit.due_date !== undefined &&
-    edit.due_date?.slice(0, 10) !== task.due_date.slice(0, 10)
-  ) {
-    return "instance";
+  edit: {
+    /** Present when the Repeat changed; `null` stops it. */
+    recurrence_rule?: string | null;
+    movesDay: boolean;
+    /** Whether anything besides the Repeat changed. */
+    changesOther: boolean;
+  },
+):
+  | { kind: "instance" | "series" | "ask" }
+  | { kind: "refuse"; message: string } {
+  const live = !!task.series && !task.series.ended;
+  const upcoming = task.status !== "OVERDUE" && task.status !== "COMPLETED";
+  if (edit.recurrence_rule !== undefined && live) {
+    if (!upcoming) {
+      return { kind: "refuse", message: TASK_SERIES_SCOPE_COPY.repeatFromNext };
+    }
+    if (edit.movesDay || edit.changesOther) {
+      return { kind: "refuse", message: TASK_SERIES_SCOPE_COPY.repeatAlone };
+    }
+    return { kind: "series" };
   }
-  return "ask";
+  if (!live || !upcoming || edit.movesDay) return { kind: "instance" };
+  return { kind: "ask" };
 }

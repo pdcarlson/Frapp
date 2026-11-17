@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   useUpdateTask,
   type LiveTaskPhoto,
@@ -15,7 +16,7 @@ import {
   type TaskSeriesLine,
 } from "@repo/validation";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { dueEntryFromTask } from "@repo/formatting";
+import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import type { TaskInput } from "@repo/chat-core/dispatch";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { getErrorMessage } from "@/lib/utils";
@@ -41,6 +42,26 @@ export interface EditableTask {
   proof_kind?: TaskProofKind;
   /** How it repeats, on a copy of a series (#5119). */
   series?: TaskSeriesLine | null;
+}
+
+/**
+ * Whether the edit moves the task to another day, both days read on this
+ * device's calendar (`dueEntryFromTask` puts a timed task on its local
+ * day), so a time change seen from another zone isn't a move (#5119).
+ */
+function movesDay(task: EditableTask, input: TaskInput): boolean {
+  const before = dueEntryFields(dueEntryFromTask(task)).due_date;
+  return input.due_date.slice(0, 10) !== before.slice(0, 10);
+}
+
+/**
+ * An "All upcoming tasks" write (#5119). The copy keeps its day there, so
+ * only the time travels: the server reads the time of day from `due_at` and
+ * refuses any `due_date` but the open copy's own.
+ */
+function seriesBody(body: TaskEdit): TaskEdit {
+  const { due_date: _day, ...rest } = body;
+  return { ...rest, scope: "series" };
 }
 
 /** A copy of a series that still makes copies (#5119). */
@@ -151,6 +172,8 @@ export function TaskEditForm({
 }) {
   const updateTask = useUpdateTask();
   const { confirm, confirmDialog } = useConfirmDialog();
+  // The scope `beforeSave` settled on, for the write that follows it.
+  const scope = useRef<"instance" | "series">("instance");
   const stored = task.stored_status ?? task.status;
   return (
     <>
@@ -159,43 +182,40 @@ export function TaskEditForm({
         initialDraft={taskDraftFromTask(task)}
         onDiscard={onClose}
         onDone={onClose}
+        beforeSave={async (input, hasNewPhotos) => {
+          // On a copy of a live series (#5119), decided before any photo
+          // uploads, so backing out leaves nothing behind.
+          const body = taskEditFrom(task, input);
+          const { recurrence_rule, ...rest } = body;
+          const decided = taskSaveScope(task, {
+            ...(recurrence_rule !== undefined ? { recurrence_rule } : {}),
+            movesDay: movesDay(task, input),
+            changesOther: Object.keys(rest).length > 0 || hasNewPhotos,
+          });
+          if (decided.kind === "refuse") return decided.message;
+          if (decided.kind !== "ask") {
+            scope.current = decided.kind;
+            return true;
+          }
+          const picked = await confirm({
+            title: TASK_SERIES_SCOPE_COPY.saveTitle,
+            description: TASK_SERIES_SCOPE_COPY.saveMessage,
+            confirmLabel: TASK_SERIES_SCOPE_COPY.allUpcoming,
+            alternativeLabel: TASK_SERIES_SCOPE_COPY.thisTask,
+            tone: "default",
+          });
+          // Dismissed: the form stays open with the edit, and nothing failed.
+          if (!picked) return false;
+          scope.current = picked.alternative ? "instance" : "series";
+          return true;
+        }}
         onPost={async (input) => {
           const body = taskEditFrom(task, input);
           if (Object.keys(body).length === 0) return { ok: true };
-          // On a copy of a live series (#5119): a Repeat change is about the
-          // series and a new day about this copy, so neither is asked;
-          // anything else is, as the event editors ask.
-          const asked = taskSaveScope(task, body);
-          if (asked === "series" && body.due_date !== undefined) {
-            const movedDay =
-              body.due_date?.slice(0, 10) !== task.due_date.slice(0, 10);
-            if (movedDay) {
-              return {
-                ok: false,
-                error:
-                  "Change the day and the repeat in two saves: move this task first, then change how it repeats.",
-              };
-            }
-          }
-          let scope: "instance" | "series" =
-            asked === "ask" ? "instance" : asked;
-          if (asked === "ask") {
-            const picked = await confirm({
-              title: TASK_SERIES_SCOPE_COPY.saveTitle,
-              description: TASK_SERIES_SCOPE_COPY.saveMessage,
-              confirmLabel: TASK_SERIES_SCOPE_COPY.allUpcoming,
-              alternativeLabel: TASK_SERIES_SCOPE_COPY.thisTask,
-              tone: "default",
-            });
-            // Dismissed: the form stays open with the edit, and nothing failed
-            // (an empty error is TaskForm's "say nothing").
-            if (!picked) return { ok: false, error: "" };
-            scope = picked.alternative ? "instance" : "series";
-          }
           try {
             await updateTask.mutateAsync({
               id: task.id,
-              body: scope === "series" ? { ...body, scope } : body,
+              body: scope.current === "series" ? seriesBody(body) : body,
             });
             return { ok: true };
           } catch (error) {

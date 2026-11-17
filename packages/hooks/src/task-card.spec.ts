@@ -490,7 +490,20 @@ describe("readEditableCardTask", () => {
       subtasks: [],
       photos: [],
       proof_kind: "none",
+      series: null,
     });
+  });
+
+  it("carries how a copy of a repeating task repeats (#5119)", () => {
+    const series = {
+      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=UTC",
+      next_due_date: "2026-11-21",
+      ended: false,
+    };
+    expect(readEditableCardTask({ ...raw, series })?.series).toEqual(series);
+    expect(
+      readEditableCardTask({ ...raw, series: { ended: "no" } })?.series,
+    ).toBeNull();
   });
 
   it("carries the task's reference photos and its proof kind (#4635)", () => {
