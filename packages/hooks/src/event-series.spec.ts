@@ -258,6 +258,25 @@ describe("seriesCadenceOf", () => {
     ]);
   });
 
+  it("counts only the series' own meetings toward its weekday", () => {
+    // Three Sunday meetings, among more Monday rows from a one-time event and
+    // another series: the Mondays must not outvote the series' own Sundays.
+    const rows = [
+      row("head", new Date(2026, 10, 8, 18)),
+      row("c1", new Date(2026, 10, 15, 18)),
+      row("c2", new Date(2026, 10, 22, 18)),
+      row("solo", new Date(2026, 10, 9, 18), { parent_event_id: null }),
+      row("other", new Date(2026, 10, 16, 18), {
+        parent_event_id: null,
+        recurrence_rule: "WEEKLY",
+      }),
+      row("o1", new Date(2026, 10, 23, 18), { parent_event_id: "other" }),
+      row("o2", new Date(2026, 10, 30, 18), { parent_event_id: "other" }),
+    ];
+    expect(seriesCadenceOf(rows, rows[1]!)).toBe("Every Sunday");
+    expect(seriesCadenceOf(rows, rows[5]!)).toBe("Every Monday");
+  });
+
   it("reads a monthly occurrence clamped to the 30th as the 31st", () => {
     const rows = [
       row("head", new Date(2027, 2, 31, 18), { recurrence_rule: "MONTHLY" }),

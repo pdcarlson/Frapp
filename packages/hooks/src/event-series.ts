@@ -282,7 +282,9 @@ export function seriesCadenceLabel(
 /**
  * How often `event`'s series meets ("Every Sunday"), as a series row says it
  * on web's Events list and on mobile's list, calendar and event page, or
- * `null` for a one-time event or a series whose head isn't among `events`.
+ * `null` for a one-time event or a generated meeting whose head isn't among
+ * `events`. A head carries its own rule, so it is labelled even when `events`
+ * leaves it out.
  *
  * The rule is the head's (`event`'s own when it is the head; a generated
  * meeting carries none); the day is the one most of the series' meetings in
