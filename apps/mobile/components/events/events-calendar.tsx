@@ -25,6 +25,7 @@ import {
   CALENDAR_RANGE_DAYS,
   type CalendarRange,
 } from "@/lib/events/events-view";
+import { WEEKDAY_INITIALS } from "@/lib/calendar-weekdays";
 import { monthCellSummary } from "@/lib/events/month-cell";
 import type { EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -56,8 +57,6 @@ const RANGE_OPTIONS = [
   { value: "3day", label: "3 days" },
   { value: "day", label: "Day" },
 ] as const satisfies readonly { value: CalendarRange; label: string }[];
-
-const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
 
 /** A month cell's title text: below the caption role, see `cellLine`. */
 const CELL_TEXT_SIZE = 11;

@@ -326,18 +326,8 @@ export function activityAgenda(
   now: Date = new Date(),
 ): ActivityAgenda {
   const todos = activityToDos(activity, now);
-  const bucketOf = (todo: ActivityToDo): { id: string; order: number } => {
-    if (todo.now) return { id: "now", order: -1 };
-    if (todo.overdue) return { id: "overdue", order: -2 };
-    if (!todo.at) return { id: "anytime", order: AGENDA_DAY_HORIZON + 1 };
-    // Earlier today, or a poll closing in the next minute: still today.
-    const days = Math.max(0, dayDelta(now, todo.at));
-    return days < AGENDA_DAY_HORIZON
-      ? { id: `day:${days}`, order: days }
-      : { id: "later", order: AGENDA_DAY_HORIZON };
-  };
   const placed = todos
-    .map((todo, index) => ({ todo, index, bucket: bucketOf(todo) }))
+    .map((todo, index) => ({ todo, index, bucket: agendaBucket(todo, now) }))
     .sort(
       (a, b) =>
         a.bucket.order - b.bucket.order ||
@@ -399,6 +389,26 @@ export function activityAgenda(
 }
 
 /**
+ * Which run of the To do list a to-do is filed under, and the run's order:
+ * Overdue, Now, a day (`day:<n>`, days from today), Later, No deadline. The
+ * week strip files by the same runs, so a day it jumps to is one the list
+ * draws.
+ */
+function agendaBucket(
+  todo: ActivityToDo,
+  now: Date,
+): { id: string; order: number } {
+  if (todo.now) return { id: "now", order: -1 };
+  if (todo.overdue) return { id: "overdue", order: -2 };
+  if (!todo.at) return { id: "anytime", order: AGENDA_DAY_HORIZON + 1 };
+  // Earlier today, or a poll closing in the next minute: still today.
+  const days = Math.max(0, dayDelta(now, todo.at));
+  return days < AGENDA_DAY_HORIZON
+    ? { id: `day:${days}`, order: days }
+    : { id: "later", order: AGENDA_DAY_HORIZON };
+}
+
+/**
  * A day's heading by how many days ahead it is, not by a row's own date: an
  * item from earlier that is neither overdue nor open (a time that passed
  * since the read) is listed with today's, and the heading still says Today.
@@ -446,20 +456,15 @@ const STRIP_KIND_ORDER: readonly ActivityStripKind[] = [
   "answers",
 ];
 
-const STRIP_KIND_OF: Record<ActivityRow["kind"], ActivityStripKind | null> = {
-  event: "events",
-  task: "tasks",
-  poll: "answers",
-  card: "answers",
-  hours: null,
-  link: null,
-  reminder: null,
-};
+/** The line of the week card a row counts under, by the narrowing's kinds. */
+const stripKindOf = (kind: ActivityRow["kind"]): ActivityStripKind | null =>
+  STRIP_KIND_ORDER.find((line) => FILTER_KINDS[line].includes(kind)) ?? null;
 
-const STRIP_NOUNS: Record<ActivityStripKind, [string, string]> = {
-  events: ["event", "events"],
-  tasks: ["task", "tasks"],
-  answers: ["poll or sign-up", "polls and sign-ups"],
+/** One of a kind, for a day's spoken count; many is {@link FILTER_NOUN}. */
+const STRIP_NOUN_ONE: Record<ActivityStripKind, string> = {
+  events: "event",
+  tasks: "task",
+  answers: "poll or sign-up",
 };
 
 /** One day of the week strip over Activity's week card. */
@@ -499,6 +504,11 @@ export const ACTIVITY_STRIP_DAYS = 7;
 export function activityWeekStrip(
   activity: Activity,
   now: Date = new Date(),
+  /**
+   * The week card's Next (`activityAgenda(...).next?.key`), which To do
+   * doesn't repeat, so it has no section to jump to.
+   */
+  cardKey: string | null = null,
 ): ActivityStripDay[] {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const days = Array.from({ length: ACTIVITY_STRIP_DAYS }, (_, offset) => ({
@@ -511,24 +521,23 @@ export function activityWeekStrip(
     count: 0,
     sections: new Set<string>(),
   }));
-  // The week card's Next is not in To do's days, so it has no section.
-  const cardKey = activityAgenda(activity, "all", now).next?.key ?? null;
   for (const todo of activityToDos(activity, now)) {
-    const kind = STRIP_KIND_OF[todo.dated.kind];
+    const kind = stripKindOf(todo.dated.kind);
     if (!kind) continue;
-    let offset: number;
-    if (todo.now) offset = 0;
-    else if (todo.overdue || !todo.at) continue;
-    // Earlier today, or a poll closing in the next minute: still today, as
-    // the agenda files it.
-    else offset = Math.max(0, dayDelta(now, todo.at));
-    const day = days[offset];
+    // To do's own runs: Now is today's, a day is its own, and Overdue, Later
+    // and No deadline are on no day of the strip.
+    const { id } = agendaBucket(todo, now);
+    const offset =
+      id === "now"
+        ? 0
+        : id.startsWith("day:")
+          ? Number(id.slice("day:".length))
+          : null;
+    const day = offset === null ? undefined : days[offset];
     if (!day) continue;
     day.perKind.set(kind, (day.perKind.get(kind) ?? 0) + 1);
     day.count += 1;
-    if (todo.dated.key !== cardKey) {
-      day.sections.add(todo.now ? "now" : `day:${offset}`);
-    }
+    if (todo.dated.key !== cardKey) day.sections.add(id);
   }
   return days.map((day, offset) => {
     const kinds = STRIP_KIND_ORDER.filter((kind) => day.perKind.has(kind));
@@ -539,8 +548,7 @@ export function activityWeekStrip(
     });
     const parts = kinds.map((kind) => {
       const n = day.perKind.get(kind) ?? 0;
-      const [one, many] = STRIP_NOUNS[kind];
-      return `${n} ${n === 1 ? one : many}`;
+      return `${n} ${n === 1 ? STRIP_NOUN_ONE[kind] : FILTER_NOUN[kind]}`;
     });
     return {
       id: `day:${offset}`,

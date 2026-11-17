@@ -2,11 +2,9 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ACTIVITY_STRIP_HUE, type ActivityStripDay } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { SkeletonBlock } from "@/components/state-block";
+import { WEEKDAY_INITIALS } from "@/lib/calendar-weekdays";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { typeRole, useFrappTheme } from "@/lib/theme";
-
-/** Sunday first, as the month grid heads its columns. */
-const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /** A dot's diameter: the month mock's, legible at a glance and no louder. */
 const DOT_SIZE = 6;
@@ -20,8 +18,9 @@ const DOT_SIZE = 6;
  *
  * Pressing a day with something on it jumps To do to that day; a day with
  * nothing has nowhere to go and is drawn but not pressable. The picked day
- * wears the accent's quiet fill and border, as the month grid's selected
- * day does, so the dots keep their hues; until a day is picked, today is.
+ * wears the month grid's selected-day look (an accent tint and an accent
+ * border, never the solid fill Next's button holds), so the dots keep their
+ * hues; until a day is picked, today is.
  */
 export function WeekStrip({
   days,
@@ -34,7 +33,7 @@ export function WeekStrip({
   onSelect: (day: ActivityStripDay) => void;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const picked = selectedId ?? days[0]?.id ?? null;
   return (
@@ -56,7 +55,9 @@ export function WeekStrip({
             style={({ pressed }) => [
               styles.day,
               selected
-                ? { backgroundColor: accentSubtle, borderColor: accentBorder }
+                ? // The month grid's selected day, so a picked day looks
+                  // the same on both screens.
+                  { backgroundColor: tint(accent, 0.18), borderColor: accent }
                 : null,
               pressed ? styles.pressed : null,
             ]}

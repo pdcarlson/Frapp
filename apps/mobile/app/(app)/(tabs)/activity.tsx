@@ -107,6 +107,7 @@ import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useRemindMessage } from "@/lib/chat/message-reminder";
+import { setCalendarRange, setEventsView } from "@/lib/events/events-view";
 import { openMessageLink } from "@/lib/chat/open-link";
 import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -263,11 +264,16 @@ export default function ActivityScreen() {
   // do. Pressing a day scrolls To do to it: the screen holds the scroll view
   // and each day section's view, measured against it at the press.
   const strip = useMemo(
-    () => (visible ? activityWeekStrip(visible, now) : null),
-    [visible, now],
+    () =>
+      visible
+        ? activityWeekStrip(visible, now, agenda?.next?.key ?? null)
+        : null,
+    [visible, now, agenda],
   );
   const scrollRef = useRef<ScrollView>(null);
   const sectionViews = useRef(new Map<string, View>());
+  const bodyView = useRef<View>(null);
+  const bodyTop = useRef(0);
   const sectionRef = useCallback(
     (id: string) => (view: View | null) => {
       if (view) sectionViews.current.set(id, view);
@@ -291,11 +297,14 @@ export default function ActivityScreen() {
         scroll.scrollTo({ y: 0, animated: true });
         return;
       }
-      const inner = scroll.getInnerViewNode();
-      if (!inner) return;
-      target.measureLayout(inner, (_x, y) => {
+      // Measured against the page's own body, a host view (a node handle
+      // is refused under the New Architecture), whose offset in the scroll
+      // content its layout reports.
+      const body = bodyView.current;
+      if (!body) return;
+      target.measureLayout(body, (_x, y) => {
         scroll.scrollTo({
-          y: Math.max(0, y - tokens.spacing.sm),
+          y: Math.max(0, bodyTop.current + y - tokens.spacing.sm),
           animated: true,
         });
       });
@@ -482,40 +491,54 @@ export default function ActivityScreen() {
     }
     if (activity.isPending) {
       return (
-        <SkeletonRegion label="Loading activity">
-          <View style={styles.body}>
-            <WeekStripSkeleton />
-            <WeekCardSkeleton />
-            <SemesterStripSkeleton />
-            <View>
-              <SectionHeader>To do</SectionHeader>
-              {Array.from({ length: 4 }, (_, index) => (
-                <ActivityRowSkeleton
-                  key={index}
-                  index={index}
-                  isFirst={index === 0}
-                />
-              ))}
+        <>
+          <SkeletonRegion label="Loading activity">
+            <View style={styles.body}>
+              <WeekStripSkeleton />
+              <WeekCardSkeleton />
+              <SemesterStripSkeleton />
+              <View>
+                <SectionHeader>To do</SectionHeader>
+                {Array.from({ length: 4 }, (_, index) => (
+                  <ActivityRowSkeleton
+                    key={index}
+                    index={index}
+                    isFirst={index === 0}
+                  />
+                ))}
+              </View>
             </View>
-          </View>
-        </SkeletonRegion>
+          </SkeletonRegion>
+          {/* The month needs none of this read, so its door is never gone. */}
+          <CalendarRow />
+        </>
       );
     }
     // Only with nothing to show: a re-read that fails (this screen re-reads
     // after every action) keeps the page it already has.
     if (activity.isError && !activity.data) {
       return (
-        <ErrorState
-          title="Couldn't load your activity"
-          body={describeLoadFailure(activity.error)}
-          onRetry={() => void activity.refetch()}
-          isRetrying={activity.isFetching}
-        />
+        <>
+          <ErrorState
+            title="Couldn't load your activity"
+            body={describeLoadFailure(activity.error)}
+            onRetry={() => void activity.refetch()}
+            isRetrying={activity.isFetching}
+          />
+          <CalendarRow />
+        </>
       );
     }
-    if (!summary || !agenda) return null;
+    if (!summary || !agenda) return <CalendarRow />;
     return (
-      <View style={styles.body}>
+      <View
+        ref={bodyView}
+        // A direct child of the scroll content, so its y is its offset there.
+        onLayout={(event) => {
+          bodyTop.current = event.nativeEvent.layout.y;
+        }}
+        style={styles.body}
+      >
         {strip ? (
           <WeekStrip
             days={strip}
@@ -1000,7 +1023,13 @@ function CalendarRow() {
       accessibilityRole="button"
       accessibilityLabel="Calendar"
       accessibilityHint="Opens the chapter's month."
-      onPress={() => router.navigate("/events")}
+      onPress={() => {
+        // The month, not the List the tab may open on, until step 2 of
+        // #5310 makes the month the only view.
+        setEventsView("calendar");
+        setCalendarRange("month");
+        router.navigate("/events");
+      }}
       testID="activity-calendar-row"
       style={({ pressed }) => [
         styles.calendarRow,

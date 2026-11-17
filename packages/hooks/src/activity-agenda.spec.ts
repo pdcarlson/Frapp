@@ -758,8 +758,16 @@ describe("activityReview (#4766)", () => {
 });
 
 describe("activityWeekStrip (#5310)", () => {
+  // As the screen calls it: with the week card's Next, which To do leaves out.
+  const weekStrip = (data: Activity) =>
+    activityWeekStrip(
+      data,
+      NOW,
+      activityAgenda(data, "all", NOW).next?.key ?? null,
+    );
+
   it("draws today and the six days after it, empty, for a quiet week", () => {
-    const strip = activityWeekStrip(activity(), NOW);
+    const strip = weekStrip(activity());
     expect(strip).toHaveLength(ACTIVITY_STRIP_DAYS);
     expect(strip.map((day) => day.date.getDate())).toEqual([
       13, 14, 15, 16, 17, 18, 19,
@@ -791,7 +799,7 @@ describe("activityWeekStrip (#5310)", () => {
         event({ id: "sunday", name: "Chapter", start_time: at(2, 19) }),
       ],
     });
-    const strip = activityWeekStrip(data, NOW);
+    const strip = weekStrip(data);
     expect(strip.map((day) => day.kinds)).toEqual([
       [],
       ["events", "answers"],
@@ -831,7 +839,7 @@ describe("activityWeekStrip (#5310)", () => {
         }),
       ],
     });
-    const [today] = activityWeekStrip(data, NOW);
+    const [today] = weekStrip(data);
     expect(today!.kinds).toEqual(["events", "tasks"]);
     expect(today!.count).toBe(3);
     // The first open event is the week card's; the other is under Now.
@@ -842,7 +850,7 @@ describe("activityWeekStrip (#5310)", () => {
     const data = activity({
       coming_up: [event({ start_time: at(3, 19) })],
     });
-    const strip = activityWeekStrip(data, NOW);
+    const strip = weekStrip(data);
     expect(strip[3]!.kinds).toEqual(["events"]);
     expect(strip[3]!.sections).toEqual([]);
   });

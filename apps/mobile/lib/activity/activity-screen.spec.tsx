@@ -356,10 +356,10 @@ const listRereads = (invalidate: ReturnType<typeof vi.spyOn>) =>
       JSON.stringify(activityKeys.chapter("chapter-1")),
   ).length;
 
-function render(): ReactTestRenderer {
+function render(options?: Parameters<typeof create>[1]): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(screen());
+    tree = create(screen(), options);
   });
   mounted.push(tree);
   return tree;
@@ -756,6 +756,38 @@ describe("Activity screen (#3897)", () => {
         stripDays(tree).find((each) => each.props.testID === day.props.testID)!
           .props.accessibilityState.selected,
       ).toBe(true);
+    });
+
+    it("scrolls To do to the day pressed, and to the top for the card's one thing", () => {
+      // Host views stand in for the scroll view and the views it measures:
+      // every day section sits 300 below the page's body.
+      const scrollTo = vi.fn();
+      const measureLayout = vi.fn(
+        (_to: unknown, done: (x: number, y: number) => void) => done(0, 300),
+      );
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          coming_up: [eventIn(26), eventIn(50, { id: "ev-2" })],
+        }),
+      };
+      const tree = render({
+        createNodeMock: () => ({ scrollTo, measureLayout }),
+      });
+      const days = stripDays(tree).filter((day) => !day.props.disabled);
+      expect(days).toHaveLength(2);
+      // The first event is the week card's Next: its day goes to the top.
+      act(() => days[0]!.props.onPress());
+      expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: true });
+      expect(measureLayout).not.toHaveBeenCalled();
+      // The second is in To do: its day section, a little above its heading.
+      act(() => days[1]!.props.onPress());
+      expect(measureLayout).toHaveBeenCalledTimes(1);
+      expect(scrollTo).toHaveBeenLastCalledWith({
+        y: 300 - tokens.spacing.sm,
+        animated: true,
+      });
     });
 
     it("opens the chapter's month from the Calendar row", () => {
