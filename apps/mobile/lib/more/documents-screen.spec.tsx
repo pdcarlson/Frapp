@@ -917,10 +917,42 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     act(() => sheet(tree, "Uploaded by").props.onSelect("u-ryan"));
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
     expect(byLabel(tree, "Uploaded by: Ryan Castellano")).toBeDefined();
-    // Clear leads the row once a filter is set, and leaves the order.
+    // Clear leads the row once a filter is set. It leaves the order and
+    // what was typed: the search is not one of the row's filters.
+    act(() => byLabel(tree, "Search documents").props.onChangeText("c"));
     act(() => byLabel(tree, "Clear filters").props.onPress());
-    expect(rowLabels(tree)).toHaveLength(3);
+    expect(byLabel(tree, "Search documents").props.value).toBe("c");
     expect(byLabel(tree, "Sort: Newest first")).toBeDefined();
+    act(() => byLabel(tree, "Search documents").props.onChangeText(""));
+    expect(rowLabels(tree)).toHaveLength(3);
+    // Nothing set, no Clear.
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Clear filters",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("opens each chip's sheet and the sort's with one tap", () => {
+    const tree = loaded();
+    for (const label of [
+      "Type",
+      "Uploaded by",
+      "Date added",
+      "Sort: Name A–Z",
+    ]) {
+      present.mockClear();
+      act(() => byLabel(tree, label).props.onPress());
+      expect(present).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("names a date pick on its chip and lights it", () => {
+    const tree = loaded();
+    act(() => sheet(tree, "Date added").props.onSelect("30d"));
+    const chip = byLabel(tree, "Date added: Last 30 days");
+    expect(chip.props.accessibilityState).toEqual({ selected: true });
+    expect(sheet(tree, "Date added").props.selected).toBe("30d");
   });
 
   it("filters by file type, from the declared type or the stored name", () => {

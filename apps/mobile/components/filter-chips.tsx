@@ -176,7 +176,7 @@ export function Chip({
  * touch slop and takes that back with a negative margin, so the slop is
  * inside its bounds and the layout around it doesn't move.
  */
-function ChipRow({
+export function ChipRow({
   scroll,
   scrollRef,
   onScrollerLayout,

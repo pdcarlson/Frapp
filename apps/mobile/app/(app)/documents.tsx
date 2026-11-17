@@ -3,7 +3,6 @@ import {
   AccessibilityInfo,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -51,7 +50,12 @@ import {
   UploadDocumentSheet,
   type PendingDocumentUpload,
 } from "@/components/documents/upload-document-sheet";
-import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
+import {
+  Chip,
+  ChipRow,
+  FilterChips,
+  SearchField,
+} from "@/components/filter-chips";
 import {
   DocumentActionsSheet,
   type DocumentActionsTarget,
@@ -472,8 +476,14 @@ export default function DocumentsScreen() {
       ? deleteFailure.message
       : null;
 
+  // The empty state's way out (web's Clear filters): the search too.
   function clearFilters() {
     setSearch("");
+    clearFilterChips();
+  }
+
+  // The chip row's Clear (#5278): the filters it holds, not what was typed.
+  function clearFilterChips() {
     setPickedUploader(null);
     setDatePreset(null);
     setKind(null);
@@ -765,12 +775,7 @@ export default function DocumentsScreen() {
     toggles (#4290). Lit while set; Clear leads the row once anything is.
   */
   const filterRow = (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      accessibilityLabel="Filters"
-      contentContainerStyle={styles.filterRow}
-    >
+    <ChipRow scroll>
       {anyFilter ? (
         <Chip
           accessibilityRole="button"
@@ -778,7 +783,7 @@ export default function DocumentsScreen() {
           accessibilityLabel="Clear filters"
           label="Clear"
           on={false}
-          onPress={clearFilters}
+          onPress={clearFilterChips}
         />
       ) : null}
       {kinds.length > 0 ? (
@@ -830,7 +835,7 @@ export default function DocumentsScreen() {
           />
         );
       })}
-    </ScrollView>
+    </ChipRow>
   );
 
   return (
@@ -1093,14 +1098,11 @@ function MenuChip({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    filterRow: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-      paddingRight: tokens.spacing.lg,
-    },
+    // On the count's baseline: the caption carries a top margin, which
+    // centring would split.
     listHeader: {
       flexDirection: "row",
-      alignItems: "center",
+      alignItems: "baseline",
       justifyContent: "space-between",
     },
     sortControl: {

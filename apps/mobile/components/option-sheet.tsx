@@ -61,7 +61,7 @@ export const OptionSheet = forwardRef<
       <Pressable
         key={option.value ?? "any"}
         accessibilityRole="radio"
-        accessibilityState={{ selected: on }}
+        accessibilityState={{ checked: on }}
         accessibilityLabel={option.label}
         onPress={() => {
           onSelect(option.value);
