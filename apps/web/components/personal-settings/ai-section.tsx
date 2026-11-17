@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { errorCopy, useAiConsent, useFrappAiChoice } from "@repo/hooks";
-import { AI_SETTINGS_COPY, FRAPP_AI_COPY, joinNames } from "@repo/validation";
+import { AI_SETTINGS_COPY, FRAPP_AI_COPY } from "@repo/validation";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { MeetFrappAiDialog } from "@/components/ai/meet-frapp-ai";
 import { anyReadUncached } from "@/components/shared/async-states";
@@ -83,9 +83,7 @@ export function AiSection() {
             {FRAPP_AI_COPY.settingsSwitch}
           </label>
           <p id={statusId} className="text-caption text-muted-foreground">
-            {FRAPP_AI_COPY.settingsCaption(
-              joinNames(consent.sheet.providers.map((p) => p.name)),
-            )}
+            {FRAPP_AI_COPY.settingsCaption}
           </p>
         </div>
         <Switch

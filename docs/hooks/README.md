@@ -115,7 +115,8 @@ real `QueryClient` wrapped with `FrappClientProvider` and `QueryClientProvider`.
 - `@testing-library/react` `renderHook`
 - The wrapper and client come from `src/test-utils.tsx`: `createHookWrapper`
   (`FrappClientProvider` outside `QueryClientProvider`, with an optional chapter
-  id) and `createTestQueryClient` (query and mutation retries off, for
+  id, or a function read on each render for a spec that switches chapter, and
+  an optional user id) and `createTestQueryClient` (query and mutation retries off, for
   deterministic assertions). A new spec uses them rather than building its own;
   older specs still being moved over are tracked in #815.
 

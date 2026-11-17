@@ -1,25 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Layers, Plus, X } from "lucide-react";
-import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import { normalizeChannelAccessList } from "@repo/validation";
 import { cn } from "@/lib/utils";
 import { SegmentedChoice } from "@/components/ui/segmented";
-import {
-  Command,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { pausedRead } from "@/components/shared/async-states";
+import { SearchablePicker } from "@/components/shared/searchable-picker";
 
 import {
   channelAccessKindHeading,
@@ -315,15 +303,6 @@ function AddEntry({
   optionsState: ChannelAccessOptionsState;
   onAdd: (entry: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const shown =
-    normalizeWords(query).length === 0
-      ? options
-      : options.filter((option) => matchesWordStarts(option.name, query));
-  const kinds = [...new Set(shown.map((option) => option.kind))].sort(
-    compareChannelAccessKinds,
-  );
   // "Find a tier, role or group", naming only what this picker offers: the
   // module Who can lists hold tiers and roles, never groups (#4076).
   const findLabel = `Find a ${orList(
@@ -331,17 +310,10 @@ function AddEntry({
       .sort(compareChannelAccessKinds)
       .map((kind) => kind.toLowerCase()),
   )}`;
-  const close = () => {
-    setOpen(false);
-    setQuery("");
-  };
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => (next ? setOpen(true) : close())}
-    >
-      <PopoverTrigger asChild>
+    <SearchablePicker
+      trigger={
         <button
           type="button"
           aria-label={`Add to ${label.toLowerCase()}`}
@@ -353,77 +325,42 @@ function AddEntry({
           <Plus className="h-3 w-3" aria-hidden />
           Add
         </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-max min-w-[16rem] max-w-[min(24rem,calc(100vw-2rem))] p-0"
-        onEscapeKeyDown={(event) => {
-          if (!query) return;
-          event.preventDefault();
-          setQuery("");
-        }}
-      >
-        <Command
-          tabIndex={-1}
-          className="outline-none"
-          shouldFilter={false}
-          label={`Add to ${label.toLowerCase()}`}
-        >
-          <CommandInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder={findLabel}
-            className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
-          />
-          <CommandList className="max-h-72 p-1">
-            {optionsState === "loading" ? (
-              <p role="status" className="px-2 py-3 text-sm text-muted">
-                Loading who you can add
-              </p>
-            ) : optionsState === "error" ? (
-              <p role="status" className="px-2 py-3 text-sm text-muted">
-                Couldn&apos;t load your chapter&apos;s tiers and roles.
-              </p>
-            ) : shown.length === 0 ? (
-              <p role="status" className="px-2 py-3 text-sm text-muted">
-                {normalizeWords(query).length === 0
-                  ? "Everything is already on the list."
-                  : `Nothing matches “${query.trim()}”.`}
-              </p>
-            ) : (
-              kinds.map((kind) => (
-                <CommandGroup
-                  key={kind}
-                  heading={channelAccessKindHeading(kind)}
-                >
-                  {shown
-                    .filter((option) => option.kind === kind)
-                    .map((option) => (
-                      <CommandItem
-                        key={option.entry}
-                        value={option.entry}
-                        className="min-h-8 gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
-                        onSelect={() => {
-                          onAdd(option.entry);
-                          close();
-                        }}
-                      >
-                        <EntryMark option={option} />
-                        <span className="min-w-0 flex-1 break-words">
-                          {option.name}
-                        </span>
-                        <span className="shrink-0 text-caption text-muted-foreground">
-                          {peopleCount(option.user_ids.length)}
-                        </span>
-                      </CommandItem>
-                    ))}
-                </CommandGroup>
-              ))
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+      }
+      align="start"
+      widthClassName="min-w-[16rem] max-w-[min(24rem,calc(100vw-2rem))]"
+      label={`Add to ${label.toLowerCase()}`}
+      placeholder={findLabel}
+      items={options}
+      nameOf={(option) => option.name}
+      keyOf={(option) => option.entry}
+      groupsOf={(shown) =>
+        [...new Set(shown.map((option) => option.kind))]
+          .sort(compareChannelAccessKinds)
+          .map((kind) => ({
+            heading: channelAccessKindHeading(kind),
+            items: shown.filter((option) => option.kind === kind),
+          }))
+      }
+      status={
+        optionsState === "loading"
+          ? "Loading who you can add"
+          : optionsState === "error"
+            ? "Couldn't load your chapter's tiers and roles."
+            : undefined
+      }
+      emptyText="Everything is already on the list."
+      itemClassName="min-h-8 gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
+      renderItem={(option) => (
+        <>
+          <EntryMark option={option} />
+          <span className="min-w-0 flex-1 break-words">{option.name}</span>
+          <span className="shrink-0 text-caption text-muted-foreground">
+            {peopleCount(option.user_ids.length)}
+          </span>
+        </>
+      )}
+      onPick={(option) => onAdd(option.entry)}
+    />
   );
 }
 

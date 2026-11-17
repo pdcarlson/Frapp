@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // imports regardless, so the stub below still lands before the module loads —
 // the same shape every other spec in this package uses.
 import { usePatchOrgConfig, usePendingConfigKeys } from "./use-org-config";
+import { createTestQueryClient } from "./test-utils";
 
 const { mockPatch } = vi.hoisted(() => ({ mockPatch: vi.fn() }));
 
@@ -28,22 +29,13 @@ function makeWrapper(qc: QueryClient) {
   };
 }
 
-function makeClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
-
 describe("usePatchOrgConfig optimistic cache", () => {
   beforeEach(() => {
     mockPatch.mockReset();
   });
 
   it("optimistically merges the diff into the cache on mutate", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { enabled_modules: { events: true, tasks: true } });
     mockPatch.mockResolvedValueOnce({ data: {}, error: undefined });
 
@@ -64,7 +56,7 @@ describe("usePatchOrgConfig optimistic cache", () => {
   });
 
   it("rolls the cache back to the previous value when the PATCH fails", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { vocabulary: { recruitment: "Rush" } });
     mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
 
@@ -96,7 +88,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   });
 
   it("writes a module toggle into the current chapter at once", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true } });
     qc.setQueryData(CHAPTER_KEY, {
       name: "Alpha",
@@ -124,7 +116,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   });
 
   it("puts the current chapter back when the PATCH fails", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true } });
     qc.setQueryData(CHAPTER_KEY, { enabled_modules: { reports: true } });
     mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
@@ -155,7 +147,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   }
 
   it("keeps a later toggle when an earlier one fails", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true, polls: true } });
     qc.setQueryData(CHAPTER_KEY, { enabled_modules: { reports: true, polls: true } });
     const first = deferred<{ data: undefined; error: { message: string } }>();
@@ -198,7 +190,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   });
 
   it("re-reads the current chapter only after the last queued write settles", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { enabled_modules: {} });
     qc.setQueryData(CHAPTER_KEY, { enabled_modules: {} });
     const first = deferred<{ data: object; error: undefined }>();
@@ -239,7 +231,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   // An officer turning analytics off must stop their own SDK before the round
   // trip, not after a re-read that may fail.
   it("writes an analytics opt-out into the current chapter at once", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { analytics_opt_out: false });
     qc.setQueryData(CHAPTER_KEY, {
       name: "Alpha",
@@ -268,7 +260,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   });
 
   it("puts the opt-out back when the PATCH fails", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { analytics_opt_out: false });
     qc.setQueryData(CHAPTER_KEY, {
       enabled_modules: { reports: true },
@@ -292,7 +284,7 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
   });
 
   it("leaves the current chapter's data alone for a write with no module toggle", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     qc.setQueryData(QUERY_KEY, { vocabulary: { recruitment: "Rush" } });
     const chapter = { enabled_modules: { reports: true } };
     qc.setQueryData(CHAPTER_KEY, chapter);
@@ -319,7 +311,7 @@ describe("usePendingConfigKeys (#881)", () => {
   });
 
   it("reports only the in-flight config leaves so sibling controls stay interactive", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     let resolvePatch!: (value: { data: unknown; error: unknown }) => void;
     mockPatch.mockImplementationOnce(
       () =>

@@ -11,7 +11,7 @@ import {
 } from "@/components/shared/inline-note";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { modulePermissions } from "@/components/settings/settings-modules";
-import { SearchablePicker } from "@/components/settings/searchable-picker";
+import { SearchablePicker } from "@/components/shared/searchable-picker";
 import {
   useRolePermissionToggle,
   useTierPermissionToggle,

@@ -1073,6 +1073,58 @@ describe('ScheduledJobsService', () => {
         TODAY,
       );
     });
+
+    // An overdue task stays in the window for days of five-minute ticks; only
+    // the one that wins the claim may pay for the assigner lookup (#5307).
+    it('reads no membership on a tick that loses the overdue claim', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(-30) },
+      ]);
+      claimDispatch.mockResolvedValue(false);
+
+      const result = await service.sweepTimedTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'TASK',
+        'task-1',
+        'OVERDUE',
+        TODAY,
+      );
+      expect(findByUserAndChapter).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    // The read now runs after the claim. A failure releases it for the next
+    // tick and loses nothing, so it stays a warning rather than paging.
+    it('releases the overdue claim and warns when the assigner read fails', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(-30) },
+      ]);
+      findByUserAndChapter.mockRejectedValue(new Error('members read failed'));
+
+      const result = await service.sweepTimedTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'TASK',
+        'task-1',
+        'OVERDUE',
+        TODAY,
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'members read failed' }),
+        expect.objectContaining({
+          level: 'warning',
+          fingerprint: expect.arrayContaining([
+            'scheduled-reminder-resolve-recipients:task.overdue',
+          ]),
+        }),
+      );
+    });
   });
 
   describe('sweepTaskReminders', () => {
@@ -1197,6 +1249,9 @@ describe('ScheduledJobsService', () => {
 
       expect(result).toEqual({ sent: 0 });
       expect(notifyUser).not.toHaveBeenCalled();
+      // The assigner's membership is read only by the tick that wins the
+      // claim, not by every losing tick while the task sits overdue (#5307).
+      expect(findByUserAndChapter).not.toHaveBeenCalled();
     });
 
     // The query is a day wider on each side than any one member's window,

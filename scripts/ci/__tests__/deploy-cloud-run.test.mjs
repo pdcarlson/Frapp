@@ -184,7 +184,7 @@ describe("buildService", () => {
       sha: SHA.toUpperCase(),
       minInstances: 0,
       maxInstances: 1,
-      secrets: [{ id: "API_URL", version: "2" }],
+      secrets: [{ id: "API_URL", version: "2" }, { id: "RENDER_GIT_COMMIT", version: "1" }],
       traffic: [],
     });
     assert.equal(body.invokerIamDisabled, true);
@@ -195,7 +195,12 @@ describe("buildService", () => {
     const [container] = body.template.containers;
     assert.equal(container.resources.cpuIdle, false);
     assert.deepEqual(container.ports, [{ name: "http1", containerPort: 3001 }]);
-    assert.deepEqual(container.env, [{ name: "API_URL", valueSource: { secretKeyRef: { secret: "API_URL", version: "2" } } }]);
+    // The commit /health reports comes from the deploy, so an image from
+    // before #5203 still verifies, and no secret can stand in for it.
+    assert.deepEqual(container.env, [
+      { name: "RENDER_GIT_COMMIT", value: SHA },
+      { name: "API_URL", valueSource: { secretKeyRef: { secret: "API_URL", version: "2" } } },
+    ]);
   });
 
   it("names revisions after the service and the commit, short enough for Cloud Run", () => {
