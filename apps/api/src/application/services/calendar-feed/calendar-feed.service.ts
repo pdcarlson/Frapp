@@ -46,8 +46,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Open tasks a feed carries at most; far more than a member has open. */
 const TASK_LIMIT = 500;
 /**
- * How long a rendered calendar is reused. Calendar apps ask at most hourly
- * (`REFRESH-INTERVAL` in `ics.ts`), so a member never sees the difference.
+ * How long a rendered calendar is reused. The feed asks calendar apps to check
+ * hourly (`REFRESH-INTERVAL` in `ics.ts`), and a member who set their app to
+ * check more often (Apple Calendar allows every 5 minutes) sees a change at
+ * most this much later.
  */
 const RENDER_TTL_MS = 5 * 60 * 1000;
 /** Links whose render is kept at once, per API instance. */
