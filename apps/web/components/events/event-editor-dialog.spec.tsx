@@ -41,40 +41,14 @@ const {
   >(() => ({ data: undefined, isLoading: false })),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
   useEvent: (id: unknown) => useEventMock(id),
   useEvents: (options?: { enabled?: boolean }) => useEventsMock(options),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
-  useEventTypes: () => ({
-    data: [
-      {
-        id: "type-meeting",
-        chapter_id: "chap-1",
-        name: "Chapter meeting",
-        point_value: 10,
-        is_mandatory: true,
-        position: 1,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-      {
-        id: "type-social",
-        chapter_id: "chap-1",
-        name: "Social",
-        point_value: 0,
-        is_mandatory: false,
-        position: 2,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-    ],
-    isLoading: false,
-  }),
-  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // The two chapter types the type picker and its Edit types list read.
+  ...(await import("@/tests/events-page")).eventTypeHooks(),
   useRoles: () => ({
     data: [
       { id: "r1", name: "Exec" },

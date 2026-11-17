@@ -5,9 +5,8 @@
  * without these writes the row would go on offering to connect after a
  * connect, and read Connected after a disconnect.
  */
-import type { ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   googleCalendarKeys,
@@ -15,13 +14,7 @@ import {
   useDisconnectGoogleCalendar,
   type GoogleCalendarStatus,
 } from "./use-google-calendar";
-import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: vi.fn(),
-  useActiveChapterId: vi.fn(),
-}));
+import { createHookWrapper } from "./test-utils";
 
 const CHAPTER = "chapter-1";
 
@@ -37,6 +30,7 @@ describe("Google Calendar mutations (#3322)", () => {
   let queryClient: QueryClient;
   let post: ReturnType<typeof vi.fn>;
   let del: ReturnType<typeof vi.fn>;
+  let wrapper: ReturnType<typeof createHookWrapper>;
 
   beforeEach(() => {
     queryClient = new QueryClient();
@@ -50,18 +44,12 @@ describe("Google Calendar mutations (#3322)", () => {
       error: undefined,
       response: { ok: true, status: 204 },
     }));
-    vi.mocked(useFrappClient).mockReturnValue({
-      POST: post,
-      DELETE: del,
-    } as unknown as ReturnType<typeof useFrappClient>);
-    vi.mocked(useActiveChapterId).mockReturnValue(CHAPTER);
+    wrapper = createHookWrapper({
+      client: { POST: post, DELETE: del },
+      queryClient,
+      chapterId: CHAPTER,
+    });
   });
-
-  function wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    );
-  }
 
   test("a confirmed sign-in becomes the chapter's status at once", async () => {
     queryClient.setQueryData(googleCalendarKeys.chapter(CHAPTER), {

@@ -24,7 +24,7 @@ import { selectAllEventRows, type EventRow } from "@/lib/events/select";
  */
 
 /** The event a set of minutes is for: its id and name are all a start needs. */
-export type MeetingEventRef = { id: string; name: string; start_time?: string };
+type MeetingEventRef = { id: string; name: string; start_time?: string };
 
 /** What the officer is starting minutes on. */
 export type MeetingChoice =

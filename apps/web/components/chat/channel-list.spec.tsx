@@ -10,6 +10,7 @@ import {
   type ChatChannel,
   type ChannelUnread,
 } from "./channel-list";
+import type { MemberThread } from "@repo/hooks";
 
 /**
  * Before display-name resolution landed, this sidebar rendered a DM channel's
@@ -1464,5 +1465,209 @@ describe("ChannelList New channel + (#3838)", () => {
   it("draws no + for a member who can't manage channels", () => {
     renderWith(undefined);
     expect(screen.queryByRole("button", { name: /^New channel/ })).toBeNull();
+  });
+});
+
+describe("ChannelList threads under their channel (#5300)", () => {
+  const thread = (
+    over: Partial<MemberThread> & { content?: string } = {},
+  ): MemberThread => {
+    const { content = "Grill is in my garage", ...rest } = over;
+    return {
+      thread_root_id: "root-1",
+      channel_id: "c-gen",
+      state: "following",
+      last_read_at: null,
+      last_reply_at: new Date().toISOString(),
+      reply_count: 2,
+      unread_count: 0,
+      root: {
+        id: rest.thread_root_id ?? "root-1",
+        channel_id: rest.channel_id ?? "c-gen",
+        sender_id: OTHER,
+        content,
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        thread_root_id: null,
+      } as unknown as MemberThread["root"],
+      ...rest,
+    };
+  };
+
+  function renderThreads(
+    byChannel: Map<string, MemberThread[]>,
+    {
+      sidebar = sidebarControls(),
+      unread = new Map<string, ChannelUnread>(),
+      activeRootId = null as string | null,
+      onOpen = vi.fn(),
+    } = {},
+  ) {
+    render(
+      <ChannelList
+        channels={[general, announcements, exec, dm]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={unread}
+        onPick={vi.fn()}
+        sidebar={sidebar}
+        threads={{
+          byChannel,
+          activeRootId,
+          nameFor: (id) => NAMES[id as keyof typeof NAMES] ?? null,
+          onOpen,
+        }}
+      />,
+    );
+    return { onOpen };
+  }
+
+  it("lists a channel's threads under its row and opens one in its channel", () => {
+    const { onOpen } = renderThreads(new Map([["c-gen", [thread()]]]));
+
+    const rows = screen.getAllByTestId("channel-thread-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveAccessibleName(
+      "Thread: Grill is in my garage, in #general",
+    );
+    // Straight after its channel's row, inside the Channels list.
+    const list = screen.getByRole("list", { name: "Threads in #general" });
+    expect(screen.getByRole("list", { name: "Channels" })).toContainElement(
+      list,
+    );
+    fireEvent.click(rows[0]!);
+    expect(onOpen).toHaveBeenCalledWith("c-gen", "root-1");
+  });
+
+  it("draws an unread thread bold with a pip, a muted one dimmed, the open one current", () => {
+    renderThreads(
+      new Map([
+        [
+          "c-gen",
+          [
+            thread({
+              thread_root_id: "r-new",
+              unread_count: 2,
+              content: "New",
+            }),
+            thread({
+              thread_root_id: "r-mute",
+              state: "muted",
+              content: "Quiet",
+            }),
+            thread({ thread_root_id: "r-open", content: "Open" }),
+          ],
+        ],
+      ]),
+      { activeRootId: "r-open" },
+    );
+
+    const [unread, muted, open] = screen.getAllByTestId("channel-thread-row");
+    expect(unread).toHaveClass("font-bold", "text-foreground");
+    expect(unread).toHaveAccessibleName(/2 new$/);
+    expect(
+      within(unread!).getByTestId("channel-thread-unread-pip"),
+    ).toBeInTheDocument();
+    expect(muted).toHaveClass("text-muted");
+    expect(muted).toHaveAccessibleName(/muted$/);
+    expect(open).toHaveAttribute("aria-current", "true");
+  });
+
+  it("draws no threads under a hidden conversation", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[{ ...dm, hidden: true }]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={new Map()}
+        onPick={vi.fn()}
+        threads={{
+          byChannel: new Map([["c-dm", [thread({ channel_id: "c-dm" })]]]),
+          activeRootId: null,
+          nameFor: () => null,
+          onOpen: vi.fn(),
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("channel-thread-row")).toBeNull();
+  });
+
+  it("keeps the channel row mounted when its first thread arrives", () => {
+    const props = {
+      channels: [general],
+      activeChannelId: null,
+      viewerId: VIEWER,
+      memberNames: NAMES,
+      unreadByChannelId: new Map<string, ChannelUnread>(),
+      onPick: vi.fn(),
+    };
+    const threadsWith = (byChannel: Map<string, MemberThread[]>) => ({
+      byChannel,
+      activeRootId: null,
+      nameFor: () => null,
+      onOpen: vi.fn(),
+    });
+    const { rerender } = render(
+      <ChannelList {...props} threads={threadsWith(new Map())} />,
+    );
+    const before = screen.getByRole("button", { name: /^[#\s]*general/ });
+    rerender(
+      <ChannelList
+        {...props}
+        threads={threadsWith(new Map([["c-gen", [thread()]]]))}
+      />,
+    );
+    expect(screen.getAllByTestId("channel-thread-row")).toHaveLength(1);
+    // The same node: an open menu or focus on it survives the re-read.
+    expect(screen.getByRole("button", { name: /^[#\s]*general/ })).toBe(before);
+  });
+
+  it("draws nothing under a channel with no active threads", () => {
+    renderThreads(new Map());
+    expect(screen.queryByTestId("channel-threads")).toBeNull();
+  });
+
+  it("keeps a read channel under Unread only when its thread has new replies", () => {
+    renderThreads(new Map([["c-gen", [thread({ unread_count: 1 })]]]), {
+      sidebar: sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(),
+          filters: { unreadOnly: true, hideMuted: false },
+          sort: "chapter",
+        },
+      }),
+    });
+
+    const channels = screen.getByRole("list", { name: "Channels" });
+    expect(channels).toHaveTextContent("general");
+    expect(channels).not.toHaveTextContent("exec");
+    expect(screen.getAllByTestId("channel-thread-row")).toHaveLength(1);
+    // The channel's own row still reads its own counts: read, not bold.
+    const generalRow = within(channels)
+      .getAllByRole("button")
+      .find((b) => b.getAttribute("aria-label") === null);
+    expect(generalRow).not.toHaveClass("font-bold");
+  });
+
+  it("reads a folded section as unread over a thread with new replies", () => {
+    renderThreads(new Map([["c-gen", [thread({ unread_count: 1 })]]]), {
+      sidebar: sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["channels"]),
+          filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
+        },
+      }),
+    });
+
+    expect(screen.getByRole("button", { name: /Channels/ })).toHaveClass(
+      "font-bold",
+      "text-foreground",
+    );
   });
 });

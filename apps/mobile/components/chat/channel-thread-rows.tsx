@@ -10,6 +10,7 @@ import {
 } from "@repo/hooks";
 import {
   memberThreadPreview,
+  sidebarThreadRowLabel,
   sidebarThreadsByChannel,
 } from "@repo/chat-core/threads";
 import type { RawChatMessage } from "@repo/chat-core/types";
@@ -55,22 +56,6 @@ export function useChannelThreads() {
     [query.data, query.dataUpdatedAt],
   );
   return { byChannel, query };
-}
-
-/**
- * Which channels hold a listed thread with replies new to the member. Thread
- * replies never count toward a channel's own unread (chat README § Message
- * threads), so the list's Unread only filter and a folded section's total
- * read this too, or the only sign of those replies would be filtered away.
- */
-export function channelsWithUnreadThreads(
-  byChannel: ReadonlyMap<string, readonly MemberThread[]>,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const [channelId, threads] of byChannel) {
-    if (threads.some((thread) => thread.unread_count > 0)) ids.add(channelId);
-  }
-  return ids;
 }
 
 /**
@@ -134,14 +119,12 @@ export function ChannelThreadRows({
             key={thread.thread_root_id}
             testID="channel-thread-row"
             accessibilityRole="button"
-            accessibilityLabel={[
-              `Thread: ${rootText}`,
-              `in ${channelLabel}`,
-              muted ? "muted" : null,
-              unread ? `${thread.unread_count} new` : null,
-            ]
-              .filter(Boolean)
-              .join(", ")}
+            accessibilityLabel={sidebarThreadRowLabel({
+              rootText,
+              channelLabel,
+              muted,
+              unreadCount: thread.unread_count,
+            })}
             accessibilityHint="Opens this thread."
             onPress={() =>
               openThreadOverChannel(router, {

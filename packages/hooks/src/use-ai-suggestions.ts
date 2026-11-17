@@ -21,7 +21,7 @@ import { taskKeys } from "./use-tasks";
 export const AI_SUGGESTIONS_NOTIFICATION_SCREEN = "ai_suggestions";
 
 export type AiSuggestion = components["schemas"]["AiSuggestionDto"];
-export type AiSuggestionSourceType = AiSuggestion["source"]["type"];
+type AiSuggestionSourceType = AiSuggestion["source"]["type"];
 /** An officer's changes to a suggested task, sent with Accept. */
 export type TaskSuggestionEdits =
   components["schemas"]["TaskSuggestionEditsDto"];

@@ -138,6 +138,15 @@ export interface IScheduledJobsRepository {
     startAfter: Date,
     startOnOrBefore: Date,
   ): Promise<SweepUpcomingEventRow[]>;
+  /**
+   * The event's `start_time` as stored now, or `null` when the event is gone.
+   * Read after a reminder claim is won, so a move that landed between the
+   * sweep's read and its claim is caught (#1550). Throws on a database error.
+   */
+  findEventStartTime(
+    chapterId: string,
+    eventId: string,
+  ): Promise<string | null>;
   findOpenInvoicesDueBetween(
     dueOnOrAfter: string,
     dueOnOrBefore: string,

@@ -15,7 +15,9 @@ import type { ChannelSections, GroupableChannel } from "./channel-sections";
  * come from `GET /v1/chat-sidebar`.
  *
  * Pure: every number it reads (unread, mentions, mute) is the server's, passed
- * in. Nothing here derives an unread count or a mute from anything else.
+ * in. One exception derives an unread count: `withUnreadThreadChannels` counts
+ * a read channel whose thread has new replies as one unread, for arranging
+ * only (#5277, #5300), so a folded section's total can include those.
  */
 
 /** The fields of a channel row the arrangement reads. */
@@ -336,6 +338,48 @@ export function countsLookUnread(
   // red badge on a read-styled row is a contradiction on screen.
   const unread = counts.unreadCount > 0 || addressed;
   return unread && (!muted || addressed);
+}
+
+/**
+ * Which channels hold a thread, among those listed under it
+ * (`sidebarThreadsByChannel`), with replies new to the member (#5277). Thread
+ * replies never count toward a channel's own unread (chat README § Message
+ * threads), so the rail's Unread only filter and a folded section's total read
+ * this too, or the only sign of those replies would be filtered away. One rule
+ * for the phone's channel list and web's rail (#5300).
+ */
+export function channelsWithUnreadThreads(
+  byChannel: ReadonlyMap<string, readonly { readonly unread_count: number }[]>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const [channelId, threads] of byChannel) {
+    if (threads.some((thread) => thread.unread_count > 0)) ids.add(channelId);
+  }
+  return ids;
+}
+
+/**
+ * What the arrangement reads as unread (#5277): the server's counts, plus one
+ * for a channel whose listed thread has new replies, so Unread only keeps that
+ * channel and its thread rows, and a folded section reads unread over it. A
+ * row's own badge still reads the server's counts alone. `undefined` (counts
+ * unknown) stays `undefined`, so no filter hides a row on missing data.
+ */
+export function withUnreadThreadChannels(
+  counts: ReadonlyMap<string, SidebarUnreadCounts> | undefined,
+  unreadThreadChannelIds: ReadonlySet<string>,
+): ReadonlyMap<string, SidebarUnreadCounts> | undefined {
+  if (!counts || unreadThreadChannelIds.size === 0) return counts;
+  const merged = new Map(counts);
+  for (const channelId of unreadThreadChannelIds) {
+    const own = merged.get(channelId);
+    if ((own?.unreadCount ?? 0) === 0)
+      merged.set(channelId, {
+        unreadCount: 1,
+        mentionCount: own?.mentionCount ?? 0,
+      });
+  }
+  return merged;
 }
 
 export function arrangeChannelSidebar<C extends SidebarChannelLike>(

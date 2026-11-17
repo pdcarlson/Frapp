@@ -23,10 +23,42 @@ export interface SheetOption {
   label: string;
   /** A small glyph before the label (a pin, a star). */
   mark?: ReactNode;
+  /**
+   * A second line under the label, in the caption role (#5318): the study
+   * zone picker's "You're here · 1 pt / hour". A row with one sets its label
+   * in the label role, so the two lines read as a title and its detail.
+   */
+  detail?: ReactNode;
+  /** What a screen reader hears for the row; the label when absent. */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
-/** Past this many rows the sheet stops growing and scrolls. */
-const MAX_ROWS_SIZED_TO_CONTENT = 8;
+/**
+ * How tall a list the sheet sizes to its rows, in single-line rows; past it
+ * the sheet stops growing and scrolls, at a fixed detent with the sheet-aware
+ * list inside, since one sheet cannot be both (`spec/ui/mobile/patterns.md`
+ * § Bottom sheets). A row with a second line counts as
+ * {@link TWO_LINE_ROW_WEIGHT} of one, so eight one-line rows or six two-line
+ * ones still fit a small phone. One rule for every pick-one sheet (#5318).
+ *
+ * The study zone picker, which had its own copy of this switch until then,
+ * is why it exists: it passed a fixed `["55%"]` detent with gorhom v5's
+ * dynamic sizing left on, which adds a content-height detent measured before
+ * the list lays out, so it opened at the height of its title with the zones
+ * cut off below the screen edge (Paul's screenshot, 2026-11-12).
+ */
+export const MAX_ROWS_SIZED_TO_CONTENT = 8;
+export const TWO_LINE_ROW_WEIGHT = 4 / 3;
+
+/** Whether a list of these rows opens sized to them rather than scrolling. */
+export function fitsContent(options: readonly SheetOption[]): boolean {
+  const height = options.reduce(
+    (sum, option) => sum + (option.detail ? TWO_LINE_ROW_WEIGHT : 1),
+    0,
+  );
+  return height <= MAX_ROWS_SIZED_TO_CONTENT + 1e-9;
+}
 const LONG_LIST_SNAP_POINTS = ["70%"];
 
 /**
@@ -43,16 +75,19 @@ export const OptionSheet = forwardRef<
     title: string;
     options: readonly SheetOption[];
     selected: string | null;
+    /** The pick. The sheet closes itself after it, so the host doesn't dismiss. */
     onSelect: (value: string | null) => void;
+    /** The sheet closed, however it closed. */
+    onDismiss?: () => void;
   }
->(function OptionSheet({ title, options, selected, onSelect }, ref) {
+>(function OptionSheet({ title, options, selected, onSelect, onDismiss }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const insets = useSafeAreaInsets();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
-  const fits = options.length <= MAX_ROWS_SIZED_TO_CONTENT;
+  const fits = fitsContent(options);
   const bottomPad = { paddingBottom: insets.bottom + tokens.spacing.md };
 
   const rows = options.map((option, index) => {
@@ -62,7 +97,8 @@ export const OptionSheet = forwardRef<
         key={option.value ?? "any"}
         accessibilityRole="radio"
         accessibilityState={{ checked: on }}
-        accessibilityLabel={option.label}
+        accessibilityLabel={option.accessibilityLabel ?? option.label}
+        accessibilityHint={option.accessibilityHint}
         onPress={() => {
           onSelect(option.value);
           closeSheet();
@@ -74,12 +110,21 @@ export const OptionSheet = forwardRef<
         ]}
       >
         {option.mark ? <View style={styles.mark}>{option.mark}</View> : null}
-        <Text
-          numberOfLines={1}
-          style={[styles.label, on ? styles.labelOn : null]}
-        >
-          {option.label}
-        </Text>
+        {option.detail ? (
+          <View style={styles.twoLine}>
+            {/* A name may wrap: zones that share a long prefix stay
+                distinguishable, as they were in the zone picker's own rows. */}
+            <Text style={styles.title}>{option.label}</Text>
+            <Text style={styles.detail}>{option.detail}</Text>
+          </View>
+        ) : (
+          <Text
+            numberOfLines={1}
+            style={[styles.label, on ? styles.labelOn : null]}
+          >
+            {option.label}
+          </Text>
+        )}
         {on ? <CheckGlyph color={accent} size={20} /> : null}
       </Pressable>
     );
@@ -95,6 +140,7 @@ export const OptionSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onDismiss={onDismiss}
     >
       <SheetBackToClose onClose={closeSheet} />
       {fits ? (
@@ -151,6 +197,18 @@ function createStyles(tokens: SignetTokens) {
     },
     labelOn: {
       ...typeRole(tokens.typography.role.label),
+    },
+    twoLine: {
+      flex: 1,
+    },
+    title: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    detail: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      marginTop: 2,
     },
   });
 }

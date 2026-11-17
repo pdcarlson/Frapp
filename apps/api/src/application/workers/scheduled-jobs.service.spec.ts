@@ -65,6 +65,7 @@ describe('ScheduledJobsService', () => {
   let findExpiredPollsPendingNotice: jest.Mock;
   let announceExpiry: jest.Mock;
   let findEventsStartingBetween: jest.Mock;
+  let findEventStartTime: jest.Mock;
   let resolveRequiredMembers: jest.Mock;
   let findChaptersWithStalePalette: jest.Mock;
   let writeRecomputedPalette: jest.Mock;
@@ -119,6 +120,19 @@ describe('ScheduledJobsService', () => {
     findExpiredPollsPendingNotice = jest.fn().mockResolvedValue([]);
     announceExpiry = jest.fn().mockResolvedValue(undefined);
     findEventsStartingBetween = jest.fn().mockResolvedValue([]);
+    // Default: the event hasn't moved since the sweep read it.
+    findEventStartTime = jest
+      .fn()
+      .mockImplementation(
+        async (_chapterId: string, eventId: string) =>
+          (
+            findEventsStartingBetween.mock.results.at(-1)?.value as
+              Promise<Array<{ id: string; start_time: string }>> | undefined
+          )?.then(
+            (rows) =>
+              rows.find((row) => row.id === eventId)?.start_time ?? null,
+          ) ?? null,
+      );
     // Default: one member is required at the event.
     resolveRequiredMembers = jest
       .fn()
@@ -144,6 +158,7 @@ describe('ScheduledJobsService', () => {
             findIncompleteTimedTasksDueBetween,
             findExpiredPollsPendingNotice,
             findEventsStartingBetween,
+            findEventStartTime,
             claimDispatch,
             releaseDispatch,
             findChaptersWithStalePalette,
@@ -508,6 +523,57 @@ describe('ScheduledJobsService', () => {
         'EVENT_REMINDER',
         TODAY,
       );
+    });
+
+    // #1550: a tick that read the event before a same-day move, but claims
+    // after it, must not keep a claim for the old time; that claim would
+    // suppress the reminder for the real one.
+    it('releases a won claim when the event moved after the sweep read it', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      findEventStartTime.mockResolvedValue('2026-08-05T21:00:00Z');
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 0,
+      });
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(resolveRequiredMembers).not.toHaveBeenCalled();
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'EVENT',
+        'evt-1',
+        'EVENT_REMINDER',
+        TODAY,
+      );
+    });
+
+    it('releases a won claim when the event was deleted after the read', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      findEventStartTime.mockResolvedValue(null);
+
+      await service.sweepEventReminders(NOW);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(releaseDispatch).toHaveBeenCalled();
+    });
+
+    it('sends when the stored time is the same instant in another spelling', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      // PostgREST returns `+00:00`; the sweep row may carry `Z`.
+      findEventStartTime.mockResolvedValue('2026-08-05T12:20:00+00:00');
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 1,
+      });
+      expect(releaseDispatch).not.toHaveBeenCalled();
+    });
+
+    it('reads the time again only on a won claim', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      claimDispatch.mockResolvedValue(false);
+
+      await service.sweepEventReminders(NOW);
+
+      expect(findEventStartTime).not.toHaveBeenCalled();
     });
 
     it('resolves the audience through AttendanceService, not from the event row', async () => {
@@ -1073,6 +1139,58 @@ describe('ScheduledJobsService', () => {
         TODAY,
       );
     });
+
+    // An overdue task stays in the window for days of five-minute ticks; only
+    // the one that wins the claim may pay for the assigner lookup (#5307).
+    it('reads no membership on a tick that loses the overdue claim', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(-30) },
+      ]);
+      claimDispatch.mockResolvedValue(false);
+
+      const result = await service.sweepTimedTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'TASK',
+        'task-1',
+        'OVERDUE',
+        TODAY,
+      );
+      expect(findByUserAndChapter).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    // The read now runs after the claim. A failure releases it for the next
+    // tick and loses nothing, so it stays a warning rather than paging.
+    it('releases the overdue claim and warns when the assigner read fails', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(-30) },
+      ]);
+      findByUserAndChapter.mockRejectedValue(new Error('members read failed'));
+
+      const result = await service.sweepTimedTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'TASK',
+        'task-1',
+        'OVERDUE',
+        TODAY,
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'members read failed' }),
+        expect.objectContaining({
+          level: 'warning',
+          fingerprint: expect.arrayContaining([
+            'scheduled-reminder-resolve-recipients:task.overdue',
+          ]),
+        }),
+      );
+    });
   });
 
   describe('sweepTaskReminders', () => {
@@ -1197,6 +1315,9 @@ describe('ScheduledJobsService', () => {
 
       expect(result).toEqual({ sent: 0 });
       expect(notifyUser).not.toHaveBeenCalled();
+      // The assigner's membership is read only by the tick that wins the
+      // claim, not by every losing tick while the task sits overdue (#5307).
+      expect(findByUserAndChapter).not.toHaveBeenCalled();
     });
 
     // The query is a day wider on each side than any one member's window,

@@ -1,32 +1,20 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-// Static import, not `await import()`: this package compiles as CommonJS under
-// NodeNext, where top-level await is an error. Vitest hoists `vi.mock` above
-// imports regardless, so the stub below still lands before the module loads —
-// the same shape every other spec in this package uses.
 import { usePatchOrgConfig, usePendingConfigKeys } from "./use-org-config";
-import { createTestQueryClient } from "./test-utils";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
-const { mockPatch } = vi.hoisted(() => ({ mockPatch: vi.fn() }));
-
-// Stub the client provider; the hook only needs a PATCH-capable client and an
-// active chapter id. Spread the real module rather than listing exports, per
-// the convention in use-members.spec.tsx — a bare factory replaces the module
-// wholesale, so the day this hook reaches for a third export the failure points
-// here instead of at the call site.
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: () => ({ PATCH: mockPatch }),
-  useActiveChapterId: () => "chap-1",
-}));
+const mockPatch = vi.fn();
 
 const QUERY_KEY = ["chapter-config", "chap-1"] as const;
 
+// The hook only needs a PATCH-capable client and the active chapter.
 function makeWrapper(qc: QueryClient) {
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-  };
+  return createHookWrapper({
+    client: { PATCH: mockPatch },
+    queryClient: qc,
+    chapterId: "chap-1",
+  });
 }
 
 describe("usePatchOrgConfig optimistic cache", () => {

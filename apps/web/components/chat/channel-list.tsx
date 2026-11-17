@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -27,6 +28,7 @@ import {
   HIDE_MUTED_LABEL,
   isAddressed,
   countsLookUnread,
+  channelsWithUnreadThreads,
   NO_MATCHING_CHANNELS,
   otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
@@ -34,8 +36,10 @@ import {
   SIDEBAR_SORT_OPTIONS,
   SORT_CHANNELS_LABEL,
   UNREAD_ONLY_LABEL,
+  withUnreadThreadChannels,
   type DisplayNameMap,
   type MemberAvatarTint,
+  type MemberThread,
   type SidebarFilterChange,
   type SidebarPreferences,
   type SidebarUnreadCounts,
@@ -56,6 +60,13 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
 import { ChannelRowMenu, type ChannelRowActions } from "./channel-row-menu";
+import {
+  CHANNEL_MARK_PX,
+  ChannelThreadRows,
+  DIRECT_MARK_PX,
+  THREAD_ROW_PX,
+} from "./channel-thread-rows";
+import { RailUnreadPip, railRowTone } from "./rail-row";
 import {
   useRailReorder,
   type RailDrag,
@@ -334,7 +345,22 @@ export interface ChannelListProps {
    * *and* no read/unread emphasis, rather than asserting "all caught up" on
    * missing data.
    */
-  unreadByChannelId?: Map<string, ChannelUnread>;
+  unreadByChannelId?: ReadonlyMap<string, ChannelUnread>;
+  /**
+   * Threads under their channel (#5300): each channel's active threads, as
+   * `sidebarThreadsByChannel` (`@repo/chat-core/threads`) picks them, drawn
+   * indented under its row. A channel with a thread with new replies also
+   * counts as unread for Unread only and a folded section, as on the phone,
+   * since thread replies never count toward the channel's own unread. Absent,
+   * no row has threads under it.
+   */
+  threads?: {
+    byChannel: ReadonlyMap<string, readonly MemberThread[]>;
+    /** The thread open in the panel, drawn as the current row. */
+    activeRootId: string | null;
+    nameFor: (userId: string) => string | null;
+    onOpen: (channelId: string, rootId: string) => void;
+  };
   /**
    * Chapter channel categories, in the order they should render.
    *
@@ -495,6 +521,7 @@ export function ChannelList({
   sidebar,
   reorder,
   onCreateChannel,
+  threads,
 }: ChannelListProps) {
   const preferences = sidebar?.preferences ?? DEFAULT_PREFERENCES;
   const mutedChannelIds = sidebar?.mutedChannelIds;
@@ -549,6 +576,21 @@ export function ChannelList({
    * categories moves no uncategorized channel. A chapter that categorizes
    * everything just sees that group's empty section disappear.
    */
+  // What the arrangement reads as unread: the server's counts, plus a channel
+  // whose listed thread has new replies (#5300, the phone's rule since #5277),
+  // so Unread only keeps it and its threads, and a folded section reads unread
+  // over it. The rows' own weight and badges read the server's counts alone.
+  const threadsByChannel = threads?.byChannel;
+  const arrangementUnread = useMemo(
+    () =>
+      threadsByChannel
+        ? withUnreadThreadChannels(
+            unreadByChannelId,
+            channelsWithUnreadThreads(threadsByChannel),
+          )
+        : unreadByChannelId,
+    [unreadByChannelId, threadsByChannel],
+  );
   const { arranged, hiddenDms, inputSections, sectionOrder } = useMemo(() => {
     // A DM the member hid (#2303) moves to the collapsed group at the end,
     // except while it is the open channel, so a jump into one does not leave
@@ -608,7 +650,7 @@ export function ChannelList({
       latestAtByChannelId: kind === "channels" ? latestAt : undefined,
       activeChannelId,
       titleOf: titleFor,
-      unreadByChannelId,
+      unreadByChannelId: arrangementUnread,
       mutedChannelIds,
     });
     hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
@@ -643,7 +685,7 @@ export function ChannelList({
     categories,
     activeChannelId,
     preferences,
-    unreadByChannelId,
+    arrangementUnread,
     mutedChannelIds,
   ]);
 
@@ -841,7 +883,13 @@ export function ChannelList({
     // Every row action lives in the right-click menu (owner, 2026-11-06:
     // "take away the pin option on hover"). The row draws no hover controls,
     // so its end is free for the mute mark and the badge alone.
-    return (
+    // Its active threads, under it (#5300). Not under a hidden conversation's
+    // row: the Hidden group is a list to reopen from, not to read.
+    const rowThreads =
+      threads && !channel.hidden
+        ? threads.byChannel.get(channel.id)
+        : undefined;
+    const row = (
       <ChannelRowMenu
         key={channel.id}
         channel={channel}
@@ -885,21 +933,15 @@ export function ChannelList({
               // A row in Hidden conversations has no line (the server keeps
               // no preview for it), so it stays one line.
               twoLine ? "h-12" : "h-8",
-              isActive
-                ? "bg-accent-subtle font-semibold text-accent-text"
-                : looksUnread
-                  ? "font-bold text-foreground hover:bg-card"
-                  : isMuted
-                    ? "text-muted hover:bg-card hover:text-foreground"
-                    : "text-muted-foreground hover:bg-card hover:text-foreground",
+              railRowTone({
+                active: isActive,
+                unread: looksUnread,
+                muted: isMuted,
+              }),
             )}
           >
             {looksUnread && !isActive ? (
-              <span
-                aria-hidden
-                data-testid="channel-unread-pip"
-                className="absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-foreground"
-              />
+              <RailUnreadPip testId="channel-unread-pip" />
             ) : null}
             <ChannelMark
               channel={channel}
@@ -972,6 +1014,30 @@ export function ChannelList({
           </button>
         </li>
       </ChannelRowMenu>
+    );
+    // Always the same keyed Fragment, so a channel gaining its first thread
+    // or losing its last adds or drops only the sibling below, and the row
+    // keeps its open menu and its focus.
+    return (
+      <Fragment key={channel.id}>
+        {row}
+        {threads && rowThreads && rowThreads.length > 0 ? (
+          // Slides with its channel while an officer drags the rail (#4178).
+          <li data-flip={`threads:${channel.id}`}>
+            <ChannelThreadRows
+              threads={rowThreads}
+              channelLabel={
+                isDm(channel) ? titleFor(channel) : `#${titleFor(channel)}`
+              }
+              markPx={isDm(channel) ? DIRECT_MARK_PX : CHANNEL_MARK_PX}
+              activeThreadRootId={threads.activeRootId}
+              nameFor={threads.nameFor}
+              viewerId={viewerId}
+              onOpen={threads.onOpen}
+            />
+          </li>
+        ) : null}
+      </Fragment>
     );
   };
 
@@ -1060,7 +1126,15 @@ export function ChannelList({
     slot = { kind: "category", before: others[index] ?? null, others };
   }
 
-  /** The slot a dragged channel would land in, drawn as a row-sized space. */
+  /**
+   * The slot a dragged channel would land in, drawn as a space its size: its
+   * row, and the thread rows under it (#5300), which leave with it, so the
+   * rows below don't close up under the pointer as the drag starts.
+   */
+  const draggedThreadRows =
+    dragging?.kind === "channel"
+      ? (threads?.byChannel.get(dragging.id)?.length ?? 0)
+      : 0;
   const channelSlot = (
     <li
       key="__reorder-slot"
@@ -1068,7 +1142,9 @@ export function ChannelList({
       data-reorder-gap=""
       aria-hidden="true"
       className={DROP_SLOT}
-      style={{ height: lift?.height ?? 32 }}
+      style={{
+        height: (lift?.height ?? 32) + draggedThreadRows * THREAD_ROW_PX,
+      }}
     />
   );
 

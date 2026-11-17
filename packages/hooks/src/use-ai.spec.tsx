@@ -1,9 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   aiAvailableFrom,
   aiConsentKey,
@@ -16,7 +14,7 @@ import {
   useFrappAiChoice,
   useUpdateAiChapterSettings,
 } from "./use-ai";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const answered = (data: unknown) => ({
   data,
@@ -60,28 +58,16 @@ describe("the AI hooks", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
 
-  const wrapper = (client: unknown, chapterId: string | null = "chapter-1") => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={client as ReturnType<typeof createFrappClient>}
-        chapterId={chapterId}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "AiHookWrapper";
-    return Wrapper;
-  };
+  const wrapper = (client: unknown, chapterId: string | null = "chapter-1") =>
+    createHookWrapper({
+      client,
+      queryClient,
+      chapterId,
+      displayName: "AiHookWrapper",
+    });
 
   it("reads a server with AI off as no AI, not as a failure", async () => {
     const GET = vi.fn().mockResolvedValue(AI_OFF);
@@ -189,27 +175,15 @@ describe("the AI hooks", () => {
 describe("Meet Frapp AI's answers (#4790)", () => {
   let queryClient: QueryClient;
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
-  const wrapper = (client: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={client as ReturnType<typeof createFrappClient>}
-        chapterId="chapter-1"
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "MeetAiWrapper";
-    return Wrapper;
-  };
+  const wrapper = (client: unknown) =>
+    createHookWrapper({
+      client,
+      queryClient,
+      chapterId: "chapter-1",
+      displayName: "MeetAiWrapper",
+    });
   it("is put in front of a member only while they have never answered", () => {
     expect(shouldMeetFrappAi(STATE as never)).toBe(true);
     expect(shouldMeetFrappAi({ ...STATE, answer: "no" } as never)).toBe(false);
