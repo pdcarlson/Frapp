@@ -1,4 +1,12 @@
 /**
+ * The production dashboard origin, as `invite-token`'s `PRODUCTION_APP_ORIGIN`
+ * (the spec pins the two together). Written out rather than imported because
+ * scripts load this file by path with Node's type stripping, which can't
+ * resolve an extensionless import.
+ */
+const PRODUCTION_ORIGIN = "https://app.frapp.live";
+
+/**
  * Where the native app lives, and how a web page sends someone to it (#4002):
  * an invite link's hand-off on web `/join`, and the phone dashboard's Get the
  * app card.
@@ -17,6 +25,55 @@ export const NATIVE_APP_SCHEME = "frapp";
 export const APP_STORE_APP_ID = "6812025642";
 
 export type NativePlatform = "ios" | "android";
+
+/** One installed app a web page or a link can open. */
+export interface NativeApp {
+  /** The iOS bundle id, which is also the Android package. */
+  id: string;
+  /** The URL scheme the app registers (`frapp://`). */
+  scheme: string;
+  /** The name on the phone's home screen, for an "Open in …" button. */
+  name: string;
+}
+
+/** The store app, which runs against production. */
+export const PRODUCTION_NATIVE_APP: NativeApp = Object.freeze({
+  id: NATIVE_APP_ID,
+  scheme: NATIVE_APP_SCHEME,
+  name: "Frapp",
+});
+
+/**
+ * The side-by-side staging app (2026-11-13), which runs against staging. Its
+ * identity is built in `apps/mobile/app.config.js` (`STAGING_IDENTITY`), and
+ * `app.config.spec.ts` holds the two to the same values.
+ */
+export const STAGING_NATIVE_APP: NativeApp = Object.freeze({
+  id: "live.frapp.mobile.staging",
+  scheme: "frapp-staging",
+  name: "Frapp Staging",
+});
+
+/**
+ * The app a dashboard origin belongs to (2026-11-17). Each environment's web
+ * hands off to its own environment's app: `app.frapp.live` to the store app,
+ * every other origin (`app.staging.frapp.live`, a preview, a laptop) to the
+ * staging app. Before this, the staging web's "Open in Frapp" opened the
+ * production app with a staging check-in code, which production refused.
+ */
+export function nativeAppForOrigin(
+  origin: string | null | undefined,
+): NativeApp {
+  let parsed: string | null = null;
+  try {
+    parsed = origin ? new URL(origin).origin : null;
+  } catch {
+    parsed = null;
+  }
+  return parsed === PRODUCTION_ORIGIN
+    ? PRODUCTION_NATIVE_APP
+    : STAGING_NATIVE_APP;
+}
 
 /**
  * The store listings. During the beta the iOS app is on TestFlight and the
@@ -102,19 +159,28 @@ export function phonePlatform(
  * installed it opens the same `frapp://join` route, and without it Chrome
  * opens the app's Play listing instead of failing.
  */
-export function openInAppUrl(platform: NativePlatform, token: string): string {
-  return appUrl(platform, `join?token=${encodeURIComponent(token)}`);
+export function openInAppUrl(
+  platform: NativePlatform,
+  token: string,
+  app: NativeApp = PRODUCTION_NATIVE_APP,
+): string {
+  return appUrl(platform, `join?token=${encodeURIComponent(token)}`, app);
 }
 
 /**
- * The one shape of a link into the app: `frapp://<route>` on iOS, Chrome's
- * `intent:` form naming the package on Android.
+ * The one shape of a link into the app: `<scheme>://<route>` on iOS, Chrome's
+ * `intent:` form naming the package on Android. `app` is the environment's
+ * app ({@link nativeAppForOrigin}); the store app when left out.
  */
-export function appUrl(platform: NativePlatform, route: string): string {
+export function appUrl(
+  platform: NativePlatform,
+  route: string,
+  app: NativeApp = PRODUCTION_NATIVE_APP,
+): string {
   if (platform === "android") {
-    return `intent://${route}#Intent;scheme=${NATIVE_APP_SCHEME};package=${NATIVE_APP_ID};end`;
+    return `intent://${route}#Intent;scheme=${app.scheme};package=${app.id};end`;
   }
-  return `${NATIVE_APP_SCHEME}://${route}`;
+  return `${app.scheme}://${route}`;
 }
 
 /**
@@ -123,8 +189,11 @@ export function appUrl(platform: NativePlatform, route: string): string {
  * the app is missing; iOS's scheme is refused without it, so the card offers
  * the store beside it.
  */
-export function openAppUrl(platform: NativePlatform): string {
-  return appUrl(platform, "");
+export function openAppUrl(
+  platform: NativePlatform,
+  app: NativeApp = PRODUCTION_NATIVE_APP,
+): string {
+  return appUrl(platform, "", app);
 }
 
 /**

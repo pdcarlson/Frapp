@@ -97,9 +97,9 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
-| 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. On the Android phone, open the same event in Frapp, tap Check myself in, then Scan code (a member without host rights sees Scan code on the event itself). Choose Don't allow, tap Allow camera, and allow it this time. Point it at the code | Android asks again after the first no; the viewport comes up, reads the code, and checks you in | #4942 |
+| 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. On the Android phone, signed in as a member without host rights, open the same event in Frapp and tap Scan code. Choose Don't allow, tap Allow camera, and allow it this time. Point it at the code | Android asks again after the first no; the viewport comes up, reads the code, and checks you in | #4942 |
 | 28 | Android | Point the Android phone's own camera app at the same code and tap the link it offers | Frapp opens on the check-in and says "You're already checked in" (row 27), not a browser page with Open in Frapp | #4763 |
-| 29 | iPhone | On the Android phone, start a second event that's happening now and show its code. On the iPhone, open it, tap Check myself in, then Scan code, and choose Don't Allow. Tap Open Settings and turn on Camera for Frapp. iOS restarts Frapp when a permission changes, so open the event again and tap Check myself in, then Scan code | After the restart the viewport comes up with no prompt, reads the code, and checks you in | #4942 |
+| 29 | iPhone | On the Android phone, start a second event that's happening now and show its code. On the iPhone, signed in as a member without host rights, open it, tap Scan code, and choose Don't Allow. Tap Open Settings and turn on Camera for Frapp. iOS restarts Frapp when a permission changes, so open the event again and tap Scan code | After the restart the viewport comes up with no prompt, reads the code, and checks you in | #4942 |
 
 ## What the pass leaves out, and why
 

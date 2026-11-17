@@ -2400,7 +2400,7 @@ export class ActivityService {
         const [checkedIn, needsCode] = checkInOpen
           ? await Promise.all([
               this.hasCheckedIn(event.id, userId),
-              this.eventService.checkInNeedsCode(event, new Date(now)),
+              this.eventService.checkInNeedsCode(event, userId, new Date(now)),
             ])
           : [null, false];
         return activityEventRow(event, {

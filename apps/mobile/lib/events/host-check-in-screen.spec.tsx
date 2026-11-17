@@ -49,6 +49,9 @@ const hooks = vi.hoisted(() => ({
   /** What `useCheckInScreenReport` answers, and what it was asked. */
   presence: { kind: "none" } as Record<string, unknown>,
   reportCalls: [] as unknown[][],
+  /** The host's own attendance read; null is "not checked in". */
+  own: null as unknown,
+  checkIn: vi.fn(async () => ({})),
 }));
 
 vi.mock("@/lib/events/check-in-screen-report", () => ({
@@ -74,8 +77,17 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       hooks.attendanceCalls.push(args);
       return { data: hooks.attendance };
     },
+    useMyAttendance: () => ({
+      isSuccess: true,
+      data: hooks.own === null ? { attendance: null } : hooks.own,
+    }),
+    useCheckIn: () => ({ mutateAsync: hooks.checkIn }),
   };
 });
+
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: null }),
+}));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -343,6 +355,61 @@ describe("Host check-in while the room fills", () => {
     expect(text).toContain("2\n checked in");
     expect(text).toContain("4KQ-88");
     act(() => tree.unmount());
+  });
+
+  it("checks the host in with one tap, since they can't scan their own code (2026-11-17)", async () => {
+    hooks.own = null;
+    hooks.checkIn.mockClear();
+    // Inside the event's check-in window.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T18:05:00Z"));
+    try {
+      const tree = render();
+      const [self] = tree.root.findAll(
+        (node) =>
+          typeof node.props.onPress === "function" &&
+          node.findAll((text) => text.props.children === "Check myself in")
+            .length > 0,
+      );
+      await act(async () => self.props.onPress());
+      expect(hooks.checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers the host no self check-in outside the window", () => {
+    hooks.own = null;
+    // The code can go up early; the check-in itself can't.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T17:00:00Z"));
+    try {
+      const tree = render();
+      expect(screenText(tree)).not.toContain("Check myself in");
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the host is in, with no button, once they are", () => {
+    hooks.own = {
+      attendance: {
+        id: "a-1",
+        status: "PRESENT",
+        check_in_time: new Date().toISOString(),
+      },
+    };
+    try {
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("You're checked in");
+      expect(text).not.toContain("Check myself in");
+      act(() => tree.unmount());
+    } finally {
+      hooks.own = null;
+    }
   });
 
   it("sizes the code to the screen, within its bounds", () => {

@@ -8,6 +8,7 @@ import { selectOwnAttendance, useCheckIn, useMyAttendance } from "@repo/hooks";
 import {
   CHECK_IN_CODE_CHANGED_COPY,
   CHECK_IN_LINK_PATH,
+  PRODUCTION_NATIVE_APP,
   STORE_LISTING_URLS,
   checkInTargetFrom,
   openCheckInInAppUrl,
@@ -20,7 +21,7 @@ import { SignedInAs } from "@/components/auth/signed-in-as";
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonText } from "@/components/shared/async-states";
 import { getLiveSessionUser } from "@/lib/auth/rejected-session";
-import { usePhonePlatform } from "@/lib/use-phone-platform";
+import { useNativeApp, usePhonePlatform } from "@/lib/use-phone-platform";
 import { cn } from "@/lib/utils";
 import {
   checkInFailure,
@@ -301,6 +302,10 @@ function AppButtons({
   target: CheckInLinkTarget;
   lead: boolean;
 }) {
+  const app = useNativeApp();
+  // The staging app has no store listing: it comes from TestFlight and the
+  // internal track, so a staging page offers no store button for it.
+  const listed = app.id === PRODUCTION_NATIVE_APP.id;
   return (
     <div className={lead ? "flex flex-col gap-3" : "flex gap-3"}>
       <Button
@@ -308,15 +313,19 @@ function AppButtons({
         variant={lead ? "default" : "secondary"}
         className={lead ? "w-full" : "flex-1"}
       >
-        <a href={openCheckInInAppUrl(platform, target)}>Open in Frapp</a>
+        <a href={openCheckInInAppUrl(platform, target, app)}>
+          Open in {app.name}
+        </a>
       </Button>
-      <Button
-        asChild
-        variant={lead ? "secondary" : "ghost"}
-        className={lead ? "w-full" : "flex-1"}
-      >
-        <a href={STORE_LISTING_URLS[platform]}>Get Frapp</a>
-      </Button>
+      {listed ? (
+        <Button
+          asChild
+          variant={lead ? "secondary" : "ghost"}
+          className={lead ? "w-full" : "flex-1"}
+        >
+          <a href={STORE_LISTING_URLS[platform]}>Get Frapp</a>
+        </Button>
+      ) : null}
     </div>
   );
 }
