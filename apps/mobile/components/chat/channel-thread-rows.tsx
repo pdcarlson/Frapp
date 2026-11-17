@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import {
   resolveAuthorLabel,
@@ -13,14 +14,29 @@ import {
 } from "@repo/chat-core/threads";
 import type { RawChatMessage } from "@repo/chat-core/types";
 import { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
+import { openNotificationTarget } from "@/lib/notifications/targets";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { UnreadPip } from "@/components/chat/channel-row";
+import { channelTitleStyles, UnreadPip } from "@/components/chat/channel-row";
 
-/** Where a row opens: the thread, over its channel. */
-export interface ThreadTarget {
-  channelId: string;
-  rootId: string;
+/**
+ * Opens a thread with its channel under it on the stack, as a thread push's
+ * tap does (#4054): the thread screen only listens on its channel's realtime
+ * topic, so with nothing under it a reply or a typist would never show live,
+ * and back would skip the channel.
+ */
+export function openThreadOverChannel(
+  router: Parameters<typeof openNotificationTarget>[0],
+  target: { channelId: string; rootId: string },
+): void {
+  openNotificationTarget(router, {
+    pathname: "/chat-thread",
+    params: { channelId: target.channelId, threadRootId: target.rootId },
+    under: {
+      pathname: "/chat-thread",
+      params: { channelId: target.channelId },
+    },
+  });
 }
 
 /** The connector's stroke and its elbow's corner. */
@@ -32,12 +48,29 @@ const CONNECTOR_RADIUS = 8;
  * (`sidebarThreadsByChannel`). The quiet window is measured from when the
  * list was read, which the minute-by-minute re-read keeps current.
  */
-export function useChannelThreads(): Map<string, MemberThread[]> {
+export function useChannelThreads() {
   const query = useMemberThreads();
-  return useMemo(
+  const byChannel = useMemo(
     () => sidebarThreadsByChannel(query.data, query.dataUpdatedAt),
     [query.data, query.dataUpdatedAt],
   );
+  return { byChannel, query };
+}
+
+/**
+ * Which channels hold a listed thread with replies new to the member. Thread
+ * replies never count toward a channel's own unread (chat README § Message
+ * threads), so the list's Unread only filter and a folded section's total
+ * read this too, or the only sign of those replies would be filtered away.
+ */
+export function channelsWithUnreadThreads(
+  byChannel: ReadonlyMap<string, readonly MemberThread[]>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const [channelId, threads] of byChannel) {
+    if (threads.some((thread) => thread.unread_count > 0)) ids.add(channelId);
+  }
+  return ids;
 }
 
 /**
@@ -49,8 +82,8 @@ export function useChannelThreads(): Map<string, MemberThread[]> {
  *
  * A thread with replies new to the member reads as an unread channel row
  * does (the leading pip and a bold title, no number: a thread reply is not
- * direct address); a muted thread reads as a muted channel. A tap pushes the
- * thread over its channel, so back returns to the channel.
+ * direct address); a muted thread reads as a muted channel. A tap opens the
+ * thread with its channel under it ({@link openThreadOverChannel}).
  *
  * Replaces the Threads row and its All threads sheet (#4960, #5139).
  */
@@ -60,7 +93,6 @@ export function ChannelThreadRows({
   nameFor,
   viewerId,
   markWidth,
-  onOpen,
 }: {
   threads: readonly MemberThread[] | undefined;
   /** `#general`, or a conversation's people, for the spoken label. */
@@ -72,8 +104,8 @@ export function ChannelThreadRows({
    * avatar (`DIRECT_AVATAR_SIZE`), so the connector drops from its middle.
    */
   markWidth?: number;
-  onOpen: (target: ThreadTarget) => void;
 }) {
+  const router = useRouter();
   const { tokens } = useFrappTheme();
   const styles = useMemo(
     () => createStyles(tokens, markWidth),
@@ -112,7 +144,7 @@ export function ChannelThreadRows({
               .join(", ")}
             accessibilityHint="Opens this thread."
             onPress={() =>
-              onOpen({
+              openThreadOverChannel(router, {
                 channelId: thread.channel_id,
                 rootId: thread.thread_root_id,
               })
@@ -130,13 +162,14 @@ export function ChannelThreadRows({
             </View>
             <Text
               numberOfLines={1}
-              style={
+              style={[
+                styles.title,
                 unread
                   ? styles.titleUnread
                   : muted
                     ? styles.titleMuted
-                    : styles.titleRead
-              }
+                    : styles.titleRead,
+              ]}
             >
               {rootText}
             </Text>
@@ -186,23 +219,9 @@ function createStyles(tokens: SignetTokens, markWidth?: number) {
       width: CONNECTOR_WIDTH,
       backgroundColor: line,
     },
-    titleRead: {
+    title: {
       flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
     },
-    titleUnread: {
-      flex: 1,
-      ...typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.foreground,
-    },
-    titleMuted: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
-    },
+    ...channelTitleStyles(tokens),
   });
 }

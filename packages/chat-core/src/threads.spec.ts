@@ -746,6 +746,15 @@ describe("sidebarThreadsByChannel (#5277)", () => {
     const map = sidebarThreadsByChannel(many, NOW);
     expect(map.get("c1")).toHaveLength(SIDEBAR_THREADS_PER_CHANNEL);
     expect(map.has("c2")).toBe(false);
+  });
+
+  test("never cuts a thread with new replies at the cap", () => {
+    const read = Array.from({ length: SIDEBAR_THREADS_PER_CHANNEL }, (_, i) =>
+      thread(`t${i}`, "c1", i),
+    );
+    const unread = thread("old-unread", "c1", 50, 1);
+    const map = sidebarThreadsByChannel([...read, unread], NOW);
+    expect(map.get("c1")?.map((t) => t.thread_root_id)).toContain("old-unread");
     expect(sidebarThreadsByChannel(undefined, NOW).size).toBe(0);
   });
 });

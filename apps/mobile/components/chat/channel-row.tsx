@@ -475,6 +475,31 @@ export function accessibilityLabelFor({
   return parts.join(", ");
 }
 
+/**
+ * A row title's three states, shared with the thread rows under a channel
+ * (`channel-thread-rows.tsx`): unread is white at 700, read is grey at 400
+ * (2026-11-08), muted is the muted hue.
+ */
+export function channelTitleStyles(tokens: SignetTokens) {
+  return {
+    titleUnread: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
+    },
+    titleRead: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    titleMuted: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.muted,
+    },
+  };
+}
+
 function createStyles(tokens: SignetTokens) {
   const AVATAR_SIZE = DIRECT_AVATAR_SIZE;
 
@@ -563,22 +588,7 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       gap: 2,
     },
-    // Unread is white at 700, read is grey at 400 (2026-11-08).
-    titleUnread: {
-      ...typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.foreground,
-    },
-    titleRead: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    titleMuted: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
-    },
+    ...channelTitleStyles(tokens),
     previewUnread: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

@@ -2511,7 +2511,7 @@ describe("Chat home: the swipe to Messages", () => {
   });
 
   it("opens Messages on a slide left, and nothing on a slide right", () => {
-    const push = vi.mocked(useRouter)().push;
+    const push = vi.mocked(vi.mocked(useRouter)().push);
     vi.mocked(push).mockClear();
     const gesture = pan(render());
     act(() =>
@@ -2534,7 +2534,7 @@ describe("Chat home: the swipe to Messages", () => {
     // channel too, on top of Messages. A full-width row never sees the
     // finger leave it, so its release reads as a tap unless the swipe holds
     // the touch.
-    const push = vi.mocked(useRouter)().push;
+    const push = vi.mocked(vi.mocked(useRouter)().push);
     const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
     try {
       const tree = render();
@@ -2659,11 +2659,63 @@ describe("threads under their channel (#5277)", () => {
       const at = labels.indexOf(label);
       expect(at).toBeGreaterThan(0);
       expect(labels[at - 1]).toMatch(/^#general/);
-      act(() => pressableLabelled(tree, label).props.onPress());
-      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
-        pathname: "/chat-thread",
-        params: { channelId: "c-general", threadRootId: "root-1" },
-      });
+      const row = pressableLabelled(tree, label);
+      // Unread reads as an unread channel row does: the pip and bold.
+      expect(
+        row.findAll(
+          (node) => node.props.testID === "channel-thread-unread-pip",
+        ),
+      ).not.toHaveLength(0);
+      const push = vi.mocked(vi.mocked(useRouter)().push);
+      push.mockClear();
+      act(() => row.props.onPress());
+      // The channel under the thread, then the thread (#4054's stack), so the
+      // thread's live replies ride the channel's topic and back lands there.
+      expect(push.mock.calls).toEqual([
+        ["/chat-thread?channelId=c-general"],
+        ["/chat-thread?channelId=c-general&threadRootId=root-1"],
+      ]);
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("draws a read thread without the pip, and a muted one as muted", () => {
+    allThreads.data = [
+      thread(),
+      thread({ thread_root_id: "root-2", state: "muted" }),
+    ];
+    try {
+      const tree = render();
+      const read = pressableLabelled(
+        tree,
+        "Thread: who has the tent, in #general",
+      );
+      expect(
+        read.findAll(
+          (node) => node.props.testID === "channel-thread-unread-pip",
+        ),
+      ).toHaveLength(0);
+      expect(
+        pressableLabelled(tree, "Thread: who has the tent, in #general, muted"),
+      ).toBeTruthy();
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("keeps a channel whose thread has new replies under Unread only", () => {
+    const social = { id: "c-social", name: "social", type: "PUBLIC" };
+    channelsData.value = [general, social];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    allThreads.data = [thread({ channel_id: social.id, unread_count: 1 })];
+    try {
+      const tree = render();
+      expect(layout(tree)).toEqual([["Channels", ["social"]]]);
+      expect(threadRows(tree)).toHaveLength(1);
     } finally {
       allThreads.data = [];
     }

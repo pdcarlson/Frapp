@@ -126,7 +126,8 @@ export default function MessagesScreen() {
   const channelsQuery = useChannels();
   // A group DM's active threads sit under its row, as a channel's do on Chat
   // home (#5277).
-  const threadsByChannel = useChannelThreads();
+  const { byChannel: threadsByChannel, query: memberThreadsQuery } =
+    useChannelThreads();
   const unread = useShownUnreadCounts();
   const unreadQuery = unread.query;
   const latestQuery = useChannelLatestMessages();
@@ -158,6 +159,7 @@ export default function MessagesScreen() {
     unreadQuery,
     latestQuery,
     notificationPrefsQuery,
+    memberThreadsQuery,
   ]);
 
   const direct = useMemo(
@@ -280,7 +282,11 @@ export default function MessagesScreen() {
     }
   }
 
-  function renderConversation(channel: ChannelSummary) {
+  // Thread rows go under the list's rows, not under a search result (#5277).
+  function renderConversation(
+    channel: ChannelSummary,
+    { withThreads = true }: { withThreads?: boolean } = {},
+  ) {
     const counts = unreadByChannelId?.get(channel.id);
     const name = titleOf(channel);
     return (
@@ -306,17 +312,11 @@ export default function MessagesScreen() {
           }
         />
         <ChannelThreadRows
-          threads={threadsByChannel.get(channel.id)}
+          threads={withThreads ? threadsByChannel.get(channel.id) : undefined}
           channelLabel={name}
           nameFor={nameFor}
           viewerId={viewerId}
           markWidth={DIRECT_AVATAR_SIZE}
-          onOpen={({ channelId, rootId }) =>
-            router.push({
-              pathname: "/chat-thread",
-              params: { channelId, threadRootId: rootId },
-            })
-          }
         />
       </Fragment>
     );
@@ -391,7 +391,9 @@ export default function MessagesScreen() {
           {searching ? (
             <>
               <View style={styles.rows}>
-                {found.conversations.map(renderConversation)}
+                {found.conversations.map((channel) =>
+                  renderConversation(channel, { withThreads: false }),
+                )}
               </View>
               {found.members.length > 0 ? (
                 <>
@@ -435,7 +437,9 @@ export default function MessagesScreen() {
             </InlineNote>
           ) : (
             <>
-              <View style={styles.rows}>{listed.map(renderConversation)}</View>
+              <View style={styles.rows}>
+                {listed.map((channel) => renderConversation(channel))}
+              </View>
               {hidden.length > 0 ? (
                 <>
                   <StickyHeader>

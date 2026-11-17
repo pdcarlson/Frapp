@@ -83,6 +83,7 @@ import {
 } from "@/components/chat/home-header";
 import {
   ChannelThreadRows,
+  channelsWithUnreadThreads,
   useChannelThreads,
 } from "@/components/chat/channel-thread-rows";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
@@ -429,6 +430,11 @@ export default function ChatHomeScreen() {
   const setup = useChapterSetupChecklist({
     omit: MOBILE_SETUP_CHECKLIST_OMIT,
   });
+  // Threads under their channel (#5277, Paul 2026-11-17, after Discord's):
+  // the member's active threads, indented under each channel row. They were
+  // a Threads row and sheet (#4960, #5139) until then. The pull re-reads them.
+  const { byChannel: threadsByChannel, query: memberThreadsQuery } =
+    useChannelThreads();
   const refresh = useRefetchAll([
     { refetch: setup.refetch },
     viewerQuery,
@@ -441,6 +447,7 @@ export default function ChatHomeScreen() {
     notificationPrefsQuery,
     sidebarRefetch,
     rosterQuery,
+    memberThreadsQuery,
   ]);
 
   // Categories are grouping only. While they load, or if the read fails,
@@ -466,13 +473,36 @@ export default function ChatHomeScreen() {
   // DM counts too: anything unread in a DM addresses the member, and that
   // gets past a mute, as it does on the row and for push (§ Sidebar
   // arrangement, Hide muted).
+  // A group DM whose thread has new replies counts too (#5277): those rows
+  // sit behind the door, and thread replies never count toward the
+  // conversation's own unread.
+  const unreadThreadChannelIds = useMemo(
+    () => channelsWithUnreadThreads(threadsByChannel),
+    [threadsByChannel],
+  );
   const unreadConversations = directChannels.filter(
-    (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
+    (channel) =>
+      (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0 ||
+      unreadThreadChannelIds.has(channel.id),
   ).length;
-  // Threads under their channel (#5277, Paul 2026-11-17, after Discord's):
-  // the member's active threads, indented under each channel row. They were
-  // a Threads row and sheet (#4960, #5139) until then.
-  const threadsByChannel = useChannelThreads();
+  // What the arrangement reads as unread: the server's counts, plus one for a
+  // channel whose thread has new replies (#5277), so Unread only keeps that
+  // channel and its thread rows, and a folded section reads unread over it.
+  // The rows' own badges still read the server's counts alone.
+  const arrangementUnread = useMemo(() => {
+    if (!unreadByChannelId || unreadThreadChannelIds.size === 0)
+      return unreadByChannelId;
+    const merged = new Map(unreadByChannelId);
+    for (const channelId of unreadThreadChannelIds) {
+      const counts = merged.get(channelId);
+      if ((counts?.unreadCount ?? 0) === 0)
+        merged.set(channelId, {
+          unreadCount: 1,
+          mentionCount: counts?.mentionCount ?? 0,
+        });
+    }
+    return merged;
+  }, [unreadByChannelId, unreadThreadChannelIds]);
   const threadAuthorName = useCallback(
     (userId: string) => memberNames[userId] ?? null,
     [memberNames],
@@ -502,7 +532,7 @@ export default function ChatHomeScreen() {
       latestAtByChannelId,
       activeChannelId: null,
       titleOf,
-      unreadByChannelId,
+      unreadByChannelId: arrangementUnread,
       mutedChannelIds,
     });
   }, [
@@ -510,7 +540,7 @@ export default function ChatHomeScreen() {
     categories,
     preferences,
     unread.provisional,
-    unreadByChannelId,
+    arrangementUnread,
     mutedChannelIds,
     titleOf,
     latestAtByChannelId,
@@ -680,12 +710,6 @@ export default function ChatHomeScreen() {
           channelLabel={`#${name}`}
           nameFor={threadAuthorName}
           viewerId={viewerId}
-          onOpen={({ channelId, rootId }) =>
-            router.push({
-              pathname: "/chat-thread",
-              params: { channelId, threadRootId: rootId },
-            })
-          }
         />
       </Fragment>
     );
@@ -806,6 +830,13 @@ export default function ChatHomeScreen() {
       {unread.isError ? (
         <Text style={styles.unreadWarning}>
           Unread counts are unavailable right now, so badges may be missing.
+        </Text>
+      ) : null}
+      {/* The same for the threads read (#5277): no rows must not read as
+          "no threads". */}
+      {memberThreadsQuery.isError && memberThreadsQuery.data === undefined ? (
+        <Text style={styles.unreadWarning}>
+          Threads couldn&apos;t load. Pull down to try again.
         </Text>
       ) : null}
 

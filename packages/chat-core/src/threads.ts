@@ -531,7 +531,8 @@ export function threadPreviewParts(
 }
 
 /**
- * One All threads row's two lines (#4960), one rule for web and the phone:
+ * One All threads row's two lines (#4960) on web, and the phone's thread row
+ * under its channel (#5277), which reads the parent's line alone:
  * the parent and its latest reply, read the way the channel draws them. The
  * API serves the raw parent, so it is normalized first (a GIF or a file-only
  * message reads "GIF" or "Attachment", not "Message"), and the latest reply
@@ -585,12 +586,13 @@ export interface SidebarThreadInput {
 
 /**
  * Which of the member's threads sit under each channel in the channel list
- * (#5277, Paul 2026-11-17, after Discord's): a followed or muted thread with
- * replies new to the member always, else one active within
- * {@link SIDEBAR_THREAD_QUIET_MS}, newest activity first and at most
- * {@link SIDEBAR_THREADS_PER_CHANNEL} per channel. A channel with none is
- * absent from the map, so it draws nothing under it: no empty state. A
- * thread that drops off is still one tap away on its parent's thread card.
+ * (#5277, Paul 2026-11-17, after Discord's): every listed thread with
+ * replies new to the member, uncapped, then read ones active within
+ * {@link SIDEBAR_THREAD_QUIET_MS}, up to {@link SIDEBAR_THREADS_PER_CHANNEL}
+ * a channel in all; newest activity first. "Listed" is `GET /v1/threads`'s
+ * newest 50. A channel with none is absent from the map, so it draws nothing
+ * under it: no empty state. A thread that drops off is still one tap away on
+ * its parent's thread card.
  */
 export function sidebarThreadsByChannel<T extends SidebarThreadInput>(
   threads: readonly T[] | undefined,
@@ -608,7 +610,10 @@ export function sidebarThreadsByChannel<T extends SidebarThreadInput>(
     .sort((a, b) => activityOf(b) - activityOf(a));
   for (const thread of kept) {
     const rows = byChannel.get(thread.channel_id) ?? [];
-    if (rows.length >= SIDEBAR_THREADS_PER_CHANNEL) continue;
+    // A thread with new replies is never cut: it is the only place on the
+    // phone that says so, since its replies don't count toward the channel.
+    if (thread.unread_count === 0 && rows.length >= SIDEBAR_THREADS_PER_CHANNEL)
+      continue;
     rows.push(thread);
     byChannel.set(thread.channel_id, rows);
   }

@@ -401,11 +401,13 @@ describe("Messages lists direct messages only", () => {
           typeof node.props.accessibilityLabel === "string" &&
           node.props.accessibilityLabel.startsWith("Thread: carpool plan, in "),
       );
+      const push = vi.mocked(vi.mocked(useRouter)().push);
+      push.mockClear();
       act(() => row.props.onPress());
-      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
-        pathname: "/chat-thread",
-        params: { channelId: group.id, threadRootId: "root-g" },
-      });
+      expect(push.mock.calls).toEqual([
+        [`/chat-thread?channelId=${group.id}`],
+        [`/chat-thread?channelId=${group.id}&threadRootId=root-g`],
+      ]);
     } finally {
       memberThreads.value = [];
     }
@@ -773,7 +775,7 @@ describe("Messages search (#4668)", () => {
     act(() => void rowNamed(tree, "Carol Alvarez").props.onPress());
     act(() => rowNamed(tree, "Alice Chen").props.onPress());
     await act(async () => resolve({ id: "c-dm-carol" }));
-    const push = vi.mocked(useRouter)().push;
+    const push = vi.mocked(vi.mocked(useRouter)().push);
     expect(push).toHaveBeenCalledTimes(1);
     expect(push).toHaveBeenCalledWith({
       pathname: "/chat-thread",

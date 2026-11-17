@@ -263,6 +263,7 @@ DM rows resolve the other participant from `member_ids` against the roster proje
 Route: `(app)/messages.tsx`.
 
 Live (2026-11-07, owner decision; the board draws no such screen) — the member's direct and group messages, opened from the Messages door on Chat home or a swipe left on it (#3774) ([`navigation.md` § Global entries outside the tab bar](navigation.md#global-entries-outside-the-tab-bar)), `‹ Chat`.
+Under a group DM's row sit its active threads, as under a channel on Chat home (#5277, 2026-11-17); search results draw none.
 A DM the member pinned leads (pins are shared with web), then newest conversation first by its latest message (`GET /v1/channels/latest`, the list waiting on its skeleton until that answers so it never reorders under a thumb), each row the other member's initials, their name, the badge (mention red for anything unread, since a DM addresses the member) and the last line under it (`channelPreviewLine`, [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Channel list previews), held blank while it loads;
 no time.
 A long press on a 1:1 DM offers Hide conversation (#2303); hidden ones sit behind a Hidden conversations toggle at the end, and opening one unhides it.
