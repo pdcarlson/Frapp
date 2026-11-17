@@ -1,26 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactElement } from "react";
+import { type ReactElement } from "react";
 import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
-import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SearchablePicker } from "@/components/shared/searchable-picker";
 import { cn } from "@/lib/utils";
 
 /**
@@ -159,11 +148,11 @@ export function FilterChip({
 }
 
 /**
- * The long-list body: a popover holding a search field over the option list.
- * A popover and cmdk rather than the dropdown menu, because a menu's typeahead
- * takes the keys meant for the field (the reason `DateFilterChip` is one too).
- * cmdk gives the combobox roles, arrow keys and Enter; the match is ours
- * (`matchesWordStarts`).
+ * The long-list body: the shared `SearchablePicker`, a popover holding a
+ * search field over the option list. A popover and cmdk rather than the
+ * dropdown menu, because a menu's typeahead takes the keys meant for the field
+ * (the reason `DateFilterChip` is one too). cmdk gives the combobox roles,
+ * arrow keys and Enter; the match is ours (`matchesWordStarts`).
  */
 function SearchableOptions({
   trigger,
@@ -180,106 +169,47 @@ function SearchableOptions({
   value: string | null;
   onChange: (value: string | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const commandRef = useRef<HTMLDivElement>(null);
-  // The "any" row leads the whole list and steps aside while a query is
-  // typed: it is not something to search for, and as the first match it would
-  // be the row Enter picks ("co" for a course would clear the filter through
-  // "Any course").
-  const shown = useMemo(
-    () =>
-      normalizeWords(query).length === 0
-        ? [{ value: ANY, label: anyLabel }, ...options]
-        : options.filter((row) => matchesWordStarts(row.label, query)),
-    [anyLabel, options, query],
-  );
   const current = value ?? ANY;
-  const close = () => {
-    setOpen(false);
-    setQuery("");
-  };
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => (next ? setOpen(true) : close())}
-    >
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        align="start"
-        // As wide as its longest label, up to a cap; past that a label wraps
-        // rather than being cut, since two long names can share a prefix.
-        className="w-max min-w-[15rem] max-w-[min(26rem,calc(100vw-2rem))] p-0"
-        // On touch the list opens without the on-screen keyboard, so it can be
-        // scrolled; a tap on the field brings the keyboard up. Focus still
-        // moves into the list, so arrow keys and Enter work from a hardware
-        // keyboard.
-        onOpenAutoFocus={(event) => {
-          if (window.matchMedia?.("(pointer: coarse)").matches) {
-            event.preventDefault();
-            commandRef.current?.focus();
-          }
-        }}
-        // Esc clears a typed query first and closes on the second press.
-        onEscapeKeyDown={(event) => {
-          if (!query) return;
-          event.preventDefault();
-          setQuery("");
-        }}
-      >
-        {/* Opens with the chosen row highlighted and scrolled into view. */}
-        {/* `label` names the field: cmdk points the input at it itself. */}
-        <Command
-          ref={commandRef}
-          tabIndex={-1}
-          className="outline-none"
-          shouldFilter={false}
-          defaultValue={current}
-          label={`Filter the ${label} list`}
-        >
-          <CommandInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Type to filter"
-            className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
+    <SearchablePicker
+      trigger={trigger}
+      align="start"
+      // As wide as its longest label, up to a cap; past that a label wraps
+      // rather than being cut, since two long names can share a prefix.
+      widthClassName="min-w-[15rem] max-w-[min(26rem,calc(100vw-2rem))]"
+      // On touch the list opens without the on-screen keyboard, so it can be
+      // scrolled.
+      keyboardlessOnTouch
+      // Opens with the chosen row highlighted and scrolled into view.
+      defaultValue={current}
+      // `label` names the field: cmdk points the input at it itself.
+      label={`Filter the ${label} list`}
+      placeholder="Type to filter"
+      // The "any" row leads the whole list and steps aside while a query is
+      // typed ("co" for a course would otherwise clear the filter through
+      // "Any course").
+      leadingItems={[{ value: ANY, label: anyLabel }]}
+      items={options}
+      nameOf={(row) => row.label}
+      keyOf={(row) => row.value}
+      itemClassName={SEARCH_ROW}
+      renderItem={(row) => (
+        <>
+          <Check
+            className={cn("h-4 w-4", row.value !== current && "invisible")}
+            aria-hidden="true"
           />
-          <CommandList className="max-h-72 p-1">
-            {shown.length === 0 ? (
-              <p role="status" className="px-2 py-3 text-sm text-muted">
-                Nothing matches “{query.trim()}”.
-              </p>
-            ) : (
-              shown.map((row) => (
-                <CommandItem
-                  key={row.value}
-                  value={row.value}
-                  className={SEARCH_ROW}
-                  onSelect={() => {
-                    onChange(row.value === ANY ? null : row.value);
-                    close();
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "h-4 w-4",
-                      row.value !== current && "invisible",
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1 break-words">
-                    {row.label}
-                    {row.value === current ? (
-                      <span className="sr-only"> (selected)</span>
-                    ) : null}
-                  </span>
-                </CommandItem>
-              ))
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+          <span className="min-w-0 flex-1 break-words">
+            {row.label}
+            {row.value === current ? (
+              <span className="sr-only"> (selected)</span>
+            ) : null}
+          </span>
+        </>
+      )}
+      onPick={(row) => onChange(row.value === ANY ? null : row.value)}
+    />
   );
 }
 
