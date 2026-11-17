@@ -135,15 +135,19 @@ import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
  *
  * **Consent is asked at the first question**, not when the sheet opens
  * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
- * first, so the consent sheet opens over the words it is about. The server
- * checks again.
+ * first, so the consent sheet opens with the words it is about already
+ * asked. Since #5426 a first question sits just above the field, where the
+ * consent sheet rises, so it may sit behind that sheet. The server checks
+ * again.
  *
  * **The saved line.** While the beta diagnostics window is on for this
  * chapter, a line above the field says questions and answers are saved and
  * until when, and only then does a question carry `saved_notice_shown`: the
  * server keeps nothing from a client that did not show it. It sits in the
  * composer, which is anchored to the sheet's bottom edge, so its arrival
- * moves neither the field nor the top of the thread.
+ * never moves the field. A short thread, which sits on the field (#5426,
+ * below), moves up by the line's height, as a chat's last message moves
+ * with its composer. Until #5426 it moved nothing.
  *
  * **A source opens the real thing.** A document opens in the in-app browser
  * over the sheet, so the thread is still there when it closes. Anything else
@@ -190,7 +194,9 @@ import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
  * it can run before the shrunk content is mounted and so measures the old
  * content. Now the opening and the thread each get their own scroller, so the
  * first turn arrives in a new one at offset zero, and the content always
- * fills the room, so a short thread never leaves an offset past its end.
+ * fills the room. While the member is following, every scroll to the end is
+ * asked for again on the next frame, after the new content is mounted, so a
+ * streamed line or a card that folds to one line is measured as it now is.
  *
  * The keyboard changes the room, not the content, so `onContentSizeChange`
  * does not see it. The scroller's own layout does: while the member is
@@ -280,6 +286,19 @@ export const AskSheet = forwardRef<
 
   const savedUntil = status.data?.saved_until ?? null;
   const lastId = exchanges.at(-1)?.id;
+
+  // Keeps the newest words in view while the member is reading them: now,
+  // and again on the next frame, once the layout that asked is mounted
+  // (#5426, above).
+  const follow = useCallback(() => {
+    if (!following.current) return;
+    scroller.current?.scrollToEnd?.({ animated: false });
+    requestAnimationFrame(() => {
+      if (following.current) {
+        scroller.current?.scrollToEnd?.({ animated: false });
+      }
+    });
+  }, []);
 
   // A new turn shows the newest words.
   useEffect(() => {
@@ -424,11 +443,7 @@ export const AskSheet = forwardRef<
           keyboardShouldPersistTaps="handled"
           // The keyboard opening or closing changes the room, not the
           // content: the newest words stay above the field (#5426).
-          onLayout={() => {
-            if (following.current) {
-              scroller.current?.scrollToEnd?.({ animated: false });
-            }
-          }}
+          onLayout={follow}
           onScrollBeginDrag={() => {
             dragged.current = true;
           }}
@@ -442,11 +457,7 @@ export const AskSheet = forwardRef<
           }}
           // The newest turn growing keeps its last line in view, unless the
           // member scrolled up to read something else.
-          onContentSizeChange={() => {
-            if (following.current) {
-              scroller.current?.scrollToEnd?.({ animated: false });
-            }
-          }}
+          onContentSizeChange={follow}
         >
           {exchanges.length > 0 ? (
             exchanges.map((exchange) => (
@@ -520,7 +531,7 @@ export const AskSheet = forwardRef<
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
-      // Takes the space the header, the search results and the composer do
+      // Takes the space the header and the composer do
       // not, so the composer stays pinned to the sheet's bottom edge at
       // every thread length.
       flex: 1,

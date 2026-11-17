@@ -3,7 +3,7 @@ import React from "react";
 import { act } from "react";
 import { ActionSheetIOS } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
 import { useReducedMotion, withRepeat } from "react-native-reanimated";
 import * as WebBrowser from "expo-web-browser";
@@ -19,6 +19,7 @@ import {
   type AskAnswer,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -145,18 +146,26 @@ import { AskSheet } from "./ask-sheet";
 
 const modal = { present: vi.fn(), dismiss: vi.fn() };
 
-function render(onClosed?: () => void): ReactTestRenderer {
+const sheetElement = (onClosed?: () => void) => (
+  <FrappThemeProvider>
+    <AskSheet ref={React.createRef<never>()} onClosed={onClosed} />
+  </FrappThemeProvider>
+);
+/** `scroller` stands in for the thread's native scroll view, made per mount. */
+function render(
+  onClosed?: () => void,
+  scroller?: () => unknown,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <AskSheet ref={React.createRef<never>()} onClosed={onClosed} />
-      </FrappThemeProvider>,
-      {
-        createNodeMock: (element) =>
-          (element.type as unknown) === "BottomSheetModal" ? modal : null,
+    tree = create(sheetElement(onClosed), {
+      createNodeMock: (element) => {
+        const type = element.type as unknown;
+        if (type === "BottomSheetModal") return modal;
+        if (type === "BottomSheetScrollView" && scroller) return scroller();
+        return null;
       },
-    );
+    });
   });
   return tree;
 }
@@ -337,7 +346,9 @@ describe("AskSheet", () => {
     hooks.suggestions = [];
     const tree = render();
     open(tree);
-    expect(screenText(tree)).toMatch(/Good (morning|afternoon|evening), Marcus\./);
+    expect(screenText(tree)).toMatch(
+      /Good (morning|afternoon|evening), Marcus\./,
+    );
     expect(
       tree.root.findAll(
         (node) => node.props.accessibilityHint === "Sends this.",
@@ -755,8 +766,7 @@ describe("AskSheet", () => {
  * conversation, not a drawer over the tab.
  */
 describe("the sheet itself (#4702)", () => {
-  const flat = (style: unknown): Record<string, unknown> =>
-    Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+  const flat = flatStyle;
 
   it("opens at full height, with dynamic sizing off so a short thread does not open it short", () => {
     const props = sheet(render()).props;
@@ -823,6 +833,8 @@ describe("the sheet itself (#4702)", () => {
  *   It is asked for from JavaScript as the new layout is committed, and that
  *   can be before the new content is mounted, so it measures the old content.
  * - A new scroller starts at offset zero, holding its first content.
+ * - The next frame comes after the mount, so a scroll asked for then
+ *   measures the new content.
  *
  * Sizes are points on a 393x852 iPhone with the keyboard down and up. The
  * opening is drawn taller than the room above the field with the keyboard up,
@@ -839,11 +851,11 @@ describe("sending with the keyboard up (#5426)", () => {
     scrollToEnd: () => void;
   };
   let scrollers: Native[] = [];
+  let frames: Array<() => void> = [];
   let room = ROOM.keyboardDown;
   let natural = NATURAL.opening;
 
-  const flat = (style: unknown): Record<string, unknown> =>
-    Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+  const flat = flatStyle;
   const host = (tree: ReactTestRenderer) =>
     tree.root.findAll(
       (node) => (node.type as unknown) === "BottomSheetScrollView",
@@ -889,27 +901,19 @@ describe("sending with the keyboard up (#5426)", () => {
       act(() => host(tree).props.onContentSizeChange?.(393, content));
       scroller.content = content;
     }
+    // The mount is done: the next frame runs.
+    const due = frames;
+    frames = [];
+    act(() => due.forEach((frame) => frame()));
   }
 
-  function render() {
-    let tree!: ReactTestRenderer;
-    const element = (
-      <FrappThemeProvider>
-        <AskSheet ref={React.createRef<never>()} />
-      </FrappThemeProvider>
-    );
-    act(() => {
-      tree = create(element, {
-        createNodeMock: (node) => {
-          const type = node.type as unknown;
-          if (type === "BottomSheetModal") return modal;
-          if (type === "BottomSheetScrollView") return makeScroller();
-          return null;
-        },
-      });
-    });
+  function mount() {
+    const tree = render(undefined, makeScroller);
     layout(tree);
-    return { tree, rerender: () => act(() => tree.update(element)) };
+    return {
+      tree,
+      rerender: () => act(() => tree.update(sheetElement())),
+    };
   }
 
   /** Where the newest turn is drawn in the content. */
@@ -936,12 +940,21 @@ describe("sending with the keyboard up (#5426)", () => {
 
   beforeEach(() => {
     scrollers = [];
+    frames = [];
     room = ROOM.keyboardDown;
     natural = NATURAL.opening;
+    vi.stubGlobal("requestAnimationFrame", (frame: () => void) => {
+      frames.push(frame);
+      return frames.length;
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    hooks.ask.mockReset();
   });
 
   it("shows the question at once, on the field, without the keyboard moving", () => {
-    const { tree, rerender } = render();
+    const { tree, rerender } = mount();
     open(tree);
     // The member taps the field: the keyboard takes the room's bottom, and
     // the opening, now taller than the room, scrolls to keep its rows above
@@ -968,10 +981,41 @@ describe("sending with the keyboard up (#5426)", () => {
     expect(turnTop(tree) + NATURAL.turn).toBe(native().offset + room);
   });
 
+  it("streams the answer in under the question and keeps its last line above the field", () => {
+    const { tree, rerender } = mount();
+    open(tree);
+    room = ROOM.keyboardUp;
+    layout(tree);
+    hooks.ask.mockImplementation((question: string) => {
+      hooks.exchanges = [sent(question)];
+    });
+    act(() => field(tree).props.onChangeText("When is formal?"));
+    act(() => byLabel(tree, ASK_COPY.send)[0].props.onPress());
+    natural = NATURAL.turn;
+    rerender();
+    layout(tree);
+
+    // The answer grows past the room, a few lines at a time, with the
+    // keyboard up and nothing touched.
+    for (const height of [200, 320, 400, 460]) {
+      hooks.exchanges = [
+        {
+          ...sent("When is formal?"),
+          preview: "Formal is Friday. ".repeat(height / 20),
+        },
+      ];
+      natural = height;
+      rerender();
+      layout(tree);
+      expect(native().offset).toBe(native().content - native().room);
+    }
+    expect(native().room).toBe(ROOM.keyboardUp);
+  });
+
   it("keeps the newest words above the field as the keyboard opens and closes", () => {
     hooks.exchanges = [answered()];
     natural = NATURAL.longThread;
-    const { tree } = render();
+    const { tree } = mount();
     open(tree);
     act(() => native().scrollToEnd());
     const atEnd = () => native().offset === native().content - native().room;
@@ -989,7 +1033,7 @@ describe("sending with the keyboard up (#5426)", () => {
   it("leaves a member reading higher up where they are when the keyboard moves", () => {
     hooks.exchanges = [answered()];
     natural = NATURAL.longThread;
-    const { tree } = render();
+    const { tree } = mount();
     open(tree);
     // They drag up to the top of the thread.
     act(() => host(tree).props.onScrollBeginDrag());
