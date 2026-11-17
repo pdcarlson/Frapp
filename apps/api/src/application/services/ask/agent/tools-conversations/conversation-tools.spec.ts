@@ -1557,7 +1557,8 @@ describe('conversation and record tools', () => {
       const { tool } = build(
         view({
           meeting: meeting({
-            transcript: 'Speaker 1: Accuracy over cost, use the stronger model.',
+            transcript:
+              'Speaker 1: Accuracy over cost, use the stronger model.',
           }),
         }),
       );
