@@ -67,8 +67,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * On the screen, not in a sheet (Paul, 2026-11-17: "I don't want a pop-up
  * sheet for everything ... if I'm writing my notes, they should be on
  * screen"), the way Granola keeps its notes beside the recording: the officer
- * types under the running clock, and the draft that comes back fills in the
- * minutes above.
+ * types while the recorder's bar runs at the bottom, and the draft that comes
+ * back fills in the minutes.
  *
  * Drafting is one action, not two doors to the same sheet. The screen's
  * button asks for it (`draft()`), and a finished transcript asks for it by
@@ -94,8 +94,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * holds it out while the ask is in flight; Clear gives it up too. A kept copy
  * comes back only over the stored notes it was typed over.
  */
-/** How long typing rests before the notes save: the web's own wait. */
-const NOTES_AUTOSAVE_MS = 1200;
+/** How long typing rests before the notes save: every notes box's wait. */
+const NOTES_AUTOSAVE_MS = 800;
 
 export interface NotesPanelHandle {
   /** Asks for a draft from these notes and the transcript. */
@@ -317,28 +317,70 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
 
   useImperativeHandle(ref, () => ({ draft: handleDraft }));
 
-  // Saved as they type, once typing rests (#5288). Never an empty box: that
-  // would clear the notes and the draft written from them.
+    // Saved as they type, once typing rests (#5288), one save at a time so a
+    // slow one can't land after a newer one. An emptied box saves only before
+    // anything is drafted: emptying the notes clears the draft written from
+    // them, which after a draft only Clear notes may do, and before one it
+    // keeps a transcript's own draft from reading notes the officer deleted.
   const saveNotes = useSaveMeetingNotes();
+    const [saveFailed, setSaveFailed] = useState(false);
   const typed = notes.replace(/\s+$/u, "");
+    const savable = (
+      text: string,
+      over = baseRef.current,
+      status = statusRef.current,
+    ) =>
+      text !== over &&
+      text.length <= MEETING_NOTES_MAX_LENGTH &&
+      (text.trim() !== "" || status === "none");
+    const typedRef = useRef(typed);
+    const baseRef = useRef(base);
+    const statusRef = useRef(state.status);
+    const draftingRef = useRef(drafting);
+    useEffect(() => {
+      typedRef.current = typed;
+      baseRef.current = base;
+      statusRef.current = state.status;
+      draftingRef.current = drafting;
+    });
+    const saving = useRef<Promise<void> | null>(null);
+    async function persist() {
+      while (saving.current) await saving.current;
+      const sent = typedRef.current;
+      if (draftingRef.current || !savable(sent)) return;
+      const run = (async () => {
+        try {
+          await saveNotes.mutateAsync({ id: meetingId, notes: sent });
+          baseRef.current = sent;
+          setBase(sent);
+          setSaveFailed(false);
+        } catch {
+          setSaveFailed(true);
+        }
+      })();
+      saving.current = run;
+      try {
+        await run;
+      } finally {
+        if (saving.current === run) saving.current = null;
+      }
+    }
   const unsaved =
-    !drafting &&
-    typed.trim() !== "" &&
-    typed !== base &&
-    typed.length <= MEETING_NOTES_MAX_LENGTH;
+      !drafting && !saveFailed && savable(typed, base, state.status);
   useEffect(() => {
     if (!unsaved) return;
-    const timer = setTimeout(() => {
-      saveNotes.mutate(
-        { id: meetingId, notes: typed },
-        // What is typed next is over these; the server stores them trimmed
-        // at the end, as sent.
-        { onSuccess: () => setBase(typed) },
-      );
-    }, NOTES_AUTOSAVE_MS);
+      const timer = setTimeout(() => void persist(), NOTES_AUTOSAVE_MS);
     return () => clearTimeout(timer);
+      // `persist` reads the latest notes through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unsaved, typed, meetingId]);
+    }, [unsaved, typed]);
+    // Leaving the screen sends what is still waiting, as a note-taker's box
+    // does; the phone's kept copy holds it too until then.
+    useEffect(
+      () => () => void persist(),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [],
+    );
 
   const draftable = notes.trim() !== "" || othersWrote;
   const draftableReported = useRef<boolean | null>(null);
@@ -423,6 +465,8 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
   const waiting = state.status === "ready";
   const status: { problem: boolean; text: string } = problem
     ? { problem: true, text: problem }
+      : saveFailed
+        ? { problem: true, text: MEETING_NOTE_TAKERS_COPY.saveFailed }
     : drafting
       ? {
           problem: false,
@@ -431,11 +475,15 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
             : MEETING_NOTES_COPY.drafting,
         }
       : needsConsent
-        ? { problem: false, text: MEETING_DRAFT_FAILURE_COPY.consent_required }
+            ? {
+                problem: false,
+                text: MEETING_DRAFT_FAILURE_COPY.consent_required,
+              }
         : state.status === "failed"
           ? {
               problem: state.failure !== "stopped",
-              text: state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
+                  text:
+                    state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
             }
           : waiting
             ? { problem: false, text: MEETING_NOTES_COPY.waiting }
@@ -472,6 +520,7 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
         onChangeText={(text) => {
           setNotes(text);
           if (problem) setProblem(null);
+            if (saveFailed) setSaveFailed(false);
         }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -608,7 +657,10 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
           accessibilityState={draftReported ? { disabled: true } : undefined}
           disabled={draftReported}
           onPress={() => reporting.report(reportTarget)}
-          style={({ pressed }) => [styles.report, pressed ? styles.pressed : null]}
+            style={({ pressed }) => [
+              styles.report,
+              pressed ? styles.pressed : null,
+            ]}
         >
           <Text style={styles.reportText}>
             {draftReported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}

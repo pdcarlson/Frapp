@@ -242,8 +242,13 @@ function LoadedMinutes({
   );
   const empty = isMeetingContentEmpty(content);
   // Without drafting the note is the minutes' Summary, typed and posted here
-  // (#5288); the other sections still come from the web.
-  const summaryShown = finishing && !notesOffered;
+  // (#5288); the other sections still come from the web. Only once the AI
+  // reads have answered that drafting is off: while they load, or when one
+  // failed, an officer's notes must not land in the Summary members read.
+  const summaryShown =
+    finishing &&
+    (ai.available === false || (ai.available === true && ai.ready)) &&
+    !notesOffered;
   const rest = useMemo(() => ({ ...content, summary: "" }), [content]);
   const writtenHere = summaryShown && summaryWritten;
 
@@ -265,12 +270,14 @@ function LoadedMinutes({
     setProblem(null);
     // No "are you sure" (Paul, 2026-11-16): posting is the officer's plain
     // intent, and posted minutes can still be edited.
-    // The Summary typed here is saved first, and the version that save made
-    // is the one posted. With no section edited here, the version to post is
-    // whatever the server holds now: the one this member just read.
-    const expectedUpdatedAt = summaryShown
-      ? await (summaryRef.current?.flush() ?? Promise.resolve(null))
-      : ((await refetch())?.updated_at ?? null);
+    // The Summary typed here is saved first; a save refused as stale stops
+    // the post, and the note offers their version. Then the version to post
+    // is whatever the server holds now, read fresh.
+    if (summaryShown && !(await summaryRef.current?.flush())) {
+      setProblem(MEETING_COPY.postFailed);
+      return;
+    }
+    const expectedUpdatedAt = (await refetch())?.updated_at ?? null;
     if (!expectedUpdatedAt) {
       setProblem(MEETING_COPY.postFailed);
       return;
@@ -421,10 +428,12 @@ function LoadedMinutes({
         ) : null}
 
         {/* Before anything is drafted the notes are the page; once the
-            minutes are in they lead and the notes sit under them. */}
-        {empty ? notes : null}
-        {body}
-        {empty ? null : notes}
+            minutes are in they lead and the notes sit under them. The notes
+            keep one slot, so the minutes arriving never remounts the box
+            being typed in. */}
+        {empty ? null : body}
+        {notes}
+        {empty ? body : null}
 
         {transcript && recordingState ? (
           <View style={styles.transcript}>

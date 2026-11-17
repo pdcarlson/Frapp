@@ -141,4 +141,39 @@ describe("SummaryNote", () => {
     expect(hooks.update).toHaveBeenCalledTimes(2);
     expect(screenText(tree)).not.toContain(MEETING_COPY.saveFailed);
   });
+
+  it("sends what is still waiting when the screen closes", async () => {
+    const tree = render();
+    act(() => field(tree).props.onChangeText("Last line"));
+    await act(async () => tree.unmount());
+    expect(hooks.update).toHaveBeenCalledWith({
+      id: "m1",
+      body: { expected_updated_at: "v1", content: { summary: "Last line" } },
+    });
+  });
+
+  it("shows a newer version when nothing is waiting, and saves over that one", async () => {
+    const tree = render("Mine", "2026-11-17T20:00:00Z");
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <SummaryNote
+            ref={note}
+            meeting={minutes("Theirs", "2026-11-17T21:00:00Z")}
+            reload={reload}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(field(tree).props.value).toBe("Theirs");
+    act(() => field(tree).props.onChangeText("Theirs, and mine"));
+    await act(async () => vi.advanceTimersByTime(SUMMARY_AUTOSAVE_MS));
+    expect(hooks.update).toHaveBeenCalledWith({
+      id: "m1",
+      body: {
+        expected_updated_at: "2026-11-17T21:00:00Z",
+        content: { summary: "Theirs, and mine" },
+      },
+    });
+  });
 });

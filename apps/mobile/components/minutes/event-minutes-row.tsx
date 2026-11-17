@@ -66,7 +66,10 @@ export function EventMinutesRow({
   // open and ask to record, notice first. The server's own offer is checked
   // there, and without it they open ready for notes.
   const { state: recorderState, recorder } = useMeetingRecorder();
-  const records = !!recorder && recorderMeetingId(recorderState) === null;
+  // Recording is offered with drafting, which is what a transcript is for
+  // (#5289 records without it); elsewhere the row writes.
+  const records =
+    canDraft && !!recorder && recorderMeetingId(recorderState) === null;
   const notesSheet = useRef<BottomSheetModal>(null);
   const [problem, setProblem] = useState<string | null>(null);
 

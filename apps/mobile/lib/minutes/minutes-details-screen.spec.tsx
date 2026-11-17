@@ -23,7 +23,11 @@ const state = vi.hoisted(() => ({
   isPending: false,
   error: null as unknown,
   refetch: vi.fn(),
-  surfaces: { available: true as boolean | undefined, meetingNotes: true },
+  surfaces: {
+    available: true as boolean | undefined,
+    meetingNotes: true,
+    ready: true,
+  },
   draft: { status: "none" } as Record<string, unknown> | null,
   draftEnabled: undefined as boolean | undefined,
   draftPending: false,
@@ -225,7 +229,7 @@ beforeEach(() => {
   state.meeting = meeting();
   state.isPending = false;
   state.error = null;
-  state.surfaces = { available: true, meetingNotes: true };
+  state.surfaces = { available: true, meetingNotes: true, ready: true };
   state.draft = { status: "none" };
   state.suggestions = [];
   state.notesSheet = 0;
@@ -315,7 +319,7 @@ describe("Recording on the minutes screen", () => {
     expect(state.recordingEnabled).toBe(false);
 
     state.meeting = meeting();
-    state.surfaces = { available: true, meetingNotes: false };
+    state.surfaces = { available: true, meetingNotes: false, ready: true };
     render();
     expect(state.recordingEnabled).toBe(false);
     expect(state.stage).toBeNull();
@@ -445,7 +449,7 @@ describe("Minutes on the phone", () => {
   });
 
   it("without drafting, the note is the minutes' Summary, posted from here once it has words (#5288)", async () => {
-    state.surfaces = { available: false, meetingNotes: false };
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     state.meeting = meeting({ content: EMPTY });
     const tree = render();
     expect(state.draftEnabled).toBe(false);
@@ -458,16 +462,34 @@ describe("Minutes on the phone", () => {
     );
     state.summaryFlush.mockResolvedValue("2026-11-17T20:00:00Z");
     await act(async () => button(tree, MEETING_COPY.post).props.onPress());
-    // The typed Summary is saved first; the post names the version it made.
+    // The typed Summary is saved first, then the version is read fresh, so
+    // a save on the web since isn't refused as stale for nothing.
     expect(state.summaryFlush).toHaveBeenCalledTimes(1);
+    expect(state.summaryFlush.mock.invocationCallOrder[0]).toBeLessThan(
+      state.refetch.mock.invocationCallOrder[0],
+    );
     expect(state.post).toHaveBeenCalledWith({
       id: "m1",
-      expectedUpdatedAt: "2026-11-17T20:00:00Z",
+      expectedUpdatedAt: "v1",
     });
   });
 
+  it("shows no Summary while the AI reads are out or failed, so notes never land in it", () => {
+    state.surfaces = { available: true, meetingNotes: false, ready: false };
+    state.meeting = meeting({ content: EMPTY });
+    render();
+    expect(state.summaryProps).toBeNull();
+    state.surfaces = {
+      available: undefined,
+      meetingNotes: false,
+      ready: true,
+    };
+    render();
+    expect(state.summaryProps).toBeNull();
+  });
+
   it("doesn't post when the Summary couldn't be saved", async () => {
-    state.surfaces = { available: false, meetingNotes: false };
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     const tree = render();
     state.summaryFlush.mockResolvedValue(null);
     await act(async () => button(tree, MEETING_COPY.post).props.onPress());
@@ -476,7 +498,7 @@ describe("Minutes on the phone", () => {
   });
 
   it("still posts from here what was written on the web, without drafting", () => {
-    state.surfaces = { available: false, meetingNotes: false };
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     const tree = render();
     expect(button(tree, MEETING_COPY.post)).toBeDefined();
   });
@@ -559,7 +581,7 @@ describe("Minutes on the phone", () => {
       params: { meetingId: "m1" },
     });
 
-    state.surfaces = { available: false, meetingNotes: false };
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     render();
     expect(state.suggestionsEnabled).toBe(false);
   });

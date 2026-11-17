@@ -13,9 +13,9 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * An event's way into its minutes on the phone (#4312). The phone has no
- * section editor, so Write minutes is offered only where minutes can be
- * drafted from notes; otherwise it would leave an empty draft behind.
+ * An event's way into its minutes on the phone (#4312): Write minutes for
+ * every officer who records them, drafting or not (#5288), and Record
+ * minutes only where drafting and the phone's recorder both are.
  */
 const state = vi.hoisted(() => ({
   on: true,
@@ -146,6 +146,12 @@ describe("EventMinutesRow", () => {
   it("offers Write minutes without drafting too: the note is the Summary (#5288)", () => {
     state.canDraft = false;
     expect(screenText(render())).toContain(MEETING_ENTRY_COPY.write);
+    // A phone that can record still writes here: recording waits on drafting
+    // (#5289), so Record minutes would open on nothing recording.
+    state.recorder = {};
+    const text = screenText(render());
+    expect(text).toContain(MEETING_ENTRY_COPY.write);
+    expect(text).not.toContain(MEETING_ENTRY_COPY.record);
   });
 
   it("starts minutes in one tap for an officer who can draft, and opens them", async () => {

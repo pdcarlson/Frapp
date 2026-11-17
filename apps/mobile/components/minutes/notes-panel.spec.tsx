@@ -35,7 +35,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: hooks.request,
     isPending: false,
   }),
-  useSaveMeetingNotes: () => ({ mutate: hooks.saveNotes, isPending: false }),
+  useSaveMeetingNotes: () => ({
+    mutateAsync: hooks.saveNotes,
+    isPending: false,
+  }),
   useDiscardMeetingDraft: () => ({
     mutateAsync: hooks.discard,
     isPending: false,
@@ -175,6 +178,7 @@ beforeEach(() => {
   hooks.removeRecording.mockResolvedValue({});
   hooks.choose.mockResolvedValue({});
   hooks.notesState = null;
+  hooks.saveNotes.mockResolvedValue({});
   gate.ensureConsent.mockResolvedValue(true);
   confirm.mockResolvedValue(true);
   reporting.offered = true;
@@ -287,33 +291,105 @@ describe("NotesPanel", () => {
     expect(hooks.request).not.toHaveBeenCalled();
   });
 
-  it("saves the notes as they type, once typing rests (#5288)", () => {
+  it("saves the notes as they type, once typing rests (#5288)", async () => {
     vi.useFakeTimers();
     try {
       const tree = render(draftState());
       act(() => field(tree).props.onChangeText("Budget passed"));
-      act(() => vi.advanceTimersByTime(600));
+      act(() => vi.advanceTimersByTime(400));
       act(() => field(tree).props.onChangeText("Budget passed 12-3.  "));
-      act(() => vi.advanceTimersByTime(1199));
+      await act(async () => vi.advanceTimersByTime(799));
       expect(hooks.saveNotes).not.toHaveBeenCalled();
-      act(() => vi.advanceTimersByTime(1));
+      await act(async () => vi.advanceTimersByTime(1));
       // Once, with what rests, trimmed at the end as the server stores it.
       expect(hooks.saveNotes).toHaveBeenCalledTimes(1);
-      expect(hooks.saveNotes).toHaveBeenCalledWith(
-        { id: "m1", notes: "Budget passed 12-3." },
-        expect.anything(),
+      expect(hooks.saveNotes).toHaveBeenCalledWith({
+        id: "m1",
+        notes: "Budget passed 12-3.",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves one at a time, so a slow save never lands after a newer one", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish!: () => void;
+      hooks.saveNotes.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finish = resolve)),
+      );
+      const tree = render(draftState());
+      act(() => field(tree).props.onChangeText("One"));
+      await act(async () => vi.advanceTimersByTime(800));
+      act(() => field(tree).props.onChangeText("One, two"));
+      await act(async () => vi.advanceTimersByTime(800));
+      // The second waits for the first.
+      expect(hooks.saveNotes).toHaveBeenCalledTimes(1);
+      await act(async () => finish());
+      await act(async () => vi.advanceTimersByTime(800));
+      expect(hooks.saveNotes).toHaveBeenLastCalledWith({
+        id: "m1",
+        notes: "One, two",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends what is still waiting when the screen closes", async () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render(draftState());
+      act(() => field(tree).props.onChangeText("Last line"));
+      await act(async () => tree.unmount());
+      expect(hooks.saveNotes).toHaveBeenCalledWith({
+        id: "m1",
+        notes: "Last line",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says a save didn't land, and tries again as they type", async () => {
+    vi.useFakeTimers();
+    try {
+      hooks.saveNotes.mockRejectedValueOnce(new Error("offline"));
+      const tree = render(draftState());
+      act(() => field(tree).props.onChangeText("Notes"));
+      await act(async () => vi.advanceTimersByTime(800));
+      expect(screenText(tree)).toContain(MEETING_NOTE_TAKERS_COPY.saveFailed);
+      act(() => field(tree).props.onChangeText("Notes!"));
+      await act(async () => vi.advanceTimersByTime(800));
+      expect(hooks.saveNotes).toHaveBeenCalledTimes(2);
+      expect(screenText(tree)).not.toContain(
+        MEETING_NOTE_TAKERS_COPY.saveFailed,
       );
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("never saves an emptied box by itself: that would clear the draft written from it", () => {
+  it("saves an emptied box before anything is drafted, so a transcript's draft won't read deleted notes", async () => {
     vi.useFakeTimers();
     try {
       const tree = render(draftState({ notes: "Typed." }));
       act(() => field(tree).props.onChangeText("   "));
-      act(() => vi.advanceTimersByTime(5000));
+      await act(async () => vi.advanceTimersByTime(800));
+      expect(hooks.saveNotes).toHaveBeenCalledWith({ id: "m1", notes: "" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never empties the notes by itself once a draft exists: that would clear the draft", async () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render(draftState({ status: "applied", notes: "Typed." }));
+      act(() => field(tree).props.onChangeText("   "));
+      await act(async () => vi.advanceTimersByTime(5000));
+      await act(async () => tree.unmount());
       expect(hooks.saveNotes).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();

@@ -219,8 +219,10 @@ export function useMeetingRecorderRow({
 }
 
 /**
- * The recorder's part of the page: the big clock while it records, the four
- * steps after Stop, or one line on why it needs the officer.
+ * The recorder's part of the page: the card of four steps after Stop, or one
+ * line on why it needs the officer (a call took the microphone, a refusal, a
+ * recording kept on the phone). While it records the bar at the bottom
+ * (`RecorderControls`) says the rest.
  */
 export function RecorderStage({
   row,
