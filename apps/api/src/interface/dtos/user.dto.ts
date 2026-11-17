@@ -1,5 +1,6 @@
 import {
   Equals,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsInt,
@@ -21,6 +22,7 @@ import {
   BIRTH_YEAR_MIN,
   BIRTHDAY_VISIBILITIES,
   type BirthdayVisibility,
+  DISPLAY_NAME_MAX_LENGTH,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
@@ -30,6 +32,12 @@ import {
   PHONE_MAX_LENGTH,
   RELEASE_NOTE_VERSION_PATTERN,
 } from '@repo/validation';
+import {
+  USER_BIO_MAX_LENGTH,
+  USER_CITY_MAX_LENGTH,
+  USER_COMPANY_MAX_LENGTH,
+} from '#domain/constants/field-limits';
+import { Trim } from '../decorators/trim.decorator';
 
 /**
  * A phone number as `isPhoneNumber` (`@repo/validation`) reads one: the same
@@ -192,14 +200,33 @@ export class ConfirmAvatarDto {
  * the caller's own object, and cleared by `DELETE /v1/users/me/avatar`.
  */
 export class UpdateUserDto {
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "The member's name as their chapters see it. Trimmed; it may not be blank.",
+    maxLength: DISPLAY_NAME_MAX_LENGTH,
+  })
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach the NOT NULL column as a 500: only an absent name is skipped. The
+  // same rule as an officer's correction (`CorrectMemberProfileDto`), so a
+  // name one route takes the other takes too.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @Trim()
   @IsString()
+  @IsNotEmpty({ message: 'Enter a name.' })
+  @MaxLength(DISPLAY_NAME_MAX_LENGTH, {
+    message: `Keep your name to ${DISPLAY_NAME_MAX_LENGTH} characters or fewer.`,
+  })
   display_name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'An empty string clears it.',
+    maxLength: USER_BIO_MAX_LENGTH,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(USER_BIO_MAX_LENGTH, {
+    message: `Keep your bio to ${USER_BIO_MAX_LENGTH.toLocaleString('en-US')} characters or fewer.`,
+  })
   bio?: string;
 
   @ApiPropertyOptional({ type: Number, nullable: true })
@@ -220,14 +247,26 @@ export class UpdateUserDto {
   @MaxLength(MAJOR_MAX_LENGTH)
   major?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'An empty string clears it.',
+    maxLength: USER_CITY_MAX_LENGTH,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(USER_CITY_MAX_LENGTH, {
+    message: `Keep your city to ${USER_CITY_MAX_LENGTH} characters or fewer.`,
+  })
   current_city?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'An empty string clears it.',
+    maxLength: USER_COMPANY_MAX_LENGTH,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(USER_COMPANY_MAX_LENGTH, {
+    message: `Keep your company to ${USER_COMPANY_MAX_LENGTH} characters or fewer.`,
+  })
   current_company?: string;
 
   @ApiPropertyOptional({

@@ -20540,10 +20540,14 @@
         "type": "object",
         "properties": {
           "display_name": {
-            "type": "string"
+            "type": "string",
+            "description": "The member's name as their chapters see it. Trimmed; it may not be blank.",
+            "maxLength": 100
           },
           "bio": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 2000
           },
           "graduation_year": {
             "type": "number",
@@ -20555,10 +20559,14 @@
             "maxLength": 100
           },
           "current_city": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 200
           },
           "current_company": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 200
           },
           "phone": {
             "type": "string",
@@ -20771,11 +20779,13 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Chapter display name (org name)"
+            "description": "Chapter display name (org name). Trimmed.",
+            "maxLength": 200
           },
           "university": {
             "type": "string",
-            "description": "University / institution name"
+            "description": "University / institution name. Trimmed.",
+            "maxLength": 200
           },
           "org_archetype": {
             "type": "string",
@@ -20897,10 +20907,14 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The chapter's name. Trimmed; it may not be blank.",
+            "maxLength": 200
           },
           "university": {
-            "type": "string"
+            "type": "string",
+            "description": "The chapter's university. Trimmed; it may not be blank.",
+            "maxLength": 200
           },
           "accent_color": {
             "type": "string"
@@ -25990,10 +26004,12 @@
             "type": "string"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 5000
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "start_time": {
             "type": "string"
@@ -26017,6 +26033,7 @@
             "maxLength": 200
           },
           "required_role_ids": {
+            "maxItems": 200,
             "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
@@ -26024,6 +26041,7 @@
             }
           },
           "optional_role_ids": {
+            "maxItems": 200,
             "description": "Roles invited but not required.",
             "type": "array",
             "items": {
@@ -26031,6 +26049,7 @@
             }
           },
           "excluded_role_ids": {
+            "maxItems": 200,
             "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
             "type": "array",
             "items": {
@@ -26042,7 +26061,8 @@
             "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older \"only these roles\" meaning, for a caller that predates this field. Omitted on update, it is left as stored."
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "agenda": {
             "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
@@ -26258,10 +26278,12 @@
             "type": "string"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 5000
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "start_time": {
             "type": "string"
@@ -26281,6 +26303,7 @@
             "maxLength": 200
           },
           "required_role_ids": {
+            "maxItems": 200,
             "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
@@ -26288,6 +26311,7 @@
             }
           },
           "optional_role_ids": {
+            "maxItems": 200,
             "description": "Roles invited but not required.",
             "type": "array",
             "items": {
@@ -26295,6 +26319,7 @@
             }
           },
           "excluded_role_ids": {
+            "maxItems": 200,
             "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
             "type": "array",
             "items": {
@@ -26306,7 +26331,8 @@
             "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older \"only these roles\" meaning."
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "agenda": {
             "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",

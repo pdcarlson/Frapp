@@ -11,7 +11,6 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -20,6 +19,7 @@ import {
   MEMBER_DISMISSAL_KEYS,
   DISPLAY_NAME_MAX_LENGTH,
 } from '@repo/validation';
+import { Trim } from '../decorators/trim.decorator';
 
 /**
  * An officer's fix to another member's profile (#4367,
@@ -36,9 +36,7 @@ export class CorrectMemberProfileDto {
   // Not `@IsOptional`, which would also skip the checks for `null` and let it
   // reach a NOT NULL column as a 500: only an absent name is skipped.
   @ValidateIf((_obj, value) => value !== undefined)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Trim()
   @IsString()
   @IsNotEmpty({ message: 'Enter a name.' })
   @MaxLength(DISPLAY_NAME_MAX_LENGTH)

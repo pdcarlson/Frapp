@@ -1,11 +1,18 @@
 import {
+  IsNotEmpty,
   IsString,
   IsOptional,
   IsUrl,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_UNIVERSITY_MAX_LENGTH,
+} from '#domain/constants/field-limits';
+import { Trim } from '../decorators/trim.decorator';
 
 export class LogoUploadUrlDto {
   @ApiProperty({ description: 'Original filename (e.g. logo.png)' })
@@ -37,14 +44,32 @@ export class ConfirmLogoDto {
 }
 
 export class UpdateChapterDto {
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiPropertyOptional({
+    description: "The chapter's name. Trimmed; it may not be blank.",
+    maxLength: CHAPTER_NAME_MAX_LENGTH,
+  })
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach the NOT NULL column as a 500: only an absent name is skipped.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @Trim()
   @IsString()
+  @IsNotEmpty({ message: "Enter the chapter's name." })
+  @MaxLength(CHAPTER_NAME_MAX_LENGTH, {
+    message: `Keep the chapter's name to ${CHAPTER_NAME_MAX_LENGTH} characters or fewer.`,
+  })
   name?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiPropertyOptional({
+    description: "The chapter's university. Trimmed; it may not be blank.",
+    maxLength: CHAPTER_UNIVERSITY_MAX_LENGTH,
+  })
+  @ValidateIf((_obj, value) => value !== undefined)
+  @Trim()
   @IsString()
+  @IsNotEmpty({ message: 'Enter the university.' })
+  @MaxLength(CHAPTER_UNIVERSITY_MAX_LENGTH, {
+    message: `Keep the university to ${CHAPTER_UNIVERSITY_MAX_LENGTH} characters or fewer.`,
+  })
   university?: string;
 
   @ApiPropertyOptional()

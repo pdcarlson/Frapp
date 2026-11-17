@@ -109,10 +109,11 @@ export const MAJOR_MAX_LENGTH = 100;
 export const PHONE_MAX_LENGTH = 32;
 
 /**
- * A member's name as an officer corrects it (`PATCH /v1/members/{id}/profile`,
- * #4367): the API's cap and both correction forms' `maxLength`. The member's
- * own `PATCH /v1/users/me` has no cap yet, so an officer fixing a longer name
- * must shorten it.
+ * A member's name, as they set it themselves (`PATCH /v1/users/me`) or an
+ * officer corrects it (`PATCH /v1/members/{id}/profile`, #4367): the API's cap
+ * on both routes, and both correction forms' `maxLength`. The member's own
+ * profile forms don't stop at it yet, so a longer name is refused on save with
+ * a message saying how long it may be.
  */
 export const DISPLAY_NAME_MAX_LENGTH = 100;
 

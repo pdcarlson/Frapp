@@ -1,8 +1,8 @@
 import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { EVENT_EXCUSE_REASON_MAX } from '@repo/validation';
 import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
+import { Trim } from '../decorators/trim.decorator';
 
 const STATUSES = ['PENDING', 'APPROVED', 'DECLINED'] as const;
 
@@ -12,9 +12,7 @@ export class SubmitEventExcuseDto {
     description: `One line on why the member can't attend, 1 to ${EVENT_EXCUSE_REASON_MAX} characters after trimming.`,
     maxLength: EVENT_EXCUSE_REASON_MAX,
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Trim()
   @IsString()
   @IsNotEmpty()
   @MaxLength(EVENT_EXCUSE_REASON_MAX)

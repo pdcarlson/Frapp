@@ -57,3 +57,44 @@ export const POSITION_MAX = 1_000_000_000;
 
 /** `role_tiers_position_range` (migration `20261111140000`): a chapter has at most this many tiers. */
 export const ROLE_TIER_POSITION_MAX = 1000;
+
+/**
+ * Free text on an event (`events.description`, `events.location`,
+ * `events.notes`), on create and update. Neither app's event form stops at a
+ * length yet, so each bound sits far above anything a member types: a
+ * description is a paragraph or two, a location a room or an address, and the
+ * notes a set of meeting minutes (the room of one minutes section,
+ * `MEETING_TEXT_MAX_LENGTH`). They matter because a repeating event copies
+ * its description and notes onto every meeting of the series
+ * (`EventSeriesService`), and every event read returns them.
+ */
+export const EVENT_DESCRIPTION_MAX_LENGTH = 5_000;
+export const EVENT_LOCATION_MAX_LENGTH = 500;
+export const EVENT_NOTES_MAX_LENGTH = 20_000;
+
+/**
+ * Roles one list on an event may name (`required_role_ids`,
+ * `optional_role_ids`, `excluded_role_ids`, and a new meeting's `role_ids`).
+ * A list names some of the chapter's roles, so this sits well above any real
+ * chapter's role count.
+ */
+export const EVENT_ROLE_IDS_MAX = 200;
+
+/**
+ * A member's own profile text (`PATCH /v1/users/me`): the bio, and where they
+ * live and work after graduating. No app field stops at a length yet, so the
+ * bounds are generous: a bio is a short paragraph, a city or company a line.
+ * An empty string still clears each.
+ */
+export const USER_BIO_MAX_LENGTH = 2_000;
+export const USER_CITY_MAX_LENGTH = 200;
+export const USER_COMPANY_MAX_LENGTH = 200;
+
+/**
+ * A chapter's name and university, set by the onboarding wizard and the web
+ * Settings page. The longest university in the chapter directory
+ * (`supabase/seed/chapter_directory.csv`) is 82 characters; a wizard name is
+ * an organization's name, often with its chapter's.
+ */
+export const CHAPTER_NAME_MAX_LENGTH = 200;
+export const CHAPTER_UNIVERSITY_MAX_LENGTH = 200;

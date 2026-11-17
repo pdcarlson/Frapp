@@ -6,6 +6,12 @@ import {
 import { MAX_CHECK_IN_OPENS_MINUTES } from '@repo/validation';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import { CreateEventDto, UpdateEventDto } from './event.dto';
+import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
+  EVENT_ROLE_IDS_MAX,
+} from '#domain/constants/field-limits';
 
 /**
  * `check_in_opens_minutes` (#3703) through the real global pipe, built from
@@ -116,4 +122,100 @@ describe('Event DTOs — recurrence_rule', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     }
   });
+});
+
+/**
+ * The free-text fields and role lists (`spec/behavior/events.md` § Event
+ * Creation, length limits). A repeating event copies its description and notes
+ * onto every meeting, so each is bounded at the request.
+ */
+describe('Event DTOs — text lengths and role lists', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (
+    metatype: ArgumentMetadata['metatype'],
+    payload: unknown,
+  ) => pipe.transform(payload, { type: 'body', metatype });
+
+  const create = {
+    name: 'Chapter',
+    start_time: '2026-11-07T20:00:00.000Z',
+    end_time: '2026-11-07T21:00:00.000Z',
+  };
+  const roleId = '7d0f5a52-4c1f-4a4e-9a51-0e6a3c1f2b11';
+  const roleFields = [
+    'required_role_ids',
+    'optional_role_ids',
+    'excluded_role_ids',
+  ] as const;
+
+  const cases = [
+    ['create', CreateEventDto, create],
+    ['update', UpdateEventDto, {}],
+  ] as const;
+
+  it.each(cases)(
+    '%s takes each text field at its limit',
+    async (_, dto, base) => {
+      const body = {
+        ...base,
+        description: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH),
+        location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH),
+        notes: 'n'.repeat(EVENT_NOTES_MAX_LENGTH),
+      };
+      await expect(transform(dto, body)).resolves.toEqual(
+        expect.objectContaining({
+          description: body.description,
+          location: body.location,
+          notes: body.notes,
+        }),
+      );
+    },
+  );
+
+  it.each(cases)(
+    '%s refuses each text field one past its limit, saying the limit',
+    async (_, dto, base) => {
+      for (const [field, max] of [
+        ['description', EVENT_DESCRIPTION_MAX_LENGTH],
+        ['location', EVENT_LOCATION_MAX_LENGTH],
+        ['notes', EVENT_NOTES_MAX_LENGTH],
+      ] as const) {
+        const error: unknown = await transform(dto, {
+          ...base,
+          [field]: 'x'.repeat(max + 1),
+        }).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect(
+          JSON.stringify((error as BadRequestException).getResponse()),
+        ).toContain(`Keep the ${field} to`);
+      }
+    },
+  );
+
+  it.each(cases)('%s takes role ids up to the cap', async (_, dto, base) => {
+    const ids = Array.from({ length: EVENT_ROLE_IDS_MAX }, () => roleId);
+    for (const field of roleFields) {
+      await expect(transform(dto, { ...base, [field]: ids })).resolves.toEqual(
+        expect.objectContaining({ [field]: ids }),
+      );
+    }
+  });
+
+  it.each(cases)(
+    '%s refuses a role id that is not an id, and a list past the cap',
+    async (_, dto, base) => {
+      const tooMany = Array.from(
+        { length: EVENT_ROLE_IDS_MAX + 1 },
+        () => roleId,
+      );
+      for (const field of roleFields) {
+        await expect(
+          transform(dto, { ...base, [field]: ['officers'] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          transform(dto, { ...base, [field]: tooMany }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+    },
+  );
 });

@@ -38,11 +38,11 @@ import {
   MEETING_VOTE_MAX,
   STANDARDS_MEETING_TYPE,
 } from '@repo/validation';
+import { EVENT_ROLE_IDS_MAX } from '#domain/constants/field-limits';
 
 /** What a request may name as a type: the four, plus Standards to refuse it. */
 const REQUESTABLE_TYPES = [...MEETING_TYPES, STANDARDS_MEETING_TYPE];
 const EVENT_NAME_MAX_LENGTH = 200;
-const ROLE_IDS_MAX = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class MeetingVoteDto {
@@ -204,13 +204,13 @@ export class NewMeetingEventDto {
 
   @ApiPropertyOptional({
     type: [String],
-    maxItems: ROLE_IDS_MAX,
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone.',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(ROLE_IDS_MAX)
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsUUID('all', { each: true })
   role_ids?: string[];
 }

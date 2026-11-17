@@ -40,6 +40,12 @@ import type { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
 import type { AssertNever } from './drift-guard';
+import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
+  EVENT_ROLE_IDS_MAX,
+} from '#domain/constants/field-limits';
 
 /**
  * Swagger/validation description shared by the create and update zone fields.
@@ -137,14 +143,20 @@ export class CreateEventDto {
   @MaxLength(255)
   name: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_DESCRIPTION_MAX_LENGTH, {
+    message: `Keep the description to ${EVENT_DESCRIPTION_MAX_LENGTH.toLocaleString('en-US')} characters or fewer.`,
+  })
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_LOCATION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_LOCATION_MAX_LENGTH, {
+    message: `Keep the location to ${EVENT_LOCATION_MAX_LENGTH} characters or fewer.`,
+  })
   location?: string;
 
   @ApiProperty()
@@ -193,31 +205,37 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
+  @IsUUID('all', { each: true })
   required_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description: 'Roles invited but not required.',
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
+  @IsUUID('all', { each: true })
   optional_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
+  @IsUUID('all', { each: true })
   excluded_role_ids?: string[];
 
   @ApiPropertyOptional({
@@ -228,9 +246,12 @@ export class CreateEventDto {
   @IsStrictBoolean()
   others_invited?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NOTES_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_NOTES_MAX_LENGTH, {
+    message: `Keep the notes to ${EVENT_NOTES_MAX_LENGTH.toLocaleString('en-US')} characters or fewer.`,
+  })
   notes?: string;
 
   @ApiPropertyOptional({
@@ -482,14 +503,20 @@ export class UpdateEventDto {
   @MaxLength(255)
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_DESCRIPTION_MAX_LENGTH, {
+    message: `Keep the description to ${EVENT_DESCRIPTION_MAX_LENGTH.toLocaleString('en-US')} characters or fewer.`,
+  })
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_LOCATION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_LOCATION_MAX_LENGTH, {
+    message: `Keep the location to ${EVENT_LOCATION_MAX_LENGTH} characters or fewer.`,
+  })
   location?: string;
 
   @ApiPropertyOptional()
@@ -532,31 +559,37 @@ export class UpdateEventDto {
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
+  @IsUUID('all', { each: true })
   required_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description: 'Roles invited but not required.',
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
+  @IsUUID('all', { each: true })
   optional_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
+  @IsUUID('all', { each: true })
   excluded_role_ids?: string[];
 
   @ApiPropertyOptional({
@@ -567,9 +600,12 @@ export class UpdateEventDto {
   @IsStrictBoolean()
   others_invited?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NOTES_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_NOTES_MAX_LENGTH, {
+    message: `Keep the notes to ${EVENT_NOTES_MAX_LENGTH.toLocaleString('en-US')} characters or fewer.`,
+  })
   notes?: string;
 
   @ApiPropertyOptional({

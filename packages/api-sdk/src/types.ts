@@ -6153,12 +6153,16 @@ export interface components {
             seen_version: string;
         };
         UpdateUserDto: {
+            /** @description The member's name as their chapters see it. Trimmed; it may not be blank. */
             display_name?: string;
+            /** @description An empty string clears it. */
             bio?: string;
             graduation_year?: number | null;
             /** @description Free text, like "Mechanical Engineering". An empty string clears it. */
             major?: string;
+            /** @description An empty string clears it. */
             current_city?: string;
+            /** @description An empty string clears it. */
             current_company?: string;
             /**
              * @description The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.
@@ -6240,9 +6244,9 @@ export interface components {
             colors?: components["schemas"]["BrandingColorsDto"];
         };
         ChapterOnboardingDto: {
-            /** @description Chapter display name (org name) */
+            /** @description Chapter display name (org name). Trimmed. */
             name: string;
-            /** @description University / institution name */
+            /** @description University / institution name. Trimmed. */
             university: string;
             /** @description Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc. */
             org_archetype?: string;
@@ -6289,7 +6293,9 @@ export interface components {
             logo_url: string | null;
         };
         UpdateChapterDto: {
+            /** @description The chapter's name. Trimmed; it may not be blank. */
             name?: string;
+            /** @description The chapter's university. Trimmed; it may not be blank. */
             university?: string;
             accent_color?: string;
             donation_url?: string;
