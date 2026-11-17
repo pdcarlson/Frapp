@@ -24,6 +24,12 @@ describe('AI_MODEL_CATALOG', () => {
     }
   });
 
+  it('books nudge cards under their own family, not Ask (2026-11-17)', () => {
+    // The family picks the chapter switch (`AI_FAMILY_SWITCH`): back under
+    // `ask`, a chapter with Ask off would get no cards again.
+    expect(aiCatalogEntry('nudges.write').family).toBe('nudges');
+  });
+
   it('gives every generation task a ceiling on what it may write', () => {
     for (const [, entry] of entries) {
       if (entry.kind === 'embedding' || entry.kind === 'transcription') {

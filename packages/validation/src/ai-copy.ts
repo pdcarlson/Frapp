@@ -17,7 +17,11 @@
  */
 
 /** The president's switches, as the API names them (`AI_CHAPTER_SWITCHES`). */
-export type AiChapterSwitchKey = "meeting_notes" | "ask" | "chat_source";
+export type AiChapterSwitchKey =
+  | "meeting_notes"
+  | "ask"
+  | "chat_source"
+  | "nudges";
 
 export interface AiSwitchCopy {
   key: AiChapterSwitchKey;
@@ -34,7 +38,8 @@ export interface AiSwitchCopy {
 
 /**
  * In the order the settings page draws them: the beta feature first, then
- * Ask and the switch that lets Ask and summaries read channel messages.
+ * Ask and the switch that lets Ask and summaries read channel messages, then
+ * nudges, the one that starts on (Paul, 2026-11-17).
  */
 export const AI_SWITCHES: readonly AiSwitchCopy[] = [
   {
@@ -63,6 +68,14 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     short:
       "Ask and channel summaries read chapter channels. Only members with Frapp AI on, never DMs.",
     dependsOn: "ask",
+  },
+  {
+    key: "nudges",
+    label: "Nudges on Activity",
+    description:
+      "Frapp puts a short card on a member's Activity when one of their own tasks is coming due, late or sent back, with a place to start, and says thanks when they finish on time.",
+    short:
+      "A short card on a member's Activity when one of their tasks could use a word.",
   },
 ];
 

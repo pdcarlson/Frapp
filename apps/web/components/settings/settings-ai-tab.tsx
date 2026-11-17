@@ -123,7 +123,7 @@ export function SettingsAiTab() {
 }
 
 /**
- * The three switches. Before the read lands they draw off and disabled at
+ * The chapter's switches. Before the read lands they draw off and disabled at
  * their full height, so nothing moves when it does; a read can't be in
  * flight long, since this page only shows once the server answered.
  */

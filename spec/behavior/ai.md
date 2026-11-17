@@ -163,9 +163,10 @@ Three gates stand between Frapp's data and a model.
 Each governs a different thing.
 
 1. **The chapter has the feature on.**
-   The president switches each family separately: Ask, meeting notes, and chat as a source.
-   Each is on from the chapter's creation until the president turns it off (Paul, 2026-11-17, [#5294](https://github.com/pdcarlson/Frapp/issues/5294): "I would like more AI stuff on by default"; until then each was off until the president turned it on).
+   The president switches each family separately: Ask, meeting notes, chat as a source, and nudges.
+   Each is on from the chapter's creation until the president turns it off (Paul, 2026-11-17, [#5294](https://github.com/pdcarlson/Frapp/issues/5294): "I would like more AI stuff on by default"; until then each was off until the president turned it on, except nudges, as below).
    With Ask on from the start, the chapter's records are indexed from the start; nothing a member wrote or asked is sent without their own yes (gate 2).
+   *Changed 2026-11-17 by `pdcarlson` (Paul: "We should turn on nudges on activity by default"):* nudges got their own switch, on by default. Until then a nudge stood behind Ask's switch, so a chapter whose president never turned Ask on got no cards. A nudge reads only the member's own tasks (including words others wrote on them: the description an officer gave it and the note an officer sent it back with) and counts of the chapter's earlier ones, never names, for that member, and still needs gate 2, so a member who hasn't said yes gets no card and nothing is sent for them.
    This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
    An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
@@ -1017,10 +1018,14 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
   Every number must be one the facts hold.
   Words that fail any check are replaced whole by Frapp's fixed sentence for that kind, which says only what the task says; so are a refusal, a provider failure and a reached spending limit.
   The member never waits on a card and never reads one nobody could stand behind.
+- **Words someone else wrote go only where the chapter has Ask on.**
+  The task's description (usually the assigner's) and an officer's sent-back note reach the model only while the president has Ask switched on; otherwise the card is written from the title, deadline, steps and counts alone, and its place to start comes from the steps.
+  Decided by Paul, 2026-11-17, when nudges went on by default (#5309): a chapter that never turned any AI on should not send what an officer wrote, who may have said No to Frapp AI themselves.
 - **What people typed is read, never obeyed.**
   The task's title, description, checklist and note go to the model as data in the user turn, and the instructions are the system channel.
   The call has no tools, and what comes back is text for one reader.
-- **It stands behind Ask's switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
+- **It stands behind the chapter's nudges switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
+  The nudges switch is on unless the president turns it off ([Consent](#consent), gate 1; Paul, 2026-11-17). It was Ask's switch until then.
   With either off there is no card, no error and no explanation, because a card is an extra.
   Tasks turned off for the chapter means no card.
 - **Nothing is scheduled and nothing is pushed.**

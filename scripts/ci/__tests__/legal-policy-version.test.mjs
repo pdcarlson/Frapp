@@ -43,11 +43,14 @@
 //   label, #4611 task photos, #4530 the study zone map's providers, #4914
 //   Ask's 90-day trace, #4787 groups, class year, service hours and study time in the AI data
 //   list) moved only the Privacy pin on those precedents too,
-//   pending the owner's ruling in its PR. So did #5294 (2026-11-17): each AI
-//   feature is on for a chapter unless its president turns it off, where the
-//   page said the president turns each on, pending the owner's ruling in its
-//   PR; whether each of these is material, and
+//   pending the owner's ruling in its PR; whether each of these is material, and
 //   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
+//   Nudge notes on by default (2026-11-17, #5309) is the owner's material
+//   change: Privacy moved to November 2026 and the constant to 2026-11, so
+//   every member accepts again once.
+//   Every AI feature on by default (2026-11-17, #5294) moved only the Privacy
+//   pin, pending the owner's ruling in its PR: if material, the constant takes
+//   the next suffix, 2026-11.2, since November 2026 is already the date.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -71,7 +74,7 @@ const ACCEPTED_PAGES = ["terms", "privacy"];
  * `LEGAL_POLICY_VERSION` as last decided. It moves only with a material change
  * to Terms or Privacy, in the same commit as that page's row below.
  */
-export const PINNED_POLICY_VERSION = "2026-09.2";
+export const PINNED_POLICY_VERSION = "2026-11";
 
 /**
  * Each legal page's served date and text fingerprint. Update a row only
@@ -85,8 +88,8 @@ export const PINNED_PAGES = {
   },
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
-    lastUpdated: "September 2026",
-    fingerprint: "c27e93588ca21423",
+    lastUpdated: "November 2026",
+    fingerprint: "4add259f8fb540e1",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

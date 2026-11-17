@@ -4,24 +4,20 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hooks = vi.hoisted(() => ({
-  current: { data: { background: "midnight", photo_url: null } as unknown, isError: false },
+  current: {
+    data: { background: "midnight", photo_url: null } as unknown,
+    isError: false,
+  },
   setDefault: vi.fn(),
   requestUrl: vi.fn(),
 }));
 const save = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: "Alpha Beta",
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock({ ...PURPLE_BRANDING, chapterName: "Alpha Beta" });
+});
 vi.mock("@repo/hooks", () => ({
   useChatBackground: () => ({ data: undefined }),
   useChapterChatBackground: () => hooks.current,
@@ -79,7 +75,9 @@ describe("ChatBackgroundDefaultPicker", () => {
         (node) => node.props.testID === "chat-background-swatch-inherit",
       ),
     ).toHaveLength(0);
-    expect(swatch(tree, "midnight").props.accessibilityState.checked).toBe(true);
+    expect(swatch(tree, "midnight").props.accessibilityState.checked).toBe(
+      true,
+    );
     act(() => swatch(tree, "midnight").props.onPress());
     expect(save).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalled();
@@ -95,7 +93,10 @@ describe("ChatBackgroundDefaultPicker", () => {
     });
     const [pick, deps] = save.mock.calls[0]!;
     expect(pick).toBe("photo");
-    await deps.requestPhotoUrl({ filename: "a.jpg", contentType: "image/jpeg" });
+    await deps.requestPhotoUrl({
+      filename: "a.jpg",
+      contentType: "image/jpeg",
+    });
     expect(hooks.requestUrl).toHaveBeenCalledWith({
       scope: "default",
       filename: "a.jpg",

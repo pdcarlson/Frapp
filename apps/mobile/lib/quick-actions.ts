@@ -16,6 +16,8 @@ import {
  * action opens is `components/quick-actions/quick-actions-host.tsx`.
  */
 export type QuickActionKey =
+  | "newMinutes"
+  | "search"
   | "newEvent"
   | "newTask"
   | "invite"
@@ -27,8 +29,10 @@ export type QuickActionKey =
 
 /**
  * The panel holds at most nine, three rows of three (Paul, 2026-11-13: "cap it
- * at 9, and then you could go 3 rows of 3"). Every action fits, so an officer
- * who can use all of them may place all of them.
+ * at 9, and then you could go 3 rows of 3"), and stays nine with New minutes
+ * and Search added (Paul, 2026-11-17, #5287): an officer who can use all ten
+ * places nine and leaves one in the Add row. Record meeting is a row above
+ * the grid and takes no slot.
  */
 export const QUICK_ACTION_LIMIT = 9;
 
@@ -47,16 +51,23 @@ export const QUICK_ACTION_COLUMNS = 3;
 /**
  * Every action, in the order a member who never edits the panel sees them.
  * The starting set is the first six of these the member may use
- * (`QUICK_ACTION_START`), so a President starts with New event, New task,
- * Invite, Message, Host check-in and Log hours, and a member whose role logs
- * hours with Message, Log hours and Study. There is no Check in: a member
- * checks in by pointing the phone's camera at the host's code, which opens the
- * app already checking in (2026-11-13), and a saved panel that held it just
- * drops it. Invite sits third so the officer who can invite finds it on the
- * first open (owner ask 2026-11-06, "I couldn't find a way to invite new
- * members"); Study and Upload wait in the Add row for that officer.
+ * (`QUICK_ACTION_START`), so a President on a chapter that drafts minutes
+ * starts with New minutes, Search, New event, New task, Invite and Message,
+ * and a member whose role logs hours with Search, Message, Log hours and
+ * Study. New minutes and Search lead (Paul, 2026-11-17, #5287: "there's no
+ * way for me to record ... minutes on my phone", "one of those options could
+ * be search"); Record meeting is not in this list at all but a row above the
+ * grid (`components/quick-actions/record-meeting-row.tsx`), so no edit can
+ * hide it. There is no Check in: a member checks in by pointing the phone's
+ * camera at the host's code, which opens the app already checking in
+ * (2026-11-13), and a saved panel that held it just drops it. Invite stays
+ * in the first six for the officer who can invite (owner ask 2026-11-06, "I
+ * couldn't find a way to invite new members"); Host check-in, Log hours,
+ * Study and Upload wait in the Add row for that officer.
  */
 const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
+  "newMinutes",
+  "search",
   "newEvent",
   "newTask",
   "invite",
@@ -68,6 +79,8 @@ const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
 ];
 
 export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
+  newMinutes: "New minutes",
+  search: "Search",
   newEvent: "New event",
   newTask: "New task",
   invite: "Invite",
@@ -80,6 +93,8 @@ export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
 
 /** What a screen reader says the action does, beyond its label. */
 export const QUICK_ACTION_HINTS: Record<QuickActionKey, string> = {
+  newMinutes: "Starts minutes for the meeting on now, or a new one.",
+  search: "Opens search for channels, members, messages and events.",
   newEvent: "Opens the new event sheet.",
   newTask: "Opens the new task sheet.",
   invite: "Opens invites to email or share with new members.",
@@ -94,6 +109,13 @@ export type QuickActionAccess = {
   permissions: readonly string[];
   /** The chapter's `enabled_modules`, once read. Unread counts as on. */
   enabledModules: Record<string, boolean> | null | undefined;
+  /**
+   * Whether the server drafts minutes from notes here (`useAiSurfaces`
+   * `meetingNotes`). New minutes waits on it for now: without drafting the
+   * phone has nothing to write minutes with until #5288 gives it a body to
+   * type in.
+   */
+  meetingNotes?: boolean;
 };
 
 /**
@@ -105,9 +127,16 @@ export type QuickActionAccess = {
 export function availableQuickActions({
   permissions,
   enabledModules,
+  meetingNotes = false,
 }: QuickActionAccess): QuickActionKey[] {
   const on = (key: string) => isModuleEnabled(enabledModules, key);
   const allowed: Record<QuickActionKey, boolean> = {
+    // `POST /v1/meetings` checks `meetings:record` behind the module.
+    newMinutes:
+      on("meetings") && can("meetings:record", permissions) && meetingNotes,
+    // Members, messages and events come from `GET /v1/search`, which checks
+    // `members:view`, as the Directory behind Message does.
+    search: can("members:view", permissions),
     // The event sheet's own gate: creating reads the roster, which the events
     // controller guards with members:view.
     newEvent: on("events") && canAll(EVENT_CREATE_PERMISSIONS, permissions),

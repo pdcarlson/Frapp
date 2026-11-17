@@ -37,12 +37,13 @@ class FakeAiConsentRepository implements IAiConsentRepository {
     updatedBy: string | null,
     now: Date | null,
   ) {
-    // The column defaults: on (#5294).
+    // The column defaults: all on (#5294).
     const row: ChapterAiSettings = {
       chapter_id: chapterId,
       ask_enabled: true,
       meeting_notes_enabled: true,
       chat_source_enabled: true,
+      nudges_enabled: true,
       ...this.settings.get(chapterId),
       ...patch,
       updated_by: updatedBy,
@@ -123,6 +124,7 @@ describe('AiConsentService', () => {
       ask_enabled: false,
       meeting_notes_enabled: false,
       chat_source_enabled: false,
+      nudges_enabled: false,
       ...on,
     });
   const sayYes = (userId: string, version = CURRENT) =>
@@ -147,12 +149,30 @@ describe('AiConsentService', () => {
     it('refuses every family once the president turned every switch off', async () => {
       await sayYes(MEMBER);
       await onlyOn(CHAPTER);
-      for (const family of ['ask', 'meetings', 'corpus'] as const) {
+      for (const family of ['ask', 'meetings', 'corpus', 'backwork'] as const) {
         await expect(service.check(call({ family }))).resolves.toEqual({
           allowed: false,
           reason: 'chapter_off',
         });
       }
+    });
+
+    it('lets a nudge through with no switch ever set, but only after the member said yes (2026-11-17)', async () => {
+      const nudge = call({ task: 'nudges.write', family: 'nudges' });
+      await expect(service.check(nudge)).resolves.toEqual({
+        allowed: false,
+        reason: 'member_declined',
+      });
+      await sayYes(MEMBER);
+      await expect(service.check(nudge)).resolves.toEqual({ allowed: true });
+      // Ask's switch no longer decides it either way.
+      await turnOn(CHAPTER, { ask_enabled: false });
+      await expect(service.check(nudge)).resolves.toEqual({ allowed: true });
+      await turnOn(CHAPTER, { nudges_enabled: false, ask_enabled: true });
+      await expect(service.check(nudge)).resolves.toEqual({
+        allowed: false,
+        reason: 'chapter_off',
+      });
     });
 
     it('refuses a member who has not answered, which counts as No', async () => {
@@ -380,23 +400,31 @@ describe('AiConsentService', () => {
     });
 
     it('are all on for a chapter that never changed one (#5294)', async () => {
-      // No row, as before the migration seeds one; and the seeded row.
+      // No row, as before the seed migration gives it one; and the seeded row.
       const untouched = {
         ask: true,
         meeting_notes: true,
         chat_source: true,
+        nudges: true,
         updated_at: null,
         can_change: false,
       };
       await expect(
         service.getChapterSettings(CHAPTER, ['role-member']),
       ).resolves.toEqual(untouched);
+      await sayYes(MEMBER);
+      for (const family of ['ask', 'meetings', 'corpus', 'nudges'] as const) {
+        await expect(service.check(call({ family }))).resolves.toEqual({
+          allowed: true,
+        });
+      }
+      await expect(
+        service.chatAuthorsWhoSaidYes(CHAPTER, [MEMBER]),
+      ).resolves.toEqual(new Set([MEMBER]));
       await repo.saveChapterSettings(CHAPTER, {}, null, null);
       await expect(
         service.getChapterSettings(CHAPTER, ['role-member']),
       ).resolves.toEqual(untouched);
-      await sayYes(MEMBER);
-      await expect(service.check(call())).resolves.toEqual({ allowed: true });
     });
 
     it('puts a never-changed chapter back as never changed when the audit fails', async () => {
@@ -449,6 +477,25 @@ describe('AiConsentService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(repo.settings.size).toBe(0);
       expect(record).not.toHaveBeenCalled();
+    });
+
+    it('lets the president turn nudges off on a chapter that never set a switch', async () => {
+      const view = await service.updateChapterSettings(
+        CHAPTER,
+        { userId: PRESIDENT, roleIds: [PRESIDENT_ROLE] },
+        { nudges: false },
+      );
+      expect(view).toMatchObject({ nudges: false, ask: true });
+      expect(repo.settings.get(CHAPTER)?.nudges_enabled).toBe(false);
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: { nudges: { from: true, to: false } },
+        }),
+      );
+      await sayYes(MEMBER);
+      await expect(
+        service.check(call({ task: 'nudges.write', family: 'nudges' })),
+      ).resolves.toEqual({ allowed: false, reason: 'chapter_off' });
     });
 
     it("refuses another chapter's president role", async () => {

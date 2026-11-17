@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'node:crypto';
-import { isProductionSupabaseUrl } from '@repo/validation';
+import {
+  GOOGLE_CALENDAR_SIGN_IN_COPY,
+  isProductionSupabaseUrl,
+} from '@repo/validation';
 import {
   GOOGLE_CALENDAR_API,
   GOOGLE_CALENDAR_SCOPE,
@@ -212,9 +215,7 @@ export class GoogleCalendarService {
       ? await this.repo.consumeState(stateId, chapterId, userId, new Date())
       : null;
     if (!state) {
-      throw new BadRequestException(
-        'That Google sign-in expired. Connect Google Calendar again.',
-      );
+      throw new BadRequestException(GOOGLE_CALENDAR_SIGN_IN_COPY.expired);
     }
 
     let grant;
@@ -228,10 +229,9 @@ export class GoogleCalendarService {
       this.logger.warn(
         `Google Calendar sign-in failed: ${toReportableError(error).message}`,
       );
-      throw new BadGatewayException(
-        "Google didn't finish the sign-in. Connect Google Calendar again.",
-        { cause: toReportableError(error) },
-      );
+      throw new BadGatewayException(GOOGLE_CALENDAR_SIGN_IN_COPY.failed, {
+        cause: toReportableError(error),
+      });
     }
 
     if (!grant.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {

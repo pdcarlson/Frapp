@@ -253,6 +253,32 @@ describe('SupabaseScheduledJobsRepository', () => {
     });
   });
 
+  describe('findIncompleteTimedTasksDueBetween', () => {
+    // The timed reminders' only "done means no reminder" guard (#5279): a
+    // task completed before its hour-before push is never read.
+    it('reads open tasks only, inside the due_at window', async () => {
+      const { repo, supabase } = await buildRepo([{ data: [], error: null }]);
+      const from = new Date('2026-08-05T12:00:00.000Z');
+      const to = new Date('2026-08-05T13:00:00.000Z');
+
+      await repo.findIncompleteTimedTasksDueBetween(from, to);
+
+      expect(supabase.builder.in).toHaveBeenCalledWith('status', [
+        'TODO',
+        'IN_PROGRESS',
+        'OVERDUE',
+      ]);
+      expect(supabase.builder.gte).toHaveBeenCalledWith(
+        'due_at',
+        from.toISOString(),
+      );
+      expect(supabase.builder.lte).toHaveBeenCalledWith(
+        'due_at',
+        to.toISOString(),
+      );
+    });
+  });
+
   describe('findEventsPendingAutoAbsent', () => {
     it('drops events whose required_role_ids is an empty array', async () => {
       const { repo } = await buildRepo([

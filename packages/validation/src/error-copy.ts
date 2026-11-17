@@ -119,6 +119,17 @@ export const CHECK_IN_NEEDS_CODE_COPY =
   "Point your phone's camera at the code on the officer's screen to check in.";
 
 /**
+ * A Google Calendar sign-in that came back without connecting (#5262): the
+ * API's confirm refusals (`GoogleCalendarService.confirm`) and the clients'
+ * `?gcal=` returns (`GOOGLE_CALENDAR_RETURN_COPY` in `@repo/hooks`) read the
+ * same sentence, so an expired sign-in reads one way whichever path told it.
+ */
+export const GOOGLE_CALENDAR_SIGN_IN_COPY = {
+  expired: "That Google sign-in expired. Connect Google Calendar again.",
+  failed: "Google didn't finish the sign-in. Connect Google Calendar again.",
+} as const;
+
+/**
  * Server sentences that carry a reason the member can act on, keyed by the
  * exact text the API throws (`apps/api/src`), rewritten in the chapter's
  * words. A key here that the API no longer throws costs nothing but a dead

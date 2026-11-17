@@ -51,6 +51,7 @@ const SETTINGS = {
   ask: false,
   meeting_notes: true,
   chat_source: false,
+  nudges: true,
   updated_at: "2026-11-12T03:00:00.000Z",
   can_change: true,
 };

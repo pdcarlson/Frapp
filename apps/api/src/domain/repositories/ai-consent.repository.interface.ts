@@ -9,7 +9,10 @@ export const AI_CONSENT_REPOSITORY = 'AI_CONSENT_REPOSITORY';
 export type ChapterAiSettingsPatch = Partial<
   Pick<
     ChapterAiSettings,
-    'ask_enabled' | 'meeting_notes_enabled' | 'chat_source_enabled'
+    | 'ask_enabled'
+    | 'meeting_notes_enabled'
+    | 'chat_source_enabled'
+    | 'nudges_enabled'
   >
 >;
 
