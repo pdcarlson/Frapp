@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CLOSES_AT_CASES, closesAtHasPassed } from "@repo/formatting";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   ACTIVITY_GLYPH_NAV,
@@ -8,6 +9,7 @@ import {
   activityBadgeIsAsk,
   activityGroups,
   activityLinkKind,
+  activityCardIsOpen,
   activityPollIsOpen,
   activityRowAction,
   activityDetailParts,
@@ -19,6 +21,40 @@ import {
   type ActivityArchive,
   type ActivityRow,
 } from "./activity-rows";
+
+/**
+ * The shared deadline cases (#5242): `CLOSES_AT_CASES` from `@repo/formatting`
+ * also runs through chat-core's `isCardClosed`, so an Activity row agrees with
+ * the chat card on every case, and the guard below keeps both helpers calling
+ * the shared rule rather than a copy of it.
+ */
+describe("Activity's poll and card rows share the deadline rule (#5242)", () => {
+  it.each(CLOSES_AT_CASES)("%s", (_label, closesAt, now, passed) => {
+    const at = new Date(now);
+    // The Activity read's closes_at is `string | null`: no undefined.
+    const closes_at = closesAt ?? null;
+    expect(closesAtHasPassed(closesAt, now)).toBe(passed);
+    expect(activityPollIsOpen({ is_closed: false, closes_at }, at)).toBe(
+      !passed,
+    );
+    expect(activityCardIsOpen({ closes_at }, at)).toBe(!passed);
+  });
+});
+
+describe("the deadline rule has one owner (#5242)", () => {
+  const source = readFileSync(join(__dirname, "activity-rows.ts"), "utf8");
+  it.each(["activityPollIsOpen", "activityCardIsOpen"])(
+    "%s calls closesAtHasPassed, with no comparison of its own",
+    (name) => {
+      const start = source.indexOf(`export function ${name}(`);
+      expect(start, `${name} is declared`).toBeGreaterThanOrEqual(0);
+      const body = source.slice(start, source.indexOf("\n}\n", start));
+      expect(body).toContain("closesAtHasPassed(");
+      expect(body).not.toMatch(/getTime\(\)\s*(<=|<|>=|>)/);
+      expect(body).not.toContain("parseInstant(");
+    },
+  );
+});
 
 const task = (overrides: Record<string, unknown> = {}) => ({
   id: "task-1",

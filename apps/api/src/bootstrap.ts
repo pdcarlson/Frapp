@@ -60,13 +60,11 @@ import { runsOnCloudRun } from './config/runtime-platform';
  *   Application Load Balancer (the service's ingress is
  *   internal-and-cloud-load-balancing, so `run.app` refuses the internet).
  *   Google documents the balancer's header as `[SUPPLIED_VALUE,] CLIENT_IP,
- *   LOAD_BALANCER_IP`. What agrees so far: the deploy's own `run.app` checks,
- *   which send no chain, logged `xffCount` 1 (Google's front end adds the
- *   caller), and one request of unknown origin through the balancer logged 2
- *   (Sentry FRAPP-API-R, 2026-11-17). That request bounds the count from
- *   above only, since its caller may have sent an entry of its own. The
- *   measurement is the forged-entry probe in `docs/ops/deployment/cloud-run.md`
- *   § Address; #5269's PR records its result. Before the move, on Render
+ *   LOAD_BALANCER_IP`, and the forged-entry probe in
+ *   `docs/ops/deployment/cloud-run.md` § Address measured exactly that on
+ *   2026-11-17: a request with no `X-Forwarded-For` logged `xffCount` 2 and
+ *   one with a single forged entry logged 3, so the balancer appends two
+ *   entries and the forged one stays untrusted. Before the move, on Render
  *   behind Cloudflare, staging was 3 (#864: probes on 2026-08-28 with 0, 1
  *   and 2 forged entries returned 3, 4 and 5).
  * - **Production: 2** (#2972). `frapp-api-prod` on Render logs `xffCount` 2

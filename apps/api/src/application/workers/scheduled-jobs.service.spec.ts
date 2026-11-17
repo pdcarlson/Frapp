@@ -1012,29 +1012,29 @@ describe('ScheduledJobsService', () => {
     const at = (minutesFromNow: number) =>
       new Date(NOW.getTime() + minutesFromNow * 60_000).toISOString();
 
-    it('reads the window from the lookback to two hours out', async () => {
+    it('reads the window from the lookback to an hour out (#5279)', async () => {
       await service.sweepTimedTaskReminders(NOW);
       const [from, to] = findIncompleteTimedTasksDueBetween.mock.calls[0]!;
-      expect((to as Date).getTime() - NOW.getTime()).toBe(120 * 60_000);
+      expect((to as Date).getTime() - NOW.getTime()).toBe(60 * 60_000);
       expect(NOW.getTime() - (from as Date).getTime()).toBe(7 * 86_400_000);
     });
 
-    it('reminds the assignee how far out the time is', async () => {
+    it('reminds the assignee an hour ahead, in the tasks category (#5279)', async () => {
       findIncompleteTimedTasksDueBetween.mockResolvedValue([
-        { ...TASK, due_date: TODAY, due_at: at(95) },
+        { ...TASK, due_date: TODAY, due_at: at(60) },
       ]);
 
       const result = await service.sweepTimedTaskReminders(NOW);
 
       expect(result).toEqual({ sent: 1 });
-      expect(notifyUser).toHaveBeenCalledWith(
-        'user-1',
-        'chap-1',
-        expect.objectContaining({
-          title: 'Book the venue',
-          body: 'Due in 2 hours',
-        }),
-      );
+      // No priority: NORMAL, which keeps the member's Tasks switch and quiet
+      // hours in force. Only URGENT skips them in `notifyUser`.
+      expect(notifyUser).toHaveBeenCalledWith('user-1', 'chap-1', {
+        title: 'Book the venue',
+        body: 'Due in 1 hour',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: 'task-1' } },
+      });
       expect(claimDispatch).toHaveBeenCalledWith(
         'chap-1',
         'TASK',

@@ -103,13 +103,18 @@ const EVENT_REMINDER_LEAD_MINUTES = 30;
 const DUE_SOON_LEAD_DAYS = 1;
 
 /**
- * How long before a timed task's `due_at` its assignee is reminded (#4003).
- * Long enough to still do a chore ("Take out the trash" due at 9 PM nudges at
- * 7), short enough that the push is about today. The day-based lead above
- * doesn't fit a task due at 9 AM, which a 9 AM daily sweep would remind about
- * as it falls due.
+ * How long before a timed task's `due_at` its assignee is reminded: an hour
+ * (Paul, 2026-11-17, #5279: reminding people "with like an hour left on
+ * them"; two hours from #4003 until then). Close enough that the push reads
+ * as "now's the time", still long enough to do a chore ("Take out the trash"
+ * due at 9 PM nudges at 8). The day-based lead above doesn't fit a task due at
+ * 9 AM, which a 9 AM daily sweep would remind about as it falls due.
+ *
+ * It is the window's width, not the delivery offset: a five-minute tick
+ * first sees a task 55 to 60 minutes out, and one made inside its own window
+ * is closer still, so the body says the time actually left (`dueInPhrase`).
  */
-const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 120;
+const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 60;
 
 /**
  * How recently an entity must have *become* overdue to still earn a
