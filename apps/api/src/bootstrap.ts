@@ -57,14 +57,18 @@ import { runsOnCloudRun } from './config/runtime-platform';
  * different hosts do not have the same chain:
  *
  * - **Staging: 2** (#5269). Cloud Run behind Google's global external
- *   Application Load Balancer, its only public path (the service's ingress
- *   is internal-and-cloud-load-balancing, so `run.app` refuses the public).
+ *   Application Load Balancer (the service's ingress is
+ *   internal-and-cloud-load-balancing, so `run.app` refuses the internet).
  *   Google documents the balancer's header as `[SUPPLIED_VALUE,] CLIENT_IP,
- *   LOAD_BALANCER_IP`, and Cloud Run adds nothing after it: the trust-proxy
- *   tripwire (Sentry FRAPP-API-R) logged `xffCount` 2 for a request through
- *   the balancer on 2026-11-17 and 1 for the deploy's own `run.app` checks.
- *   Before that, on Render behind Cloudflare, staging was 3 (#864: probes on
- *   2026-08-28 with 0, 1 and 2 forged entries returned 3, 4 and 5).
+ *   LOAD_BALANCER_IP`. What agrees so far: the deploy's own `run.app` checks,
+ *   which send no chain, logged `xffCount` 1 (Google's front end adds the
+ *   caller), and one request of unknown origin through the balancer logged 2
+ *   (Sentry FRAPP-API-R, 2026-11-17). That request bounds the count from
+ *   above only, since its caller may have sent an entry of its own. The
+ *   measurement is the forged-entry probe in `docs/ops/deployment/cloud-run.md`
+ *   § Address; #5269's PR records its result. Before the move, on Render
+ *   behind Cloudflare, staging was 3 (#864: probes on 2026-08-28 with 0, 1
+ *   and 2 forged entries returned 3, 4 and 5).
  * - **Production: 2** (#2972). `frapp-api-prod` on Render logs `xffCount` 2
  *   for callers that send no chain of their own (Stripe's webhook deliveries,
  *   a scanner; Render logs, 2026-09-29 and 30). This value used to be the
@@ -84,10 +88,12 @@ import { runsOnCloudRun } from './config/runtime-platform';
  * while looking like a fix.
  *
  * Each environment must have one public path, or the shorter chain
- * over-trusts. Staging's is the balancer, with both of its hosts
- * (`api-staging.frapp.live` and the deploy's `candidate.` host) the same
- * chain. Production's two Render hostnames have not been compared that way;
- * the tripwire below covers a shorter one.
+ * over-trusts. Staging's Cloud Run service has one, the balancer, with both
+ * of its hosts (`api-staging.frapp.live` and the deploy's `candidate.` host)
+ * the same chain; its old Render service stays up as the rollback until
+ * #5228 removes it, and runs its own older build with Render's count.
+ * Production's two Render hostnames have not been compared that way; the
+ * tripwire below covers a shorter one.
  *
  * **The limit of a hop count, stated rather than left sharp:** it trusts N
  * entries whether or not N proxies actually appended them. Where the real
