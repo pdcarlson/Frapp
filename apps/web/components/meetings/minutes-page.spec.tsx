@@ -313,7 +313,9 @@ describe("MinutesPage", () => {
       screen.getByRole("heading", { name: "Chapter meeting" }),
     ).toBeTruthy();
     expect(screen.getByText("Budget approved.")).toBeTruthy();
-    expect(screen.getByText("30 for, 2 against, 1 abstaining")).toBeTruthy();
+    expect(
+      screen.getByLabelText("30 for, 2 against, 1 abstaining").textContent,
+    ).toBe("30–2–1");
     expect(screen.getByText(/Sam Lee · Due/)).toBeTruthy();
     expect(screen.getByText("Jake Ross, Sam Lee")).toBeTruthy();
     // Announcements is in the template but empty, so it isn't drawn.
@@ -321,6 +323,46 @@ describe("MinutesPage", () => {
     // A member who can't edit gets no Edit or Delete.
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("marks the reader's own action items, says when nobody was named, and leads each topic line with its topic", () => {
+    loaded(
+      minutes({
+        sections: ["summary", "action_items", "discussion_log"],
+        content: {
+          ...EMPTY,
+          summary: "Budget approved.",
+          action_items: [
+            {
+              text: "Collect the deposit",
+              owner_user_id: "11111111-1111-4111-8111-111111111111",
+              due_date: null,
+            },
+            {
+              text: "Send the shirt form",
+              owner_user_id: null,
+              due_date: null,
+            },
+          ],
+          discussion_log:
+            "Rusty Pipes afterparty: the venue asked for a deposit, and it passed with that condition.\nNo topic on this line.",
+        },
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    const mine = screen.getByText("Collect the deposit").parentElement!;
+    expect(mine.textContent).toContain("Yours");
+    const theirs = screen.getByText("Send the shirt form").parentElement!;
+    expect(theirs.textContent).not.toContain("Yours");
+    expect(screen.getByText("Nobody named yet")).toBeTruthy();
+    const topic = screen.getByText("Rusty Pipes afterparty");
+    expect(topic.className).toContain("font-semibold");
+    expect(screen.getByText("No topic on this line.")).toBeTruthy();
+    // What was settled and who owes what come before the discussion.
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => h.textContent);
+    expect(headings).toEqual(["Summary", "Action items", "Discussion log"]);
   });
 
   it("lists suggested tasks under posted minutes, and never beside a draft or the editor", () => {

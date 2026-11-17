@@ -28,15 +28,17 @@ The type is captured as metadata on the meeting and persists through transcripti
 
 All meeting summaries use a **single global template** with toggleable sections per chapter. Available sections:
 
-- Attendees (default ON)
 - Summary / Overview (default ON)
-- Announcements (default ON)
 - Decisions (default ON)
 - Action items with owner + due date (default ON)
 - Discussion log (default OFF — verbose)
+- Attendees (default ON)
+- Announcements (default ON)
+- Officer reports (default OFF)
 - Old business (default OFF)
 - New business (default OFF)
-- Officer reports (default OFF)
+
+> Changed 2026-11-17 by pdcarlson (#5381): what was settled and who owes what come right after the summary, then the discussion, then the record. The list began with Attendees and put Decisions after Announcements.
 
 Chapters toggle sections from chapter settings ([`settings/README.md`](settings/README.md)), on the Meetings page's Rules. The template is the same across all meeting types — type only affects AI summarization behavior. The sections always show in the order above. A section switched off keeps what minutes already wrote in it, and those minutes still show it.
 

@@ -54,15 +54,18 @@ export function meetingTypeLabel(
  * check-ins, filled without anyone typing.
  */
 export const MEETING_SECTIONS = [
-  { key: "attendees", label: "Attendees", defaultOn: true },
+  // What a member opens minutes for comes first: what was settled and who
+  // owes what, then the body of the discussion, then the record (Paul,
+  // 2026-11-17: "What matters is the body of the discussion").
   { key: "summary", label: "Summary", defaultOn: true },
-  { key: "announcements", label: "Announcements", defaultOn: true },
   { key: "decisions", label: "Decisions", defaultOn: true },
   { key: "action_items", label: "Action items", defaultOn: true },
+  { key: "discussion_log", label: "Discussion log", defaultOn: false },
+  { key: "attendees", label: "Attendees", defaultOn: true },
+  { key: "announcements", label: "Announcements", defaultOn: true },
   { key: "officer_reports", label: "Officer reports", defaultOn: false },
   { key: "old_business", label: "Old business", defaultOn: false },
   { key: "new_business", label: "New business", defaultOn: false },
-  { key: "discussion_log", label: "Discussion log", defaultOn: false },
 ] as const;
 
 export type MeetingSectionKey = (typeof MEETING_SECTIONS)[number]["key"];
@@ -76,7 +79,9 @@ export const DEFAULT_MEETING_SECTIONS: readonly MeetingSectionKey[] =
     (section) => section.key,
   );
 
-export function isMeetingSectionKey(value: unknown): value is MeetingSectionKey {
+export function isMeetingSectionKey(
+  value: unknown,
+): value is MeetingSectionKey {
   return (
     typeof value === "string" &&
     (MEETING_SECTION_KEYS as readonly string[]).includes(value)
@@ -174,7 +179,9 @@ export const EMPTY_MEETING_CONTENT: MeetingContent = Object.freeze({
  */
 export function readMeetingContent(value: unknown): MeetingContent {
   const raw =
-    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
   const text = (key: MeetingTextSection): string => {
     const parsed = sectionText.safeParse(raw[key]);
     return parsed.success ? parsed.data : "";
