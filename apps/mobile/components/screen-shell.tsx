@@ -3,6 +3,7 @@ import {
   Fragment,
   type ReactElement,
   type ReactNode,
+  type RefObject,
   cloneElement,
   isValidElement,
 } from "react";
@@ -110,6 +111,14 @@ type ScreenShellProps = {
    * screens only.
    */
   footer?: ReactNode;
+  /**
+   * The body's scroll view, for a screen that moves it to a part of itself:
+   * Activity's week strip jumps To do to the day pressed (#5310), as
+   * Fantastical's DayTicker jumps its list. Measure the part against a host
+   * view of the screen's own (a node handle is refused under the New
+   * Architecture) and `scrollTo` it.
+   */
+  scrollRef?: RefObject<ScrollView | null>;
   children: ReactNode;
 };
 
@@ -151,6 +160,7 @@ export function ScreenShell({
   scrollEnabled = true,
   keyboardShouldPersistTaps,
   footer,
+  scrollRef,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -183,6 +193,7 @@ export function ScreenShell({
           <View style={styles.safeArea}>
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
+              ref={scrollRef}
               // Folds the floating bar while the member reads down a tab
               // screen (#4904); nothing off the tab bar.
               {...barScroll}
