@@ -1,4 +1,4 @@
-# 20261117162505_backwork_ai_fill_claim.sql
+# 20261117214944_backwork_ai_fill_claim.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
@@ -6,6 +6,8 @@
      don't copy it. -->
 
 Lets the backwork AI fill run once at a time per draft (#5233, `spec/behavior/backwork.md` § AI fill).
+
+*Renumbered 2026-11-17 from `20261117162505`: it merged after staging had applied `20261117164915`, so staging's `db push` refused it as out of order and halted every staging deploy. It had been applied nowhere, so it moved after everything on `main` ([`drift-and-ordering.md` § `migration-order`](../drift-and-ordering.md#migration-order--the-required-one)).*
 
 ## Promotion
 
