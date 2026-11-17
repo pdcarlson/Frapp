@@ -386,7 +386,9 @@ subscription link as before; set, it connects the member's Google account and
 Frapp writes their events and tasks into a calendar of its own there
 ([`events.md` § Google Calendar](../../../spec/behavior/events.md#google-calendar),
 #3322). Everything below is provider-side configuration no repo state creates.
-Owner-only: it is the `signet-frapp` Google Cloud project, the one whose
+Owner-only: it is the `signet-frapp` Google Cloud project (display name
+"Frapp sign-in", in the frapp.live organization since 2026-11-17:
+[`google-cloud.md`](google-cloud.md)), the one whose
 consent screen Google sign-in already uses (brand "Frapp", verified;
 publishing status In production, user type External:
 [`supabase.md`](supabase.md#auth-oauth-providers-google-and-apple)).
@@ -449,6 +451,12 @@ keeps them matching it
 #5157). Frapp reads only folders a chapter shares with its service account, so
 there is no consent screen, no scope review and nothing on the Google sign-in
 client. Owner-only, in the `signet-frapp` Google Cloud project.
+
+> **Don't set this up yet (2026-11-17).** `signet-frapp` joined the frapp.live
+> organization, whose policy blocks service account key files, so step 3
+> fails there. [#5323](https://github.com/frapplive/Frapp/issues/5323) moves
+> these accounts to the `nonprod` and `prod` projects and has the API on
+> Cloud Run act as them with no key file; these steps change with it.
 
 1. **Enable the API.** Google Cloud console, project `signet-frapp` → APIs &
    Services → Library → **Google Drive API** → Enable.
