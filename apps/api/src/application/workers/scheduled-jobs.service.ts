@@ -1203,7 +1203,9 @@ export class ScheduledJobsService {
    * That check is resolved lazily, behind the claim (#5307): an overdue task
    * stays in the sweep's lookback for days, and only the first tick can send,
    * so reading the assigner's membership before claiming paid one
-   * `chapter_members` read per tick per replica for nothing.
+   * `chapter_members` read per tick per replica for nothing. A failed read is
+   * a `warning`, as it was before: the claim is released and the task stays
+   * in the lookback for days, so the next tick retries and nothing is lost.
    */
   private notifyTaskOverdue(task: SweepTaskRow) {
     return this.claimAndNotify({
@@ -1222,6 +1224,7 @@ export class ScheduledJobsService {
           ? [task.assignee_id, task.created_by]
           : [task.assignee_id];
       },
+      resolveFailureLevel: 'warning',
       title: task.title,
       body: `Overdue · was due ${formatDueDate(task.due_date)}`,
       category: 'tasks',
@@ -1263,6 +1266,12 @@ export class ScheduledJobsService {
     threshold: DispatchThreshold;
     dueDate: string;
     recipients: string[] | (() => Promise<string[]>);
+    /**
+     * How a rejected thunk reports. `error` (the default) suits a reminder
+     * whose window is a few ticks wide, where a release is close to dropped
+     * work; a sweep that will retry for days passes `warning`.
+     */
+    resolveFailureLevel?: 'error' | 'warning';
     title: string;
     body: string;
     category: string;
@@ -1289,7 +1298,7 @@ export class ScheduledJobsService {
           : params.recipients;
     } catch (error) {
       reportCaughtFailure(this.logger, {
-        level: 'error',
+        level: params.resolveFailureLevel ?? 'error',
         site: `scheduled-reminder-resolve-recipients:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,
