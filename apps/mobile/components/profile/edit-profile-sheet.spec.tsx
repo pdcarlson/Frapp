@@ -737,13 +737,28 @@ describe("EditProfileSheet opens at a field (#5280)", () => {
   }
 
   /** Places the block holding the field labelled `label` at `y`. */
-  function placed(tree: ReactTestRenderer, label: string, y: number) {
+  function placed(
+    tree: ReactTestRenderer,
+    label: string,
+    y: number,
+    height = 48,
+  ) {
     let block = input(tree, label).parent;
     while (block && typeof block.props.onLayout !== "function") {
       block = block.parent;
     }
     act(() => {
-      block!.props.onLayout({ nativeEvent: { layout: { y, height: 48 } } });
+      block!.props.onLayout({ nativeEvent: { layout: { y, height } } });
+    });
+  }
+
+  /** The keyboard has shrunk the sheet's body to `height`. */
+  function keyboardUp(tree: ReactTestRenderer, height: number) {
+    const scroll = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetScrollView",
+    );
+    act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { y: 0, height } } });
     });
   }
 
@@ -803,6 +818,92 @@ describe("EditProfileSheet opens at a field (#5280)", () => {
     settleOpen(tree);
     expect(scrollTo).toHaveBeenCalledWith({ y: 800, animated: true });
     expect(focus.get("Company")).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't scroll a form shorter than the sheet", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 700, 640);
+    placed(tree, "Bio", 450, 100);
+
+    settleOpen(tree);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the field again once the keyboard has shrunk the sheet, and only then", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 700, 700);
+    placed(tree, "Bio", 450, 100);
+    settleOpen(tree);
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    keyboardUp(tree, 450);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 250, animated: true });
+
+    keyboardUp(tree, 700);
+    keyboardUp(tree, 300);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing as the sheet finishes closing", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Bio", 500);
+
+    act(() => {
+      modal(tree).props.onChange(-1);
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Bio")).not.toHaveBeenCalled();
+  });
+
+  it("scrolls to a field that shares a row, by its row", () => {
+    const tree = renderAt("graduationYear");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Graduation year", 400);
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 400 - lg, animated: true });
+    expect(focus.get("Graduation year")).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls a birthday to its heading and focuses the month", () => {
+    const tree = renderAt("birthdayMonth");
+    laidOut(tree, 600, 1400);
+    const heading = tree.root.find(
+      (node) =>
+        typeof node.props.onLayout === "function" &&
+        node.findAll(
+          (child) =>
+            (child.type as unknown) === "Text" &&
+            child.props.children === "Birthday",
+        ).length > 0 &&
+        node.findAll(
+          (child) => (child.type as unknown) === "BottomSheetTextInput",
+        ).length === 0,
+    );
+    act(() => {
+      heading.props.onLayout({
+        nativeEvent: { layout: { y: 380, height: 20 } },
+      });
+    });
+    placed(tree, "Birthday month, 1 to 12", 412, 72);
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 380 - lg, animated: true });
+    expect(focus.get("Birthday month, 1 to 12")).toHaveBeenCalledTimes(1);
+  });
+
+  // The You tab draws City from the stored year; a year typed ahead and kept
+  // from a failed save must not leave that row opening a sheet without it.
+  it("keeps City and Company while the stored year shows them, under a year typed ahead", () => {
+    const graduate = { ...PROFILE, graduationYear: 2020, currentCity: null };
+    const tree = renderAt("city", graduate);
+    type(tree, "Graduation year", "2099");
+    expect(input(tree, "City").props.value).toBe("");
+
+    settleOpen(tree);
+    expect(focus.get("City")).toHaveBeenCalledTimes(1);
   });
 
   it("opens a birthday at its month", () => {

@@ -58,8 +58,9 @@ import { pageSurfaces } from "@/lib/surfaces";
  *
  * Canvas draws Email, Phone, Pledge class and Big brother. No big-brother
  * column exists, so that one is omitted. The rows are Email, Phone (#3711),
- * four more of the fields the API's `UpdateUserDto` lets a member edit
- * (major, graduation year, city, company), and after Graduation the member's
+ * Birthday (#4959), and more of the fields the API's `UpdateUserDto` lets a
+ * member edit (major, graduation year, and city and company when the editor
+ * shows them, below), and after Graduation the member's
  * pledge class and order number (#3939), which live on the membership and are
  * drawn only when an officer has set them. Display name heads the screen and
  * bio gets its own card.
@@ -72,9 +73,10 @@ import { pageSurfaces } from "@/lib/surfaces";
  * while it is empty) call `onEdit` with their field, which opens
  * `EditProfileSheet` (#3387) at that field with its keyboard up (#5280).
  * City and Company are drawn only when the sheet has their fields
- * (`showsAfterGraduation`, Paul's 2026-11-06 rule that an undergrad doesn't
- * see them; his pick on #5280, 2026-11-17, that the rows follow the editor),
- * so no row opens a sheet without its field. Email is the
+ * (`showsAfterGraduation` on the stored profile, Paul's 2026-11-06 rule that
+ * an undergrad doesn't see them; his pick on #5280, 2026-11-17, that the rows
+ * follow the editor). The sheet keeps them while the stored year says so, even
+ * under a draft year typed ahead, so no row opens a sheet without its field. Email is the
  * account's address and the pledge class rows are an officer's, so those
  * don't. The photo edits in place (#732): `ProfilePhoto` picks, uploads and
  * confirms it. The screen draws these only once the profile has loaded,
