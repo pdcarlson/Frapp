@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -75,7 +76,7 @@ export class ChapterConfigController {
     summary: 'Get merged chapter config (archetype defaults + overrides)',
   })
   async getConfig(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     this.assertMatchesActiveChapter(id, chapterId);
@@ -98,7 +99,7 @@ export class ChapterConfigController {
     },
   )
   async patchConfig(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: PatchChapterConfigDto,
@@ -113,7 +114,7 @@ export class ChapterConfigController {
     summary: 'Recompute and persist derived theme palette from branding.colors',
   })
   async recomputePalette(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     this.assertMatchesActiveChapter(id, chapterId);

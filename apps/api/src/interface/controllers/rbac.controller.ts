@@ -82,7 +82,7 @@ export class RbacController {
   })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateRoleDto,
@@ -142,7 +142,7 @@ export class RbacController {
   })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async delete(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {

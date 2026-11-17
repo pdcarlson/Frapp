@@ -310,7 +310,7 @@ export class BackworkController {
   @ApiOperation({ summary: 'Update department name' })
   async updateDepartment(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDepartmentDto,
   ) {
     return this.backworkService.updateDepartment(id, chapterId, dto);
@@ -323,7 +323,7 @@ export class BackworkController {
   })
   async deleteDepartment(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.backworkService.deleteDepartment(id, chapterId);
     return { success: true };
@@ -337,7 +337,7 @@ export class BackworkController {
   @ApiCreatedResponse({ type: MergeBackworkTaxonomyResponseDto })
   async mergeDepartments(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MergeBackworkTaxonomyDto,
   ) {
     return this.backworkService.mergeDepartments(id, dto.target_id, chapterId);
@@ -385,7 +385,7 @@ export class BackworkController {
   })
   async deleteCourse(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.backworkService.deleteCourse(id, chapterId);
     return { success: true };
@@ -406,7 +406,7 @@ export class BackworkController {
   @ApiOperation({ summary: 'Update professor name' })
   async updateProfessor(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProfessorDto,
   ) {
     return this.backworkService.updateProfessor(id, chapterId, dto);
@@ -419,7 +419,7 @@ export class BackworkController {
   })
   async deleteProfessor(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.backworkService.deleteProfessor(id, chapterId);
     return { success: true };
@@ -433,7 +433,7 @@ export class BackworkController {
   @ApiCreatedResponse({ type: MergeBackworkTaxonomyResponseDto })
   async mergeProfessors(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MergeBackworkTaxonomyDto,
   ) {
     return this.backworkService.mergeProfessors(id, dto.target_id, chapterId);
@@ -442,14 +442,20 @@ export class BackworkController {
   @Get(':id')
   @ApiOperation({ summary: 'Get resource detail with download URL' })
   @FeatureEvent('backwork-viewed')
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.backworkService.findById(id, chapterId);
   }
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Delete a backwork resource' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     await this.backworkService.delete(id, chapterId);
     return { success: true };
   }

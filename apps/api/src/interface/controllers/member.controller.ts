@@ -132,7 +132,7 @@ export class MemberController {
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') viewerUserId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.memberService.findProfileById(id, chapterId, viewerUserId);
   }
@@ -143,7 +143,7 @@ export class MemberController {
   async updateRoles(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
     // A non-empty list can only come from a page that read the member before
@@ -238,7 +238,7 @@ export class MemberController {
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
   async remove(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
   ) {
     await this.memberService.remove(id, chapterId, userId);
