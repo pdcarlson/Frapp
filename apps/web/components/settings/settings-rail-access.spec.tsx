@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
+import { idleMutation, loadedEmpty } from "@/tests/settings-harness";
 
 // `@repo/validation`'s beta list, emptied so this spec pins the ordinary
 // module rule with dues as its example. A test that wants dues beta-off, as
@@ -60,7 +61,6 @@ vi.mock("@repo/hooks", async () =>
       fetchStatus: "idle",
       refetch: vi.fn(),
     }),
-    permissions: () => permissions.current ?? [],
     overrides: {
       aiAvailableFrom: () => ai.available,
       // A read that can still be in flight, or fail.
@@ -74,11 +74,11 @@ vi.mock("@repo/hooks", async () =>
         fetchStatus: "idle",
         refetch: permissions.refetch,
       }),
-      useRoleTiers: () => ({ data: [], isPending: false, isError: false }),
-      useMembers: () => ({ data: [], isPending: false, isError: false }),
+      useRoleTiers: loadedEmpty,
+      useMembers: loadedEmpty,
       useViewerUserId: () => null,
-      useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
-      useUpdateRoleTier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      useUpdateRole: idleMutation,
+      useUpdateRoleTier: idleMutation,
     },
   }),
 );

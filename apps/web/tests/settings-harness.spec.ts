@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   chapterStore,
@@ -9,17 +9,35 @@ import {
   type SettingsHooksOptions,
 } from "./settings-harness";
 
-const SETTINGS = join(__dirname, "..", "components", "settings");
+const WEB = join(__dirname, "..");
+/** Where a spec that renders the page can live. */
+const ROOTS = ["components", "app"].map((dir) => join(WEB, dir));
 
-/** The specs that render the whole Settings page. */
+/** Every spec file under `dir`, recursively. */
+function specFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return specFiles(path);
+    return /\.spec\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+/**
+ * An import of `settings-page`, dynamic or static, by its sibling path or its
+ * alias: `import("./settings-page")`, `from "./settings-page"`, or either
+ * with `@/components/settings/settings-page`.
+ */
+const IMPORTS_PAGE =
+  /(?:import\(|from )\s*["'](?:\.\/|@\/components\/settings\/)settings-page["']/;
+
+/** The specs that render the whole Settings page, named from `apps/web`. */
 function pageSpecs(): [string, string][] {
-  return readdirSync(SETTINGS)
-    .filter((name) => name.endsWith(".spec.tsx"))
-    .map((name): [string, string] => [
-      name,
-      readFileSync(join(SETTINGS, name), "utf8"),
+  return ROOTS.flatMap(specFiles)
+    .map((path): [string, string] => [
+      relative(WEB, path),
+      readFileSync(path, "utf8"),
     ])
-    .filter(([, text]) => text.includes('import("./settings-page")'));
+    .filter(([, text]) => IMPORTS_PAGE.test(text));
 }
 
 /** Calls one stubbed hook by name, failing loudly if the harness lacks it. */
@@ -34,7 +52,14 @@ function hooksFrom(options: SettingsHooksOptions) {
 
 const HARNESS = String.raw`async \(\) =>\s*\(await import\("@/tests/settings-harness"\)\)\.`;
 
-/** Each module a page spec stubs, and the harness factory that stubs it. */
+/**
+ * Each module every page spec stubs, and the harness factory that stubs it.
+ *
+ * `@/components/shared/can` is not here, so `canPassThrough` is not enforced:
+ * `settings-rollover-promotion` mocks `Can` by hand on purpose, as a gate that
+ * hides the promote toggle from a viewer without `roles:manage`, because that
+ * gating is what it tests.
+ */
 const STUBS = [
   ["@repo/hooks", "settingsHooks"],
   ["@/lib/stores/chapter-store", "chapterStore"],
@@ -46,6 +71,24 @@ describe("Settings page spec harness", () => {
   // A page spec that hand-writes one of these stubs again drifts from the
   // baseline the others render against, which is how eight copies came to
   // exist in the first place.
+  it("finds a page spec however it imports the page", () => {
+    expect(
+      [
+        'await import("./settings-page")',
+        'import { SettingsPage } from "./settings-page";',
+        'import { SettingsPage } from "@/components/settings/settings-page";',
+        'await import("@/components/settings/settings-page")',
+      ].map((line) => IMPORTS_PAGE.test(line)),
+    ).toEqual([true, true, true, true]);
+    expect(
+      [
+        'from "./personal-settings-page"',
+        "`settings-page.tsx` had five blocks",
+        'from "./settings-page-header"',
+      ].map((line) => IMPORTS_PAGE.test(line)),
+    ).toEqual([false, false, false]);
+  });
+
   it.each(STUBS)("every page spec stubs %s through %s", (module, factory) => {
     const specs = pageSpecs();
     // A scan of nothing passes forever.
@@ -87,10 +130,8 @@ describe("Settings page spec harness", () => {
   });
 
   it("defaults to an IFC chapter, loaded empty reads and idle mutations", () => {
-    const use = hooksFrom({
-      currentChapter: () => null,
-      permissions: () => [],
-    });
+    const use = hooksFrom({ currentChapter: () => null });
+    expect(use("useMyPermissions").data).toEqual({ permissions: [] });
     expect(use("useOrgConfig").data).toEqual({ org_archetype: "ifc" });
     expect(use("useSemesters")).toEqual({
       data: [],

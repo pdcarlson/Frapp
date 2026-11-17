@@ -18,30 +18,47 @@ import { vi } from "vitest";
  * );
  * ```
  *
- * The specs differ on purpose in who is viewing (a wildcard, a fixed set, a
- * set a test swaps), in the org config, and in which mutations they observe,
- * so those are options and `overrides`; everything else is the one baseline
- * every page spec renders against: a server with AI off (no AI row, #4308),
- * loaded empty reads, and idle mutations.
+ * Every page spec starts from one baseline: a server with AI off (no AI row,
+ * #4308), an IFC chapter, loaded empty reads, and idle mutations. Who is
+ * viewing and the org config are options, and a spec replaces through
+ * `overrides` any export it needs to vary: `settings-module-deeplink` swaps
+ * the AI reads to put the AI tab in reach, and `settings-rail-access` swaps
+ * AI availability and the permissions read's loading and error states.
  */
 export type SettingsHooksOptions = {
   /** What `useCurrentChapter()` returns. */
   currentChapter: () => unknown;
-  /** The viewer's permission set, read on every render. */
-  permissions: () => string[];
+  /**
+   * The viewer's permission set, read on every render, as a loaded
+   * `useMyPermissions()`. Omit it only when `overrides.useMyPermissions`
+   * supplies the whole read (one that can still be in flight, or fail);
+   * without either, the viewer holds nothing.
+   */
+  permissions?: () => string[];
   /** `useOrgConfig().data`, read on every render. Defaults to an IFC chapter. */
   orgConfig?: () => Record<string, unknown>;
   /** Replaces or adds `@repo/hooks` exports, such as an observed mutation. */
   overrides?: Record<string, unknown>;
 };
 
-const idleMutation = () => ({ mutateAsync: vi.fn(), isPending: false });
-const loadedEmpty = () => ({ data: [], isPending: false, isError: false });
+/** A mutation nobody has fired. */
+export const idleMutation = () => ({ mutateAsync: vi.fn(), isPending: false });
+/** A list read that loaded and found nothing. */
+export const loadedEmpty = () => ({
+  data: [],
+  isPending: false,
+  isError: false,
+});
 
-/** The `@repo/hooks` module the Settings page reads. */
+/**
+ * The `@repo/hooks` exports the Settings page reads on its default tabs. A tab
+ * with reads of its own (the roles, classes and groups tabs read
+ * `useMembers`, `useRoleTiers`, `useInvitableRoleIds` and more) is not in the
+ * baseline: a spec that opens one adds what it reads through `overrides`.
+ */
 export function settingsHooks({
   currentChapter,
-  permissions,
+  permissions = () => [],
   orgConfig = () => ({ org_archetype: "ifc" }),
   overrides = {},
 }: SettingsHooksOptions): Record<string, unknown> {
@@ -96,8 +113,11 @@ export function navigation(
 }
 
 /**
- * `@/components/shared/can` as a pass-through. The permission gate has its own
- * tests; in a page spec it must not swallow the controls.
+ * `@/components/shared/can` as a pass-through, for a page spec that tests
+ * what the page renders rather than what `Can` hides: the gate has its own
+ * tests. A spec that tests the gating itself mocks `Can` by hand instead, as
+ * `settings-rollover-promotion` does to hide the promote toggle from a
+ * viewer without `roles:manage`.
  */
 export function canPassThrough() {
   return {
