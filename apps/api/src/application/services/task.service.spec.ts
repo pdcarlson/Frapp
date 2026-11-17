@@ -258,8 +258,14 @@ describe('TaskService', () => {
     });
 
     it.each([
-      ['repeats', { recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=UTC' }],
-      ['carries photos', { reference_photo_paths: ['chapters/ch-1/tasks/p/a.jpg'] }],
+      [
+        'repeats',
+        { recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=UTC' },
+      ],
+      [
+        'carries photos',
+        { reference_photo_paths: ['chapters/ch-1/tasks/p/a.jpg'] },
+      ],
       ['posts to chat', { channel_id: 'c-1', client_message_id: 'm-1' }],
       ['also names an assignee', { assignee_id: 'user-1' }],
     ])('refuses one that %s, writing nothing', async (_label, extra) => {
@@ -330,8 +336,8 @@ describe('TaskService', () => {
             points_awarded: true,
           }),
         ];
-        mockTaskRepo.findById.mockImplementation(async (id: string) =>
-          copies.find((copy) => copy.id === id) ?? null,
+        mockTaskRepo.findById.mockImplementation(
+          async (id: string) => copies.find((copy) => copy.id === id) ?? null,
         );
         mockTaskRepo.findGroupCopies.mockResolvedValue(copies);
         mockTaskRepo.updateUnconfirmed.mockImplementation(
@@ -374,9 +380,7 @@ describe('TaskService', () => {
       it('keeps going when another copy is confirmed mid-edit', async () => {
         mockTaskRepo.updateUnconfirmed.mockImplementation(
           async (id: string, _chapterId: string, patch: Partial<Task>) =>
-            id === 'copy-user-2'
-              ? null
-              : { ...copyOf('user-1'), ...patch },
+            id === 'copy-user-2' ? null : { ...copyOf('user-1'), ...patch },
         );
 
         const view = await service.updateGroup(

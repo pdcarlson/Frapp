@@ -715,9 +715,7 @@ export class TaskService {
 
   async create(input: CreateTaskInput): Promise<CreateTaskResult> {
     if (input.audience && input.assignee_id) {
-      throw new BadRequestException(
-        'Send assignee_id or audience, not both',
-      );
+      throw new BadRequestException('Send assignee_id or audience, not both');
     }
     if (input.audience) return this.createForGroup(input, input.audience);
     if (!input.assignee_id) {
@@ -905,8 +903,7 @@ export class TaskService {
     }
 
     const own =
-      copies.find((copy) => copy.assignee_id === input.created_by) ??
-      copies[0];
+      copies.find((copy) => copy.assignee_id === input.created_by) ?? copies[0];
     return {
       ...own,
       photos: [],
@@ -954,11 +951,11 @@ export class TaskService {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) throw new NotFoundException('Task not found');
     if (!task.group_id) {
-      throw new BadRequestException('This task isn\'t for a group');
+      throw new BadRequestException("This task isn't for a group");
     }
     if (input.assignee_id !== undefined) {
       throw new BadRequestException(
-        'Hand one member\'s copy to someone else on that copy alone',
+        "Hand one member's copy to someone else on that copy alone",
       );
     }
     if (input.reference_photo_paths !== undefined) {
@@ -998,7 +995,7 @@ export class TaskService {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) throw new NotFoundException('Task not found');
     if (!task.group_id) {
-      throw new BadRequestException('This task isn\'t for a group');
+      throw new BadRequestException("This task isn't for a group");
     }
     const copies = await this.taskRepo.findGroupCopies(chapterId, [
       task.group_id,

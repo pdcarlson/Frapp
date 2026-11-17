@@ -180,7 +180,8 @@ export class TaskController {
       body,
       result,
     }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
-      assigned_to_self: !body?.audience && result.assignee_id === result.created_by,
+      assigned_to_self:
+        !body?.audience && result.assignee_id === result.created_by,
       audience: body?.audience ?? 'person',
       group_size: result.group?.total ?? 1,
       has_due_time: !!result.due_at,

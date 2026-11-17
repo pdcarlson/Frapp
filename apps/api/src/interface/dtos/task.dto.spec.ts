@@ -167,9 +167,10 @@ describe('CreateTaskDto audience', () => {
     expect(await invalid({ audience: 'actives' })).toEqual(['audience']);
   });
 
-  it("takes the group scope on an edit and a delete", async () => {
+  it('takes the group scope on an edit and a delete', async () => {
     expect(
-      (await validate(plainToInstance(UpdateTaskDto, { scope: 'group' }))).length,
+      (await validate(plainToInstance(UpdateTaskDto, { scope: 'group' })))
+        .length,
     ).toBe(0);
     expect(
       (await validate(plainToInstance(DeleteTaskQueryDto, { scope: 'group' })))

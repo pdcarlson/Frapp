@@ -187,7 +187,9 @@ describe("SuggestedTasks (#4313)", () => {
 
   it("offers Report this on each suggestion (#4315)", () => {
     mocks.items.current = [suggestion("1")];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     expect(screen.getByRole("button", { name: "Report Task 1" })).toBeTruthy();
   });
 

@@ -1650,7 +1650,9 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     // No status lane says it, so the tile does.
     expect(within(region("This week")).getByText("In progress")).toBeVisible();
     // A member has nothing to switch or filter.
-    expect(screen.queryByRole("radiogroup", { name: "Whose tasks" })).toBeNull();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Whose tasks" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "Assignee" })).toBeNull();
   });
 
@@ -1795,7 +1797,9 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     const labels = screen
       .getAllByRole("region")
       .map((section) => section.getAttribute("aria-labelledby"))
-      .filter((id): id is string => id?.startsWith("tasks-column-person-") ?? false)
+      .filter(
+        (id): id is string => id?.startsWith("tasks-column-person-") ?? false,
+      )
       .map((id) => document.getElementById(id)?.textContent ?? "");
     expect(labels.map((label) => label.replace(/\d+$/, "").trim())).toEqual([
       "Cole Martin",
