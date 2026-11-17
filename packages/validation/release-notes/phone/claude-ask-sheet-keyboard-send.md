@@ -1,1 +1,0 @@
-In Ask Frapp, what you send now shows right away just above the box with the keyboard up, the newest words stay in view as the keyboard opens and closes, and dragging the conversation puts the keyboard away.
