@@ -133,6 +133,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can give a task to everyone: each active member gets their own copy, with their own progress, proof and points.",
       "Drafted minutes now list what the meeting actually decided, with the amounts and conditions, and leave out procedural votes like moving on to new business.",
       "Frapp's entries in the audit log can no longer be deleted, and nothing there can be newly pinned or flagged.",
+      "Settings has a Linked apps page: Google Calendar, Discord and the ways you sign in each show a green check when connected, and red when they need reconnecting.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
