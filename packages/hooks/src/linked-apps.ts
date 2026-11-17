@@ -59,7 +59,18 @@ export function discordLinkedState(
     };
   }
   if (link.available === false) return null;
-  return { tone: "off", detail: "Not linked" };
+  // Says what linking is for: `available` is the server's Discord app, not
+  // whether this chapter imported, so the row can't assume the member knows.
+  return { tone: "off", detail: "Link to claim your imported messages" };
+}
+
+/** What a status mark is read as, on web and the phone alike. */
+export function linkedStatusLabel(tone: LinkedAppTone): string {
+  return tone === "connected"
+    ? "Connected"
+    : tone === "expired"
+      ? "Expired"
+      : "Not connected";
 }
 
 /** One way a member can sign in to Frapp. */
@@ -77,7 +88,10 @@ export interface SignInIdentity {
 }
 
 const SIGN_IN_METHODS: readonly { key: SignInMethodKey; label: string }[] = [
-  { key: "email", label: "Email and password" },
+  // "Email", not "Email and password": Supabase gives a magic-link account
+  // the same `email` identity as a password one, and which it has can't be
+  // read from the identity.
+  { key: "email", label: "Email" },
   { key: "google", label: "Google" },
   { key: "apple", label: "Apple" },
 ];
@@ -103,4 +117,31 @@ export function signInMethodsFrom(
         typeof email === "string" && email ? email : (accountEmail ?? "Set up"),
     };
   });
+}
+
+/** The sign-in rows' query key: the account's own, cleared with the cache on sign-out. */
+export const signInMethodsQueryKey = ["auth", "sign-in-methods"] as const;
+
+/** The two Supabase Auth reads the sign-in rows need (web's and the phone's client both have them). */
+export interface SignInMethodsAuth {
+  getUserIdentities(): Promise<{
+    data: { identities: SignInIdentity[] } | null;
+    error: unknown;
+  }>;
+  getUser(): Promise<{ data: { user: { email?: string | null } | null } }>;
+}
+
+/** Reads the account's identities and maps them to rows. Throws on a failed read. */
+export async function loadSignInMethods(
+  auth: SignInMethodsAuth,
+): Promise<SignInMethod[]> {
+  const [{ data, error }, user] = await Promise.all([
+    auth.getUserIdentities(),
+    auth.getUser(),
+  ]);
+  if (error) throw error;
+  return signInMethodsFrom(
+    data?.identities ?? [],
+    user.data.user?.email ?? null,
+  );
 }

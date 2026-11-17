@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ExternalLink,
   MoreHorizontal,
+  RotateCcw,
   Unlink,
 } from "lucide-react";
 import {
@@ -18,9 +19,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
-import { useGoogleCalendarConnection } from "@/lib/events/google-calendar-connect";
-
-const GOOGLE_CALENDAR_WEB = "https://calendar.google.com/calendar/r";
+import {
+  GOOGLE_CALENDAR_WEB,
+  useGoogleCalendarConnection,
+} from "@/lib/events/google-calendar-connect";
 
 /**
  * Google Calendar's Linked apps row (#5407). Drawn on Settings → Linked apps
@@ -38,6 +40,26 @@ export function GoogleCalendarRow({
   webReturn: GoogleCalendarWebReturn;
 }) {
   const google = useGoogleCalendarConnection(webReturn);
+  // A failed read draws the row with a retry: no row would read as "not
+  // offered here", which is a claim (`DiscordRow` does the same).
+  if (google.status.isError) {
+    return (
+      <LinkedAppRow
+        icon={<CalendarDays className="text-foreground" />}
+        name="Google Calendar"
+        state={{ tone: "off", detail: "Couldn't load your connection" }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Try loading Google Calendar again"
+          onClick={() => void google.status.refetch()}
+        >
+          <RotateCcw aria-hidden="true" />
+        </Button>
+      </LinkedAppRow>
+    );
+  }
   const state = googleCalendarLinkedState(google.status.data);
   if (!state) return null;
 

@@ -8,12 +8,7 @@ import {
   RotateCcw,
   Unlink,
 } from "lucide-react";
-import {
-  calendarAppLinks,
-  googleCalendarFootnote,
-  useCalendarFeedLink,
-  useResetCalendarFeedLink,
-} from "@repo/hooks";
+import { googleCalendarFootnote } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,12 +17,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { useToast } from "@/lib/hooks/use-toast";
 import {
+  GOOGLE_CALENDAR_WEB,
   useGoogleCalendarConnection,
   useGoogleCalendarReturn,
 } from "@/lib/events/google-calendar-connect";
+import { useCalendarLinkActions } from "@/lib/events/calendar-link-actions";
 
 /**
  * "Subscribe" on the Events toolbar (#3322): puts the chapter's events, and
@@ -58,57 +53,13 @@ import {
  */
 export function CalendarSubscribeMenu() {
   const [open, setOpen] = useState(false);
-  const link = useCalendarFeedLink({ enabled: open });
-  const reset = useResetCalendarFeedLink();
+  const { link, apps, copyLink, resetLink, resetting, confirmDialog } =
+    useCalendarLinkActions({ enabled: open });
   const google = useGoogleCalendarConnection("events");
-  const { confirm, confirmDialog } = useConfirmDialog();
-  const { toast } = useToast();
-  const apps = link.data ? calendarAppLinks(link.data) : null;
   const googleConnect = google.status.data?.available
     ? google.status.data
     : null;
   useGoogleCalendarReturn();
-
-  async function copyLink() {
-    if (!link.data) return;
-    try {
-      // Inside the try: without a secure context `navigator.clipboard` is
-      // undefined and the call throws before any promise exists.
-      await navigator.clipboard.writeText(link.data.url);
-      toast({
-        description:
-          "Link copied. Paste it where your calendar app adds a calendar by URL.",
-      });
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Copy failed",
-        description: "Try again, or use one of the calendar apps above.",
-      });
-    }
-  }
-
-  async function resetLink() {
-    const ok = await confirm({
-      title: "Reset your calendar link?",
-      description:
-        "Calendars using your current link will go empty at their next update. Subscribe again with the new link afterwards.",
-      confirmLabel: "Reset link",
-      tone: "destructive",
-    });
-    if (!ok) return;
-    try {
-      await reset.mutateAsync();
-      toast({
-        description: "Link reset. Subscribe again to keep your calendar.",
-      });
-    } catch {
-      toast({
-        variant: "destructive",
-        description: "Couldn't reset your link. Try again.",
-      });
-    }
-  }
 
   return (
     <>
@@ -137,7 +88,7 @@ export function CalendarSubscribeMenu() {
           {googleConnect?.connected && googleConnect.status === "active" ? (
             <DropdownMenuItem asChild>
               <a
-                href="https://calendar.google.com/calendar/r"
+                href={GOOGLE_CALENDAR_WEB}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -198,7 +149,7 @@ export function CalendarSubscribeMenu() {
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem
-            disabled={!link.data || reset.isPending}
+            disabled={!link.data || resetting}
             onSelect={() => void resetLink()}
           >
             <RotateCcw aria-hidden="true" />

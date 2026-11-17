@@ -2,7 +2,11 @@
 
 import { Mail } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { signInMethodsFrom, type SignInMethodKey } from "@repo/hooks";
+import {
+  loadSignInMethods,
+  signInMethodsQueryKey,
+  type SignInMethodKey,
+} from "@repo/hooks";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
 import { NestedError } from "@/components/shared/nested-states";
@@ -16,7 +20,7 @@ const ICONS: Record<SignInMethodKey, React.ReactNode> = {
 
 /**
  * The ways this account signs in (#5407), read from Supabase Auth's
- * identities: email and password, Google, Apple. Each is a Linked apps row,
+ * identities: email (a password or a sign-in link), Google, Apple. Each is a Linked apps row,
  * checked when the account has it, the way Google's "Ways you sign in" and
  * GitHub's sign-in methods list them.
  *
@@ -26,19 +30,8 @@ const ICONS: Record<SignInMethodKey, React.ReactNode> = {
  */
 export function SignInMethodRows() {
   const identities = useQuery({
-    queryKey: ["auth", "sign-in-methods"],
-    queryFn: async () => {
-      const supabase = createSupabaseBrowserClient();
-      const [{ data, error }, user] = await Promise.all([
-        supabase.auth.getUserIdentities(),
-        supabase.auth.getUser(),
-      ]);
-      if (error) throw error;
-      return signInMethodsFrom(
-        data?.identities ?? [],
-        user.data.user?.email ?? null,
-      );
-    },
+    queryKey: signInMethodsQueryKey,
+    queryFn: () => loadSignInMethods(createSupabaseBrowserClient().auth),
     staleTime: 60_000,
   });
 

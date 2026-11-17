@@ -6,7 +6,7 @@
  */
 
 /** Discord's blurple. A trademark color, never a theme token. */
-export const DISCORD_BLURPLE = "#5865F2";
+const DISCORD_BLURPLE = "#5865F2";
 
 export function DiscordMark() {
   return (

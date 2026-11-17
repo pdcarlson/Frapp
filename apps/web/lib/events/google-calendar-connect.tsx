@@ -17,8 +17,11 @@ import {
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/lib/hooks/use-toast";
 
+/** Google Calendar on the web, which Open Google Calendar opens. */
+export const GOOGLE_CALENDAR_WEB = "https://calendar.google.com/calendar/r";
+
 /** The toast a finished sign-in shows, wherever it lands. */
-export const GOOGLE_CALENDAR_CONNECTED_TOAST = {
+const GOOGLE_CALENDAR_CONNECTED_TOAST = {
   title: "Google Calendar connected",
   description: "Your events show up there within a minute.",
 } as const;

@@ -44,6 +44,10 @@ export const GOOGLE_CALENDAR_WEB_RETURNS = {
   calendar: '/preferences?section=calendar',
 } as const;
 export type GoogleCalendarWebReturn = keyof typeof GOOGLE_CALENDAR_WEB_RETURNS;
+/** The values `web_return` accepts: the DTO validates against this list. */
+export const GOOGLE_CALENDAR_WEB_RETURN_KEYS = Object.keys(
+  GOOGLE_CALENDAR_WEB_RETURNS,
+) as GoogleCalendarWebReturn[];
 const WEB_RETURN_PATH = GOOGLE_CALENDAR_WEB_RETURNS.events;
 /** How long a started sign-in stays good. */
 const STATE_TTL_MS = 10 * 60 * 1000;

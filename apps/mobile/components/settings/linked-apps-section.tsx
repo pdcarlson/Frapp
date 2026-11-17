@@ -6,7 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   discordLinkedState,
   googleCalendarLinkedState,
-  signInMethodsFrom,
+  linkedStatusLabel,
+  loadSignInMethods,
+  signInMethodsQueryKey,
   useDiscordAuthorLink,
   type LinkedAppState,
   type LinkedAppTone,
@@ -23,6 +25,8 @@ import {
 import { getSupabaseClient } from "@/lib/supabase";
 import { useFrappTheme } from "@/lib/theme";
 
+/** Settings' own address: Google's sign-in comes back here. */
+const GOOGLE_RETURN_PATH = "preferences";
 /** Discord's blurple: a trademark color, never a theme token. */
 const DISCORD_BLURPLE = "#5865F2";
 const MARK_SIZE = 18;
@@ -44,24 +48,18 @@ const MARK_SIZE = 18;
  */
 export function LinkedAppsSection() {
   const { tokens } = useFrappTheme();
-  const google = useGoogleCalendarConnection({ returnPath: "preferences" });
+  const google = useGoogleCalendarConnection({
+    returnPath: GOOGLE_RETURN_PATH,
+  });
   const googleState = googleCalendarLinkedState(google.status.data);
   const discord = useDiscordAuthorLink();
   const discordState = discordLinkedState(discord.data);
   const signIn = useQuery({
-    queryKey: ["auth", "sign-in-methods"],
+    queryKey: signInMethodsQueryKey,
     queryFn: async () => {
+      // No client is a build without Supabase settings: no account to read.
       const supabase = getSupabaseClient();
-      if (!supabase) return [];
-      const [{ data, error }, user] = await Promise.all([
-        supabase.auth.getUserIdentities(),
-        supabase.auth.getUser(),
-      ]);
-      if (error) throw error;
-      return signInMethodsFrom(
-        data?.identities ?? [],
-        user.data.user?.email ?? null,
-      );
+      return supabase ? loadSignInMethods(supabase.auth) : [];
     },
     staleTime: 60_000,
   });
@@ -69,8 +67,21 @@ export function LinkedAppsSection() {
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
   function pressGoogle(state: LinkedAppState) {
-    if (state.tone !== "connected") {
+    if (state.tone === "off") {
       void google.connect();
+      return;
+    }
+    if (state.tone === "expired") {
+      // Reconnect, or remove it instead, as web's row offers both.
+      Alert.alert("Google Calendar", state.detail, [
+        { text: "Reconnect", onPress: () => void google.connect() },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: google.confirmDisconnect,
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
       return;
     }
     Alert.alert("Google Calendar", state.detail, [
@@ -92,7 +103,16 @@ export function LinkedAppsSection() {
     <>
       <SectionHeader>Linked apps</SectionHeader>
       <ListSection>
-        {googleState ? (
+        {google.status.isError ? (
+          // A failed read is said, never drawn as "not offered here".
+          <ListRow
+            label="Google Calendar"
+            description="Couldn't load your connection. Tap to try again."
+            descriptionTone="destructive"
+            action
+            onPress={() => void google.status.refetch()}
+          />
+        ) : googleState ? (
           <ListRow
             label="Google Calendar"
             leading={
@@ -105,7 +125,7 @@ export function LinkedAppsSection() {
               googleState.tone === "expired" ? "destructive" : "default"
             }
             trailing={<LinkedStatusMark tone={googleState.tone} />}
-            accessibilityValue={statusLabel(googleState.tone)}
+            accessibilityValue={linkedStatusLabel(googleState.tone)}
             accessibilityHint={
               googleState.tone === "connected"
                 ? "Opens Google Calendar, or disconnects it."
@@ -140,7 +160,7 @@ export function LinkedAppsSection() {
             }
             description={discordState.detail}
             trailing={<LinkedStatusMark tone={discordState.tone} />}
-            accessibilityValue={statusLabel(discordState.tone)}
+            accessibilityValue={linkedStatusLabel(discordState.tone)}
             action
             onPress={() =>
               Alert.alert(
@@ -169,7 +189,7 @@ export function LinkedAppsSection() {
                 }
                 description={method.detail}
                 trailing={<LinkedStatusMark tone={method.tone} />}
-                accessibilityValue={statusLabel(method.tone)}
+                accessibilityValue={linkedStatusLabel(method.tone)}
               />
             ))}
           </ListSection>
@@ -180,21 +200,14 @@ export function LinkedAppsSection() {
         ref={calendarSheetRef}
         open={calendarSheetOpen}
         onDismiss={() => setCalendarSheetOpen(false)}
+        googleReturnPath={GOOGLE_RETURN_PATH}
       />
     </>
   );
 }
 
-function statusLabel(tone: LinkedAppTone): string {
-  return tone === "connected"
-    ? "Connected"
-    : tone === "expired"
-      ? "Expired"
-      : "Not connected";
-}
-
 /** The check, hollow circle or alert at a row's end. */
-export function LinkedStatusMark({ tone }: { tone: LinkedAppTone }) {
+function LinkedStatusMark({ tone }: { tone: LinkedAppTone }) {
   const { tokens } = useFrappTheme();
   const size = MARK_SIZE;
   if (tone === "connected") {

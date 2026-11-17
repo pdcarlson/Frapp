@@ -37,8 +37,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** How long "Copied" stands in for "Copy link" before it reads as a row again. */
 const COPIED_HOLD_MS = 1500;
 /**
- * Where Google's sign-in comes back to: the Events tab, which is where the
- * member started, so the router has a real screen to land on when the system
+ * Where Google's sign-in comes back to by default: the Events tab, which is
+ * where the member started, so the router has a real screen to land on when the system
  * also hands the address to the app.
  */
 const GOOGLE_RETURN_PATH = "events";
@@ -73,8 +73,19 @@ const GOOGLE_RETURN_PATH = "events";
  */
 export const CalendarSubscribeSheet = forwardRef<
   BottomSheetModal,
-  { open: boolean; onDismiss: () => void }
->(function CalendarSubscribeSheet({ open, onDismiss }, ref) {
+  {
+    open: boolean;
+    onDismiss: () => void;
+    /**
+     * Where Google's sign-in comes back to: the screen that opened the sheet
+     * (Events, or Settings, #5407).
+     */
+    googleReturnPath?: string;
+  }
+>(function CalendarSubscribeSheet(
+  { open, onDismiss, googleReturnPath = GOOGLE_RETURN_PATH },
+  ref,
+) {
   const closeSheet = useSheetClose(ref);
   const backgroundStyle = useSheetBackgroundStyle();
   const { tokens } = useFrappTheme();
@@ -83,7 +94,7 @@ export const CalendarSubscribeSheet = forwardRef<
   const reset = useResetCalendarFeedLink();
   const apps = link.data ? calendarAppLinks(link.data) : null;
   const google = useGoogleCalendarConnection({
-    returnPath: GOOGLE_RETURN_PATH,
+    returnPath: googleReturnPath,
     beforeOpen: closeSheet,
   });
   const googleConnect = google.status.data?.available

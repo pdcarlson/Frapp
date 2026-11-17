@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { AlertCircle, CheckCircle2, Circle } from "lucide-react";
-import type { LinkedAppState } from "@repo/hooks";
+import { linkedStatusLabel, type LinkedAppState } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 
 /**
@@ -74,14 +74,8 @@ export function LinkedAppRow({
   );
 }
 
-const STATUS_LABEL: Record<LinkedAppState["tone"], string> = {
-  connected: "Connected",
-  off: "Not connected",
-  expired: "Expired",
-};
-
 /** The check, hollow circle or alert beside an app's name. */
-export function LinkedStatusMark({ tone }: { tone: LinkedAppState["tone"] }) {
+function LinkedStatusMark({ tone }: { tone: LinkedAppState["tone"] }) {
   const Icon =
     tone === "connected"
       ? CheckCircle2
@@ -91,7 +85,7 @@ export function LinkedStatusMark({ tone }: { tone: LinkedAppState["tone"] }) {
   return (
     <span
       role="img"
-      aria-label={STATUS_LABEL[tone]}
+      aria-label={linkedStatusLabel(tone)}
       className={cn(
         "shrink-0 [&_svg]:size-4",
         tone === "connected" && "text-success",

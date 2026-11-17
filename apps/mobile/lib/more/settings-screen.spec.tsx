@@ -127,8 +127,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-// Its own reads (Google Calendar, Discord, the sign-in methods through the
-// Supabase client) are covered by `@repo/hooks/linked-apps.spec.ts`.
+// Linked apps has its own spec (`components/settings/linked-apps-section.spec.tsx`);
+// this one only checks the rest of Settings.
 vi.mock("@/components/settings/linked-apps-section", () => ({
   LinkedAppsSection: () => null,
 }));

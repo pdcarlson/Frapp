@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   discordLinkedState,
   googleCalendarLinkedState,
+  loadSignInMethods,
   signInMethodsFrom,
 } from "./linked-apps";
 
@@ -78,5 +79,27 @@ describe("signInMethodsFrom", () => {
       ["google", "connected", "g@gmail.com"],
       ["apple", "off", "Not set up"],
     ]);
+  });
+});
+
+describe("loadSignInMethods", () => {
+  it("throws on a failed identities read rather than listing nothing", async () => {
+    await expect(
+      loadSignInMethods({
+        getUserIdentities: async () => ({ data: null, error: new Error("x") }),
+        getUser: async () => ({ data: { user: null } }),
+      }),
+    ).rejects.toThrow("x");
+  });
+
+  it("labels the email method Email, since a magic-link account has it too", async () => {
+    const rows = await loadSignInMethods({
+      getUserIdentities: async () => ({
+        data: { identities: [{ provider: "email", identity_data: {} }] },
+        error: null,
+      }),
+      getUser: async () => ({ data: { user: { email: "a@b.com" } } }),
+    });
+    expect(rows[0]).toMatchObject({ label: "Email", detail: "a@b.com" });
   });
 });

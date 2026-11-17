@@ -1,11 +1,7 @@
 "use client";
 
 import { Link2, MoreHorizontal, RotateCcw } from "lucide-react";
-import {
-  calendarAppLinks,
-  useCalendarFeedLink,
-  useResetCalendarFeedLink,
-} from "@repo/hooks";
+import { useState } from "react";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +11,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { GoogleCalendarRow } from "@/components/linked-apps/google-calendar-row";
 import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
 import { useGoogleCalendarReturn } from "@/lib/events/google-calendar-connect";
-import { useToast } from "@/lib/hooks/use-toast";
+import { useCalendarLinkActions } from "@/lib/events/calendar-link-actions";
 
 /**
  * Settings → Calendar (`/preferences?section=calendar`, #5407): where a
@@ -47,45 +42,16 @@ export function CalendarSection() {
 }
 
 function SubscriptionLinkRow() {
-  const link = useCalendarFeedLink({ enabled: true });
-  const reset = useResetCalendarFeedLink();
-  const { confirm, confirmDialog } = useConfirmDialog();
-  const { toast } = useToast();
-  const apps = link.data ? calendarAppLinks(link.data) : null;
+  // The link is made the first time it's asked for (Copy, or the menu), not
+  // when the page opens, so glancing at Settings mints no link.
+  const [wanted, setWanted] = useState(false);
+  const { link, apps, copyLink, resetLink, resetting, confirmDialog } =
+    useCalendarLinkActions({ enabled: wanted });
 
-  async function copyLink() {
-    if (!link.data) return;
-    try {
-      await navigator.clipboard.writeText(link.data.url);
-      toast({
-        description:
-          "Link copied. Paste it where your calendar app adds a calendar by URL.",
-      });
-    } catch {
-      toast({ variant: "destructive", description: "Copy failed. Try again." });
-    }
-  }
-
-  async function resetLink() {
-    const ok = await confirm({
-      title: "Reset your calendar link?",
-      description:
-        "Calendars using your current link will go empty at their next update. Subscribe again with the new link afterwards.",
-      confirmLabel: "Reset link",
-      tone: "destructive",
-    });
-    if (!ok) return;
-    try {
-      await reset.mutateAsync();
-      toast({
-        description: "Link reset. Subscribe again to keep your calendar.",
-      });
-    } catch {
-      toast({
-        variant: "destructive",
-        description: "Couldn't reset your link. Try again.",
-      });
-    }
+  async function copy() {
+    setWanted(true);
+    const url = link.data?.url ?? (await link.refetch()).data?.url;
+    await copyLink(url);
   }
 
   return (
@@ -104,12 +70,12 @@ function SubscriptionLinkRow() {
         <Button
           variant="secondary"
           size="toolbar"
-          disabled={!link.data}
-          onClick={() => void copyLink()}
+          disabled={link.isFetching && !link.data}
+          onClick={() => void copy()}
         >
           Copy link
         </Button>
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => open && setWanted(true)}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -139,7 +105,7 @@ function SubscriptionLinkRow() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              disabled={!link.data || reset.isPending}
+              disabled={!link.data || resetting}
               onSelect={() => void resetLink()}
             >
               <RotateCcw aria-hidden="true" />
