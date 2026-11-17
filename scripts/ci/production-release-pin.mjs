@@ -8,15 +8,19 @@
 // notices a split-brain deploy or a named-SHA ship that skipped Release.
 //
 // This script reads:
-//   * Render frapp-api-prod's deploy with status `live` → commit.id
+//   * the API's commit: on Cloud Run (`apiHost: cloud-run`, #5228), the
+//     `commit` that api.frapp.live's /health reports, which is then required;
+//     on Render, frapp-api-prod's deploy with status `live` → commit.id
 //   * Vercel frapp-web and frapp-landing READY production githubCommitSha
 //   * GitHub refs/tags/vX.Y.Z peeled to a commit
 // and requires the three SHAs to be identical and to match at least one
 // such tag. Matching origin/main is NOT required: live is allowed to lag
 // main until the next Deploy production.
 //
-// /health `commit` is corroboration only. Absent is ignored (the live tag
-// predates that field). Present and disagreeing with Render is a failure.
+// On Render, /health `commit` is corroboration only. Absent is ignored (the
+// live tag predates that field). Present and disagreeing with Render is a
+// failure. Cloud Run has no deploy list to read the commit from, and Render
+// no longer receives production's deploys there, so /health is the source.
 // The GET is timed out so a stall cannot hold the job until the runner kills it.
 //
 // Unreadable matching-refs or annotated-tag peel is FAIL, not a missing tag.
@@ -273,7 +277,15 @@ export async function peelVTags({ token, repo, fetchImpl }) {
   return { ok: true, tags };
 }
 
+/** /health's reading as the API host's own commit: required, not corroboration. */
+export function apiShaFromHealth(health) {
+  if (!health?.present) return { ok: false, reason: "/health reports no commit, so the API's commit is unknown" };
+  if (!health.ok) return { ok: false, reason: health.reason };
+  return { ok: true, sha: health.sha };
+}
+
 export async function collectLiveShas({
+  apiHost = "render",
   renderApiKey,
   vercelApiKey,
   teamId,
@@ -284,7 +296,9 @@ export async function collectLiveShas({
   fetchImpl = fetch,
 }) {
   let api;
-  try {
+  if (apiHost === "cloud-run") {
+    api = null;
+  } else try {
     const found = await findLiveRenderDeployPage({
       apiKey: renderApiKey,
       serviceId: renderServiceId,
@@ -335,6 +349,10 @@ export async function collectLiveShas({
     }
   }
 
+  if (apiHost === "cloud-run") {
+    // /health is the API's commit itself, so it isn't compared with itself.
+    return { api: apiShaFromHealth(health), web, landing, health: { present: false } };
+  }
   return { api, web, landing, health };
 }
 
@@ -401,9 +419,10 @@ export async function runWatchdog({
 async function main() {
   const probeOnly = process.argv.includes("--probe-only");
 
-  const renderApiKey = requireEnv("RENDER_API_KEY");
+  const apiHost = process.env.API_HOST || "render";
+  const renderApiKey = apiHost === "render" ? requireEnv("RENDER_API_KEY") : "";
   const vercelApiKey = requireEnv("VERCEL_API_KEY");
-  const renderServiceId = requireEnv("RENDER_SERVICE_ID");
+  const renderServiceId = apiHost === "render" ? requireEnv("RENDER_SERVICE_ID") : "";
   const webProjectId = requireEnv("VERCEL_WEB_PROJECT_ID");
   const landingProjectId = requireEnv("VERCEL_LANDING_PROJECT_ID");
   const teamId = process.env.VERCEL_TEAM_ID;
@@ -417,6 +436,7 @@ async function main() {
   }
 
   const hosts = await collectLiveShas({
+    apiHost,
     renderApiKey,
     vercelApiKey,
     teamId,

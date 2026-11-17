@@ -29,7 +29,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
 `scripts/gcp/bootstrap.sh` creates these in each project. None of them has a key.
 
 - **`frapp-api-runtime`** is the identity the API runs as. It can read its own project's Secret Manager values and call Vertex AI in its own project.
-- **`frapp-deployer`** is the identity a GitHub Actions deploy acts as. It can manage Cloud Run, push to its project's registry, list secrets, and run revisions as `frapp-api-runtime`. It holds `run.admin` because the deploy also turns off Cloud Run's invoker check, which is what makes the API public. Try narrowing it to `run.developer` once the deploy path works. Production's deployer can also read staging's registry, to copy the image staging ran.
+- **`frapp-deployer`** is the identity a GitHub Actions deploy acts as. It can manage Cloud Run, push to its project's registry, list secrets, and run revisions as `frapp-api-runtime`. It holds `run.admin` because the deploy also turns off Cloud Run's invoker check, which is what makes the API public. Try narrowing it to `run.developer` once the deploy path works. Production's deployer can also read staging's registry, which it was given to copy staging's image; production builds its own since #5228, so nothing uses that grant now ([#5335](https://github.com/frapplive/Frapp/issues/5335)).
 - **GitHub sign-in** goes through the workload identity pool `github`, provider `frapplive-frapp`. It accepts a GitHub token only when all three of these hold:
   - the repository is `frapplive/Frapp`;
   - the owner is the matching owner, checked by numeric id along with the repository, so both survive a rename;
@@ -86,7 +86,7 @@ for p in cs-project-6vw9f5xp cs-project-nyit2x59; do gcloud services enable orgp
 
 The org-policy service has to be on in the project a call is billed to, which Cloud Shell's default project isn't, hence the `services enable` and `--billing-project`. Wait a couple of minutes for the policy to take effect, then run the script again.
 
-**Images.** Each registry keeps its 50 newest images and deletes older ones after 90 days. Deploy production builds the commit's image itself rather than copying staging's: the source-map check counts only maps this run's build uploaded, and production can ship a commit staging never deployed. The setup script still lets production's deployer read staging's registry, which nothing uses now.
+**Images.** Each registry keeps its 50 newest images and deletes older ones after 90 days. Deploy production builds the commit's image itself rather than copying staging's: the source-map check counts only maps this run's build uploaded, and production can ship a commit staging never deployed. The setup script still lets production's deployer read staging's registry, which nothing uses now ([#5335](https://github.com/frapplive/Frapp/issues/5335)).
 
 ## Observability
 
@@ -130,14 +130,17 @@ Staging's `api-staging.frapp.live` moved on 2026-11-17. Its rollback value is th
 
 ### Production's first deploy
 
-Production had no members on 2026-11-16, so Paul chose to bring it up the way staging came up rather than build a special first step:
+Production had no members on 2026-11-16, so Paul chose to bring it up the way staging came up rather than build a special first step. Run steps 1 to 4 in one sitting:
 
-1. The first **Deploy production** after #5228's production step creates the service and serves the commit on Cloud Run. Its "Verify production serves the commit" step then fails, because `api.frapp.live` still reaches Render's older build, so that run ships no web and mints no tag. Its migrations have applied, as on any run.
-2. Run `bash scripts/gcp/load-balancer.sh production cs-project-nyit2x59` in Cloud Shell, from `main`, and add the `_acme-challenge` CNAME and the `candidateRecord` it prints at Squarespace.
-3. Once a rerun shows both certificates `ACTIVE`, move `api.frapp.live` to the balancer's address. Its rollback value is the CNAME Render gave it, which the Squarespace record shows before the change.
-4. Re-run the failed deploy job. It checks its candidate on `candidate.api.frapp.live`, moves traffic, and goes green, then ships web and the tag as usual.
-5. Measure the chain with the probe below against `api.frapp.live`. Production's count is already 2, as staging's is.
-6. Suspend `frapp-api-prod` on Render (**Settings → Suspend Web Service**), which keeps it as the rollback but stops it. Unlike staging's free service, it never sleeps, so until it is suspended its sweeps and chat workers run beside Cloud Run's against the same database ([§ Why one copy](#shape)), and it stays a second way into production's data.
+1. Dispatch **Deploy production** for `main`'s tip, which is newer than anything Render serves. The run creates the service and serves the commit on Cloud Run. Its "Verify production serves the commit" step then fails, because `api.frapp.live` still reaches Render's older build, so the run ships no web, mints no tag, and raises the P1 "Deploy production failed" alert. Its migrations have applied, as on any run. From here until step 4, Cloud Run (min 1) and Render production both run the sweeps and chat workers against the same database ([§ Why one copy](#shape)).
+2. Run `bash scripts/gcp/load-balancer.sh production cs-project-nyit2x59` in Cloud Shell, from `main`, and add the `_acme-challenge` CNAME and the `candidateRecord` it prints at Squarespace. Rerun the script until both certificates read `ACTIVE`.
+3. Move `api.frapp.live` to the balancer's address. Its rollback value is the CNAME Render gave it, which the Squarespace record shows before the change.
+4. Suspend `frapp-api-prod` on Render (**Settings → Suspend Web Service**). It stays as the rollback, resumable, but stops running beside Cloud Run, and stops being a second way into production's data.
+5. Re-run the failed deploy job. It checks its candidate on `candidate.api.frapp.live`, moves traffic, and goes green, then ships web and the tag as usual. The success closes the alert from step 1.
+6. Set `GOOGLE_VERTEX_PROJECT` in Infisical `prod` to `cs-project-nyit2x59` ([§ Identities](#identities), the Vertex AI note), then deploy again so the new revision reads it. Not before step 4: with no key file, boot refuses that value anywhere but Cloud Run, and Infisical's Render sync would hand it to Render production too.
+7. Measure the chain with the probe below against `api.frapp.live`. Production's count is already 2, as staging's is.
+
+The daily release pin (`production-release-pin.yml`) reads the API's commit from `/health` once production's `apiHost` is `cloud-run`, so it fails from step 1 until step 5's tag, then passes.
 
 **One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on staging. The probe below measured it on 2026-11-17: 2 with no forged entry, 3 with one. Staging's old Render service, `frapp-api-staging.onrender.com`, stays up as the rollback until Render is removed. It is a second way into staging's database, running its own older build with Render's count of 3, so a rollback to it needs no re-measuring, but a redeploy of current code to Render would.
 
