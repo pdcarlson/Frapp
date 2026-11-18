@@ -408,7 +408,7 @@ describe("Recording on the minutes screen", () => {
     expect(state.notesProps).toMatchObject({ autoDraft: false });
   });
 
-  it("shows the transcript on the screen on a tap, not in a sheet", () => {
+  it("opens the transcript on its own screen, never under the minutes", () => {
     state.recording = {
       ...available,
       status: "ready",
@@ -417,9 +417,13 @@ describe("Recording on the minutes screen", () => {
     };
     const tree = render();
     const row = MEETING_RECORDER_COPY.transcriptRow(1800);
-    expect(drawnText(tree.root)).not.toContain("Call to order.");
     act(() => button(tree, row).props.onPress());
-    expect(drawnText(tree.root)).toContain("Speaker 1  Call to order.");
+    // An hour of lines would push the minutes away (Paul, 2026-11-18).
+    expect(drawnText(tree.root)).not.toContain("Call to order.");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/minutes-transcript",
+      params: { id: "m1" },
+    });
   });
 });
 

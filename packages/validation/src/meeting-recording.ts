@@ -374,12 +374,23 @@ export const MEETING_RECORDER_COPY = {
   uploadingTitle: "Uploading",
   transcribingTitle: "Transcribing",
   readyTitle: "Transcript ready",
-  /** After Stop, the four steps to a draft, ticked off as they finish. */
+  /**
+   * After Stop, the four steps to a draft, ticked off as they finish. A step
+   * reads as done, or still to come, by its milestone; the one running says
+   * what it is doing (Paul, 2026-11-18: "Drafted" beside a step still
+   * running read as the wrong tense).
+   */
   steps: {
     recorded: "Recorded",
     uploaded: "Uploaded",
     transcribed: "Transcribed",
     drafted: "Drafted",
+  },
+  stepsRunning: {
+    recorded: "Saving",
+    uploaded: "Uploading",
+    transcribed: "Transcribing",
+    drafted: "Drafting",
   },
   transcriptRow: (seconds: number) => `Transcript, ${lengthInWords(seconds)}`,
   stopTitle: "Stop recording?",
@@ -445,3 +456,31 @@ export const MEETING_RECORDER_COPY = {
     `The recording of ${eventName} is on this phone and hasn't been uploaded.`,
   barHint: "Opens the minutes this recording is for.",
 } as const;
+
+/** One turn of a transcript, as phone and web draw it: speaker leading. */
+export interface TranscriptTurn {
+  speaker: string | null;
+  text: string;
+}
+
+/** "Speaker 2: words", split so the speaker can lead. */
+const TRANSCRIPT_SPEAKER_LINE = /^([^:]{1,40}):\s+([\s\S]*)$/;
+
+/**
+ * A transcript read as its turns, one per non-empty line, each with its
+ * speaker split off when the line names one, so the transcript screens on
+ * phone and web lead every turn with its speaker in a quieter weight, as
+ * Otter and Granola show theirs.
+ */
+export function transcriptTurns(transcript: string): TranscriptTurn[] {
+  return transcript
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const match = TRANSCRIPT_SPEAKER_LINE.exec(line);
+      return match
+        ? { speaker: match[1] ?? null, text: match[2] ?? "" }
+        : { speaker: null, text: line };
+    });
+}

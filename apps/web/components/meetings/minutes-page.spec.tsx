@@ -387,10 +387,14 @@ describe("MinutesPage", () => {
       screen.getByText("100 members can't be added one by one").parentElement!
         .className,
     ).toContain("pl-5");
+    // The transcript opens in its own tab, not under the minutes.
     expect(screen.getByText("Transcript")).toBeTruthy();
     expect(
-      screen.getByText("Speaker 1: One join code for Discord."),
-    ).toBeTruthy();
+      screen.getByRole("link", { name: "Open transcript" }).getAttribute("href"),
+    ).toBe("/meetings/m-1/transcript");
+    expect(
+      screen.queryByText("Speaker 1: One join code for Discord."),
+    ).toBeNull();
   });
 
   it("lists suggested tasks under posted minutes, and never beside a draft or the editor", () => {
@@ -1239,10 +1243,9 @@ describe("MinutesPage", () => {
       expect(
         screen.queryByRole("button", { name: "Add to your notes" }),
       ).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Read" }));
-      expect(
-        screen.getByText(TRANSCRIPT, { normalizer: (t) => t }),
-      ).toBeTruthy();
+      const open = screen.getByRole("link", { name: "Open transcript" });
+      expect(open.getAttribute("href")).toBe("/meetings/m-1/transcript");
+      expect(open.getAttribute("target")).toBe("_blank");
       expect(
         screen.getByRole("button", { name: "Draft from all notes" }),
       ).toBeTruthy();

@@ -129,6 +129,11 @@ export const MEETING_LIST_COPY = {
 export const MEETING_COPY = {
   /** The row that opens posted minutes' transcript (#5410). */
   transcript: "Transcript",
+  /** Its own screen, opened for a transcript that has since gone. */
+  /** Web: opens the transcript in a new tab. */
+  openTranscript: "Open transcript",
+  transcriptHint: "Opens the transcript on its own screen.",
+  transcriptMissing: "There's no transcript for these minutes.",
   missingTitle: "These minutes aren't here",
   missingBody: "They were deleted, or they aren't shared with you.",
   loadFailedTitle: "Couldn't load the minutes",

@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Linking,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -276,7 +282,9 @@ export function RecorderStage({
                   />
                 </View>
               ) : step.state === "active" ? (
-                <WorkingBars color={accent} />
+                // A spinner, not the recording bars: nothing is listening
+                // now, the step is just running (Paul, 2026-11-18).
+                <ActivityIndicator size="small" color={accent} />
               ) : (
                 <View style={styles.waitDot} />
               )}
