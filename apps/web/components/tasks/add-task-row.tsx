@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Plus, SlidersHorizontal } from "lucide-react";
+import { Plus, SlidersHorizontal } from "lucide-react";
 import { dueEntryFields } from "@repo/formatting";
 import type { CreateOpenTaskBody } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -88,9 +88,9 @@ type Missing = {
  * so the common task never opens a form. At rest it is one line even in the
  * Tasks column beside chat (~480px): the title, then short chips and More as
  * an icon. Once the line is in use (focused, or something typed) the title
- * takes the whole first line and the chips sit under it, roomier, with Add at
- * the end once there is a title to add, the way Linear's and Todoist's quick
- * adds grow under the title rather than wrap ragged. A missing who or due is flagged and
+ * and Add (once there is a title to add) take the first line and the chips
+ * sit under it, the way Linear's and Todoist's quick adds grow under the
+ * title rather than wrap ragged. A missing who or due is flagged and
  * focused on Enter, never while typing. More opens the rest of the task in
  * place: steps, notes, repeat, photos and proof. After a create the line
  * clears for the next one. Escape clears what was typed.
@@ -246,23 +246,39 @@ export function AddTaskRow({
       >
         <div
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2",
+            "flex min-w-0 flex-1 items-center gap-1.5",
             active && "basis-full",
-            FOCUS_RING_WITHIN,
           )}
         >
-          <Plus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <input
-            ref={titleRef}
-            aria-label="Task title"
-            placeholder="Add a task"
-            value={draft.title}
-            disabled={controls.disabled}
-            onChange={(event) =>
-              setDraft((prev) => ({ ...prev, title: event.target.value }))
-            }
-            className="h-9 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-          />
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2",
+              FOCUS_RING_WITHIN,
+            )}
+          >
+            <Plus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <input
+              ref={titleRef}
+              aria-label="Task title"
+              placeholder="Add a task"
+              value={draft.title}
+              disabled={controls.disabled}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, title: event.target.value }))
+              }
+              className="h-9 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+            />
+          </div>
+          {hasTitle ? (
+            <Button
+              size="toolbar"
+              type="submit"
+              className="shrink-0"
+              {...gate.controlProps(busy)}
+            >
+              {uploading ? "Adding photos…" : "Add"}
+            </Button>
+          ) : null}
         </div>
         <WhoPicker
           ref={whoRef}
@@ -274,9 +290,9 @@ export function AddTaskRow({
           invalid={missing.who}
           aria-describedby={missing.who ? `${ids}-missing` : undefined}
           disabled={controls.disabled}
-          className={cn("shrink-0", active ? "max-w-[14rem]" : "max-w-[8rem]")}
+          className="max-w-[10rem] shrink-0"
         />
-        <div className={cn("shrink-0", active ? "w-36" : "w-20")}>
+        <div className={cn("shrink-0", active ? "w-28" : "w-20")}>
           <DateField
             ref={dueRef}
             aria-label="Due date"
@@ -301,8 +317,8 @@ export function AddTaskRow({
           type="number"
           min={0}
           aria-label="Points (optional)"
-          placeholder="Points"
-          className={cn("h-9 shrink-0", active ? "w-24" : "w-[4.5rem]")}
+          placeholder="Pts"
+          className="h-9 w-20 shrink-0"
           value={draft.points}
           disabled={controls.disabled}
           onChange={(event) => {
@@ -314,36 +330,16 @@ export function AddTaskRow({
         <Button
           type="button"
           size="toolbar"
-          variant="ghost"
-          className={cn("shrink-0 gap-1", !active && "w-9 px-0")}
-          aria-label={active ? undefined : "More"}
-          title={active ? undefined : "More: steps, notes, repeat, photos"}
+          variant={more ? "secondary" : "ghost"}
+          className="w-9 shrink-0 px-0"
+          aria-label="More"
+          title="More: steps, notes, repeat, photos"
           aria-expanded={more}
           aria-controls={`${ids}-more`}
           onClick={() => setMore((open) => !open)}
         >
-          {active ? (
-            <>
-              More
-              <ChevronDown
-                className={cn("h-4 w-4 transition-transform", more && "rotate-180")}
-                aria-hidden="true"
-              />
-            </>
-          ) : (
-            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-          )}
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
-        {hasTitle ? (
-          <Button
-            size="toolbar"
-            type="submit"
-            className="ml-auto shrink-0"
-            {...gate.controlProps(busy)}
-          >
-            {uploading ? "Adding photos…" : "Add"}
-          </Button>
-        ) : null}
       </div>
       {missing.who || missing.due || missing.passed ? (
         <p id={`${ids}-missing`} role="alert" className="px-3 pb-2 text-caption text-destructive-text">
