@@ -139,7 +139,7 @@ That is the model's judgment, given the context, not a ranking rule.
   That is the chapter the asker is in when they ask.
   Belonging to a second chapter adds nothing to the answer.
 - **Background work acts for a named member.**
-  Drafting minutes acts for the officer who started it.
+  Drafting minutes acts for the officer who started it; the earlier minutes it reads for background are only ones that officer may read and whose meeting invited the same people as tonight's ([`meetings.md` § Drafting from notes](meetings.md#drafting-from-notes), #5477).
   A scheduled feature acts for the officer who turned it on or who will receive its result.
   The run reads only what that member can open at the moment it runs (one exception, which shows nobody anything: [This time last year](#this-time-last-year) reads this year's whole record to decide what to stay quiet about).
   A run with no member to act for does not read the corpus.

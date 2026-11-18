@@ -25,6 +25,18 @@ import {
 } from '@repo/validation';
 import type { LanguageModelMessage } from '../adapters/language-model.interface';
 import { isQuoteGrounded } from './quote-grounding';
+import {
+  BACKGROUND_RULES,
+  backgroundBlock,
+  backgroundText,
+  checkFollowUps,
+  dropEchoes,
+  followUpGaps,
+  followUpLines,
+  hasBackground,
+  withFollowUpLines,
+  type MinutesBackground,
+} from './minutes-context';
 
 /**
  * Minutes drafted from an officer's notes (#4312, `spec/behavior/meetings.md`
@@ -101,6 +113,11 @@ export interface MinutesDraftRequest {
   agenda?: readonly string[];
   /** Set when a long meeting is drafted in parts (`minutes-draft-parts.ts`). */
   part?: { index: number; count: number };
+  /**
+   * What the draft knows from earlier minutes (#5477, `minutes-context.ts`):
+   * never a source, never quoted, never written as said tonight.
+   */
+  background?: MinutesBackground;
 }
 
 /** The sources a request reads: `sources`, or `notes` as the one source. */
@@ -262,13 +279,19 @@ export function buildMinutesDraftPrompt(
           '',
         ]
       : []),
+    ...(hasBackground(request.background)
+      ? [...backgroundBlock(request.background), '']
+      : []),
     'Sources:',
     ...sources,
   ].join('\n');
 
+  const rules = hasBackground(request.background)
+    ? `${SYSTEM_RULES}\n${BACKGROUND_RULES}`
+    : SYSTEM_RULES;
   return {
     promptVersion: MEETING_DRAFT_PROMPT_VERSION,
-    system: `${SYSTEM_RULES}\n\n${TYPE_GUIDE[request.meetingType]}`,
+    system: `${rules}\n\n${TYPE_GUIDE[request.meetingType]}`,
     messages: [{ role: 'user', content }],
   };
 }
@@ -518,12 +541,39 @@ export function verifyMinutesDraft(
     });
   }
 
+  // Nothing from earlier minutes is written as said tonight (#5477): a line
+  // that repeats the background and no source goes, and is counted.
+  const earlier = backgroundText(request.background);
+  const tonight = sources.map((source) => source.text).join('\n');
+  let echoes = 0;
   const content: Partial<MeetingContent> = {};
   for (const key of MEETING_TEXT_SECTIONS) {
-    if (wants(key)) content[key] = clamp(output[key], MEETING_TEXT_MAX_LENGTH);
+    if (!wants(key)) continue;
+    const { text, dropped } = dropEchoes(output[key], earlier, tonight);
+    echoes += dropped;
+    content[key] = clamp(text, MEETING_TEXT_MAX_LENGTH);
   }
   if (wants('decisions')) content.decisions = decisions;
   if (wants('action_items')) content.action_items = actionItems;
+
+  // Last meeting's action items and the standing reports, where each stands
+  // tonight: the model's reading only with a line of a source, and in
+  // Frapp's own words under old business.
+  const followUps = checkFollowUps(
+    request.background,
+    output.follow_ups,
+    (quote, named) => locate(quote, named, sources),
+  );
+  const carriedLines = followUpLines(followUps, (userId) => {
+    const member = request.roster.find((m) => m.userId === userId);
+    return member ? member.name : null;
+  });
+  if (carriedLines) {
+    // Old business when the template has it; the discussion log, which
+    // every template has, otherwise.
+    const into = wants('old_business') ? 'old_business' : 'discussion_log';
+    content[into] = withFollowUpLines(content[into] ?? '', carriedLines);
+  }
 
   // Frapp's own gaps first, so the list's limit never cuts them.
   const ownGaps = [
@@ -531,6 +581,14 @@ export function verifyMinutesDraft(
       (about) =>
         `The notes disagree about "${about}", and one version couldn't be matched to its notes. Check it and fill it in.`,
     ),
+    ...followUpGaps(followUps),
+    ...(echoes > 0
+      ? [
+          echoes === 1
+            ? 'A drafted line repeated earlier minutes rather than tonight\u2019s notes, so it was taken out.'
+            : `${echoes} drafted lines repeated earlier minutes rather than tonight\u2019s notes, so they were taken out.`,
+        ]
+      : []),
     ...(unlisted > 0
       ? [
           unlisted === 1
@@ -549,7 +607,13 @@ export function verifyMinutesDraft(
 
   return {
     content,
-    review: { gaps, sources: sourceNotes, left_out: leftOut, conflicts },
+    review: {
+      gaps,
+      sources: sourceNotes,
+      left_out: leftOut,
+      conflicts,
+      follow_ups: followUps,
+    },
     ownersCleared,
     votesCleared,
   };
@@ -763,6 +827,11 @@ function withRecoveredQuotes(
       ...conflict,
       versions: conflict.versions.map(fix),
     })),
+    follow_ups: output.follow_ups?.map((entry) =>
+      entry.quote
+        ? { ...entry, quote: recoverQuote(entry.quote, sources) }
+        : entry,
+    ),
   };
 }
 

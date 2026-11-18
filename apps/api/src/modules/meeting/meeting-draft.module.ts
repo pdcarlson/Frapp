@@ -4,6 +4,7 @@ import { MeetingDraftRetentionService } from '../../application/workers/meeting-
 import { MeetingDraftController } from '../../interface/controllers/meeting-draft.controller';
 import { MeetingNotesController } from '../../interface/controllers/meeting-notes.controller';
 import { MeetingNotesService } from '../../application/services/meeting-notes.service';
+import { MeetingDraftContextService } from '../../application/services/meeting-draft-context.service';
 import { SupabaseMeetingNotesRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-notes.repository';
 import { SupabaseMeetingRecordingRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-recording.repository';
 import { MEETING_NOTES_REPOSITORY } from '#domain/repositories/meeting-notes.repository.interface';
@@ -21,6 +22,7 @@ import { AiModule } from '../ai/ai.module';
 import { AiRunsModule } from '../ai-runs/ai-runs.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { MeetingModule } from './meeting.module';
+import { EventModule } from '../event/event.module';
 
 /**
  * Minutes drafted from notes (#4312): the first feature on the AI gateway
@@ -32,6 +34,8 @@ import { MeetingModule } from './meeting.module';
   imports: [
     // Who may edit which minutes, and the save the draft goes in through.
     MeetingModule,
+    // Tonight's agenda and which earlier minutes share its audience (#5477).
+    EventModule,
     RbacModule,
     AiModule,
     AiRunsModule,
@@ -44,6 +48,7 @@ import { MeetingModule } from './meeting.module';
   providers: [
     MeetingDraftService,
     MeetingNotesService,
+    MeetingDraftContextService,
     MeetingDraftRetentionService,
     AiEnabledGuard,
     {

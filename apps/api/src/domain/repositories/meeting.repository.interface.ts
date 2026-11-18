@@ -35,6 +35,15 @@ export interface IMeetingRepository {
     limit: number,
   ): Promise<Meeting[]>;
   /**
+   * Posted minutes for meetings held before `before`, newest meeting first,
+   * at most `limit`: the few earlier minutes a draft reads (#5477).
+   */
+  findPostedBefore(
+    chapterId: string,
+    before: string,
+    limit: number,
+  ): Promise<Meeting[]>;
+  /**
    * Resolves to `null` when the event already has minutes (the unique index
    * on `event_id` won), so the caller can answer with the ones that exist.
    */

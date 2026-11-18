@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v5";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v6";
 
 const DueDate = z
   .string()
@@ -107,6 +107,24 @@ export const MeetingDraftOutputSchema = z.object({
             due_date: DueDate,
           }),
         ),
+      }),
+    )
+    .optional(),
+  /**
+   * What tonight's sources say about each item the prompt's background
+   * carries from earlier minutes (#5477): last meeting's open action items
+   * ("F1"…) and the standing reports ("R1"…). A status other than
+   * `not_mentioned` stands only with a quote Frapp finds in a source;
+   * otherwise Frapp reads it as `not_mentioned`. Optional, so a prompt with
+   * no background, or a reply that leaves it out, still fits.
+   */
+  follow_ups: z
+    .array(
+      z.object({
+        id: z.string(),
+        status: z.enum(["done", "carried", "given", "not_mentioned"]),
+        quote: z.string().nullable(),
+        source: z.string().nullable(),
       }),
     )
     .optional(),
@@ -238,6 +256,39 @@ export type MeetingDraftConflict = z.infer<typeof MeetingDraftConflictSchema>;
 export const MEETING_DRAFT_CONFLICTS_MAX = 12;
 
 /**
+ * Where an item carried from earlier minutes stands tonight (#5477).
+ * `done` and `carried` are an action item someone reported on tonight;
+ * `given` is a standing report given tonight; `not_mentioned` is nothing in
+ * tonight's sources, for the secretary to confirm.
+ */
+export const MEETING_FOLLOW_UP_STATUSES = [
+  "done",
+  "carried",
+  "given",
+  "not_mentioned",
+] as const;
+export type MeetingFollowUpStatus = (typeof MEETING_FOLLOW_UP_STATUSES)[number];
+
+/**
+ * One item the draft carried from earlier minutes (#5477): an open action
+ * item from the last meeting, or a standing report. Its text is from those
+ * minutes, never from tonight; `quote` and `from` are tonight's line about
+ * it, and are null when nothing tonight mentions it.
+ */
+export const MeetingDraftFollowUpSchema = z.object({
+  kind: z.enum(["action_item", "report"]),
+  /** The action item's text, or the office that reports, as earlier minutes wrote it. */
+  text: z.string(),
+  owner_user_id: z.string().nullable(),
+  /** The day of the meeting whose minutes it comes from, `YYYY-MM-DD`. */
+  from_meeting_date: z.string(),
+  status: z.enum(MEETING_FOLLOW_UP_STATUSES),
+  quote: z.string().nullable(),
+  from: z.string().nullable(),
+});
+export type MeetingDraftFollowUp = z.infer<typeof MeetingDraftFollowUpSchema>;
+
+/**
  * What the officer checks a draft against: what the notes left unsaid, the
  * line each decision and action item came from, and how many drafted lines
  * were left out because they matched nothing in the notes.
@@ -248,6 +299,12 @@ export const MeetingDraftReviewSchema = z.object({
   left_out: z.number().int().min(0),
   /** Where sources disagreed, and how each was settled (#4935). */
   conflicts: z.array(MeetingDraftConflictSchema).default([]),
+  /**
+   * What the draft carried from earlier minutes, and where each stands
+   * tonight (#5477). Empty on a draft with no earlier minutes to read, and
+   * on one written before this.
+   */
+  follow_ups: z.array(MeetingDraftFollowUpSchema).default([]),
 });
 export type MeetingDraftReview = z.infer<typeof MeetingDraftReviewSchema>;
 
@@ -256,6 +313,7 @@ export const EMPTY_MEETING_DRAFT_REVIEW: MeetingDraftReview = Object.freeze({
   sources: [],
   left_out: 0,
   conflicts: [],
+  follow_ups: [],
 }) as MeetingDraftReview;
 
 /** The most gaps a draft lists, and how long each may run. */
@@ -268,7 +326,7 @@ export const MEETING_DRAFT_GAP_MAX_LENGTH = 240;
  * the line no longer vouches for it.
  */
 export function meetingDraftQuoteFor(
-  review: MeetingDraftReview | null | undefined,
+  review: Pick<MeetingDraftReview, "sources"> | null | undefined,
   kind: MeetingDraftSource["kind"],
   text: string,
 ): string | null {
@@ -287,7 +345,7 @@ export function meetingDraftQuoteFor(
  * note-takers, or once the officer rewrites the item.
  */
 export function meetingDraftSourceFor(
-  review: MeetingDraftReview | null | undefined,
+  review: Pick<MeetingDraftReview, "sources"> | null | undefined,
   kind: MeetingDraftSource["kind"],
   text: string,
 ): string | null {

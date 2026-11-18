@@ -23,6 +23,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   MEETING_DRAFT_FAILURES,
   MEETING_DRAFT_SETTLED_BY,
+  MEETING_FOLLOW_UP_STATUSES,
   MEETING_DRAFT_STATUSES,
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
@@ -505,6 +506,42 @@ export class ChooseMeetingDraftVersionDto {
   expected_updated_at: string;
 }
 
+export class MeetingDraftFollowUpDto {
+  @ApiProperty({ enum: ['action_item', 'report'] })
+  kind: 'action_item' | 'report';
+  @ApiProperty({
+    description:
+      'The action item, or the office that reports, as earlier minutes wrote it. Never from tonight.',
+  })
+  text: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  owner_user_id: string | null;
+  @ApiProperty({
+    description: 'The day of the meeting whose minutes it comes from.',
+    example: '2026-11-03',
+  })
+  from_meeting_date: string;
+  @ApiProperty({
+    enum: MEETING_FOLLOW_UP_STATUSES,
+    description:
+      'Where it stands tonight. Anything but not_mentioned comes with the line of tonight’s notes that says so.',
+  })
+  status: (typeof MEETING_FOLLOW_UP_STATUSES)[number];
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Tonight’s line about it, word for word; null when nothing tonight mentions it.',
+  })
+  quote: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Whose line it is: a note-taker’s name, or "Recording".',
+  })
+  from: string | null;
+}
+
 export class MeetingDraftReviewDto {
   @ApiProperty({
     type: [String],
@@ -524,6 +561,12 @@ export class MeetingDraftReviewDto {
       'Where note-takers’ notes or the recording disagreed, and how each was settled (#4935).',
   })
   conflicts: MeetingDraftConflictDto[];
+  @ApiPropertyOptional({
+    type: [MeetingDraftFollowUpDto],
+    description:
+      'Last meeting’s action items and the standing reports the draft carried from earlier minutes, and where each stands tonight (#5477). This build always sends it, empty when there were none; optional so a client reads an older server the same way.',
+  })
+  follow_ups?: MeetingDraftFollowUpDto[];
 }
 
 export class MeetingDraftDto {

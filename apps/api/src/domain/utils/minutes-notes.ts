@@ -12,6 +12,7 @@ import {
   weekdayOf,
   type MinutesDraftRequest,
 } from './minutes-draft';
+import { spellingLines } from './minutes-context';
 
 /**
  * The notes pass (#5410): the meeting written up as notes, topic by topic,
@@ -32,7 +33,7 @@ import {
  * the officer before anything is posted. Decisions and action items keep
  * the draft pass's word-for-word check.
  */
-export const MINUTES_NOTES_PROMPT_VERSION = 'minutes-notes@v2';
+export const MINUTES_NOTES_PROMPT_VERSION = 'minutes-notes@v3';
 
 export const MinutesNotesOutputSchema = z.object({
   summary: z.string(),
@@ -122,6 +123,7 @@ export function buildMinutesNotesPrompt(request: MinutesDraftRequest): {
           '',
         ]
       : []),
+    ...spellingLines(request.background),
     'Sources:',
     ...sources,
   ].join('\n');

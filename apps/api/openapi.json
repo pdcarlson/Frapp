@@ -35467,6 +35467,61 @@
           "settled_by"
         ]
       },
+      "MeetingDraftFollowUpDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "action_item",
+              "report"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "The action item, or the office that reports, as earlier minutes wrote it. Never from tonight."
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "from_meeting_date": {
+            "type": "string",
+            "description": "The day of the meeting whose minutes it comes from.",
+            "example": "2026-11-03"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "done",
+              "carried",
+              "given",
+              "not_mentioned"
+            ],
+            "description": "Where it stands tonight. Anything but not_mentioned comes with the line of tonight’s notes that says so."
+          },
+          "quote": {
+            "type": "string",
+            "nullable": true,
+            "description": "Tonight’s line about it, word for word; null when nothing tonight mentions it."
+          },
+          "from": {
+            "type": "string",
+            "nullable": true,
+            "description": "Whose line it is: a note-taker’s name, or \"Recording\"."
+          }
+        },
+        "required": [
+          "kind",
+          "text",
+          "owner_user_id",
+          "from_meeting_date",
+          "status",
+          "quote",
+          "from"
+        ]
+      },
       "MeetingDraftReviewDto": {
         "type": "object",
         "properties": {
@@ -35492,6 +35547,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MeetingDraftConflictDto"
+            }
+          },
+          "follow_ups": {
+            "description": "Last meeting’s action items and the standing reports the draft carried from earlier minutes, and where each stands tonight (#5477). This build always sends it, empty when there were none; optional so a client reads an older server the same way.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDraftFollowUpDto"
             }
           }
         },
