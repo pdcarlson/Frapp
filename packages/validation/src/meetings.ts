@@ -54,6 +54,11 @@ export function meetingTypeLabel(
  * check-ins, filled without anyone typing.
  */
 export const MEETING_SECTIONS = [
+  // The TL;DR leads: a few plain bullets for the average member, what was
+  // decided, what they need to do and by when, and what's coming up, read
+  // before anything else (Paul, 2026-11-18, #5523: "a more parsable version
+  // of the minutes, just for your average brother to read").
+  { key: "tldr", label: "TL;DR", defaultOn: true },
   // What a member opens minutes for comes first: what was settled and who
   // owes what, then the body of the discussion, then the record (Paul,
   // 2026-11-17: "What matters is the body of the discussion").
@@ -86,9 +91,12 @@ export const DEFAULT_MEETING_SECTIONS: readonly MeetingSectionKey[] =
 
 /**
  * Sections every chapter's minutes carry, whatever its template says: the
- * notes by topic are what minutes are for, so no switch turns them off.
+ * TL;DR is what most members read (Paul, 2026-11-18, #5523: always on, so a
+ * template saved before it still gets one), and the notes by topic are what
+ * minutes are for, so no switch turns either off.
  */
 export const ALWAYS_MEETING_SECTIONS: readonly MeetingSectionKey[] = [
+  "tldr",
   "discussion_log",
 ];
 
@@ -115,6 +123,7 @@ export function normalizeMeetingSections(
 
 /** The free-text sections, each one block of the officer's own words. */
 export const MEETING_TEXT_SECTIONS = [
+  "tldr",
   "summary",
   "announcements",
   "officer_reports",
@@ -169,6 +178,7 @@ const sectionText = z.string().max(MEETING_TEXT_MAX_LENGTH);
  * send any subset, and a section left out keeps what is stored.
  */
 export const MeetingContentSchema = z.object({
+  tldr: sectionText,
   summary: sectionText,
   announcements: sectionText,
   decisions: z.array(MeetingDecisionSchema).max(MEETING_LIST_MAX_ITEMS),
@@ -185,6 +195,7 @@ export type MeetingActionItem = z.infer<typeof MeetingActionItemSchema>;
 export type MeetingContent = z.infer<typeof MeetingContentSchema>;
 
 export const EMPTY_MEETING_CONTENT: MeetingContent = Object.freeze({
+  tldr: "",
   summary: "",
   announcements: "",
   decisions: [],
@@ -216,6 +227,7 @@ export function readMeetingContent(value: unknown): MeetingContent {
     });
   };
   return {
+    tldr: text("tldr"),
     summary: text("summary"),
     announcements: text("announcements"),
     decisions: list("decisions", MeetingDecisionSchema),

@@ -836,6 +836,9 @@ function Minutes({
                 // Grows with the text, so a long summary reads whole.
                 className="min-h-28"
                 rows={key === "summary" ? 6 : 4}
+                placeholder={
+                  key === "tldr" ? MEETING_COPY.tldrPlaceholder : undefined
+                }
                 onChange={(event) =>
                   editContent({
                     [key]: event.target.value,
@@ -843,7 +846,6 @@ function Minutes({
                 }
               />
             ) : key === "summary" ? (
-              // The lead: what a member reads if they read nothing else.
               <p className="whitespace-pre-wrap break-words text-base leading-relaxed">
                 {view.content.summary}
               </p>
@@ -851,6 +853,9 @@ function Minutes({
               <LinesView
                 text={view.content[key as MeetingTextSection]}
                 outline={key === "discussion_log"}
+                // The lead (#5523): what a member reads if they read
+                // nothing else, a size up from the sections under it.
+                lead={key === "tldr"}
               />
             )}
           </section>
@@ -1143,10 +1148,21 @@ function ActionItemsView({
  * way Granola lays out meeting notes. A plain line that opens with its
  * topic ("Treasurer: ...") shows the topic in bold, so it can be skimmed.
  */
-function LinesView({ text, outline }: { text: string; outline: boolean }) {
+function LinesView({
+  text,
+  outline,
+  lead = false,
+}: {
+  text: string;
+  outline: boolean;
+  lead?: boolean;
+}) {
   const lines = parseMinutesNotes(text, { outline });
   return (
-    <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
+    <ul
+      role="list"
+      className={`space-y-1.5 leading-relaxed ${lead ? "text-base" : "text-sm"}`}
+    >
       {lines.map((line, index) => {
         if (line.kind === "topic") {
           return (

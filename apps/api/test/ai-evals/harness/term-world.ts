@@ -1144,6 +1144,7 @@ export function createTermWorld(
           .filter((line) => line.startsWith(`${tag}:`))
           .map((line) => line.slice(tag.length + 1).trim());
       const content: MeetingContent = {
+        tldr: '',
         summary: lines
           .filter(
             (line) =>

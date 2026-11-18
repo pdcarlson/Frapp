@@ -849,6 +849,19 @@ describe('MeetingService', () => {
       expect(second.content.action_items).toHaveLength(2);
     });
 
+    it('saves the TL;DR, and keeps it when a save leaves it out (#5523)', async () => {
+      const first = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: { tldr: '- Pay dues by Friday' },
+      });
+      expect(first.content.tldr).toBe('- Pay dues by Friday');
+      const second = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: first.meeting.updated_at,
+        content: { summary: 'Dues came up.' },
+      });
+      expect(second.content.tldr).toBe('- Pay dues by Friday');
+    });
+
     it('refuses a save over newer minutes', async () => {
       await expect(
         service.update(CHAPTER, 'mtg-1', SECRETARY, {
@@ -1089,6 +1102,7 @@ describe('MeetingService', () => {
   describe('template', () => {
     it('reads the default sections when the chapter saved none', async () => {
       await expect(service.getTemplate(CHAPTER)).resolves.toEqual([
+        'tldr',
         'summary',
         'announcements',
         'decisions',
@@ -1104,9 +1118,10 @@ describe('MeetingService', () => {
         'summary',
         'summary',
       ]);
+      // The TL;DR is always on (#5523), so a list without it still has it.
       expect(repo.upsertTemplate).toHaveBeenCalledWith(
         CHAPTER,
-        ['summary', 'discussion_log'],
+        ['tldr', 'summary', 'discussion_log'],
         PRESIDENT,
       );
     });

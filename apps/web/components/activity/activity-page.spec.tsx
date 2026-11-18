@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
@@ -28,8 +35,7 @@ const mockInvalidate = vi.fn();
 const listRereads = () =>
   mockInvalidate.mock.calls.filter(
     ([options]) =>
-      Array.isArray(options?.queryKey) &&
-      options.queryKey[0] === "activity",
+      Array.isArray(options?.queryKey) && options.queryKey[0] === "activity",
   ).length;
 const standingRereads = () =>
   mockInvalidate.mock.calls.filter(([options]) =>
@@ -43,6 +49,17 @@ const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
 const mockPermissions = vi.fn(() => ({
   data: { permissions: [] as string[] },
 }));
+// The member's arrangement (#5520): nothing saved, so the role's default,
+// unless a test saves one.
+const mockLayout = vi.fn<
+  () => {
+    data?: { card_order: string[]; hidden_cards: string[]; saved: boolean };
+    isSuccess?: boolean;
+    isPending?: boolean;
+  }
+>(() => ({ data: { card_order: [], hidden_cards: [], saved: false } }));
+const mockSaveLayout = vi.fn();
+const mockResetLayout = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -95,6 +112,22 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     withRecapDismissal: actual.withRecapDismissal,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
+    ACTIVITY_CARD_COPY: actual.ACTIVITY_CARD_COPY,
+    ACTIVITY_WEEK_CARD_COPY: actual.ACTIVITY_WEEK_CARD_COPY,
+    activityCardRole: actual.activityCardRole,
+    arrangeActivityCards: actual.arrangeActivityCards,
+    canHideActivityCard: actual.canHideActivityCard,
+    hideActivityCard: actual.hideActivityCard,
+    moveActivityCard: actual.moveActivityCard,
+    sameActivityArrangement: actual.sameActivityArrangement,
+    showActivityCard: actual.showActivityCard,
+    useActivityLayout: () => ({
+      isSuccess: true,
+      isPending: false,
+      ...mockLayout(),
+    }),
+    useSaveActivityLayout: () => ({ mutate: mockSaveLayout }),
+    useResetActivityLayout: () => ({ mutate: mockResetLayout }),
     activityDetailParts: actual.activityDetailParts,
     // The roster knows the officer only: anyone else has left.
     useActivityFaces: () => (id: string) =>
@@ -275,6 +308,11 @@ const loaded = (overrides: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
+  mockLayout.mockReturnValue({
+    data: { card_order: [], hidden_cards: [], saved: false },
+  });
+  mockSaveLayout.mockClear();
+  mockResetLayout.mockClear();
   vi.useRealTimers();
   vi.clearAllMocks();
   mockSearch = new URLSearchParams();
@@ -1279,7 +1317,7 @@ describe("ActivityPage", () => {
     }
   });
 
-  it("orders the page: the week, last week, this semester, to review, to do, waiting on others, links", () => {
+  it("orders an officer's page by their default: the week, last week, to review, to do, waiting on others, this semester, links (#5520)", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 16, 9));
     mockPermissions.mockReturnValue({
@@ -1348,10 +1386,10 @@ describe("ActivityPage", () => {
     ).toEqual([
       "2 left this week",
       "Last week",
-      "This semester",
       "To review",
       "To do",
       "Waiting on others",
+      "This semester",
       "Links",
     ]);
     // The old page's names are gone with its tiles and chips.
@@ -1359,6 +1397,100 @@ describe("ActivityPage", () => {
       expect(screen.queryByText(gone)).toBeNull();
     }
     expect(screen.queryByRole("group", { name: "Show" })).toBeNull();
+  });
+
+  describe("the member's cards (#5520)", () => {
+    const withGroups = () =>
+      loaded({
+        made_by_you: {
+          polls: [{ ...poll, message_id: "p9", sender_id: "me" }],
+          tasks: [],
+          events: [],
+        },
+      });
+
+    it("draws a saved order and leaves out what the member hid", () => {
+      mockActivity.mockReturnValue(withGroups());
+      mockLayout.mockReturnValue({
+        data: {
+          card_order: ["waiting", "todo", "a-card-from-a-newer-app"],
+          hidden_cards: ["semester"],
+          saved: true,
+        },
+      });
+      render(<ActivityPage />);
+
+      const headings = screen
+        .getAllByRole("heading", { level: 2 })
+        .map((heading) => heading.textContent);
+      expect(headings.indexOf("Waiting on others")).toBeLessThan(
+        headings.indexOf("To do"),
+      );
+      expect(headings).not.toContain("This semester");
+    });
+
+    it("edits in place of the page, and Done saves only a change", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(withGroups());
+      render(<ActivityPage />);
+
+      await user.click(screen.getByRole("button", { name: "Edit Activity" }));
+      expect(
+        screen.getByRole("heading", { name: "Edit Activity" }),
+      ).toBeInTheDocument();
+      // To do moves but can't be hidden: the week card's lines act on it.
+      expect(screen.queryByRole("button", { name: "Hide To do" })).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Done" }));
+      expect(mockSaveLayout).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Edit Activity" }));
+      await user.click(
+        screen.getByRole("button", { name: "Hide Waiting on others" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Move To do up" }));
+      expect(
+        screen.getByRole("button", { name: "Show Waiting on others" }),
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Done" }));
+
+      expect(mockSaveLayout).toHaveBeenCalledTimes(1);
+      const saved = mockSaveLayout.mock.calls[0]![0];
+      expect(saved.hidden).toEqual(["waiting"]);
+      expect(saved.shown.indexOf("todo")).toBeLessThan(
+        saved.shown.indexOf("recap"),
+      );
+    });
+
+    it("offers Edit Activity only once the member's arrangement is in", () => {
+      mockActivity.mockReturnValue(withGroups());
+      mockLayout.mockReturnValue({ isSuccess: false, isPending: true });
+      render(<ActivityPage />);
+      expect(
+        screen.queryByRole("button", { name: "Edit Activity" }),
+      ).toBeNull();
+    });
+
+    it("offers Reset only once the member has saved an arrangement", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(withGroups());
+      render(<ActivityPage />);
+      await user.click(screen.getByRole("button", { name: "Edit Activity" }));
+      expect(
+        screen.queryByRole("button", { name: "Reset to the default" }),
+      ).toBeNull();
+      cleanup();
+
+      mockLayout.mockReturnValue({
+        data: { card_order: ["todo"], hidden_cards: [], saved: true },
+      });
+      render(<ActivityPage />);
+      await user.click(screen.getByRole("button", { name: "Edit Activity" }));
+      await user.click(
+        screen.getByRole("button", { name: "Reset to the default" }),
+      );
+      expect(mockResetLayout).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("leaves out a group with nothing in it", () => {

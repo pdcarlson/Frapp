@@ -117,6 +117,11 @@ export class MeetingActionItemDto {
 
 /** Every section of the minutes, as a read returns them. */
 export class MeetingContentDto {
+  @ApiProperty({
+    description:
+      'The TL;DR: a few "- " bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it.',
+  })
+  tldr: string;
   @ApiProperty() summary: string;
   @ApiProperty() announcements: string;
   @ApiProperty({ type: [MeetingDecisionDto] }) decisions: MeetingDecisionDto[];
@@ -130,6 +135,12 @@ export class MeetingContentDto {
 
 /** A change to the minutes; a section left out keeps what is stored. */
 export class MeetingContentPatchDto {
+  @ApiPropertyOptional({ maxLength: MEETING_TEXT_MAX_LENGTH })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MEETING_TEXT_MAX_LENGTH)
+  tldr?: string;
+
   @ApiPropertyOptional({ maxLength: MEETING_TEXT_MAX_LENGTH })
   @IsOptional()
   @IsString()
