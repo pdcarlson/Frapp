@@ -10,8 +10,8 @@ import {
   EVERYONE_IN_CHAPTER,
   NOBODY_YET,
   WHO_PICKER_COPY,
-  type WhoRow,
-} from "@/lib/tasks/who-picker";
+} from "@repo/hooks/task-who-picker";
+import type { WhoRow } from "@/lib/tasks/who-rows";
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -21,7 +21,7 @@ import { WhoPickerBody, WhoPickerFooter } from "./who-picker-sheet";
 
 /**
  * The Assign to picker's sheet (the Tasks overhaul § 2). Its rules have
- * their own spec (`lib/tasks/who-picker.spec.ts`); this pins what a member
+ * their own spec (`packages/hooks/src/task-who-picker.spec.ts`); this pins what a member
  * sees and taps. The list is gorhom's, a stand-in under test, so its rows are
  * drawn here through its own `renderItem`.
  */
@@ -37,7 +37,6 @@ const directory = buildWhoDirectory({
   ],
   groups: [{ id: "g-1", name: "Formal planning", kind: "manual", member_ids: [] }],
   viewerUserId: "u-me",
-  fallbackName: (id) => id,
 });
 
 function render(node: React.ReactElement): ReactTestRenderer {

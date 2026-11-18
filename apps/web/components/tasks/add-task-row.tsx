@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus, SlidersHorizontal } from "lucide-react";
 import { dueEntryFields } from "@repo/formatting";
 import type { CreateOpenTaskBody } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -84,8 +84,13 @@ type Missing = {
 
 /**
  * The page's quick add (Paul, 2026-11-18): one line, as Todoist's is. Type a
- * title and press Enter; Who, Due and Points sit beside it as chips, so the
- * common task never opens a form. A missing who or due is flagged and
+ * title and press Enter; Who, Due and Points sit beside it as compact chips,
+ * so the common task never opens a form. At rest it is one line even in the
+ * Tasks column beside chat (~480px): the title, then short chips and More as
+ * an icon. Once the line is in use (focused, or something typed) the title
+ * takes the whole first line and the chips sit under it, roomier, with Add at
+ * the end once there is a title to add, the way Linear's and Todoist's quick
+ * adds grow under the title rather than wrap ragged. A missing who or due is flagged and
  * focused on Enter, never while typing. More opens the rest of the task in
  * place: steps, notes, repeat, photos and proof. After a create the line
  * clears for the next one. Escape clears what was typed.
@@ -206,6 +211,11 @@ export function AddTaskRow({
 
   const dirty =
     draft.title !== "" || draft.who !== null || draft.due !== "" || draft.points !== "";
+  // Focus anywhere in the line, its pickers' popovers included (React's
+  // focus events bubble through their portals).
+  const [focused, setFocused] = useState(false);
+  const active = focused || dirty || more;
+  const hasTitle = draft.title.trim() !== "";
 
   return (
     <form
@@ -221,12 +231,23 @@ export function AddTaskRow({
           setMissing({});
         }
       }}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next || !event.currentTarget.contains(next)) setFocused(false);
+      }}
       className="rounded-[14px] border border-border"
     >
-      <div className="flex flex-wrap items-center gap-2 p-1.5">
+      <div
+        className={cn(
+          "flex items-center gap-1.5 p-1.5",
+          active ? "flex-wrap" : "flex-nowrap",
+        )}
+      >
         <div
           className={cn(
-            "flex min-w-[12rem] flex-1 items-center gap-2 rounded-md px-2",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2",
+            active && "basis-full",
             FOCUS_RING_WITHIN,
           )}
         >
@@ -253,9 +274,9 @@ export function AddTaskRow({
           invalid={missing.who}
           aria-describedby={missing.who ? `${ids}-missing` : undefined}
           disabled={controls.disabled}
-          className="max-w-[16rem]"
+          className={cn("shrink-0", active ? "max-w-[14rem]" : "max-w-[8rem]")}
         />
-        <div className="w-40">
+        <div className={cn("shrink-0", active ? "w-36" : "w-20")}>
           <DateField
             ref={dueRef}
             aria-label="Due date"
@@ -281,7 +302,7 @@ export function AddTaskRow({
           min={0}
           aria-label="Points (optional)"
           placeholder="Points"
-          className="h-9 w-24"
+          className={cn("h-9 shrink-0", active ? "w-24" : "w-[4.5rem]")}
           value={draft.points}
           disabled={controls.disabled}
           onChange={(event) => {
@@ -294,20 +315,35 @@ export function AddTaskRow({
           type="button"
           size="toolbar"
           variant="ghost"
-          className="gap-1"
+          className={cn("shrink-0 gap-1", !active && "w-9 px-0")}
+          aria-label={active ? undefined : "More"}
+          title={active ? undefined : "More: steps, notes, repeat, photos"}
           aria-expanded={more}
           aria-controls={`${ids}-more`}
           onClick={() => setMore((open) => !open)}
         >
-          More
-          <ChevronDown
-            className={cn("h-4 w-4 transition-transform", more && "rotate-180")}
-            aria-hidden="true"
-          />
+          {active ? (
+            <>
+              More
+              <ChevronDown
+                className={cn("h-4 w-4 transition-transform", more && "rotate-180")}
+                aria-hidden="true"
+              />
+            </>
+          ) : (
+            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+          )}
         </Button>
-        <Button size="toolbar" type="submit" {...gate.controlProps(busy)}>
-          {uploading ? "Adding photos…" : "Add"}
-        </Button>
+        {hasTitle ? (
+          <Button
+            size="toolbar"
+            type="submit"
+            className="ml-auto shrink-0"
+            {...gate.controlProps(busy)}
+          >
+            {uploading ? "Adding photos…" : "Add"}
+          </Button>
+        ) : null}
       </div>
       {missing.who || missing.due || missing.passed ? (
         <p id={`${ids}-missing`} role="alert" className="px-3 pb-2 text-caption text-destructive-text">

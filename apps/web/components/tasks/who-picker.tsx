@@ -19,7 +19,7 @@ import {
   useRoleTiers,
   useRoles,
 } from "@repo/hooks";
-import { normalizeTaskWho, type TaskWho } from "@repo/validation";
+import type { TaskWho } from "@repo/validation";
 import {
   Popover,
   PopoverContent,
@@ -31,24 +31,34 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn, initials } from "@/lib/utils";
 import {
+  EVERYONE_IN_CHAPTER,
+  GROUPS_HEADING,
+  NOBODY_YET,
+  WHO_PICKER_COPY,
+  allRoles,
   buildWhoDirectory,
-  includedIds,
-  matchesSearch,
-  modeOf,
-  openSections,
+  initialOpenTiers,
+  initialWhoTab,
+  isGroupWho,
+  pickerMode,
   setTick,
+  tickChecked,
+  tickedIds,
+  tierKey,
   toggleChapter,
   togglePerson,
   toggleSet,
   whoHint,
   whoLabel,
+  whoMatches,
+  whoMode,
   whoSummary,
   withMode,
   type WhoDirectory,
   type WhoMode,
   type WhoPerson,
   type WhoSet,
-} from "./who-picker-model";
+} from "@repo/hooks/task-who-picker";
 
 /**
  * The chapter as the Who picker reads it: its active members, roles under
@@ -70,7 +80,7 @@ export function useWhoDirectory(options: { enabled?: boolean } = {}) {
         roles: roles.data,
         tiers: tiers.data,
         groups: groups.data,
-        viewerId,
+        viewerUserId: viewerId,
       }),
     [members.data, roles.data, tiers.data, groups.data, viewerId],
   );
@@ -171,7 +181,10 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
         </PopoverTrigger>
         <PopoverContent
           align={align}
-          className="w-[min(22rem,calc(100vw-2rem))] p-0"
+          // Kept on screen in the Tasks column beside chat, whose right edge
+          // is the viewport's: Radix shifts it in rather than clip it.
+          collisionPadding={12}
+          className="w-[min(22rem,calc(100vw-1.5rem))] p-0"
           onOpenAutoFocus={(event) => {
             // The search field takes focus, not the first row.
             event.preventDefault();
@@ -203,14 +216,22 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
 type Tab = "people" | "sets";
 
 const TAB_OPTIONS = [
-  { value: "people", label: "People" },
-  { value: "sets", label: "Roles and groups" },
+  { value: "people", label: WHO_PICKER_COPY.people },
+  { value: "sets", label: WHO_PICKER_COPY.rolesAndGroups },
 ] as const;
 
 const MODE_OPTIONS = [
-  { value: "each", label: "Each of them does it" },
-  { value: "someone", label: "One of them claims it" },
+  { value: "each", label: WHO_PICKER_COPY.each },
+  { value: "someone", label: WHO_PICKER_COPY.someone },
 ] as const;
+
+/** Groups fold like a tier, and start open. */
+const GROUPS_KEY = "groups";
+
+/** The sections a picker opens on: its tiers by the shared rule, and Groups. */
+function opening(who: TaskWho | null, directory: WhoDirectory): Set<string> {
+  return new Set([...initialOpenTiers(who, directory), GROUPS_KEY]);
+}
 
 /** The popover's inside, exported for specs and for a caller with its own shell. */
 export function WhoPickerBody({
@@ -235,16 +256,11 @@ export function WhoPickerBody({
   const ids = useId();
   const { avatarTintFor } = useMemberDisplayNames();
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<Tab>(() =>
-    value && value.kind !== "person" && value.target.kind !== "people" &&
-    value.target.kind !== "chapter"
-      ? "sets"
-      : "people",
-  );
-  // Tiers and sets opened, starting on the ones holding the pick (at 100+
-  // roles every tier open would bury it).
+  const [tab, setTab] = useState<Tab>(() => initialWhoTab(value));
+  // Tiers, groups and sets opened: every tier in a small chapter, only the
+  // one holding the pick past a dozen roles (where all open would bury it).
   const [opened, setOpened] = useState<Set<string>>(() =>
-    openSections(value, directory),
+    opening(value, directory),
   );
   // Roles and groups can land after the picker opens: seed the open
   // sections once from the first directory that has any.
@@ -252,13 +268,19 @@ export function WhoPickerBody({
   useEffect(() => {
     if (seeded.current || directory.sets.size === 0) return;
     seeded.current = true;
-    setOpened(openSections(value, directory));
+    setOpened(opening(value, directory));
   }, [directory, value]);
+  // The mode a group takes, held while one person is picked, so ticking a
+  // second person comes back to the last answer.
+  const [heldMode, setHeldMode] = useState<WhoMode>(() =>
+    pickerMode(value, "each"),
+  );
+  const mode = pickerMode(value, heldMode);
   // The role or group a pick was narrowed from, for "5 of Recruitment".
   const [narrowedFrom, setNarrowedFrom] = useState<WhoSet | null>(null);
   const many = allow === "any";
   const included = useMemo(
-    () => new Set(includedIds(value, directory)),
+    () => new Set(tickedIds(value, directory)),
     [value, directory],
   );
   const chapterPicked =
@@ -266,15 +288,8 @@ export function WhoPickerBody({
 
   function pick(next: TaskWho | null, from: WhoSet | null = null) {
     setNarrowedFrom(from);
+    if (isGroupWho(next)) setHeldMode(whoMode(next));
     onChange(next);
-  }
-
-  function personPicked(person: WhoPerson) {
-    if (!many) {
-      pick({ kind: "person", userId: person.userId });
-      return;
-    }
-    pick(togglePerson(value, person.userId, directory));
   }
 
   function toggleOpen(key: string) {
@@ -288,14 +303,10 @@ export function WhoPickerBody({
 
   const searching = query.trim() !== "";
   const people = directory.people.filter((person) =>
-    matchesSearch(person.name, query),
+    whoMatches(person.name, query),
   );
-  const allSets = [
-    ...directory.tiers.flatMap((tier) => tier.roles),
-    ...directory.untiered,
-    ...directory.groups,
-  ];
-  const sets = many ? allSets.filter((set) => matchesSearch(set.name, query)) : [];
+  const allSets = [...allRoles(directory), ...directory.groups];
+  const sets = many ? allSets.filter((set) => whoMatches(set.name, query)) : [];
 
   const personRow = (person: WhoPerson, from: WhoSet | null = null) => (
     <PickRow
@@ -307,28 +318,15 @@ export function WhoPickerBody({
           : value?.kind === "person" && value.userId === person.userId
       }
       kind={many ? "checkbox" : "radio"}
-      onClick={() => {
-        if (from && many) {
-          const base =
-            value && value.kind !== "person" &&
-            (value.target.kind === "role" || value.target.kind === "group") &&
-            value.target.id === from.id
-              ? from.memberIds
-              : includedIds(value, directory);
-          const next = base.includes(person.userId)
-            ? base.filter((id) => id !== person.userId)
-            : [...base, person.userId];
-          pick(
-            normalizeTaskWho({
-              kind: modeOf(value),
-              target: { kind: "people", userIds: next },
-            }),
-            from,
-          );
-          return;
-        }
-        personPicked(person);
-      }}
+      onClick={() =>
+        pick(
+          many
+            ? togglePerson(value, person.userId, mode, directory)
+            : { kind: "person", userId: person.userId },
+          // A member unticked inside a role or group: "5 of Recruitment".
+          many ? from : null,
+        )
+      }
       leading={
         <PersonFace person={person} tint={avatarTintFor(person.userId)} />
       }
@@ -348,14 +346,14 @@ export function WhoPickerBody({
     return (
       <li key={set.id}>
         <PickRow
-          tick={empty ? false : setTick(value, set, directory)}
+          tick={tickChecked(setTick(value, set, directory))}
           kind="checkbox"
           disabled={empty}
-          onClick={() => pick(toggleSet(value, set))}
+          onClick={() => pick(toggleSet(value, set, mode, directory))}
           name={set.name}
           trailing={
             <span className="text-caption text-muted-foreground">
-              {empty ? "Nobody yet" : set.memberIds.length}
+              {empty ? NOBODY_YET : set.memberIds.length}
             </span>
           }
           after={
@@ -401,7 +399,7 @@ export function WhoPickerBody({
         onClick={() =>
           pick(
             many
-              ? toggleChapter(value)
+              ? toggleChapter(value, mode, directory)
               : { kind: "each", target: { kind: "chapter" } },
           )
         }
@@ -410,7 +408,7 @@ export function WhoPickerBody({
             <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
           </span>
         }
-        name="Everyone in the chapter"
+        name={EVERYONE_IN_CHAPTER}
         trailing={
           <span className="text-caption text-muted-foreground">
             {directory.people.length}
@@ -494,10 +492,9 @@ export function WhoPickerBody({
       <ul aria-label="Roles and groups">
         {chapterRow ? <li>{chapterRow}</li> : null}
         {directory.tiers.map((tier) =>
-          section(`tier:${tier.id}`, tier.name, tier.roles),
+          section(tierKey(tier), tier.name, tier.roles),
         )}
-        {section("tier:none", directory.tiers.length > 0 ? "Other roles" : "Roles", directory.untiered)}
-        {section("groups", "Groups", directory.groups)}
+        {section(GROUPS_KEY, GROUPS_HEADING, directory.groups)}
       </ul>
     );
   }
@@ -517,8 +514,8 @@ export function WhoPickerBody({
               setQuery("");
             }
           }}
-          aria-label={many ? "Search people, roles and groups" : "Search people"}
-          placeholder={many ? "Search people, roles and groups" : "Search people"}
+          aria-label={many ? WHO_PICKER_COPY.search : WHO_PICKER_COPY.searchPeople}
+          placeholder={many ? WHO_PICKER_COPY.search : WHO_PICKER_COPY.searchPeople}
           className="h-11 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
       </div>
@@ -541,8 +538,11 @@ export function WhoPickerBody({
           <SegmentedChoice
             label="How it's given"
             options={MODE_OPTIONS}
-            value={modeOf(value)}
-            onChange={(mode: WhoMode) => pick(withMode(value, mode), narrowedFrom)}
+            value={mode}
+            onChange={(next: WhoMode) => {
+              setHeldMode(next);
+              pick(withMode(value, next), narrowedFrom);
+            }}
             fill
             dense
           />

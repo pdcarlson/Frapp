@@ -71,12 +71,17 @@ async function pickPerson(name: RegExp) {
 }
 
 describe("AddTaskRow's line", () => {
-  it("is one line: title, Who, Due, Points, More and Add", () => {
+  it("is one line: title, Who, Due, Points and More; Add once there's a title", () => {
     renderRow();
     for (const name of ["Task title", "Due date", "Points (optional)"]) {
       expect(within(form()).getByLabelText(name)).toBeInTheDocument();
     }
     expect(within(form()).getByRole("button", { name: "Who" })).toBeInTheDocument();
+    expect(within(form()).getByRole("button", { name: "More" })).toBeInTheDocument();
+    expect(within(form()).queryByRole("button", { name: "Add" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Sweep" },
+    });
     expect(add()).toBeInTheDocument();
     // The rest waits under More.
     expect(within(form()).queryByLabelText("Notes (optional)")).toBeNull();
@@ -281,7 +286,7 @@ describe("AddTaskRow for many people (#4295 step 3, 2026-11-18)", () => {
     expect(body.reference_photo_paths).toBeUndefined();
   });
 
-  it("puts One of them claims it up for grabs, through the open-tasks endpoint", async () => {
+  it("puts One claims it up for grabs, through the open-tasks endpoint", async () => {
     const onCreate = renderRow();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Drive to the airport" },
@@ -289,7 +294,7 @@ describe("AddTaskRow for many people (#4295 step 3, 2026-11-18)", () => {
     await userEvent.click(within(form()).getByRole("button", { name: /^who/i }));
     await userEvent.click(await screen.findByRole("radio", { name: "Roles and groups" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /Recruitment Chair/ }));
-    await userEvent.click(screen.getByRole("radio", { name: "One of them claims it" }));
+    await userEvent.click(screen.getByRole("radio", { name: "One claims it" }));
     await userEvent.keyboard("{Escape}");
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "Dec 31 2099" },

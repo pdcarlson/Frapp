@@ -31,23 +31,23 @@ import {
   WHO_PICKER_COPY,
   chapterTick,
   initialOpenTiers,
+  initialWhoTab,
   isGroupWho,
   personTicked,
+  pickerMode,
   setTick,
+  tickChecked,
   toggleChapter,
   togglePerson,
   toggleSet,
   whoHint,
-  whoMode,
-  whoRows,
   whoSummary,
   withMode,
   type Tick,
   type WhoDirectory,
   type WhoMode,
-  type WhoRow,
-  type WhoTab,
-} from "@/lib/tasks/who-picker";
+} from "@repo/hooks/task-who-picker";
+import { whoRows, type WhoRow, type WhoTab } from "@/lib/tasks/who-rows";
 import type { WhoReadState } from "@/lib/tasks/use-who-directory";
 
 export interface WhoPickerSheetProps {
@@ -106,8 +106,10 @@ export const WhoPickerSheet = forwardRef<BottomSheetModal, WhoPickerSheetProps>(
     const close = useSheetClose(ref);
     // The mode a group takes, remembered while one person is picked, so
     // ticking a second person comes back to the last answer.
-    const [heldMode, setHeldMode] = useState<WhoMode>(() => whoMode(value));
-    const mode = isGroupWho(value) ? whoMode(value) : heldMode;
+    const [heldMode, setHeldMode] = useState<WhoMode>(() =>
+      pickerMode(value, "each"),
+    );
+    const mode = pickerMode(value, heldMode);
     const showFooter = !single && isGroupWho(value);
 
     const setMode = (next: WhoMode) => {
@@ -217,12 +219,7 @@ export function WhoPickerBody({
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand.accent);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<WhoTab>(() =>
-    value && value.kind !== "person" && value.target.kind !== "people" &&
-    value.target.kind !== "chapter"
-      ? "sets"
-      : "people",
-  );
+  const [tab, setTab] = useState<WhoTab>(() => initialWhoTab(value));
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   // Taken once as the picker opens: a tier the member folds stays folded.
   const [openTiers, setOpenTiers] = useState(() =>
@@ -352,7 +349,7 @@ export function WhoPickerBody({
         return (
           <TickRow
             label={label}
-            tick={personTicked(person.userId, value, directory) ? "all" : "none"}
+            tick={personTicked(value, person.userId, directory) ? "all" : "none"}
             nested={item.nested}
             onPress={() =>
               onPick(togglePerson(value, person.userId, mode, directory))
@@ -368,7 +365,7 @@ export function WhoPickerBody({
           <TickRow
             label={set.name}
             count={nobody ? NOBODY_YET : String(set.memberIds.length)}
-            tick={setTick(set, value, directory)}
+            tick={setTick(value, set, directory)}
             disabled={nobody}
             onPress={() => onPick(toggleSet(value, set, mode, directory))}
             disclosure={
@@ -462,7 +459,7 @@ function TickRow({
         accessibilityRole="checkbox"
         accessibilityLabel={count ? `${label}, ${count}` : label}
         accessibilityState={{
-          checked: tick === "all" ? true : tick === "some" ? "mixed" : false,
+          checked: tickChecked(tick),
           disabled,
         }}
         disabled={disabled}

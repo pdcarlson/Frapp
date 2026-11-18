@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import {
-  memberFallbackLabel,
   useChapterRoster,
   useGroups,
   useMembers,
@@ -8,7 +7,10 @@ import {
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
-import { buildWhoDirectory, type WhoDirectory } from "./who-picker";
+import {
+  buildWhoDirectory,
+  type WhoDirectory,
+} from "@repo/hooks/task-who-picker";
 
 /** Where a part of the directory stands, for the picker's empty lines. */
 export type WhoReadState = "loading" | "ready" | "error";
@@ -22,7 +24,7 @@ export interface WhoDirectoryRead {
 }
 
 /**
- * The chapter as the Assign to picker draws it (`who-picker.ts`): active
+ * The chapter as the Assign to picker draws it (`@repo/hooks/task-who-picker`): active
  * members with their roles (`GET /v1/members`, which says who is alumni and
  * who holds what; the display-only roster can't), the roles in their tiers,
  * and the chapter's groups. A task officer holds `members:view`, which these
@@ -52,7 +54,6 @@ export function useWhoDirectory(
         tiers: withSets ? tiersQuery.data : undefined,
         groups: withSets ? (groupsQuery.data ?? null) : null,
         viewerUserId,
-        fallbackName: memberFallbackLabel,
       }),
     [
       membersQuery.data,

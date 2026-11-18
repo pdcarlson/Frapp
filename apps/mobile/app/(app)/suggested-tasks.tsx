@@ -58,7 +58,7 @@ import { lastYearTemplate } from "@/lib/events/last-year-template";
 import { selectEventDetail } from "@/lib/events/select";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
-import { whoLabel } from "@/lib/tasks/who-picker";
+import { whoLabel } from "@repo/hooks/task-who-picker";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 

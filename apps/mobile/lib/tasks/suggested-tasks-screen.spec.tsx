@@ -71,14 +71,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 const ai = vi.hoisted(() => ({ available: true as boolean | undefined }));
 // The chapter as the Assign to picker reads it (`use-who-directory.ts`).
 vi.mock("@/lib/tasks/use-who-directory", async () => {
-  const { buildWhoDirectory } = await import("@/lib/tasks/who-picker");
+  const { buildWhoDirectory } = await import("@repo/hooks/task-who-picker");
   const directory = buildWhoDirectory({
     members: [
       { user_id: "user-1", display_name: "Paul Carlson", role_ids: [] },
       { user_id: "user-2", display_name: "Shawn Klein", role_ids: [] },
     ],
     viewerUserId: "user-1",
-    fallbackName: (id: string) => `Member ${id}`,
   });
   return {
     useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),

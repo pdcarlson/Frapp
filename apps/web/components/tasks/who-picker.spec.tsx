@@ -91,18 +91,55 @@ describe("WhoPicker", () => {
       kind: "each",
       target: { kind: "people", userIds: ["u-sam", "u-alex"] },
     });
-    expect(screen.getByRole("radio", { name: "Each of them does it" })).toHaveAttribute(
+    expect(screen.getByRole("radio", { name: "Each does it" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    await userEvent.click(screen.getByRole("radio", { name: "One of them claims it" }));
+    await userEvent.click(screen.getByRole("radio", { name: "One claims it" }));
     expect(onChange).toHaveBeenLastCalledWith({
       kind: "someone",
       target: { kind: "people", userIds: ["u-sam", "u-alex"] },
     });
   });
 
-  it("groups roles under their tiers, folded except the one holding the pick", async () => {
+  it("keeps the mode going down to one person and back up", async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    await openPicker();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /Sam Ortiz/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alex Kim/ }));
+    await userEvent.click(screen.getByRole("radio", { name: "One claims it" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Alex Kim/ }));
+    expect(onChange).toHaveBeenLastCalledWith({ kind: "person", userId: "u-sam" });
+    expect(screen.queryByRole("radiogroup", { name: "How it's given" })).toBeNull();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Paul Carlson/ }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      kind: "someone",
+      target: { kind: "people", userIds: ["u-sam", "u-paul"] },
+    });
+  });
+
+  it("narrows from the chapter to a role, keeping the mode", async () => {
+    const onChange = vi.fn();
+    render(
+      <Harness
+        onChange={onChange}
+        initial={{ kind: "someone", target: { kind: "chapter" } }}
+      />,
+    );
+    await openPicker();
+    await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /Recruitment Committee/ }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      kind: "someone",
+      target: { kind: "role", id: "role-rush" },
+    });
+  });
+
+  it("groups roles under their tiers, all open in a chapter with few roles", async () => {
     render(
       <Harness initial={{ kind: "each", target: { kind: "role", id: "role-rush" } }} />,
     );
@@ -115,7 +152,7 @@ describe("WhoPicker", () => {
     );
     expect(screen.getByRole("button", { name: /Exec board/ })).toHaveAttribute(
       "aria-expanded",
-      "false",
+      "true",
     );
     expect(screen.getByRole("button", { name: /Chairs/ })).toHaveAttribute(
       "aria-expanded",
@@ -133,7 +170,6 @@ describe("WhoPicker", () => {
     render(<Harness />);
     await openPicker();
     await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
-    await userEvent.click(screen.getByRole("button", { name: /Exec board/ }));
 
     const historian = screen.getByRole("checkbox", { name: /Historian/ });
     expect(historian).toBeDisabled();

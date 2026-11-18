@@ -14,6 +14,7 @@ import {
   type OpenTask,
   type UpdateOpenTaskBody,
 } from "@repo/hooks";
+import { personName } from "@repo/hooks/task-who-picker";
 import {
   TASK_AUDIENCE_COPY,
   TASK_PROOF_KINDS,
@@ -55,7 +56,6 @@ import {
   TitleField,
 } from "./task-panel";
 import { useWhoDirectory, WhoPicker } from "./who-picker";
-import { personName } from "./who-picker-model";
 
 /** "Due Saturday", as the posting's row and its claim toast say it. */
 function dueWords(posting: Pick<OpenTask, "due_date" | "due_at">): string | null {

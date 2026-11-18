@@ -98,12 +98,8 @@ import {
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
 import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
-import {
-  isGroupWho,
-  whoHint,
-  whoLabel,
-  whoOfLegacyAssignee,
-} from "@/lib/tasks/who-picker";
+import { isGroupWho, whoHint, whoLabel } from "@repo/hooks/task-who-picker";
+import { whoOfLegacyAssignee } from "@/lib/tasks/who-rows";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).

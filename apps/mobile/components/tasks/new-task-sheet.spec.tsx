@@ -86,7 +86,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 // The chapter as the Assign to picker reads it (`use-who-directory.ts`):
 // three active members, and a committee two of them hold.
 vi.mock("@/lib/tasks/use-who-directory", async () => {
-  const { buildWhoDirectory } = await import("@/lib/tasks/who-picker");
+  const { buildWhoDirectory } = await import("@repo/hooks/task-who-picker");
   const directory = buildWhoDirectory({
     members: [
       { user_id: "user-1", display_name: "Paul Carlson", role_ids: [] },
@@ -95,7 +95,6 @@ vi.mock("@/lib/tasks/use-who-directory", async () => {
     ],
     roles: [{ id: "r1", name: "Recruitment Committee", tier_id: null }],
     viewerUserId: "user-1",
-    fallbackName: (id: string) => `Member ${id}`,
   });
   return {
     useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),

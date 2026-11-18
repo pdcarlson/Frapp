@@ -373,6 +373,25 @@ function liveStatus(): HTMLElement | null {
   );
 }
 
+
+/**
+ * Picks in the toolbar's View menu (grouping and List / Grid), which closes
+ * on the pick.
+ */
+async function pickView(name: string) {
+  await userEvent.click(screen.getByRole("button", { name: "View" }));
+  await userEvent.click(await screen.findByRole("menuitemradio", { name }));
+}
+
+/** Whether a View menu pick is the current one; the menu closes again. */
+async function viewChecked(name: string): Promise<boolean> {
+  await userEvent.click(screen.getByRole("button", { name: "View" }));
+  const item = await screen.findByRole("menuitemradio", { name });
+  const checked = item.getAttribute("aria-checked") === "true";
+  await userEvent.keyboard("{Escape}");
+  return checked;
+}
+
 describe("TasksBoard suggested tasks (#4313)", () => {
   it("folds an officer's suggestions to one line over the board, and shows none to a member", async () => {
     chapter.active();
@@ -661,8 +680,11 @@ describe("TasksBoard subscription gating", () => {
     expect(screen.getByText(/sweep the chapter room/i)).toBeInTheDocument();
 
     // And the add line takes nothing that cannot succeed.
+    // Add shows only once there's a title, which a gated line can't take.
     expect(titleField()).toBeDisabled();
-    expect(addSubmit()).toBeDisabled();
+    expect(
+      within(addForm()).queryByRole("button", { name: "Add" }),
+    ).toBeNull();
   });
 
   it("gates the other four task writes, not just Create", () => {
@@ -879,17 +901,11 @@ describe("TasksBoard List / Grid", () => {
   const sweepItem = () =>
     within(todoRegion()).getByText("Sweep the chapter room").closest("li");
 
-  const layoutChoice = (name: "List" | "Grid") =>
-    within(screen.getByRole("radiogroup", { name: "Layout" })).getByRole(
-      "radio",
-      { name },
-    );
-
-  it("opens as a compact List until the person picks (Paul, 2026-11-18)", () => {
+  it("opens as a compact List until the person picks (Paul, 2026-11-18)", async () => {
     window.localStorage.clear();
     resetListLayoutForTests();
     const { container } = render(<TasksBoard />);
-    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
+    expect(await viewChecked("List")).toBe(true);
     const todo = todoRegion();
     // Groups stacked, not lanes; each task a flush 40px row; Confirmed too.
     expect(todo.parentElement).not.toHaveClass("grid");
@@ -926,9 +942,9 @@ describe("TasksBoard List / Grid", () => {
     resetListLayoutForTests();
     const user = userEvent.setup();
     const { unmount } = render(<TasksBoard />);
-    await user.click(layoutChoice("Grid"));
+    await pickView("Grid");
 
-    expect(layoutChoice("Grid")).toHaveAttribute("aria-checked", "true");
+    expect(await viewChecked("Grid")).toBe(true);
     expect(todoRegion().parentElement).toHaveClass("@4xl:grid-cols-4");
     expect(sweepItem()).toHaveClass("rounded-[14px]", "border");
     expect(confirmedList()).toHaveClass("@4xl:grid-cols-4");
@@ -949,7 +965,7 @@ describe("TasksBoard List / Grid", () => {
 
     unmount();
     render(<TasksBoard />);
-    expect(layoutChoice("Grid")).toHaveAttribute("aria-checked", "true");
+    expect(await viewChecked("Grid")).toBe(true);
   });
 });
 
@@ -1173,8 +1189,7 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     render(<TasksBoard />);
     await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
     await userEvent.click(await screen.findByRole("radio", { name: "Roles and groups" }));
-    // Roles outside a tier sit folded under Other roles until opened.
-    await userEvent.click(screen.getByRole("button", { name: /other roles/i }));
+    // A chapter with a dozen roles or fewer opens every tier.
     await userEvent.click(await screen.findByRole("checkbox", { name: /Recruitment Committee/ }));
     await userEvent.keyboard("{Escape}");
     fireEvent.change(screen.getByLabelText("Due date"), {
@@ -1191,12 +1206,12 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     expect(createOpenTaskMutate).not.toHaveBeenCalled();
   });
 
-  it("posts One of them claims it to Up for grabs", async () => {
+  it("posts One claims it to Up for grabs", async () => {
     render(<TasksBoard />);
     await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /Paul Carlson/ }));
     await userEvent.click(await screen.findByRole("checkbox", { name: /Cole Martin/ }));
-    await userEvent.click(await screen.findByRole("radio", { name: "One of them claims it" }));
+    await userEvent.click(await screen.findByRole("radio", { name: "One claims it" }));
     await userEvent.keyboard("{Escape}");
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "2026-12-01" },
@@ -1916,14 +1931,8 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
   });
 
   it("groups the chapter's board by person, with each tile's status", async () => {
-    const user = userEvent.setup();
     render(<TasksBoard />);
-    await user.click(
-      within(screen.getByRole("radiogroup", { name: "Group tasks" })).getByRole(
-        "radio",
-        { name: "By person" },
-      ),
-    );
+    await pickView("By person");
 
     expect(titlesIn("Cole Martin")).toEqual(["Order shirts"]);
     // By name, whatever order the read listed them in.
@@ -2142,9 +2151,9 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     expect(within(tile).getByText("14 of 20 done")).toBeInTheDocument();
   });
 
-  it("shows each copy on its own once a filter asks about members", () => {
+  it("shows each copy on its own once a filter asks about members", async () => {
     render(<TasksBoard />);
-    fireEvent.click(screen.getByRole("radio", { name: "By person" }));
+    await pickView("By person");
     expect(
       screen.queryByRole("listitem", {
         name: "Fill out the tabling form, for everyone",

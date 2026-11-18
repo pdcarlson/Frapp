@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Pencil,
   Plus,
+  SlidersHorizontal,
   Trash2,
   Undo2,
   Users,
@@ -110,7 +111,15 @@ import { TaskPanel, type TaskPanelTarget } from "./task-panel";
 import { OpenTaskPanel, UpForGrabs } from "./up-for-grabs";
 import { SuggestionsStrip } from "./suggestions-strip";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
-import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FilterChip, type FilterOption } from "@/components/shared/filter-chip";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { useListLayout, type ListLayout } from "@/lib/list-layout";
@@ -190,6 +199,11 @@ const GROUP_BY_OPTIONS = [
   { value: "status", label: "By status" },
   { value: "person", label: "By person" },
 ] as const;
+
+const LAYOUT_OPTIONS = [
+  { value: "list", label: "List" },
+  { value: "grid", label: "Grid" },
+] as const satisfies readonly { value: ListLayout; label: string }[];
 
 /** The status groups' order in List: late first (by group id). */
 const LIST_STATUS_ORDER = ["overdue", "todo", "in_progress", "completed"];
@@ -337,7 +351,7 @@ export function TasksBoard() {
   const openTasksQuery = useOpenTasks();
   // Grid is the board of status columns, the page's only view until #4175
   // and still its default; List is the same groups as rows, top to bottom.
-  const [layout] = useListLayout("tasks");
+  const [layout, setLayout] = useListLayout("tasks");
   const isGrid = layout === "grid";
 
   // Read here, ahead of the early returns, because My tasks needs it to pick
@@ -1002,30 +1016,92 @@ export function TasksBoard() {
         */
         <>
           {/*
-            One toolbar row over the groups. An officer's view switch leads
-            it (Asana's My tasks beside a project, Linear's My issues beside
-            the team's); the chapter's board adds its grouping and filter
-            chips (Linear's Display and Filter, as the Directory's chips
-            draw them). New task and the List / Grid switch keep the trailing
-            edge, where Linear's and Asana's sit.
+            At most two toolbar rows over the groups, even in the Tasks
+            column beside chat (~480px). The first: an officer's view switch
+            (Asana's My tasks beside a project, Linear's My issues beside the
+            team's), then View and New task at the trailing edge, where
+            Linear's and Asana's sit. View is one menu holding the grouping and
+            List / Grid, as Linear's Display menu holds both. The second: the
+            chapter's board's filter chips (Linear's Filter, as the
+            Directory's chips draw them).
           */}
-          <div className="flex flex-wrap items-center gap-2">
-            {canManage ? (
-              <SegmentedChoice
-                label="Whose tasks"
-                options={VIEW_OPTIONS}
-                value={view}
-                onChange={setOfficerView}
-              />
-            ) : null}
-            {view === "all" && canManage ? (
-              <>
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              {canManage ? (
                 <SegmentedChoice
-                  label="Group tasks"
-                  options={GROUP_BY_OPTIONS}
-                  value={groupBy}
-                  onChange={setGroupBy}
+                  label="Whose tasks"
+                  options={VIEW_OPTIONS}
+                  value={view}
+                  onChange={setOfficerView}
                 />
+              ) : null}
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="toolbar"
+                      variant="secondary"
+                      className="gap-1.5"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                      View
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" collisionPadding={12}>
+                    {view === "all" && canManage ? (
+                      <>
+                        <DropdownMenuLabel>Group tasks</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup
+                          value={groupBy}
+                          onValueChange={(next) =>
+                            setGroupBy(next as TasksGroupBy)
+                          }
+                        >
+                          {GROUP_BY_OPTIONS.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuLabel>Layout</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={layout}
+                      onValueChange={(next) => setLayout(next as ListLayout)}
+                    >
+                      {LAYOUT_OPTIONS.map((option) => (
+                        <DropdownMenuRadioItem
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="toolbar"
+                    className="gap-1.5"
+                    {...gate.controlProps()}
+                    onClick={() => setExpandSignal((n) => n + 1)}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    New task
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            {view === "all" && canManage ? (
+              <div className="flex flex-wrap items-center gap-2">
                 <FilterChip
                   label="Assignee"
                   anyLabel="Anyone"
@@ -1059,23 +1135,8 @@ export function TasksBoard() {
                     Clear filters
                   </Button>
                 ) : null}
-              </>
+              </div>
             ) : null}
-            <div className="ml-auto flex items-center gap-2">
-              {canManage ? (
-                <Button
-                  type="button"
-                  size="toolbar"
-                  className="gap-1.5"
-                  {...gate.controlProps()}
-                  onClick={() => setExpandSignal((n) => n + 1)}
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  New task
-                </Button>
-              ) : null}
-              <ListLayoutToggle screen="tasks" />
-            </div>
           </div>
           {/*
             Rule 2: the first action sits where the first item goes, so the
