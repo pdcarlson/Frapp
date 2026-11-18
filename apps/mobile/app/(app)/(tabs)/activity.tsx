@@ -43,12 +43,13 @@ import {
   useNowDate,
   useCurrentChapter,
   useClearActivityLinkState,
-  useMemberNudge,
-  useMemberNudgeActions,
+  useActivityNudge,
+  useActivityNudgeActions,
   useMyPermissions,
   useRemoveActivityLink,
   useRestoreActivityLink,
-  useSetMemberNudgesEnabled,
+  useSetActivityNudgesEnabled,
+  type ActivityNudge,
   useSetActivityLinkState,
   useViewerUserId,
   useActivityFaces,
@@ -63,7 +64,7 @@ import {
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { messageReminderPresetTime } from "@repo/hooks/use-message-reminders";
-import { can, isModuleEnabled, memberNudgeAskPrompt } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import {
   ActivityFaces,
   ActivityListRow,
@@ -82,6 +83,11 @@ import {
   type ReminderSheetActions,
 } from "@/components/activity/activity-sheet";
 import { NudgeCard } from "@/components/activity/nudge-card";
+import {
+  activityNudgeAskPrompt,
+  nudgeShowsRow,
+  withoutWeekNext,
+} from "@/lib/activity/nudge";
 import { useActivitySnoozeMenu } from "@/components/activity/activity-snooze";
 import { RecapCard, recapDismissal } from "@/components/activity/recap-card";
 import { ReviewCard } from "@/components/activity/review-card";
@@ -440,35 +446,83 @@ export default function ActivityScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewTaskId, refetchActivity, router]);
 
-  // The nudge card (#4781): one card Frapp's AI wrote about one of the
-  // member's own tasks, or nothing. Asked for only where the chapter has
-  // nudges on (its own switch, on by default since 2026-11-17; Ask's switch
-  // until then) and the member holds `ai:use`; any failure is no card. It is
-  // asked again after the task sheet closes, since acting on the task is
-  // what the card was for.
+  // The card at the top (#5464): the one most useful thing waiting on the
+  // member, and a tray of the next few, picked by the server from Activity's
+  // own reads. It shows with or without AI; AI only adds a sentence, so it is
+  // asked for on every Activity. Any failure is no card. It is asked again
+  // after a sheet closes, since acting is what the card was for.
   const ai = useAiSurfaces();
-  const nudgeRead = useMemberNudge({
-    enabled: ai.nudges && moduleOn("tasks"),
-  });
-  const nudge = ai.nudges ? (nudgeRead.data ?? null) : null;
-  const nudgeActions = useMemberNudgeActions();
-  const setNudgesEnabled = useSetMemberNudgesEnabled();
+  const nudgeRead = useActivityNudge();
+  // Never the week card's Next a second time: when the card's pick is the
+  // Next row, the tray's first takes its place.
+  const nudge = useMemo(
+    () => withoutWeekNext(nudgeRead.data, agenda?.next?.key ?? null),
+    [nudgeRead.data, agenda?.next?.key],
+  );
+  const nudgeActions = useActivityNudgeActions();
+  const setNudgesEnabled = useSetActivityNudgesEnabled();
   const askRef = useRef<BottomSheetModal>(null);
   const [askDraft, setAskDraft] = useState<string | null>(null);
   // Mounted on the first "Ask about this", then presented once it has.
   useEffect(() => {
     if (askDraft !== null) askRef.current?.present();
   }, [askDraft]);
-  const openNudgeTask = () => {
-    if (!nudge) return;
-    const row = activity.data
-      ? findActivityTaskRow(activity.data, nudge.task_id, new Date())
-      : null;
-    if (row) {
-      open(row);
-    } else {
-      // Past the read's cap, or finished since: the board has every task.
-      router.push("/tasks");
+  // A target this build can't open (a newer server's, or one with no id)
+  // waves the card off rather than leaving a button that does nothing.
+  const openNudge = (item: ActivityNudge) => {
+    if (!openNudgeTarget(item)) nudgeActions.dismiss(item);
+  };
+  const openNudgeTarget = (item: ActivityNudge): boolean => {
+    const id = item.target_id;
+    switch (item.target_type) {
+      case "task": {
+        const row =
+          activity.data && id
+            ? findActivityTaskRow(activity.data, id, new Date())
+            : null;
+        // Past the read's cap, or finished since: the board has every task.
+        if (row) open(row);
+        else router.push("/tasks");
+        return true;
+      }
+      case "event":
+        if (!id) return false;
+        router.push({ pathname: "/event-details", params: { id } });
+        return true;
+      case "message":
+        if (!item.channel_id || !id) return false;
+        router.push({
+          pathname: "/chat-thread",
+          params: { channelId: item.channel_id, focusMessageId: id },
+        });
+        return true;
+      case "channel":
+        if (!id) return false;
+        router.push({ pathname: "/chat-thread", params: { channelId: id } });
+        return true;
+      case "review": {
+        // The oldest waiting, where the member confirms or approves it. A
+        // snoozed one isn't on the card, so it opens from the whole read.
+        const rows = review?.rows ?? [];
+        const row =
+          rows.find((r) => id !== null && r.key.endsWith(`:${id}`)) ??
+          (activity.data && id
+            ? findActivityTaskRow(activity.data, id, new Date())
+            : null) ??
+          rows[0];
+        if (row) open(row);
+        else router.push("/tasks");
+        return true;
+      }
+      case "meeting":
+        if (!id) return false;
+        router.push({ pathname: "/minutes-details", params: { id } });
+        return true;
+      case "study":
+        router.push("/study");
+        return true;
+      default:
+        return false;
     }
   };
 
@@ -550,15 +604,16 @@ export default function ActivityScreen() {
           rowActions={rowActions}
           onOpenNext={open}
         />
-        {nudge ? (
+        {nudge?.card ? (
           <NudgeCard
-            nudge={nudge}
+            card={nudge.card}
+            tray={nudge.tray}
             canAsk={ai.ask}
-            onOpenTask={openNudgeTask}
-            onAsk={() => setAskDraft(memberNudgeAskPrompt(nudge.task_title))}
-            onDismiss={(reason) => nudgeActions.dismiss(nudge.id, reason)}
+            onOpen={openNudge}
+            onAsk={(item) => setAskDraft(activityNudgeAskPrompt(item))}
+            onDismiss={(item) => nudgeActions.dismiss(item)}
             onTurnOff={() => setNudgesEnabled.mutate(false)}
-            onSeen={() => nudgeActions.markSeen(nudge.id)}
+            onSeen={(id) => nudgeActions.markSeen(id)}
           />
         ) : null}
         {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
@@ -619,10 +674,13 @@ export default function ActivityScreen() {
             rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
             onActed={reread}
             onClosed={() => {
+              const closedKey = openedKey;
               setOpenedKey(null);
               if (rereadOnClose()) reread();
-              // The member may have just done what the card asked.
-              if (nudge) void nudgeActions.recheck();
+              // The member may have just done what the card asked: ask again
+              // only when the sheet was the card's own item, since every
+              // other sheet leaves the card as it was.
+              if (nudgeShowsRow(nudge, closedKey)) void nudgeActions.recheck();
             }}
             linkActions={linkActions}
             reminderActions={reminderActions}

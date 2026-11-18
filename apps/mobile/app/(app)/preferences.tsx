@@ -10,10 +10,10 @@ import {
   useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
-  useMemberNudgeSettings,
+  useActivityNudgeSettings,
   usePermissionList,
   useSetChapterChatLevel,
-  useSetMemberNudgesEnabled,
+  useSetActivityNudgesEnabled,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -229,12 +229,11 @@ export default function PreferencesScreen() {
   // The AI footnote's privacy link reports a failed open under itself, not in
   // the shared slot under Account, which is a screen away.
   const [aiPrivacyFailed, setAiPrivacyFailed] = useState(false);
-  // The nudge card on Activity (#4781): the member's own switch, offered
-  // only once they have Frapp AI on, since the card is an AI feature.
-  const aiYes =
-    frappAi.consent?.answer === "yes" && !frappAi.consent.sheet_changed;
-  const nudgeSettings = useMemberNudgeSettings({ enabled: aiYes });
-  const setNudgesEnabled = useSetMemberNudgesEnabled();
+  // The card at the top of Activity: the member's own switch. Offered to
+  // everyone since #5464, because the card shows with or without AI; the
+  // card's own More turns it off, and only here turns it back on.
+  const nudgeSettings = useActivityNudgeSettings();
+  const setNudgesEnabled = useSetActivityNudgesEnabled();
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
   // The chapter-wide chat level (#3840). Unknown until read, so the row
@@ -491,6 +490,27 @@ export default function PreferencesScreen() {
         />
       </ListSection>
 
+      {/* The card at the top of Activity (#5464), which shows with or
+          without AI, so its switch sits outside the AI section. */}
+      {nudgeSettings.data ? (
+        <>
+          <SectionHeader>Activity</SectionHeader>
+          <ListSection>
+            <ListRow
+              label="Nudges on Activity"
+              description="The card at the top of Activity, about what is waiting on you."
+              trailing={
+                <Toggle
+                  value={nudgeSettings.data.enabled}
+                  onValueChange={(value) => setNudgesEnabled.mutate(value)}
+                  accessibilityLabel="Nudges on Activity"
+                />
+              }
+            />
+          </ListSection>
+        </>
+      ) : null}
+
       <LinkedAppsSection />
 
       {/* Only where the server has AI (`AI_ENABLED`): with it off the
@@ -520,19 +540,7 @@ export default function PreferencesScreen() {
                 />
               }
             />
-            {aiYes && nudgeSettings.data ? (
-              <ListRow
-                label="Nudges on Activity"
-                description="A short note from Frapp when one of your tasks could use it."
-                trailing={
-                  <Toggle
-                    value={nudgeSettings.data.enabled}
-                    onValueChange={(value) => setNudgesEnabled.mutate(value)}
-                    accessibilityLabel="Nudges on Activity"
-                  />
-                }
-              />
-            ) : null}
+
             {showChapterAi && chapterAi.data ? (
               <ListRow
                 label={AI_SETTINGS_COPY.chapterRow}
