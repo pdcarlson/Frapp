@@ -17,7 +17,7 @@ vi.mock("@repo/hooks", () => ({
   // Task photos (#4565): no photo reads or uploads in these cases.
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useTaskPhotoUrl: () => ({ data: undefined }),
-  // The task form's Who picker reads roles, tiers and groups.
+  // The Who picker (the card's and the task form's) reads roles, tiers and groups.
   useRoles: () => ({ data: [] }),
   useRoleTiers: () => ({ data: [] }),
   useGroups: () => ({ data: [] }),
@@ -44,12 +44,6 @@ vi.mock("@repo/hooks", () => ({
       ],
     };
   },
-  // The Who picker's directory (Paul, 2026-11-18): no roles or groups here.
-  useRoles: () => ({ data: [] }),
-  useRoleTiers: () => ({ data: [] }),
-  useGroups: () => ({ data: [] }),
-  useCurrentUser: () => ({ data: undefined }),
-  useMemberDisplayNames: () => ({ avatarTintFor: () => undefined }),
   useMembers: () => ({
     data: [
       { user_id: "u-jake", display_name: "Jake Ross" },
