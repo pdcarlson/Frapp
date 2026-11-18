@@ -161,7 +161,9 @@ order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
 - **A card newer than a member's save** goes where the default puts it: after the nearest card
   before it in the default that they show.
 - **Edit Activity**, at the foot of the page, lists the cards in place of the page until Done:
-  minus hides one, plus brings it back where the default puts it, and arrows move it one place.
+  minus hides one, plus brings it back where the default puts it, and dragging its handle moves
+  it, the rows between sliding apart to show where it lands (#5520 step 2, as Bevel and Fitness
+  reorder theirs). A screen reader or keyboard moves it one place with Move up and Move down.
   Done saves only when something changed; Reset to the default is offered once they have saved.
   A failed save puts the saved arrangement back and says so. Edit Activity is offered only once the member's
   saved arrangement and role have loaded, since an editor opened on the default would save it over

@@ -136,6 +136,24 @@ export function moveActivityCard(
   return { shown, hidden: arrangement.hidden };
 }
 
+/**
+ * Move a shown card to a place in the shown list, as a drag drops it. A place
+ * past either end is the end.
+ */
+export function moveActivityCardTo(
+  arrangement: ActivityCardArrangement,
+  key: ActivityCardKey,
+  to: number,
+): ActivityCardArrangement {
+  const from = arrangement.shown.indexOf(key);
+  if (from < 0) return arrangement;
+  const place = Math.max(0, Math.min(arrangement.shown.length - 1, to));
+  if (place === from) return arrangement;
+  const shown = arrangement.shown.filter((k) => k !== key);
+  shown.splice(place, 0, key);
+  return { shown, hidden: arrangement.hidden };
+}
+
 /** Hide a shown card. Hidden cards are listed most recently hidden first. */
 export function hideActivityCard(
   arrangement: ActivityCardArrangement,

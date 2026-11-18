@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BackHandler,
   Platform,
@@ -13,17 +13,24 @@ import {
   canHideActivityCard,
   hideActivityCard,
   moveActivityCard,
+  moveActivityCardTo,
   showActivityCard,
   type ActivityCardArrangement,
   type ActivityCardRole,
 } from "@repo/hooks";
 import type { ActivityCardKey } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
+import { GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useSharedValue,
+  type SharedValue,
+} from "react-native-reanimated";
 import {
-  DisclosureGlyph,
+  DragHandleGlyph,
   MinusGlyph,
   PlusGlyph,
 } from "@/components/control-glyphs";
+import { useDragRow } from "@/lib/drag-rows";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -65,6 +72,28 @@ export function ActivityEditor({
     return () => sub.remove();
   }, [draft, onDone]);
 
+  // Dragging a card by its handle (#5520 step 2), as Bevel and Fitness
+  // reorder theirs: the rows between slide apart to show where it lands.
+  const heldIndex = useSharedValue(-1);
+  const dragY = useSharedValue(0);
+  const count = useSharedValue(draft.shown.length);
+  useEffect(() => {
+    count.set(draft.shown.length);
+  }, [draft.shown.length, count]);
+  const onDragStart = useCallback(() => undefined, []);
+  const onDrop = useCallback(
+    (from: number, rows: number) => {
+      setDraft((current) => {
+        const key = current.shown[from];
+        return key ? moveActivityCardTo(current, key, from + rows) : current;
+      });
+      heldIndex.set(-1);
+      dragY.set(0);
+    },
+    [heldIndex, dragY],
+  );
+  const drag = { heldIndex, dragY, count, onDragStart, onDrop };
+
   return (
     <View style={styles.body}>
       <View style={styles.titleRow}>
@@ -99,8 +128,9 @@ export function ActivityEditor({
           <ShownRow
             key={key}
             cardKey={key}
-            isFirst={index === 0}
+            index={index}
             isLast={index === draft.shown.length - 1}
+            drag={drag}
             onHide={() => setDraft(hideActivityCard(draft, key))}
             onMove={(direction) =>
               setDraft(moveActivityCard(draft, key, direction))
@@ -143,16 +173,30 @@ export function ActivityEditor({
   );
 }
 
+/** The list's drag state, shared by its rows (`useDragRow`). */
+type DragState = {
+  heldIndex: SharedValue<number>;
+  dragY: SharedValue<number>;
+  count: SharedValue<number>;
+  onDragStart: () => void;
+  onDrop: (from: number, rows: number) => void;
+};
+
+/** Every shown row is one height, so a drag's distance is a count of rows. */
+const ROW_HEIGHT = 64;
+
 function ShownRow({
   cardKey,
-  isFirst,
+  index,
   isLast,
+  drag,
   onHide,
   onMove,
 }: {
   cardKey: ActivityCardKey;
-  isFirst: boolean;
+  index: number;
   isLast: boolean;
+  drag: DragState;
   onHide: () => void;
   onMove: (direction: -1 | 1) => void;
 }) {
@@ -160,15 +204,21 @@ function ShownRow({
   const styles = createStyles(tokens);
   const name = ACTIVITY_CARD_COPY[cardKey].name;
   const hideable = canHideActivityCard(cardKey);
+  const { style: lifted, pan } = useDragRow({
+    index,
+    rowHeight: ROW_HEIGHT,
+    liftedFill: tokens.color.surface.popover,
+    ...drag,
+  });
   return (
-    <View
-      style={styles.row}
-      // A screen reader gets the arrows as the row's own actions.
+    <Animated.View
+      style={[styles.row, styles.shownRow, lifted]}
+      // A screen reader moves a row with these, since it can't drag.
       accessible
       accessibilityLabel={name}
       accessibilityActions={[
         ...(hideable ? [{ name: "hide", label: `Hide ${name}` }] : []),
-        ...(isFirst ? [] : [{ name: "up", label: "Move up" }]),
+        ...(index === 0 ? [] : [{ name: "up", label: "Move up" }]),
         ...(isLast ? [] : [{ name: "down", label: "Move down" }]),
       ]}
       onAccessibilityAction={(event) => {
@@ -183,30 +233,41 @@ function ShownRow({
         // Holds the column, so every name lines up.
         <View style={styles.hit} />
       )}
-      <CardText cardKey={cardKey} />
-      <ArrowButton
-        label="Move up"
-        direction="up"
-        disabled={isFirst}
-        onPress={() => onMove(-1)}
-      />
-      <ArrowButton
-        label="Move down"
-        direction="down"
-        disabled={isLast}
-        onPress={() => onMove(1)}
-      />
-    </View>
+      <CardText cardKey={cardKey} oneLine />
+      {/* Drag from the handle only, so the rest of the list still scrolls. */}
+      <GestureDetector gesture={pan}>
+        <View
+          style={styles.hit}
+          hitSlop={8}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <DragHandleGlyph color={tokens.color.text.mutedForeground} />
+        </View>
+      </GestureDetector>
+    </Animated.View>
   );
 }
 
-function CardText({ cardKey }: { cardKey: ActivityCardKey }) {
+function CardText({
+  cardKey,
+  oneLine = false,
+}: {
+  cardKey: ActivityCardKey;
+  /** One line each, so a draggable row keeps the height a drag counts in. */
+  oneLine?: boolean;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const lines = oneLine ? 1 : undefined;
   return (
     <View style={styles.text}>
-      <Text style={styles.name}>{ACTIVITY_CARD_COPY[cardKey].name}</Text>
-      <Text style={styles.detail}>{ACTIVITY_CARD_COPY[cardKey].detail}</Text>
+      <Text numberOfLines={lines} style={styles.name}>
+        {ACTIVITY_CARD_COPY[cardKey].name}
+      </Text>
+      <Text numberOfLines={lines} style={styles.detail}>
+        {ACTIVITY_CARD_COPY[cardKey].detail}
+      </Text>
     </View>
   );
 }
@@ -240,39 +301,6 @@ function RoundButton({
           <MinusGlyph color={tokens.color.semantic.onSemantic} size={14} />
         )}
       </View>
-    </Pressable>
-  );
-}
-
-function ArrowButton({
-  label,
-  direction,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  direction: "up" | "down";
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.hit, pressed && styles.pressed]}
-    >
-      <DisclosureGlyph
-        direction={direction}
-        size={20}
-        color={
-          disabled ? tokens.color.text.disabled : tokens.color.text.foreground
-        }
-      />
     </Pressable>
   );
 }
@@ -325,6 +353,7 @@ function createStyles(tokens: SignetTokens) {
       borderTopColor: tokens.color.border.hairline,
     },
     noTop: { borderTopWidth: 0 },
+    shownRow: { height: ROW_HEIGHT, minHeight: ROW_HEIGHT },
     weekRow: { paddingLeft: tokens.spacing.lg },
     text: { flex: 1, paddingVertical: tokens.spacing.sm },
     name: {

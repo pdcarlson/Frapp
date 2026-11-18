@@ -71,14 +71,22 @@ describe("ActivityEditor (#5520)", () => {
     expect(result.shown).toContain("links");
   });
 
-  it("moves a card with its arrows, and not past either end", () => {
+  it("moves a card with the row's Move up action, never past the top", () => {
     const { tree, onDone } = render({});
-    const moveUps = tree.root.findAll(
-      (n) => n.props.accessibilityLabel === "Move up" && n.props.onPress,
+    const rows = tree.root.findAll(
+      (n) =>
+        Array.isArray(n.props.accessibilityActions) &&
+        typeof n.props.onAccessibilityAction === "function",
     );
-    // The first card's up arrow is drawn but disabled.
-    expect(moveUps[0]!.props.disabled).toBe(true);
-    act(() => moveUps[1]!.props.onPress());
+    const actionsOf = (n: (typeof rows)[number]) =>
+      n.props.accessibilityActions.map((a: { name: string }) => a.name);
+    // The first card offers no Move up; the second moves above it.
+    expect(actionsOf(rows[0]!)).not.toContain("up");
+    act(() =>
+      rows[1]!.props.onAccessibilityAction({
+        nativeEvent: { actionName: "up" },
+      }),
+    );
     press(tree, "Done");
     expect(onDone.mock.calls[0]![0].shown.slice(0, 2)).toEqual([
       START.shown[1],

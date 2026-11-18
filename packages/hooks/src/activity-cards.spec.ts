@@ -6,6 +6,7 @@ import {
   arrangeActivityCards,
   hideActivityCard,
   moveActivityCard,
+  moveActivityCardTo,
   sameActivityArrangement,
   showActivityCard,
 } from "./activity-cards";
@@ -151,6 +152,14 @@ describe("editing", () => {
     expect(hidden.hidden).toEqual(["review"]);
     const back = showActivityCard(hidden, "review", "officer");
     expect(back).toEqual(start);
+  });
+
+  it("drops a dragged card at its place, and past an end at that end", () => {
+    const dropped = moveActivityCardTo(start, "links", 0);
+    expect(dropped.shown[0]).toBe("links");
+    expect(dropped.shown).toHaveLength(start.shown.length);
+    expect(moveActivityCardTo(start, "nudge", 99).shown.at(-1)).toBe("nudge");
+    expect(moveActivityCardTo(start, "nudge", 0)).toBe(start);
   });
 
   it("knows when nothing changed", () => {

@@ -1,11 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  runOnJS,
-  useAnimatedStyle,
   useSharedValue,
-  withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import {
@@ -22,6 +19,7 @@ import { BACK_TO_CHAT } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
 import { DisclosureGlyph, DragHandleGlyph } from "@/components/control-glyphs";
 import { ICON_BUTTON_SIZE, IconButton } from "@/components/icon-button";
+import { useDragRow } from "@/lib/drag-rows";
 import { pressHaptic, selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { selectCategories, selectChannels } from "@/lib/chat/channel-list";
@@ -37,7 +35,6 @@ import {
 
 /** Every row and heading is one height, so a drag's distance is a count of rows. */
 const ROW_HEIGHT = 48;
-const SHIFT_MS = 150;
 
 /**
  * Arrange channels, on the phone (#3838; Shawn wanted drag to reorder on the
@@ -270,54 +267,18 @@ function ArrangeRow({
   // A plain string for the worklet, not the whole token tree.
   const liftedFill = tokens.color.surface.popover;
 
-  const animated = useAnimatedStyle(() => {
-    const held = heldIndex.get();
-    if (held === index) {
-      return {
-        transform: [{ translateY: dragY.get() }, { scale: 1.02 }],
-        zIndex: 10,
-        backgroundColor: liftedFill,
-      };
-    }
-    let shift = 0;
-    if (held >= 0) {
-      const target = Math.max(
-        1,
-        Math.min(count.get() - 1, held + Math.round(dragY.get() / ROW_HEIGHT)),
-      );
-      if (held < index && index <= target) shift = -ROW_HEIGHT;
-      else if (target <= index && index < held) shift = ROW_HEIGHT;
-    }
-    return {
-      transform: [
-        {
-          translateY: held >= 0 ? withTiming(shift, { duration: SHIFT_MS }) : 0,
-        },
-        { scale: 1 },
-      ],
-      zIndex: 0,
-      backgroundColor: "transparent",
-    };
+  const { style: animated, pan } = useDragRow({
+    index,
+    rowHeight: ROW_HEIGHT,
+    // Row 0 is the first heading, which nothing is dragged above.
+    minIndex: 1,
+    liftedFill,
+    heldIndex,
+    dragY,
+    count,
+    onDragStart,
+    onDrop,
   });
-
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        .minDistance(0)
-        .onBegin(() => {
-          heldIndex.set(index);
-          dragY.set(0);
-          runOnJS(onDragStart)();
-        })
-        .onUpdate((event) => {
-          dragY.set(event.translationY);
-        })
-        .onFinalize(() => {
-          const rows = Math.round(dragY.get() / ROW_HEIGHT);
-          runOnJS(onDrop)(index, rows);
-        }),
-    [index, heldIndex, dragY, onDragStart, onDrop],
-  );
 
   if (entry.kind === "heading") {
     return (

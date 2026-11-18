@@ -1,18 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronUp, Minus, Plus } from "lucide-react";
+import { ChevronLeft, Minus, Plus } from "lucide-react";
 import {
   ACTIVITY_CARD_COPY,
   ACTIVITY_WEEK_CARD_COPY,
   canHideActivityCard,
   hideActivityCard,
-  moveActivityCard,
   showActivityCard,
   type ActivityCardArrangement,
   type ActivityCardRole,
 } from "@repo/hooks";
 import type { ActivityCardKey } from "@repo/validation";
+import { ReorderList } from "@/components/shared/reorder-list";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -72,25 +72,30 @@ export function ActivityEditor({
         <h3 className="text-caption font-semibold uppercase tracking-wider text-muted-foreground">
           Shown
         </h3>
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-          <li className="px-4 py-3">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-semibold">
               {ACTIVITY_WEEK_CARD_COPY.name}
             </p>
             <p className="text-caption text-muted-foreground">
               {ACTIVITY_WEEK_CARD_COPY.detail}
             </p>
-          </li>
-          {draft.shown.map((key, index) => {
-            const name = ACTIVITY_CARD_COPY[key].name;
-            return (
-              <li key={key} className="flex items-center gap-1 px-2 py-1.5">
+          </div>
+          {/* Drag a handle, or use its arrow keys or Move buttons (#5520 step 2). */}
+          <ReorderList
+            aria-label="Shown cards"
+            items={draft.shown}
+            getId={(key) => key}
+            getLabel={(key) => ACTIVITY_CARD_COPY[key].name}
+            onReorder={(shown) => setDraft({ shown, hidden: draft.hidden })}
+            renderItem={(key) => (
+              <div className="flex items-center gap-1">
                 {canHideActivityCard(key) ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`Hide ${name}`}
+                    aria-label={`Hide ${ACTIVITY_CARD_COPY[key].name}`}
                     onClick={() => setDraft(hideActivityCard(draft, key))}
                   >
                     <span className="grid size-5 place-items-center rounded-full bg-destructive text-background">
@@ -101,30 +106,10 @@ export function ActivityEditor({
                   <span aria-hidden="true" className="size-9 shrink-0" />
                 )}
                 <CardText cardKey={key} />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Move ${name} up`}
-                  disabled={index === 0}
-                  onClick={() => setDraft(moveActivityCard(draft, key, -1))}
-                >
-                  <ChevronUp aria-hidden="true" className="size-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Move ${name} down`}
-                  disabled={index === draft.shown.length - 1}
-                  onClick={() => setDraft(moveActivityCard(draft, key, 1))}
-                >
-                  <ChevronDown aria-hidden="true" className="size-4" />
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+            )}
+          />
+        </div>
       </div>
 
       {draft.hidden.length > 0 ? (
