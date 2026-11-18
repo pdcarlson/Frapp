@@ -41,6 +41,9 @@ type PushStatus = { granted: boolean; canAskAgain: boolean; status: string };
  */
 const state = vi.hoisted(() => ({
   setNudges: vi.fn(),
+  // The Read receipts switch (#5519).
+  readReceipts: { enabled: true, ready: true, failed: false },
+  setReadReceipts: vi.fn(),
   permissions: [] as string[],
   pushReason: null as string | null,
   quietHoursEnabled: false,
@@ -103,6 +106,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // The Activity card's switch (#5464), drawn for every member.
   useActivityNudgeSettings: () => ({ data: { enabled: true } }),
   useSetActivityNudgesEnabled: () => ({ mutate: state.setNudges }),
+  useReadReceiptsSetting: () => ({
+    ...state.readReceipts,
+    pending: false,
+    setEnabled: state.setReadReceipts,
+  }),
   useChapterChatLevel: () => ({
     data: "all",
     isPending: false,
@@ -325,10 +333,12 @@ describe("Settings switches", () => {
 
     // Push, quiet hours, then one per notification category this member is
     // shown (no permissions here, so not the officers' join switch, nor the
-    // weekly recap, which goes to `members:view`), and the Activity card's
-    // own switch (#5464).
+    // weekly recap, which goes to `members:view`), Read receipts under Chat
+    // (#5519), and the Activity card's own switch (#5464).
     expect(pushSwitches(tree)).toHaveLength(1);
-    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 2 + 1);
+    expect(switches).toHaveLength(
+      2 + NOTIFICATION_CATEGORIES.length - 2 + 1 + 1,
+    );
     for (const node of switches) {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");
@@ -589,6 +599,38 @@ describe("Settings copy", () => {
           typeof node.props.onPress === "function",
       );
       expect(row.props.value).toBe("0 on");
+    });
+
+    it("offers Read receipts under Chat, and turns them off (#5519)", () => {
+      const receiptsSwitch = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Read receipts" &&
+            typeof node.props.onValueChange === "function",
+        );
+      state.readReceipts = { enabled: true, ready: true, failed: false };
+      state.setReadReceipts.mockClear();
+      const tree = render();
+      const text = screenText(tree);
+      expect(text.indexOf("Read receipts")).toBeGreaterThan(
+        text.indexOf("Chat density"),
+      );
+      expect(text.indexOf("Read receipts")).toBeLessThan(
+        text.indexOf("Nudges on Activity"),
+      );
+      const [toggle] = receiptsSwitch(tree);
+      expect(toggle!.props.value).toBe(true);
+      act(() => toggle!.props.onValueChange(false));
+      expect(state.setReadReceipts).toHaveBeenCalledWith(false);
+
+      // Not drawn until settings answer, so it never flips under a thumb.
+      state.readReceipts = { enabled: false, ready: false, failed: false };
+      expect(receiptsSwitch(render())).toHaveLength(0);
+
+      // A failed save says so under the section.
+      state.readReceipts = { enabled: true, ready: true, failed: true };
+      expect(screenText(render())).toContain("Couldn't change read receipts");
+      state.readReceipts = { enabled: true, ready: true, failed: false };
     });
 
     it("offers the nudge switch to every member, AI or not (#5464)", () => {

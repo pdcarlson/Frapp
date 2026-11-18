@@ -14,7 +14,9 @@ import {
   LockGlyph,
   MuteGlyph,
 } from "@/components/chat/card-glyphs";
+import { CheckAllGlyph, CheckGlyph } from "@/components/control-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
 import { type ChannelMark } from "@repo/hooks/channel-start";
 import {
@@ -24,6 +26,10 @@ import {
   PIN_TO_TOP_LABEL,
   UNPIN_FROM_TOP_LABEL,
 } from "@repo/hooks";
+import {
+  CONVERSATION_READ_STATUS_LABEL,
+  type ConversationReadStatus,
+} from "@repo/chat-core/channel-preview";
 
 /**
  * One row of the s04 channel list.
@@ -53,6 +59,10 @@ import {
  * `text.disabled`).
  * Chat home's rows are one line (no preview, no time, owner 2026-11-07); the
  * preview line is for the Messages list, where a DM's last line is the point.
+ * A Messages row also carries the last message's time at the end of its name
+ * line and, on the member's own last message, a sent or read check before
+ * the line, with the badge at the line's end (#5519, Paul, 2026-11-18), as
+ * WhatsApp lays out its inbox.
  *
  * The row itself never takes a fill at rest. It used to lift every unread row onto
  * `surface1`, which on a busy chapter striped the list in card-coloured bars
@@ -104,6 +114,19 @@ export interface ChannelRowProps {
    * hidden DM.
    */
   preview?: string | null;
+  /**
+   * When the last message was sent (`formatConversationTime`), at the end of
+   * the name line on a Messages row (#5519). Leave it out for a one-line row.
+   */
+  time?: string | null;
+  /** The same instant written out in full, for the row's spoken label. */
+  timeLabel?: string | null;
+  /**
+   * The check before the member's own last line (#5519): one for sent, two
+   * in the chapter accent for read (`conversationReadStatus`). Null or absent
+   * draws none.
+   */
+  readStatus?: ConversationReadStatus | null;
   /**
    * The member muted this channel. The row stays where it is, drawn quiet: a
    * read row's title whatever its count, and a crossed-out speaker after the
@@ -162,6 +185,9 @@ export function ChannelRow({
   avatarTint = null,
   isPinned = false,
   preview,
+  time = null,
+  timeLabel = null,
+  readStatus = null,
   isMuted = false,
   unreadCount,
   mentionCount,
@@ -172,6 +198,7 @@ export function ChannelRow({
 }: ChannelRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const brand = useChapterBranding();
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
   // #2877, so an unread DM drew a neutral badge while web drew it red; the
@@ -205,6 +232,8 @@ export function ChannelRow({
         mentionCount,
         isMuted,
         preview,
+        readStatus,
+        timeLabel: timeLabel ?? time,
       })}
       onPress={onPress}
       onLongPress={onLongPress ?? onHide}
@@ -294,25 +323,61 @@ export function ChannelRow({
             {name}
           </Text>
           {isMuted ? <MutedMark color={tokens.color.text.muted} /> : null}
+          {time ? (
+            <Text
+              numberOfLines={1}
+              style={looksUnread ? styles.timeUnread : styles.timeRead}
+            >
+              {time}
+            </Text>
+          ) : null}
         </View>
         {preview != null ? (
-          <Text
-            numberOfLines={1}
-            style={looksUnread ? styles.previewUnread : styles.previewRead}
-          >
-            {/* A space, not "", so a pending line keeps its height. */}
-            {preview || " "}
-          </Text>
+          <View style={styles.previewLine}>
+            {readStatus ? (
+              <ReadStatusMark
+                status={readStatus}
+                color={
+                  readStatus === "read" ? brand.accent : tokens.color.text.muted
+                }
+              />
+            ) : null}
+            <Text
+              numberOfLines={1}
+              style={[
+                looksUnread ? styles.previewUnread : styles.previewRead,
+                styles.previewText,
+              ]}
+            >
+              {/* A space, not "", so a pending line keeps its height. */}
+              {preview || " "}
+            </Text>
+            {/* On a two-line row the badge ends the last line, under the
+                time, as WhatsApp's does (#5519). */}
+            {hasMention ? (
+              <View style={styles.badgeSlot}>
+                <UnreadBadge
+                  unreadCount={unreadCount}
+                  mentionCount={mentionCount}
+                />
+              </View>
+            ) : null}
+          </View>
         ) : null}
       </View>
 
-      <View style={styles.trailing}>
-        {/* A number only when it addresses the member, as Discord does: a
-            merely unread channel says so with its bold name (2026-11-07). */}
-        {hasMention ? (
-          <UnreadBadge unreadCount={unreadCount} mentionCount={mentionCount} />
-        ) : null}
-      </View>
+      {preview == null ? (
+        <View style={styles.trailing}>
+          {/* A number only when it addresses the member, as Discord does: a
+              merely unread channel says so with its bold name (2026-11-07). */}
+          {hasMention ? (
+            <UnreadBadge
+              unreadCount={unreadCount}
+              mentionCount={mentionCount}
+            />
+          ) : null}
+        </View>
+      ) : null}
     </PressableRow>
   );
 }
@@ -325,6 +390,30 @@ export function UnreadPip({ testID }: { testID?: string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return <View testID={testID} style={styles.unreadPip} />;
+}
+
+/**
+ * One check for sent, two for read (#5519), at 14 before the last line: the
+ * shapes web draws (Lucide's `Check` and `CheckCheck`). Decorative: the row's
+ * label says "Sent" or "Read".
+ */
+function ReadStatusMark({
+  status,
+  color,
+}: {
+  status: ConversationReadStatus;
+  color: string;
+}) {
+  const Glyph = status === "read" ? CheckAllGlyph : CheckGlyph;
+  return (
+    <View
+      testID={`channel-row-${status}`}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Glyph color={color} size={14} />
+    </View>
+  );
 }
 
 /**
@@ -443,6 +532,8 @@ export function accessibilityLabelFor({
   mentionCount,
   isMuted = false,
   preview,
+  readStatus = null,
+  timeLabel = null,
 }: {
   name: string;
   isDirect: boolean;
@@ -456,6 +547,10 @@ export function accessibilityLabelFor({
   mentionCount: number;
   isMuted?: boolean;
   preview?: string | null;
+  /** The member's own last message: sent or read (#5519). */
+  readStatus?: ConversationReadStatus | null;
+  /** When the last message was sent, said after everything else. */
+  timeLabel?: string | null;
 }): string {
   const subject = isDirect ? name : `#${name}`;
   const parts: string[] = [subject];
@@ -470,8 +565,11 @@ export function accessibilityLabelFor({
   if (unreadCount > 0) {
     parts.push(`${unreadCount} unread`);
   }
-  // The preview last, after the counts a member listens for first.
+  // The preview after the counts a member listens for first, then whether
+  // the other side has read it, then when (#5519).
   if (preview) parts.push(preview);
+  if (readStatus) parts.push(CONVERSATION_READ_STATUS_LABEL[readStatus]);
+  if (timeLabel) parts.push(timeLabel);
   return parts.join(", ");
 }
 
@@ -596,6 +694,33 @@ function createStyles(tokens: SignetTokens) {
     previewRead: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    previewLine: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    previewText: {
+      flex: 1,
+    },
+    // No height of its own, so the 24pt badge sits centred on the caption
+    // line without making a row taller when a message arrives (pending and
+    // live states never shift layout).
+    badgeSlot: {
+      height: 0,
+      justifyContent: "center",
+      overflow: "visible",
+    },
+    // The time keeps the preview's caption step and its read/unread hues.
+    timeRead: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      marginLeft: "auto",
+    },
+    timeUnread: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginLeft: "auto",
     },
     trailing: {
       alignItems: "flex-end",

@@ -621,6 +621,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
     Under Chat the nav has a **Direct messages** row (paper-plane glyph) that opens the same chat panel on the member's direct and group messages instead of the chapter's channels, the way Slack's DMs entry, Discord's Direct Messages home and Teams' separate Chat entry keep conversations apart from channels.
     It is one panel: the row for the list on screen closes it, the other row switches it in place, and either opens it when closed; the two are never open side by side, which would not fit beside a tool page.
     The Channels list then holds channels only, and the Direct messages list holds DMs and group DMs, with Pinned above them and Hidden conversations below, no heading of its own, and no officer reordering (a DM has no place in the chapter's order).
+    Each Direct messages row is two lines like the phone's: the name with the last message's time at its end (`formatConversationTime`, the full date and time as its tooltip), and the last line, led by a sent check or a read double check in the chapter accent when it is the member's own, with the count badge at its end (#5519, Paul, 2026-11-18; [`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Read Receipts → Shown to the sender).
     Channels land on their last channel as before; Direct messages open only the DM the member last had open there, and with none ask them to pick one, since opening one they didn't pick would mark it read unseen ([`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Where Chat opens).
     `/chat`'s top-bar title follows the list ([§ Top bar](#top-bar)).
     The Chat row lights for channels and @-mentions; the Direct messages row carries a mention-red count of conversations with anything unread, the count the phone's Messages tab shows.
@@ -906,7 +907,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | Group | Section | `?section=` | Holds |
 | ----- | ------- | ----------- | ----- |
 | My account | Notifications | _(none)_ | Quiet hours (`user_settings`) |
-| My account | Appearance and chat | `appearance` | Chat density, kept on the browser. No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
+| My account | Appearance and chat | `appearance` | Chat density, kept on the browser, and the Read receipts switch, an account setting (#5519; [`chat/README.md` § Shown to the sender](../../behavior/chat/README.md#shown-to-the-sender)). No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
 | My account | Linked apps | `apps` | One row per connected app, each marked with a green check when connected, greyed when not and red once expired (#5407): Google Calendar and Discord for the active chapter, then the ways the account signs in (email, Google, Apple, read from Supabase Auth). `?section=discord` opens it. The API's Discord link handshake and Google's sign-in return here |
 | My account | Calendar | `calendar` | The Google Calendar row again, with the subscription link (Copy link, made only on that tap, and the Apple, Outlook and Reset menu) |
 | My account | Account | `account` | Replay the tour, sign out, delete account |

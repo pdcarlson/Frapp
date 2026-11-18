@@ -34,6 +34,7 @@ export {
   formatDayTime,
   formatDayTimeRange,
   formatClockShort,
+  formatConversationTime,
   formatDueLabel,
   formatEndsLabel,
   formatDueOn,

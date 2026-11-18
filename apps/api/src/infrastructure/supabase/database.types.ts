@@ -789,6 +789,8 @@ export interface Database {
           forwarded_from: ChatForwardedMessage | null;
           /** `20261114153147`: the latest message is a GIF (#4657). */
           has_gif: boolean;
+          /** `20261118173407`: `sent` or `read` on the caller's own DM message (#5519). */
+          read_status: string | null;
         }[];
       };
       /**

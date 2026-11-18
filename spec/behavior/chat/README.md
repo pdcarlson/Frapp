@@ -198,7 +198,7 @@ Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issu
   It is not keyed by member, so a shared device keeps one density across sign-ins, and sign-out leaves it.
   Syncing it to the account would need a stored setting and an endpoint; revisit if members ask for it to follow them.
 - **Bubbles is a third choice** (added 2026-11-10;
-  a read receipt under your latest message is not built, because no endpoint returns other members' read positions yet, [#4040](https://github.com/pdcarlson/Frapp/issues/4040);
+  "Read" under your latest message in an open DM is not built: the Messages list shows the sent or read check (§ Read Receipts → Shown to the sender), and the footer waits on a live signal when the other member reads, [#5532](https://github.com/pdcarlson/Frapp/issues/5532) *(corrected 2026-11-18: this cited #4040, which does not exist)*;
   [#3787](https://github.com/pdcarlson/Frapp/issues/3787);
   Paul's opt-in OK is [his comment there](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6771881257)).
   Cozy stays the default; nobody is put on Bubbles.
@@ -342,7 +342,8 @@ Web's Direct messages list draws them the same way since [#3774](https://github.
 - **Source.**
   `GET /v1/channels/latest` returns one row per channel the caller can read that has a message: its id, sender, `author_name`, `content` cut to 500 characters, `kind`, `payload` (an audit line's only), attachment count, `forwarded_from` (a forward's copy of its original, masked to `sender_blocked` with its text, GIF and file count emptied when the caller blocked the original's author;
   § Forward), `has_gif` (the message is a GIF, which has no text;
-  § GIFs) and `created_at`.
+  § GIFs), `read_status` (`sent` or `read` on the caller's own last message in a direct conversation, null otherwise;
+  § Read Receipts → Shown to the sender) and `created_at`.
   It is computed by `get_channel_latest_messages`, which skips deleted messages, senders the caller blocked, and message-thread replies (§ Messages → Message threads), and is filtered to the same channels as `GET /v1/channels/unread`, a hidden DM left out.
   A conversation with no message has no row, and its list row reads `No messages yet`, so every listed row is two lines.
   While the read is pending or has failed, the line is held blank rather than left out, so the rows don't grow when it answers.
@@ -351,6 +352,7 @@ Web's Direct messages list draws them the same way since [#3774](https://github.
   The sender's first name and the one-line text: "Jake: I've got the van".
   The viewer's own reads "You: ...".
   In a 1:1 DM the other person's message drops the name, which the row is already titled with; a group DM keeps it.
+  Where the row draws a sent or read check before the viewer's own line, "You:" is dropped, since the check already says whose it is, as WhatsApp's rows do (#5519).
   Only a resolved name is cut to its first word: someone the roster can't name keeps the thread's whole fallback label ("Member 2f4a1c"), so two of them still read apart.
   A file-only message or a card with no text is named ("Attachment", "Event"), and a GIF reads "GIF" ("Jake: GIF").
   A forward with no comment reads as its copy: "Forwarded: <text>", "Forwarded a GIF", or "Forwarded a message" when the copy has no text or GIF, is masked, or its original was deleted; a forward with a comment reads as the comment.
@@ -358,6 +360,10 @@ Web's Direct messages list draws them the same way since [#3774](https://github.
 - **No time on a row** (2026-11-07).
   The stamp abbreviated ("Yesterday", "Oct 27"), and the Messages list's newest-first order already says which is newest.
   Its formatter (`formatListStamp`) was deleted with it.
+  - Changed in [#5519](https://github.com/pdcarlson/Frapp/issues/5519) by Paul (`pdcarlson`), 2026-11-18: "it would be better to have dates".
+    Every Messages row, on the phone and web's Direct messages, says when its last message was sent, at the end of the name line, as WhatsApp and iMessage put it: the time today ("4:46 PM"), "Yesterday", the weekday within the past week ("Friday"), otherwise the house short date ("Nov 6", "Nov 6, 2025" outside this year).
+    One formatter, `formatConversationTime` in `@repo/formatting`; the spoken label and web's tooltip give the full date and time (`formatTimestampFull`).
+    Chat home's channel rows still draw no time.
 - **Freshness.**
   Live (owner, #3698, 2026-11-07, which replaced "not live").
   The previews refresh with the unread badges whenever a message the member may read lands in any channel, within about a second, coalesced into one read per burst: the realtime manager's inbox reports it, and the client re-reads both ([`message-delivery.md` § Receiving Messages](../../ui/resilience/message-delivery.md#receiving-messages-realtime)).
@@ -1744,6 +1750,7 @@ If realtime delivery fails, the message is still persisted and will appear on th
 ## Read Receipts
 
 Each user's last-read timestamp per channel is tracked in a `channel_read_receipts` table.
+It drives the member's own unread counts, and, in a direct conversation, whether the people in it have read what they sent (§ Shown to the sender).
 Opening a channel stamps the cursor to server `now()`, and so do hiding a 1:1 DM (§ Direct Messages), Mark as read in the row menu (§ Sidebar arrangement), leaving the channel again, a message from someone else arriving in the thread the member is looking at (its thread focused, the app or tab in front of them;
 once per burst), and the app coming back to the foreground or its realtime connection recovering while they look at one (#3698, [§ Channel list previews](#channel-list-previews) "Freshness");
 there is no mark-read-to-a-specific-message.
@@ -1782,6 +1789,31 @@ A thread reply is never in the unread set itself.
 
 Both are computed server-side by `get_channel_unread_counts` and served from `GET /v1/channels/unread`, which returns one row per channel the caller can read — including channels with nothing unread, as zero.
 Clients MUST NOT re-derive either number locally: a second definition would disagree with this one on exactly the cases above.
+
+### Shown to the sender
+
+*(Added in [#5519](https://github.com/pdcarlson/Frapp/issues/5519), Paul, 2026-11-18: "show the double check if it's been read, or a check if it's been sent … just for DMs".)*
+
+In a DM or group DM whose last message is the viewer's own, the Messages row draws a check before that line: one, in `--muted`, for **sent**, and two, in the chapter accent, for **read**.
+Someone else's last message, a channel, an audit line and an imported message carry no check.
+The checks are the phone's `CheckGlyph` / `CheckAllGlyph` and web's Lucide `Check` / `CheckCheck`, and a screen reader hears "Sent" or "Read".
+This follows WhatsApp's ticks; iMessage says the same in words under the bubble.
+
+- **Read** means the other member's read cursor is at or after the message (anything that stamps it, listed above: opening the conversation, Mark as read, hiding a 1:1 DM).
+  Mark unread moves it back, and the row says sent again.
+- **A group DM** is read only once **every** other member has read it, WhatsApp's group rule.
+  iMessage and Slack draw nothing in groups, and Messenger draws each reader's face, which would expose who read what; neither was chosen (Paul, 2026-11-18).
+- **The Read receipts switch** (`user_settings.read_receipts`, on by default) is two-way, as Paul picked: off, a member's reads are never reported to anyone, and they are told about no one's, so their own messages say sent only.
+  A member with it off never counts as having read a group's message, so that group stays at sent.
+  It lives in the phone's Settings › Chat and web's Settings › Appearance and chat, and follows the member across devices (`PATCH /v1/settings` `read_receipts`; `useReadReceiptsSetting` in `@repo/hooks`).
+- **A member who blocked the sender** never counts as having read it: a block withholds the sender's messages from them, so their cursor passing it says nothing.
+- **What leaves the server** is the one word, on the caller's own last message: `read_status` on `GET /v1/channels/latest`, decided in `get_channel_latest_messages` (`20261118173407`).
+  No read time is ever served, and the read is filtered to channels the caller can read like every other preview, so nobody outside a conversation learns anything about it.
+  An older server sends no `read_status`, and the row then draws no check and keeps "You:".
+- **Freshness.**
+  The check refreshes with the previews (§ Channel list previews, "Freshness"), and once a switch change has saved.
+  It does not flip the moment the other member reads, since nothing pings the sender then; that, and "Read" under the viewer's own message inside the open conversation, are [#5532](https://github.com/pdcarlson/Frapp/issues/5532).
+  A message still queued in the outbox is not on the row at all yet (the row is the server's latest), so there is no "sending" mark ([#5533](https://github.com/pdcarlson/Frapp/issues/5533)).
 
 ### Before the counts arrive (mobile)
 
