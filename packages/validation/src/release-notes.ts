@@ -127,6 +127,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     phone: [
       "Tapping a detail on your profile, like your bio or your birthday, now opens the editor right at that field with the keyboard ready.",
       "Minutes open as a note you type in while the meeting records, with the recorder as a bar at the bottom, and a chapter without AI drafting can now write the summary and post minutes from the phone.",
+      "Opening the app now shows the Frapp logo until your chats are ready, then goes straight to them instead of grey placeholder rows.",
     ],
   },
   {
