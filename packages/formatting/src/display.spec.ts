@@ -13,6 +13,7 @@ import {
   formatEventWindow,
   formatPoints,
   formatPointsChip,
+  formatConversationTime,
   formatRelativeDayTime,
   formatSentLabel,
   formatActedLabel,
@@ -383,5 +384,25 @@ describe("a Date reads as the instant it is (#4976)", () => {
 
   it("counts a Date down to its time, not its day", () => {
     expect(formatDueLabel(at, NOW)).toBe("Due Friday at 5 PM");
+  });
+});
+
+// #5519: a Messages row's time, as WhatsApp's and iMessage's inbox rows put it.
+describe("formatConversationTime", () => {
+  it("says the time today, then Yesterday, the weekday within the week, then the date", () => {
+    // NOW is Wed Nov 4, 2026, 9:00 AM Pacific.
+    expect(formatConversationTime("2026-11-04T08:15:00-08:00", NOW)).toBe("8:15 AM");
+    expect(formatConversationTime("2026-11-04T00:01:00-08:00", NOW)).toBe("12:01 AM");
+    expect(formatConversationTime("2026-11-03T23:59:00-08:00", NOW)).toBe("Yesterday");
+    expect(formatConversationTime("2026-11-02T10:00:00-08:00", NOW)).toBe("Monday");
+    expect(formatConversationTime("2026-10-29T10:00:00-07:00", NOW)).toBe("Thursday");
+    expect(formatConversationTime("2026-10-28T10:00:00-07:00", NOW)).toBe("Oct 28");
+    expect(formatConversationTime("2025-11-06T10:00:00-08:00", NOW)).toBe("Nov 6, 2025");
+  });
+
+  it("reads a time a little ahead of the clock as a time, and leaves a bad value out", () => {
+    expect(formatConversationTime("2026-11-04T09:01:00-08:00", NOW)).toBe("9:01 AM");
+    expect(formatConversationTime(undefined, NOW)).toBeNull();
+    expect(formatConversationTime("not a date", NOW)).toBeNull();
   });
 });

@@ -641,7 +641,18 @@ export interface ChannelLatestMessage {
    * reads "GIF" rather than "Message".
    */
   has_gif: boolean;
+  /**
+   * Read receipts (#5519): on a DM or group DM whose latest message is the
+   * caller's, `read` once every other member has read past it and `sent`
+   * until then; null on every other row. `get_channel_latest_messages` decides
+   * it, honouring each member's switch and blocks, so no read time leaves the
+   * database.
+   */
+  read_status: ChannelReadStatus | null;
 }
+
+/** What a Messages row says about the caller's own last message (#5519). */
+export type ChannelReadStatus = 'sent' | 'read';
 
 /**
  * Per-user reaction / vote / RSVP / card-action row (Chunk 02).

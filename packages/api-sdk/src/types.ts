@@ -7211,6 +7211,8 @@ export interface components {
              * @description When the custom status line clears. Null: until the member clears it.
              */
             custom_status_expires_at: string | null;
+            /** @description Read receipts on direct messages (#5519). `true` until the member turns them off. */
+            read_receipts: boolean;
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -7241,6 +7243,8 @@ export interface components {
              * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
              */
             custom_status_expires_at?: string | null;
+            /** @description Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is. */
+            read_receipts?: boolean;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -7314,6 +7318,11 @@ export interface components {
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
             /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
             has_gif: boolean;
+            /**
+             * @description Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row.
+             * @enum {string|null}
+             */
+            read_status: "sent" | "read" | null;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */

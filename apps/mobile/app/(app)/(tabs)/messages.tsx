@@ -36,8 +36,10 @@ import {
 } from "@repo/hooks";
 import {
   channelPreviewLine,
+  conversationReadStatus,
   NO_MESSAGES_PREVIEW,
 } from "@repo/chat-core/channel-preview";
+import { formatConversationTime, formatTimestampFull } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -90,9 +92,12 @@ const MEMBERS_WAITING_FOR_NETWORK =
  *
  * Newest conversation first, as every messaging app orders an inbox, and each
  * row keeps its last line: in a DM the last message is what the member is
- * looking for, where a channel's preview was noise (owner, 2026-11-07). No
- * time on the row, which only abbreviated ("Yesterday", "Oct 27"); the order
- * already says which is newest.
+ * looking for, where a channel's preview was noise (owner, 2026-11-07). Each
+ * row says when that line was sent, and the member's own carries a sent or
+ * read check (#5519, Paul, 2026-11-18, reversing the 2026-11-07 "no time on
+ * the row"), as WhatsApp's and iMessage's inboxes do. The check is the
+ * server's word (`read_status`), which honours every member's Read receipts
+ * switch; the row never works it out.
  *
  * Hidden conversations (#2303) moved here from Chat home with the rows they
  * belong to; opening one unhides it, as before.
@@ -295,6 +300,9 @@ export default function MessagesScreen() {
   ) {
     const counts = unreadByChannelId?.get(channel.id);
     const name = titleOf(channel);
+    const latest = latestQuery.isSuccess
+      ? latestById.get(channel.id)
+      : undefined;
     return (
       <Fragment key={channel.id}>
         <ChannelRow
@@ -303,6 +311,9 @@ export default function MessagesScreen() {
           avatarUrl={avatarOf(channel)}
           avatarTint={tintOf(channel)}
           preview={previewOf(channel)}
+          time={latest ? formatConversationTime(latest.created_at) : null}
+          timeLabel={latest ? formatTimestampFull(latest.created_at) : null}
+          readStatus={conversationReadStatus(latest, viewerId)}
           isMuted={mutedChannelIds?.has(channel.id) ?? false}
           unreadCount={counts?.unreadCount ?? 0}
           mentionCount={counts?.mentionCount ?? 0}

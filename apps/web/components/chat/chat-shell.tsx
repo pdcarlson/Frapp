@@ -88,8 +88,10 @@ import { typingLabel } from "@repo/chat-core/typing-label";
 import { attachmentRequestBody } from "@repo/chat-core/adapters";
 import {
   channelPreviewLine,
+  conversationReadStatus,
   NO_MESSAGES_PREVIEW,
 } from "@repo/chat-core/channel-preview";
+import { formatConversationTime, formatTimestampFull } from "@repo/formatting";
 import { TypingLine } from "./typing-line";
 import {
   replyAskRefusal,
@@ -169,6 +171,7 @@ import {
   type ChannelSidebarControls,
   type ChannelCategory,
   type ChatChannel,
+  type ConversationRowMeta,
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
 import { ChatBackground, useChapterLetters } from "./chat-background";
@@ -2332,10 +2335,20 @@ export function ChatShell({
     const byId = new Map(latestRows.map((row) => [row.channel_id, row]));
     const at = new Map<string, string>();
     const previews = new Map<string, string>();
+    // Each row's time and, on the viewer's own last line, the server's sent
+    // or read check (#5519).
+    const meta = new Map<string, ConversationRowMeta>();
     for (const channel of railChannels) {
       if (channel.hidden) continue;
       const latest = byId.get(channel.id);
-      if (latest) at.set(channel.id, latest.created_at);
+      if (latest) {
+        at.set(channel.id, latest.created_at);
+        meta.set(channel.id, {
+          time: formatConversationTime(latest.created_at),
+          timeLabel: formatTimestampFull(latest.created_at),
+          readStatus: conversationReadStatus(latest, userId),
+        });
+      }
       previews.set(
         channel.id,
         latest
@@ -2349,7 +2362,7 @@ export function ChatShell({
           : NO_MESSAGES_PREVIEW,
       );
     }
-    return { at, previews };
+    return { at, previews, meta };
   }, [directView, latestRows, railChannels, userId, nameFor]);
   // Recent on the channels rail (#2877): each channel's latest message time.
   // Absent until the read answers or if it failed, when the shared
@@ -3361,6 +3374,7 @@ export function ChatShell({
               kind={view}
               latestAt={directView ? directLatest?.at : channelLatestAt}
               previews={directLatest?.previews}
+              rowMeta={directLatest?.meta}
               viewerId={userId}
               memberNames={memberNames}
               avatarTintFor={avatarTintFor}

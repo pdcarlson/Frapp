@@ -223,6 +223,26 @@ export function formatRelativeDayTime(
 }
 
 /**
+ * When a conversation's last message was sent, as a messaging app's inbox
+ * row says it (#5519): the time today (`"4:46 PM"`), `"Yesterday"`, the
+ * weekday within the past week (`"Friday"`), otherwise the short date
+ * (`"Nov 6"`, `"Nov 6, 2025"` outside this year). Both apps' Messages lists
+ * read it. A time a little ahead of the device clock still reads as a time.
+ */
+export function formatConversationTime(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  const at = toDate(value);
+  if (!at) return null;
+  const days = dayDelta(now, at);
+  if (days >= 0) return days === 0 ? time(at) : monthDay(at, now);
+  if (days === -1) return "Yesterday";
+  if (days > -7) return weekdayName(at);
+  return monthDay(at, now);
+}
+
+/**
  * A list's day heading, written out: `"Today"`, `"Tomorrow"`, `"Yesterday"`,
  * the weekday within the coming week (`"Sunday"`), otherwise the month and
  * day (`"November 14"`, `"January 3, 2027"` outside the current year). The

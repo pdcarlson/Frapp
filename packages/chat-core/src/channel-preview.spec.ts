@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
   channelPreviewLine,
+  conversationReadStatus,
   type ChannelLatestMessage,
   type PreviewNames,
 } from "./channel-preview";
@@ -64,6 +65,24 @@ describe("channelPreviewLine", () => {
     const own = latest({ sender_id: VIEWER, content: "see you at 6" });
     expect(channelPreviewLine(own, channel)).toBe("You: see you at 6");
     expect(channelPreviewLine(own, dm)).toBe("You: see you at 6");
+  });
+
+  // #5519: the check before the line already says it is the viewer's.
+  it("drops You where the row draws a sent or read check", () => {
+    const own = latest({ sender_id: VIEWER, content: "see you at 6" });
+    expect(channelPreviewLine({ ...own, read_status: "sent" }, dm)).toBe(
+      "see you at 6",
+    );
+    expect(channelPreviewLine({ ...own, read_status: "read" }, channel)).toBe(
+      "see you at 6",
+    );
+    // No status (a channel, an older server, an unknown word): You stays.
+    expect(channelPreviewLine({ ...own, read_status: null }, dm)).toBe(
+      "You: see you at 6",
+    );
+    expect(channelPreviewLine({ ...own, read_status: "seen" }, dm)).toBe(
+      "You: see you at 6",
+    );
   });
 
   it("drops the other person's name in a DM, which the row already shows", () => {
@@ -156,5 +175,24 @@ describe("channelPreviewLine", () => {
       content: "old news",
     });
     expect(channelPreviewLine(imported, channel)).toBe("kyle_r: old news");
+  });
+});
+
+describe("conversationReadStatus (#5519)", () => {
+  const own = latest({ sender_id: VIEWER });
+  it("reads the server's status on the viewer's own message only", () => {
+    expect(conversationReadStatus({ ...own, read_status: "sent" }, VIEWER)).toBe("sent");
+    expect(conversationReadStatus({ ...own, read_status: "read" }, VIEWER)).toBe("read");
+    // Someone else's message never carries a check, whatever the server says.
+    expect(
+      conversationReadStatus(latest({ read_status: "read" }), VIEWER),
+    ).toBeNull();
+  });
+
+  it("draws none for no status, an unknown word, no message, or no viewer", () => {
+    expect(conversationReadStatus(own, VIEWER)).toBeNull();
+    expect(conversationReadStatus({ ...own, read_status: "seen" }, VIEWER)).toBeNull();
+    expect(conversationReadStatus(undefined, VIEWER)).toBeNull();
+    expect(conversationReadStatus({ ...own, read_status: "read" }, null)).toBeNull();
   });
 });

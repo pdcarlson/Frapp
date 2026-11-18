@@ -23514,6 +23514,10 @@
             "description": "When the custom status line clears. Null: until the member clears it.",
             "nullable": true,
             "format": "date-time"
+          },
+          "read_receipts": {
+            "type": "boolean",
+            "description": "Read receipts on direct messages (#5519). `true` until the member turns them off."
           }
         },
         "required": [
@@ -23524,7 +23528,8 @@
           "status",
           "status_expires_at",
           "custom_status",
-          "custom_status_expires_at"
+          "custom_status_expires_at",
+          "read_receipts"
         ]
       },
       "UpdateUserSettingsDto": {
@@ -23583,6 +23588,10 @@
             "nullable": true,
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "read_receipts": {
+            "type": "boolean",
+            "description": "Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is."
           }
         }
       },
@@ -23759,6 +23768,15 @@
           "has_gif": {
             "type": "boolean",
             "description": "The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”."
+          },
+          "read_status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "read"
+            ],
+            "nullable": true,
+            "description": "Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row."
           }
         },
         "required": [
@@ -23772,7 +23790,8 @@
           "attachment_count",
           "created_at",
           "forwarded_from",
-          "has_gif"
+          "has_gif",
+          "read_status"
         ]
       },
       "ChannelAccessOptionDto": {

@@ -46,6 +46,9 @@ vi.mock("@/components/profile/blocked-members-card", () => ({
 vi.mock("@/components/personal-settings/ai-section", () => ({
   AiSection: () => <p>ai section</p>,
 }));
+vi.mock("@/components/personal-settings/read-receipts-section", () => ({
+  ReadReceiptsSection: () => <p>read receipts section</p>,
+}));
 vi.mock("@/components/linked-apps/linked-apps-section", () => ({
   LinkedAppsSection: () => <p>linked apps section</p>,
 }));
@@ -148,6 +151,8 @@ describe("PersonalSettingsPage (#3856)", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /cozy/i })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /compact/i })).toBeInTheDocument();
+    // The Read receipts switch sits under density (#5519).
+    expect(screen.getByText("read receipts section")).toBeInTheDocument();
   });
 
   it("adds AI to My account only while the server has AI (#4308)", () => {
