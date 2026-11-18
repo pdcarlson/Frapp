@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MINUTES_MANY,
+  openActionItems,
   matchesQuery,
   minutesListView,
   minutesRowTime,
@@ -169,5 +170,21 @@ describe("minutesRowTime", () => {
       /^Oct \d{1,2}$/,
     );
     expect(minutesRowTime("2025-10-02T23:00:00Z", NOW)).toMatch(/, 2025$/);
+  });
+});
+
+describe("openActionItems (#5482)", () => {
+  it("keeps an item open until its task is done; one never made a task stays open", () => {
+    const open = openActionItems(
+      ["Book the venue", "Send the reminder", "Order shirts"],
+      [
+        { index: 1, done: true },
+        { index: 2, done: false, group: { done: 3, total: 20 } },
+      ],
+    );
+    expect(open).toEqual([
+      { item: "Book the venue", index: 0, group: null },
+      { item: "Order shirts", index: 2, group: { done: 3, total: 20 } },
+    ]);
   });
 });

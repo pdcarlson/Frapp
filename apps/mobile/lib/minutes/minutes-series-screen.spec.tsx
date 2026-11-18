@@ -16,6 +16,7 @@ import { screenText } from "@/test/screen-text";
 const state = vi.hoisted(() => ({
   rows: [] as Record<string, unknown>[],
   meetings: new Map<string, unknown>(),
+  tasks: new Map<string, unknown[]>(),
   asked: [] as string[],
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -31,6 +32,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     state.asked.push(id);
     const data = state.meetings.get(id);
     return { data, isPending: data === undefined, isError: false };
+  },
+  useMeetingActionItemTasks: (id: string) => {
+    const data = state.tasks.get(id) ?? [];
+    return { data, isPending: false, isError: false };
   },
   useMemberDisplayNames: () => ({ nameFor: () => "Sam" }),
 }));
@@ -106,6 +111,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.asked = [];
   state.meetings = new Map();
+  state.tasks = new Map();
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ key: "head" });
 });
 
@@ -122,26 +128,46 @@ describe("Minutes series", () => {
     expect(text).toMatch(/Every \w+day/);
   });
 
-  it("reads action items from the latest three posted minutes only, newest first", () => {
+  it("lists only open action items, across every posted minutes that has any (#5482)", () => {
     state.rows = [
       row("draft", 0, { status: "draft" }),
       row("w1", 1),
       row("w2", 2, { action_item_count: 0 }),
       row("w3", 3),
-      row("w4", 4),
+      row("w9", 9),
     ];
     state.meetings.set("w1", minutesWith("Book the venue"));
     state.meetings.set("w3", minutesWith("Send the reminder"));
+    state.meetings.set("w9", minutesWith("Order the shirts"));
+    // w3's item became a task that is done; w9's is a task for everyone.
+    state.tasks.set("w3", [{ index: 0, done: true, group: null }]);
+    state.tasks.set("w9", [
+      { index: 0, done: false, group: { done: 3, total: 20 } },
+    ]);
     const text = screenText(render());
-    // w4 is the fourth posted minutes: not read. w2 has none: not read.
-    expect(state.asked).toEqual(["w1", "w3"]);
+    // Drafts and minutes with no items are never read; old minutes are.
+    expect([...new Set(state.asked)]).toEqual(["w1", "w3", "w9"]);
+    expect(text).toContain(MEETING_LIST_COPY.seriesActions);
     expect(text).toContain("Book the venue");
+    expect(text).not.toContain("Send the reminder");
+    expect(text).toContain("Order the shirts");
+    expect(text).toContain(MEETING_LIST_COPY.seriesActionsGroup(3, 20));
     expect(text).toContain(MEETING_LIST_COPY.noOwner);
+    expect(text).not.toContain(MEETING_LIST_COPY.seriesActionsNone);
   });
 
-  it("says when the latest minutes set no action items", () => {
+  it("says nothing is open once every item's task is done", () => {
+    state.rows = [row("a", 0)];
+    state.meetings.set("a", minutesWith("Book the venue"));
+    state.tasks.set("a", [{ index: 0, done: true, group: null }]);
+    const text = screenText(render());
+    expect(text).not.toContain("Book the venue");
+    expect(text).toContain(MEETING_LIST_COPY.seriesActionsNone);
+  });
+
+  it("shows no action items section for a series whose minutes set none", () => {
     state.rows = [row("a", 0, { action_item_count: 0 })];
-    expect(screenText(render())).toContain(MEETING_LIST_COPY.seriesActionsNone);
+    expect(screenText(render())).not.toContain(MEETING_LIST_COPY.seriesActions);
   });
 
   it("says the series isn't here when none of its minutes are", () => {

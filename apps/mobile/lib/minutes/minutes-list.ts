@@ -236,3 +236,34 @@ export function showsTypeTag(
   ).toLowerCase();
   return !row.event_name.toLowerCase().includes(label);
 }
+
+/** An action item still open, with where its task for everyone stands. */
+export interface OpenActionItem<T> {
+  item: T;
+  /** Its place in the minutes' list, as the task marks name it. */
+  index: number;
+  /** A task for everyone: how many of its copies are done. */
+  group: { done: number; total: number } | null;
+}
+
+/**
+ * The action items of one posted minutes that are still open (#5482; Paul's
+ * pick, 2026-11-18: done comes from Tasks). An item is open until the
+ * suggested task it became is done; an item nobody made a task of stays
+ * open. The minutes themselves never change.
+ */
+export function openActionItems<T>(
+  items: readonly T[],
+  tasks: readonly {
+    index: number;
+    done: boolean;
+    group?: { done: number; total: number } | null;
+  }[],
+): OpenActionItem<T>[] {
+  const marks = new Map(tasks.map((task) => [task.index, task]));
+  return items.flatMap((item, index) => {
+    const mark = marks.get(index);
+    if (mark?.done) return [];
+    return [{ item, index, group: mark?.group ?? null }];
+  });
+}

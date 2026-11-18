@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   seriesCadenceLabel,
   useMeeting,
+  useMeetingActionItemTasks,
   useMeetings,
   useMemberDisplayNames,
 } from "@repo/hooks";
@@ -29,6 +30,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
   minutesRowTime,
+  openActionItems,
   seriesRows,
   type MinutesListRow,
 } from "@/lib/minutes/minutes-list";
@@ -36,19 +38,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const BACK_TO_MINUTES: BackTarget = { label: "Minutes", href: "/minutes" };
 
-/** How many of a series' latest posted minutes the action items come from. */
-export const SERIES_ACTION_SOURCES = 3;
-
 /**
  * One repeating meeting's minutes (#5290), opened from the Minutes list's
- * Series row: its meetings by date, and the action items its latest minutes
- * set, which is the question a weekly meeting asks ("what did we say we'd
- * do?"). Granola keeps a recurring meeting's earlier notes beside the new
- * one in the same spirit.
+ * Series row: the action items still open across all its posted minutes,
+ * newest meeting first, then its meetings by date. That is the question a
+ * weekly meeting asks ("what did we say we'd do?"); Granola keeps a recurring
+ * meeting's earlier notes beside the new one in the same spirit.
  *
- * Action items carry no done state yet, so these are the items of the latest
- * {@link SERIES_ACTION_SOURCES} posted minutes, newest first, rather
- * than "still open" ones (#5482 decides how one is marked done).
+ * Open is Tasks' answer (#5482; Paul's pick, 2026-11-18): an item is open
+ * until the suggested task it became is done, and an item nobody made a task
+ * of stays open (`openActionItems`). Only minutes the list says hold action
+ * items are read.
  */
 export default function MinutesSeriesScreen() {
   if (isBetaOffModule("meetings")) return <Redirect href="/you" />;
@@ -104,10 +104,9 @@ function MinutesSeriesBody() {
     newest.event_start_time,
     rows.map((row) => row.event_start_time),
   );
-  const latest = rows
-    .filter((row) => row.status === "posted")
-    .slice(0, SERIES_ACTION_SOURCES);
-  const sources = latest.filter((row) => row.action_item_count > 0);
+  const sources = rows.filter(
+    (row) => row.status === "posted" && row.action_item_count > 0,
+  );
   const years = new Map<number, MinutesListRow[]>();
   for (const row of rows) {
     const year = new Date(row.event_start_time).getFullYear();
@@ -123,21 +122,8 @@ function MinutesSeriesBody() {
         .join(" · ")}
       refresh={refresh}
     >
-      {latest.length > 0 ? (
-        <>
-          <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
-          {sources.length > 0 ? (
-            sources.map((source) => (
-              <SourceActionItems
-                key={source.id}
-                id={source.id}
-                day={minutesRowTime(source.event_start_time, now)}
-              />
-            ))
-          ) : (
-            <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>
-          )}
-        </>
+      {sources.length > 0 ? (
+        <OpenActionItems sources={sources} now={now} />
       ) : null}
       {[...years.entries()].map(([year, members]) => (
         <View key={year}>
@@ -170,17 +156,75 @@ function MinutesSeriesBody() {
 }
 
 /**
- * One posted minutes' action items, as their own card: what, who, when it's
- * due, and from when. A row's shape while they load; a line if they can't.
+ * The series' open action items: each source minutes' own card, and a line
+ * once every one of them has answered with nothing open.
  */
-function SourceActionItems({ id, day }: { id: string; day: string }) {
+function OpenActionItems({
+  sources,
+  now,
+}: {
+  sources: MinutesListRow[];
+  now: number;
+}) {
+  // How many each source has open, once it has answered.
+  const [open, setOpen] = useState<Record<string, number>>({});
+  const report = useCallback((id: string, count: number) => {
+    setOpen((before) =>
+      before[id] === count ? before : { ...before, [id]: count },
+    );
+  }, []);
+  const answered = sources.every((source) => open[source.id] !== undefined);
+  const none = answered && sources.every((source) => open[source.id] === 0);
+  return (
+    <>
+      <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
+      {sources.map((source) => (
+        <SourceOpenItems
+          key={source.id}
+          id={source.id}
+          day={minutesRowTime(source.event_start_time, now)}
+          onCount={report}
+        />
+      ))}
+      {none ? (
+        <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * One posted minutes' open action items, as their own card: what, who, when
+ * it's due, how a task for everyone is going, and from when. A row's shape
+ * while they load; a line if they can't; nothing once none is open.
+ */
+function SourceOpenItems({
+  id,
+  day,
+  onCount,
+}: {
+  id: string;
+  day: string;
+  onCount: (id: string, count: number) => void;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const names = useMemberDisplayNames();
-  const query = useMeeting(id);
-  const meeting = query.data;
-  if (!meeting) {
-    return query.isPending ? (
+  const meetingQuery = useMeeting(id);
+  const tasksQuery = useMeetingActionItemTasks(id);
+  const meeting = meetingQuery.data;
+  const tasks = tasksQuery.data;
+  const open =
+    meeting && tasks
+      ? openActionItems(readMeetingContent(meeting.content).action_items, tasks)
+      : null;
+  const count = open?.length ?? null;
+  useEffect(() => {
+    if (count !== null) onCount(id, count);
+  }, [count, id, onCount]);
+
+  if (!open) {
+    return meetingQuery.isPending || tasksQuery.isPending ? (
       <ListSection>
         <ListRowSkeleton index={0} description />
       </ListSection>
@@ -190,10 +234,10 @@ function SourceActionItems({ id, day }: { id: string; day: string }) {
       </InlineNote>
     );
   }
-  const items = readMeetingContent(meeting.content).action_items;
+  if (open.length === 0) return null;
   return (
     <ListSection>
-      {items.map((item, index) => (
+      {open.map(({ item, index, group }) => (
         <View key={`${id}-${index}`} style={styles.item}>
           <Text style={styles.text}>{item.text}</Text>
           <Text style={styles.meta}>
@@ -205,6 +249,9 @@ function SourceActionItems({ id, day }: { id: string; day: string }) {
                   )
                 : MEETING_LIST_COPY.noOwner,
               item.due_date ? meetingDueLabel(item.due_date) : null,
+              group
+                ? MEETING_LIST_COPY.seriesActionsGroup(group.done, group.total)
+                : null,
               MEETING_LIST_COPY.seriesActionsFrom(day),
             ]
               .filter(Boolean)
