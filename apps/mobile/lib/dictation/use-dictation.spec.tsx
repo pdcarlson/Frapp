@@ -32,6 +32,7 @@ vi.mock("../haptics", () => ({ selectionHaptic: vi.fn() }));
 import {
   DICTATION_LEVEL_SAMPLES,
   DICTATION_MAX_SECONDS,
+  fit,
   useDictation,
   type UseDictationOptions,
 } from "./use-dictation";
@@ -40,10 +41,15 @@ function setup(
   clean = vi.fn<UseDictationOptions["clean"]>(
     async (text: string) => `Tidy: ${text}`,
   ),
+  room = 1000,
 ) {
   const onText = vi.fn();
-  const view = renderHook(() => useDictation({ clean, onText }));
-  return { ...view, clean, onText };
+  let renders = 0;
+  const view = renderHook(() => {
+    renders += 1;
+    return useDictation({ clean, onText, room });
+  });
+  return { ...view, clean, onText, renders: () => renders };
 }
 
 async function listen(view: ReturnType<typeof setup>) {
@@ -83,8 +89,8 @@ describe("useDictation", () => {
       speech.handlers!.onLevel(0.4);
       speech.handlers!.onLevel(0.9);
     });
-    expect(view.result.current.words).toBe("so um the bid dinner");
-    expect(view.result.current.levels).toEqual([0.4, 0.9]);
+    expect(view.result.current.live.get().words).toBe("so um the bid dinner");
+    expect(view.result.current.live.get().levels).toEqual([0.4, 0.9]);
 
     act(() => view.result.current.finish());
     expect(speech.finish).toHaveBeenCalled();
@@ -100,7 +106,7 @@ describe("useDictation", () => {
       "Tidy: so um the bid dinner moved",
       "so um the bid dinner moved",
     );
-    expect(view.result.current.words).toBe("");
+    expect(view.result.current.live.get().words).toBe("");
   });
 
   it("keeps the words as heard when the cleanup gives nothing back or throws", async () => {
@@ -130,8 +136,8 @@ describe("useDictation", () => {
         speech.handlers!.onLevel(i / 100);
       }
     });
-    expect(view.result.current.levels).toHaveLength(DICTATION_LEVEL_SAMPLES);
-    expect(view.result.current.levels.at(-1)).toBe(
+    expect(view.result.current.live.get().levels).toHaveLength(DICTATION_LEVEL_SAMPLES);
+    expect(view.result.current.live.get().levels.at(-1)).toBe(
       (DICTATION_LEVEL_SAMPLES + 4) / 100,
     );
   });
@@ -141,7 +147,7 @@ describe("useDictation", () => {
     await listen(view);
     act(() => speech.handlers!.onEnd("  "));
     expect(view.result.current.phase).toBe("idle");
-    expect(view.result.current.failure).toBe("no-speech");
+    expect(view.result.current.notice).toBe("no-speech");
     expect(view.clean).not.toHaveBeenCalled();
   });
 
@@ -149,10 +155,10 @@ describe("useDictation", () => {
     speech.granted = false;
     const view = setup();
     act(() => view.result.current.start());
-    await waitFor(() => expect(view.result.current.failure).toBe("denied"));
+    await waitFor(() => expect(view.result.current.notice).toBe("denied"));
     expect(speech.started).toBe(0);
     act(() => view.result.current.dismiss());
-    expect(view.result.current.failure).toBeNull();
+    expect(view.result.current.notice).toBeNull();
   });
 
   it("reports a recogniser that won't start", async () => {
@@ -160,7 +166,7 @@ describe("useDictation", () => {
     const view = setup();
     act(() => view.result.current.start());
     await waitFor(() =>
-      expect(view.result.current.failure).toBe("unavailable"),
+      expect(view.result.current.notice).toBe("unavailable"),
     );
     expect(view.result.current.phase).toBe("idle");
   });
@@ -198,7 +204,84 @@ describe("useDictation", () => {
     act(() => {
       vi.advanceTimersByTime(DICTATION_MAX_SECONDS * 1000);
     });
-    expect(view.result.current.seconds).toBe(DICTATION_MAX_SECONDS);
+    expect(view.result.current.live.get().seconds).toBe(DICTATION_MAX_SECONDS);
     expect(speech.finish).toHaveBeenCalled();
+  });
+
+  it("keeps level samples out of the host's renders", async () => {
+    const view = setup();
+    await listen(view);
+    const before = view.renders();
+    act(() => {
+      for (let i = 0; i < 20; i += 1) speech.handlers!.onLevel(0.5);
+      speech.handlers!.onWords("so the bid dinner");
+    });
+    expect(view.renders()).toBe(before);
+  });
+
+  it("stops listening once the words fill the field's room", async () => {
+    const view = setup(undefined, 20);
+    await listen(view);
+    act(() => speech.handlers!.onWords("short"));
+    expect(speech.finish).not.toHaveBeenCalled();
+    act(() => speech.handlers!.onWords("this is now longer than twenty"));
+    expect(speech.finish).toHaveBeenCalled();
+  });
+
+  it("cuts words past the room at a word boundary and says so", async () => {
+    const view = setup(
+      vi.fn<UseDictationOptions["clean"]>(async (text) => text),
+      20,
+    );
+    await listen(view);
+    act(() => speech.handlers!.onEnd("remind the rush chairs about formal"));
+    await waitFor(() => expect(view.onText).toHaveBeenCalled());
+    expect(view.clean).toHaveBeenCalledWith(
+      "remind the rush",
+      expect.anything(),
+    );
+    expect(view.onText).toHaveBeenCalledWith(
+      "remind the rush",
+      "remind the rush",
+    );
+    expect(view.result.current.notice).toBe("full");
+  });
+
+  it("keeps the words as heard when the tidied ones would overflow the room", async () => {
+    const view = setup(
+      vi.fn<UseDictationOptions["clean"]>(async () => "a much longer tidy text"),
+      12,
+    );
+    await listen(view);
+    act(() => speech.handlers!.onEnd("short words"));
+    await waitFor(() => expect(view.onText).toHaveBeenCalled());
+    expect(view.onText).toHaveBeenCalledWith("short words", "short words");
+  });
+
+  it("clears its notice on cancel, so a closed sheet reopens clean", async () => {
+    const view = setup();
+    await listen(view);
+    act(() => speech.handlers!.onEnd(""));
+    expect(view.result.current.notice).toBe("no-speech");
+    act(() => view.result.current.cancel());
+    expect(view.result.current.notice).toBeNull();
+  });
+});
+
+describe("fit", () => {
+  it("leaves words that fit alone, and cuts the rest at a word", () => {
+    expect(fit(" hello there ", 20)).toEqual({
+      text: "hello there",
+      clipped: false,
+    });
+    expect(fit("hello there friend", 13)).toEqual({
+      text: "hello there",
+      clipped: true,
+    });
+    expect(fit("supercalifragilistic", 5)).toEqual({
+      text: "super",
+      clipped: true,
+    });
+    expect(fit("anything", 0)).toEqual({ text: "", clipped: true });
   });
 });

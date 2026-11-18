@@ -30,6 +30,13 @@ describe('AI_MODEL_CATALOG', () => {
     expect(aiCatalogEntry('nudges.write').family).toBe('nudges');
   });
 
+  it('books dictation cleanup under Ask, as a structured call (#5276)', () => {
+    // The family picks the chapter switch the consent check reads: Ask's
+    // switch off must stop dictation's cleanup too.
+    expect(aiCatalogEntry('ask.dictation').family).toBe('ask');
+    expect(aiCatalogEntry('ask.dictation').kind).toBe('structured');
+  });
+
   it('gives every generation task a ceiling on what it may write', () => {
     for (const [, entry] of entries) {
       if (entry.kind === 'embedding' || entry.kind === 'transcription') {

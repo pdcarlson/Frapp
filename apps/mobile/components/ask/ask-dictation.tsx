@@ -9,6 +9,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
+import { formatTimer } from "@repo/formatting";
 import type { SignetTokens } from "@repo/theme/signet";
 import {
   CheckGlyph,
@@ -16,8 +17,12 @@ import {
   MicGlyph,
   UndoGlyph,
 } from "@/components/control-glyphs";
-import { DICTATION_LEVEL_SAMPLES } from "@/lib/dictation/use-dictation";
-import type { DictationFailure } from "@/lib/dictation/speech";
+import {
+  DICTATION_LEVEL_SAMPLES,
+  useDictationLive,
+  type DictationLive,
+  type DictationNotice as Notice,
+} from "@/lib/dictation/use-dictation";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -36,7 +41,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *   Frapp's AI tidies them.
  * - {@link DictationOriginal}: once tidied words land, a chip that puts back
  *   exactly what was said.
- * - {@link DictationNotice}: why a try ended with nothing.
+ * - {@link DictationNotice}: why a try ended short.
+ *
+ * The waveform, the clock and the words line read the live values themselves
+ * (`useDictationLive`), so a level sample redraws them and nothing else.
  *
  * Phone only: web's Ask has no mic in #5276. The words are this file's own,
  * not `ASK_COPY`'s, for that reason.
@@ -57,7 +65,8 @@ export const DICTATION_COPY = {
     interrupted: "Dictation stopped.",
     unavailable: "Dictation isn't available right now.",
     failed: "Dictation stopped.",
-  } satisfies Record<DictationFailure, string>,
+    full: "That's all that fits in one question.",
+  } satisfies Record<Notice, string>,
 } as const;
 
 /** 32pt inside a 44pt field; the slop reaches 44. */
@@ -82,16 +91,15 @@ export function DictationMic({ onPress }: { onPress: () => void }) {
 }
 
 export function DictationListening({
-  levels,
-  seconds,
+  live,
   onCancel,
   accent,
 }: {
-  levels: number[];
-  seconds: number;
+  live: DictationLive;
   onCancel: () => void;
   accent: string;
 }) {
+  const { levels, seconds } = useDictationLive(live);
   const { tokens } = useFrappTheme();
   const themed = createStyles(tokens);
   // The newest samples at the right, padded with silence at the left, so the
@@ -130,7 +138,7 @@ export function DictationListening({
           />
         ))}
       </View>
-      <Text style={themed.timer}>{clock(seconds)}</Text>
+      <Text style={themed.timer}>{formatTimer(seconds)}</Text>
     </View>
   );
 }
@@ -162,7 +170,8 @@ export function DictationDone({
 }
 
 /** The words so far, faint, above the field; the latest at the end. */
-export function DictationHeard({ words }: { words: string }) {
+export function DictationHeard({ live }: { live: DictationLive }) {
+  const { words } = useDictationLive(live);
   const { tokens } = useFrappTheme();
   if (!words) return null;
   return (
@@ -181,7 +190,8 @@ export function DictationHeard({ words }: { words: string }) {
 }
 
 /** The heard words in the field's place, pulsing while they are tidied. */
-export function DictationTidying({ words }: { words: string }) {
+export function DictationTidying({ live }: { live: DictationLive }) {
+  const { words } = useDictationLive(live);
   const { tokens } = useFrappTheme();
   const themed = createStyles(tokens);
   const reduceMotion = useReducedMotion();
@@ -205,15 +215,17 @@ export function DictationTidying({ words }: { words: string }) {
       accessibilityLiveRegion="polite"
       style={themed.tidying}
     >
-      <Animated.Text
-        numberOfLines={5}
-        style={[
-          themed.tidyingText,
-          reduceMotion ? { color: tokens.color.text.muted } : faded,
-        ]}
-      >
-        {words}
-      </Animated.Text>
+      <Animated.View style={reduceMotion ? null : faded}>
+        <Text
+          numberOfLines={5}
+          style={[
+            themed.tidyingText,
+            reduceMotion ? { color: tokens.color.text.muted } : null,
+          ]}
+        >
+          {words}
+        </Text>
+      </Animated.View>
     </View>
   );
 }
@@ -240,7 +252,7 @@ export function DictationNotice({
   failure,
   onDismiss,
 }: {
-  failure: DictationFailure;
+  failure: Notice;
   onDismiss: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -262,11 +274,6 @@ export function DictationNotice({
       ) : null}
     </View>
   );
-}
-
-function clock(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({

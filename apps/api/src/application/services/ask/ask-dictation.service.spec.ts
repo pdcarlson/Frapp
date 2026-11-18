@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import type { AiGatewayService } from '../ai/ai-gateway.service';
 import {
@@ -109,6 +109,78 @@ describe('AskDictationService', () => {
       });
     },
   );
+
+  describe('the member’s words are never logged', () => {
+    const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose'] as const;
+    let spies: jest.SpyInstance[];
+    beforeEach(() => {
+      spies = LOG_METHODS.map((method) =>
+        jest.spyOn(Logger.prototype, method).mockImplementation(() => {}),
+      );
+    });
+    afterEach(() => {
+      for (const spy of spies) spy.mockRestore();
+    });
+    const logged = () => JSON.stringify(spies.flatMap((spy) => spy.mock.calls));
+
+    it('on a thrown provider error: the kind only', async () => {
+      const { service } = build(new LanguageModelError('timeout', 'anthropic'));
+      await expect(clean(service)).resolves.toBe(SAID);
+      // The failure was logged, so the check below reads a real line.
+      expect(spies.some((spy) => spy.mock.calls.length > 0)).toBe(true);
+      expect(logged()).toContain('timeout');
+      expect(logged()).not.toContain('chapter meeting');
+    });
+
+    it('on a cleanup that fails the length check', async () => {
+      const answer = `${CLEANED} ${'x'.repeat(Math.floor(dictationCeiling(SAID)))}`;
+      const { service } = build({ status: 'ok', value: { text: answer } });
+      await expect(clean(service)).resolves.toBe(SAID);
+      expect(logged()).not.toContain('chapter meeting');
+      expect(logged()).not.toContain(CLEANED);
+    });
+  });
+
+  describe('a member who left', () => {
+    it('keeps the words and logs nothing when the call is aborted', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => {});
+      try {
+        const { service, generateObject } = build(
+          new LanguageModelError('aborted', 'anthropic'),
+        );
+        const abort = new AbortController();
+        abort.abort();
+        await expect(
+          service.clean({
+            chapterId: 'chapter-1',
+            userId: 'user-1',
+            text: SAID,
+            signal: abort.signal,
+          }),
+        ).resolves.toBe(SAID);
+        expect(generateObject.mock.calls[0][1].signal).toBe(abort.signal);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('does not throw an error that is not the provider’s once the signal is aborted', async () => {
+      const { service } = build(new Error('socket closed'));
+      const abort = new AbortController();
+      abort.abort();
+      await expect(
+        service.clean({
+          chapterId: 'chapter-1',
+          userId: 'user-1',
+          text: SAID,
+          signal: abort.signal,
+        }),
+      ).resolves.toBe(SAID);
+    });
+  });
 
   describe('the safety check', () => {
     it('keeps the words as said when the cleanup is empty', async () => {

@@ -304,6 +304,8 @@ export const AskSheet = forwardRef<
   const cleanDictation = useCleanDictation();
   const dictation = useDictation({
     clean: cleanDictation,
+    // What the field has left, with a space before the new words.
+    room: ASK_QUESTION_MAX_LENGTH - (draft.trim() ? draft.trimEnd().length + 1 : 0),
     onText: (text, heard) => {
       const before = draftRef.current;
       const tidied = joinDraft(before, text);
@@ -360,6 +362,7 @@ export const AskSheet = forwardRef<
     askedHereRef.current = askedHere;
   }, [working, askedHere]);
   const cancelDictation = dictation.cancel;
+  const dismissDictation = dictation.dismiss;
   const onDismiss = useCallback(() => {
     setShownOpen(false);
     cancelDictation();
@@ -398,10 +401,11 @@ export const AskSheet = forwardRef<
       if (!text.trim() || workingRef.current) return;
       setDraft("");
       setOriginal(null);
+      dismissDictation();
       clearNotice();
       void ask(text, options());
     },
-    [ask, options, clearNotice],
+    [ask, options, clearNotice, dismissDictation],
   );
 
   const pick = useCallback(
@@ -537,10 +541,10 @@ export const AskSheet = forwardRef<
               {askSavedLine(formatAiAnswerDate(savedUntil))}
             </Text>
           ) : null}
-          {listening ? <DictationHeard words={dictation.words} /> : null}
-          {dictation.failure !== null && dictation.phase === "idle" ? (
+          {listening ? <DictationHeard live={dictation.live} /> : null}
+          {dictation.notice !== null && dictation.phase === "idle" ? (
             <DictationNotice
-              failure={dictation.failure}
+              failure={dictation.notice}
               onDismiss={dictation.dismiss}
             />
           ) : null}
@@ -563,13 +567,12 @@ export const AskSheet = forwardRef<
             >
               {listening ? (
                 <DictationListening
-                  levels={dictation.levels}
-                  seconds={dictation.seconds}
+                  live={dictation.live}
                   onCancel={dictation.cancel}
                   accent={accent}
                 />
               ) : tidying ? (
-                <DictationTidying words={dictation.words} />
+                <DictationTidying live={dictation.live} />
               ) : (
                 <>
                   {/* `BottomSheetTextInput`, never a plain `TextInput`

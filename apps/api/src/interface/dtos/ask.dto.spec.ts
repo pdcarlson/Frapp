@@ -4,11 +4,12 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import {
+  ASK_DICTATION_MAX_LENGTH,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
   ASK_HISTORY_MAX_TURNS,
 } from '@repo/validation';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
-import { AskRequestDto } from './ask.dto';
+import { AskDictationRequestDto, AskRequestDto } from './ask.dto';
 
 /**
  * `history` is the conversation as the client holds it, so it is caller
@@ -128,5 +129,46 @@ describe('AskRequestDto', () => {
     await expect(
       transform({ question: 'What is quorum?', [field]: value }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+/** What the recogniser heard (#5276), run through the production pipe. */
+describe('AskDictationRequestDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'body',
+    metatype: AskDictationRequestDto,
+    data: '',
+  };
+  const transform = (body: unknown) => pipe.transform(body, metadata);
+
+  it('trims the words', async () => {
+    await expect(
+      transform({ text: '  um so when is chapter  ' }),
+    ).resolves.toEqual({ text: 'um so when is chapter' });
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', ' \n\t '],
+  ])('refuses words that are %s', async (_, text) => {
+    await expect(transform({ text })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('takes exactly as many as a question holds, and refuses one more', async () => {
+    await expect(
+      transform({ text: 'a'.repeat(ASK_DICTATION_MAX_LENGTH) }),
+    ).resolves.toEqual({ text: 'a'.repeat(ASK_DICTATION_MAX_LENGTH) });
+    await expect(
+      transform({ text: 'a'.repeat(ASK_DICTATION_MAX_LENGTH + 1) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('counts the length after trimming', async () => {
+    await expect(
+      transform({ text: `  ${'a'.repeat(ASK_DICTATION_MAX_LENGTH)}  ` }),
+    ).resolves.toEqual({ text: 'a'.repeat(ASK_DICTATION_MAX_LENGTH) });
   });
 });

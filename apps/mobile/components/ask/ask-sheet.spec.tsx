@@ -1193,11 +1193,63 @@ describe("dictation (#5276)", () => {
     expect(screenText(tree)).toContain("Open Settings");
   });
 
+  it("holds send while the words are being tidied, so typed words never go alone", async () => {
+    let finishCleaning!: (text: string) => void;
+    dictating.clean.mockImplementation(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishCleaning = resolve;
+        }),
+    );
+    const tree = render();
+    act(() => field(tree).props.onChangeText("Quick one:"));
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => byLabel(tree, "Done")[0]!.props.onPress());
+    await act(async () => dictating.handlers!.onEnd("who has the keys"));
+    expect(byLabel(tree, "Tidying your words")).toHaveLength(1);
+    expect(byLabel(tree, ASK_COPY.send)[0]!.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    await act(async () => finishCleaning("Who has the keys?"));
+    expect(field(tree).props.value).toBe("Quick one: Who has the keys?");
+  });
+
+  it("takes the Original chip away once the question is sent", async () => {
+    const tree = render();
+    await dictate(tree, "so um who has the keys");
+    expect(byLabel(tree, "Original")).toHaveLength(1);
+    act(() => byLabel(tree, ASK_COPY.send)[0]!.props.onPress());
+    expect(hooks.ask).toHaveBeenCalledWith("Who has the keys?", ASKING);
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+  });
+
+  it("stops at what fits in one question and says so", async () => {
+    dictating.clean.mockImplementation(async (text: string) => text);
+    const tree = render();
+    act(() => field(tree).props.onChangeText("x".repeat(990)));
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => dictating.handlers!.onWords("one two three four five"));
+    expect(dictating.finish).toHaveBeenCalled();
+    await act(async () => dictating.handlers!.onEnd("one two three four five"));
+    expect(field(tree).props.value).toBe(`${"x".repeat(990)} one two`);
+    expect(screenText(tree)).toContain("That's all that fits in one question.");
+  });
+
   it("stops listening when the sheet closes", async () => {
     const tree = render();
     open(tree);
     await act(async () => mic(tree)[0]!.props.onPress());
     act(() => sheet(tree).props.onDismiss());
     expect(dictating.cancel).toHaveBeenCalled();
+  });
+
+  it("drops a notice when the sheet closes", async () => {
+    const tree = render();
+    open(tree);
+    await act(async () => mic(tree)[0]!.props.onPress());
+    await act(async () => dictating.handlers!.onEnd(""));
+    expect(screenText(tree)).toContain("Didn't catch anything.");
+    act(() => sheet(tree).props.onDismiss());
+    expect(screenText(tree)).not.toContain("Didn't catch anything.");
   });
 });

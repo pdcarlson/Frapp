@@ -105,6 +105,11 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 
 ## 9. Dictate to Ask Frapp (3 minutes)
 
+Run this section on the **Frapp Staging** app, signed in to staging: Frapp AI is on there and off on
+production ([`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md), `AI_ENABLED`), and with it
+off there is no Ask Frapp to dictate into. Move these rows to the production pass once Paul turns
+Frapp AI on there.
+
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
 | 30 | Both | Open Ask Frapp and tap the mic inside the field. Allow the microphone (and Speech Recognition on iPhone). Say "so um can you remind the rush chairs that the uh bid dinner moved to Thursday no Friday at seven", then tap the check | While you talk the field shows a moving waveform in the chapter's colour and a clock, with your words faint above it. After the check they pulse for about a second, then the box reads close to "Can you remind the rush chairs that the bid dinner moved to Friday at 7?", nothing has been sent, and Original puts back what you said | #5276 |

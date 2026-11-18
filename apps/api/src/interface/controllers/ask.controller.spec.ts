@@ -106,7 +106,10 @@ function build(
   };
   const analytics = { track: jest.fn(async () => undefined) };
   const dictation = {
-    clean: jest.fn(async () => 'When is the chapter meeting Friday?'),
+    clean: jest.fn(
+      async (_input: { signal?: AbortSignal }) =>
+        'When is the chapter meeting Friday?',
+    ),
   };
   const controller = new AskController(
     askService as never,
@@ -489,18 +492,24 @@ describe('AskController', () => {
 
 describe('POST /ai/ask/dictation (#5276)', () => {
   it('hands the words to the cleanup as the caller, in their chapter, and answers with what comes back', async () => {
-    const { controller, dictation, analytics } = build(async function* () {
-      yield done;
-    });
+    const { controller, dictation, analytics, response } = build(
+      async function* () {
+        yield done;
+      },
+    );
     await expect(
-      controller.cleanDictation('chapter-a', 'user-1', {
-        text: 'um when is the chapter meeting thursday no friday',
-      }),
+      controller.cleanDictation(
+        'chapter-a',
+        'user-1',
+        { text: 'um when is the chapter meeting thursday no friday' },
+        response as never,
+      ),
     ).resolves.toEqual({ text: 'When is the chapter meeting Friday?' });
     expect(dictation.clean).toHaveBeenCalledWith({
       chapterId: 'chapter-a',
       userId: 'user-1',
       text: 'um when is the chapter meeting thursday no friday',
+      signal: expect.any(AbortSignal),
     });
     // Not a question: nothing is counted.
     expect(analytics.track).not.toHaveBeenCalled();
@@ -514,8 +523,47 @@ describe('POST /ai/ask/dictation (#5276)', () => {
       new ForbiddenException({ code: 'ai.consent.required' }),
     );
     await expect(
-      controller.cleanDictation('chapter-a', 'user-1', { text: 'hi' }),
+      controller.cleanDictation(
+        'chapter-a',
+        'user-1',
+        { text: 'hi' },
+        new FakeResponse() as never,
+      ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('stops the cleanup when the member leaves: a closed response aborts its signal', async () => {
+    const { controller, dictation, response } = build(async function* () {
+      yield done;
+    });
+    let signal: AbortSignal | undefined;
+    dictation.clean.mockImplementationOnce(async (input) => {
+      signal = input.signal;
+      expect(signal?.aborted).toBe(false);
+      response.emit('close');
+      return 'hi';
+    });
+    await controller.cleanDictation(
+      'chapter-a',
+      'user-1',
+      { text: 'hi' },
+      response as never,
+    );
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('aborts at once when the member left before the handler ran', async () => {
+    const { controller, dictation } = build(async function* () {
+      yield done;
+    });
+    const gone = Object.assign(new FakeResponse(), { destroyed: true });
+    await controller.cleanDictation(
+      'chapter-a',
+      'user-1',
+      { text: 'hi' },
+      gone as never,
+    );
+    expect(dictation.clean.mock.calls[0][0].signal?.aborted).toBe(true);
   });
 });
 

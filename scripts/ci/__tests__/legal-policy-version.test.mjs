@@ -57,7 +57,9 @@
 //   permissions clause, with Apple or Google as the recogniser where the
 //   phone has none of its own (2026-11-17, #5276), was ruled non-material by
 //   the owner the same day, in the wording he approved, so it moved only the
-//   Privacy pin.
+//   Privacy pin. Its added end, that Frapp AI then tidies the text before the
+//   member chooses whether to send it (same day, from the PR's review), was
+//   approved and ruled non-material by the owner too.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -96,7 +98,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "November 2026",
-    fingerprint: "65d883cdbc3c78a9",
+    fingerprint: "378058610b7e3563",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

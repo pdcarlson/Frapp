@@ -64,7 +64,10 @@ export class AskDictationService {
         { chapterId: input.chapterId, actingUserId: input.userId },
       );
     } catch (error) {
+      // The member left Ask: nobody to answer, and nothing failed.
+      if (input.signal?.aborted) return said;
       if (!(error instanceof LanguageModelError)) throw error;
+      if (error.kind === 'aborted') return said;
       // Its kind only: a `LanguageModelError` carries no provider text.
       this.logger.warn(`Dictation cleanup failed: ${error.kind}`);
       return said;
