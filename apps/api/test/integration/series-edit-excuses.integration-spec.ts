@@ -3,7 +3,8 @@
 // The unit suite pins which old occurrence pairs with which rebuilt one; only
 // the database can show what `delete_replaced_occurrences` does with the
 // pairs: each excuse, and an approved one's EXCUSED attendance row, moves to
-// the new meeting, and so do the old meeting's agenda and attachments (#4934); the excuses no pair took are returned and deleted with
+// the new meeting, and so do the old meeting's agenda and attachments (#4934)
+// and its suggested agenda items (#5534); the excuses no pair took are returned and deleted with
 // their rows; and a bad pair changes nothing at all.
 //
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
@@ -117,6 +118,43 @@ describeIntegration(
             meeting(rebuilt, chapterId, 7),
             meeting(otherChapterEvent, otherChapterId, 7),
           ] as never)
+        ).error,
+      );
+
+      // A suggestion added on the old meeting, and when the model last wrote
+      // for it (#5534): both follow the meeting.
+      assertOk(
+        'event_agenda_suggestions',
+        (
+          await supabase.from('event_agenda_suggestions').insert({
+            chapter_id: chapterId,
+            event_id: oldKept,
+            kind: 'ai',
+            text: 'Venue check-in',
+            reason: null,
+            source_meeting_id: null,
+            tabled_meeting_id: null,
+            tabled_start_time: null,
+            tabled_times: null,
+            dedupe_key: 'ai:venue check-in',
+            audience_key: 'r:;o:;x:;e:1',
+            status: 'added',
+            agenda_item_id: 's-1',
+            decided_by: officerId,
+            decided_at: new Date().toISOString(),
+          })
+        ).error,
+      );
+      assertOk(
+        'event_agenda_suggestion_runs',
+        (
+          await supabase.from('event_agenda_suggestion_runs').insert({
+            event_id: oldKept,
+            chapter_id: chapterId,
+            generated_by: officerId,
+            generated_at: new Date().toISOString(),
+            audience_key: 'r:;o:;x:;e:1',
+          })
         ).error,
       );
 
@@ -237,6 +275,19 @@ describeIntegration(
         agenda: KEPT_AGENDA,
         attachments: KEPT_ATTACHMENTS,
       });
+
+      // So did its suggestions and its run (#5534), rather than going with
+      // the old row.
+      const { data: suggestions } = await supabase
+        .from('event_agenda_suggestions')
+        .select('event_id, status')
+        .eq('chapter_id', chapterId);
+      expect(suggestions).toEqual([{ event_id: rebuilt, status: 'added' }]);
+      const { data: runs } = await supabase
+        .from('event_agenda_suggestion_runs')
+        .select('event_id')
+        .eq('chapter_id', chapterId);
+      expect(runs).toEqual([{ event_id: rebuilt }]);
 
       const { data: left } = await supabase
         .from('events')

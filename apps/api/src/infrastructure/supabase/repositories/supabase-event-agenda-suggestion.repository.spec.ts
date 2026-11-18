@@ -40,6 +40,7 @@ const suggestion = (overrides: Record<string, unknown> = {}) => ({
   tabled_start_time: '2026-11-11T23:00:00.000Z',
   tabled_times: 1,
   dedupe_key: `tabled:${MINUTES}:1:formal budget`,
+  audience_key: 'r:;o:;x:;e:1',
   status: 'open',
   agenda_item_id: null,
   decided_by: null,
@@ -99,12 +100,14 @@ const seed = () => ({
       event_id: EVENT,
       generated_by: USER_SHARED,
       generated_at: NOW,
+      audience_key: 'r:;o:;x:;e:1',
     }),
     inB({
       id: 'run-b',
       event_id: EVENT_B,
       generated_by: USER_SHARED,
       generated_at: NOW,
+      audience_key: 'r:;o:;x:;e:1',
     }),
   ],
 });
@@ -160,6 +163,7 @@ describe('SupabaseEventAgendaSuggestionRepository — tenant scope', () => {
           tabled_start_time: null,
           tabled_times: null,
           dedupe_key: 'ai:philanthropy update',
+          audience_key: 'r:;o:;x:;e:1',
         },
       ]),
     );
@@ -233,6 +237,7 @@ describe('SupabaseEventAgendaSuggestionRepository — tenant scope', () => {
         chapter_id: CHAPTER_A,
         generated_by: USER_SHARED,
         generated_at: '2026-11-18T20:00:00.000Z',
+        audience_key: 'r:;o:;x:;e:1',
       }),
     );
     const b = harness

@@ -7,6 +7,7 @@ import {
   MEETING_SECTIONS,
   MEETING_TABLED_MAX_ITEMS,
   MEETING_TABLED_MAX_TIMES,
+  agendaMatterKey,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_TEXT_SECTIONS,
   MEETING_VOTE_MAX,
@@ -607,7 +608,7 @@ export function verifyMinutesDraft(
     const tabled: MeetingTabledItem[] = [];
     for (const item of output.tabled ?? []) {
       const text = clamp(item.text, MEETING_ITEM_TEXT_MAX_LENGTH);
-      const key = text.toLowerCase();
+      const key = agendaMatterKey(text);
       if (!text || seen.has(key)) continue;
       if (!locate(item.quote, item.source, sources)) {
         leftOut += 1;
@@ -1153,15 +1154,10 @@ export function tabledAgain(
       ? agenda[drafted.agenda_item - 1]
       : undefined;
   if (named?.tabledFrom) return named.tabledFrom;
-  const words = sameWords(text);
+  const words = agendaMatterKey(text);
   return (
-    agenda.find((item) => item.tabledFrom && sameWords(item.text) === words)
-      ?.tabledFrom ?? null
+    agenda.find(
+      (item) => item.tabledFrom && agendaMatterKey(item.text) === words,
+    )?.tabledFrom ?? null
   );
-}
-
-function sameWords(text: string): string {
-  return oneLine(text)
-    .toLowerCase()
-    .replace(/[.!?;:,\s]+$/, '');
 }

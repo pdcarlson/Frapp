@@ -154,4 +154,40 @@ describe("useEventListsEditor (#4934)", () => {
     });
     expect(PATCH).toHaveBeenCalledTimes(1);
   });
+
+  it("settles only once a save in flight, and what was queued behind it, has landed (#5534)", async () => {
+    let finish: (value: unknown) => void = () => {};
+    const PATCH = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (finish = resolve)),
+      )
+      .mockResolvedValue({ data: {}, error: undefined });
+    const { result } = setup(PATCH);
+    act(() => result.current.change("agenda", check("a")));
+    await act(async () => {
+      vi.advanceTimersByTime(EVENT_LISTS_SAVE_DELAY_MS);
+    });
+    expect(PATCH).toHaveBeenCalledTimes(1);
+    // A change made while that save is out, then a settle.
+    act(() => result.current.change("agenda", check("b")));
+    let settled = false;
+    let settling: Promise<void> = Promise.resolve();
+    act(() => {
+      settling = result.current.settle().then(() => {
+        settled = true;
+      });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(settled).toBe(false);
+    await act(async () => {
+      finish({ data: {}, error: undefined });
+      await vi.runAllTimersAsync();
+      await settling;
+    });
+    expect(settled).toBe(true);
+    expect(PATCH).toHaveBeenCalledTimes(2);
+  });
 });

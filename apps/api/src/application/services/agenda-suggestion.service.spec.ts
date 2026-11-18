@@ -22,6 +22,8 @@ import type { RbacService } from './rbac.service';
 
 const CHAPTER = 'ch-1';
 const OFFICER = 'u-officer';
+/** `audienceKey` of an event that invites everyone, by no role. */
+const EVERYONE = 'r:;o:;x:;e:1';
 const EXEC_ROLE = 'role-exec';
 const NOW = new Date('2026-11-20T12:00:00.000Z');
 /** A first tabling's minutes: the shared schema reads only a uuid there. */
@@ -178,6 +180,7 @@ function setup(options: {
   earlier: Meeting[];
   aiAllowed?: boolean;
   modelItems?: { text: string; reason: string; minutes?: string }[];
+  eventsOff?: boolean;
 }) {
   process.env.AI_ENABLED = 'true';
   const repo = new FakeRepo();
@@ -223,6 +226,12 @@ function setup(options: {
     { findChapterMemberIdentities: jest.fn(async () => []) } as never,
     { findByChapter: jest.fn(async () => []) } as never,
     { findById: jest.fn(async () => null) } as never,
+    {
+      findById: jest.fn(async () => ({
+        id: CHAPTER,
+        enabled_modules: options.eventsOff ? { events: false } : {},
+      })),
+    } as never,
     events as unknown as EventService,
     meetings as unknown as MeetingService,
     { findByChapter: jest.fn(async () => []) } as unknown as RbacService,
@@ -247,7 +256,7 @@ describe('AgendaSuggestionService', () => {
       ],
       aiAllowed: false,
     });
-    const list = await service.list(CHAPTER, 'evt-next', OFFICER, NOW);
+    const list = await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW });
     expect(list.ai_available).toBe(false);
     expect(list.suggestions).toEqual([
       expect.objectContaining({
@@ -278,7 +287,9 @@ describe('AgendaSuggestionService', () => {
         ]),
       ],
     });
-    const list = await service.list(CHAPTER, 'evt-chapter', OFFICER, NOW);
+    const list = await service.list(CHAPTER, 'evt-chapter', OFFICER, {
+      now: NOW,
+    });
     expect(list.suggestions).toEqual([]);
   });
 
@@ -291,14 +302,15 @@ describe('AgendaSuggestionService', () => {
         ]),
       ],
     });
-    const [suggestion] = (await service.list(CHAPTER, 'evt-next', OFFICER, NOW))
-      .suggestions;
+    const [suggestion] = (
+      await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW })
+    ).suggestions;
     const { agenda } = await service.add(
       CHAPTER,
       'evt-next',
       suggestion.id,
       OFFICER,
-      NOW,
+      { now: NOW },
     );
     expect(agenda).toEqual([
       {
@@ -321,7 +333,7 @@ describe('AgendaSuggestionService', () => {
     );
     // Decided: a second Add finds nothing open.
     await expect(
-      service.add(CHAPTER, 'evt-next', suggestion.id, OFFICER, NOW),
+      service.add(CHAPTER, 'evt-next', suggestion.id, OFFICER, { now: NOW }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(events.appendAgendaItem).toHaveBeenCalledTimes(1);
     // Taken up: the next meeting with the same audience isn't offered it.
@@ -332,7 +344,9 @@ describe('AgendaSuggestionService', () => {
         end_time: '2026-12-02T02:00:00.000Z',
       }),
     );
-    const later = await service.list(CHAPTER, 'evt-after', OFFICER, NOW);
+    const later = await service.list(CHAPTER, 'evt-after', OFFICER, {
+      now: NOW,
+    });
     expect(later.suggestions).toEqual([]);
   });
 
@@ -363,13 +377,14 @@ describe('AgendaSuggestionService', () => {
       tabled_start_time: '2026-11-11T00:00:00.000Z',
       tabled_times: 1,
       dedupe_key: `tabled:${M_A}:1:formal budget`,
+      audience_key: EVERYONE,
       status: 'added',
       agenda_item_id: 's-old',
       decided_by: OFFICER,
       decided_at: '2026-11-12T00:00:00.000Z',
       created_at: '2026-11-12T00:00:00.000Z',
     });
-    const list = await service.list(CHAPTER, 'evt-next', OFFICER, NOW);
+    const list = await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW });
     expect(list.suggestions).toEqual([
       expect.objectContaining({
         text: 'Formal budget',
@@ -392,15 +407,19 @@ describe('AgendaSuggestionService', () => {
         ]),
       ],
     });
-    const [suggestion] = (await service.list(CHAPTER, 'evt-next', OFFICER, NOW))
-      .suggestions;
-    await service.dismiss(CHAPTER, 'evt-next', suggestion.id, OFFICER, NOW);
+    const [suggestion] = (
+      await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW })
+    ).suggestions;
+    await service.dismiss(CHAPTER, 'evt-next', suggestion.id, OFFICER, {
+      now: NOW,
+    });
     expect(repo.rows[0]).toEqual(
       expect.objectContaining({ status: 'dismissed', text: 'Formal budget' }),
     );
     // Listing again doesn't bring it back.
     expect(
-      (await service.list(CHAPTER, 'evt-next', OFFICER, NOW)).suggestions,
+      (await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW }))
+        .suggestions,
     ).toEqual([]);
   });
 
@@ -429,13 +448,16 @@ describe('AgendaSuggestionService', () => {
       tabled_start_time: null,
       tabled_times: null,
       dedupe_key: 'ai:pizza order',
+      audience_key: EVERYONE,
       status: 'dismissed',
       agenda_item_id: null,
       decided_by: OFFICER,
       decided_at: '2026-11-17T00:00:00.000Z',
       created_at: '2026-11-17T00:00:00.000Z',
     });
-    const list = await service.refresh(CHAPTER, 'evt-next', OFFICER, NOW);
+    const list = await service.refresh(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
     expect(list.suggestions.map((s) => [s.kind, s.text])).toEqual([
       ['tabled', 'Formal budget'],
       ['ai', 'Venue check-in'],
@@ -467,7 +489,9 @@ describe('AgendaSuggestionService', () => {
       ],
       aiAllowed: false,
     });
-    const list = await service.refresh(CHAPTER, 'evt-next', OFFICER, NOW);
+    const list = await service.refresh(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
     expect(gateway.generateObject).not.toHaveBeenCalled();
     expect(list.suggestions.map((s) => s.text)).toEqual(['Formal budget']);
     expect(list.generated_at).toBeNull();
@@ -488,10 +512,206 @@ describe('AgendaSuggestionService', () => {
         ]),
       ],
     });
-    expect(await service.list(CHAPTER, 'evt-past', OFFICER, NOW)).toEqual({
+    expect(
+      await service.list(CHAPTER, 'evt-past', OFFICER, { now: NOW }),
+    ).toEqual({
       suggestions: [],
       generated_at: null,
       ai_available: false,
     });
+  });
+
+  it('keeps offering the other matters a meeting tabled once one is added', async () => {
+    const { service } = setup({
+      events: [event('evt-next'), event('evt-last')],
+      earlier: [
+        minutes('m-last', 'evt-last', '2026-11-18', [
+          { text: 'Formal budget' },
+          { text: 'Rush shirts' },
+        ]),
+      ],
+    });
+    const first = await service.list(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
+    const budget = first.suggestions.find((s) => s.text === 'Formal budget')!;
+    await service.add(CHAPTER, 'evt-next', budget.id, OFFICER, { now: NOW });
+    const after = await service.list(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
+    expect(after.suggestions.map((s) => s.text)).toEqual(['Rush shirts']);
+  });
+
+  it('takes an open tabled matter back from another meeting once an agenda takes it up', async () => {
+    const { service, byId } = setup({
+      events: [
+        event('evt-a'),
+        event('evt-b', {
+          start_time: '2026-12-02T00:00:00.000Z',
+          end_time: '2026-12-02T02:00:00.000Z',
+        }),
+        event('evt-last'),
+      ],
+      earlier: [
+        minutes('m-last', 'evt-last', '2026-11-18', [
+          { text: 'Formal budget' },
+        ]),
+      ],
+    });
+    const onB = await service.list(CHAPTER, 'evt-b', OFFICER, { now: NOW });
+    expect(onB.suggestions).toHaveLength(1);
+    const [onA] = (await service.list(CHAPTER, 'evt-a', OFFICER, { now: NOW }))
+      .suggestions;
+    await service.add(CHAPTER, 'evt-a', onA.id, OFFICER, { now: NOW });
+    expect(byId.get('evt-a')?.agenda).toHaveLength(1);
+    expect(
+      (await service.list(CHAPTER, 'evt-b', OFFICER, { now: NOW })).suggestions,
+    ).toEqual([]);
+  });
+
+  it('fills the places of matters dismissed or taken up with the next ones', async () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => ({
+      text: `Matter ${i + 1}`,
+    }));
+    const { service } = setup({
+      events: [event('evt-next'), event('evt-last')],
+      earlier: [minutes('m-last', 'evt-last', '2026-11-18', twelve)],
+    });
+    const first = await service.list(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
+    expect(first.suggestions).toHaveLength(10);
+    for (const row of first.suggestions.slice(0, 3)) {
+      await service.dismiss(CHAPTER, 'evt-next', row.id, OFFICER, { now: NOW });
+    }
+    const after = await service.list(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
+    expect(after.suggestions).toHaveLength(9);
+    expect(after.suggestions.map((s) => s.text)).toContain('Matter 12');
+  });
+
+  it('shows nothing written for the audience an event had before, and starts it over', async () => {
+    const { service, repo, byId } = setup({
+      events: [event('evt-next'), event('evt-last')],
+      earlier: [],
+      modelItems: [{ text: 'Venue check-in', reason: 'Still open' }],
+    });
+    await service.refresh(CHAPTER, 'evt-next', OFFICER, { now: NOW });
+    expect(repo.rows).toHaveLength(1);
+    // The event becomes officers-only.
+    byId.set(
+      'evt-next',
+      event('evt-next', {
+        required_role_ids: [EXEC_ROLE],
+        others_invited: false,
+      }),
+    );
+    const list = await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW });
+    expect(list.suggestions).toEqual([]);
+    expect(list.generated_at).toBeNull();
+    await expect(
+      service.add(CHAPTER, 'evt-next', repo.rows[0].id, OFFICER, { now: NOW }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('hides a suggestion drawn from minutes this member can’t read, and refuses to add it', async () => {
+    const { service, repo } = setup({
+      events: [event('evt-next')],
+      earlier: [],
+    });
+    repo.rows.push({
+      id: 'from-hidden',
+      chapter_id: CHAPTER,
+      event_id: 'evt-next',
+      kind: 'ai',
+      text: 'Discipline hearing',
+      reason: null,
+      source_meeting_id: 'm-hidden',
+      tabled_meeting_id: null,
+      tabled_start_time: null,
+      tabled_times: null,
+      dedupe_key: 'ai:discipline hearing',
+      audience_key: EVERYONE,
+      status: 'open',
+      agenda_item_id: null,
+      decided_by: null,
+      decided_at: null,
+      created_at: NOW.toISOString(),
+    });
+    expect(
+      (await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW }))
+        .suggestions,
+    ).toEqual([]);
+    await expect(
+      service.add(CHAPTER, 'evt-next', 'from-hidden', OFFICER, { now: NOW }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('teaches the prompt only with choices made for the same audience', async () => {
+    const { service, repo, gateway } = setup({
+      events: [event('evt-next')],
+      earlier: [],
+      modelItems: [],
+    });
+    const decided = (id: string, text: string, audience: string) => ({
+      id,
+      chapter_id: CHAPTER,
+      event_id: 'evt-old',
+      kind: 'ai' as const,
+      text,
+      reason: null,
+      source_meeting_id: null,
+      tabled_meeting_id: null,
+      tabled_start_time: null,
+      tabled_times: null,
+      dedupe_key: `ai:${text.toLowerCase()}`,
+      audience_key: audience,
+      status: 'added' as const,
+      agenda_item_id: `s-${id}`,
+      decided_by: OFFICER,
+      decided_at: '2026-11-17T00:00:00.000Z',
+      created_at: '2026-11-17T00:00:00.000Z',
+    });
+    repo.rows.push(
+      decided('same', 'Risk report', EVERYONE),
+      decided('exec', 'Discipline hearing', `r:${EXEC_ROLE};o:;x:;e:0`),
+    );
+    await service.refresh(CHAPTER, 'evt-next', OFFICER, { now: NOW });
+    const [, prompt] = gateway.generateObject.mock.calls[0] as unknown as [
+      string,
+      { messages: { content: string }[] },
+    ];
+    expect(prompt.messages[0].content).toContain('- Risk report');
+    expect(prompt.messages[0].content).not.toContain('Discipline hearing');
+  });
+
+  it('keeps an item the model suggests again on Suggest again', async () => {
+    const { service } = setup({
+      events: [event('evt-next')],
+      earlier: [],
+      modelItems: [{ text: 'Venue check-in', reason: 'Still open' }],
+    });
+    await service.refresh(CHAPTER, 'evt-next', OFFICER, { now: NOW });
+    const again = await service.refresh(CHAPTER, 'evt-next', OFFICER, {
+      now: NOW,
+    });
+    expect(again.suggestions.map((s) => s.text)).toEqual(['Venue check-in']);
+  });
+
+  it('offers nothing in a chapter with Events off', async () => {
+    const { service } = setup({
+      events: [event('evt-next'), event('evt-last')],
+      earlier: [
+        minutes('m-last', 'evt-last', '2026-11-18', [
+          { text: 'Formal budget' },
+        ]),
+      ],
+      eventsOff: true,
+    });
+    expect(
+      (await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW }))
+        .suggestions,
+    ).toEqual([]);
   });
 });

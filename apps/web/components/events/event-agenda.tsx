@@ -83,7 +83,10 @@ export function EventMeetingLists({
   lists: EventLists;
   /** Holds `events:update`, and the event is there to write to. */
   canEdit: boolean;
-  /** The meeting hasn't ended: Suggested shows only for one still to come. */
+  /**
+   * The meeting hasn't ended and the chapter has minutes on: Suggested
+   * shows only then.
+   */
   upcoming: boolean;
   documentsOn: DocumentsModule;
 }) {
@@ -99,18 +102,23 @@ export function EventMeetingLists({
         fallback: "Your last change was undone. Try it again in a moment.",
       }),
   });
+  // While an Add is out the agenda's controls wait: the server is writing
+  // the list, and an edit now would send the copy without the new item.
+  const [adding, setAdding] = useState(false);
   return (
     <>
       <EventAgendaSection
         agenda={editor.agenda}
         canEdit={editable}
+        locked={adding}
         onChange={(update) => editor.change("agenda", update)}
       />
       {editable && upcoming ? (
         <AgendaSuggestions
           eventId={eventId}
           full={editor.agenda.length >= EVENT_AGENDA_MAX}
-          flushAgenda={editor.flush}
+          settleAgenda={editor.settle}
+          onAdding={setAdding}
         />
       ) : null}
       <EventAttachmentsSection
@@ -126,10 +134,13 @@ export function EventMeetingLists({
 export function EventAgendaSection({
   agenda,
   canEdit,
+  locked = false,
   onChange,
 }: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  /** The controls show but wait (a suggestion is being added). */
+  locked?: boolean;
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
   const { toast } = useToast();
@@ -170,6 +181,7 @@ export function EventAgendaSection({
                   <input
                     type="checkbox"
                     checked={item.done}
+                    disabled={locked}
                     aria-label={item.text}
                     onChange={() =>
                       onChange((current) => toggleAgendaItem(current, item.id))
@@ -203,7 +215,7 @@ export function EventAgendaSection({
                 <span className="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
                   <IconButton
                     label={`Move "${item.text}" up`}
-                    disabled={index === 0}
+                    disabled={locked || index === 0}
                     onClick={() =>
                       onChange((current) =>
                         moveEventEntry(
@@ -218,7 +230,7 @@ export function EventAgendaSection({
                   </IconButton>
                   <IconButton
                     label={`Move "${item.text}" down`}
-                    disabled={index === agenda.length - 1}
+                    disabled={locked || index === agenda.length - 1}
                     onClick={() =>
                       onChange((current) =>
                         moveEventEntry(
@@ -233,6 +245,7 @@ export function EventAgendaSection({
                   </IconButton>
                   <IconButton
                     label={`Remove "${item.text}"`}
+                    disabled={locked}
                     onClick={() =>
                       onChange((current) =>
                         current.filter((entry) => entry.id !== item.id),
@@ -265,7 +278,7 @@ export function EventAgendaSection({
             type="submit"
             size="sm"
             variant="secondary"
-            disabled={!normalizeAgendaText(draft)}
+            disabled={locked || !normalizeAgendaText(draft)}
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Add
@@ -314,33 +327,42 @@ function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
 function AgendaSuggestions({
   eventId,
   full,
-  flushAgenda,
+  settleAgenda,
+  onAdding,
 }: {
   eventId: string;
   full: boolean;
-  flushAgenda: () => Promise<void>;
+  /** Wait for the agenda's own saves to land (the editor's `settle`). */
+  settleAgenda: () => Promise<void>;
+  onAdding: (adding: boolean) => void;
 }) {
   const list = useAgendaSuggestions(eventId);
-  const actions = useAgendaSuggestionActions(eventId, { flushAgenda });
+  const actions = useAgendaSuggestionActions(eventId, {
+    flushAgenda: settleAgenda,
+  });
   const [busy, setBusy] = useState<string | null>(null);
 
-  if (list.suggestions.length === 0 && !list.writing) return null;
+  if (list.suggestions.length === 0 && !list.writing && !list.refreshFailed) {
+    return null;
+  }
 
   async function act(row: AgendaSuggestion, action: "add" | "dismiss") {
     setBusy(row.id);
+    if (action === "add") onAdding(true);
     try {
       await actions[action](row.id);
     } catch (error) {
       toastFailure({
         title:
           action === "add"
-            ? "Couldn't add that to the agenda"
-            : "Couldn't dismiss that suggestion",
+            ? AGENDA_SUGGESTION_COPY.addFailed
+            : AGENDA_SUGGESTION_COPY.dismissFailed,
         error,
         fallback: "Try again in a moment.",
       });
     } finally {
       setBusy(null);
+      if (action === "add") onAdding(false);
     }
   }
 
@@ -401,8 +423,12 @@ function AgendaSuggestions({
       ) : null}
       {full && list.suggestions.length > 0 ? (
         <p className="text-caption text-muted-foreground">
-          The agenda is full ({EVENT_AGENDA_MAX} items). Remove one to add a
-          suggestion.
+          {AGENDA_SUGGESTION_COPY.full(EVENT_AGENDA_MAX)}
+        </p>
+      ) : null}
+      {list.refreshFailed && !list.writing ? (
+        <p role="status" className="text-caption text-muted-foreground">
+          {AGENDA_SUGGESTION_COPY.refreshFailed}
         </p>
       ) : null}
     </section>

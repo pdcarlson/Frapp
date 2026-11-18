@@ -23,6 +23,11 @@ export interface EventAgendaSuggestion {
   tabled_times: number | null;
   /** The same matter or words, once per event (`agenda-suggestions.ts`). */
   dedupe_key: string;
+  /**
+   * Who the event invited when the row was written (`audienceKey`): shown,
+   * and read as an example, only for an event that invites the same people.
+   */
+  audience_key: string;
   status: EventAgendaSuggestionStatus;
   /** The agenda item an added suggestion became. */
   agenda_item_id: string | null;
@@ -40,4 +45,6 @@ export interface EventAgendaSuggestionRun {
   chapter_id: string;
   generated_by: string | null;
   generated_at: string;
+  /** Who the event invited then: a run for another audience doesn't count. */
+  audience_key: string;
 }

@@ -72,8 +72,11 @@ export const AGENDA_SUGGESTION_COPY = {
   dismiss: "Dismiss",
   refresh: "Suggest again",
   writing: "Writing suggestions…",
-  failed: "Couldn't load suggestions.",
-  openMinutes: "Open those minutes",
+  refreshFailed: "Couldn't write new suggestions. Try again in a minute.",
+  addFailed: "Couldn't add that to the agenda. Try again in a moment.",
+  dismissFailed: "Couldn't dismiss that suggestion. Try again in a moment.",
+  full: (max: number) =>
+    `The agenda is full (${max} items). Remove one to add a suggestion.`,
   addLabel: (text: string) => `Add "${text}" to the agenda`,
   dismissLabel: (text: string) => `Dismiss "${text}"`,
 } as const;

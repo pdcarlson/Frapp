@@ -97,6 +97,7 @@ describe('tabledCandidates', () => {
         first('Formal budget'),
         first('Rush shirts'),
         first('New composite'),
+        first('Bylaws'),
       ]),
     ];
     const taken = tabledCandidates(source, [])[0].key;
@@ -106,7 +107,7 @@ describe('tabledCandidates', () => {
         { id: 'a1', text: 'rush shirts.', done: false },
         {
           id: 'a2',
-          text: 'Composite photos',
+          text: 'New composite',
           done: false,
           tabled_from: {
             meeting_id: M3,
@@ -117,7 +118,26 @@ describe('tabledCandidates', () => {
       ],
       new Set([taken]),
     );
-    expect(found).toEqual([]);
+    // Another matter from the same minutes still shows.
+    expect(found.map((candidate) => candidate.text)).toEqual(['Bylaws']);
+  });
+
+  it('cuts to the most it offers only after leaving matters out', () => {
+    const source = [
+      minutes(
+        M3,
+        '2026-11-18T23:00:00.000Z',
+        Array.from({ length: 12 }, (_, i) => first(`Matter ${i + 1}`)),
+      ),
+    ];
+    const all = tabledCandidates(source, [], new Set(), Infinity);
+    const found = tabledCandidates(
+      source,
+      [],
+      new Set(all.slice(0, 3).map((candidate) => candidate.key)),
+    );
+    expect(found).toHaveLength(9);
+    expect(found.at(-1)?.text).toBe('Matter 12');
   });
 
   it('gives a matter tabled again a new key, so a later meeting can offer it again', () => {

@@ -7,6 +7,7 @@ import {
 } from '@repo/validation';
 import type { Meeting } from '#domain/entities/meeting.entity';
 import type { Event } from '#domain/entities/event.entity';
+import type { MeetingType } from '@repo/validation';
 import {
   BACKGROUND_MEETINGS_MAX,
   CARRIED_ITEMS_MAX,
@@ -138,45 +139,81 @@ export class MeetingDraftContextService {
     userId: string,
   ): Promise<{ row: Meeting; sameSeries: boolean }[]> {
     if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) return [];
-    const rows = (
-      await this.meetings.listPostedBefore(
-        chapterId,
-        userId,
-        meeting.event_start_time,
-        meeting.meeting_type,
-        EARLIER_MINUTES_READ,
-      )
-    ).filter(
-      (row) =>
-        row.id !== meeting.id &&
-        row.event_id !== null &&
-        row.meeting_type === meeting.meeting_type &&
-        (meeting.meeting_type !== 'other' ||
-          sameLabel(row.other_label, meeting.other_label)),
-    );
-    if (rows.length === 0) return [];
-    // The events themselves: their audience and series, which the read
-    // rule above doesn't hand back, and only those this officer still sees.
-    const visible = new Map(
-      (
-        await this.events.findVisibleByIds(
-          rows.map((row) => row.event_id as string),
-          chapterId,
-          userId,
-        )
-      ).map((event) => [event.id, event]),
-    );
-    const series = seriesOf(tonight);
-    const kept = rows.flatMap((row) => {
-      const event = visible.get(row.event_id as string);
-      if (!event || !sameAudience(event, tonight)) return [];
-      return [{ row, sameSeries: seriesOf(event) === series }];
+    const found = await sameAudienceMinutes(this.meetings, this.events, {
+      chapterId,
+      userId,
+      tonight,
+      meetingType: meeting.meeting_type,
+      otherLabel: meeting.other_label,
+      excludeMeetingId: meeting.id,
     });
+    const series = seriesOf(tonight);
+    const kept = found.map(({ row, event }) => ({
+      row,
+      sameSeries: seriesOf(event) === series,
+    }));
     return [
       ...kept.filter((entry) => entry.sameSeries),
       ...kept.filter((entry) => !entry.sameSeries),
     ].slice(0, BACKGROUND_MEETINGS_MAX);
   }
+}
+
+/**
+ * Posted minutes held before `tonight` that `userId` may read, of events
+ * they can still see that invite the same people by the same rule
+ * (`sameAudience`), newest first, with each one's event. At most
+ * `EARLIER_MINUTES_READ` are read. Of one type (and, for "other", the same
+ * label), or of every type but Standards when `meetingType` is null. Shared
+ * by the draft's background (#5477) and the agenda's suggestions (#5534).
+ */
+export async function sameAudienceMinutes(
+  meetings: Pick<MeetingService, 'listPostedBefore'>,
+  events: Pick<EventService, 'findVisibleByIds'>,
+  options: {
+    chapterId: string;
+    userId: string;
+    tonight: Event;
+    meetingType: MeetingType | null;
+    otherLabel?: string | null;
+    excludeMeetingId?: string;
+  },
+): Promise<{ row: Meeting; event: Event }[]> {
+  const { chapterId, userId, tonight, meetingType } = options;
+  const rows = (
+    await meetings.listPostedBefore(
+      chapterId,
+      userId,
+      tonight.start_time,
+      meetingType,
+      EARLIER_MINUTES_READ,
+    )
+  ).filter(
+    (row) =>
+      row.id !== options.excludeMeetingId &&
+      row.event_id !== null &&
+      row.event_id !== tonight.id &&
+      (row.meeting_type as string) !== STANDARDS_MEETING_TYPE &&
+      (meetingType === null || row.meeting_type === meetingType) &&
+      (meetingType !== 'other' ||
+        sameLabel(row.other_label, options.otherLabel ?? null)),
+  );
+  if (rows.length === 0) return [];
+  // The events themselves: their audience and series, which the read rule
+  // above doesn't hand back, and only those this member still sees.
+  const visible = new Map(
+    (
+      await events.findVisibleByIds(
+        rows.map((row) => row.event_id as string),
+        chapterId,
+        userId,
+      )
+    ).map((event) => [event.id, event]),
+  );
+  return rows.flatMap((row) => {
+    const event = visible.get(row.event_id as string);
+    return event && sameAudience(event, tonight) ? [{ row, event }] : [];
+  });
 }
 
 /**
@@ -246,15 +283,26 @@ function roleSet(ids: readonly string[] | null): string {
 }
 
 /**
+ * Who an event invites, as one string: the roles required, invited and
+ * left out, and the answer for members holding none of them. Two events
+ * with the same key invite the same people by the same rule, and show to
+ * the same members. Stored on a suggestion (#5534), so a row is only ever
+ * read for an event that invites the same people as when it was written.
+ */
+export function audienceKey(event: Event): string {
+  return [
+    `r:${roleSet(event.required_role_ids)}`,
+    `o:${roleSet(event.optional_role_ids)}`,
+    `x:${roleSet(event.excluded_role_ids)}`,
+    `e:${eventOthersInvited(event) ? 1 : 0}`,
+  ].join(';');
+}
+
+/**
  * Whether two events invite the same people by the same rule: the same
  * roles required, invited and left out, and the same answer for members
  * holding none of them.
  */
 export function sameAudience(a: Event, b: Event): boolean {
-  return (
-    roleSet(a.required_role_ids) === roleSet(b.required_role_ids) &&
-    roleSet(a.optional_role_ids) === roleSet(b.optional_role_ids) &&
-    roleSet(a.excluded_role_ids) === roleSet(b.excluded_role_ids) &&
-    eventOthersInvited(a) === eventOthersInvited(b)
-  );
+  return audienceKey(a) === audienceKey(b);
 }

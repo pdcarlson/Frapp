@@ -93,8 +93,10 @@ const CLAUDE_SONNET = {
 
 /**
  * The smallest, fastest model, for short proposals read in a glance (Paul,
- * 2026-11-18, #5522: "a small, fast model"). Prices read from Anthropic's
- * model table on 2026-11-18, for prompts up to 100K tokens.
+ * 2026-11-18, #5522: "a small, fast model"). Prices are Anthropic's
+ * published rates for Claude Haiku 5.5 as the Claude API reference listed
+ * them on 2026-11-18 (prompts up to 100K tokens; $0.50 / $2.50 beyond),
+ * confirmed at Anthropic before the first paid call, like the others.
  */
 const CLAUDE_HAIKU = {
   provider: 'anthropic',

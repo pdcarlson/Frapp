@@ -89,11 +89,13 @@ export function useAgendaSuggestions(
 }
 
 /**
- * Add and Dismiss. Both take the row off the list at once. Add first sends
- * any agenda edits still waiting (`flushAgenda`, the editor's `flush`), so
- * the server appends to the list the officer sees, then puts the agenda the
- * server saved into the event's read. A failed Add or Dismiss puts the list
- * back as the server has it.
+ * Add and Dismiss. Both take the row off the list at once. Add first waits
+ * for every agenda edit to land (`flushAgenda`, the editor's `settle`), so
+ * the server appends to the list the officer sees and no queued save of an
+ * older copy can follow it, then puts the agenda the server saved into the
+ * event's read. The screens lock the agenda's controls while an Add is out
+ * (`adding`). A failed Add or Dismiss puts the list back as the server has
+ * it.
  */
 export function useAgendaSuggestionActions(
   eventId: string,

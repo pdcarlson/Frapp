@@ -68,7 +68,7 @@ import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 import { EventMeetingLists } from "@/components/events/event-agenda";
-import { useNotesLabel } from "@/lib/minutes/meetings-on";
+import { useMeetingsOn, useNotesLabel } from "@/lib/minutes/meetings-on";
 import {
   ScrollRevealProvider,
   useScrollReveal,
@@ -189,6 +189,7 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
+  const meetingsOn = useMeetingsOn();
   const notesLabel = useNotesLabel();
   // The body's scroll view, which keeps a focused field above the keyboard.
   const scrollRef = useRef<ScrollView>(null);
@@ -319,7 +320,8 @@ export default function EventDetailsScreen() {
           // A real events:update answer, and an event still there: every
           // write to one deleted since would 404.
           canEdit={canDecideExcuses && !eventGone}
-          upcoming={Date.parse(event.end_time) > now.getTime()}
+          // Suggested draws on minutes, so it waits for them to be on.
+          upcoming={meetingsOn && Date.parse(event.end_time) > now.getTime()}
         />
 
         {event.notes ? (

@@ -20,6 +20,7 @@ export type EventAgendaSuggestionDraft = Pick<
   | 'tabled_start_time'
   | 'tabled_times'
   | 'dedupe_key'
+  | 'audience_key'
 >;
 
 /**

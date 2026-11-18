@@ -73,6 +73,7 @@ import {
   type MeetingTextSection,
   type MeetingType,
   parseMinutesNotes,
+  agendaMatterKey,
   readEventAgenda,
 } from "@repo/validation";
 import { ErrorState } from "@/components/shared/async-states";
@@ -1424,16 +1425,14 @@ function TabledEditor({
   onChange: (next: MeetingTabledItem[]) => void;
 }) {
   const event = useEvent(eventId ?? "");
-  const tabledWords = new Set(
-    items.map((item) => item.text.trim().toLowerCase()),
-  );
+  const tabledWords = new Set(items.map((item) => agendaMatterKey(item.text)));
   // Each agenda item not tabled yet, as a chip (#5534): one tap tables it,
   // and one carried from an earlier Tabled list keeps its first date and
   // counts once more.
   const offered = readEventAgenda(event.data?.agenda).filter(
     (item) =>
       item.text.trim().length > 0 &&
-      !tabledWords.has(item.text.trim().toLowerCase()),
+      !tabledWords.has(agendaMatterKey(item.text)),
   );
   const full = items.length >= MEETING_TABLED_MAX_ITEMS;
   return (

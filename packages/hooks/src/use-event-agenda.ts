@@ -159,6 +159,20 @@ export function useEventListsEditor(
     [flush],
   );
 
+  /**
+   * Send what's waiting and wait until nothing is out or queued: a save in
+   * flight, and anything changed meanwhile, has landed. For a second writer
+   * of the same list (adding a suggested agenda item, #5534), which must
+   * not race a save that carries the editor's older copy.
+   */
+  const settle = useCallback(async () => {
+    await flush();
+    while (inFlight.current || dirty.current.size > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!inFlight.current) await flush();
+    }
+  }, [flush]);
+
   return {
     agenda: edited.agenda ?? server.agenda,
     attachments: edited.attachments ?? server.attachments,
@@ -167,5 +181,6 @@ export function useEventListsEditor(
     change,
     /** Send what's waiting now, without the delay. */
     flush,
+    settle,
   };
 }

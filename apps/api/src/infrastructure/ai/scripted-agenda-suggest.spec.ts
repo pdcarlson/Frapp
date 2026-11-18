@@ -31,7 +31,7 @@ describe('scriptedAgendaSuggest', () => {
       kind: 'structured',
       messages,
     } as never);
-    expect(reply.object).toEqual({
+    expect('object' in reply ? reply.object : null).toEqual({
       items: [
         {
           text: 'Check in: Book the venue',

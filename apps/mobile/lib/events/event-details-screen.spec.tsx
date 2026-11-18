@@ -151,7 +151,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useEventListsEditor: (
     _id: string,
     server: { agenda: unknown[]; attachments: unknown[] },
-  ) => ({ ...server, saving: false, change: listsChange, flush: vi.fn() }),
+  ) => ({
+    ...server,
+    saving: false,
+    change: listsChange,
+    flush: vi.fn(),
+    settle: vi.fn(async () => {}),
+  }),
   useAgendaSuggestions: () => ({
     suggestions: agendaSuggestions,
     aiAvailable: true,
@@ -1135,8 +1141,31 @@ describe("Event details agenda and attachments (#4934)", () => {
         typeof node.props.onPress === "function",
     );
     expect(link.props.accessibilityLabel).toContain("2nd time");
-    // A member never sees Suggested.
-    expect(screenText(tree)).not.toContain("SUGGESTED");
+  });
+
+  it("never shows Suggested to a member, or for a meeting that has ended (#5534)", () => {
+    agendaSuggestions = [
+      {
+        id: "s1",
+        kind: "ai",
+        text: "Venue check-in",
+        tabled_from: null,
+        source_meeting_id: "m-last",
+        reason: null,
+      },
+    ];
+    // A member, on an upcoming meeting.
+    event = {
+      ...WITH_LISTS,
+      start_time: "2099-01-01T18:00:00.000Z",
+      end_time: "2099-01-01T19:00:00.000Z",
+    };
+    expect(screenText(render())).not.toContain("SUGGESTED");
+    // An editor, on a meeting that has ended.
+    permissions = ["members:view", "events:update"];
+    event = WITH_LISTS;
+    expect(screenText(render())).not.toContain("SUGGESTED");
+    agendaSuggestions = [];
   });
 
   it("offers Suggested items to an editor of an upcoming meeting, with Add and Dismiss (#5534)", async () => {

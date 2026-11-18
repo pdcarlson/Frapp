@@ -9,15 +9,18 @@ Adds the tables behind an upcoming meeting's Suggested agenda items, tabled matt
 
 ## Promotion
 
-- **Purpose**: `event_agenda_suggestions` holds each suggestion offered under an event's agenda (a tabled matter from earlier minutes, or an item the `agenda.suggest` model wrote), kept after it is added or dismissed so the next prompt can learn from it. `event_agenda_suggestion_runs` records when the model last wrote suggestions for an event. Both have RLS on and no policies: only the API reads or writes them.
+- **Purpose**: `delete_replaced_occurrences` also moves both tables' rows onto a rebuilt meeting, as it moves excuses. `event_agenda_suggestions` holds each suggestion offered under an event's agenda (a tabled matter from earlier minutes, or an item the `agenda.suggest` model wrote), kept after it is added or dismissed so the next prompt can learn from it. `event_agenda_suggestion_runs` records when the model last wrote suggestions for an event. Both have RLS on and no policies: only the API reads or writes them.
 - **Checks**: `select relrowsecurity from pg_class where relname in ('event_agenda_suggestions', 'event_agenda_suggestion_runs');` returns two `t`. `select count(*) from pg_policies where tablename in ('event_agenda_suggestions', 'event_agenda_suggestion_runs');` returns 0. `select conname from pg_constraint where conrelid = 'public.event_agenda_suggestions'::regclass;` lists `event_agenda_suggestions_event_key`.
 - **Promoter notes**: Apply before the API that reads them; the API from before this never touches them, so the deploy window and an API rollback both hold. Writes no data. Both tables are new, so the foreign keys' locks on `chapters`, `events`, `meetings` and `users` last milliseconds.
 
 ## Rollback
 
-Worth reverting only with the API that uses the tables also reverted. Dropping them loses the suggestions and what was added or dismissed; the agenda items added from them stay on their events.
+Worth reverting only with the API that uses the tables also reverted. Dropping them loses the suggestions and what was added or dismissed; the agenda items added from them stay on their events. Put `delete_replaced_occurrences` back first, since this file's version names both tables: re-run its definition from `20261113220742_event_agenda_and_attachments.sql` (the `create or replace function` statement only; its grants carry over).
 
 ```sql
+-- 1. Re-run the create or replace function public.delete_replaced_occurrences(...)
+--    statement from 20261113220742_event_agenda_and_attachments.sql.
+-- 2. Then:
 drop table if exists public.event_agenda_suggestion_runs;
 drop table if exists public.event_agenda_suggestions;
 ```

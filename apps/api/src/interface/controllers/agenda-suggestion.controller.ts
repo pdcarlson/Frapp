@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Headers,
   HttpCode,
   Param,
   ParseUUIDPipe,
@@ -33,6 +34,7 @@ import {
   AgendaSuggestionListDto,
 } from '../dtos/agenda-suggestion.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
 
 /**
  * Suggested agenda items (#5534, `spec/behavior/events.md` § Suggested
@@ -42,7 +44,10 @@ import { SystemPermissions } from '#domain/constants/permissions';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
-@RequireModule('events')
+// The suggestions are drawn from posted minutes and the minutes AI task, so
+// they stand behind the meetings module, as every minutes route does; the
+// service checks the events module, whose agenda Add writes.
+@RequireModule('meetings')
 @Controller('events/:id/agenda-suggestions')
 export class AgendaSuggestionController {
   constructor(private readonly suggestions: AgendaSuggestionService) {}
@@ -73,8 +78,11 @@ export class AgendaSuggestionController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) eventId: string,
+    // The days the model is told are the member's (an evening meeting west
+    // of Greenwich is still its own day).
+    @Headers(TIME_ZONE_HEADER) timeZone: string | undefined,
   ): Promise<AgendaSuggestionListDto> {
-    return this.suggestions.refresh(chapterId, eventId, userId);
+    return this.suggestions.refresh(chapterId, eventId, userId, { timeZone });
   }
 
   @Post(':suggestionId/add')

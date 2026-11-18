@@ -36,7 +36,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useEventListsEditor: (
     _eventId: string,
     lists: { agenda: EventAgendaItem[]; attachments: EventAttachment[] },
-  ) => ({ ...lists, saving: false, change: state.change, flush: state.flush }),
+  ) => ({
+    ...lists,
+    saving: false,
+    change: state.change,
+    flush: state.flush,
+    settle: state.flush,
+  }),
   useAgendaSuggestions: () => ({
     suggestions: state.suggestions,
     aiAvailable: state.aiAvailable,

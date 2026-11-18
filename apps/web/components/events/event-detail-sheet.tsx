@@ -638,7 +638,9 @@ export function EventDetailSheet({
                 // Not while the event is gone or never loaded: every write
                 // would 404, as Edit and Delete already know.
                 canEdit={canEditInPlace && !eventUnavailable}
+                // Suggested draws on minutes, so it waits for them to be on.
                 upcoming={
+                  meetingsOn === true &&
                   typeof resolvedEvent?.end_time === "string" &&
                   Date.parse(resolvedEvent.end_time) > now
                 }

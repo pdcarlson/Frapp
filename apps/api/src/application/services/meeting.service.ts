@@ -11,6 +11,7 @@ import {
   EMPTY_MEETING_CONTENT,
   MEETING_TEXT_MAX_LENGTH,
   MeetingTabledItemSchema,
+  agendaMatterKey,
   STANDARDS_MEETING_REFUSAL,
   STANDARDS_MEETING_TYPE,
   isMeetingType,
@@ -577,8 +578,11 @@ export class MeetingService {
       const stored = readMeetingContent(meeting.content);
       const patch = pickContent(input.content);
       if (patch.tabled !== undefined) {
-        patch.tabled = keepTabledOrigins(patch.tabled, stored.tabled);
-        await this.assertTabledFromChapter(chapterId, patch.tabled, stored);
+        patch.tabled = await this.tabledFromChapter(
+          chapterId,
+          keepTabledOrigins(patch.tabled, stored.tabled),
+          stored,
+        );
       }
       write.content = { ...stored, ...patch };
     }
@@ -1135,14 +1139,17 @@ export class MeetingService {
 
   /**
    * Every tabled item reads back as sent (#5522): one the shared schema
-   * would drop on read is refused here instead, and the minutes it says
-   * first tabled it are minutes of this chapter.
+   * would drop on read is refused here instead. Where an item says it was
+   * first tabled is kept only when those minutes are this chapter's and
+   * still there: otherwise the item keeps its words and count and loses
+   * the origin (#5534), so minutes deleted since never fail a save or a
+   * draft, and no client can point one at another chapter's minutes.
    */
-  private async assertTabledFromChapter(
+  private async tabledFromChapter(
     chapterId: string,
     tabled: readonly MeetingTabledItem[],
     stored: MeetingContent,
-  ): Promise<void> {
+  ): Promise<MeetingTabledItem[]> {
     if (
       tabled.some((item) => !MeetingTabledItemSchema.safeParse(item).success)
     ) {
@@ -1164,13 +1171,15 @@ export class MeetingService {
         ),
       ),
     ];
+    const missing = new Set<string>();
     for (const id of named) {
-      if (!(await this.meetingRepo.findById(chapterId, id))) {
-        throw new BadRequestException(
-          'A tabled item names minutes that aren’t this chapter’s.',
-        );
-      }
+      if (!(await this.meetingRepo.findById(chapterId, id))) missing.add(id);
     }
+    return tabled.map((item) =>
+      item.first_meeting_id && missing.has(item.first_meeting_id)
+        ? { ...item, first_meeting_id: null, first_start_time: null }
+        : item,
+    );
   }
 
   private alreadyStarted(): ConflictException {
@@ -1210,7 +1219,7 @@ export function keepTabledOrigins(
   next: readonly MeetingTabledItem[],
   stored: readonly MeetingTabledItem[],
 ): MeetingTabledItem[] {
-  const key = (text: string) => text.trim().toLowerCase();
+  const key = agendaMatterKey;
   const carried = new Map(
     stored
       .filter((item) => item.first_meeting_id)

@@ -90,7 +90,10 @@ export function EventMeetingLists({
   lists: EventLists;
   /** Holds `events:update` (a real answer), and the event is there. */
   canEdit: boolean;
-  /** The meeting hasn't ended: Suggested shows only for one still to come. */
+  /**
+   * The meeting hasn't ended and the chapter has minutes on: Suggested
+   * shows only then.
+   */
   upcoming: boolean;
 }) {
   const { tokens } = useFrappTheme();
@@ -108,18 +111,23 @@ export function EventMeetingLists({
     setFailed(false);
     editor.change(field, update);
   };
+  // While an Add is out the agenda's controls wait: the server is writing
+  // the list, and an edit now would send the copy without the new item.
+  const [adding, setAdding] = useState(false);
   return (
     <>
       <EventAgendaSection
         agenda={editor.agenda}
         canEdit={editable}
+        locked={adding}
         onChange={(update) => change("agenda", update)}
       />
       {editable && upcoming ? (
         <AgendaSuggestions
           eventId={eventId}
           full={editor.agenda.length >= EVENT_AGENDA_MAX}
-          flushAgenda={editor.flush}
+          settleAgenda={editor.settle}
+          onAdding={setAdding}
         />
       ) : null}
       <EventAttachmentsSection
@@ -141,10 +149,13 @@ export function EventMeetingLists({
 function EventAgendaSection({
   agenda,
   canEdit,
+  locked = false,
   onChange,
 }: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  /** The controls show but wait (a suggestion is being added). */
+  locked?: boolean;
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -195,7 +206,8 @@ function EventAgendaSection({
           {canEdit ? (
             <Pressable
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: item.done }}
+              accessibilityState={{ checked: item.done, disabled: locked }}
+              disabled={locked}
               accessibilityLabel={item.text}
               onPress={() =>
                 onChange((current) => toggleAgendaItem(current, item.id))
@@ -237,7 +249,7 @@ function EventAgendaSection({
             <View style={styles.controls}>
               <IconButton
                 label={`Move "${item.text}" up`}
-                disabled={index === 0}
+                disabled={locked || index === 0}
                 onPress={() => move(item.id, -1)}
               >
                 <DisclosureGlyph
@@ -247,7 +259,7 @@ function EventAgendaSection({
               </IconButton>
               <IconButton
                 label={`Move "${item.text}" down`}
-                disabled={index === agenda.length - 1}
+                disabled={locked || index === agenda.length - 1}
                 onPress={() => move(item.id, 1)}
               >
                 <DisclosureGlyph
@@ -261,6 +273,7 @@ function EventAgendaSection({
               </IconButton>
               <IconButton
                 label={`Remove "${item.text}"`}
+                disabled={locked}
                 onPress={() =>
                   onChange((current) =>
                     current.filter((entry) => entry.id !== item.id),
@@ -296,6 +309,7 @@ function EventAgendaSection({
               }
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Add an agenda item"
+              editable={!locked}
               maxLength={EVENT_AGENDA_ITEM_MAX}
               returnKeyType="done"
               // Return adds the item and keeps the keyboard up for the next,
@@ -358,35 +372,44 @@ function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
 function AgendaSuggestions({
   eventId,
   full,
-  flushAgenda,
+  settleAgenda,
+  onAdding,
 }: {
   eventId: string;
   full: boolean;
-  flushAgenda: () => Promise<void>;
+  /** Wait for the agenda's own saves to land (the editor's `settle`). */
+  settleAgenda: () => Promise<void>;
+  onAdding: (adding: boolean) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const muted = tokens.color.text.mutedForeground;
   const list = useAgendaSuggestions(eventId);
-  const actions = useAgendaSuggestionActions(eventId, { flushAgenda });
+  const actions = useAgendaSuggestionActions(eventId, {
+    flushAgenda: settleAgenda,
+  });
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  if (list.suggestions.length === 0 && !list.writing) return null;
+  if (list.suggestions.length === 0 && !list.writing && !list.refreshFailed) {
+    return null;
+  }
 
   async function act(row: AgendaSuggestion, action: "add" | "dismiss") {
     setBusy(row.id);
     setFailed(null);
+    if (action === "add") onAdding(true);
     try {
       await actions[action](row.id);
     } catch {
       setFailed(
         action === "add"
-          ? "Couldn't add that to the agenda. Try again in a moment."
-          : "Couldn't dismiss that suggestion. Try again in a moment.",
+          ? AGENDA_SUGGESTION_COPY.addFailed
+          : AGENDA_SUGGESTION_COPY.dismissFailed,
       );
     } finally {
       setBusy(null);
+      if (action === "add") onAdding(false);
     }
   }
 
@@ -440,8 +463,12 @@ function AgendaSuggestions({
       ) : null}
       {full && list.suggestions.length > 0 ? (
         <Text style={styles.caption}>
-          The agenda is full ({EVENT_AGENDA_MAX} items). Remove one to add a
-          suggestion.
+          {AGENDA_SUGGESTION_COPY.full(EVENT_AGENDA_MAX)}
+        </Text>
+      ) : null}
+      {list.refreshFailed && !list.writing ? (
+        <Text style={styles.caption}>
+          {AGENDA_SUGGESTION_COPY.refreshFailed}
         </Text>
       ) : null}
       {failed ? (

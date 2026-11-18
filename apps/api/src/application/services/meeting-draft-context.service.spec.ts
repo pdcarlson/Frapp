@@ -11,6 +11,11 @@ import type { MeetingService } from './meeting.service';
 import type { EventService } from './event.service';
 
 const CHAPTER = 'ch-1';
+const FORMAL_FROM = {
+  meeting_id: '0a000000-0000-4000-8000-0000000005a1',
+  start_time: '2026-11-03T00:00:00.000Z',
+  times: 1,
+};
 const SECRETARY = 'u-secretary';
 const PRIYA = '0a000000-0000-4000-8000-00000000000b';
 
@@ -88,7 +93,12 @@ function setup(options: {
           agenda: [
             { id: 'a1', text: 'Treasurer report', done: false },
             { id: 'a2', text: '  ', done: false },
-            { id: 'a3', text: 'Formal', done: false },
+            {
+              id: 'a3',
+              text: 'Formal',
+              done: false,
+              tabled_from: FORMAL_FROM,
+            },
           ],
         })
       : options.tonight;
@@ -139,9 +149,11 @@ describe('MeetingDraftContextService (#5477)', () => {
       CHAPTER,
       SECRETARY,
     );
+    // An item added from an earlier Tabled list carries where it came
+    // from (#5534), so a draft that tables it again keeps its first date.
     expect(context.agenda).toEqual([
       { text: 'Treasurer report', tabledFrom: null },
-      { text: 'Formal', tabledFrom: null },
+      { text: 'Formal', tabledFrom: FORMAL_FROM },
     ]);
     expect(context.background).toEqual({
       meetings: [

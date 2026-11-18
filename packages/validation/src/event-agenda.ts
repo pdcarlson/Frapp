@@ -88,6 +88,19 @@ export function normalizeAgendaText(value: string): string {
 }
 
 /**
+ * The words an agenda item or a tabled matter is told apart by (#5534):
+ * case, spacing and end punctuation don't make a different matter, so
+ * "Formal budget." on the minutes is the agenda's "Formal budget". The one
+ * rule the API's suggestions, the minutes draft, a minutes save and both
+ * apps compare with.
+ */
+export function agendaMatterKey(text: string): string {
+  return normalizeAgendaText(text)
+    .toLowerCase()
+    .replace(/[.!?;:,\s]+$/, "");
+}
+
+/**
  * Why an agenda can't be saved, or `null` when it can. The same rule the API
  * applies, so a form can say it before the request.
  */

@@ -3,6 +3,7 @@ import {
   AGENDA_SUGGESTIONS_AI_MAX,
   AGENDA_SUGGESTIONS_TABLED_MAX,
   EVENT_AGENDA_ITEM_MAX,
+  agendaMatterKey,
   normalizeAgendaText,
   type EventAgendaItem,
   type EventAgendaTabledFrom,
@@ -41,14 +42,11 @@ const MINUTES_LIST_MAX = 10;
 export const AGENDA_SUGGESTION_REASON_MAX = 120;
 
 /**
- * The words a suggestion is told apart by: case, spacing and end
- * punctuation don't make a different item.
+ * The words a suggestion is told apart by (`agendaMatterKey`, shared with
+ * the draft, a minutes save and both apps), cut to an agenda item's length.
  */
 export function agendaKeyText(text: string): string {
-  return normalizeAgendaText(text)
-    .toLowerCase()
-    .replace(/[.!?;:,\s]+$/, '')
-    .slice(0, EVENT_AGENDA_ITEM_MAX);
+  return agendaMatterKey(text).slice(0, EVENT_AGENDA_ITEM_MAX);
 }
 
 /**
@@ -89,19 +87,23 @@ export interface TabledCandidate {
 /**
  * The tabled matters of `minutes` (newest first), each once: a matter
  * tabled again later keeps its first date and reads at its newest count.
- * Matters tonight's agenda already holds, by its words or by where it was
- * first tabled, are left out, and so are keys in `added` (taken up by an
- * agenda already).
+ * Matters tonight's agenda already holds (by their words, or as the same
+ * matter from the same first minutes) are left out, and so are keys in
+ * `excluded` (taken up by an agenda already, or decided for this event);
+ * then at most `max` are kept, so a left-out matter never takes a place.
  */
 export function tabledCandidates(
   minutes: readonly AgendaSourceMinutes[],
   agenda: readonly EventAgendaItem[],
-  added: ReadonlySet<string> = new Set(),
+  excluded: ReadonlySet<string> = new Set(),
+  max: number = AGENDA_SUGGESTIONS_TABLED_MAX,
 ): TabledCandidate[] {
   const onAgendaText = new Set(agenda.map((item) => agendaKeyText(item.text)));
-  const onAgendaOrigin = new Set(
+  const onAgendaMatter = new Set(
     agenda.flatMap((item) =>
-      item.tabled_from ? [item.tabled_from.meeting_id] : [],
+      item.tabled_from
+        ? [`${item.tabled_from.meeting_id}|${agendaKeyText(item.text)}`]
+        : [],
     ),
   );
   const seen = new Set<string>();
@@ -123,16 +125,16 @@ export function tabledCandidates(
       seen.add(matter);
       const key = tabledSuggestionKey(tabledFrom, text);
       if (
-        added.has(key) ||
+        excluded.has(key) ||
         onAgendaText.has(agendaKeyText(text)) ||
-        onAgendaOrigin.has(tabledFrom.meeting_id)
+        onAgendaMatter.has(matter)
       ) {
         continue;
       }
       out.push({ text, tabledFrom, sourceMeetingId: row.id, key });
     }
   }
-  return out.slice(0, AGENDA_SUGGESTIONS_TABLED_MAX);
+  return out.slice(0, max);
 }
 
 /** One role the event names, as the model reads it. */

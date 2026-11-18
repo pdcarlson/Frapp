@@ -13,6 +13,8 @@ import { SupabaseEventTypeRepository } from '../../infrastructure/supabase/repos
 import { EVENT_AGENDA_SUGGESTION_REPOSITORY } from '#domain/repositories/event-agenda-suggestion.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import { EVENT_TYPE_REPOSITORY } from '#domain/repositories/event-type.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { SupabaseMeetingNotesRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-notes.repository';
 import { SupabaseMeetingRecordingRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-recording.repository';
 import { MEETING_NOTES_REPOSITORY } from '#domain/repositories/meeting-notes.repository.interface';
@@ -87,6 +89,7 @@ import { EventModule } from '../event/event.module';
     },
     { provide: ROLE_TIER_REPOSITORY, useClass: SupabaseRoleTierRepository },
     { provide: EVENT_TYPE_REPOSITORY, useClass: SupabaseEventTypeRepository },
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
   exports: [MeetingDraftService],
 })
