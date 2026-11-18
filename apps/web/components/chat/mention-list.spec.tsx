@@ -265,7 +265,10 @@ describe("MentionList — Frapp's own row (#4713)", () => {
     const row = screen.getByRole("option", { name: /Frapp/ });
     expect(row).toHaveTextContent("Only you see the answer");
     expect(row).not.toHaveTextContent("Role");
-    expect(row.querySelector("[data-mention-ask-glyph]")).not.toBeNull();
+    // On the chapter's tint, not the grey disc a role gets (#5476).
+    expect(row.querySelector("[data-mention-ask-glyph]")).toHaveClass(
+      "bg-accent-subtle",
+    );
     expect(row.querySelector("[data-mention-role-glyph]")).toBeNull();
     act(() => row.click());
     expect(command).toHaveBeenCalledWith(FRAPP);
