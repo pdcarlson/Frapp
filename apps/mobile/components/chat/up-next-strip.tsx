@@ -25,7 +25,8 @@ import {
 import { NavGlyph } from "@/components/nav-glyph";
 
 /**
- * The UP NEXT strip at the top of Chat home (s04).
+ * The UP NEXT strip at the top of Chat home (s04), under the "While you
+ * were away" card when that shows (#5464).
  *
  * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar — "the
  * next event and the nearest due task as compact rows, each tapping through

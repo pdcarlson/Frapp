@@ -13,21 +13,21 @@ const ROWS: AwayRow[] = [
     channelId: "exec",
     name: "exec",
     kind: "mention",
-    count: 2,
+    mentions: 120,
     preview: "Jordan: Is the budget final?",
   },
   {
     channelId: "ann",
     name: "announcements",
     kind: "announcement",
-    count: 1,
+    mentions: 0,
     preview: null,
   },
   {
     channelId: "gen",
     name: "general",
     kind: "busy",
-    count: 140,
+    mentions: 0,
     preview: "Dev: who can sub Sunday",
   },
 ];
@@ -50,7 +50,7 @@ function render(onOpen = vi.fn(), onClose = vi.fn()): ReactTestRenderer {
 }
 
 describe("AwayCard", () => {
-  it("lists each channel with its real last message and its count", () => {
+  it("lists each channel with its last message, and counts only mentions", () => {
     const text = screenText(render());
     expect(text).toContain("While you were away");
     expect(text).toContain("since yesterday 9:40 PM");
@@ -58,6 +58,8 @@ describe("AwayCard", () => {
     expect(text).toContain("Jordan: Is the budget final?");
     expect(text).toContain("#announcements");
     expect(text).toContain("99+");
+    // A plain unread channel carries no number.
+    expect(text).not.toMatch(/#general\D*\d/);
   });
 
   it("opens the channel a row names, and closes on its mark", () => {

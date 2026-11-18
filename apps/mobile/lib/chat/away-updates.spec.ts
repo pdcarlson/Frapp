@@ -7,6 +7,9 @@ import {
   awaySinceLabel,
 } from "./away-updates";
 
+const SINCE = Date.parse("2026-11-17T21:40:00");
+const after = (minutes: number) =>
+  new Date(SINCE + minutes * 60_000).toISOString();
 const channels = [
   { id: "gen", name: "general" },
   { id: "ann", name: "announcements" },
@@ -18,57 +21,88 @@ const counts = (unreadCount: number, mentionCount = 0) => ({
   unreadCount,
   mentionCount,
 });
+const base = {
+  channels,
+  announcementIds: new Set(["ann"]),
+  mutedIds: new Set<string>(),
+  since: SINCE,
+  latestAt: new Map(channels.map((c) => [c.id, after(60)])),
+};
 
 describe("awayRows", () => {
   it("puts mentions first, then announcements, then the busiest, up to three", () => {
     const rows = awayRows({
-      channels,
+      ...base,
       unread: new Map([
         ["gen", counts(40)],
         ["ann", counts(1)],
         ["intra", counts(23)],
         ["exec", counts(3, 2)],
       ]),
-      announcementIds: new Set(["ann"]),
-      latest: [
-        {
-          channel_id: "exec",
-          author_name: "Jordan",
-          content: "Is the  budget\nfinal?",
-        },
-      ],
+      previewOf: (id) =>
+        id === "exec" ? "Jordan: Is the budget final?" : null,
     });
-    expect(rows.map((row) => [row.channelId, row.kind, row.count])).toEqual([
+    expect(rows.map((row) => [row.channelId, row.kind, row.mentions])).toEqual([
       ["exec", "mention", 2],
-      ["ann", "announcement", 1],
-      ["gen", "busy", 40],
+      ["ann", "announcement", 0],
+      ["gen", "busy", 0],
     ]);
     expect(rows[0]?.preview).toBe("Jordan: Is the budget final?");
-    expect(rows[1]?.preview).toBeNull();
   });
 
-  it("leaves out read channels and muted ones, unless the member was named", () => {
+  it("leaves out what is older than the absence", () => {
     const rows = awayRows({
-      channels,
+      ...base,
       unread: new Map([
-        ["gen", counts(0)],
+        ["gen", counts(40)],
+        ["exec", counts(1, 1)],
+      ]),
+      latestAt: new Map([
+        ["gen", after(-30)],
+        ["exec", after(10)],
+      ]),
+    });
+    expect(rows.map((row) => row.channelId)).toEqual(["exec"]);
+  });
+
+  it("keeps a muted channel quiet unless the member was named", () => {
+    const rows = awayRows({
+      ...base,
+      unread: new Map([
         ["quiet", counts(9)],
         ["intra", counts(4, 1)],
       ]),
-      announcementIds: new Set(),
       mutedIds: new Set(["quiet", "intra"]),
     });
     expect(rows.map((row) => row.channelId)).toEqual(["intra"]);
   });
 
+  it("lists no busy channel while the member's muting is unknown", () => {
+    const rows = awayRows({
+      ...base,
+      unread: new Map([
+        ["gen", counts(40)],
+        ["ann", counts(1)],
+      ]),
+      mutedIds: undefined,
+    });
+    expect(rows.map((row) => row.channelId)).toEqual(["ann"]);
+  });
+
+  it("lists only the channels it opened with, so it never fills back up", () => {
+    const rows = awayRows({
+      ...base,
+      unread: new Map([
+        ["gen", counts(40)],
+        ["intra", counts(3)],
+      ]),
+      onlyIds: new Set(["intra"]),
+    });
+    expect(rows.map((row) => row.channelId)).toEqual(["intra"]);
+  });
+
   it("is empty once everything is read", () => {
-    expect(
-      awayRows({
-        channels,
-        unread: new Map(),
-        announcementIds: new Set(["ann"]),
-      }),
-    ).toEqual([]);
+    expect(awayRows({ ...base, unread: new Map() })).toEqual([]);
   });
 });
 
@@ -82,18 +116,15 @@ describe("awaySince", () => {
   });
 
   it("says when, the way a person would", () => {
-    const at = (iso: string) => Date.parse(iso);
-    expect(awaySinceLabel(at("2026-11-17T21:40:00"), now)).toBe(
-      "since yesterday 9:40 PM",
+    expect(awaySinceLabel(SINCE, now)).toMatch(/^since yesterday 9:40/);
+    expect(awaySinceLabel(Date.parse("2026-11-18T06:15:00"), now)).toMatch(
+      /^since 6:15/,
     );
-    expect(awaySinceLabel(at("2026-11-18T06:15:00"), now)).toBe(
-      "since 6:15 AM",
+    expect(awaySinceLabel(Date.parse("2026-11-16T09:00:00"), now)).toMatch(
+      /^since Monday 9/,
     );
-    expect(awaySinceLabel(at("2026-11-16T09:00:00"), now)).toBe(
-      "since Monday 9:00 AM",
-    );
-    expect(awaySinceLabel(at("2026-11-01T09:00:00"), now)).toBe(
-      "since last week",
+    expect(awaySinceLabel(Date.parse("2026-10-02T09:00:00"), now)).toBe(
+      "since October 2",
     );
   });
 });
@@ -125,25 +156,5 @@ describe("announcementChannelIds", () => {
       ]),
     ).toEqual(new Set(["ann"]));
     expect(announcementChannelIds(undefined)).toEqual(new Set());
-  });
-});
-
-describe("awayRows, the sender", () => {
-  it("names a member sender by first name from the roster", () => {
-    const [row] = awayRows({
-      channels: [{ id: "exec", name: "exec" }],
-      unread: new Map([["exec", { unreadCount: 1, mentionCount: 1 }]]),
-      announcementIds: new Set(),
-      latest: [
-        {
-          channel_id: "exec",
-          sender_id: "u1",
-          author_name: null,
-          content: "Budget?",
-        },
-      ],
-      nameOf: (id) => (id === "u1" ? "Jordan Lee" : undefined),
-    });
-    expect(row?.preview).toBe("Jordan: Budget?");
   });
 });

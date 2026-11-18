@@ -68,7 +68,10 @@ import {
   useSetChannelNotificationLevel,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
+  resolveAuthorLabel,
+  resolveAuthorName,
 } from "@repo/hooks";
+import { channelPreviewLine } from "@repo/chat-core/channel-preview";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
@@ -116,11 +119,9 @@ import { AwayCard } from "@/components/chat/away-card";
 import {
   announcementChannelIds,
   awayRows,
-  awaySince,
   awaySinceLabel,
-  readLastChatVisit,
-  writeLastChatVisit,
 } from "@/lib/chat/away-updates";
+import { useChatAway } from "@/lib/chat/use-chat-away";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
@@ -218,7 +219,7 @@ export default function ChatHomeScreen() {
   // boot the outbox flush from this screen. The badges stay live without it:
   // the realtime manager is bound app-wide (`useChatRealtimeBinding`, #3698).
   const viewerId = useViewerUserId();
-  const { byId: memberNames } = useMemberDisplayNames();
+  const { byId: memberNames, nameFor } = useMemberDisplayNames();
 
   // A DM the member hid (#2303) is still in the payload, so a thread opened by
   // id keeps resolving. The list leaves it out.
@@ -628,68 +629,78 @@ export default function ChatHomeScreen() {
   );
 
   // "While you were away" (#5464): after hours off Chat, the few channels
-  // that matter since. The visit is stored per member and chapter on the
-  // phone; the card keeps its "since" for this stretch, so it stays while
-  // the member reads through it, and leaves once its channels are read.
-  const [awayFrom, setAwayFrom] = useState<number | null>(null);
-  const [awayClosed, setAwayClosed] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (!viewerId || !chapterId) return;
-      let live = true;
-      void readLastChatVisit(viewerId, chapterId).then((previous) => {
-        if (!live) return;
-        const now = Date.now();
-        const since = awaySince(previous, now);
-        if (since !== null) {
-          setAwayFrom(since);
-          setAwayClosed(false);
-        }
-        writeLastChatVisit(viewerId, chapterId, now);
-      });
-      return () => {
-        live = false;
-        writeLastChatVisit(viewerId, chapterId, Date.now());
-      };
-    }, [viewerId, chapterId]),
-  );
+  // with something new since (`lib/chat/use-chat-away.ts`). It opens on the
+  // channels it found, leaves once those are read or on its close mark, and
+  // waits for the launch jump, as the checklist below does.
+  const away = useChatAway({ viewerId, chapterId, focused: isFocused });
+  const awayStretch = away.stretch;
   const announcementIds = useMemo(
     () => announcementChannelIds(channelsQuery.data),
     [channelsQuery.data],
   );
   const awayLatest = useChannelLatestMessages({
-    enabled: awayFrom !== null && !awayClosed,
+    enabled: awayStretch !== null && !awayStretch.closed,
   });
-  const awayList = useMemo(
-    () =>
-      awayFrom === null || awayClosed || !unreadByChannelId
-        ? []
-        : awayRows({
-            channels,
-            unread: unreadByChannelId,
-            announcementIds,
-            mutedIds: mutedChannelIds,
-            latest: awayLatest.data,
-            nameOf: (userId) => memberNames[userId],
-          }),
-    [
-      awayFrom,
-      awayClosed,
-      unreadByChannelId,
+  const awayList = useMemo(() => {
+    if (!awayStretch || awayStretch.closed || !unreadByChannelId) return null;
+    if (!awayLatest.data) return null;
+    const latestById = new Map(
+      awayLatest.data.map((row) => [row.channel_id, row]),
+    );
+    return awayRows({
       channels,
+      unread: unreadByChannelId,
       announcementIds,
-      mutedChannelIds,
-      awayLatest.data,
-      memberNames,
-    ],
-  );
+      mutedIds: mutedChannelIds,
+      latestAt: new Map(
+        awayLatest.data.map((row) => [row.channel_id, row.created_at]),
+      ),
+      since: awayStretch.since,
+      onlyIds: awayStretch.ids,
+      previewOf: (channelId) => {
+        const latest = latestById.get(channelId);
+        return latest
+          ? channelPreviewLine(latest, {
+              isOneToOne: false,
+              viewerId,
+              nameOf: (author) => resolveAuthorName(author, nameFor),
+              fallbackLabel: (author) =>
+                resolveAuthorLabel(author, nameFor, null),
+            })
+          : null;
+      },
+    });
+  }, [
+    awayStretch,
+    unreadByChannelId,
+    awayLatest.data,
+    channels,
+    announcementIds,
+    mutedChannelIds,
+    viewerId,
+    nameFor,
+  ]);
+  const { freeze: freezeAway, end: endAway } = away;
+  useEffect(() => {
+    if (!awayStretch || awayList === null) return;
+    // The first rows fix what the card is about; none left ends the stretch.
+    if (awayList.length === 0) endAway();
+    else if (awayStretch.ids === null) {
+      freezeAway(awayList.map((row) => row.channelId));
+    }
+  }, [awayStretch, awayList, freezeAway, endAway]);
   const awayCard =
-    awayFrom !== null && awayList.length > 0 ? (
+    awayStretch &&
+    !awayStretch.closed &&
+    awayList &&
+    awayList.length > 0 &&
+    !channelsQuery.isPending &&
+    !holdingForLaunch ? (
       <AwayCard
         rows={awayList}
-        sinceLabel={awaySinceLabel(awayFrom, Date.now())}
+        sinceLabel={awaySinceLabel(awayStretch.since, Date.now())}
         onOpen={(channelId) => openChannel(channelId)}
-        onClose={() => setAwayClosed(true)}
+        onClose={away.close}
       />
     ) : null;
 

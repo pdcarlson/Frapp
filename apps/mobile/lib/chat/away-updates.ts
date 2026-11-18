@@ -1,10 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { dayDelta, formatClockShort, formatDayHeading } from "@repo/formatting";
 import { isAnnouncementChannel } from "@repo/validation";
 
 /** Away this long from Chat before the card says what happened (#5464). */
 export const AWAY_AFTER_MS = 8 * 60 * 60 * 1000;
 /** The most conversations the card lists. */
 export const AWAY_ROWS_MAX = 3;
+/** How often an open Chat records that the member is still here. */
+export const AWAY_HEARTBEAT_MS = 5 * 60 * 1000;
 
 export type AwayRowKind = "mention" | "announcement" | "busy";
 
@@ -12,76 +15,90 @@ export interface AwayRow {
   channelId: string;
   name: string;
   kind: AwayRowKind;
-  /** Mentions for a mention row; unread messages otherwise. */
-  count: number;
-  /** "Jordan: is the formal budget final?", the real last message, or null. */
+  /** Mentions on a mention row; a plain unread channel carries no number. */
+  mentions: number;
+  /** The channel's last message as the channel list draws it, or null. */
   preview: string | null;
 }
 
 /**
  * What the "while you were away" card lists (#5464; Slack's catch-up and
- * Activity are the comparables): the channels with a mention first, most
- * mentions first, then the announcements channel, then the busiest, up to
- * three. Only channels Chat home lists (no direct messages, which the
- * Messages tab carries) and none the member muted. Every word is the real
- * last message, so the card is the same with AI or without.
+ * Activity are the comparables): channels with something new since the
+ * member left, a mention first (most mentions first), then the announcements
+ * channel, then the busiest, up to three. Only channels Chat home lists (no
+ * direct messages, which the Messages tab carries).
+ *
+ * - **Since they left.** A channel counts only when its latest message is
+ *   newer than `since`: unread from before the absence isn't news.
+ * - **Muted stays quiet** unless the member was named in it. While the
+ *   member's muting isn't known (`mutedIds` undefined), only mentions and
+ *   announcements are listed, so a muted channel is never shown by mistake.
+ * - **`onlyIds`**: once the card has opened, it lists only the channels it
+ *   opened with, so it leaves when those are read and never fills back up.
+ *
+ * Every word is the real last message, so the card is the same with AI or
+ * without.
  */
 export function awayRows(input: {
   channels: readonly { id: string; name: string }[];
   unread: ReadonlyMap<string, { unreadCount: number; mentionCount: number }>;
   announcementIds: ReadonlySet<string>;
-  mutedIds?: ReadonlySet<string>;
-  latest?: readonly {
-    channel_id: string;
-    sender_id?: string | null;
-    author_name: string | null;
-    content: string;
-  }[];
-  /** A member's display name by `users.id`, for the preview's sender. */
-  nameOf?: (userId: string) => string | undefined;
+  mutedIds: ReadonlySet<string> | undefined;
+  /** Each channel's latest message time. */
+  latestAt: ReadonlyMap<string, string>;
+  since: number;
+  onlyIds?: ReadonlySet<string> | null;
+  previewOf?: (channelId: string) => string | null;
 }): AwayRow[] {
-  const latest = new Map((input.latest ?? []).map((m) => [m.channel_id, m]));
   const ORDER: Record<AwayRowKind, number> = {
     mention: 0,
     announcement: 1,
     busy: 2,
   };
   const rows: AwayRow[] = [];
+  const unreadOf = (row: AwayRow) =>
+    input.unread.get(row.channelId)?.unreadCount ?? 0;
   for (const channel of input.channels) {
+    if (input.onlyIds && !input.onlyIds.has(channel.id)) continue;
     const counts = input.unread.get(channel.id);
     if (!counts || counts.unreadCount <= 0) continue;
+    const at = Date.parse(input.latestAt.get(channel.id) ?? "");
+    if (Number.isNaN(at) || at <= input.since) continue;
     const mentioned = counts.mentionCount > 0;
-    // A muted channel still says when the member was named.
-    if (!mentioned && input.mutedIds?.has(channel.id)) continue;
     const kind: AwayRowKind = mentioned
       ? "mention"
       : input.announcementIds.has(channel.id)
         ? "announcement"
         : "busy";
-    const last = latest.get(channel.id);
-    const text = last?.content.replace(/\s+/g, " ").trim() ?? "";
-    const author =
-      last?.author_name ??
-      (last?.sender_id ? input.nameOf?.(last.sender_id) : undefined) ??
-      null;
+    if (
+      kind === "busy" &&
+      (!input.mutedIds || input.mutedIds.has(channel.id))
+    ) {
+      continue;
+    }
+    if (kind === "announcement" && input.mutedIds?.has(channel.id)) continue;
     rows.push({
       channelId: channel.id,
       name: channel.name,
       kind,
-      count: mentioned ? counts.mentionCount : counts.unreadCount,
-      preview:
-        text === "" ? null : author ? `${author.split(" ")[0]}: ${text}` : text,
+      mentions: counts.mentionCount,
+      preview: input.previewOf?.(channel.id) ?? null,
     });
   }
   return rows
-    .sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || b.count - a.count)
+    .sort(
+      (a, b) =>
+        ORDER[a.kind] - ORDER[b.kind] ||
+        b.mentions - a.mentions ||
+        unreadOf(b) - unreadOf(a),
+    )
     .slice(0, AWAY_ROWS_MAX);
 }
 
 /**
  * When the member was last on Chat, so the card shows only after time away:
  * the previous visit when it was at least {@link AWAY_AFTER_MS} ago, else
- * null. Per member and chapter, on the phone only; a first visit has none.
+ * null. A first visit has none.
  */
 export function awaySince(previous: number | null, now: number): number | null {
   if (previous === null || Number.isNaN(previous)) return null;
@@ -114,23 +131,21 @@ export function writeLastChatVisit(
   });
 }
 
-/** "since yesterday 9:40 PM", "since 2:15 PM", "since Monday 9:40 PM". */
+/**
+ * "since 6:15 AM", "since yesterday 9:40 PM", "since Monday 9:40 PM", or
+ * "since November 2" further back, in the device's own locale.
+ */
 export function awaySinceLabel(since: number, now: number): string {
-  const time = new Date(since).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const day = (at: number) => {
-    const d = new Date(at);
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  };
-  const days = Math.round((day(now) - day(since)) / 86_400_000);
+  const at = new Date(since);
+  const days = dayDelta(at, new Date(now));
+  const time = formatClockShort(at);
   if (days <= 0) return `since ${time}`;
   if (days === 1) return `since yesterday ${time}`;
-  const weekday = new Date(since).toLocaleDateString("en-US", {
-    weekday: "long",
-  });
-  return days < 7 ? `since ${weekday} ${time}` : "since last week";
+  if (days < 7) {
+    return `since ${at.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
+  }
+  // Further back: the date, as a day heading writes a past day.
+  return `since ${formatDayHeading(at, new Date(now)) ?? ""}`;
 }
 
 /**
@@ -149,11 +164,7 @@ export function announcementChannelIds(data: unknown): Set<string> {
       typeof id === "string" &&
       typeof name === "string" &&
       typeof type === "string" &&
-      isAnnouncementChannel({
-        name,
-        type,
-        is_read_only: is_read_only === true,
-      })
+      isAnnouncementChannel({ name, type, is_read_only: is_read_only === true })
     ) {
       ids.add(id);
     }

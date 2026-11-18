@@ -15,9 +15,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * catch-up and Activity are the comparables.
  *
  * Show, don't write: each row is a tile in its kind's colour (mention red,
- * announcements house gold, a busy channel neutral), the channel, the real
- * last message, and a count. Pressing a row opens the channel. The card
- * leaves once every row is read, or on its close mark.
+ * announcements house gold, a busy channel info blue), the channel, and its
+ * last message as the channel list draws it. Only a mention carries a count,
+ * the red badge, since a plain unread channel carries no number
+ * (`foundations.md` §5). Pressing a row opens the channel. The card leaves
+ * once its channels are read, or on its close mark.
  */
 export function AwayCard({
   rows,
@@ -58,18 +60,16 @@ export function AwayCard({
             ? tokens.color.semantic.mention
             : row.kind === "announcement"
               ? tokens.color.gold.askText
-              : undefined;
+              : tokens.color.semantic.infoText;
         return (
           <Pressable
             key={row.channelId}
             accessibilityRole="button"
-            accessibilityLabel={`#${row.name}, ${row.count} ${
+            accessibilityLabel={
               row.kind === "mention"
-                ? row.count === 1
-                  ? "mention"
-                  : "mentions"
-                : "new"
-            }`}
+                ? `#${row.name}, ${row.mentions} ${row.mentions === 1 ? "mention" : "mentions"}`
+                : `#${row.name}, new messages`
+            }
             onPress={() => onOpen(row.channelId)}
             testID={`chat-away-row-${row.channelId}`}
             style={({ pressed }) => [
@@ -81,7 +81,7 @@ export function AwayCard({
             <LeadTile size="lead" on="card" hue={hue}>
               <NavGlyph
                 paths={NAV_GLYPHS.chat}
-                color={hue ?? tokens.color.text.mutedForeground}
+                color={hue}
                 size={LEAD_TILE_GLYPH}
               />
             </LeadTile>
@@ -95,33 +95,15 @@ export function AwayCard({
                 </Text>
               ) : null}
             </View>
-            <View
-              style={[
-                styles.badge,
-                row.kind === "mention"
-                  ? { backgroundColor: tokens.color.semantic.mention }
-                  : row.kind === "announcement"
-                    ? {
-                        backgroundColor: tokens.color.gold.askFill,
-                        borderColor: tokens.color.gold.askBorder,
-                        borderWidth: 1,
-                      }
-                    : { backgroundColor: tokens.color.border.input },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.badgeText,
-                  row.kind === "mention"
-                    ? { color: tokens.color.semantic.mentionForeground }
-                    : row.kind === "announcement"
-                      ? { color: tokens.color.gold.askText }
-                      : null,
-                ]}
-              >
-                {row.count > 99 ? "99+" : row.count}
-              </Text>
-            </View>
+            {row.kind === "mention" ? (
+              // The one count badge: being addressed (`foundations.md` §5).
+              // A plain unread channel carries no number.
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {row.mentions > 99 ? "99+" : row.mentions}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
         );
       })}
@@ -182,6 +164,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     badge: {
+      backgroundColor: tokens.color.semantic.mention,
       minWidth: 24,
       height: 24,
       borderRadius: 12,
@@ -192,7 +175,7 @@ function createStyles(tokens: SignetTokens) {
     badgeText: {
       ...typeRole(tokens.typography.role.caption),
       fontWeight: "700",
-      color: tokens.color.text.foreground,
+      color: tokens.color.semantic.mentionForeground,
     },
     pressed: { opacity: 0.7 },
   });
