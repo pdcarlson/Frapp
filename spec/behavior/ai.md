@@ -1018,7 +1018,7 @@ Why it never reached him, read on staging that day: no `member_nudges` row had e
 
 ### The card and its tray
 
-Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, then web; until the phone's step of #5464 lands it still draws the task card from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
+Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, and web after; a phone build from before #5464 still draws only the task card, from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
 
 - **What earns a card.** Any of these, for the member, under each module's own rule for who may see it, with the module on:
   an event starting today or tomorrow (in the member's time zone) that they haven't checked in to or snoozed, until it ends;
@@ -1061,6 +1061,7 @@ Activity draws one card under the week card, from `POST /v1/activity/card`, and 
   "Not now" also means nothing new for two days.
 - **The member is in charge of it.**
   "More" on the card offers "Show fewer of these" (nothing new for 14 days) and "Turn these off"; the switch is also in Preferences, "Nudges on Activity", and turning it back on ends any quiet stretch.
+  On the widened card (#5464) "···" offers "Hide this one" and "Turn these off", and Preferences offers the switch to every member, since the card shows without AI.
   There is no setting for how hard the cards push: an officer never gets one either.
 - **The words are checked.**
   A title of at most 40 characters, a body of at most 170 and two sentences, a starting point of at most 150 and one sentence.
