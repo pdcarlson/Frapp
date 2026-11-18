@@ -40,6 +40,8 @@ export const reactNativeStub = {
     // An overlay moves a screen reader's focus onto itself as it appears
     // (spec/ui/mobile/patterns.md § Overlays).
     sendAccessibilityEvent: vi.fn(),
+    // The glass menu hands focus back to a row named by its tag on close.
+    setAccessibilityFocus: vi.fn(),
     // The skeleton's pulse follows the Reduce Motion setting live
     // (`components/state-block.tsx`). Off by default; a spec flips it, or
     // runs the listener a block registered.
@@ -99,7 +101,9 @@ export const reactNativeStub = {
   // below.
   FlatList: "FlatList",
   ActivityIndicator: "ActivityIndicator",
-  // A channel row's long-press menu (`channel-actions-menu.tsx`) opens in one.
+  // A task's photo viewer (`components/tasks/task-photos.tsx`) opens in one,
+  // a known exception to patterns.md § Overlays tracked in #5545; the glass
+  // menu's spec checks that it never does (#5517).
   Modal: "Modal",
   KeyboardAvoidingView: "KeyboardAvoidingView",
   Share: {

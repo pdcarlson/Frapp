@@ -9,6 +9,7 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { MemberAvatarTint } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
+import { type FocusReturn, focusReturnOf } from "@/lib/overlay";
 import {
   AuditGlyph,
   LockGlyph,
@@ -153,9 +154,13 @@ export interface ChannelRowProps {
    * (`ChannelActionsMenu`) beside the press. Without it a long press falls
    * back to `onHide`, as before #2877. Also a named accessibility action,
    * "Channel actions", since a long press is not discoverable by a screen
-   * reader; that one has no press point, so its event is `undefined`.
+   * reader; that one has no press point, so its event is `undefined`, and
+   * `trigger` names the row, for the menu to hand focus back to on close.
    */
-  onLongPress?: (event: GestureResponderEvent | undefined) => void;
+  onLongPress?: (
+    event: GestureResponderEvent | undefined,
+    trigger?: FocusReturn | null,
+  ) => void;
 }
 
 /** The menu action's `name`; its spoken label is "Channel actions". */
@@ -261,7 +266,9 @@ export function ChannelRow({
         onLongPress || onTogglePin || onHide
           ? (event) => {
               const action = event.nativeEvent.actionName;
-              if (action === ACTIONS_ACTION) onLongPress?.(undefined);
+              if (action === ACTIONS_ACTION) {
+                onLongPress?.(undefined, focusReturnOf(event));
+              }
               if (action === PIN_ACTION) onTogglePin?.();
               if (action === HIDE_ACTION) onHide?.();
             }

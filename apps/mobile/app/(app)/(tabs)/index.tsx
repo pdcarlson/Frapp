@@ -150,6 +150,7 @@ import {
 } from "@/components/chat/channel-actions-menu";
 import { useConnection } from "@/lib/connection/use-connection";
 import { pressHaptic } from "@/lib/haptics";
+import { focusReturnOf } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 import { ScreenReady } from "@/lib/sentry/screen-ready";
@@ -732,7 +733,7 @@ export default function ChatHomeScreen() {
           mentionCount={counts?.mentionCount ?? 0}
           onPress={() => openChannel(channel.id)}
           onTogglePin={togglePin}
-          onLongPress={(event) => {
+          onLongPress={(event, trigger) => {
             pressHaptic();
             setMenuTarget({
               channelId: channel.id,
@@ -740,6 +741,8 @@ export default function ChatHomeScreen() {
               // A screen reader's "Channel actions" has no press point, so the
               // menu opens a third of the way down.
               pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
+              // The row, for a screen reader's focus back on close.
+              trigger: focusReturnOf(event) ?? trigger ?? null,
               pinned,
               level: levelFor(channel.id),
               fromChapterLevel: selectFromChapterLevel(

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   CHANNEL_LEVEL_DETAIL,
   CHANNEL_NOTIFICATIONS_LABEL,
@@ -24,7 +24,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { GlassMenu, glassMenuRowStyles } from "@/components/glass-menu";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
-import { useFocusOnOpen } from "@/lib/overlay";
+import { type FocusReturn, useFocusOnOpen } from "@/lib/overlay";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-control";
@@ -54,6 +54,8 @@ export interface ChannelActionsMenuTarget {
   name: string;
   /** Where the press landed, in window coordinates; the menu opens beside it. */
   pageY: number;
+  /** The row pressed, which gets a screen reader's focus back on close. */
+  trigger?: FocusReturn | null;
   pinned: boolean;
   /** The effective level, or `undefined` while the levels are unknown. */
   level: ChatNotificationLevel | undefined;
@@ -115,9 +117,9 @@ export function ChannelActionsMenu({
   onSetDisplayLock?: (channelId: string, locked: boolean) => void;
   /**
    * Sets a channel's background, or with null follows the chapter default
-   * (#4031); offered only with `canSetBackground`. Runs once the menu has
-   * finished closing, because `photo` opens the library, and presenting it
-   * while this modal animates out can leave it drawing nothing.
+   * (#4031); offered only with `canSetBackground`. Runs as the menu closes:
+   * the menu is drawn in the app's own tree, not a `Modal` (#5517), so the
+   * library `photo` opens has no presented window to wait out.
    */
   onSetBackground?: (channelId: string, pick: ChatBackgroundKey | null) => void;
   /**
@@ -127,27 +129,12 @@ export function ChannelActionsMenu({
    */
   writeBlockedReason: string | null;
 }) {
-  // A background pick waits here until the modal is gone (see
-  // `onSetBackground`). iOS reports that through `onDismiss`; Android's
-  // library is its own activity, so it can run on the close.
-  const afterClose = useRef<(() => void) | null>(null);
-  const runAfterClose = () => {
-    const run = afterClose.current;
-    afterClose.current = null;
-    run?.();
-  };
-  const closeThen = (run: () => void) => {
-    afterClose.current = run;
-    onClose();
-    if (Platform.OS !== "ios") runAfterClose();
-  };
-
   return (
     <GlassMenu
       visible={target !== null}
       pageY={target?.pageY ?? 0}
       onClose={onClose}
-      onDismiss={runAfterClose}
+      returnFocusTo={target?.trigger}
       backdropTestID="channel-actions-backdrop"
     >
       {target ? (
@@ -161,8 +148,10 @@ export function ChannelActionsMenu({
           onSetDisplayLock={onSetDisplayLock}
           onSetBackground={
             onSetBackground
-              ? (channelId, pick) =>
-                  closeThen(() => onSetBackground(channelId, pick))
+              ? (channelId, pick) => {
+                  onClose();
+                  onSetBackground(channelId, pick);
+                }
               : undefined
           }
           writeBlockedReason={writeBlockedReason}

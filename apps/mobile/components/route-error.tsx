@@ -64,7 +64,7 @@ import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
 /** Which boundary caught the error, as the `error_boundary` tag. */
 export type RouteErrorBoundaryKind =
-  "root" | "app" | "tabs" | "screen" | "sheet";
+  "root" | "app" | "tabs" | "screen" | "sheet" | "overlay";
 
 /** Reports a caught render error, once per error object. */
 export const reportRouteError = createReportOnce<{

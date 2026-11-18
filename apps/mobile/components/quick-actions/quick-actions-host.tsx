@@ -1,5 +1,4 @@
 import {
-  Component,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -23,7 +22,7 @@ import {
   type PendingDocumentUpload,
 } from "@/components/documents/upload-document-sheet";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
-import { reportRouteError } from "@/components/route-error";
+import { DropBoundary } from "@/components/drop-boundary";
 import { useMeetingQuickActions } from "@/components/quick-actions/meeting-actions";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
@@ -292,24 +291,18 @@ export function useQuickActionsHost({
 }
 
 /** Catches a sheet's render error, reports it, and lets the host drop it. */
-export class SheetBoundary extends Component<
-  { onError: () => void; children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown): void {
-    reportRouteError(error, { boundary: "sheet" });
-    this.props.onError();
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? null : this.props.children;
-  }
+export function SheetBoundary({
+  onError,
+  children,
+}: {
+  onError: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <DropBoundary boundary="sheet" onError={onError}>
+      {children}
+    </DropBoundary>
+  );
 }
 
 /**
