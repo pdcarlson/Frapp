@@ -24,6 +24,54 @@ describe('ai-spend-config', () => {
     });
   });
 
+  describe('on staging, where the team tests', () => {
+    const staging = {
+      NODE_ENV: 'staging',
+      SUPABASE_URL: 'https://hnoyzpidbmizhbqaiity.supabase.co',
+    };
+
+    it('widens the chapter and member caps, and keeps the account cap', () => {
+      expect(aiSpendCaps('anthropic', staging)).toEqual({
+        chapterMonthlyMicroUsd: 100_000_000,
+        memberDailyMicroUsd: 25_000_000,
+        platformMonthlyMicroUsd: 150_000_000,
+      });
+    });
+
+    it('still takes a cap set by its variable', () => {
+      expect(
+        aiSpendCaps('anthropic', {
+          ...staging,
+          AI_CHAPTER_MONTHLY_CAP_USD: '40',
+          AI_MEMBER_DAILY_CAP_USD: '3',
+        }),
+      ).toMatchObject({
+        chapterMonthlyMicroUsd: 40_000_000,
+        memberDailyMicroUsd: 3_000_000,
+      });
+    });
+
+    it.each([
+      [
+        'production',
+        { NODE_ENV: 'production', SUPABASE_URL: staging.SUPABASE_URL },
+      ],
+      [
+        'staging pointed at the production database',
+        {
+          NODE_ENV: 'staging',
+          SUPABASE_URL: 'https://unttyvyfezddlyafcydh.supabase.co',
+        },
+      ],
+      ['a laptop', { SUPABASE_URL: 'http://127.0.0.1:54321' }],
+    ])('keeps the sold defaults on %s', (_where, env) => {
+      expect(aiSpendCaps('anthropic', env)).toMatchObject({
+        chapterMonthlyMicroUsd: 25_000_000,
+        memberDailyMicroUsd: 2_000_000,
+      });
+    });
+  });
+
   it('accepts unset, empty and plain amounts', () => {
     expect(validateAiSpendEnv({})).toEqual([]);
     expect(

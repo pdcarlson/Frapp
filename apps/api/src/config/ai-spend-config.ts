@@ -1,3 +1,4 @@
+import { isProductionSupabaseUrl } from '@repo/validation';
 import type { AiProvider } from '#domain/adapters/language-model.interface';
 import type { AiSpendCaps } from '#domain/repositories/ai-usage.repository.interface';
 
@@ -59,6 +60,44 @@ function capMicroUsd(env: Env, variable: CapVariable): number {
   return AI_SPEND_CAP_DEFAULTS_USD[variable] * 1_000_000;
 }
 
+/**
+ * Staging's chapter and member defaults. Staging is where unfinished AI
+ * features are tried (Paul, 2026-11-15), and its chapters are the team's:
+ * on 2026-11-18 Paul's was refused its minutes after one long meeting, since
+ * Opus holds about $0.67 a call up front against a $2 day. These are wide
+ * enough for a day of testing long meetings and still bound one member, so
+ * a loop can't spend the provider month every staging chapter shares.
+ */
+const STAGING_CAP_DEFAULTS_USD: Partial<Record<CapVariable, number>> = {
+  AI_CHAPTER_MONTHLY_CAP_USD: 100,
+  AI_MEMBER_DAILY_CAP_USD: 25,
+};
+
+/**
+ * Whether this process is staging, by the rule `deploymentEnvironment`
+ * keeps (`interface/http/deployment-environment.ts`): `NODE_ENV=staging`,
+ * and not the production database. It fails closed: production, a laptop,
+ * CI and an unset `NODE_ENV` all keep the sold defaults, so a misread can
+ * only ever tighten a cap.
+ */
+function isStaging(env: Env): boolean {
+  const nodeEnv = typeof env.NODE_ENV === 'string' ? env.NODE_ENV.trim() : '';
+  if (nodeEnv !== 'staging') return false;
+  const url = env.SUPABASE_URL;
+  return !(typeof url === 'string' && isProductionSupabaseUrl(url.trim()));
+}
+
+/** A chapter or member cap: its variable when set, else this deployment's default. */
+function chapterCapMicroUsd(env: Env, variable: CapVariable): number {
+  const raw = env[variable];
+  const set = typeof raw === 'string' && raw.trim() !== '';
+  const staging = STAGING_CAP_DEFAULTS_USD[variable];
+  if (!set && staging !== undefined && isStaging(env)) {
+    return staging * 1_000_000;
+  }
+  return capMicroUsd(env, variable);
+}
+
 /** The caps a call by `provider` is held against, read on each call. */
 export function aiSpendCaps(
   provider: AiProvider,
@@ -66,8 +105,11 @@ export function aiSpendCaps(
 ): AiSpendCaps {
   const platformVariable = PLATFORM_CAP_VARIABLE[provider];
   return {
-    chapterMonthlyMicroUsd: capMicroUsd(env, 'AI_CHAPTER_MONTHLY_CAP_USD'),
-    memberDailyMicroUsd: capMicroUsd(env, 'AI_MEMBER_DAILY_CAP_USD'),
+    chapterMonthlyMicroUsd: chapterCapMicroUsd(
+      env,
+      'AI_CHAPTER_MONTHLY_CAP_USD',
+    ),
+    memberDailyMicroUsd: chapterCapMicroUsd(env, 'AI_MEMBER_DAILY_CAP_USD'),
     platformMonthlyMicroUsd:
       platformVariable === null ? null : capMicroUsd(env, platformVariable),
   };
