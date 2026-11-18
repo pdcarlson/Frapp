@@ -33,7 +33,10 @@ export function reminderPresetValue(at: Date, now: Date): string {
 }
 
 /** What the member hears once a reminder is set: "Reminder set for …". */
-function reminderSetAnnouncement(at: Date, now: Date = new Date()): string {
+function reminderSetAnnouncement(
+  at: Date,
+  now: Date = new Date(),
+): string {
   return `Reminder set for ${reminderAtLabel(at, now)}`;
 }
 

@@ -72,10 +72,7 @@ export function pickAndSetChatBackgroundPhoto(deps: {
  */
 export async function saveChatBackgroundPick(
   pick: ChatBackgroundKey | null,
-  deps: {
-    requestPhotoUrl: RequestBackgroundPhotoUrl;
-    save: SaveChatBackground;
-  },
+  deps: { requestPhotoUrl: RequestBackgroundPhotoUrl; save: SaveChatBackground },
 ): Promise<ChatBackgroundSaveResult> {
   if (pick === "photo") {
     const result = await pickAndSetChatBackgroundPhoto(deps);
@@ -85,9 +82,6 @@ export async function saveChatBackgroundPick(
     await deps.save({ background: pick });
     return { status: "saved" };
   } catch (err) {
-    return {
-      status: "refused",
-      reason: errorCopy(err, BACKGROUND_SAVE_FAILED),
-    };
+    return { status: "refused", reason: errorCopy(err, BACKGROUND_SAVE_FAILED) };
   }
 }

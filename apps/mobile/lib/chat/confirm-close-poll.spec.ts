@@ -6,10 +6,7 @@ import {
   CLOSE_POLL_CONFIRM_LABEL,
   CLOSE_POLL_CONFIRM_TITLE,
 } from "@repo/chat-core/polls";
-import {
-  CLOSE_POLL_FAILED_TITLE,
-  confirmClosePoll,
-} from "./confirm-close-poll";
+import { CLOSE_POLL_FAILED_TITLE, confirmClosePoll } from "./confirm-close-poll";
 
 beforeEach(() => {
   vi.mocked(Alert.alert).mockClear();

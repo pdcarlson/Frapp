@@ -41,8 +41,7 @@ describe("deliveryChrome (#1910)", () => {
     expect(
       deliveryChrome({
         _status: "unconfirmed",
-        _error:
-          "Not confirmed — these points may or may not have been recorded.",
+        _error: "Not confirmed — these points may or may not have been recorded.",
       }),
     ).toEqual({
       status: "unconfirmed",

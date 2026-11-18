@@ -78,9 +78,7 @@ describe("saveChatBackgroundPick", () => {
   it("reads a refused built-in save through errorCopy, with its own sentence as the fallback", async () => {
     const forbidden = await saveChatBackgroundPick("letters", {
       requestPhotoUrl: vi.fn(),
-      save: vi
-        .fn()
-        .mockRejectedValue({ statusCode: 403, message: "Forbidden" }),
+      save: vi.fn().mockRejectedValue({ statusCode: 403, message: "Forbidden" }),
     });
     expect(forbidden.status).toBe("refused");
     expect(forbidden).not.toEqual({
@@ -91,9 +89,6 @@ describe("saveChatBackgroundPick", () => {
       requestPhotoUrl: vi.fn(),
       save: vi.fn().mockRejectedValue({ statusCode: 500, message: "boom" }),
     });
-    expect(failed).toEqual({
-      status: "refused",
-      reason: BACKGROUND_SAVE_FAILED,
-    });
+    expect(failed).toEqual({ status: "refused", reason: BACKGROUND_SAVE_FAILED });
   });
 });
