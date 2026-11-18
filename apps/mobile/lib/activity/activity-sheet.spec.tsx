@@ -26,16 +26,9 @@ import { screenText } from "@/test/screen-text";
  */
 
 const cards = vi.hoisted(() => ({
-  task: [] as Record<string, unknown>[],
   event: [] as Record<string, unknown>[],
   poll: [] as Record<string, unknown>[],
   hours: [] as Record<string, unknown>[],
-}));
-vi.mock("@/components/chat/task-card", () => ({
-  TaskCard: (props: Record<string, unknown>) => {
-    cards.task.push(props);
-    return null;
-  },
 }));
 vi.mock("@/components/chat/event-card", () => ({
   EventCard: (props: Record<string, unknown>) => {
@@ -206,7 +199,6 @@ function sheetElement(
   row: ActivityRow | null,
   viewerId: string | null,
   rowActionState: ActivityRowActionState = "idle",
-  canManage = false,
 ) {
   return (
     <FrappThemeProvider>
@@ -214,7 +206,6 @@ function sheetElement(
         row={row}
         viewerId={viewerId}
         rowActionState={rowActionState}
-        canManage={canManage}
         onActed={onActed}
         onClosed={onClosed}
         linkActions={linkActions}
@@ -228,11 +219,10 @@ function render(
   row: ActivityRow | null,
   viewerId: string | null = "me",
   rowActionState: ActivityRowActionState = "idle",
-  canManage = false,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(sheetElement(row, viewerId, rowActionState, canManage), {
+    tree = create(sheetElement(row, viewerId, rowActionState), {
       // `vitest.setup.ts` mocks `BottomSheetModal` as a host string, so the
       // sheet's ref lands on whatever this returns for it.
       createNodeMock: (element) =>
@@ -282,25 +272,25 @@ describe("Activity sheet (#3897)", () => {
     it("stays down with no row, and presents once when a row is opened", () => {
       const tree = render(null);
       expect(present).not.toHaveBeenCalled();
-      act(() => tree.update(sheetElement(rowOf("task"), "me")));
+      act(() => tree.update(sheetElement(rowOf("event"), "me")));
       expect(present).toHaveBeenCalledTimes(1);
     });
 
     it("does not present again when a re-read hands the same row down as a new object", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       expect(present).toHaveBeenCalledTimes(1);
-      act(() => tree.update(sheetElement({ ...rowOf("task") }, "me")));
+      act(() => tree.update(sheetElement({ ...rowOf("event") }, "me")));
       expect(present).toHaveBeenCalledTimes(1);
     });
 
     it("presents again for a different row", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       act(() => tree.update(sheetElement(rowOf("hours"), "me")));
       expect(present).toHaveBeenCalledTimes(2);
     });
 
     it("tells the screen when the sheet has gone", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       act(() => {
         modal(tree).props.onDismiss();
       });
@@ -308,7 +298,7 @@ describe("Activity sheet (#3897)", () => {
     });
 
     it("closes from the header's X", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       act(() => {
         button(tree, "Close").props.onPress();
       });
@@ -316,62 +306,18 @@ describe("Activity sheet (#3897)", () => {
     });
   });
 
-  it("draws chat's task card for a completion to review, as a confirmed message of the viewer's", () => {
-    const row = rowOf("task");
-    expect(row.key).toBe("needs-confirm:task:task-2");
-    render(row);
-    const props = cards.task.at(-1)!;
-    expect(props.viewerId).toBe("me");
-    expect(props.isConfirmed).toBe(true);
-    expect(props.payload).toMatchObject({
-      task_id: "task-2",
-      title: "Sweep the porch",
-      assignee_user_id: "sam",
-      point_reward: 10,
-    });
-    // Not a message in a channel: no message actions to open.
-    expect(props.onOpenActions).toBeUndefined();
-  });
-
-  it("draws the review for a completion waiting on an officer wherever its row sits, by the screen's rule (#5492)", () => {
-    const made = activityGroups(
-      {
-        ...READ,
-        made_by_you: {
-          polls: [],
-          events: [],
-          tasks: [],
-          task_items: [
-            {
-              kind: "task",
-              task: READ.needs_you.task_confirmations[0]!,
-            },
-          ],
-        },
-      } as unknown as Activity,
-      new Date(),
-      { taskItems: true },
-    )
-      .flatMap((group) => group.rows)
-      .find((row) => row.kind === "task")!;
-    expect(made.key).toBe("made:task:task-2");
-    // The officer the screen read: the review.
-    render(made, "me", "idle", true);
-    expect(cards.task.at(-1)!.payload).toMatchObject({ task_id: "task-2" });
-    // Without tasks:manage, the screen pushes the task's screen; the sheet
-    // agrees and draws nothing.
-    for (const list of Object.values(cards)) list.length = 0;
-    render(made, "me", "idle", false);
-    expect(cards.task).toHaveLength(0);
-  });
-
-  it("draws no card for any other task: it is the task's own screen (#5492)", () => {
+  it("draws no card for a task row, a review included: every task is its own screen (#5492, #5513)", () => {
+    const review = rowOf("task");
+    expect(review.key).toBe("needs-confirm:task:task-2");
     const own = activityToDos(READ)
       .map((todo) => todo.dated)
       .find((row) => row.kind === "task")!;
     expect(own.key).toBe("needs:task:task-1");
-    render(own);
-    expect(cards.task).toHaveLength(0);
+    for (const row of [review, own]) {
+      const tree = render(row);
+      for (const list of Object.values(cards)) expect(list).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("Loading your account…");
+    }
   });
 
   it("draws chat's event card with the member's own attendance answer", () => {
@@ -397,8 +343,8 @@ describe("Activity sheet (#3897)", () => {
   });
 
   it("waits for the viewer's id before drawing a card", () => {
-    const tree = render(rowOf("task"), null);
-    expect(cards.task).toHaveLength(0);
+    const tree = render(rowOf("event"), null);
+    expect(cards.event).toHaveLength(0);
     expect(screenText(tree)).toContain("Loading your account…");
   });
 

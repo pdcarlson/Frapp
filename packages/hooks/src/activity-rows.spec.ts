@@ -16,14 +16,15 @@ import {
   activityCardIsOpen,
   activityPollIsOpen,
   activityRowAction,
-  activityRowAwaitsReview,
   activityDetailParts,
   activityReviewQueue,
   activityReviewRows,
   activityToDos,
   findActivityTaskRow,
+  taskAwaitsReview,
   type Activity,
   type ActivityArchive,
+  type ActivityReviewer,
   type ActivityRow,
 } from "./activity-rows";
 
@@ -1452,8 +1453,8 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
   });
 });
 
-describe("activityRowAwaitsReview (#5492)", () => {
-  const officer = { viewerId: "me", canManage: true };
+describe("taskAwaitsReview (#5492, #5513)", () => {
+  const officer: ActivityReviewer = { viewerId: "me", canManage: true };
   /** A member's completion of a task the viewer assigned. */
   const done = (overrides: Record<string, unknown> = {}) =>
     task({
@@ -1483,64 +1484,43 @@ describe("activityRowAwaitsReview (#5492)", () => {
     )
       .find((group) => group.id === "made-by-you")!
       .rows.find((row) => row.kind === "task")!;
+  const awaits = (overrides: Record<string, unknown> = {}, who = officer) =>
+    taskAwaitsReview(done(overrides), who);
 
-  it("is a To review row, whoever asks", () => {
-    const review = activityReviewRows(
-      activity({
-        needs_you: {
-          tasks: [],
-          task_confirmations: [done()],
-          hours_approvals: [],
-          polls: [],
-        },
-      }),
-    )[0]!;
-    expect(activityRowAwaitsReview(review)).toBe(true);
-    expect(activityRowAction(review)).toBe("confirm");
-  });
-
-  it("is a completion waiting on an officer's sign-off wherever it sits", () => {
-    expect(activityRowAwaitsReview(madeRow(), officer)).toBe(true);
+  it("is a member's completion waiting on an officer's sign-off", () => {
+    expect(awaits()).toBe(true);
     // A proof task too, which needs a sign-off with no points.
-    expect(
-      activityRowAwaitsReview(
-        madeRow({ point_reward: null, proof_kind: "photo" }),
-        officer,
-      ),
-    ).toBe(true);
+    expect(awaits({ point_reward: null, proof_kind: "photo" })).toBe(true);
   });
 
   it("is not one the viewer can't or needn't sign off", () => {
-    // Without asking who looks: only the To review card's own rows.
-    expect(activityRowAwaitsReview(madeRow())).toBe(false);
-    // No tasks:manage.
-    expect(
-      activityRowAwaitsReview(madeRow(), { viewerId: "me", canManage: false }),
-    ).toBe(false);
+    // No tasks:manage, or no viewer yet.
+    expect(awaits({}, { viewerId: "me", canManage: false })).toBe(false);
+    expect(awaits({}, { viewerId: null, canManage: true })).toBe(false);
     // Their own: the API refuses a self-confirm.
-    expect(
-      activityRowAwaitsReview(madeRow({ assignee_id: "me" }), officer),
-    ).toBe(false);
+    expect(awaits({ assignee_id: "me" })).toBe(false);
     // Confirmed, not done, or needing no sign-off.
-    expect(
-      activityRowAwaitsReview(
-        madeRow({ confirmed_at: "2026-11-03T00:00:00.000Z" }),
-        officer,
-      ),
-    ).toBe(false);
-    expect(
-      activityRowAwaitsReview(
-        madeRow({ status: "TODO", stored_status: "TODO" }),
-        officer,
-      ),
-    ).toBe(false);
-    expect(
-      activityRowAwaitsReview(
-        madeRow({ point_reward: null, proof_kind: "none" }),
-        officer,
-      ),
-    ).toBe(false);
-    // Nor is the made row's own badge an ask: no one-press Confirm there.
+    expect(awaits({ confirmed_at: "2026-11-03T00:00:00.000Z" })).toBe(false);
+    expect(awaits({ status: "TODO", stored_status: "TODO" })).toBe(false);
+    expect(awaits({ point_reward: null, proof_kind: "none" })).toBe(false);
+  });
+
+  it("puts Confirm on a To review row only, never on a made row", () => {
+    const reviewRow = (overrides: Record<string, unknown> = {}) =>
+      activityReviewRows(
+        activity({
+          needs_you: {
+            tasks: [],
+            task_confirmations: [done(overrides)],
+            hours_approvals: [],
+            polls: [],
+          },
+        }),
+      )[0]!;
+    expect(activityRowAction(reviewRow())).toBe("confirm");
+    // A proof task opens instead, so the proof is seen first (#4635).
+    expect(activityRowAction(reviewRow({ proof_kind: "photo" }))).toBeNull();
+    // The made row's badge is no ask: no one-press Confirm there.
     expect(activityRowAction(madeRow())).toBeNull();
   });
 });

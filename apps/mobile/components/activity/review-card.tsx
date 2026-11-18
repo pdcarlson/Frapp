@@ -33,7 +33,8 @@ import {
  *
  * Closed, it is one row: the count and what it is made of. Pressed, it opens
  * in place to the rows, longest waiting first, each with its one-press
- * Confirm or Approve (#4437) and its sheet behind the rest of the row. A
+ * Confirm or Approve (#4437) and its record behind the rest of the row (a
+ * task its screen, with Confirm and Send back, #5513; hours their sheet). A
  * queue of three or fewer starts open, so a chair's two confirmations are
  * still one press each; the president's fourteen wait behind the count. The
  * screen draws it only when something waits or a part behind it failed to

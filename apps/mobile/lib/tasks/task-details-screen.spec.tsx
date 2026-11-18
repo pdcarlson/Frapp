@@ -122,6 +122,13 @@ const removeFromGroup = vi.fn(
     group: { id: "g1", audience: "everyone", total: 5, done: 2, confirmed: 1 },
   }),
 );
+const confirmTask = vi.fn<(id: string) => Promise<unknown>>(async () => ({}));
+const rejectTask = vi.fn<
+  (input: {
+    id: string;
+    body: { comment: string; require_photo?: boolean };
+  }) => Promise<unknown>
+>(async () => ({}));
 const addSubtask = vi.fn();
 const deleteSubtask = vi.fn();
 
@@ -145,6 +152,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     avatarTintFor: () => ({ fill: "#222222", text: "#EEEEEE" }),
   }),
   useUpdateTaskStatus: () => ({ mutateAsync: mutateStatus }),
+  useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
+  useRejectTask: () => ({ mutateAsync: rejectTask, isPending: false }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
   useReleaseTask: () => ({ mutate: releaseTask, isPending: false }),
   useRemoveFromTaskGroup: () => ({
@@ -187,6 +196,16 @@ vi.mock("@/lib/action-menu", () => ({
   showActionMenu: (menu: ActionMenu) => menus.push(menu),
 }));
 vi.mock("@/lib/haptics", () => ({ successHaptic: () => undefined }));
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: null }),
+}));
+// Send back's sheet has its own spec; here only what the screen hands it.
+vi.mock("@/components/tasks/send-back-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    SendBackSheet: (props: object) => createElement("SendBackSheet", props),
+  };
+});
 
 import TaskDetailsScreen from "@/app/(app)/task-details";
 
@@ -806,5 +825,149 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
     press(tree, "More");
     expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
     act(() => tree.unmount());
+  });
+});
+
+describe("An officer's Confirm and Send back (#5513)", () => {
+  /** A member's completion of the officer's task, waiting on a sign-off. */
+  const WAITING = {
+    ...PLAIN,
+    created_by: ME,
+    assignee_id: "u-ben",
+    status: "COMPLETED",
+    stored_status: "COMPLETED",
+    point_reward: 10,
+    completed_at: "2026-11-18T09:00:00.000Z",
+  };
+  const sendBackSheet = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "SendBackSheet")[0];
+
+  beforeEach(() => {
+    permissions = ["members:view", "tasks:manage"];
+    task = WAITING;
+  });
+
+  it("puts Confirm in the accent pill and Send back beside it, on another member's completion", () => {
+    const tree = render();
+    const confirm = control(tree, "Confirm")!;
+    expect(confirm).toBeDefined();
+    // Send back, Edit and More beside it: the payout moves to its hint.
+    expect(confirm.props.accessibilityHint).toBe("Awards +10 pts.");
+    expect(control(tree, "Send back")).toBeDefined();
+    expect(control(tree, "Mark done")).toBeUndefined();
+    // Not in More too.
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Delete"]);
+    act(() => tree.unmount());
+  });
+
+  it("names the payout on the pill when the bar has room", () => {
+    // No due day: no Edit, so Send back and More are its only rounds.
+    task = { ...WAITING, due_date: null };
+    const tree = render();
+    expect(control(tree, "Confirm · +10 pts")).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("confirms through the confirm route, and says so", async () => {
+    const tree = render();
+    await act(async () => {
+      control(tree, "Confirm")!.props.onPress();
+    });
+    expect(confirmTask).toHaveBeenCalledTimes(1);
+    expect(confirmTask).toHaveBeenCalledWith("t1");
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      "Confirmed.",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("says a gate refusal on Confirm, and withdraws Confirm and Send back", async () => {
+    confirmTask.mockRejectedValueOnce({
+      statusCode: 403,
+      error: "Forbidden",
+      message:
+        "Chapter subscription is not active; complete checkout to use this feature.",
+    });
+    const tree = render();
+    await act(async () => {
+      control(tree, "Confirm")!.props.onPress();
+    });
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(control(tree, "Confirm")).toBeUndefined();
+    expect(control(tree, "Send back")).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("opens Send back's sheet, which sends the reason and the photo ask", async () => {
+    const tree = render();
+    expect(sendBackSheet(tree)).toBeUndefined();
+    press(tree, "Send back");
+    const sheet = sendBackSheet(tree)!;
+    expect(sheet.props).toMatchObject({
+      title: "Sweep the porch",
+      proofKind: "none",
+      submittedAt: "2026-11-18T09:00:00.000Z",
+      keptDraft: "send-back:t1",
+    });
+    await act(async () => {
+      await sheet.props.onSubmit({
+        comment: "Floor is still sticky",
+        require_photo: true,
+      });
+    });
+    expect(rejectTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { comment: "Floor is still sticky", require_photo: true },
+    });
+    act(() => sheet.props.onClosed());
+    expect(sendBackSheet(tree)).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("puts Send back first in More when the bar already holds three", () => {
+    task = { ...WAITING, group_id: "g1", group: GROUP_COPIES[0]!.group };
+    tasks = [task, ...GROUP_COPIES.slice(1)];
+    const tree = render();
+    expect(control(tree, "Confirm")).toBeDefined();
+    expect(control(tree, "Send back")).toBeUndefined();
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual([
+      "Send back",
+      "Delete",
+      "Delete for everyone",
+    ]);
+    act(() => menus[0]!.rows[0]!.onPress());
+    expect(sendBackSheet(tree)).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers neither on the viewer's own completion, a confirmed one, or to a member", () => {
+    const none = () => {
+      const tree = render();
+      expect(control(tree, "Confirm")).toBeUndefined();
+      expect(control(tree, "Confirm · +10 pts")).toBeUndefined();
+      expect(control(tree, "Send back")).toBeUndefined();
+      if (control(tree, "More")) {
+        menus.length = 0;
+        press(tree, "More");
+        expect(menus[0]!.rows.map((row) => row.label)).not.toContain(
+          "Send back",
+        );
+      }
+      act(() => tree.unmount());
+    };
+    // Their own: the API refuses a self-confirm.
+    task = { ...WAITING, assignee_id: ME };
+    none();
+    task = {
+      ...WAITING,
+      points_awarded: true,
+      confirmed_at: "2026-11-18T10:00:00.000Z",
+    };
+    none();
+    permissions = ["members:view"];
+    task = WAITING;
+    none();
   });
 });

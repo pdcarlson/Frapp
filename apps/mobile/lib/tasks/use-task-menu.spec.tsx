@@ -53,6 +53,8 @@ const updateStatus = vi.fn<(input: unknown) => Promise<object>>(
 const deleteTask = vi.fn<(target: unknown) => Promise<object>>(
   async () => ({}),
 );
+const confirmTask = vi.fn<(id: string) => Promise<object>>(async () => ({}));
+const rejectTask = vi.fn<(input: unknown) => Promise<object>>(async () => ({}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -61,7 +63,18 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useTasks: () => ({ data: tasks, isSuccess: true, isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: updateStatus }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
+  useRejectTask: () => ({ mutateAsync: rejectTask, isPending: false }),
 }));
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: null }),
+}));
+vi.mock("@/components/tasks/send-back-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    SendBackSheet: (props: object) => createElement("SendBackSheet", props),
+  };
+});
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
@@ -422,5 +435,78 @@ describe("a confirmed task", () => {
     tasks = [confirmed];
     const tree = render();
     expect(rowOf(tree, "Sweep the porch").props.onLongPress).toBeUndefined();
+  });
+});
+
+describe("a completion waiting on the officer (#5513)", () => {
+  const waiting = {
+    ...BASE,
+    status: "COMPLETED",
+    stored_status: "COMPLETED",
+    completed_at: "2026-11-17T12:00:00.000Z",
+  };
+  beforeEach(() => {
+    viewer = OFFICER;
+    permissions = ["members:view", "tasks:manage"];
+    tasks = [waiting];
+  });
+
+  it("leads with Confirm and Send back, and Confirm confirms", async () => {
+    const tree = render();
+    expect(longPress(tree)).toEqual([
+      "Confirm",
+      "Send back",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+    await act(async () => {
+      pick(tree, "Confirm");
+    });
+    expect(confirmTask).toHaveBeenCalledWith("t1");
+  });
+
+  it("opens Send back's sheet, which sends through the reject route", async () => {
+    const tree = render();
+    longPress(tree);
+    pick(tree, "Send back");
+    const sheet = tree.root.find(
+      (node) => (node.type as unknown) === "SendBackSheet",
+    );
+    expect(sheet.props.keptDraft).toBe("send-back:t1");
+    await act(async () => {
+      await sheet.props.onSubmit({ comment: "Not finished" });
+    });
+    expect(rejectTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { comment: "Not finished" },
+    });
+  });
+
+  it("offers no Confirm on a task whose proof the menu can't show", () => {
+    tasks = [{ ...waiting, proof_kind: "photo", point_reward: null }];
+    expect(longPress(render())).toEqual([
+      "Send back",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+  });
+
+  it("says a refused Confirm in the platform alert", async () => {
+    confirmTask.mockRejectedValueOnce({ statusCode: 400, message: "No" });
+    const tree = render();
+    longPress(tree);
+    await act(async () => {
+      pick(tree, "Confirm");
+    });
+    expect(Alert.alert).toHaveBeenCalledWith("Couldn't confirm the task.");
+  });
+
+  it("offers neither on the officer's own completion", () => {
+    tasks = [{ ...waiting, assignee_id: OFFICER }];
+    expect(longPress(render())).not.toContain("Confirm");
   });
 });

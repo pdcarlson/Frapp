@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
@@ -431,15 +430,12 @@ export async function readAllTaskPages(
   return rows;
 }
 
-/** `GET /v1/tasks/:id`, as `useTask` and `useFetchTask` read it. */
-function taskQuery(
-  client: ReturnType<typeof useFrappClient>,
-  chapterId: string | null,
-  id: string,
-) {
-  return {
+export function useTask(id: string) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
     queryKey: taskKeys.detail(chapterId, id),
-    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/tasks/{id}", {
         signal,
         params: { path: { id } },
@@ -448,28 +444,8 @@ function taskQuery(
       return data;
     },
     staleTime: 30_000,
-  };
-}
-
-export function useTask(id: string) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  return useQuery({ ...taskQuery(client, chapterId, id), enabled: !!id });
-}
-
-/**
- * Reads one task when asked, through `useTask`'s cache: for a handler that
- * learns the id after render, such as Activity's review push for a task its
- * read lists no row for (#5492). Rejects as the read does.
- */
-export function useFetchTask(): (id: string) => Promise<unknown> {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  const queryClient = useQueryClient();
-  return useCallback(
-    (id: string) => queryClient.fetchQuery(taskQuery(client, chapterId, id)),
-    [client, chapterId, queryClient],
-  );
+    enabled: !!id,
+  });
 }
 
 /**

@@ -236,10 +236,6 @@ const menuReads = vi.hoisted(() => ({
   updateStatus: vi.fn<(input: unknown) => Promise<object>>(() =>
     Promise.resolve({}),
   ),
-  /** `GET /v1/tasks/:id`, for a review push the read lists no row for. */
-  fetchTask: vi.fn<(id: string) => Promise<unknown>>(() =>
-    Promise.reject(new Error("Not found")),
-  ),
   deleteTask: vi.fn(() => Promise.resolve({})),
   deleteEvent: vi.fn(),
 }));
@@ -298,10 +294,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       mutationKey: ["tasks", "update-task-status"],
       mutationFn: menuReads.updateStatus,
     }),
-  useFetchTask: () => menuReads.fetchTask,
   useDeleteTask: () => ({ mutateAsync: menuReads.deleteTask }),
   useDeleteEvent: () => ({ mutate: menuReads.deleteEvent }),
   useConfirmTask: () => ({ mutateAsync: writes.confirm }),
+  useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
   useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
@@ -336,7 +332,6 @@ const sheet = vi.hoisted(() => ({
   props: null as null | {
     row: { key: string } | null;
     viewerId: string | null;
-    canManage?: boolean;
     rowActionState?: string;
     onClosed: () => void;
     onActed: () => void;
@@ -496,9 +491,6 @@ describe("Activity screen (#3897)", () => {
     menuReads.tasks = [];
     menuReads.events = [];
     menuReads.updateStatus.mockClear();
-    menuReads.fetchTask
-      .mockReset()
-      .mockImplementation(() => Promise.reject(new Error("Not found")));
     menuReads.deleteTask.mockClear();
     menuReads.deleteEvent.mockClear();
     chapter.data = undefined;
@@ -1145,6 +1137,20 @@ describe("Activity screen (#3897)", () => {
       expect(chores()).toHaveLength(0);
     });
 
+    it("pushes a row's task screen, where Confirm and Send back are (#5513)", () => {
+      links.permissions = ["*"];
+      activity.value = { ...activity.value, data: queue(1) };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => row(tree, "Chore 0").props.onPress());
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "done-0" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
+    });
+
     it("says its part couldn't load to the officer whose queue it is", () => {
       links.permissions = ["service:approve"];
       activity.value = {
@@ -1634,8 +1640,8 @@ describe("Activity screen (#3897)", () => {
         polls: [],
       },
     });
-    // The completion waits on the officer's sign-off: its sheet holds
-    // Confirm and Send back, which the task's screen doesn't (#5492).
+    // The completion waits on the officer's sign-off: its screen holds
+    // Confirm and Send back (#5513).
     const fresh = read({
       needs_you: {
         tasks: [],
@@ -1659,11 +1665,17 @@ describe("Activity screen (#3897)", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
       review: "task-9",
     });
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
     try {
       render();
       await act(async () => {});
       expect(refetch).toHaveBeenCalledTimes(1);
-      expect(sheet.props?.row?.key).toBe("needs-confirm:task:task-9");
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "task-9" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
       // Opened from the push reads it, as a tap on the row does.
       expect(links.markRead).toHaveBeenCalledWith([
         { kind: "task", item_id: "task-9" },
@@ -1675,7 +1687,7 @@ describe("Activity screen (#3897)", () => {
     }
   });
 
-  it("opens nothing for a review the re-read doesn't hold, and still drops the param", async () => {
+  it("pushes the screen by id for a review the re-read doesn't hold, and drops the param", async () => {
     const router = vi.mocked(useRouter)() as unknown as {
       setParams?: (params: unknown) => void;
     };
@@ -1688,10 +1700,18 @@ describe("Activity screen (#3897)", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
       review: "gone",
     });
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
     try {
       render();
       await act(async () => {});
       expect(sheet.props?.row).toBeNull();
+      // A copy of a task for everyone, one past the read's cap, or one
+      // deleted since: its screen reads it, and says so if it's gone.
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "gone" },
+      });
       expect(setParams).toHaveBeenCalledWith({ review: undefined });
     } finally {
       vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
@@ -3441,7 +3461,7 @@ describe("Activity screen (#3897)", () => {
       ]);
     });
 
-    it("opens a completion waiting on the officer as its review, wherever it sits", () => {
+    it("pushes a completion waiting on the officer to its screen, wherever it sits (#5513)", () => {
       links.permissions = ["*"];
       activity.value = {
         ...activity.value,
@@ -3472,76 +3492,12 @@ describe("Activity screen (#3897)", () => {
       const push = vi.mocked(useRouter().push);
       push.mockClear();
       act(() => row(tree, "Swept the porch").props.onPress());
-      // Not the task screen, which has no Confirm or Send back.
-      expect(push).not.toHaveBeenCalled();
-      expect(sheet.props?.row?.key).toBe("made:task:done-1");
-      // The sheet decides by the same rule, on the same viewer.
-      expect(sheet.props?.canManage).toBe(true);
-    });
-
-    describe("a review push for a task the read lists no row for", () => {
-      /** A copy of a task for everyone, as `GET /v1/tasks/:id` reads it. */
-      const copy = (overrides: Record<string, unknown> = {}) => ({
-        id: "copy-3",
-        title: "Clean the house",
-        assignee_id: "m3",
-        created_by: "me",
-        status: "COMPLETED",
-        stored_status: "COMPLETED",
-        due_date: "2099-01-01",
-        due_at: null,
-        point_reward: 5,
-        points_awarded: false,
-        proof_kind: "none",
-        confirmed_at: null,
-        ...overrides,
+      // The task screen, which holds Confirm and Send back.
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "done-1" },
       });
-      const pushFor = async (read: unknown) => {
-        const router = vi.mocked(useRouter)() as unknown as {
-          setParams?: (params: unknown) => void;
-        };
-        router.setParams = vi.fn();
-        links.permissions = ["*"];
-        menuReads.fetchTask.mockResolvedValue(read);
-        activity.value = {
-          ...activity.value,
-          refetch: vi.fn(() => Promise.resolve({ data: activity.value.data })),
-        };
-        vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-          review: "copy-3",
-        });
-        const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
-        push.mockClear();
-        try {
-          render();
-          await act(async () => {});
-        } finally {
-          vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
-          delete router.setParams;
-        }
-        expect(menuReads.fetchTask).toHaveBeenCalledWith("copy-3");
-        return push;
-      };
-
-      it("reads it by id and opens its review when it waits on the viewer", async () => {
-        const push = await pushFor(copy());
-        expect(push).not.toHaveBeenCalled();
-        expect(sheet.props?.row?.key).toBe("needs-confirm:task:copy-3");
-      });
-
-      it("pushes its screen once it no longer waits on them", async () => {
-        const push = await pushFor(
-          copy({
-            confirmed_at: "2026-11-18T00:00:00.000Z",
-            points_awarded: true,
-          }),
-        );
-        expect(push).toHaveBeenCalledWith({
-          pathname: "/task-details",
-          params: { id: "copy-3" },
-        });
-        expect(sheet.props?.row ?? null).toBeNull();
-      });
+      expect(sheet.props?.row ?? null).toBeNull();
     });
 
     it("asks the card again on the way back from a task the week card's Next pushed", () => {

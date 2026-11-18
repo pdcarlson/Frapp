@@ -33,13 +33,9 @@ import {
   activityReview,
   activityWeekStrip,
   activityWeekSummary,
-  activityReviewRow,
-  activityRowAwaitsReview,
   activityRowTaskId,
   findActivityTaskRow,
-  taskAwaitsReview,
   useActivity,
-  useFetchTask,
   useActivityArchive,
   useActivitySnoozeWake,
   useActivityRecap,
@@ -114,7 +110,6 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
-import { reviewTaskOf } from "@/lib/activity/review-task";
 import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
@@ -164,10 +159,10 @@ const GROUP_OPTIONS: ActivityGroupsOptions = { taskItems: true };
  * (`apps/web/components/activity/activity-page.tsx`).
  *
  * A task row pushes the task's own screen (#5492), a task for everyone the
- * copy that carries its group; any other row opens the record in a sheet
- * drawn with chat's own card, where the member acts on it
- * (`components/activity/activity-sheet.tsx`), as does a completion waiting on
- * the member's sign-off. A long press on a task or event row opens the
+ * copy that carries its group, and a completion waiting on the member's
+ * sign-off too, where they confirm it or send it back (#5513); any other row
+ * opens the record in a sheet drawn with chat's own card, where the member
+ * acts on it (`components/activity/activity-sheet.tsx`). A long press on a task or event row opens the
  * board's and the Calendar's menu, with Snooze in it where it applies
  * (`useActivityRowMenu`). The read is never served fresh from cache
  * (`useActivity`). It is read again when the sheet closes, because the cards
@@ -458,17 +453,6 @@ export default function ActivityScreen() {
         ? "link"
         : null;
 
-  // Who may sign off a completion (#5492): a row whose task waits on this
-  // viewer's review opens as one, wherever it sits (`activityRowAwaitsReview`,
-  // the sheet's rule too).
-  const reviewer = useMemo(
-    () => ({
-      viewerId,
-      canManage: moduleOn("tasks") && can("tasks:manage", permissions ?? []),
-    }),
-    [viewerId, moduleOn, permissions],
-  );
-
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
@@ -477,10 +461,8 @@ export default function ActivityScreen() {
     // A task is its own screen (#5492; Paul, 2026-11-18: the sheet was
     // "lazy"), as on the board and the Calendar; a task for everyone opens
     // the copy that carries its group. A completion waiting on the viewer's
-    // sign-off still opens the sheet, which holds Confirm and Send back.
-    const taskId = activityRowAwaitsReview(row, reviewer)
-      ? null
-      : activityRowTaskId(row);
+    // sign-off too: the screen holds Confirm and Send back (#5513).
+    const taskId = activityRowTaskId(row);
     if (taskId !== null) {
       // What the card or the week card's Next opened is asked again on the
       // way back, as a sheet's close asks it.
@@ -523,18 +505,15 @@ export default function ActivityScreen() {
   // `/activity?review=<taskId>`: a "submitted a task" push (targets.ts).
   // The read is taken again first, because the one in hand predates the
   // submission whenever the app was warm, then that task opens as a press on
-  // its row opens it, and the param is dropped so coming back to the tab
-  // doesn't open it again. A task the read lists no row for (a copy of a
-  // task for everyone, whose row names only the copy it opens, #5492; or one
-  // past the read's cap) is read by its id (`GET /v1/tasks/:id`): still
-  // waiting on the viewer's sign-off, it opens its review sheet; otherwise
-  // its own screen. One the read refuses (deleted since) opens nothing, and
-  // the officer lands on the page.
+  // its row opens it, its screen with Confirm and Send back (#5513), and the
+  // param is dropped so coming back to the tab doesn't open it again. A task
+  // the read lists no row for (a copy of a task for everyone, whose row
+  // names only the copy it opens, #5492; or one past the read's cap) pushes
+  // its screen by id all the same; one deleted since says so there.
   const { review: reviewParam } = useLocalSearchParams<{ review?: string }>();
   const reviewTaskId =
     typeof reviewParam === "string" && reviewParam !== "" ? reviewParam : null;
   const refetchActivity = activity.refetch;
-  const fetchTask = useFetchTask();
   useEffect(() => {
     if (reviewTaskId === null) return;
     let live = true;
@@ -552,26 +531,18 @@ export default function ActivityScreen() {
       // Dropped first: opening may push a screen, whose params these
       // would then be.
       router.setParams({ review: undefined });
-      if (row) {
-        open(row);
-        return;
-      }
-      const read = await fetchTask(reviewTaskId).catch(() => null);
-      const task = read ? reviewTaskOf(read, (id) => faceFor(id)?.name) : null;
-      if (!live || !task) return;
-      if (taskAwaitsReview(task, reviewer)) {
-        const review = activityReviewRow(task, new Date());
-        setOpened(review);
-        setOpenedKey(review.key);
-      } else {
-        router.push({ pathname: "/task-details", params: { id: task.id } });
+      if (row) open(row);
+      else {
+        router.push({
+          pathname: "/task-details",
+          params: { id: reviewTaskId },
+        });
       }
     })();
     return () => {
       live = false;
     };
-    // Once per review linked; `open`, the viewer and the names are read
-    // when the reads land.
+    // Once per review linked; `open` is read when the read lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewTaskId, refetchActivity, router]);
 
@@ -788,7 +759,6 @@ export default function ActivityScreen() {
           <ActivitySheet
             row={sheetRow}
             viewerId={viewerId}
-            canManage={reviewer.canManage}
             rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
             onActed={reread}
             onClosed={() => {

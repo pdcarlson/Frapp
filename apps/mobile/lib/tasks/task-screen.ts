@@ -8,7 +8,10 @@
  * Mark not done only the assignee's, before an officer confirms (an officer
  * moving someone's completion back is Send back, its own endpoint). Edit,
  * Delete and Remove people are `tasks:manage`, and Edit is refused once a
- * task is confirmed. There is no creator rule.
+ * task is confirmed. There is no creator rule. Confirm and Send back
+ * (`POST /v1/tasks/:id/confirm` and `/reject`, #5513) are a `tasks:manage`
+ * holder's on a completion waiting on their sign-off, never their own
+ * (`taskAwaitsReview`: the API refuses a self-confirm).
  *
  * A row's long-press menu (#5492) reads the same controls
  * (`taskMenuKeys`), so the menu and the screen can't disagree about who may
@@ -21,9 +24,11 @@ import {
   canReopenOwnTask,
   isTaskStatus,
   TASK_ACTION_LABELS,
+  taskAwaitsReview,
+  taskConfirmLabel,
   type TaskStatus,
 } from "@repo/hooks";
-import { formatRelativeDayTime } from "@repo/formatting";
+import { formatPointsChip, formatRelativeDayTime } from "@repo/formatting";
 import { taskGroupLabel } from "@repo/validation";
 import { records, str } from "@/lib/more/narrow";
 import {
@@ -73,6 +78,19 @@ export function rowStatus(row: TaskRowModel): {
 export interface TaskScreenControls {
   /** The one thing to do: the accent pill. */
   markDone: boolean;
+  /**
+   * An officer's sign-off on someone's completion (#5513): the accent pill,
+   * where Mark done would be (a done task has no Mark done).
+   */
+  confirm: boolean;
+  /**
+   * Confirm in a row's long-press menu, which shows no proof: only on a task
+   * that asked for none, the To review row's own rule (#4635), so a photo or
+   * link is seen on the screen before it is confirmed.
+   */
+  confirmInMenu: boolean;
+  /** Send back, with a reason, beside Confirm (`sendBackInBar` says where). */
+  sendBack: boolean;
   edit: boolean;
   /** The minus, on a group task's copy. */
   removePeople: boolean;
@@ -108,11 +126,30 @@ export function taskScreenControls({
   viewerId: string | null;
   /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
   canManage: boolean;
-  /** A gate refusal latched on the status write (#2710): no Mark done. */
+  /**
+   * A gate refusal latched on a status or review write (#2710): no Mark
+   * done, Confirm or Send back. The routes share the subscription and module
+   * gates, so a refusal on one is a refusal on all.
+   */
   toggleRefused: boolean;
 }): TaskScreenControls {
   const isAssignee = viewerId !== null && row.assigneeId === viewerId;
   const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  // The ledger's own flag too: a read that has it awarded without a
+  // `confirmed_at` is not waiting on anyone.
+  const awaitsReview =
+    !toggleRefused &&
+    !row.pointsAwarded &&
+    taskAwaitsReview(
+      {
+        assignee_id: row.assigneeId,
+        stored_status: stored ?? null,
+        confirmed_at: row.confirmedAt,
+        point_reward: row.pointReward,
+        proof_kind: row.proofKind,
+      },
+      { viewerId, canManage },
+    );
   // The board's rule for its sheet's Edit (#4296): the edit form needs an
   // assignee and a day, and a confirmed task can't change.
   const edit =
@@ -128,6 +165,9 @@ export function taskScreenControls({
       (isAssignee || canManage) &&
       !toggleRefused &&
       checkboxSequence(row).length > 0,
+    confirm: awaitsReview,
+    confirmInMenu: awaitsReview && row.proofKind === "none",
+    sendBack: awaitsReview,
     edit,
     removePeople: canManage && row.groupId !== null,
     reopen:
@@ -155,6 +195,8 @@ export function taskScreenControls({
 /** A task's long-press menu rows (#5492), in the order they are drawn. */
 export type TaskMenuKey =
   | "markDone"
+  | "confirm"
+  | "sendBack"
   | "start"
   | "reopen"
   | "edit"
@@ -167,7 +209,9 @@ export type TaskMenuKey =
 /**
  * Which rows a task's long-press menu draws: what the task screen offers the
  * same viewer, less Give it back (the screen's, by its More). Mark done is
- * the task screen's pill, so it leads; the two deletes are last, and red.
+ * the task screen's pill, so it leads, or on a completion waiting on the
+ * viewer, Confirm (where no proof needs seeing first) then Send back
+ * (#5513); the two deletes are last, and red.
  *
  * `group`: a Calendar row that stands for every copy of a group task
  * (an officer's "4 of 12 done"), which can only be acted on as a group:
@@ -180,6 +224,8 @@ export function taskMenuKeys(
   const keys: TaskMenuKey[] = [];
   if (scope === "copy") {
     if (controls.markDone) keys.push("markDone");
+    if (controls.confirmInMenu) keys.push("confirm");
+    if (controls.sendBack) keys.push("sendBack");
     if (controls.start) keys.push("start");
     if (controls.reopen) keys.push("reopen");
     if (controls.edit) keys.push("edit");
@@ -393,4 +439,41 @@ export function markDoneBarLabel(
     return { label: full, hint: undefined };
   }
   return { label: TASK_ACTION_LABELS.complete, hint: `${full}.` };
+}
+
+/**
+ * The most round controls the bar holds beside its pill: at 320pt, a fourth
+ * leaves the pill no room for its verb.
+ */
+const BAR_ROUNDS_MAX = 3;
+
+/**
+ * Confirm's words in the bar (#5513): the payout named on it, as web's review
+ * says it (`taskConfirmLabel`, "Confirm · +10 pts"), beside up to two round
+ * controls: shorter than Mark done's longest, it still fits a 320pt phone
+ * there. Beside three, `markDoneBarLabel`'s crowded-bar rule: the pill says
+ * "Confirm" and the payout is its spoken hint.
+ */
+export function confirmBarLabel(
+  pointReward: number | null,
+  rounds: number,
+): { label: string; hint: string | undefined } {
+  const full = taskConfirmLabel(pointReward);
+  if (rounds < BAR_ROUNDS_MAX || full === TASK_ACTION_LABELS.confirm) {
+    return { label: full, hint: undefined };
+  }
+  return {
+    label: TASK_ACTION_LABELS.confirm,
+    hint: `Awards ${formatPointsChip(pointReward ?? 0)}.`,
+  };
+}
+
+/**
+ * Whether Send back is a round in the bar (#5513) or leads More: a round
+ * while the bar has room beside the other rounds (Edit, Remove people,
+ * More), else More's first row. More then holds at most Send back, Delete
+ * and Delete for everyone, three, which Android's dialog can draw.
+ */
+export function sendBackInBar(otherRounds: number): boolean {
+  return otherRounds < BAR_ROUNDS_MAX;
 }

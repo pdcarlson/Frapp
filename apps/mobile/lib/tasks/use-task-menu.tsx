@@ -37,6 +37,7 @@ import { UndoBar } from "@/components/tasks/undo-bar";
 import { alertFailure } from "@/lib/failure-alert";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import { useStartTask } from "@/lib/tasks/use-start-task";
+import { useTaskReview } from "@/lib/tasks/use-task-review";
 import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import {
   editTargetOfRow,
@@ -60,8 +61,9 @@ import {
 } from "@/lib/tasks/use-task-toggle";
 
 /**
- * A task row's long-press menu (#5492; Paul, 2026-11-18): Mark done, Edit,
- * Reassign, Remove people, Duplicate and Delete, each to the viewer the API
+ * A task row's long-press menu (#5492; Paul, 2026-11-18): Mark done, Confirm
+ * and Send back, Edit, Reassign, Remove people, Duplicate and Delete, each to
+ * the viewer the API
  * lets use it. The rows are `taskMenuKeys`' over the task screen's own
  * `taskScreenControls`, so the menu and the screen can't disagree; what each
  * row does is the screen's too:
@@ -70,6 +72,10 @@ import {
  *   checkbox, so a task that asks for proof opens Mark done's sheet and a
  *   completion offers the same Undo. A screen with no checkbox of its own
  *   (the Calendar) takes `useCalendarTaskMenu`, which brings its own.
+ * - Confirm and Send back, on a completion waiting on the viewer's sign-off
+ *   (#5513), are the task screen's (`useTaskReview`): Send back opens its
+ *   sheet for the reason. Confirm only where no proof needs seeing first
+ *   (`confirmInMenu`); a refusal is the platform's alert.
  * - Start is the assignee's To do → In progress (`useStartTask`), as chat's
  *   task card and the task screen's More offer it.
  * - Edit and Reassign open the board's edit sheet (New task in edit mode),
@@ -151,6 +157,14 @@ export function useTaskMenu({
   );
 
   const startTask = useStartTask();
+  // Confirm and Send back (#5513). The menu has no line to carry a refusal,
+  // so it is the platform's alert.
+  const review = useTaskReview();
+  const reviewRefusal = review.refusal;
+  useEffect(() => {
+    if (reviewRefusal) Alert.alert(reviewRefusal.text);
+  }, [reviewRefusal]);
+  const { confirm: confirmTask, sendBack } = review;
 
   const actionFor = useCallback(
     (key: TaskMenuKey, row: TaskRowModel): ItemMenuAction => {
@@ -161,6 +175,20 @@ export function useTaskMenu({
             label: markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind),
             glyph: (color) => <CheckGlyph color={color} />,
             run: () => void toggle.toggle(row),
+          };
+        case "confirm":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.confirm,
+            glyph: (color) => <CheckGlyph color={color} />,
+            run: () => confirmTask(row),
+          };
+        case "sendBack":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.reject,
+            glyph: (color) => <UndoGlyph color={color} />,
+            run: () => sendBack(row),
           };
         case "start":
           return {
@@ -239,9 +267,11 @@ export function useTaskMenu({
         }
       }
     },
-    [toggle, router, tasksData, runDelete, startTask],
+    [toggle, router, tasksData, runDelete, startTask, confirmTask, sendBack],
   );
 
+  const reviewRefused = reviewRefusal?.gate === true;
+  const reviewHeld = review.disabled;
   const build = useCallback(
     (
       row: TaskRowModel,
@@ -252,20 +282,23 @@ export function useTaskMenu({
         row,
         viewerId,
         canManage,
-        toggleRefused: toggle.refusal !== null,
+        toggleRefused: toggle.refusal !== null || reviewRefused,
       });
       const keys = taskMenuKeys(controls, scope).filter(
-        // Mid-write, the box is held; so are the menu's status moves.
+        // Mid-write, the box is held; so are the menu's status moves, and
+        // Confirm and Send back while one is sending or would be lost.
         (key) =>
-          (key !== "markDone" && key !== "start" && key !== "reopen") ||
-          toggle.canToggle(row),
+          key === "confirm" || key === "sendBack"
+            ? !reviewHeld
+            : (key !== "markDone" && key !== "start" && key !== "reopen") ||
+              toggle.canToggle(row),
       );
       return menu.handleFor({
         title,
         actions: keys.map((key) => actionFor(key, row)),
       });
     },
-    [viewerId, canManage, toggle, menu, actionFor],
+    [viewerId, canManage, toggle, menu, actionFor, reviewRefused, reviewHeld],
   );
 
   const menuFor = useCallback(
@@ -309,6 +342,7 @@ export function useTaskMenu({
   const host = (
     <>
       {menu.element}
+      {review.host}
       {editing ? (
         <NewTaskSheet
           key={`${editing.target.id}-${editing.at.getTime()}`}

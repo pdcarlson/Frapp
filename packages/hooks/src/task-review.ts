@@ -41,6 +41,17 @@ export function isAwaitingReview(task: LiveTask): boolean {
   return stored === "COMPLETED" && !task.confirmed_at && !task.points_awarded;
 }
 
+/**
+ * Confirm's words where it pays: `"Confirm · +10 pts"`, the payout named on
+ * the button, or `"Confirm"` for a task with no points. Web's review and the
+ * phone's task screen (#5513) both say it.
+ */
+export function taskConfirmLabel(
+  pointReward: number | null | undefined,
+): string {
+  return pointReward ? `Confirm · ${formatPointsChip(pointReward)}` : "Confirm";
+}
+
 export function taskReview(task: LiveTask, now: Date = new Date()): TaskReview {
   // A task sent back and marked done again keeps its send-back stamp until
   // it is confirmed: that is what makes this a resubmission.
@@ -63,9 +74,7 @@ export function taskReview(task: LiveTask, now: Date = new Date()): TaskReview {
       : null,
     resubmitted,
     timing,
-    confirmLabel: task.point_reward
-      ? `Confirm · ${formatPointsChip(task.point_reward)}`
-      : "Confirm",
+    confirmLabel: taskConfirmLabel(task.point_reward),
     sentBackReason: resubmitted ? task.sent_back_reason : null,
     note: task.completion_note?.trim() || null,
     proofPhotos: photos.filter((photo) => photo.kind === "proof"),
