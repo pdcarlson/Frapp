@@ -500,6 +500,8 @@ function build(model: ILanguageModel, captured: Captured) {
         return Promise.resolve();
       },
     } as never,
+    // Dictation's cleanup is not asked here.
+    {} as never,
   );
 }
 

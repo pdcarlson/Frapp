@@ -139,6 +139,10 @@ export default function AppLayout() {
         options={{ title: SCREEN_TITLES["minutes-transcript"] }}
       />
       <Stack.Screen
+        name="minutes-series"
+        options={{ title: SCREEN_TITLES["minutes-series"] }}
+      />
+      <Stack.Screen
         name="suggested-tasks"
         options={{ title: SCREEN_TITLES["suggested-tasks"] }}
       />

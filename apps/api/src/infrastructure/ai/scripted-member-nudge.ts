@@ -21,6 +21,11 @@ function short(text: string, max: number): string {
 
 export const scriptedMemberNudge: ScriptedHandler = (request) => {
   const prompt = request.messages.at(-1)?.content ?? '';
+  // The widened card's one sentence (#5464): `nudges.item-line`.
+  if (request.system?.includes('Return "line"')) {
+    const line = scriptedLine(prompt);
+    return { text: JSON.stringify({ line }), object: { line } };
+  }
   const task = short(fact(prompt, 'Task') ?? 'Your task', 50);
   const due = fact(prompt, 'Due') ?? 'soon';
   const typical = fact(
@@ -66,3 +71,24 @@ export const scriptedMemberNudge: ScriptedHandler = (request) => {
   }
   return { text: JSON.stringify(output), object: output };
 };
+
+/** One plain sentence from the item's facts, by what they name. */
+function scriptedLine(prompt: string): string {
+  const event = fact(prompt, 'Event');
+  if (event !== null) {
+    const points = fact(prompt, 'Points for coming');
+    return points
+      ? `Being there counts for ${points} points, and the night goes better with everyone in the room.`
+      : 'The night goes better with everyone in the room.';
+  }
+  if (fact(prompt, 'Sign-up') !== null) {
+    return 'Picking a slot now takes a minute and gets you the time that suits you.';
+  }
+  if (fact(prompt, 'Minutes posted for') !== null) {
+    return 'A quick read catches you up on what was decided.';
+  }
+  const left = fact(prompt, 'Left to reach it');
+  return left
+    ? `One focused session today takes a real bite out of the ${left} left.`
+    : 'One focused session today keeps the week on track.';
+}

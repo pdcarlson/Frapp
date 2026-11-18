@@ -16,6 +16,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ASK_DICTATION_MAX_LENGTH,
   ASK_DOORS,
   ASK_EFFORTS,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
@@ -243,4 +244,27 @@ export class AskSuggestionsDto {
       'At most three questions, then at most one request. Empty when the member’s account holds nothing to ask about.',
   })
   suggestions: AskSuggestionDto[];
+}
+
+export class AskDictationRequestDto {
+  @ApiProperty({
+    description:
+      'What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.',
+    example: 'um so when is the uh chapter meeting thursday no friday',
+    maxLength: ASK_DICTATION_MAX_LENGTH,
+  })
+  @Trim()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ASK_DICTATION_MAX_LENGTH)
+  text: string;
+}
+
+export class AskDictationResponseDto {
+  @ApiProperty({
+    description:
+      'The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.',
+    example: 'When is the chapter meeting Friday?',
+  })
+  text: string;
 }

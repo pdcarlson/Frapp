@@ -5003,6 +5003,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The caller's card for Activity, and its tray
+         * @description The one most useful thing waiting on the caller (an event today or tomorrow they haven't checked in to, an unread @mention, a task of theirs, an open sign-up, an unread announcement, an officer's queue, new minutes, a study goal behind), and up to three more for the tray. A POST because it may raise a new card, which may cost a model call. `line` is null whenever AI is off for the caller or the server: the card shows either way. Times are written in the `X-Time-Zone` zone.
+         */
+        post: operations["ActivityCardController_card_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that the card was on screen */
+        post: operations["ActivityCardController_seen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wave a card or tray item off
+         * @description The caller does not want this one: it is not raised again. A mention or announcement comes back only when something new is posted in its channel. Answers 204 whether or not there was anything to close.
+         */
+        post: operations["ActivityCardController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own switch for the card
+         * @description The same switch as `GET /v1/nudges/settings`, without its AI gate: the card shows without AI, so every member can turn it off.
+         */
+        get: operations["ActivityCardController_settings_v1"];
+        /**
+         * Turn the card on or off for the caller
+         * @description Off also closes the card that is showing.
+         */
+        put: operations["ActivityCardController_updateSettings_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/goals": {
         parameters: {
             query?: never;
@@ -5047,6 +5128,84 @@ export interface paths {
         get?: never;
         /** Replace one measure's goals */
         put: operations["GoalsController_setGoals_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The caller's card for Activity, if one is due
+         * @description Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.
+         */
+        post: operations["MemberNudgeController_current_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/{id}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that the card was on screen */
+        post: operations["MemberNudgeController_seen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close the card
+         * @description Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.
+         */
+        post: operations["MemberNudgeController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own switch for these cards */
+        get: operations["MemberNudgeController_settings_v1"];
+        /**
+         * Turn the cards on or off for the caller
+         * @description Off also closes the card that is showing.
+         */
+        put: operations["MemberNudgeController_updateSettings_v1"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5551,6 +5710,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask/dictation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tidy up words dictated into Ask
+         * @description The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.
+         */
+        post: operations["AskController_cleanDictation_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/ask/diagnostics": {
         parameters: {
             query?: never;
@@ -5717,84 +5896,6 @@ export interface paths {
          * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.
          */
         post: operations["BackworkFillController_fill_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/nudges/current": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * The caller's card for Activity, if one is due
-         * @description Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.
-         */
-        post: operations["MemberNudgeController_current_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/nudges/{id}/seen": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Record that the card was on screen */
-        post: operations["MemberNudgeController_seen_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/nudges/{id}/dismiss": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Close the card
-         * @description Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.
-         */
-        post: operations["MemberNudgeController_dismiss_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/nudges/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The caller's own switch for these cards */
-        get: operations["MemberNudgeController_settings_v1"];
-        /**
-         * Turn the cards on or off for the caller
-         * @description Off also closes the card that is showing.
-         */
-        put: operations["MemberNudgeController_updateSettings_v1"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8377,7 +8478,7 @@ export interface components {
             point_value?: number;
             is_mandatory?: boolean;
         };
-        MeetingSummaryDto: {
+        MeetingListItemDto: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -8396,6 +8497,17 @@ export interface components {
             posted_at: string | null;
             /** Format: date-time */
             updated_at: string;
+            /**
+             * Format: uuid
+             * @description The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see.
+             */
+            series_key: string | null;
+            /** @description The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series. */
+            series_rule: string | null;
+            decision_count: number;
+            action_item_count: number;
+            /** @description A recording was used for these minutes. */
+            recorded: boolean;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -10888,6 +11000,88 @@ export interface components {
              */
             fired_at: string | null;
         };
+        ActivityNudgeItemDto: {
+            /**
+             * Format: uuid
+             * @description The showing card's id, for `seen`; null for a tray item, which is only drawn.
+             */
+            id: string | null;
+            /**
+             * @description Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client draws a kind it does not know with a neutral icon.
+             * @example event_soon
+             */
+            kind: string;
+            /** @description What the card is about, opaque to the client. Sent back with `kind` to dismiss it. */
+            subject_key: string;
+            /**
+             * @description The thing's own name: an event, a channel, a sign-up's title.
+             * @example Chapter Meeting
+             */
+            headline: string;
+            /**
+             * @description When, where or how many, written out in the caller's time zone (`X-Time-Zone`).
+             * @example Tonight 7:00 PM · Chapter House · Required
+             */
+            meta: string;
+            /** @description Whether the time or count is pressing enough to draw in colour. */
+            urgent: boolean;
+            /**
+             * @description The tray chip's few characters: a count, Tonight, Due Fri.
+             * @example Tonight
+             */
+            chip: string;
+            /**
+             * @description The button's label.
+             * @example Open event
+             */
+            action: string;
+            /**
+             * @description What the button opens: a task, an event, a chat message (a sign-up), a channel, the review queue, minutes, or study.
+             * @enum {string}
+             */
+            target_type: "task" | "event" | "message" | "channel" | "review" | "meeting" | "study";
+            /** @description The id of what it opens: a task, event, message, channel, meeting, or the oldest item in the review queue; null for study. */
+            target_id: string | null;
+            /**
+             * Format: uuid
+             * @description The channel a message or channel target is in.
+             */
+            channel_id: string | null;
+            /**
+             * Format: uuid
+             * @description The task a task card is about.
+             */
+            task_id: string | null;
+            /** @description One sentence Frapp AI wrote for the card, or null: a plain card, because AI is off for the caller or the server, or the kind is never written. */
+            line: string | null;
+            /** @description A task card's suggested place to start, when AI wrote one. */
+            start_here: string | null;
+            /** @description False until the caller has had the card on screen. */
+            seen: boolean;
+        };
+        ActivityNudgeCardDto: {
+            /** @description The one most useful thing waiting on the caller, or null when nothing is, or they turned these cards off. */
+            card: components["schemas"]["ActivityNudgeItemDto"] | null;
+            /** @description Up to three more, in order, for the tray under the card. */
+            tray: components["schemas"]["ActivityNudgeItemDto"][];
+        };
+        ActivityNudgeSeenDto: {
+            /** Format: uuid */
+            id: string;
+        };
+        ActivityNudgeDismissDto: {
+            /** @enum {string} */
+            kind: "task_due_soon" | "task_overdue" | "task_sent_back" | "task_praise" | "event_soon" | "mention_unread" | "announcement_unread" | "signup_open" | "officer_queue" | "minutes_new" | "study_behind";
+            /** @description The `subject_key` the card or tray item carried. */
+            subject_key: string;
+        };
+        MemberNudgeSettingsDto: {
+            /** @description The member's own switch for these cards. */
+            enabled: boolean;
+        };
+        UpdateMemberNudgeSettingsDto: {
+            enabled: boolean;
+        };
         RoleGoalDto: {
             /** Format: uuid */
             role_id: string;
@@ -10915,6 +11109,43 @@ export interface components {
             service: number | null;
             /** @description The caller's study minutes goal this week, or null. */
             study: number | null;
+        };
+        MemberNudgeDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client shows a kind it does not know as a plain card.
+             * @example task_due_soon
+             */
+            kind: string;
+            /** @description A few words, plain text. */
+            title: string;
+            /** @description One or two sentences, plain text. */
+            body: string;
+            /** @description A suggested place to start: one sentence, or null when the card has none. */
+            start_here: string | null;
+            /**
+             * Format: uuid
+             * @description The task the card is about.
+             */
+            task_id: string;
+            /** @description The task's own title. */
+            task_title: string;
+            /** @description False until the member has had the card on screen. */
+            seen: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MemberNudgeCurrentDto: {
+            /** @description The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them. */
+            nudge: components["schemas"]["MemberNudgeDto"] | null;
+        };
+        DismissMemberNudgeDto: {
+            /**
+             * @description `not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks.
+             * @enum {string}
+             */
+            reason: "not_now" | "fewer" | "thanks";
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -11368,6 +11599,20 @@ export interface components {
              */
             effort?: "default" | "more";
         };
+        AskDictationRequestDto: {
+            /**
+             * @description What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.
+             * @example um so when is the uh chapter meeting thursday no friday
+             */
+            text: string;
+        };
+        AskDictationResponseDto: {
+            /**
+             * @description The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.
+             * @example When is the chapter meeting Friday?
+             */
+            text: string;
+        };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
             actions: string[];
@@ -11582,50 +11827,6 @@ export interface components {
                 [key: string]: unknown;
             };
             reason?: string;
-        };
-        MemberNudgeDto: {
-            /** Format: uuid */
-            id: string;
-            /**
-             * @description Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise today; a client shows a kind it does not know as a plain card.
-             * @example task_due_soon
-             */
-            kind: string;
-            /** @description A few words, plain text. */
-            title: string;
-            /** @description One or two sentences, plain text. */
-            body: string;
-            /** @description A suggested place to start: one sentence, or null when the card has none. */
-            start_here: string | null;
-            /**
-             * Format: uuid
-             * @description The task the card is about.
-             */
-            task_id: string;
-            /** @description The task's own title. */
-            task_title: string;
-            /** @description False until the member has had the card on screen. */
-            seen: boolean;
-            /** Format: date-time */
-            created_at: string;
-        };
-        MemberNudgeCurrentDto: {
-            /** @description The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them. */
-            nudge: components["schemas"]["MemberNudgeDto"] | null;
-        };
-        DismissMemberNudgeDto: {
-            /**
-             * @description `not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks.
-             * @enum {string}
-             */
-            reason: "not_now" | "fewer" | "thanks";
-        };
-        MemberNudgeSettingsDto: {
-            /** @description The member's own switch for these cards. */
-            enabled: boolean;
-        };
-        UpdateMemberNudgeSettingsDto: {
-            enabled: boolean;
         };
         AiReportPolicyDto: {
             /** @description Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so. */
@@ -17499,7 +17700,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MeetingSummaryDto"][];
+                    "application/json": components["schemas"]["MeetingListItemDto"][];
                 };
             };
             /** @description Error */
@@ -23456,6 +23657,154 @@ export interface operations {
             };
         };
     };
+    ActivityCardController_card_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityNudgeCardDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_seen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityNudgeSeenDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityNudgeDismissDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_settings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberNudgeSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     GoalsController_getGoals_v1: {
         parameters: {
             query?: never;
@@ -23541,6 +23890,168 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_current_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeCurrentDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_seen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissMemberNudgeDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such card is showing for the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_settings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberNudgeSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -24541,6 +25052,52 @@ export interface operations {
             };
         };
     };
+    AskController_cleanDictation_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskDictationRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDictationResponseDto"];
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     AskController_startDiagnostics_v1: {
         parameters: {
             query?: never;
@@ -25033,168 +25590,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    MemberNudgeController_current_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberNudgeCurrentDto"];
-                };
-            };
-            /** @description AI is off on this server (`ai.not_available`). */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    MemberNudgeController_seen_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    MemberNudgeController_dismiss_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DismissMemberNudgeDto"];
-            };
-        };
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No such card is showing for the caller. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    MemberNudgeController_settings_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    MemberNudgeController_updateSettings_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateMemberNudgeSettingsDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
-                };
             };
             /** @description Error */
             default: {
