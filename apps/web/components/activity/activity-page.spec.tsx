@@ -54,6 +54,8 @@ const mockPermissions = vi.fn(() => ({
 const mockLayout = vi.fn<
   () => {
     data?: { card_order: string[]; hidden_cards: string[]; saved: boolean };
+    isSuccess?: boolean;
+    isPending?: boolean;
   }
 >(() => ({ data: { card_order: [], hidden_cards: [], saved: false } }));
 const mockSaveLayout = vi.fn();
@@ -119,7 +121,11 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     moveActivityCard: actual.moveActivityCard,
     sameActivityArrangement: actual.sameActivityArrangement,
     showActivityCard: actual.showActivityCard,
-    useActivityLayout: () => mockLayout(),
+    useActivityLayout: () => ({
+      isSuccess: true,
+      isPending: false,
+      ...mockLayout(),
+    }),
     useSaveActivityLayout: () => ({ mutate: mockSaveLayout }),
     useResetActivityLayout: () => ({ mutate: mockResetLayout }),
     activityDetailParts: actual.activityDetailParts,
@@ -1454,6 +1460,15 @@ describe("ActivityPage", () => {
       expect(saved.shown.indexOf("todo")).toBeLessThan(
         saved.shown.indexOf("recap"),
       );
+    });
+
+    it("offers Edit Activity only once the member's arrangement is in", () => {
+      mockActivity.mockReturnValue(withGroups());
+      mockLayout.mockReturnValue({ isSuccess: false, isPending: true });
+      render(<ActivityPage />);
+      expect(
+        screen.queryByRole("button", { name: "Edit Activity" }),
+      ).toBeNull();
     });
 
     it("offers Reset only once the member has saved an arrangement", async () => {

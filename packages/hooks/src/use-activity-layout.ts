@@ -35,52 +35,103 @@ export function useActivityLayout(options: { enabled?: boolean } = {}) {
   });
 }
 
+type LayoutKey = ReturnType<typeof activityLayoutKeys.chapter>;
+type LayoutContext = {
+  key: LayoutKey;
+  previous: ActivityLayoutRead | undefined;
+};
+
 /**
- * Save an arrangement. The page shows it at once and keeps it if the write
- * fails, re-reading the server's copy only on the next read; the caller
- * reports the failure.
+ * Save an arrangement. The page shows it at once; a failed save puts back
+ * what was there and re-reads the server's copy, and the caller says so.
+ * Every write lands on the chapter the save started in, whatever the member
+ * opened since, and a read already out is cancelled so it can't draw the old
+ * arrangement over the new one. Keys this build doesn't know are carried
+ * through (`activityLayoutBody`).
  */
 export function useSaveActivityLayout() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<
+    ActivityLayoutRead,
+    unknown,
+    ActivityCardArrangement,
+    LayoutContext
+  >({
     mutationKey: ["activity-layout", "save"],
-    mutationFn: async (arrangement: ActivityCardArrangement) => {
+    onMutate: async (arrangement) => {
+      const key = activityLayoutKeys.chapter(chapterId!);
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
+      const previous = queryClient.getQueryData<ActivityLayoutRead>(key);
+      queryClient.setQueryData<ActivityLayoutRead>(key, {
+        ...activityLayoutBody(arrangement, previous),
+        saved: true,
+      });
+      return { key, previous };
+    },
+    mutationFn: async (arrangement) => {
+      // `onMutate` ran first: what is cached now is the arrangement with the
+      // stored unknown keys already folded in, so this adds nothing twice.
+      const cached = queryClient.getQueryData<ActivityLayoutRead>(
+        activityLayoutKeys.chapter(chapterId!),
+      );
       const { data, error } = await client.PUT("/v1/activity/layout", {
-        body: activityLayoutBody(arrangement),
+        body: activityLayoutBody(arrangement, cached),
       });
       if (error !== undefined || data === undefined) throw error;
       return data;
     },
-    onMutate: (arrangement) => {
-      queryClient.setQueryData<ActivityLayoutRead>(
-        activityLayoutKeys.chapter(chapterId!),
-        { ...activityLayoutBody(arrangement), saved: true },
-      );
+    onSuccess: (data, _arrangement, context) => {
+      if (context) queryClient.setQueryData(context.key, data);
     },
-    onSuccess: (data) => {
-      queryClient.setQueryData(activityLayoutKeys.chapter(chapterId!), data);
+    onError: (_error, _arrangement, context) => {
+      if (!context) return;
+      queryClient.setQueryData(context.key, context.previous);
+      void queryClient.invalidateQueries({
+        queryKey: context.key,
+        exact: true,
+      });
     },
   });
 }
 
-/** Forget the member's arrangement, so their role's default applies again. */
+/**
+ * Forget the member's arrangement, so their role's default applies again.
+ * Shown at once; a failure puts the arrangement back, and either way the
+ * server's copy is read again.
+ */
 export function useResetActivityLayout() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<void, unknown, void, LayoutContext>({
     mutationKey: ["activity-layout", "reset"],
+    onMutate: async () => {
+      const key = activityLayoutKeys.chapter(chapterId!);
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
+      const previous = queryClient.getQueryData<ActivityLayoutRead>(key);
+      queryClient.setQueryData<ActivityLayoutRead>(key, {
+        card_order: [],
+        hidden_cards: [],
+        saved: false,
+      });
+      return { key, previous };
+    },
     mutationFn: async () => {
       const { error } = await client.DELETE("/v1/activity/layout");
       if (error !== undefined) throw error;
     },
-    onMutate: () => {
-      queryClient.setQueryData<ActivityLayoutRead>(
-        activityLayoutKeys.chapter(chapterId!),
-        { card_order: [], hidden_cards: [], saved: false },
-      );
+    onError: (_error, _vars, context) => {
+      if (context) queryClient.setQueryData(context.key, context.previous);
+    },
+    onSettled: (_data, _error, _vars, context) => {
+      if (context) {
+        void queryClient.invalidateQueries({
+          queryKey: context.key,
+          exact: true,
+        });
+      }
     },
   });
 }

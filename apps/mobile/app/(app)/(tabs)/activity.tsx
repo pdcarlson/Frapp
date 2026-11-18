@@ -226,7 +226,8 @@ export default function ActivityScreen() {
     useLinkActions();
   const reminderActions = useReminderActions(skipNextCloseReread);
 
-  const permissions = useMyPermissions().data?.permissions;
+  const permissionsRead = useMyPermissions();
+  const permissions = permissionsRead.data?.permissions;
   // The member's cards, in their order (#5520, § Cards): saved on their
   // account so web draws the same page, and their role's default until they
   // save one, or while the read is out or failed.
@@ -243,16 +244,12 @@ export default function ActivityScreen() {
   const refresh = showArchive ? refreshArchive : refreshPage;
   const saveLayout = useSaveActivityLayout();
   const resetLayout = useResetActivityLayout();
-  // Edit Activity in place of the page, as the Archive is, until Done.
+  // Edit Activity in place of the page, as the Archive is, until Done (or
+  // Android's back button, which the editor takes as Done). Offered only once
+  // the member's arrangement and role are known: an editor opened on the
+  // default would save it over their own.
   const [editing, setEditing] = useState(false);
-  useEffect(() => {
-    if (!editing || Platform.OS !== "android") return undefined;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      setEditing(false);
-      return true;
-    });
-    return () => sub.remove();
-  }, [editing]);
+  const canEdit = layout.isSuccess && permissionsRead.data !== undefined;
   const finishEditing = (next: ActivityCardArrangement) => {
     setEditing(false);
     if (sameActivityArrangement(next, arrangement)) return;
@@ -261,7 +258,7 @@ export default function ActivityScreen() {
         alertFailure({
           title: "Couldn't save your cards",
           error,
-          fallback: "They're arranged on this phone until you leave Activity.",
+          fallback: "Your cards are back the way they were saved.",
         }),
     });
   };
@@ -498,7 +495,10 @@ export default function ActivityScreen() {
   // after a sheet closes, since acting is what the card was for.
   const ai = useAiSurfaces();
   // A hidden card isn't asked for: the read can cost a model call.
-  const nudgeRead = useActivityNudge({ enabled: shows("nudge") });
+  // It waits for the arrangement, so a member who hid it never sends one.
+  const nudgeRead = useActivityNudge({
+    enabled: !layout.isPending && shows("nudge"),
+  });
   // Never the week card's Next a second time: when the card's pick is the
   // Next row, the tray's first takes its place.
   const nudge = useMemo(
@@ -722,7 +722,7 @@ export default function ActivityScreen() {
         {arrangement.shown.map((key) => (
           <Fragment key={key}>{cards[key]}</Fragment>
         ))}
-        <EditActivityLink onPress={() => setEditing(true)} />
+        {canEdit ? <EditActivityLink onPress={() => setEditing(true)} /> : null}
         {snoozedRows.length > 0 ? (
           <SnoozedPart
             rows={snoozedRows}

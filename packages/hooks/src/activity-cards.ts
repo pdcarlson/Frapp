@@ -1,5 +1,6 @@
 import {
   ACTIVITY_CARD_KEYS,
+  ACTIVITY_LAYOUT_MAX_KEYS,
   can,
   isActivityCardKey,
   type ActivityCardKey,
@@ -171,14 +172,47 @@ export function sameActivityArrangement(
   );
 }
 
-/** What `PUT /v1/activity/layout` takes for an arrangement. */
-export function activityLayoutBody(arrangement: ActivityCardArrangement): {
-  card_order: string[];
-  hidden_cards: string[];
-} {
+/**
+ * What `PUT /v1/activity/layout` takes for an arrangement.
+ *
+ * The PUT replaces the whole row, so keys this build doesn't know (a newer
+ * client's cards) are carried over from what was stored: a hidden one stays
+ * hidden, and a shown one keeps its place after the card it followed. Without
+ * this, saving on an older phone would bring back a card hidden on web.
+ */
+export function activityLayoutBody(
+  arrangement: ActivityCardArrangement,
+  stored?: ActivityLayoutRead | null,
+): { card_order: string[]; hidden_cards: string[] } {
+  const card_order: string[] = [...arrangement.shown];
+  const hidden_cards: string[] = [...arrangement.hidden];
+  if (stored?.saved) {
+    const placed = new Set<string>([...card_order, ...hidden_cards]);
+    // The card each unknown key followed, or the last unknown key put after it.
+    let after: string | null = null;
+    for (const key of stored.card_order) {
+      if (isActivityCardKey(key)) {
+        if (card_order.includes(key)) after = key;
+        continue;
+      }
+      if (placed.has(key)) continue;
+      card_order.splice(
+        after === null ? 0 : card_order.indexOf(after) + 1,
+        0,
+        key,
+      );
+      placed.add(key);
+      after = key;
+    }
+    for (const key of stored.hidden_cards) {
+      if (isActivityCardKey(key) || placed.has(key)) continue;
+      hidden_cards.push(key);
+      placed.add(key);
+    }
+  }
   return {
-    card_order: [...arrangement.shown],
-    hidden_cards: [...arrangement.hidden],
+    card_order: card_order.slice(0, ACTIVITY_LAYOUT_MAX_KEYS),
+    hidden_cards: hidden_cards.slice(0, ACTIVITY_LAYOUT_MAX_KEYS),
   };
 }
 

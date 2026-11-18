@@ -161,6 +161,32 @@ describe("editing", () => {
     ).toBe(true);
   });
 
+  it("carries a newer client's cards through a save", () => {
+    const stored = saved(
+      ["future-a", "todo", "future-b", "future-c", "links"],
+      ["future-hidden", "recap"],
+    );
+    const arranged = arrangeActivityCards(stored, "member");
+    const moved = moveActivityCard(arranged, "links", -1);
+    const body = activityLayoutBody(moved, stored);
+    expect(body.card_order.indexOf("future-a")).toBe(0);
+    // Still right after To do, and in the order they were stored.
+    const todo = body.card_order.indexOf("todo");
+    expect(body.card_order.slice(todo + 1, todo + 3)).toEqual([
+      "future-b",
+      "future-c",
+    ]);
+    expect(body.hidden_cards).toEqual(["recap", "future-hidden"]);
+  });
+
+  it("keeps nothing extra when nothing was saved", () => {
+    const body = activityLayoutBody(
+      { shown: ["todo"], hidden: [] },
+      { card_order: ["future"], hidden_cards: [], saved: false },
+    );
+    expect(body.card_order).toEqual(["todo"]);
+  });
+
   it("writes the body the API takes", () => {
     expect(activityLayoutBody({ shown: ["todo"], hidden: ["links"] })).toEqual({
       card_order: ["todo"],

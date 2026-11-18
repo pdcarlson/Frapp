@@ -984,7 +984,10 @@ export function ActivityPage() {
   const { toast } = useToast();
   const saveLayout = useSaveActivityLayout();
   const resetLayout = useResetActivityLayout();
+  // Offered only once the member's arrangement and role are known: an
+  // editor opened on the default would save it over their own.
   const [editing, setEditing] = useState(false);
+  const canEdit = layout.isSuccess && permissions.data !== undefined;
   const finishEditing = (next: ActivityCardArrangement) => {
     setEditing(false);
     if (sameActivityArrangement(next, arrangement)) return;
@@ -993,7 +996,7 @@ export function ActivityPage() {
         toast({
           variant: "destructive",
           title: "Couldn't save your cards",
-          description: "They're arranged here until you leave Activity.",
+          description: "Your cards are back the way they were saved.",
         }),
     });
   };
@@ -1200,14 +1203,16 @@ export function ActivityPage() {
             {arrangement.shown.map((key) => (
               <Fragment key={key}>{cards[key]}</Fragment>
             ))}
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-full"
-              onClick={() => setEditing(true)}
-            >
-              Edit Activity
-            </Button>
+            {canEdit ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() => setEditing(true)}
+              >
+                Edit Activity
+              </Button>
+            ) : null}
             {snoozedRows.length > 0 ? (
               <SnoozedSection rows={snoozedRows} kit={kit} />
             ) : null}

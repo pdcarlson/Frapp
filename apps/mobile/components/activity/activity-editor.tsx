@@ -1,5 +1,12 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  BackHandler,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   ACTIVITY_CARD_COPY,
   ACTIVITY_WEEK_CARD_COPY,
@@ -47,6 +54,16 @@ export function ActivityEditor({
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const [draft, setDraft] = useState(initial);
+  // Android's back button is Done: the way out of a screen there, so it
+  // keeps what the member changed, as Done and web's ‹ Activity do.
+  useEffect(() => {
+    if (Platform.OS !== "android") return undefined;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onDone(draft);
+      return true;
+    });
+    return () => sub.remove();
+  }, [draft, onDone]);
 
   return (
     <View style={styles.body}>
@@ -56,6 +73,7 @@ export function ActivityEditor({
         </Text>
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Done"
           accessibilityHint="Saves your cards and goes back to Activity."
           onPress={() => onDone(draft)}
           hitSlop={8}

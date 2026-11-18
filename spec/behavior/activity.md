@@ -163,8 +163,13 @@ order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
 - **Edit Activity**, at the foot of the page, lists the cards in place of the page until Done:
   minus hides one, plus brings it back where the default puts it, and arrows move it one place.
   Done saves only when something changed; Reset to the default is offered once they have saved.
-  A failed save keeps the arrangement on the page until they leave and says so.
-- **A hidden Frapp card isn't asked for**: its read can cost a model call
+  A failed save puts the saved arrangement back and says so. Edit Activity is offered only once the member's
+  saved arrangement and role have loaded, since an editor opened on the default would save it over
+  theirs. Leaving the editor by Android's back button or web's `‹ Activity` is Done.
+- **A save keeps the keys a client doesn't know.** The PUT replaces the row, so a client carries
+  over the stored keys it skips: a hidden one stays hidden, and a shown one keeps its place after the
+  card it followed. An older phone saving can't bring back a card hidden on web.
+- **A hidden Frapp card isn't asked for**, so its read waits for the arrangement to load: it can cost a model call
   ([`ai.md` § The card and its tray](ai.md#the-card-and-its-tray)). Hiding it hides only the card;
   Preferences' "Nudges on Activity" still owns whether the server makes one at all.
 

@@ -212,10 +212,12 @@ const cards = vi.hoisted(() => ({
   save: vi.fn(),
   reset: vi.fn(),
   refetch: vi.fn(() => Promise.resolve()),
+  pending: false,
 }));
 const nudge = vi.hoisted(() => ({
   ask: false,
   data: null as null | Record<string, unknown>,
+  enabledCalls: [] as boolean[],
   dismiss: vi.fn(),
   markSeen: vi.fn(),
   recheck: vi.fn(),
@@ -236,7 +238,10 @@ const snoozeWrites = vi.hoisted(() => ({
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActivityNudge: () => ({ data: nudge.data }),
+  useActivityNudge: (options?: { enabled?: boolean }) => {
+    nudge.enabledCalls.push(options?.enabled ?? true);
+    return { data: nudge.data };
+  },
   useActivityNudgeActions: () => ({
     dismiss: nudge.dismiss,
     markSeen: nudge.markSeen,
@@ -269,7 +274,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   // The member's arrangement (#5520): the role's default unless a test saves one.
-  useActivityLayout: () => ({ data: cards.layout, refetch: cards.refetch }),
+  useActivityLayout: () => ({
+    data: cards.layout,
+    refetch: cards.refetch,
+    isSuccess: !cards.pending,
+    isPending: cards.pending,
+  }),
   useSaveActivityLayout: () => ({ mutate: cards.save }),
   useResetActivityLayout: () => ({ mutate: cards.reset }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
@@ -438,6 +448,7 @@ const reviewToggle = (tree: ReactTestRenderer) =>
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
     cards.layout = undefined;
+    cards.pending = false;
     cards.save.mockClear();
     cards.reset.mockClear();
     standing.value = {
@@ -1952,6 +1963,20 @@ describe("Activity screen (#3897)", () => {
       });
       expect(cards.save).toHaveBeenCalledWith(hidden, expect.anything());
       expect(tree.root.findAllByType(ActivityEditor)).toHaveLength(0);
+    });
+
+    it("waits for the arrangement before offering Edit Activity or asking for the Frapp card", () => {
+      cards.pending = true;
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityHint ===
+              "Choose which cards Activity shows, and their order." &&
+            typeof node.props.onPress === "function",
+        ),
+      ).toHaveLength(0);
+      expect(nudge.enabledCalls.at(-1)).toBe(false);
     });
 
     it("starts an officer with To review before their own To do", () => {
