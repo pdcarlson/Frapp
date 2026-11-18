@@ -24,6 +24,8 @@ import { ErrorState, NoChapterState } from "@/components/state-block";
 import { useCanCreateEvents } from "@/components/events/new-event-sheet";
 import { pickedDayStart } from "@/lib/events/create-event";
 import { useNewEventAt } from "@/lib/events/use-new-event-at";
+import { useEventMenu } from "@/lib/events/use-event-menu";
+import { useCalendarTaskMenu } from "@/lib/tasks/use-task-menu";
 import {
   EventsCalendar,
   EventsCalendarSkeleton,
@@ -60,6 +62,10 @@ import { useFrappTheme } from "@/lib/theme";
  * and Fantastical put add at the top right; with a later day picked, the
  * event starts that day. Subscribe (#3322) sits beside it.
  *
+ * A long press on an event or a task under the day opens its menu (#5492):
+ * Edit, Duplicate and Delete for an event (`useEventMenu`), a task's actions
+ * for a task (`useCalendarTaskMenu`), each to a viewer the API lets use them.
+ *
  * The board's Going / Can't buttons and "Going ✓" marker are not drawn: RSVP
  * has no server model yet (`spec/behavior/events.md`), and they come back with
  * the endpoint (#1035), as on s07.
@@ -83,6 +89,9 @@ export default function EventsScreen() {
   // New event from the header's + (#5113), filled in to start on the picked
   // day.
   const newEvent = useNewEventAt(now);
+  // Long-press menus on the day's rows (#5492).
+  const eventMenu = useEventMenu();
+  const taskMenu = useCalendarTaskMenu();
   const allEvents = useMemo(
     () => selectAllEventRows(eventsQuery.data),
     [eventsQuery.data],
@@ -184,6 +193,8 @@ export default function EventsScreen() {
           setPickedMonth(startOfMonth(day));
         }}
         onOpen={openEvent}
+        eventMenuFor={eventMenu.menuFor}
+        taskMenuFor={taskMenu.menuForCalendarTask}
         onOpenDay={(day) =>
           router.push({
             pathname: "/calendar-day",
@@ -237,6 +248,8 @@ export default function EventsScreen() {
         onDismiss={() => setSubscribeOpen(false)}
       />
       {newEvent.sheet}
+      {eventMenu.host}
+      {taskMenu.host}
     </ScreenShell>
   );
 }

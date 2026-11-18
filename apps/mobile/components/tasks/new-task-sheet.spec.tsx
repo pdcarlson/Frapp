@@ -1236,3 +1236,64 @@ describe("NewTaskSheet for more than one person (#4295 step 3; 2026-11-18)", () 
     act(() => tree.unmount());
   });
 });
+
+describe("Duplicate, from a row's long press (#5492)", () => {
+  function renderDuplicate(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            keptDraft="tasks-create"
+            prefill={{
+              title: "Sweep the porch",
+              description: "Behind the bins too.",
+              who: { kind: "person", userId: "user-2" },
+              pointsInput: "5",
+              proofKind: "photo",
+              subtasks: ["Sweep", "Mop"],
+              due: { kind: "date", date: "2026-09-30" },
+              dueTime: null,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("opens as New task on the original, and creates a new task with its description", () => {
+    failure = FAILED;
+    const tree = renderDuplicate();
+    expect(titleValueOf(tree)).toBe("Sweep the porch");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      title: "Sweep the porch",
+      description: "Behind the bins too.",
+      assignee_id: "user-2",
+      due_date: "2026-09-30",
+      point_reward: 5,
+      proof_kind: "photo",
+      subtasks: ["Sweep", "Mop"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("neither opens on nor keeps the screen's New task draft", () => {
+    failure = FAILED;
+    const kept = render({ keptDraft: "tasks-create" });
+    const title = kept.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Half a draft"));
+    act(() => kept.unmount());
+    const tree = renderDuplicate();
+    expect(titleValueOf(tree)).toBe("Sweep the porch");
+    act(() => tree.unmount());
+    const again = render({ keptDraft: "tasks-create" });
+    expect(titleValueOf(again)).toBe("Half a draft");
+    act(() => again.unmount());
+  });
+});

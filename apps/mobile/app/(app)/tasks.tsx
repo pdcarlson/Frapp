@@ -84,6 +84,7 @@ import {
 } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
+import { useTaskMenu } from "@/lib/tasks/use-task-menu";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -116,6 +117,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * back to `IN_PROGRESS` (`spec/behavior/tasks.md` § Assignee Actions). The
  * box's writes, proof sheet and refusals are `useTaskToggle`
  * (`lib/tasks/use-task-toggle.tsx`), which the task screen's Mark done shares.
+ *
+ * A long press on a row or card opens the task's menu (`useTaskMenu`, #5492):
+ * Mark done, Edit, Reassign, Remove people, Duplicate and Delete, each to the
+ * viewer the API lets use it. Its Mark done is the box's, Undo and all.
  *
  * ## Why the board filters by assignee
  *
@@ -306,6 +311,10 @@ export default function TasksScreen() {
   useEffect(() => {
     if (createMounted) createRef.current?.present();
   }, [createMounted]);
+  // A row's long-press menu (#5492): its Mark done is the box's, and a
+  // Duplicate says where it went in the line New task's create uses.
+  const taskMenu = useTaskMenu({ toggles, onCreated: setCreated });
+  const { menuFor } = taskMenu;
   const openCreate = useCallback(() => {
     setCreated(null);
     if (createMounted) createRef.current?.present();
@@ -542,6 +551,7 @@ export default function TasksScreen() {
         isPending: pendingId === row.id,
         onToggle: canToggle(row) ? () => void toggle(row) : undefined,
         onOpen: () => openTask(row.id),
+        menu: menuFor(row),
       });
       if (layout === "grid") {
         return (
@@ -564,7 +574,7 @@ export default function TasksScreen() {
         </View>
       );
     },
-    [now, pendingId, canToggle, toggle, openTask, layout, styles.grid],
+    [now, pendingId, canToggle, toggle, openTask, menuFor, layout, styles.grid],
   );
 
   function renderBoard() {
@@ -766,6 +776,8 @@ export default function TasksScreen() {
       ) : null}
 
       <MarkDoneHost toggle={toggles} />
+
+      {taskMenu.host}
     </View>
   );
 }

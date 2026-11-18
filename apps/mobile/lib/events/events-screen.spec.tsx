@@ -1,7 +1,13 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { StyleSheet, type TextStyle } from "react-native";
+import {
+  Alert,
+  StyleSheet,
+  type AlertButton,
+  type TextStyle,
+} from "react-native";
+import { SERIES_SCOPE_COPY } from "@repo/validation";
 import {
   create,
   type ReactTestInstance,
@@ -59,6 +65,14 @@ let tasks: unknown[] = [];
 // Birthdays members share (#4959), as `GET /v1/members/birthdays` lists them.
 let birthdays: MemberBirthday[] = [];
 const birthdaysRefetch = vi.fn(() => Promise.resolve());
+// The long-press menus' writes (#5492).
+const deleteEvent = vi.fn();
+const deleteTask = vi.fn<(target: unknown) => Promise<object>>(
+  async () => ({}),
+);
+const updateStatus = vi.fn<(input: unknown) => Promise<object>>(
+  async () => ({}),
+);
 
 const { eventAttendanceFor } = await vi.hoisted(
   async () => await import("@repo/validation"),
@@ -104,6 +118,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useViewerUserId: () => "me",
   usePermissionList: () => permissions,
+  // An event row's Edit reads the event (`EventEditHost`).
+  useEvent: (id: string) => ({
+    ...query,
+    isPending: false,
+    data: (events as { id: string }[]).find((event) => event.id === id),
+  }),
+  useDeleteEvent: () => ({ mutate: deleteEvent, isPending: false }),
+  useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useUpdateTaskStatus: () => ({ mutateAsync: updateStatus }),
 }));
 
 // Its own spec covers it; here it would need the AI reads.
@@ -122,7 +145,7 @@ vi.mock("@/components/events/calendar-subscribe-sheet", () => ({
 // New event has its own spec; here only what an hour press hands it, and
 // that the screen presents it.
 const newEventSheet = vi.hoisted(() => ({
-  props: null as null | { template?: NewEventDraft },
+  props: null as null | { template?: NewEventDraft; editing?: unknown },
   presented: 0,
 }));
 vi.mock("@/components/events/new-event-sheet", async (importOriginal) => {
@@ -132,7 +155,7 @@ vi.mock("@/components/events/new-event-sheet", async (importOriginal) => {
       typeof import("@/components/events/new-event-sheet")
     >()),
     NewEventSheet: forwardRef(function NewEventSheet(
-      props: { template?: NewEventDraft },
+      props: { template?: NewEventDraft; editing?: unknown },
       ref,
     ) {
       newEventSheet.props = props;
@@ -819,6 +842,186 @@ describe("Calendar month", () => {
 });
 
 /** #5310: the hour grid lives on the Day screen, opened from the heading. */
+// #5492 (Paul, 2026-11-18): hold an event or a task on the Calendar for its
+// actions, gated as `event.controller.ts` and `task.controller.ts` gate them.
+describe("Calendar long-press menus", () => {
+  const eventRow = (tree: ReactTestRenderer, name = "Chapter meeting") =>
+    tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith(`Open ${name}`),
+    );
+  const openMenu = (row: ReactTestInstance) => {
+    expect(row.props.onLongPress, "a long press").toBeTypeOf("function");
+    act(() => row.props.onLongPress({ nativeEvent: { pageY: 320 } }));
+  };
+  const items = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+  const labels = (tree: ReactTestRenderer) =>
+    items(tree).map((node) => node.props.accessibilityLabel as string);
+  const pick = (tree: ReactTestRenderer, label: string) =>
+    act(() =>
+      items(tree)
+        .find((node) => node.props.accessibilityLabel === label)!
+        .props.onPress(),
+    );
+
+  beforeEach(() => {
+    deleteEvent.mockClear();
+    vi.mocked(Alert.alert).mockClear();
+  });
+
+  it("gives a member who can't change events no long press", () => {
+    permissions = [];
+    expect(eventRow(render()).props.onLongPress).toBeUndefined();
+  });
+
+  it("offers each action only with its grant", () => {
+    permissions = ["members:view", "events:update"];
+    let tree = render();
+    openMenu(eventRow(tree));
+    expect(labels(tree)).toEqual(["Edit"]);
+
+    permissions = ["members:view", "events:create"];
+    tree = render();
+    openMenu(eventRow(tree));
+    expect(labels(tree)).toEqual(["Duplicate"]);
+
+    permissions = ["members:view", "events:delete"];
+    tree = render();
+    openMenu(eventRow(tree));
+    expect(labels(tree)).toEqual(["Delete"]);
+
+    permissions = ["*"];
+    tree = render();
+    openMenu(eventRow(tree));
+    expect(labels(tree)).toEqual(["Edit", "Duplicate", "Delete"]);
+  });
+
+  it("Edit opens Edit event on the event, over the Calendar", () => {
+    permissions = ["*"];
+    const tree = render();
+    openMenu(eventRow(tree));
+    const presented = newEventSheet.presented;
+    pick(tree, "Edit");
+    expect(newEventSheet.props?.editing).toMatchObject({
+      event: { id: "evt-1", name: "Chapter meeting" },
+    });
+    expect(newEventSheet.presented).toBe(presented + 1);
+    expect(vi.mocked(expoRouter.useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("Duplicate opens New event filled in from it, as a new event ahead", () => {
+    permissions = ["*"];
+    events = [{ ...EVENT, location: "Great Room", point_value: 10 }];
+    const tree = render();
+    openMenu(eventRow(tree));
+    pick(tree, "Duplicate");
+    const template = newEventSheet.props?.template;
+    expect(newEventSheet.props?.editing).toBeUndefined();
+    expect(template).toMatchObject({
+      name: "Chapter meeting",
+      location: "Great Room",
+      pointsInput: "10",
+    });
+    expect(template?.start?.toISOString()).toBe(START.toISOString());
+  });
+
+  it("Delete asks, then deletes the one event", async () => {
+    permissions = ["*"];
+    const tree = render();
+    openMenu(eventRow(tree));
+    pick(tree, "Delete");
+    expect(deleteEvent).not.toHaveBeenCalled();
+    const [title, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
+    expect(title).toBe("Delete this event?");
+    await act(async () => {
+      (buttons as AlertButton[])
+        .find((button) => button.text === "Delete")!
+        .onPress?.();
+    });
+    expect(deleteEvent).toHaveBeenCalledWith(
+      { id: "evt-1", scope: "instance" },
+      expect.any(Object),
+    );
+  });
+
+  it("asks a repeating event's Delete this one or all upcoming", () => {
+    permissions = ["*"];
+    events = [{ ...EVENT, recurrence_rule: "WEEKLY", parent_event_id: null }];
+    const tree = render();
+    openMenu(eventRow(tree));
+    pick(tree, "Delete");
+    const [, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
+    expect((buttons as AlertButton[]).map((button) => button.text)).toEqual([
+      SERIES_SCOPE_COPY.thisEvent,
+      SERIES_SCOPE_COPY.allUpcoming,
+      "Cancel",
+    ]);
+  });
+
+  it("offers a member their own task's Mark done, and an officer's two separate tasks none", () => {
+    const due = localIsoDate(MOUNTED_AT);
+    permissions = ["members:view", "tasks:manage"];
+    tasks = [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: due,
+        status: "TODO",
+        stored_status: "TODO",
+      },
+      ...["m1", "m2"].map((assignee) => ({
+        id: `t-${assignee}`,
+        title: "Dues form",
+        assignee_id: assignee,
+        created_by: "me",
+        due_date: due,
+        status: "TODO",
+        stored_status: "TODO",
+      })),
+    ];
+    const tree = render();
+    const mine = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Clean the kitchen"),
+    );
+    openMenu(mine);
+    expect(labels(tree)).toEqual([
+      "Mark done",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+    const assigned = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Dues form"),
+    );
+    expect(assigned.props.onLongPress).toBeUndefined();
+  });
+
+  it("puts the menu on the Day screen's event blocks too", () => {
+    permissions = ["*"];
+    const tree = renderDay(START);
+    const block = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.testID).startsWith("time-grid-block-evt-1"),
+    );
+    openMenu(block);
+    expect(labels(tree)).toEqual(["Edit", "Duplicate", "Delete"]);
+  });
+});
+
 describe("Calendar day heading", () => {
   it("opens the picked day's hour grid", () => {
     const tree = render();

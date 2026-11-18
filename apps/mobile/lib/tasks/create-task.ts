@@ -42,6 +42,7 @@ import {
   type TaskWho,
 } from "@repo/validation";
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
+import type { TaskRowModel } from "./board";
 
 export interface NewTaskDraft {
   title: string;
@@ -64,6 +65,11 @@ export interface NewTaskDraft {
   pointsInput: string;
   /** What Mark done needs (#4635); absent reads as None. */
   proofKind?: TaskProofKind;
+  /**
+   * The officer's notes, sent as they are. The form has no field for them;
+   * only a Duplicate carries the original's over (#5492).
+   */
+  description?: string | null;
 }
 
 export interface DuePreset {
@@ -232,6 +238,8 @@ export interface ValidatedNewTask {
   point_reward?: number;
   /** What Mark done needs, when it is more than None (#4635). */
   proof_kind?: TaskProofKind;
+  /** The notes a Duplicate carries over (#5492). */
+  description?: string;
   /**
    * Reference photos' storage paths, in order (#4635): added by the sheet
    * once the picked photos are up, never by {@link validateNewTask}. On an
@@ -280,6 +288,8 @@ export function validateNewTask(
   if (draft.proofKind && draft.proofKind !== "none") {
     body.proof_kind = draft.proofKind;
   }
+  const description = draft.description?.trim();
+  if (description) body.description = description;
   return body;
 }
 
@@ -313,6 +323,104 @@ export function editTargetOfCardTask(task: EditableCardTask): TaskEditTarget {
     storedStatus: task.stored_status ?? null,
     referencePhotos: task.photos.filter((photo) => photo.kind === "reference"),
     proofKind: task.proof_kind,
+  };
+}
+
+/**
+ * A board or Calendar row as the edit sheet opens it, or `null` when the
+ * form can't hold it: it needs an assignee and a day (`taskScreenControls`'
+ * Edit rule).
+ */
+export function editTargetOfRow(row: TaskRowModel): TaskEditTarget | null {
+  if (!row.assigneeId || !row.dueDay) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    assigneeId: row.assigneeId,
+    dueDay: row.dueDay,
+    dueAt: row.dueAt,
+    pointReward: row.pointReward,
+    storedStatus: row.storedStatus,
+    referencePhotos: row.photos.filter((photo) => photo.kind === "reference"),
+    proofKind: row.proofKind,
+  };
+}
+
+/**
+ * What New task opens on for a Duplicate (#5492): the task's words, points,
+ * proof, steps and who, as a new task, as Things 3's and Todoist's Duplicate
+ * copy an item. Not its photos, which would have to go up again, nor anything
+ * that happened to it (done, sent back, confirmed).
+ */
+export interface TaskPrefill {
+  title: string;
+  description: string | null;
+  who: TaskWho | null;
+  pointsInput: string;
+  proofKind: TaskProofKind;
+  subtasks: string[];
+  /** Its own day while that is still ahead, else New task's default. */
+  due: DueChoice;
+  dueTime: string | null;
+}
+
+/**
+ * Who a Duplicate goes to: the same person, or the group a copy was one of,
+ * named as its read names it (the chapter, a role, a chapter group); people
+ * picked one by one are its copies' assignees. `null`, for the officer to
+ * pick, when a group's members can't be read off `copies`.
+ */
+export function duplicateWho(
+  row: TaskRowModel,
+  copies: readonly TaskRowModel[],
+): TaskWho | null {
+  const group = row.group;
+  if (!row.groupId || !group) {
+    return row.assigneeId ? { kind: "person", userId: row.assigneeId } : null;
+  }
+  if (group.audience === "everyone") {
+    return { kind: "each", target: { kind: "chapter" } };
+  }
+  if (
+    (group.audience === "role" || group.audience === "group") &&
+    group.targetId
+  ) {
+    return {
+      kind: "each",
+      target: { kind: group.audience, id: group.targetId },
+    };
+  }
+  const userIds = [
+    ...new Set(
+      copies.flatMap((copy) => (copy.assigneeId ? [copy.assigneeId] : [])),
+    ),
+  ];
+  return userIds.length > 0
+    ? { kind: "each", target: { kind: "people", userIds } }
+    : null;
+}
+
+export function taskDuplicateOf(
+  row: TaskRowModel,
+  copies: readonly TaskRowModel[],
+  now: Date,
+): TaskPrefill {
+  const { dueDate, dueTime } = row.dueDay
+    ? splitDueEntry(
+        dueEntryFromTask({ due_date: row.dueDay, due_at: row.dueAt }),
+      )
+    : { dueDate: "", dueTime: null };
+  // A day that has gone would only be refused; New task's Today stands in.
+  const ahead = dueDate !== "" && dueDate >= localIsoDate(now);
+  return {
+    title: row.title,
+    description: row.description,
+    who: duplicateWho(row, copies),
+    pointsInput: row.pointReward ? String(row.pointReward) : "",
+    proofKind: row.proofKind,
+    subtasks: row.subtasks.map((subtask) => subtask.title),
+    due: ahead ? { kind: "date", date: dueDate } : DEFAULT_DUE_CHOICE,
+    dueTime: ahead ? (dueTime ?? null) : null,
   };
 }
 

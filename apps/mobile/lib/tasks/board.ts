@@ -95,6 +95,8 @@ export interface TaskRowModel {
 /** A group task's summary, as the task reads carry it (`group`). */
 export interface TaskRowGroup {
   audience: string;
+  /** The role or chapter group it went to (`role`, `group`), else `null`. */
+  targetId: string | null;
   targetName: string | null;
   total: number;
   /** Copies marked done, confirmed or still waiting on an officer. */
@@ -109,6 +111,7 @@ function toGroup(value: unknown): TaskRowGroup | null {
   if (!audience) return null;
   return {
     audience,
+    targetId: str(record, "target_id"),
     targetName: str(record, "target_name"),
     total: num(record, "total") ?? 0,
     done: num(record, "done") ?? 0,

@@ -117,6 +117,7 @@ const claimMutate = vi.fn();
 const releaseMutate = vi.fn();
 const assignMutate = vi.fn();
 const deleteMutate = vi.fn();
+const deleteTask = vi.fn(async () => ({}));
 
 const refetch = vi.hoisted(() => ({
   viewer: vi.fn(async () => undefined),
@@ -150,6 +151,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: options?.enabled ? events : undefined };
   },
   useUpdateTaskStatus: () => ({ mutateAsync }),
+  useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
   useChapterRoster: () => ({ data: [] }),
   useOpenTasks: () => ({
     data: openTasks,
@@ -194,6 +196,7 @@ vi.mock("@/components/tasks/mark-done-sheet", async () => {
 const successHaptic = vi.fn();
 vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
+  pressHaptic: () => undefined,
 }));
 
 import TasksScreen from "@/app/(app)/tasks";

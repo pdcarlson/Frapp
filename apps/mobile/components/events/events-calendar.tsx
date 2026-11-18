@@ -16,7 +16,11 @@ import { InlineNote } from "@/components/inline-note";
 import { DayHeading, SectionHeaderSkeleton } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
 import { EventRowFlat } from "@/components/events/event-rows";
-import { CalendarTaskRow } from "@/components/events/calendar-tasks";
+import {
+  CalendarTaskRow,
+  type CalendarTaskMenuFor,
+} from "@/components/events/calendar-tasks";
+import type { ItemMenuHandle } from "@/components/item-actions-menu";
 import { seriesCadenceOf, useRequiredOfViewer } from "@repo/hooks";
 import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -65,6 +69,8 @@ export function EventsCalendar({
   nameOf = fallbackName,
   onOpenTask,
   onOpenDay,
+  eventMenuFor,
+  taskMenuFor,
 }: {
   /** Every occurrence, past ones included (`selectAllEventRows`). */
   events: EventRow[];
@@ -94,6 +100,10 @@ export function EventsCalendar({
   onOpenTask?: (taskId: string) => void;
   /** The picked day's heading, pressed: that day's hour grid. */
   onOpenDay?: (day: Date) => void;
+  /** An event row's long-press menu (`useEventMenu`, #5492). */
+  eventMenuFor?: (event: EventRow) => ItemMenuHandle | null;
+  /** A task row's (`useCalendarTaskMenu`, #5492). */
+  taskMenuFor?: CalendarTaskMenuFor;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -331,6 +341,7 @@ export function EventsCalendar({
                 now={now}
                 isFirst={index === 0}
                 onPress={() => onOpen(event.id)}
+                menu={eventMenuFor?.(event) ?? null}
               />
             ))}
             {dayTasks.map((item, index) => (
@@ -340,6 +351,7 @@ export function EventsCalendar({
                 isFirst={dayEvents.length === 0 && index === 0}
                 nameOf={nameOf}
                 onOpenTask={(taskId) => onOpenTask?.(taskId)}
+                menuFor={taskMenuFor}
               />
             ))}
           </>
