@@ -45,15 +45,44 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
 
   async listChapterIdsWithSwitchOn(
     column: keyof ChapterAiSettingsPatch,
+    onWithoutRow: boolean,
   ): Promise<string[]> {
-    // Paged: every chapter has a row since #5294, all on by default, so
-    // this lists most chapters, and one read stops at the project's max rows.
+    // Paged: one read stops at the project's max rows.
+    if (!onWithoutRow) {
+      return this.pagedSettingsIds(column, true);
+    }
+    // Every chapter, minus those whose stored row turns the switch off. A
+    // trigger seeds every chapter's row (#5294), so this matters only for a
+    // chapter that somehow has none: it reads as on, as one switch read does
+    // (#5511).
+    const [chapters, off] = await Promise.all([
+      fetchAllPages<{ id: string }>(
+        (from, to) =>
+          this.supabase
+            .from('chapters')
+            .select('id')
+            .order('id')
+            .range(from, to),
+        { pageSize: 500 },
+      ),
+      this.pagedSettingsIds(column, false),
+    ]);
+    const switchedOff = new Set(off);
+    return chapters
+      .map((row) => row.id)
+      .filter((chapterId) => !switchedOff.has(chapterId));
+  }
+
+  private async pagedSettingsIds(
+    column: keyof ChapterAiSettingsPatch,
+    value: boolean,
+  ): Promise<string[]> {
     const rows = await fetchAllPages<{ chapter_id: string }>(
       (from, to) =>
         this.supabase
           .from('chapter_ai_settings')
           .select('chapter_id')
-          .eq(column, true)
+          .eq(column, value)
           .order('chapter_id')
           .range(from, to),
       { pageSize: 500 },
