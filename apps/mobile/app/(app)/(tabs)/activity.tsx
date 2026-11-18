@@ -83,7 +83,11 @@ import {
   type ReminderSheetActions,
 } from "@/components/activity/activity-sheet";
 import { NudgeCard } from "@/components/activity/nudge-card";
-import { activityNudgeAskPrompt, withoutWeekNext } from "@/lib/activity/nudge";
+import {
+  activityNudgeAskPrompt,
+  nudgeShowsRow,
+  withoutWeekNext,
+} from "@/lib/activity/nudge";
 import { useActivitySnoozeMenu } from "@/components/activity/activity-snooze";
 import { RecapCard, recapDismissal } from "@/components/activity/recap-card";
 import { ReviewCard } from "@/components/activity/review-card";
@@ -463,7 +467,12 @@ export default function ActivityScreen() {
   useEffect(() => {
     if (askDraft !== null) askRef.current?.present();
   }, [askDraft]);
+  // A target this build can't open (a newer server's, or one with no id)
+  // waves the card off rather than leaving a button that does nothing.
   const openNudge = (item: ActivityNudge) => {
+    if (!openNudgeTarget(item)) nudgeActions.dismiss(item);
+  };
+  const openNudgeTarget = (item: ActivityNudge): boolean => {
     const id = item.target_id;
     switch (item.target_type) {
       case "task": {
@@ -474,39 +483,46 @@ export default function ActivityScreen() {
         // Past the read's cap, or finished since: the board has every task.
         if (row) open(row);
         else router.push("/tasks");
-        return;
+        return true;
       }
       case "event":
-        if (id) router.push({ pathname: "/event-details", params: { id } });
-        return;
+        if (!id) return false;
+        router.push({ pathname: "/event-details", params: { id } });
+        return true;
       case "message":
-        if (item.channel_id && id) {
-          router.push({
-            pathname: "/chat-thread",
-            params: { channelId: item.channel_id, focusMessageId: id },
-          });
-        }
-        return;
+        if (!item.channel_id || !id) return false;
+        router.push({
+          pathname: "/chat-thread",
+          params: { channelId: item.channel_id, focusMessageId: id },
+        });
+        return true;
       case "channel":
-        if (id) {
-          router.push({ pathname: "/chat-thread", params: { channelId: id } });
-        }
-        return;
+        if (!id) return false;
+        router.push({ pathname: "/chat-thread", params: { channelId: id } });
+        return true;
       case "review": {
-        // The oldest waiting, where the member confirms or approves it.
+        // The oldest waiting, where the member confirms or approves it. A
+        // snoozed one isn't on the card, so it opens from the whole read.
         const rows = review?.rows ?? [];
-        const row = rows.find((r) => id && r.key.endsWith(`:${id}`)) ?? rows[0];
+        const row =
+          rows.find((r) => id !== null && r.key.endsWith(`:${id}`)) ??
+          (activity.data && id
+            ? findActivityTaskRow(activity.data, id, new Date())
+            : null) ??
+          rows[0];
         if (row) open(row);
-        return;
+        else router.push("/tasks");
+        return true;
       }
       case "meeting":
-        if (id) router.push({ pathname: "/minutes-details", params: { id } });
-        return;
+        if (!id) return false;
+        router.push({ pathname: "/minutes-details", params: { id } });
+        return true;
       case "study":
         router.push("/study");
-        return;
+        return true;
       default:
-        return;
+        return false;
     }
   };
 
@@ -658,10 +674,13 @@ export default function ActivityScreen() {
             rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
             onActed={reread}
             onClosed={() => {
+              const closedKey = openedKey;
               setOpenedKey(null);
               if (rereadOnClose()) reread();
-              // The member may have just done what the card asked.
-              if (nudge?.card) void nudgeActions.recheck();
+              // The member may have just done what the card asked: ask again
+              // only when the sheet was the card's own item, since every
+              // other sheet leaves the card as it was.
+              if (nudgeShowsRow(nudge, closedKey)) void nudgeActions.recheck();
             }}
             linkActions={linkActions}
             reminderActions={reminderActions}

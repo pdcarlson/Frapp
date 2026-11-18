@@ -207,8 +207,6 @@ const standing = vi.hoisted(() => ({
 /** The Activity card (#5464): what the server sent, and what the card did. */
 const nudge = vi.hoisted(() => ({
   ask: false,
-  /** The chapter's nudges switch with the member's `ai:use` (`useAiSurfaces`). */
-  nudges: false,
   data: null as null | Record<string, unknown>,
   dismiss: vi.fn(),
   markSeen: vi.fn(),
@@ -218,7 +216,6 @@ const nudge = vi.hoisted(() => ({
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => ({
     ask: nudge.ask,
-    nudges: nudge.nudges,
     ready: true,
     available: true,
   }),
@@ -447,7 +444,6 @@ describe("Activity screen (#3897)", () => {
     writes.fix.mockReset();
     writes.writeBlockedReason = null;
     nudge.ask = false;
-    nudge.nudges = false;
     nudge.data = null;
     nudge.dismiss.mockReset();
     nudge.markSeen.mockReset();
@@ -1232,6 +1228,67 @@ describe("Activity screen (#3897)", () => {
       expect(nudge.dismiss).toHaveBeenCalledWith(
         expect.objectContaining({ kind: "task_praise" }),
       );
+    });
+
+    it.each([
+      [
+        "a sign-up, at its message",
+        { target_type: "message", target_id: "msg-1", channel_id: "ch-1" },
+        {
+          pathname: "/chat-thread",
+          params: { channelId: "ch-1", focusMessageId: "msg-1" },
+        },
+      ],
+      [
+        "a mention, in its channel",
+        { target_type: "channel", target_id: "ch-1", channel_id: "ch-1" },
+        { pathname: "/chat-thread", params: { channelId: "ch-1" } },
+      ],
+      [
+        "new minutes",
+        { target_type: "meeting", target_id: "m-1" },
+        { pathname: "/minutes-details", params: { id: "m-1" } },
+      ],
+      ["the study goal", { target_type: "study", target_id: null }, "/study"],
+    ])("opens %s", (_label, target, expected) => {
+      nudge.data = { card: { ...CARD, ...target }, tray: [] };
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith(expected);
+    });
+
+    it("waves off a card this build can't open, rather than doing nothing", () => {
+      nudge.data = {
+        card: { ...CARD, target_type: "from_the_future" },
+        tray: [],
+      };
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).not.toHaveBeenCalled();
+      expect(nudge.dismiss).toHaveBeenCalledWith(
+        expect.objectContaining({ subject_key: "event-9" }),
+      );
+    });
+
+    it("turns the cards off from More", () => {
+      nudge.data = { card: CARD, tray: [] };
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-more").props.onPress();
+      });
+      const buttons = alert.mock.calls.at(-1)?.[2] ?? [];
+      act(() => buttons.find((b) => b.text === "Turn these off")?.onPress?.());
+      expect(nudge.setEnabled).toHaveBeenCalledWith(false);
+      alert.mockRestore();
     });
 
     it("offers Ask about this only where the member has Ask", () => {

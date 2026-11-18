@@ -23,6 +23,22 @@ export function withoutWeekNext(
 }
 
 /**
+ * Whether a sheet that just closed was for something the card or its tray
+ * names, so the card is worth asking for again (the member may have done
+ * it). Any other sheet leaves the card as it was, and asking costs a read of
+ * everything Activity holds.
+ */
+export function nudgeShowsRow(
+  data: ActivityNudgeCard | null,
+  rowKey: string | null,
+): boolean {
+  if (!data?.card || rowKey === null) return false;
+  return [data.card, ...data.tray].some(
+    (item) => item.target_id !== null && rowKey.endsWith(`:${item.target_id}`),
+  );
+}
+
+/**
  * What "Ask about this" puts in Ask's box for the member to send or change:
  * a task's own question (#4781), or the card's thing by name.
  */
