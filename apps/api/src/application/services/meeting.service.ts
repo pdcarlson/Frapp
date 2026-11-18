@@ -14,6 +14,7 @@ import {
   STANDARDS_MEETING_TYPE,
   isMeetingType,
   normalizeMeetingSections,
+  eventSeriesKey,
   readMeetingContent,
   type MeetingContent,
   type MeetingSectionKey,
@@ -38,6 +39,16 @@ import { isInvited, type EventViewer } from './event-role-targeting';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import { chunkIds } from '#domain/utils/chunk-ids';
+
+/** A Minutes list row's facts beyond the row (`MeetingService.listFacts`). */
+export interface MeetingListFacts {
+  series_key: string | null;
+  series_rule: string | null;
+  decision_count: number;
+  action_item_count: number;
+  recorded: boolean;
+}
 
 /**
  * What a feature does each time posted minutes are saved: when they are
@@ -185,6 +196,83 @@ export class MeetingService {
   }
 
   /**
+   * The Minutes list (#5290): the minutes the viewer may read, as `list`,
+   * with each row's facts (`listFacts`). The events the read rule already
+   * loaded are reused, so the list reads each event once.
+   */
+  async listWithFacts(
+    chapterId: string,
+    viewerId: string,
+    eventId?: string,
+  ): Promise<{ rows: Meeting[]; facts: Map<string, MeetingListFacts> }> {
+    const all = eventId
+      ? await this.meetingRepo
+          .findByEvent(chapterId, eventId)
+          .then((row) => (row ? [row] : []))
+      : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT);
+    const { rows, events } = await this.readableWithEvents(
+      chapterId,
+      viewerId,
+      all,
+    );
+    const facts = await this.listFacts(chapterId, viewerId, rows, events);
+    return { rows, facts };
+  }
+
+  /**
+   * What the Minutes list shows on each row beyond the row itself (#5290):
+   * the series its event belongs to (`eventSeriesKey`, the rule the apps'
+   * Events lists key a series by) with the first event's repeat rule, how
+   * many decisions and action items it holds, and whether a recording was
+   * used. `known` holds events already read for this viewer; only the rest
+   * are read, then the series' first events, then the drafts' recordings. An
+   * event the viewer can't see (an editor reading every row) gives no series.
+   */
+  async listFacts(
+    chapterId: string,
+    viewerId: string,
+    rows: readonly Meeting[],
+    known: ReadonlyMap<string, Event> = new Map(),
+  ): Promise<Map<string, MeetingListFacts>> {
+    const events = new Map(known);
+    const unread = rows.flatMap((row) =>
+      row.event_id && !events.has(row.event_id) ? [row.event_id] : [],
+    );
+    for (const event of await this.visibleEvents(chapterId, viewerId, unread)) {
+      events.set(event.id, event);
+    }
+    const headIds = [...events.values()].flatMap((event) =>
+      event.parent_event_id && !events.has(event.parent_event_id)
+        ? [event.parent_event_id]
+        : [],
+    );
+    for (const head of await this.visibleEvents(chapterId, viewerId, headIds)) {
+      events.set(head.id, head);
+    }
+    const drafts = rows.flatMap((row) =>
+      row.status === 'draft' ? [row.id] : [],
+    );
+    const recorded = await this.meetingRepo.findRecordedIds(chapterId, drafts);
+
+    const facts = new Map<string, MeetingListFacts>();
+    for (const row of rows) {
+      const event = row.event_id ? events.get(row.event_id) : undefined;
+      const seriesKey = event ? eventSeriesKey(event) : null;
+      const content = readMeetingContent(row.content);
+      facts.set(row.id, {
+        series_key: seriesKey,
+        series_rule: seriesKey
+          ? (events.get(seriesKey)?.recurrence_rule ?? null)
+          : null,
+        decision_count: content.decisions.length,
+        action_item_count: content.action_items.length,
+        recorded: row.transcript !== null || recorded.has(row.id),
+      });
+    }
+    return facts;
+  }
+
+  /**
    * The newest posted minutes the viewer may read for meetings held since
    * `since`, at most `limit`. The same read rule as `list`, over a read that
    * does not load the chapter's whole history (Ask's opening, #4700).
@@ -230,7 +318,37 @@ export class MeetingService {
     viewerId: string,
     rows: Meeting[],
   ): Promise<Meeting[]> {
-    if (rows.length === 0) return [];
+    return (await this.readableWithEvents(chapterId, viewerId, rows)).rows;
+  }
+
+  /**
+   * The events among `ids` the viewer may read, in `chunkIds` reads, so a
+   * chapter's whole list never builds a URL PostgREST refuses (414).
+   */
+  private async visibleEvents(
+    chapterId: string,
+    viewerId: string,
+    ids: readonly string[],
+  ): Promise<Event[]> {
+    const found: Event[] = [];
+    for (const chunk of chunkIds([...new Set(ids)])) {
+      found.push(
+        ...(await this.events.findVisibleByIds(chunk, chapterId, viewerId)),
+      );
+    }
+    return found;
+  }
+
+  /**
+   * `readableRows`, with the events it read to decide: the ones the viewer
+   * may see, which the Minutes list's facts reuse.
+   */
+  private async readableWithEvents(
+    chapterId: string,
+    viewerId: string,
+    rows: Meeting[],
+  ): Promise<{ rows: Meeting[]; events: Map<string, Event> }> {
+    if (rows.length === 0) return { rows: [], events: new Map() };
     const access = await this.access(chapterId, viewerId);
     // Only the events these rows point at, never the whole calendar: a
     // `meetings:edit` holder reads every row anyway.
@@ -242,14 +360,17 @@ export class MeetingService {
             ? [row.event_id]
             : [],
         );
-    const visibleEventIds = new Set(
-      (await this.events.findVisibleByIds(pointedAt, chapterId, viewerId)).map(
-        (event) => event.id,
+    const events = new Map(
+      (await this.visibleEvents(chapterId, viewerId, pointedAt)).map(
+        (event) => [event.id, event],
       ),
     );
-    return rows.filter((row) =>
-      this.readable(row, viewerId, access, (id) => visibleEventIds.has(id)),
-    );
+    return {
+      rows: rows.filter((row) =>
+        this.readable(row, viewerId, access, (id) => events.has(id)),
+      ),
+      events,
+    };
   }
 
   /**

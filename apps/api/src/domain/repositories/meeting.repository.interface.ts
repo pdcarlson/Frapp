@@ -47,6 +47,15 @@ export interface IMeetingRepository {
     limit: number,
   ): Promise<Meeting[]>;
   /**
+   * Of `meetingIds`, the minutes a recording was used for: a recording row
+   * that hasn't failed. A recording that went to posted minutes leaves its
+   * transcript on them; this covers drafts, whose recording is its own row.
+   */
+  findRecordedIds(
+    chapterId: string,
+    meetingIds: readonly string[],
+  ): Promise<Set<string>>;
+  /**
    * Resolves to `null` when the event already has minutes (the unique index
    * on `event_id` won), so the caller can answer with the ones that exist.
    */

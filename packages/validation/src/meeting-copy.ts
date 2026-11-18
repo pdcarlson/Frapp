@@ -1,6 +1,5 @@
 import {
   MEETING_SECTIONS,
-  meetingTypeLabel,
   type MeetingSectionKey,
   type MeetingType,
   type MeetingVote,
@@ -51,18 +50,6 @@ export function meetingDueLabel(
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return "";
   return meetingDayLabel(new Date(year, month - 1, day, 12).toISOString(), now);
-}
-
-export function meetingTitleLine(meeting: {
-  meeting_type: string;
-  other_label?: string | null;
-  event_start_time: string;
-}): string {
-  const type = meetingTypeLabel(
-    meeting.meeting_type as MeetingType,
-    meeting.other_label,
-  );
-  return `${type} · ${meetingDayLabel(meeting.event_start_time)}`;
 }
 
 export function meetingSectionLabel(key: MeetingSectionKey): string {
@@ -119,6 +106,28 @@ export const MEETING_LIST_COPY = {
   loadFailedBody: "Check your connection and try again.",
   /** A draft that isn't the reader's own names whose it is. */
   draftOf: (name: string) => `${name}'s draft`,
+  /** The list's grouping and finding (#5290). */
+  yourDrafts: "Your drafts",
+  search: "Search minutes",
+  allTypes: "All",
+  types: "Meeting types",
+  series: "Series",
+  nothingMatches: "No minutes match.",
+  newMinutes: "New minutes",
+  newMinutesHint: "Records a meeting, or starts minutes to type.",
+  recorded: "Recorded",
+  decisions: (count: number) =>
+    count === 1 ? "1 decision" : `${count} decisions`,
+  actionItems: (count: number) =>
+    count === 1 ? "1 action item" : `${count} action items`,
+  minutesCount: (count: number) =>
+    count === 1 ? "1 meeting" : `${count} meetings`,
+  lastOn: (day: string) => `last ${day}`,
+  /** The series screen (#5290). */
+  seriesActions: "Action items",
+  seriesActionsFrom: (day: string) => `from ${day}`,
+  seriesActionsNone: "No action items in the latest minutes.",
+  noOwner: "Nobody named",
   /** Present, Late and Excused: who checked in to the meeting's event. */
   present: "Present",
   late: "Late",

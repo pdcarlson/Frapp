@@ -1244,3 +1244,24 @@ export function zonedDateAndTime(
     time: `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)}`,
   };
 }
+
+/**
+ * Which repeating series an event belongs to: its first event's id. A series
+ * is stored as rows, the first carrying the rule and every generated
+ * occurrence pointing at it through `parent_event_id`. `null` for a one-time
+ * event, and for an occurrence detached into a standalone event (no parent,
+ * no rule). The API's Minutes list (#5290) and the apps' Events lists key a
+ * series by this one rule.
+ */
+export function eventSeriesKey(event: {
+  id?: unknown;
+  recurrence_rule?: unknown;
+  parent_event_id?: unknown;
+}): string | null {
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() !== "" ? value : null;
+  const parent = text(event.parent_event_id);
+  if (parent) return parent;
+  const id = text(event.id);
+  return id && text(event.recurrence_rule) ? id : null;
+}

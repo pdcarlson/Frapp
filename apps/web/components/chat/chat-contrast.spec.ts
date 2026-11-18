@@ -263,6 +263,20 @@ describe("reaction chips", () => {
     }
   });
 
+  it("keeps Frapp's crest in the @ list readable on its tint for every chapter seed", () => {
+    // `mention-list.tsx` draws the crest (`text-primary`) on an
+    // `bg-accent-subtle` disc (#5476). The crest is a glyph, so the floor is
+    // the non-text one; neither the accent engine nor any other spec holds
+    // these two roles to a ratio.
+    for (const seed of SEEDS) {
+      const roles = accentRolesFor(seed);
+      expect(
+        ratio(roles["--primary"]!, roles["--accent-subtle"]!),
+        `${seed} @ list crest`,
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    }
+  });
+
   it("keeps the neutral chip's text AA on the elevated step", () => {
     expect(ratio(TEXT.mutedForeground, SURFACE.popover)).toBeGreaterThanOrEqual(
       AA_TEXT,

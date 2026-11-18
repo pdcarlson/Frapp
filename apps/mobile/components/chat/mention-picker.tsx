@@ -26,7 +26,7 @@ import { MemberAvatar } from "@/components/member-avatar";
 import { NavGlyph } from "@/components/nav-glyph";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/more/narrow";
-import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The `@` list (#3825, #3835): who a field's `@` offers and the list it
@@ -200,9 +200,13 @@ export function MentionPicker({
             pressed ? styles.mentionRowPressed : null,
           ]}
         >
-          {/* The crest in the chapter's colour, as the Ask Frapp bar
-                  draws it (`ask-bar.tsx`). */}
-          <View style={styles.mentionAvatar} testID="mention-ask-glyph">
+          {/* The crest in the chapter's colour on the chapter's tint, as
+                  the Ask Frapp bar draws its arrow (`ask-bar.tsx`), so the
+                  first row reads as Frapp at a glance (#5476). */}
+          <View
+            style={[styles.mentionAvatar, { backgroundColor: tint(accent) }]}
+            testID="mention-ask-glyph"
+          >
             <FrappCrest height={MENTION_ROLE_GLYPH_SIZE} color={accent} />
           </View>
           <Text numberOfLines={1} style={styles.mentionName}>

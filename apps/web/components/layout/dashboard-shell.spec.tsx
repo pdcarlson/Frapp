@@ -195,6 +195,14 @@ vi.mock("@/components/onboarding/onboarding-tour", () => ({
 vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
   MeetFrappAiHost: () => null,
 }));
+// Whether this member has Ask (`ask-host.tsx`); null, as for one without it,
+// unless a test says otherwise.
+const askEntry = vi.hoisted(() => ({
+  current: null as { open: boolean; openWith: () => void } | null,
+}));
+vi.mock("@/components/ask/ask-host", () => ({
+  useAskEntry: () => askEntry.current,
+}));
 vi.mock("@/components/layout/notifications-popover", () => ({
   NotificationsPopover: ({ children }: { children: unknown }) => children,
 }));
@@ -215,6 +223,7 @@ import {
 } from "@/components/shared/connection-pill-focus";
 
 afterEach(() => {
+  askEntry.current = null;
   mockPathname.value = "/events";
   mockPermissions.value = [];
   mockUnread.value = [];
@@ -500,9 +509,9 @@ describe("DashboardShell", () => {
     expect(
       screen.getByRole("button", { name: /account menu/i }),
     ).toBeInTheDocument();
-    // Paul, 2026-11-13: no Ask button in the corner of the top bar. Its
-    // entry is the find field itself (#4904, `find-bar.spec.tsx`), so the
-    // field is the only control here that could name Ask.
+    // Paul, 2026-11-13: no Ask button in the corner of the top bar, and
+    // since #5476 (2026-11-18) not in the field either: Ask floats at the
+    // bottom of the page (the next test).
     expect(
       within(banner)
         .queryAllByRole("button", { name: /ask/i })
@@ -563,6 +572,29 @@ describe("DashboardShell", () => {
    * of chat itself: the padding just reappears around a layout that still
    * "works".
    */
+  it("floats Ask Frapp's bar at the bottom of a tool page, for a member with Ask only (#5476)", () => {
+    mockPathname.value = "/events";
+    const view = render(<DashboardShell>content</DashboardShell>);
+    expect(screen.queryByRole("button", { name: /^Ask Frapp/ })).toBeNull();
+    let page = view.container.querySelector("[data-tool-page]") as HTMLElement;
+    expect(page.className).not.toContain("pb-24");
+    view.unmount();
+
+    askEntry.current = { open: false, openWith: vi.fn() };
+    const { container } = render(<DashboardShell>content</DashboardShell>);
+    // Named by its own words (WCAG 2.5.3).
+    const bar = screen.getByRole("button", { name: "Ask Frapp anything" });
+    expect(screen.getByRole("banner")).not.toContainElement(bar);
+    const column = container.querySelector("[data-tool-column]") as HTMLElement;
+    expect(column).toContainElement(bar);
+    // The page reserves room, so its last row scrolls clear of the bar.
+    page = container.querySelector("[data-tool-page]") as HTMLElement;
+    expect(page.className).toContain("pb-24");
+    // And tells a control it pins to its own bottom how far to rise.
+    expect(page.className).toContain("[--ask-bar-room:4.5rem]");
+    expect(page).not.toContainElement(bar);
+  });
+
   it("insets and scrolls a tool page, inside the one main landmark", () => {
     mockPathname.value = "/events";
     const { container } = render(<DashboardShell>content</DashboardShell>);
@@ -1217,6 +1249,18 @@ describe("DashboardShell", () => {
       render(<DashboardShell>events</DashboardShell>);
       fireEvent.keyDown(screen.getByRole("separator"), { key: "Enter" });
       expect(document.cookie).toContain("frapp_chat_split=0.500");
+    });
+
+    it("floats Ask Frapp's bar on the home view too, for a member with Ask (#5476)", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/chat";
+      askEntry.current = { open: false, openWith: vi.fn() };
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      const home = container.querySelector("[data-chapter-home]")!;
+      const bar = screen.getByRole("button", { name: "Ask Frapp anything" });
+      expect(home.parentElement).toContainElement(bar);
     });
 
     it("draws the chapter mark on the home view", () => {

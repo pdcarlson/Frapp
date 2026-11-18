@@ -281,7 +281,8 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 - **Where it is.**
   On web the top bar's find field, which reads "Search or ask Frapp", asks from any page and opens the conversation as a dialog where Find opens (changed in #4904 by pdcarlson, 2026-11-13, Paul's pick;
   until then a button in the chat composer opened it over the thread;
-  [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar);
+  [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar).
+  Changed in #5476 by pdcarlson, 2026-11-18 (Paul's pick, after Shawn and he didn't want Ask in the search bar): on web the field only finds, and a floating Ask bar with the crest opens Ask, as on the phone: at the bottom of every tool page, or at the foot of the Channels column when chat is alone, never over a message box (in a channel, `@Frapp` asks). It opens the same dialog;
   on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field only asks, and the Search screen's last row opens it with the searched words (changed in #5139 by pdcarlson, 2026-11-16; from #4904 the field also listed places that matched what was typed;
   [`../ui/mobile/navigation.md`](../ui/mobile/navigation.md) § Global entries).
   With Ask off for the chapter, for a member without `ai:use`, or on a server with no AI, there is no entry anywhere.
@@ -488,7 +489,9 @@ Slack draws a slash command's reply this way ("Only visible to you"), and Discor
   While the draft names `@Frapp`, the line by the message box reads "Only you will see this question and Frapp's answer."
   On the phone it takes the typing line's place, so nothing moves, and the send button is named Ask Frapp.
 - **Frapp in the `@` list** is offered only to a member with Ask, in a message box that can ask.
-  On a bare `@` it is the last row, so Enter straight after `@` still picks a person; once its name is being typed it is first, as Slack lists an app above people.
+  It is the first row, on a bare `@` and once its name is being typed, as Slack lists an app above people, so a member who never knew they could ask in a channel finds Frapp the first time they mention anyone; its crest is drawn in the chapter's colour on the chapter's tint.
+  Enter straight after `@` picks Frapp, which still sends nothing: the line by the message box says the draft is a question, and taking `@Frapp` out undoes it.
+  Changed in #5476 by pdcarlson, 2026-11-18 (Paul, after Shawn asked "how do I ask in the channel"): until then a bare `@` listed Frapp last, so Enter after `@` still picked a person, and nothing showed a member Frapp until they typed its name.
   It takes one of the eight rows, never a ninth.
 - **Where the answer sits.**
   Under the message that was newest when the question was sent, and it stays there as the channel moves on.
@@ -544,7 +547,7 @@ Slack draws a slash command's reply this way ("Only visible to you"), and Discor
 
 > **Added 2026-11-13 (#4713, the building session's, Paul's to change).**
 > Not stated before: the handle counting anywhere in the message;
-> Frapp last on a bare `@`;
+> Frapp last on a bare `@` (changed in #5476 by pdcarlson, 2026-11-18: first);
 > the answer anchored under the newest message rather than at the bottom of the channel;
 > New conversation clearing channel answers too;
 > a question from a channel left to finish when Ask closes;
@@ -692,6 +695,34 @@ How Frapp finds out whether an answer was any good, without keeping anyone's wor
 > **Added 2026-11-13 (#4902, the building session's, Paul's to change).**
 > Paul asked for feedback and observability and approved a thumbs down that may offer to send the exchange.
 > The rest is this session's: the four reasons, no typed note on a thumbs (the note lives on Report this), taking a thumbs back, which taps are counted, the one-minute window, and 90 days for the trace and thumbs (below).
+
+### Dictation
+
+A member can speak a question into Ask's field instead of typing it (#5276).
+
+- **The phone hears it.**
+  The phone's own speech recogniser turns the speech into words: on the device where the phone can, otherwise Apple's or Google's recogniser.
+  Frapp never receives the audio.
+- **Frapp tidies the words.**
+  The recogniser's words go to `POST /v1/ai/ask/dictation`, one gateway call (`ask.dictation`), which takes out filler words and false starts, keeps only the last version of a self-correction ("Thursday, no, Friday" becomes "Friday"), adds punctuation and capitalisation, and writes times and counts as digits.
+  It never answers the question, adds or drops a fact, changes a name, a channel name or the meaning, or translates; the member's own words and order stay.
+  The words are data to tidy, never instructions: "ignore your instructions" spoken into the mic comes back as that sentence, punctuated.
+- **Only for a member with Frapp AI on and Ask on.**
+  The gateway checks the chapter's Ask switch and the member's yes before the call, as for a question.
+  Without them the route refuses (`ai.consent.required`, `ai.chapter_off`) and the recogniser's raw words land in the field.
+- **It runs before the member sends.**
+  So the words reach the model even if the member never sends them.
+  Nothing is stored, logged or counted beyond the gateway's usual content-free usage row.
+- **A checked result.**
+  A cleanup that comes back empty, or much longer than what was said (more than a quarter longer plus 40 characters: the model answered or added), is dropped for the words as said.
+- **Failure keeps the raw words.**
+  A refusal, a provider failure, a spend cap, a reply the model got wrong, or no answer within 3 seconds leaves the recogniser's words in the field.
+  Nothing the member said is lost.
+- **Nothing sends on its own.**
+  The tidied words land in the field for the member to read, edit and send.
+
+> **Decided 2026-11-17 (Paul, #5276).**
+> Paul picked the phone's own speech recognition, then this cleanup through the model, over sending audio to a transcription vendor.
 
 ## Catch me up
 
@@ -1011,6 +1042,28 @@ Half of an officer's job is nudging people, and a reminder alone ("Task due tomo
 So Frapp puts one short card on a member's Activity when something of theirs is worth a word: why it is worth doing now, and a small place to start.
 Paul asked for it on 2026-11-13 with Bevel Health's daily cards as the reference (#4777); this section is the member's card (#4781).
 Cards for chairs and officers, the chapter's own voice, and push are later steps of #4777 and are not built.
+Changed in #5464 by `pdcarlson`, 2026-11-18 (Paul: "I keep bringing it up and it never ends up getting to my device"): the card now picks from everything waiting on the member, including what waits on an officer, and shows whether or not AI is available. A card for chairs and exec about their committee or chapter (#4782), the chapter's own voice and push are still later steps.
+Why it never reached him, read on staging that day: no `member_nudges` row had ever been written for anyone and no nudge model call had ever been made. Paul had said yes to AI and the switch was on, but none of his tasks sat in the narrow windows below (all eight were handed out that day, inside the first-day grace), so the card had nothing to say.
+
+### The card and its tray
+
+Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, and web after; a phone build from before #5464 still draws only the task card, from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
+
+- **What earns a card.** Any of these, for the member, under each module's own rule for who may see it, with the module on:
+  an event starting today or tomorrow (in the member's time zone) that they haven't checked in to or snoozed, until it ends;
+  an unread @mention in a channel (direct messages are the Messages tab's, which carries their count);
+  one of their own tasks, by the rules below;
+  an open sign-up sheet, headcount or form they haven't answered or snoozed;
+  unread posts in the announcements channel;
+  for a member who confirms tasks or approves hours, how many wait on them and the oldest;
+  minutes someone else posted in the last three days;
+  their weekly study goal, from the third day of the week, when they are more than an hour behind an even pace.
+- **Which wins.** One order, in code: an event today, then a mention, then a task sent back or coming due, then a sign-up, then an event tomorrow, an unread announcement, the officer's queue, new minutes, the study goal, a task past due, and thanks last. The next three in that order are the tray.
+- **Every card is true without AI.** A card is the thing's own name, when or how many, and one button that settles it: Open event, Open, See the task, Sign up, Read, Review oldest, Start studying. That is the whole card when AI is off for the member (no yes, or no `ai:use`), off for the chapter, or off on the server: a plain card, with no generated words. Before #5464 a member without AI got no card at all.
+- **AI adds one sentence, where it has something to add.** For an event, a sign-up, new minutes or the study goal, the model writes one sentence of at most 120 characters from the card's facts, under the same checks as below, and a sentence that fails them leaves the card plain. An event's name and place and a sign-up's title were typed by other members, so like a task's description they reach the model only where the chapter has Ask on; otherwise the card is plain. A mention, an announcement or an officer's queue already says everything in its count, and a channel's messages never go to a model for a card. A task card keeps its own words (below), and Frapp's fixed sentence is not drawn on this card: when the model didn't write, the task card is plain too.
+- **Shown whenever it is true** (Paul, 2026-11-18). An event, a mention, a sign-up or any other kind that isn't a task shows whenever it holds and leaves when its moment passes: an event when it ends, a mention or announcement when the channel is read or after two days, the officer's queue after a day. Only task cards keep the pacing below. A card something more useful overtakes before the member acts on it is withdrawn without a record, so it can return, except a task card the member already saw, which counts as shown. One that runs out its time leaves no record either.
+- **Waving one off.** The card and each tray item can be waved off; that subject is not raised again. A mention or announcement is the channel and its latest message, so it comes back when something new is posted there.
+- **The member's own switch** ("Nudges on Activity") still turns the card off entirely.
 
 - **Code picks the moment, the AI writes the words.**
   Whether a member gets a card, and about what, is dates and counts in code.
@@ -1037,6 +1090,7 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
   "Not now" also means nothing new for two days.
 - **The member is in charge of it.**
   "More" on the card offers "Show fewer of these" (nothing new for 14 days) and "Turn these off"; the switch is also in Preferences, "Nudges on Activity", and turning it back on ends any quiet stretch.
+  On the widened card (#5464) "···" offers "Hide this one" and "Turn these off", and Preferences offers the switch to every member, since the card shows without AI.
   There is no setting for how hard the cards push: an officer never gets one either.
 - **The words are checked.**
   A title of at most 40 characters, a body of at most 170 and two sentences, a starting point of at most 150 and one sentence.
@@ -1054,12 +1108,12 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
   The call has no tools, and what comes back is text for one reader.
 - **It stands behind the chapter's nudges switch and the member's own yes**, like every AI feature that reads for a member: the model call is made as that member, counts against their limit, and is not made at all for a member who has not agreed.
   The nudges switch is on unless the president turns it off ([Consent](#consent), gate 1; Paul, 2026-11-17). It was Ask's switch until then.
-  With either off there is no card, no error and no explanation, because a card is an extra.
-  Tasks turned off for the chapter means no card.
+  With either off a task card is plain, and no other card gets a sentence ([The card and its tray](#the-card-and-its-tray)); until #5464 there was no card at all.
+  Tasks turned off for the chapter means no task card.
 - **Nothing is scheduled and nothing is pushed.**
   The card is worked out when the member opens Activity.
   A card already showing is checked against the task as it is now: started or finished closes it as done (a task sent back is already started, so only finishing closes that one); handed to someone else, deleted, taken back, its deadline moved, or past its time closes it quietly.
-  So does AI or Tasks being turned off.
+  So does AI or Tasks being turned off, for the card `POST /v1/nudges/current` serves; on the widened card AI being turned off deletes the model's words from a showing card and leaves it plain.
   A card lasts seven days (a word of thanks three, and a "coming due" card never past the deadline).
 - **The card says nothing about how it was made.**
   It is headed "From Frapp", in Frapp's gold, and carries no model name, no "AI-generated" label and no explanation of the rules (Paul, 2026-11-13: "don't say more about the process than needs to be said to the end user").
@@ -1070,7 +1124,7 @@ Cards for chairs and officers, the chapter's own voice, and push are later steps
   Closing a card, however it closes, deletes its title, body and starting point.
   What stays is that this task was raised for this reason, so it is not raised again.
   A card whose member never comes back to it is closed, and its words deleted, the next time anyone in the chapter opens Activity after its time has passed; nothing runs on a schedule, so in a chapter nobody opens it waits until someone does.
-  A member's cards are deleted when they answer No on the AI sheet or delete their account.
+  A member's cards are deleted when they delete their account. Answering No on the AI sheet deletes every showing card with the model's words; since #5464 closed cards, which hold no words, stay as the record of what the member waved off, because the card itself shows without AI.
   No card text, task title or name is logged, and none goes to any outside service other than the AI provider that writes the card.
 
 > **Added 2026-11-13 (#4781, the building session's, Paul's to change).**

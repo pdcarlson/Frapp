@@ -143,6 +143,14 @@ export const AskRequestSchema = z.object({
 export type AskRequest = z.infer<typeof AskRequestSchema>;
 
 /**
+ * Dictation in Ask's field (#5276, `ai.md` § Ask Frapp, Dictation): the
+ * phone's own recogniser turns speech into raw words, and
+ * `POST /v1/ai/ask/dictation` hands them back tidied (fillers and false
+ * starts out, punctuation in). As long as a question, since it becomes one.
+ */
+export const ASK_DICTATION_MAX_LENGTH = ASK_QUESTION_MAX_LENGTH;
+
+/**
  * What the server is doing while a turn works, each named when it happens
  * (`ai.md` § Ask Frapp, #4701):
  *

@@ -365,6 +365,32 @@ export class MeetingSummaryDto {
   @ApiProperty({ format: 'date-time' }) updated_at: string;
 }
 
+/**
+ * One row of the Minutes list (`GET /v1/meetings`): the summary and what the
+ * list shows on it (#5290).
+ */
+export class MeetingListItemDto extends MeetingSummaryDto {
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see.",
+  })
+  series_key: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series.",
+  })
+  series_rule: string | null;
+  @ApiProperty({ minimum: 0 }) decision_count: number;
+  @ApiProperty({ minimum: 0 }) action_item_count: number;
+  @ApiProperty({ description: 'A recording was used for these minutes.' })
+  recorded: boolean;
+}
+
 /** A meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */
 export class MeetingDto extends MeetingSummaryDto {
   @ApiProperty({ type: String, format: 'date-time', nullable: true })

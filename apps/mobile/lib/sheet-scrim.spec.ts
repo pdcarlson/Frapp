@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 /**
  * Every presented sheet draws the scrim (`spec/ui/mobile/patterns.md`
  * § Bottom sheets): `backdropComponent={SheetScrim}`, from
- * `components/sheet-scaffold.tsx`.
+ * `components/sheet-scaffold.tsx`. The one exception is the long-press
+ * message menu, whose `SheetLightScrim` leaves the message it acts on
+ * readable (#5479); the guard below keeps it to that sheet.
  *
  * Half the app's sheets once shipped without one, so the screen behind them
  * read through at full brightness and a tap outside them did nothing. A
@@ -127,6 +129,13 @@ describe("openingTags", () => {
 
 describe("every bottom sheet draws the scrim", () => {
   const tags = sheetTags();
+
+  it("draws the light scrim only on the long-press message menu (#5479)", () => {
+    const light = tags
+      .filter(({ tag }) => /\bbackdropComponent=\{SheetLightScrim\}/.test(tag))
+      .map(({ at }) => at.replace(/:\d+$/, ""));
+    expect(light).toEqual(["components/chat/message-actions-sheet.tsx"]);
+  });
 
   it("finds the app's sheets", () => {
     // A guard that matches nothing passes vacuously; there are at least the

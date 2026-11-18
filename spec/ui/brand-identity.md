@@ -57,7 +57,11 @@ The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming
 >
 > Changed in #4904 by pdcarlson, 2026-11-13: on web the first of those places is now the Ask Frapp row in the Find dialog, since the composer button is gone. The exception itself is unchanged.
 >
+> Changed in #5476 by pdcarlson, 2026-11-18: on web that place is now the floating Ask bar at the bottom of the page, the phone's bar, since Find no longer asks. The exception itself is unchanged.
+>
 > Changed in #4904 by pdcarlson, 2026-11-17 (Paul's pick: "a big ... glowing logo and the chapter crest" when Ask opens): a fourth place, the opening of the conversation before its first turn, where the crest is drawn large over a glow of the accent ([`design-system/components.md`](design-system/components.md) §11). It is still Ask's icon inside Ask, not the brand's signature, but there the words "Ask Frapp" are on the bar or field that opened it and in the dialog's name rather than beside the crest. Everywhere else the rule above holds.
+>
+> Added in #5476 by pdcarlson, 2026-11-18 (recording what was already drawn, not a new place): the crest also takes the accent as Frapp's own mark inside a channel, where a member asks it there ([`../behavior/ai.md` § Asking from a channel](../behavior/ai.md#asking-from-a-channel)): Frapp's row in a composer's `@` list, on the accent's tint where an avatar goes (#4713; the first row since #5476), and the mark beside an answer drawn in the channel (#4713). The phone's Search screen's "Ask Frapp about …" row is another (#5139). The full list of places is [`design-system/components.md`](design-system/components.md)'s bullet on the crest.
 
 ### Banned logo vocabulary
 

@@ -79,4 +79,5 @@ export {
   formatDueTimeLabel,
   splitDueEntry,
   suggestedDueTime,
+  suggestTaskDue,
 } from "./due-time";

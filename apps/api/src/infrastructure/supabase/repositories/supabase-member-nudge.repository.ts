@@ -1,5 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { MemberNudgeDismissReason } from '@repo/validation';
+import {
+  MEMBER_NUDGE_ITEM_KINDS,
+  MEMBER_NUDGE_TASK_KINDS,
+  type MemberNudgeDismissReason,
+} from '@repo/validation';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import type {
   MemberNudge,
@@ -69,16 +73,16 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
   async findRaised(
     chapterId: string,
     userId: string,
-  ): Promise<Pick<MemberNudge, 'task_id' | 'kind'>[]> {
-    // Newest first and capped: a member's open tasks are recent ones, and a
-    // card is at most a couple a week, so the cap is years of cards.
+    subjectKeys: readonly string[],
+  ): Promise<Pick<MemberNudge, 'task_id' | 'kind' | 'subject_key'>[]> {
+    if (subjectKeys.length === 0) return [];
     const { data, error } = await this.supabase
       .from('member_nudges')
-      .select('task_id, kind')
+      .select('task_id, kind, subject_key')
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(500);
+      .neq('status', 'showing')
+      .in('subject_key', [...new Set(subjectKeys)]);
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
@@ -146,6 +150,93 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
     return data.length > 0;
   }
 
+  async deleteShowing(
+    chapterId: string,
+    userId: string,
+    id: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('member_nudges')
+      .delete()
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('status', 'showing');
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async dismissSubject(
+    chapterId: string,
+    userId: string,
+    subject: Pick<MemberNudge, 'kind' | 'subject_key' | 'task_id'>,
+    now: string,
+  ): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('member_nudges')
+      .update({
+        status: 'dismissed',
+        dismiss_reason: 'not_now',
+        closed_at: now,
+        title: null,
+        body: null,
+        start_here: null,
+      })
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('kind', subject.kind)
+      .eq('subject_key', subject.subject_key)
+      .eq('status', 'showing')
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    if (data.length > 0) return;
+    const row: TablesInsert<'member_nudges'> = {
+      chapter_id: chapterId,
+      user_id: userId,
+      kind: subject.kind,
+      subject_key: subject.subject_key,
+      task_id: subject.task_id,
+      written_by: 'plain',
+      status: 'dismissed',
+      dismiss_reason: 'not_now',
+      title: null,
+      body: null,
+      start_here: null,
+      closed_at: now,
+      expires_at: now,
+    };
+    const inserted = await this.supabase.from('member_nudges').insert(row);
+    // Already raised and closed: waved off once is enough.
+    if (inserted.error && !isUniqueViolation(inserted.error)) {
+      throw new SupabaseQueryError(inserted.error);
+    }
+  }
+
+  async stripWords(
+    chapterId: string,
+    userId: string,
+    id: string,
+    title: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('member_nudges')
+      .update({ title, body: null, start_here: null, written_by: 'plain' })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('status', 'showing');
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async deleteWrittenByUser(userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('member_nudges')
+      .delete()
+      .eq('user_id', userId)
+      .eq('status', 'showing')
+      .neq('written_by', 'plain');
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async deleteByUser(userId: string): Promise<void> {
     const { error } = await this.supabase
       .from('member_nudges')
@@ -155,7 +246,7 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
   }
 
   async closeExpired(chapterId: string, now: string): Promise<void> {
-    const { error } = await this.supabase
+    const closed = await this.supabase
       .from('member_nudges')
       .update({
         status: 'expired',
@@ -166,8 +257,19 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
       })
       .eq('chapter_id', chapterId)
       .eq('status', 'showing')
+      .in('kind', [...MEMBER_NUDGE_TASK_KINDS])
       .lte('expires_at', now);
-    if (error) throw new SupabaseQueryError(error);
+    if (closed.error) throw new SupabaseQueryError(closed.error);
+    // Any other kind leaves no record when its time passes: it may be raised
+    // again while it still holds (#5464).
+    const deleted = await this.supabase
+      .from('member_nudges')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('status', 'showing')
+      .in('kind', [...MEMBER_NUDGE_ITEM_KINDS])
+      .lte('expires_at', now);
+    if (deleted.error) throw new SupabaseQueryError(deleted.error);
   }
 
   async findSettings(

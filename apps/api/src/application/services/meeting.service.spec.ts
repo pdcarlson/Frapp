@@ -134,6 +134,8 @@ describe('MeetingService', () => {
   >;
   let notifyMembers: jest.Mock;
   let service: MeetingService;
+  // Drafts with a recording row (`meeting_recordings`) that hasn't failed.
+  let recordedDrafts: Set<string>;
 
   const has = (userId: string, permission: string) => {
     const held = PERMISSIONS[userId] ?? [];
@@ -150,6 +152,7 @@ describe('MeetingService', () => {
       [EXEC_EVENT.id, EXEC_EVENT],
     ]);
     rows = new Map();
+    recordedDrafts = new Set();
     repo = {
       findById: jest.fn(async (_chapterId, id) => rows.get(id) ?? null),
       findByEvent: jest.fn(
@@ -194,6 +197,10 @@ describe('MeetingService', () => {
       delete: jest.fn(async (_chapterId, id) => {
         rows.delete(id);
       }),
+      findRecordedIds: jest.fn(
+        async (_chapterId: string, ids: readonly string[]) =>
+          new Set(ids.filter((id) => recordedDrafts.has(id))),
+      ),
       findTemplate: jest.fn().mockResolvedValue(null),
       upsertTemplate: jest.fn(async (chapterId, sections, updatedBy) => ({
         chapter_id: chapterId,
@@ -287,6 +294,122 @@ describe('MeetingService', () => {
       rbac as unknown as RbacService,
       { notifyMembers } as unknown as NotificationService,
     );
+  });
+
+  describe('listFacts (#5290)', () => {
+    it('keys a repeating event by its first event, with the rule, and counts what the minutes hold', async () => {
+      // A generated occurrence points at its series' head.
+      events.set(
+        'evt-head',
+        event({ id: 'evt-head', recurrence_rule: 'WEEKLY' }),
+      );
+      events.set(
+        'evt-occ',
+        event({
+          id: 'evt-occ',
+          parent_event_id: 'evt-head',
+          recurrence_rule: null,
+        }),
+      );
+      const occurrence = meeting({
+        id: 'mtg-occ',
+        event_id: 'evt-occ',
+        status: 'posted',
+        transcript: 'Words.',
+        content: {
+          ...EMPTY_MEETING_CONTENT,
+          decisions: [{ text: 'Dues due Friday', vote: null }],
+          action_items: [
+            { text: 'Book the venue', owner_user_id: null, due_date: null },
+            { text: 'Send reminder', owner_user_id: null, due_date: null },
+          ],
+        },
+      });
+      const oneOff = meeting({ id: 'mtg-one' });
+      recordedDrafts.add('mtg-one');
+      const facts = await service.listFacts(CHAPTER, PRESIDENT, [
+        occurrence,
+        oneOff,
+      ]);
+      expect(facts.get('mtg-occ')).toEqual({
+        series_key: 'evt-head',
+        series_rule: 'WEEKLY',
+        decision_count: 1,
+        action_item_count: 2,
+        recorded: true,
+      });
+      expect(facts.get('mtg-one')).toEqual({
+        series_key: null,
+        series_rule: null,
+        decision_count: 0,
+        action_item_count: 0,
+        recorded: true,
+      });
+    });
+
+    it("keys minutes on a series' first event by its own id", async () => {
+      events.set(
+        'evt-first',
+        event({ id: 'evt-first', recurrence_rule: 'WEEKLY' }),
+      );
+      const first = meeting({
+        id: 'mtg-first',
+        event_id: 'evt-first',
+        status: 'posted',
+      });
+      const facts = await service.listFacts(CHAPTER, PRESIDENT, [first]);
+      expect(facts.get('mtg-first')).toMatchObject({
+        series_key: 'evt-first',
+        series_rule: 'WEEKLY',
+      });
+    });
+
+    it('reads each event once for the list, reusing what the read rule loaded', async () => {
+      events.set('evt-x', event({ id: 'evt-x' }));
+      rows.set(
+        'mtg-x',
+        meeting({ id: 'mtg-x', event_id: 'evt-x', status: 'posted' }),
+      );
+      eventService.findVisibleByIds.mockClear();
+      const { rows: listed, facts } = await service.listWithFacts(
+        CHAPTER,
+        JAKE,
+      );
+      expect(listed.map((row) => row.id)).toEqual(['mtg-x']);
+      expect(facts.get('mtg-x')).toBeDefined();
+      const asked = eventService.findVisibleByIds.mock.calls.flatMap(
+        ([ids]) => [...ids],
+      );
+      expect(asked.filter((id) => id === 'evt-x')).toHaveLength(1);
+    });
+
+    it('reads events a hundred ids at a time', async () => {
+      const many = Array.from({ length: 150 }, (_, i) =>
+        meeting({ id: `mtg-${i}`, event_id: `evt-${i}`, status: 'posted' }),
+      );
+      eventService.findVisibleByIds.mockClear();
+      await service.listFacts(CHAPTER, PRESIDENT, many);
+      const sizes = eventService.findVisibleByIds.mock.calls.map(
+        ([ids]) => ids.length,
+      );
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(100);
+      expect(sizes.filter((size) => size > 0)).toEqual([100, 50]);
+    });
+
+    it('gives no series for an event the reader cannot see, and asks about recordings only for drafts', async () => {
+      const posted = meeting({
+        id: 'mtg-exec',
+        event_id: EXEC_EVENT.id,
+        status: 'posted',
+      });
+      events.set(EXEC_EVENT.id, { ...EXEC_EVENT, recurrence_rule: 'WEEKLY' });
+      const facts = await service.listFacts(CHAPTER, JAKE, [posted]);
+      expect(facts.get('mtg-exec')).toMatchObject({
+        series_key: null,
+        recorded: false,
+      });
+      expect(repo.findRecordedIds).toHaveBeenCalledWith(CHAPTER, []);
+    });
   });
 
   describe('Standards meetings', () => {
@@ -967,11 +1090,11 @@ describe('MeetingService', () => {
     it('reads the default sections when the chapter saved none', async () => {
       await expect(service.getTemplate(CHAPTER)).resolves.toEqual([
         'summary',
+        'announcements',
         'decisions',
         'action_items',
         'discussion_log',
         'attendees',
-        'announcements',
       ]);
     });
 

@@ -47,20 +47,20 @@ import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
  * answers from the chapter's sources, each claim marked with the source it
  * came from, or shows a card for something they asked to have done.
  *
- * **Where Find opens, from the same field** (#4904, Paul's pick of
- * 2026-11-13). It was a card that rose from a button in the chat composer
- * (#4702), and before that a panel docked to the right edge. Paul found the
- * composer button out of place and picked one field for search and Ask
- * (`ask-host.tsx`). So the conversation takes the Find dialog's place and
+ * **Where Find opens** (#4904, Paul's pick of 2026-11-13). It was a card
+ * that rose from a button in the chat composer (#4702), and before that a
+ * panel docked to the right edge. From #4904 the top bar's field asked as
+ * well as searched, so the conversation took the Find dialog's place and
  * measures (`find-dialog.tsx`): the same width, the same distance from the
- * top, the same surface and scrim. A question typed into the field arrives
- * already asked (`asking`). It is a real dialog now, so it is reachable from
- * every page and Escape or a click outside closes it.
+ * top, the same surface and scrim. It is a real dialog, reachable from every
+ * page, and Escape or a click outside closes it. Since #5476 (Paul,
+ * 2026-11-18) the field only finds, and the floating Ask bar (`ask-bar.tsx`)
+ * opens this dialog in the same place.
  *
  * **Following a link closes it.** A source, a channel an answer names and
  * the page a confirmed card leaves for all open under the dialog, so a
  * plain click on any link in the thread closes it. The conversation is
- * kept, and the field reopens it.
+ * kept, and the Ask bar reopens it.
  *
  * It is owned by `AskHost` above the whole dashboard, so the thread is the
  * same thread on every page.
@@ -105,11 +105,25 @@ import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
  * the card comes up and is true at the moment of asking.
  */
 /**
- * The entry on screen: the top bar's field carries the attribute
- * (`find-bar.tsx`). Focus goes back to it when whatever opened the
- * conversation is gone, as a row inside the Find dialog is.
+ * The entries: every Ask bar carries the attribute (`ask-bar.tsx`). Focus
+ * goes back to one that is on screen when the bar that opened the
+ * conversation is gone or hidden: following a link from a tool page lands on
+ * `/chat`, and below `lg` with a channel open the Channels column's bar is
+ * there but hidden (#5476).
  */
 const ASK_ENTRY_SELECTOR = "[data-ask-entry]";
+
+/**
+ * Whether focus can land on `element`: in the page and not hidden by a
+ * `display: none` ancestor. `checkVisibility` answers that where the browser
+ * has it; without it (jsdom), being in the page is all there is to check.
+ */
+function onScreen(element: HTMLElement | null): element is HTMLElement {
+  if (!element?.isConnected) return false;
+  return typeof element.checkVisibility === "function"
+    ? element.checkVisibility()
+    : true;
+}
 
 /** Within this of the bottom, the member is reading the newest words. */
 const FOLLOW_SLACK_PX = 80;
@@ -118,17 +132,11 @@ export function AskCard({
   open,
   onOpenChange,
   returnFocus,
-  asking = null,
-  onAsked,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The control that opened it, which takes focus back when it closes. */
   returnFocus?: RefObject<HTMLElement | null>;
-  /** A question typed into the top bar's field, to send as it opens. */
-  asking?: string | null;
-  /** The question was sent (or could not be): it is not to be sent twice. */
-  onAsked?: () => void;
 }) {
   const {
     exchanges,
@@ -193,26 +201,6 @@ export function AskCard({
   }, [open, refetchStatus]);
 
   const shown = open;
-
-  // A question typed into the top bar's field is asked as the dialog opens.
-  // Handing it back first makes this run once for each question.
-  useEffect(() => {
-    if (!open || !asking) return;
-    onAsked?.();
-    // One question at a time. While another is being answered (one asked
-    // from a channel goes on with this closed), the words wait in the field
-    // rather than being lost.
-    if (working) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- the handed question is consumed above (onAsked), so this is its one landing place
-      setDraft(asking);
-      return;
-    }
-    void ask(asking, {
-      savedNoticeShown: saving,
-      actions: mayAct,
-      gate: ensureConsent,
-    });
-  }, [open, asking, onAsked, working, ask, saving, mayAct, ensureConsent]);
 
   // The field grows with what is typed.
   useGrowWithText(field, draft, shown);
@@ -299,12 +287,14 @@ export function AskCard({
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              // What opened it, or the field on screen now: a row inside the
-              // Find dialog is gone by the time this closes.
+              // What opened it, or an Ask bar on screen now: the one that
+              // opened it may be gone, or hidden by the layout it left.
               const opener = returnFocus?.current ?? null;
-              const entry = opener?.isConnected
+              const entry = onScreen(opener)
                 ? opener
-                : document.querySelector<HTMLElement>(ASK_ENTRY_SELECTOR);
+                : Array.from(
+                    document.querySelectorAll<HTMLElement>(ASK_ENTRY_SELECTOR),
+                  ).find(onScreen);
               entry?.focus({ preventScroll: true });
             }}
             // The Find dialog's place and measures (`find-dialog.tsx`), with

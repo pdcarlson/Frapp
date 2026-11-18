@@ -85,7 +85,7 @@ Photos and proof (#4565, Shawn, 2026-11-12; reshaped by #4635, Paul, 2026-11-12)
 - **Edit and delete for everyone.** The tile's Edit opens the task form on the group and saves with `scope: "group"` on `PATCH /v1/tasks/:id`: title, description, due and points change on every copy not yet confirmed (a confirmed copy is a record). Its Delete asks first, then deletes every copy and the group with `scope=group`. A single copy is still edited or deleted on its own (the default `instance` scope), from By person, a card or the task sheet; handing a copy to someone else makes it that member's.
 - **Not yet.** A task for everyone can't repeat, carry reference photos (one stored photo belongs to one task, § Photos) or post a chat card; the forms hide Repeat and Photos once Everyone is picked and say why (the phone has no Repeat yet), and the API refuses them. Proof still applies to each copy.
 - **Suggested tasks** take Everyone too: a suggestion's payload carries `audience` beside `assignee_id`, one or the other, and accepting it makes the group task ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks)). Picking a member clears Everyone and the other way round.
-- **On the phone**, the New task sheet (from the Tasks screen and the quick actions) and Change before accepting offer Everyone first in Assign to; a chat's + doesn't, since its card is for one member. Grouping the copies on the phone, and a "This member only or Everyone's copy" choice on a single copy's edit, are follow-ups.
+- **On the phone**, the New task sheet (from the Tasks screen and the quick actions) and Change before creating offer Everyone first in Assign to; a chat's + doesn't, since its card is for one member. Grouping the copies on the phone, and a "This member only or Everyone's copy" choice on a single copy's edit, are follow-ups.
 
 ## Status words
 
@@ -152,6 +152,7 @@ On mobile's task board only the row's checkbox changes a task; a tap elsewhere o
 - The assignee sees their own tasks.
 - All admins (users with `tasks:manage`) see all tasks.
 - Members without `tasks:manage` only see tasks assigned to themselves.
+- One exception: anyone who may read posted minutes sees whether each task made from its action items is done, and for a task for everyone how many copies are ("14 of 20 done"), as checkboxes on the minutes. Nothing else of the task reaches them (Paul, 2026-11-18: action items "as checkboxes that update"; [`meetings.md` § Suggested tasks](meetings.md#suggested-tasks)).
 
 ## Chat Integration
 

@@ -1,68 +1,110 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import type { MemberNudge } from "@repo/hooks";
+import type { ActivityNudge } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
-import { MEMBER_NUDGE_KINDS, isMemberNudgePraise } from "@repo/validation";
-import { eyebrowStyle } from "@/components/eyebrow";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { isMemberNudgePraise } from "@repo/validation";
+import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
+import { NavGlyph } from "@/components/nav-glyph";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
+type GlyphName = keyof typeof NAV_GLYPHS;
+
+/** Each kind's glyph and hue: what it is, at a glance, before a word is read. */
+function kindLook(
+  kind: string,
+  tokens: SignetTokens,
+): { glyph: GlyphName; hue: string } {
+  const { semantic, gold } = tokens.color;
+  switch (kind) {
+    case "event_soon":
+      return { glyph: "events", hue: semantic.infoText };
+    case "mention_unread":
+      return { glyph: "chat", hue: semantic.mention };
+    case "announcement_unread":
+      return { glyph: "chat", hue: gold.askText };
+    case "signup_open":
+      return { glyph: "signup", hue: semantic.success };
+    case "officer_queue":
+      return { glyph: "confirm", hue: gold.askText };
+    case "minutes_new":
+      return { glyph: "meetings", hue: semantic.infoText };
+    case "study_behind":
+      return { glyph: "study", hue: semantic.warning };
+    case "task_due_soon":
+    case "task_overdue":
+    case "task_sent_back":
+    case "task_praise":
+      return { glyph: "tasks", hue: semantic.success };
+    default:
+      // A kind from a newer server: a neutral glyph, never a blank.
+      return { glyph: "activity", hue: tokens.color.text.mutedForeground };
+  }
+}
+
 /**
- * The nudge card on the phone's Activity (#4781, `spec/behavior/ai.md`
- * § Nudges): one card, under the week card, that Frapp's AI wrote about one
- * of the member's own tasks. Bevel's daily insight card and Duolingo's
- * streak line are the comparables: a short, specific word at the top of the
- * page the member already opens, with one way in and one way to wave it off.
+ * The card at the top of the phone's Activity (#5464, `spec/behavior/ai.md`
+ * § The card and its tray): the one most useful thing waiting on the member,
+ * and a tray of the next few. Paul picked this shape on 2026-11-18 (one
+ * spotlight with a tray). Bevel's daily card is the reference: always at the
+ * top under the day's stats, one specific thing from the member's own data.
+ * Linear's Inbox gives the coloured kind tiles, Apple Fitness the row of
+ * small coloured stats.
  *
- * - **One at a time, and never a list.** The server sends one or none.
- * - **Frapp's voice is gold.** The eyebrow and the starting point's rule take
- *   the fixed house gold, as Ask does; the member's own things on this page
- *   keep the chapter accent (`components.md` §11).
- * - **No filled button.** The week card's Next row holds the one filled
- *   action on the screen, so both of this card's buttons are outlined.
- * - **A word of thanks asks for nothing:** no starting point, and one button
- *   that closes it.
- *
- * It says nothing about how it was made. "More" holds the two quieter ways
- * out: fewer of these for a while, or none at all.
+ * - **Show, don't write.** A tile whose glyph and colour say what it is, the
+ *   thing's own name, its time or count, and one button that settles it.
+ *   That is the whole card without AI. With AI on, one sentence sits under
+ *   it on Frapp's gold rule.
+ * - **The tray.** Up to three chips, each in its kind's colour. Pressing one
+ *   brings that item into the card in place; nothing opens over the page.
+ * - **No filled button.** The week card's Next holds the screen's one filled
+ *   action, so the card's buttons are outlined.
+ * - **Waving off.** The close mark waves off what the card shows, and it is
+ *   not raised again. "More" holds turning the card off.
  */
 export function NudgeCard({
-  nudge,
+  card,
+  tray,
   canAsk,
-  onOpenTask,
+  onOpen,
   onAsk,
   onDismiss,
   onTurnOff,
   onSeen,
 }: {
-  nudge: MemberNudge;
+  card: ActivityNudge;
+  tray: readonly ActivityNudge[];
   /** Ask Frapp is on for this member. Off: no "Ask about this". */
   canAsk: boolean;
-  onOpenTask: () => void;
-  onAsk: () => void;
-  onDismiss: (reason: "not_now" | "fewer" | "thanks") => void;
+  onOpen: (item: ActivityNudge) => void;
+  onAsk: (item: ActivityNudge) => void;
+  onDismiss: (item: ActivityNudge) => void;
   onTurnOff: () => void;
-  onSeen: () => void;
+  onSeen: (id: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const praise = isMemberNudgePraise(nudge.kind);
-  // A kind from a newer server than this build: its two lines and "Not
-  // now", and none of the task buttons, which may not fit it.
-  const known = (MEMBER_NUDGE_KINDS as readonly string[]).includes(nudge.kind);
+  // Which item the card shows: the server's pick until a chip is pressed.
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const all = [card, ...tray];
+  const keyOf = (item: ActivityNudge) => `${item.kind}:${item.subject_key}`;
+  const shown = all.find((item) => keyOf(item) === pickedKey) ?? card;
+  const others = all.filter((item) => item !== shown);
+  const look = kindLook(shown.kind, tokens);
+  const praise = isMemberNudgePraise(shown.kind);
 
   // On screen is seen: the card sits at the top of the page.
-  const { id, seen } = nudge;
+  const { id, seen } = card;
   useEffect(() => {
-    if (!seen) onSeen();
+    if (id && !seen) onSeen(id);
     // Once per card; `onSeen` is read when the card arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, seen]);
 
   const more = () =>
-    Alert.alert("Nudges from Frapp", undefined, [
-      { text: "Not now", onPress: () => onDismiss("not_now") },
-      { text: "Show fewer of these", onPress: () => onDismiss("fewer") },
+    Alert.alert("This card", undefined, [
+      { text: "Hide this one", onPress: () => onDismiss(shown) },
       { text: "Turn these off", style: "destructive", onPress: onTurnOff },
       { text: "Cancel", style: "cancel" },
     ]);
@@ -70,61 +112,105 @@ export function NudgeCard({
   return (
     <View style={styles.card} testID="activity-nudge-card">
       <View style={styles.head}>
-        <Text style={styles.eyebrow}>From Frapp</Text>
-        {praise || !known ? null : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="More"
-            accessibilityHint="Hide this, see fewer, or turn nudges off."
-            hitSlop={12}
-            onPress={more}
-            testID="activity-nudge-more"
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
+        <LeadTile
+          size="lead"
+          on="card"
+          hue={look.hue}
+          testID={`activity-nudge-tile-${shown.kind}`}
+        >
+          <NavGlyph
+            paths={NAV_GLYPHS[look.glyph]}
+            color={look.hue}
+            size={LEAD_TILE_GLYPH}
+          />
+        </LeadTile>
+        <View style={styles.headText}>
+          <Text
+            accessibilityRole="header"
+            numberOfLines={2}
+            style={styles.headline}
           >
-            <Text style={styles.more}>More</Text>
-          </Pressable>
-        )}
-      </View>
-      <Text accessibilityRole="header" style={styles.title}>
-        {nudge.title}
-      </Text>
-      <Text style={styles.body}>{nudge.body}</Text>
-      {known && nudge.start_here ? (
-        <View style={styles.start}>
-          <Text style={styles.startLabel}>A place to start</Text>
-          <Text style={styles.startText}>{nudge.start_here}</Text>
+            {shown.headline}
+          </Text>
+          <Text
+            numberOfLines={2}
+            style={[styles.meta, shown.urgent ? { color: look.hue } : null]}
+          >
+            {shown.meta}
+          </Text>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="More"
+          accessibilityHint="Hide this one, or turn these cards off."
+          hitSlop={12}
+          onPress={more}
+          testID="activity-nudge-more"
+          style={({ pressed }) => [
+            styles.moreButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.moreDots}>···</Text>
+        </Pressable>
+      </View>
+      {shown.line ? (
+        <Text style={styles.line} testID="activity-nudge-line">
+          {shown.line}
+        </Text>
+      ) : null}
+      {shown.start_here ? (
+        <Text style={styles.line} testID="activity-nudge-start">
+          {shown.start_here}
+        </Text>
       ) : null}
       <View style={styles.actions}>
-        {praise ? (
+        <CardButton
+          label={shown.action}
+          onPress={() => (praise ? onDismiss(shown) : onOpen(shown))}
+          testID="activity-nudge-open"
+        />
+        {canAsk && !praise ? (
           <CardButton
-            label="Thanks"
-            onPress={() => onDismiss("thanks")}
-            testID="activity-nudge-thanks"
+            label="Ask about this"
+            onPress={() => onAsk(shown)}
+            testID="activity-nudge-ask"
           />
-        ) : !known ? (
-          <CardButton
-            label="Not now"
-            onPress={() => onDismiss("not_now")}
-            testID="activity-nudge-not-now"
-          />
-        ) : (
-          <>
-            <CardButton
-              label="See the task"
-              onPress={onOpenTask}
-              testID="activity-nudge-open"
-            />
-            {canAsk ? (
-              <CardButton
-                label="Ask about this"
-                onPress={onAsk}
-                testID="activity-nudge-ask"
-              />
-            ) : null}
-          </>
-        )}
+        ) : null}
       </View>
+      {others.length > 0 ? (
+        <View style={styles.tray} testID="activity-nudge-tray">
+          {others.map((item) => {
+            const itemLook = kindLook(item.kind, tokens);
+            return (
+              <Pressable
+                key={keyOf(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.headline}, ${item.meta}`}
+                onPress={() => setPickedKey(keyOf(item))}
+                testID={`activity-nudge-chip-${item.kind}`}
+                style={({ pressed }) => [
+                  styles.chip,
+                  { borderColor: itemLook.hue },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <NavGlyph
+                  paths={NAV_GLYPHS[itemLook.glyph]}
+                  color={itemLook.hue}
+                  size={16}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={[styles.chipLabel, { color: itemLook.hue }]}
+                >
+                  {item.chip}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -169,38 +255,33 @@ function createStyles(tokens: SignetTokens) {
     head: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+      gap: tokens.spacing.md,
     },
-    eyebrow: {
-      ...eyebrowStyle(tokens),
-      // House gold, fixed. Never the chapter accent on Frapp's own voice.
-      color: tokens.color.gold.askText,
-    },
-    more: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    title: {
+    headText: { flex: 1, minWidth: 0, gap: 2 },
+    headline: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
     },
-    body: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    start: {
-      borderLeftWidth: 2,
-      borderLeftColor: tokens.color.gold.askText,
-      paddingLeft: tokens.spacing.md,
-      gap: 2,
-    },
-    startLabel: {
-      ...typeRole(tokens.typography.role.caption),
+    meta: {
+      ...typeRole(tokens.typography.role.label),
+      fontWeight: "400",
       color: tokens.color.text.mutedForeground,
     },
-    startText: {
-      ...typeRole(tokens.typography.role.label),
+    moreButton: {
+      alignSelf: "flex-start",
+      paddingHorizontal: tokens.spacing.xs,
+    },
+    moreDots: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.mutedForeground,
+    },
+    line: {
+      ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
+      borderLeftWidth: 2,
+      // Frapp's own voice keeps the fixed house gold (`components.md` §11).
+      borderLeftColor: tokens.color.gold.askText,
+      paddingLeft: tokens.spacing.md,
     },
     actions: {
       flexDirection: "row",
@@ -221,6 +302,26 @@ function createStyles(tokens: SignetTokens) {
     buttonLabel: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
+    },
+    tray: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+      paddingTop: tokens.spacing.sm,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      minHeight: 32,
+      borderRadius: 999,
+      borderWidth: 1,
+      paddingHorizontal: tokens.spacing.md,
+    },
+    chipLabel: {
+      ...typeRole(tokens.typography.role.label),
     },
     pressed: { opacity: 0.7 },
   });

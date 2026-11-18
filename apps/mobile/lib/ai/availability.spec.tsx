@@ -101,7 +101,6 @@ describe("useAiSurfaces", () => {
       askAccess: "no",
       catchUp: false,
       meetingNotes: false,
-      nudges: false,
       ready: true,
     });
     expect(state.settingsEnabled).toBe(false);
@@ -219,31 +218,6 @@ describe("useAiSurfaces", () => {
     state.permissions = { data: { permissions: ["ai:use"] }, isPending: false };
     state.consent = { data: null, isError: false };
     expect(read().catchUp).toBe(false);
-  });
-});
-
-describe("useAiSurfaces nudges", () => {
-  it("offers the nudge card on the chapter's nudges switch, not Ask's", () => {
-    // Paul, 2026-11-17: nudges on by default, apart from Ask.
-    state.settings = {
-      data: { ask: false, meeting_notes: false, chat_source: false, nudges: true },
-      isPending: false,
-    };
-    expect(read()).toMatchObject({ ask: false, nudges: true });
-    state.settings = {
-      data: { ask: true, meeting_notes: true, chat_source: true, nudges: false },
-      isPending: false,
-    };
-    expect(read()).toMatchObject({ ask: true, nudges: false });
-  });
-
-  it("keeps the card from a member whose role can't use AI", () => {
-    state.settings = {
-      data: { ask: true, meeting_notes: true, chat_source: true, nudges: true },
-      isPending: false,
-    };
-    state.permissions = { data: { permissions: [] }, isPending: false };
-    expect(read().nudges).toBe(false);
   });
 });
 

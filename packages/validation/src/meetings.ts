@@ -58,6 +58,9 @@ export const MEETING_SECTIONS = [
   // owes what, then the body of the discussion, then the record (Paul,
   // 2026-11-17: "What matters is the body of the discussion").
   { key: "summary", label: "Summary", defaultOn: true },
+  // Announcements next: what every member needs to hear, read first (Paul,
+  // 2026-11-18: "summary, announcements, decisions, and then action items").
+  { key: "announcements", label: "Announcements", defaultOn: true },
   { key: "decisions", label: "Decisions", defaultOn: true },
   { key: "action_items", label: "Action items", defaultOn: true },
   // The notes themselves: every topic with its detail. Always on, because
@@ -65,7 +68,6 @@ export const MEETING_SECTIONS = [
   // meeting gets distilled into one sentence ... there's zero detail").
   { key: "discussion_log", label: "Notes", defaultOn: true },
   { key: "attendees", label: "Attendees", defaultOn: true },
-  { key: "announcements", label: "Announcements", defaultOn: true },
   { key: "officer_reports", label: "Officer reports", defaultOn: false },
   { key: "old_business", label: "Old business", defaultOn: false },
   { key: "new_business", label: "New business", defaultOn: false },

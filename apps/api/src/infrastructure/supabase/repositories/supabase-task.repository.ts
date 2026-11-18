@@ -51,6 +51,17 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return data;
   }
 
+  async findByIds(chapterId: string, ids: string[]): Promise<Task[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('tasks')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .in('id', ids);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async findByChapter(
     chapterId: string,
     query: TaskListQuery = {},

@@ -5,17 +5,28 @@ import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { aiSuggestionKeys } from "./use-ai-suggestions";
 
-/** One row of `GET /v1/meetings`. */
-export type MeetingSummary = components["schemas"]["MeetingSummaryDto"];
+/** One row of the Minutes list (`GET /v1/meetings`), with what the list shows on it (#5290). */
+export type MeetingSummary = components["schemas"]["MeetingListItemDto"];
 /** One meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */
 export type MeetingMinutes = components["schemas"]["MeetingDto"];
 export type StartMeetingBody = components["schemas"]["StartMeetingDto"];
 export type UpdateMeetingBody = components["schemas"]["UpdateMeetingDto"];
+/** One action item that became a task, as the minutes' checkbox reads it. */
+export type MeetingActionItemTask =
+  components["schemas"]["MeetingActionItemTaskDto"];
 export type MeetingTemplateSections =
   components["schemas"]["MeetingTemplateDto"]["sections"];
 
 const meetingsKey = (chapterId: string | null | undefined) =>
   ["meetings", chapterId] as const;
+
+/**
+ * The Minutes list reads (`useMeetings`, whole or for one event), which carry
+ * whether each minutes had a recording (#5290): a recording that starts, is
+ * confirmed or is removed changes that tag.
+ */
+const isMeetingsList = (query: { queryKey: readonly unknown[] }) =>
+  query.queryKey.length === 2 || query.queryKey[2] === "event";
 const meetingKey = (chapterId: string | null | undefined, id: string) =>
   ["meetings", chapterId, "one", id] as const;
 const templateKey = (chapterId: string | null | undefined) =>
@@ -62,6 +73,37 @@ export function useMeeting(id: string | null | undefined) {
       return data;
     },
     enabled: !!chapterId && !!id,
+  });
+}
+
+/**
+ * Which action items of posted minutes became tasks, and whether each is
+ * done: the minutes' checkboxes. It follows the tasks as they are checked
+ * off elsewhere, so it is read again every minute while the minutes are open
+ * and whenever the window comes back to them.
+ */
+export function useMeetingActionItemTasks(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      ...meetingKey(chapterId, id ?? ""),
+      "action-item-tasks",
+    ] as const,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/{id}/action-item-tasks",
+        { signal, params: { path: { id: id! } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -159,6 +201,11 @@ export function useUpdateMeeting() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      // The checkboxes are keyed by where each action item sits, so an edit
+      // that moves or drops one reads them again.
+      void queryClient.invalidateQueries({
+        queryKey: [...meetingKey(chapterId, data.id), "action-item-tasks"],
+      });
       // Suggested tasks follow the action items of posted minutes (#4313).
       if (data.status === "posted") {
         void queryClient.invalidateQueries({
@@ -716,6 +763,10 @@ export function useStartMeetingRecording() {
         ...data,
         upload: null,
       });
+      void queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+        predicate: isMeetingsList,
+      });
     },
   });
 }
@@ -761,8 +812,14 @@ export function useRemoveMeetingRecording() {
       return id;
     },
     onSuccess: (id) =>
-      queryClient.invalidateQueries({
-        queryKey: meetingRecordingKey(chapterId, id),
-      }),
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: meetingRecordingKey(chapterId, id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: meetingsKey(chapterId),
+          predicate: isMeetingsList,
+        }),
+      ]),
   });
 }
