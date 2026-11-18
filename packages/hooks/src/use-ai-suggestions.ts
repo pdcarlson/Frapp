@@ -264,6 +264,7 @@ export function useDismissAiSuggestion() {
 export function useDecideAiSuggestions() {
   const client = useFrappClient();
   const drop = useDropFromLists();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["ai-suggestions", "decide"],
     retry: false,
@@ -276,10 +277,15 @@ export function useDecideAiSuggestions() {
       throwUnlessOk(result);
       return bodyOf(result.data).outcomes;
     },
-    onSuccess: (outcomes) =>
+    onSuccess: (outcomes) => {
       drop(
         outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.id),
         true,
-      ),
+      );
+      // Tasks made from action items give their minutes checkboxes.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey.at(-1) === "action-item-tasks",
+      });
+    },
   });
 }

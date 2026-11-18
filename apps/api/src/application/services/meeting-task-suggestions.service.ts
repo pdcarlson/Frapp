@@ -1,12 +1,6 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { readMeetingContent } from '@repo/validation';
 import type { Meeting } from '#domain/entities/meeting.entity';
-import { TaskStatus } from '#domain/entities/task.entity';
 import {
   AI_SUGGESTION_REPOSITORY,
   type IAiSuggestionRepository,
@@ -75,10 +69,12 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
    * The tasks the action items of these minutes became: one entry per item
    * an officer created as a task that still exists, with whether it is done.
    * An item matches its suggestion by the same fingerprint that keeps it
-   * from being suggested twice, so an item tidied after posting keeps its
-   * task. Only the done mark is told, never the task's own fields, because a
-   * member may read the minutes without being able to read the task
-   * (`tasks.md` § Visibility), and the minutes already say who owes it.
+   * from being suggested twice, so an item whose case, punctuation or
+   * spacing is tidied after posting keeps its task; one reworded is a new
+   * item to Frapp and loses its box. Only the done mark is told, never the task's own fields, because a
+   * member may read the minutes without being able to read the task, and the
+   * minutes already say who owes it (`tasks.md` § Visibility records this
+   * exception).
    */
   async actionItemTasks(
     chapterId: string,
@@ -101,33 +97,26 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
         taskOf.set(row.dedupe_key, row.result_id);
       }
     }
-    const wanted = items.map((item, index) => ({
-      index,
-      taskId: taskOf.get(actionItemKey(item.text.trim())),
-    }));
-    const found = await Promise.all(
-      wanted.map(async ({ index, taskId }) => {
-        if (!taskId) return null;
-        try {
-          const task = await this.tasks.findById(taskId, chapterId);
-          const group = task.group
-            ? { done: task.group.done, total: task.group.total }
-            : null;
-          return {
-            index,
-            done: group
-              ? group.total > 0 && group.done >= group.total
-              : task.stored_status === TaskStatus.COMPLETED,
-            group,
-          };
-        } catch (error) {
-          // A task deleted since: the item has no task to follow.
-          if (error instanceof NotFoundException) return null;
-          throw error;
-        }
-      }),
+    // Two items that read the same were one suggestion, so one task: it
+    // follows the first of them.
+    const seen = new Set<string>();
+    const wanted = items.flatMap((item, index) => {
+      const key = actionItemKey(item.text.trim());
+      const taskId = taskOf.get(key);
+      if (!taskId || seen.has(key)) return [];
+      seen.add(key);
+      return [{ index, taskId }];
+    });
+    if (wanted.length === 0) return [];
+    const marks = await this.tasks.doneMarks(
+      chapterId,
+      wanted.map((entry) => entry.taskId),
     );
-    return found.filter((entry): entry is ActionItemTask => entry !== null);
+    // A task deleted since leaves its item with nothing to follow.
+    return wanted.flatMap(({ index, taskId }) => {
+      const mark = marks.get(taskId);
+      return mark ? [{ index, ...mark }] : [];
+    });
   }
 
   onModuleInit(): void {

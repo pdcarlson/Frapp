@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { suggestTaskDue, suggestTaskOwner } from "./task-suggestion-guess";
+import { suggestTaskOwner } from "./task-suggestion-guess";
 
 const members = [
   { user_id: "u-jake", display_name: "Jake Ross" },
   { user_id: "u-jake2", display_name: "Jake Moore" },
-  { user_id: "u-sam", display_name: "Sam Lee" },
+  { user_id: "u-sam", display_name: "sam lee" },
   { user_id: "u-mark", display_name: "Mark Diaz" },
+  { user_id: "u-grant", display_name: "Grant Hall" },
 ];
 
 describe("suggestTaskOwner", () => {
-  it("names the one member a line names by first name", () => {
+  it("names the one member a line names by first name, whatever case the roster uses", () => {
     expect(suggestTaskOwner("Sam to book the bus", members)).toBe("u-sam");
+    expect(suggestTaskOwner("Ask Sam's roommate for the key", members)).toBe(
+      "u-sam",
+    );
   });
 
   it("leaves a first name two members share to the officer, unless the full name settles it", () => {
@@ -27,19 +31,17 @@ describe("suggestTaskOwner", () => {
     ).toBeNull();
     expect(suggestTaskOwner("Order shirts", members)).toBeNull();
   });
-});
 
-describe("suggestTaskDue", () => {
-  it("is a week after the meeting", () => {
+  it("reads a verb that opens the line as a verb, not a name", () => {
     expect(
-      suggestTaskDue("2026-11-09T19:00:00", new Date("2026-11-10T12:00:00")),
-    ).toBe("2026-11-16");
-  });
-
-  it("is nothing for minutes old enough that the day has gone by, or with no meeting day", () => {
-    expect(
-      suggestTaskDue("2026-10-01T19:00:00", new Date("2026-11-10T12:00:00")),
+      suggestTaskOwner("Mark the formal on the calendar", members),
     ).toBeNull();
-    expect(suggestTaskDue(null)).toBeNull();
+    expect(suggestTaskOwner("Grant access to the drive", members)).toBeNull();
+    expect(suggestTaskOwner("Mark will reserve the hall", members)).toBe(
+      "u-mark",
+    );
+    expect(
+      suggestTaskOwner("Reserve the hall. Mark to confirm.", members),
+    ).toBe("u-mark");
   });
 });

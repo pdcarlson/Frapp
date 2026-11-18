@@ -193,6 +193,11 @@ export function useUpdateMeeting() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      // The checkboxes are keyed by where each action item sits, so an edit
+      // that moves or drops one reads them again.
+      void queryClient.invalidateQueries({
+        queryKey: [...meetingKey(chapterId, data.id), "action-item-tasks"],
+      });
       // Suggested tasks follow the action items of posted minutes (#4313).
       if (data.status === "posted") {
         void queryClient.invalidateQueries({

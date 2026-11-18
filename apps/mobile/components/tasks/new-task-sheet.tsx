@@ -186,8 +186,8 @@ export interface NewTaskSheetProps {
   onSaved?: () => void;
   /**
    * Accept a suggested task through the form (#4313): the fields open on what
-   * the minutes suggested, titled "Change before accepting", and the button
-   * accepts. Who it is for starts empty when the meeting named nobody, never
+   * the minutes suggested, titled "Change before creating", and the button
+   * creates it. Who it is for starts empty when the meeting named nobody, never
    * on the viewer: a wrong owner is worse than none. Points are left out (a
    * suggestion carries none). The host mounts one sheet per suggestion
    * (`key` on its id).

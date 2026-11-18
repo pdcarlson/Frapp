@@ -5,7 +5,6 @@ import {
   TASK_AUDIENCE_COPY,
   TASK_AUDIENCE_EVERYONE,
   noTaskRepeatDraft,
-  suggestTaskDue,
   suggestTaskOwner,
   taskWhoFields,
   taskWhoValue,
@@ -29,6 +28,7 @@ import {
   dueEntryFields,
   dueEntryFromTask,
   lastYearBareDay,
+  suggestTaskDue,
 } from "@repo/formatting";
 import { codeOf } from "@repo/api-sdk";
 import {
@@ -198,6 +198,8 @@ export function SuggestedTasks({
   const [flagged, setFlagged] = useState<ReadonlySet<string>>(new Set());
   const [formFor, setFormFor] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // The card whose Create task is on its way, to say so on its button.
+  const [creatingId, setCreatingId] = useState<string | null>(null);
 
   const [index, setIndex] = useState(0);
 
@@ -235,10 +237,14 @@ export function SuggestedTasks({
   const busy = busyId !== null || decide.isPending;
   const valuesOf = (item: WaitingSuggestion) =>
     rowValues(item, edits[item.id], guesses.get(item.id));
+  // What the minutes or the officer said, without Frapp's guesses: the bulk
+  // button creates cards the officer may never have brought up, and a guess
+  // is only saved from the card that showed it.
+  const saidOf = (item: WaitingSuggestion) => rowValues(item, edits[item.id]);
   // A row open in the form is decided there, with what was typed into it.
   const ready = items.filter((item) => {
     if (item.id === formFor) return false;
-    const values = valuesOf(item);
+    const values = saidOf(item);
     return values.assigneeId && values.due;
   });
 
@@ -261,6 +267,7 @@ export function SuggestedTasks({
       return false;
     }
     setBusyId(item.id);
+    setCreatingId(item.id);
     try {
       await accept.mutateAsync({ id: item.id, task: editsFor(item, values) });
       toast({
@@ -277,6 +284,7 @@ export function SuggestedTasks({
       return false;
     } finally {
       setBusyId(null);
+      setCreatingId(null);
     }
   }
 
@@ -303,7 +311,7 @@ export function SuggestedTasks({
       const decisions = ready.map((item) => ({
         id: item.id,
         action: "accept" as const,
-        task: editsFor(item, valuesOf(item)),
+        task: editsFor(item, saidOf(item)),
       }));
       // The route takes 50 at a time.
       const outcomes = [];
@@ -418,7 +426,7 @@ export function SuggestedTasks({
         members={members}
         flagged={flagged.has(current.id)}
         disabled={busy}
-        pending={busyId === current.id && accept.isPending}
+        pending={creatingId === current.id}
         formOpen={formFor === current.id}
         onEdit={(patch) => editRow(current.id, patch)}
         onAccept={() => void acceptRow(current)}

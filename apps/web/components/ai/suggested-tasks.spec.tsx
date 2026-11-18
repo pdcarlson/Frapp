@@ -435,4 +435,66 @@ describe("SuggestedTasks (#4313)", () => {
       vi.useRealTimers();
     }
   });
+
+  it("leaves Frapp's guesses out of Create all: only what the minutes or the officer said", async () => {
+    mocks.items.current = [
+      suggestion("1"),
+      suggestion("2"),
+      {
+        ...suggestion("3", { title: "Sam to book the bus", assignee_id: null }),
+        quote: "Sam to book the bus",
+      },
+    ];
+    mocks.decide.mockResolvedValue([
+      { id: "1", ok: true },
+      { id: "2", ok: true },
+    ]);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create the 2 that say who and when",
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.decide).toHaveBeenCalledWith([
+        { id: "1", action: "accept", task: undefined },
+        { id: "2", action: "accept", task: undefined },
+      ]),
+    );
+  });
+
+  it("suggests nobody for last year's task, even when its title names a member (#3930)", () => {
+    mocks.items.current = [
+      {
+        ...suggestion("1", {
+          title: "Sam to book the bus",
+          assignee_id: null,
+          last_year_on: "2025-11-13",
+        }),
+        quote: "Sam to book the bus",
+        source: { type: "task", id: "t-old" },
+      },
+    ];
+    render(<SuggestedTasks headingId="s" />);
+    expect(screen.queryByText("Suggested from the minutes")).toBeNull();
+  });
+
+  it("keeps the other suggestions in reach while one is being created", () => {
+    mocks.accept.mockReturnValue(new Promise(() => {}));
+    mocks.items.current = [suggestion("1"), suggestion("2")];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.click(acceptButtons()[0]!);
+    expect(screen.getByRole("button", { name: "Creating…" })).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Next suggestion",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
 });

@@ -42,7 +42,7 @@ function build(switchOn = true) {
     reconcileSource: jest.fn(async () => ({ created: [], withdrawn: 0 })),
   };
   const consent = { chapterSwitchOn: jest.fn(async () => switchOn) };
-  const tasks = { findById: jest.fn() };
+  const tasks = { doneMarks: jest.fn(async () => new Map()) };
   const repo = { listKeyedForSource: jest.fn(async () => [] as unknown[]) };
   const service = new MeetingTaskSuggestionsService(
     meetings as never,
@@ -184,27 +184,25 @@ describe("actionItemTasks: the minutes' checkboxes", () => {
         dedupe_key: actionItemKey('Order shirts'),
       },
     ]);
-    tasks.findById.mockResolvedValue({
-      stored_status: 'COMPLETED',
-      group: null,
-    });
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-bus', { done: true, group: null }]]),
+    );
 
     await expect(
       service.actionItemTasks(CHAPTER, MEETING, OFFICER),
     ).resolves.toEqual([{ index: 0, done: true, group: null }]);
     expect(meetings.get).toHaveBeenCalledWith(CHAPTER, MEETING, OFFICER);
-    expect(tasks.findById).toHaveBeenCalledWith('t-bus', CHAPTER);
+    expect(tasks.doneMarks).toHaveBeenCalledWith(CHAPTER, ['t-bus']);
   });
 
-  it('follows a task for everyone by its copies', async () => {
+  it('passes on a task for everyone with its counts', async () => {
     const { service, repo, tasks } = build();
     repo.listKeyedForSource.mockResolvedValue([
       accepted('Order shirts', 't-shirts'),
     ]);
-    tasks.findById.mockResolvedValue({
-      stored_status: 'COMPLETED',
-      group: { done: 14, total: 20, confirmed: 3 },
-    });
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-shirts', { done: false, group: { done: 14, total: 20 } }]]),
+    );
     await expect(
       service.actionItemTasks(CHAPTER, MEETING, OFFICER),
     ).resolves.toEqual([
@@ -212,13 +210,35 @@ describe("actionItemTasks: the minutes' checkboxes", () => {
     ]);
   });
 
+  it('gives a task to the first of two items that read the same', async () => {
+    const { service, repo, tasks, meetings } = build();
+    meetings.get.mockResolvedValue({
+      meeting: meeting({
+        content: {
+          ...meeting().content,
+          action_items: [
+            { text: 'Order shirts', owner_user_id: null, due_date: null },
+            { text: 'order shirts.', owner_user_id: null, due_date: null },
+          ],
+        },
+      }),
+    });
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Order shirts', 't-shirts'),
+    ]);
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-shirts', { done: true, group: null }]]),
+    );
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([{ index: 0, done: true, group: null }]);
+  });
+
   it('leaves out an item whose task was deleted since', async () => {
-    const { NotFoundException } = await import('@nestjs/common');
-    const { service, repo, tasks } = build();
+    const { service, repo } = build();
     repo.listKeyedForSource.mockResolvedValue([
       accepted('Book the bus', 't-gone'),
     ]);
-    tasks.findById.mockRejectedValue(new NotFoundException('Task not found'));
     await expect(
       service.actionItemTasks(CHAPTER, MEETING, OFFICER),
     ).resolves.toEqual([]);
