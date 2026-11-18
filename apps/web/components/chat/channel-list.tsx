@@ -271,6 +271,40 @@ function ChannelRowName({
 }
 
 /**
+ * A row's count: the mention-red badge when it addresses the member, else,
+ * for a merely unread row, the same words for a screen reader alone. One
+ * copy, so a channel row and a Direct messages row (which draws it at the end
+ * of its last line, #5519) can't announce unread differently.
+ */
+function RowCount({
+  counts,
+  isDirect,
+  showBadge,
+  announce,
+}: {
+  counts: ChannelUnread;
+  isDirect: boolean;
+  showBadge: boolean;
+  announce: boolean;
+}) {
+  if (showBadge) {
+    return (
+      <Badge
+        variant="mention"
+        className="h-6 justify-center px-2"
+        aria-label={unreadAnnouncement(counts, isDirect)}
+      >
+        {badgeLabel(counts.unreadCount, counts.mentionCount)}
+      </Badge>
+    );
+  }
+  // No number to draw, but a screen reader still hears it.
+  return announce ? (
+    <span className="sr-only">{unreadAnnouncement(counts, isDirect)}</span>
+  ) : null;
+}
+
+/**
  * One check for sent, two for read (#5519), before the viewer's own last line:
  * the shapes the phone draws (`CheckGlyph`, `CheckAllGlyph`). Read takes the
  * chapter accent, sent stays muted. The words are for a screen reader.
@@ -1049,21 +1083,14 @@ export function ChannelList({
                   {/* The badge ends the last line, under the time (#5519).
                       No height of its own, so a row never moves when one
                       arrives. */}
-                  {countsKnown && hasMention ? (
-                    <span className="flex h-0 shrink-0 items-center">
-                      <Badge
-                        variant="mention"
-                        className="h-6 justify-center px-2"
-                        aria-label={unreadAnnouncement(counts, isDm(channel))}
-                      >
-                        {badgeLabel(counts.unreadCount, counts.mentionCount)}
-                      </Badge>
-                    </span>
-                  ) : isUnread ? (
-                    <span className="sr-only">
-                      {unreadAnnouncement(counts, isDm(channel))}
-                    </span>
-                  ) : null}
+                  <span className="flex h-0 shrink-0 items-center">
+                    <RowCount
+                      counts={counts}
+                      isDirect={isDm(channel)}
+                      showBadge={countsKnown && hasMention}
+                      announce={isUnread}
+                    />
+                  </span>
                 </span>
               </span>
             ) : (
@@ -1086,20 +1113,12 @@ export function ChannelList({
                 {/* A number only when it addresses the member, as Discord does:
                   a merely unread channel says so with its bold name
                   (2026-11-07). */}
-                {countsKnown && hasMention ? (
-                  <Badge
-                    variant="mention"
-                    className="h-6 justify-center px-2"
-                    aria-label={unreadAnnouncement(counts, isDm(channel))}
-                  >
-                    {badgeLabel(counts.unreadCount, counts.mentionCount)}
-                  </Badge>
-                ) : isUnread ? (
-                  // No number to draw, but a screen reader still hears it.
-                  <span className="sr-only">
-                    {unreadAnnouncement(counts, isDm(channel))}
-                  </span>
-                ) : null}
+                <RowCount
+                  counts={counts}
+                  isDirect={isDm(channel)}
+                  showBadge={countsKnown && hasMention}
+                  announce={isUnread}
+                />
               </span>
             )}
           </button>

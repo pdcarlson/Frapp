@@ -22,6 +22,7 @@ import {
   useGetOrCreateDm,
   useLeaveChannel,
   useMemberDisplayNames,
+  useNowDate,
   useSidebarPreferences,
   useViewerUserId,
   sidebarMutedChannelIds,
@@ -139,6 +140,9 @@ export default function MessagesScreen() {
   const unread = useShownUnreadCounts();
   const unreadQuery = unread.query;
   const latestQuery = useChannelLatestMessages();
+  // The rows' times read this clock, so a tab that never unmounts still
+  // moves "4:46 PM" to "Yesterday" (#5519).
+  const now = useNowDate();
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const leaveChannel = useLeaveChannel();
   const reopenDm = useGetOrCreateDm();
@@ -311,7 +315,7 @@ export default function MessagesScreen() {
           avatarUrl={avatarOf(channel)}
           avatarTint={tintOf(channel)}
           preview={previewOf(channel)}
-          time={latest ? formatConversationTime(latest.created_at) : null}
+          time={latest ? formatConversationTime(latest.created_at, now) : null}
           timeLabel={latest ? formatTimestampFull(latest.created_at) : null}
           readStatus={conversationReadStatus(latest, viewerId)}
           isMuted={mutedChannelIds?.has(channel.id) ?? false}

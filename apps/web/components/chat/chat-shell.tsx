@@ -39,6 +39,7 @@ import {
   claimViewedChannel,
   useChannelUnreadCounts,
   useChannelLatestMessages,
+  useNowDate,
   useChannels,
   useChapterScope,
   useSetChannelNotificationLevel,
@@ -2323,6 +2324,9 @@ export function ChatShell({
     enabled: directView || recentSort,
   });
   const latestRows = latestQuery.data;
+  // The rows' times read this clock, so "4:46 PM" becomes "Yesterday" on a
+  // tab left open: identical refetches keep `latestRows` stable (#5519).
+  const now = useNowDate();
   // Settled once it has data, has failed, or isn't fetching at all (paused
   // offline, or never enabled for want of a chapter): only a first read in
   // flight holds the list.
@@ -2344,7 +2348,7 @@ export function ChatShell({
       if (latest) {
         at.set(channel.id, latest.created_at);
         meta.set(channel.id, {
-          time: formatConversationTime(latest.created_at),
+          time: formatConversationTime(latest.created_at, now),
           timeLabel: formatTimestampFull(latest.created_at),
           readStatus: conversationReadStatus(latest, userId),
         });
@@ -2363,7 +2367,7 @@ export function ChatShell({
       );
     }
     return { at, previews, meta };
-  }, [directView, latestRows, railChannels, userId, nameFor]);
+  }, [directView, latestRows, railChannels, userId, nameFor, now]);
   // Recent on the channels rail (#2877): each channel's latest message time.
   // Absent until the read answers or if it failed, when the shared
   // arrangement keeps the chapter's order rather than sorting on nothing.

@@ -76,13 +76,17 @@ describe("ReadReceiptsSection", () => {
   it("holds the switch while a save is in flight or the browser is offline", () => {
     state.pending = true;
     const { unmount } = render(<ReadReceiptsSection />);
-    expect(screen.getByRole("switch", { name: "Read receipts" })).toBeDisabled();
+    expect(
+      screen.getByRole("switch", { name: "Read receipts" }),
+    ).toBeDisabled();
     unmount();
 
     state.pending = false;
     state.offline = true;
     render(<ReadReceiptsSection />);
-    expect(screen.getByRole("switch", { name: "Read receipts" })).toBeDisabled();
+    expect(
+      screen.getByRole("switch", { name: "Read receipts" }),
+    ).toBeDisabled();
   });
 
   it("says once when a save failed", () => {

@@ -11,7 +11,10 @@ import { db, miss } from "../harness.mjs";
 //   sender who turned them off is told about none (the switch is two-way);
 // - a group DM is `read` only once every other member has read it;
 // - a member who blocked the sender never counts as having read it;
-// - an audit line in a DM is nobody's message to have sent.
+// - a cursor from before the message is not a read of it, and Mark unread
+//   (a cursor moved back) brings sent back;
+// - an audit line or an imported message in a DM is nobody's to have sent;
+// - a conversation with nobody else left in it stays sent.
 try {
   const CH = "f0f0f0f0-0000-4000-8000-000000005519";
   const U = {
@@ -23,6 +26,8 @@ try {
   const GROUP = "f2f2f2f2-0000-4000-8000-000000005502";
   const PUB = "f2f2f2f2-0000-4000-8000-000000005503";
   const AUDIT_DM = "f2f2f2f2-0000-4000-8000-000000005504";
+  const IMPORTED_DM = "f2f2f2f2-0000-4000-8000-000000005505";
+  const ALONE = "f2f2f2f2-0000-4000-8000-000000005506";
   await db.exec(`
     insert into chapters (id, name, university) values ('${CH}', 'Read receipts', 'U');
     insert into users (id, supabase_auth_id, email, display_name) values
@@ -33,16 +38,31 @@ try {
       ('${DM}', '${CH}', 'dm-rr', 'DM', array['${U.a}', '${U.b}']::uuid[]),
       ('${GROUP}', '${CH}', 'group', 'GROUP_DM', array['${U.a}', '${U.b}', '${U.c}']::uuid[]),
       ('${PUB}', '${CH}', 'general', 'PUBLIC', '{}'::uuid[]),
-      ('${AUDIT_DM}', '${CH}', 'dm-rr-audit', 'DM', array['${U.a}', '${U.c}']::uuid[]);
+      ('${AUDIT_DM}', '${CH}', 'dm-rr-audit', 'DM', array['${U.a}', '${U.c}']::uuid[]),
+      ('${IMPORTED_DM}', '${CH}', 'group-rr-imported', 'GROUP_DM', array['${U.a}', '${U.b}']::uuid[]),
+      ('${ALONE}', '${CH}', 'group-left', 'GROUP_DM', array['${U.a}']::uuid[]);
     insert into chat_messages (channel_id, sender_id, content, kind, created_at) values
       ('${DM}', '${U.b}', 'hey', 'text', now() - interval '10 minutes'),
       ('${DM}', '${U.a}', 'hi back', 'text', now() - interval '5 minutes'),
       ('${GROUP}', '${U.a}', 'flyers?', 'text', now() - interval '5 minutes'),
       ('${PUB}', '${U.a}', 'to everyone', 'text', now() - interval '5 minutes'),
-      ('${AUDIT_DM}', '${U.a}', '', 'system_audit', now() - interval '5 minutes');
+      ('${AUDIT_DM}', '${U.a}', '', 'system_audit', now() - interval '5 minutes'),
+      ('${IMPORTED_DM}', '${U.a}', 'from the archive', 'imported', now() - interval '5 minutes'),
+      ('${ALONE}', '${U.a}', 'anyone?', 'text', now() - interval '5 minutes');
+    -- B read the DM before A's message: a cursor, but not past it.
+    insert into channel_read_receipts (channel_id, user_id, last_read_at) values
+      ('${DM}', '${U.b}', now() - interval '7 minutes'),
+      ('${IMPORTED_DM}', '${U.b}', now());
   `);
 
-  const LABEL = { [DM]: "DM", [GROUP]: "GROUP", [PUB]: "PUB", [AUDIT_DM]: "AUDIT" };
+  const LABEL = {
+    [DM]: "DM",
+    [GROUP]: "GROUP",
+    [PUB]: "PUB",
+    [AUDIT_DM]: "AUDIT",
+    [IMPORTED_DM]: "IMPORTED",
+    [ALONE]: "ALONE",
+  };
   // "<channel>=<status>" per channel, sorted; "-" for no status.
   const status = async (user) =>
     (
@@ -80,6 +100,13 @@ try {
   await setReceipts(U.a, false);
   const senderOff = await status(U.a);
   await setReceipts(U.a, true);
+  // Mark unread: B's cursor moved back to before A's message.
+  await db.exec(`
+    update channel_read_receipts set last_read_at = now() - interval '6 minutes'
+     where channel_id = '${DM}' and user_id = '${U.b}';
+  `);
+  const markedUnread = await status(U.a);
+  await read(DM, U.b);
   await db.exec(`
     insert into chat_member_blocks (chapter_id, blocker_user_id, blocked_user_id)
     values ('${CH}', '${U.b}', '${U.a}');
@@ -88,39 +115,44 @@ try {
 
   const SCENARIOS = [
     {
-      name: "the sender's own last DM message is sent until read; a channel and an audit line carry no status",
+      name: "the sender's own last DM message is sent until read, a cursor from before it included; a channel, an audit line and an imported message carry no status; a conversation with nobody else left stays sent",
       got: unread,
-      want: "AUDIT=- DM=sent GROUP=sent PUB=-",
+      want: "ALONE=sent AUDIT=- DM=sent GROUP=sent IMPORTED=- PUB=-",
     },
     {
       name: "someone else's message carries no status for the person who received it",
       got: receiverView,
-      want: "AUDIT=- DM=- GROUP=- PUB=-",
+      want: "ALONE=- AUDIT=- DM=- GROUP=- IMPORTED=- PUB=-",
     },
     {
       name: "a DM is read once the other member's cursor passes it; a group waits for everyone",
       got: afterRead,
-      want: "AUDIT=- DM=read GROUP=sent PUB=-",
+      want: "ALONE=sent AUDIT=- DM=read GROUP=sent IMPORTED=- PUB=-",
     },
     {
       name: "a group DM is read once every other member has read it",
       got: groupAll,
-      want: "AUDIT=- DM=read GROUP=read PUB=-",
+      want: "ALONE=sent AUDIT=- DM=read GROUP=read IMPORTED=- PUB=-",
     },
     {
       name: "a receiver with read receipts off never reports a read, in a DM or a group",
       got: receiverOff,
-      want: "AUDIT=- DM=sent GROUP=sent PUB=-",
+      want: "ALONE=sent AUDIT=- DM=sent GROUP=sent IMPORTED=- PUB=-",
     },
     {
       name: "a sender with read receipts off is told about no one's reads",
       got: senderOff,
-      want: "AUDIT=- DM=sent GROUP=sent PUB=-",
+      want: "ALONE=sent AUDIT=- DM=sent GROUP=sent IMPORTED=- PUB=-",
+    },
+    {
+      name: "Mark unread, a cursor moved back before the message, brings sent back",
+      got: markedUnread,
+      want: "ALONE=sent AUDIT=- DM=sent GROUP=read IMPORTED=- PUB=-",
     },
     {
       name: "a member who blocked the sender never counts as having read it",
       got: blockedBy,
-      want: "AUDIT=- DM=sent GROUP=sent PUB=-",
+      want: "ALONE=sent AUDIT=- DM=sent GROUP=sent IMPORTED=- PUB=-",
     },
   ];
   for (const s of SCENARIOS) {
@@ -128,7 +160,9 @@ try {
       console.log(`OK    ${s.name}`);
     } else {
       miss();
-      console.log(`MISS  ${s.name}\n        ↳ expected ${s.want}, got ${s.got}`);
+      console.log(
+        `MISS  ${s.name}\n        ↳ expected ${s.want}, got ${s.got}`,
+      );
     }
   }
 

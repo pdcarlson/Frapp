@@ -227,7 +227,8 @@ export function formatRelativeDayTime(
  * row says it (#5519): the time today (`"4:46 PM"`), `"Yesterday"`, the
  * weekday within the past week (`"Friday"`), otherwise the short date
  * (`"Nov 6"`, `"Nov 6, 2025"` outside this year). Both apps' Messages lists
- * read it. A time a little ahead of the device clock still reads as a time.
+ * read it, passing `useNowDate()` so the label moves with the clock. A time
+ * ahead of the device clock, even across midnight, reads as a time.
  */
 export function formatConversationTime(
   value: unknown,
@@ -236,7 +237,9 @@ export function formatConversationTime(
   const at = toDate(value);
   if (!at) return null;
   const days = dayDelta(now, at);
-  if (days >= 0) return days === 0 ? time(at) : monthDay(at, now);
+  // Today, or ahead of a device clock that runs slow (even past midnight):
+  // the time, never a date that hasn't happened yet.
+  if (days >= 0) return time(at);
   if (days === -1) return "Yesterday";
   if (days > -7) return weekdayName(at);
   return monthDay(at, now);

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { READ_RECEIPTS_COPY, useReadReceiptsSetting } from "@repo/hooks";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { Switch } from "@/components/ui/switch";
+import { SettingsSwitchCard } from "@/components/personal-settings/settings-switch-card";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 
@@ -18,8 +18,6 @@ export function ReadReceiptsSection() {
   const setting = useReadReceiptsSetting();
   const { isOffline } = useNetwork();
   const { toast } = useToast();
-  const switchId = useId();
-  const captionId = useId();
 
   // A failed save is said once, as the AI switch says its own.
   const failed = setting.failed;
@@ -35,26 +33,13 @@ export function ReadReceiptsSection() {
 
   return (
     <ProfileSection id="read-receipts" title={READ_RECEIPTS_COPY.label}>
-      <div className="flex items-start justify-between gap-8 rounded-[14px] border border-border px-4 py-4">
-        <div className="min-w-0 space-y-0.5">
-          <label
-            htmlFor={switchId}
-            className="text-sm font-medium text-foreground"
-          >
-            {READ_RECEIPTS_COPY.label}
-          </label>
-          <p id={captionId} className="text-caption text-muted-foreground">
-            {READ_RECEIPTS_COPY.description}
-          </p>
-        </div>
-        <Switch
-          id={switchId}
-          checked={setting.enabled}
-          disabled={isOffline || setting.pending}
-          onCheckedChange={setting.setEnabled}
-          aria-describedby={captionId}
-        />
-      </div>
+      <SettingsSwitchCard
+        label={READ_RECEIPTS_COPY.label}
+        caption={READ_RECEIPTS_COPY.description}
+        checked={setting.enabled}
+        disabled={isOffline || setting.pending}
+        onCheckedChange={setting.setEnabled}
+      />
     </ProfileSection>
   );
 }

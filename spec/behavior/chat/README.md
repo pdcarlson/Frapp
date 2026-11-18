@@ -198,7 +198,7 @@ Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issu
   It is not keyed by member, so a shared device keeps one density across sign-ins, and sign-out leaves it.
   Syncing it to the account would need a stored setting and an endpoint; revisit if members ask for it to follow them.
 - **Bubbles is a third choice** (added 2026-11-10;
-  a read receipt under your latest message is not built, because no endpoint returns other members' read positions yet, [#4040](https://github.com/pdcarlson/Frapp/issues/4040);
+  "Read" under your latest message in an open DM is not built: the Messages list shows the sent or read check (§ Read Receipts → Shown to the sender), and the footer waits on a live signal when the other member reads, [#5532](https://github.com/pdcarlson/Frapp/issues/5532) *(corrected 2026-11-18: this cited #4040, which does not exist)*;
   [#3787](https://github.com/pdcarlson/Frapp/issues/3787);
   Paul's opt-in OK is [his comment there](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6771881257)).
   Cozy stays the default; nobody is put on Bubbles.

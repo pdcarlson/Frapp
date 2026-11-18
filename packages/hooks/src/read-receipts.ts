@@ -30,13 +30,18 @@ export function useReadReceiptsSetting() {
   const settings = useUserSettings();
   const update = useUpdateUserSettings();
   const queryClient = useQueryClient();
+  // `mutateAsync`, not a per-call `onSettled`: TanStack skips per-call
+  // callbacks once the calling screen unmounts, and a member often leaves
+  // Settings before the save answers. The promise settles either way, so the
+  // previews are always re-read. A failure is reported through `failed`.
+  const { mutateAsync } = update;
   const setEnabled = useCallback(
-    (next: boolean) =>
-      update.mutate(
-        { read_receipts: next },
-        { onSettled: () => invalidateChannelSummaries(queryClient) },
-      ),
-    [update, queryClient],
+    (next: boolean) => {
+      void mutateAsync({ read_receipts: next })
+        .catch(() => undefined)
+        .finally(() => invalidateChannelSummaries(queryClient));
+    },
+    [mutateAsync, queryClient],
   );
   return {
     enabled: settings.data?.read_receipts ?? true,

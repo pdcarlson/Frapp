@@ -115,6 +115,7 @@ describe('GET /v1/settings — a member with no settings row (#2885)', () => {
       status_expires_at: null,
       custom_status: null,
       custom_status_expires_at: null,
+      read_receipts: true,
     });
   });
 
@@ -140,6 +141,7 @@ describe('GET /v1/settings — a member with no settings row (#2885)', () => {
       status_expires_at: null,
       custom_status: null,
       custom_status_expires_at: null,
+      read_receipts: true,
     });
   });
 

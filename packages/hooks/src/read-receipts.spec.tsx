@@ -36,9 +36,7 @@ function setup(client: Record<string, unknown>) {
 describe("useReadReceiptsSetting", () => {
   it("is on, and not ready, until settings answer, then reads the member's choice", async () => {
     let answer!: (value: unknown) => void;
-    const get = vi.fn(
-      () => new Promise((resolve) => (answer = resolve)),
-    );
+    const get = vi.fn(() => new Promise((resolve) => (answer = resolve)));
     const { result } = setup({ GET: get });
     expect(result.current.enabled).toBe(true);
     expect(result.current.ready).toBe(false);
@@ -80,6 +78,30 @@ describe("useReadReceiptsSetting", () => {
     expect(patch).toHaveBeenCalledWith("/v1/settings", {
       body: { read_receipts: false },
     });
+  });
+
+  // A member often leaves Settings before the save answers: the previews are
+  // still re-read once it lands (a per-call onSettled would be skipped).
+  it("re-reads the previews even when the screen that saved has gone", async () => {
+    let answer!: (value: unknown) => void;
+    const get = vi.fn().mockResolvedValue({ data: SETTINGS, error: undefined });
+    const patch = vi.fn(() => new Promise((resolve) => (answer = resolve)));
+    const { result, queryClient, unmount } = setup({ GET: get, PATCH: patch });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    queryClient.setQueryData(CHANNEL_LATEST_MESSAGES_KEY, []);
+
+    act(() => result.current.setEnabled(false));
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    unmount();
+    await act(async () => {
+      answer({ data: { ...SETTINGS, read_receipts: false }, error: undefined });
+    });
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(CHANNEL_LATEST_MESSAGES_KEY)?.isInvalidated,
+      ).toBe(true),
+    );
   });
 
   it("reports a failed save", async () => {
