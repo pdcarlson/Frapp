@@ -3552,6 +3552,23 @@ export interface paths {
         patch: operations["TaskController_updateSubtask_v1"];
         trace?: never;
     };
+    "/v1/tasks/{id}/group/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take members out of a group task: their copies go, the rest stay (#5492) */
+        post: operations["TaskController_removeFromGroup_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/open-tasks": {
         parameters: {
             query?: never;
@@ -9432,6 +9449,15 @@ export interface components {
             /** @description True to check it off, false to uncheck it. */
             done: boolean;
         };
+        RemoveFromTaskGroupDto: {
+            /** @description The members whose copy goes, 1 to 1000. A member with no copy is skipped; a confirmed copy, or every copy, is a 400. */
+            assignee_ids: string[];
+        };
+        RemoveFromTaskGroupResponseDto: {
+            /** @description The members whose copy was deleted. */
+            removed: string[];
+            group: components["schemas"]["TaskGroupSummaryDto"];
+        };
         CreateOpenTaskDto: {
             title: string;
             description?: string;
@@ -10564,6 +10590,8 @@ export interface components {
              * @enum {string}
              */
             proof_kind: "none" | "photo" | "link";
+            /** @description On a task for everyone, its group (#5492), as every task read carries it: each member’s copy has the same `id`, and the counts say how far the group is. Null for a one-person task. */
+            group: components["schemas"]["TaskGroupSummaryDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
@@ -20370,6 +20398,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskSubtaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_removeFromGroup_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveFromTaskGroupDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveFromTaskGroupResponseDto"];
                 };
             };
             /** @description Error */

@@ -140,6 +140,7 @@ describe('TaskService', () => {
       findGroups: jest.fn().mockResolvedValue([]),
       findGroupCopies: jest.fn().mockResolvedValue([]),
       deleteGroup: jest.fn().mockResolvedValue(undefined),
+      deleteGroupCopies: jest.fn().mockResolvedValue([]),
     };
     mockRbac = {
       getAlumniRoleId: jest.fn().mockResolvedValue(null),
@@ -784,6 +785,157 @@ describe('TaskService', () => {
       expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [
         'chapters/ch-1/tasks/p1/a.jpg',
       ]);
+    });
+  });
+
+  describe('removeFromGroup (#5492)', () => {
+    const copyOf = (assigneeId: string, over: Partial<Task> = {}): Task => ({
+      ...baseTask,
+      id: `copy-${assigneeId}`,
+      assignee_id: assigneeId,
+      group_id: 'group-1',
+      ...over,
+    });
+    const group = {
+      id: 'group-1',
+      chapter_id: 'ch-1',
+      created_by: 'admin-1',
+      audience: 'everyone' as const,
+      target_id: null,
+      target_name: null,
+      created_at: '2026-11-17T00:00:00.000Z',
+    };
+
+    beforeEach(() => {
+      mockTaskRepo.findById.mockResolvedValue(copyOf('user-1'));
+      mockTaskRepo.findGroups.mockResolvedValue([group]);
+    });
+
+    it("deletes the picked members' copies and their photos, and returns the group as it stands", async () => {
+      mockTaskRepo.findGroupCopies
+        .mockResolvedValueOnce([
+          copyOf('user-1'),
+          copyOf('user-2'),
+          copyOf('user-3', { status: TaskStatus.COMPLETED }),
+        ])
+        .mockResolvedValueOnce([
+          copyOf('user-1'),
+          copyOf('user-3', { status: TaskStatus.COMPLETED }),
+        ]);
+      mockTaskRepo.deleteGroupCopies.mockResolvedValue(['copy-user-2']);
+      mockTaskRepo.findPhotos.mockResolvedValue([
+        {
+          id: 'photo-1',
+          task_id: 'copy-user-2',
+          chapter_id: 'ch-1',
+          kind: 'proof',
+          storage_path: 'chapters/ch-1/tasks/p1/a.jpg',
+          position: 0,
+          created_by: 'user-2',
+          created_at: '2026-11-17T00:00:00.000Z',
+        },
+      ]);
+
+      const result = await service.removeFromGroup('copy-user-1', 'ch-1', [
+        'user-2',
+        'not-in-group',
+      ]);
+
+      expect(mockTaskRepo.deleteGroupCopies).toHaveBeenCalledWith(
+        'ch-1',
+        'group-1',
+        ['copy-user-2'],
+      );
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [
+        'chapters/ch-1/tasks/p1/a.jpg',
+      ]);
+      expect(result).toEqual({
+        removed: ['user-2'],
+        group: {
+          id: 'group-1',
+          audience: 'everyone',
+          target_id: null,
+          target_name: null,
+          total: 2,
+          done: 1,
+          confirmed: 0,
+        },
+      });
+    });
+
+    it('leaves out of the answer, and keeps the photos of, a copy confirmed before the delete reached it', async () => {
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1'),
+        copyOf('user-2'),
+        copyOf('user-3'),
+      ]);
+      // user-3's copy was confirmed between the read and the delete, whose
+      // own filter left it.
+      mockTaskRepo.deleteGroupCopies.mockResolvedValue(['copy-user-2']);
+      const photo = (taskId: string, path: string) => ({
+        id: `photo-${taskId}`,
+        task_id: taskId,
+        chapter_id: 'ch-1',
+        kind: 'proof' as const,
+        storage_path: path,
+        position: 0,
+        created_by: 'member',
+        created_at: '2026-11-17T00:00:00.000Z',
+      });
+      mockTaskRepo.findPhotos.mockResolvedValue([
+        photo('copy-user-2', 'chapters/ch-1/tasks/p2/a.jpg'),
+        photo('copy-user-3', 'chapters/ch-1/tasks/p3/a.jpg'),
+      ]);
+
+      const result = await service.removeFromGroup('copy-user-1', 'ch-1', [
+        'user-2',
+        'user-3',
+      ]);
+
+      expect(result.removed).toEqual(['user-2']);
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [
+        'chapters/ch-1/tasks/p2/a.jpg',
+      ]);
+    });
+
+    it('refuses a confirmed copy, deleting nothing', async () => {
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1'),
+        copyOf('user-2', { points_awarded: true }),
+      ]);
+
+      await expect(
+        service.removeFromGroup('copy-user-1', 'ch-1', ['user-2']),
+      ).rejects.toThrow('A confirmed copy stays');
+      expect(mockTaskRepo.deleteGroupCopies).not.toHaveBeenCalled();
+    });
+
+    it('refuses taking out everyone, which is deleting the task', async () => {
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1'),
+        copyOf('user-2'),
+      ]);
+
+      await expect(
+        service.removeFromGroup('copy-user-1', 'ch-1', ['user-1', 'user-2']),
+      ).rejects.toThrow('delete the task for everyone instead');
+      expect(mockTaskRepo.deleteGroupCopies).not.toHaveBeenCalled();
+    });
+
+    it("refuses a task that isn't for a group", async () => {
+      mockTaskRepo.findById.mockResolvedValue({ ...baseTask, group_id: null });
+
+      await expect(
+        service.removeFromGroup('task-1', 'ch-1', ['user-2']),
+      ).rejects.toThrow("This task isn't for a group");
+    });
+
+    it('is a 404 for a task not in the chapter', async () => {
+      mockTaskRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.removeFromGroup('task-1', 'ch-1', ['user-2']),
+      ).rejects.toThrow('Task not found');
     });
   });
 

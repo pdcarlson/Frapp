@@ -151,6 +151,16 @@ export interface ITaskRepository {
    * subtask rows go with their copies (on delete cascade).
    */
   deleteGroup(chapterId: string, groupId: string): Promise<void>;
+  /**
+   * Delete these copies of a group (#5492), the group's row staying. Only
+   * copies not yet confirmed go: one confirmed since it was read stays, its
+   * points paid on it. Returns the ids deleted.
+   */
+  deleteGroupCopies(
+    chapterId: string,
+    groupId: string,
+    ids: string[],
+  ): Promise<string[]>;
   /** These series of the chapter, any order. */
   findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]>;
   /** A series' latest copy (the furthest `occurrence_date`), or null. */

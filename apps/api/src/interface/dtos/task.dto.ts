@@ -615,6 +615,41 @@ export class UpdateTaskDto {
   recurrence_rule?: string | null;
 }
 
+/**
+ * The most members one `POST /v1/tasks/:id/group/remove` takes out (#5492):
+ * above any chapter's roster, so a whole chapter fits in one call.
+ */
+export const TASK_GROUP_REMOVE_MAX = 1000;
+
+/** `POST /v1/tasks/:id/group/remove` (#5492). */
+export class RemoveFromTaskGroupDto {
+  @ApiProperty({
+    description: `The members whose copy goes, 1 to ${TASK_GROUP_REMOVE_MAX}. A member with no copy is skipped; a confirmed copy, or every copy, is a 400.`,
+    type: [String],
+    format: 'uuid',
+    minItems: 1,
+    maxItems: TASK_GROUP_REMOVE_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(TASK_GROUP_REMOVE_MAX)
+  @IsUUID('all', { each: true })
+  assignee_ids: string[];
+}
+
+/** The group after `POST /v1/tasks/:id/group/remove` (#5492). */
+export class RemoveFromTaskGroupResponseDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description: 'The members whose copy was deleted.',
+  })
+  removed: string[];
+
+  @ApiProperty({ type: () => TaskGroupSummaryDto })
+  group: TaskGroupSummaryDto;
+}
+
 /** `DELETE /v1/tasks/:id` (#5119). */
 export class DeleteTaskQueryDto {
   @ApiPropertyOptional({

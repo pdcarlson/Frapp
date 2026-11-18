@@ -5,6 +5,8 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   InternalServerErrorException,
   Param,
   ParseUUIDPipe,
@@ -45,6 +47,8 @@ import {
   CreateTaskResponseDto,
   CreateTaskSubtaskDto,
   DeleteTaskQueryDto,
+  RemoveFromTaskGroupDto,
+  RemoveFromTaskGroupResponseDto,
   TaskGroupSummaryDto,
   TaskSeriesSummaryDto,
   TaskSubtaskDto,
@@ -393,6 +397,22 @@ export class TaskController {
   ) {
     await this.taskService.deleteSubtask(id, subtaskId, chapterId);
     return { success: true };
+  }
+
+  @Post(':id/group/remove')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(SystemPermissions.TASKS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Take members out of a group task: their copies go, the rest stay (#5492)',
+  })
+  @ApiOkResponse({ type: RemoveFromTaskGroupResponseDto })
+  async removeFromGroup(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RemoveFromTaskGroupDto,
+  ): Promise<RemoveFromTaskGroupResponseDto> {
+    return this.taskService.removeFromGroup(id, chapterId, dto.assignee_ids);
   }
 
   @Delete(':id')
