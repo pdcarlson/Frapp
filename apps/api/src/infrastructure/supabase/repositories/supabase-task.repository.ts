@@ -1,3 +1,4 @@
+import { chunkIds } from '#domain/utils/chunk-ids';
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
@@ -348,6 +349,8 @@ export class SupabaseTaskRepository implements ITaskRepository {
       p_chapter_id: input.chapter_id,
       p_created_by: input.created_by,
       p_audience: input.audience,
+      p_target_id: input.target_id,
+      p_target_name: input.target_name,
       p_assignee_ids: input.assignee_ids,
       p_title: input.title,
       p_description: input.description,
@@ -419,6 +422,28 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId)
       .eq('id', groupId);
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async deleteGroupCopies(
+    chapterId: string,
+    groupId: string,
+    ids: string[],
+  ): Promise<string[]> {
+    const deleted: string[] = [];
+    // In batches: a whole chapter's ids in one `in` list overflows the URL.
+    for (const batch of chunkIds(ids)) {
+      const { data, error } = await this.supabase
+        .from('tasks')
+        .delete()
+        .eq('chapter_id', chapterId)
+        .eq('group_id', groupId)
+        .eq('points_awarded', false)
+        .in('id', batch)
+        .select('id');
+      if (error) throw new SupabaseQueryError(error);
+      deleted.push(...(data ?? []).map((row) => row.id));
+    }
+    return deleted;
   }
 
   async findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]> {

@@ -1,3 +1,4 @@
+import type { MeetingType } from '@repo/validation';
 import { Meeting, MeetingTemplate } from '../entities/meeting.entity';
 
 export const MEETING_REPOSITORY = 'MEETING_REPOSITORY';
@@ -32,6 +33,17 @@ export interface IMeetingRepository {
   findPostedSince(
     chapterId: string,
     since: string,
+    limit: number,
+  ): Promise<Meeting[]>;
+  /**
+   * Posted minutes of one type for meetings held before `before`, newest
+   * meeting first, at most `limit`: the few earlier minutes a draft reads
+   * (#5477).
+   */
+  findPostedBefore(
+    chapterId: string,
+    before: string,
+    meetingType: MeetingType,
     limit: number,
   ): Promise<Meeting[]>;
   /**

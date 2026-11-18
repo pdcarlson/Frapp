@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -16,6 +17,12 @@ vi.mock("@repo/hooks", () => ({
   // Task photos (#4565): no photo reads or uploads in these cases.
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useTaskPhotoUrl: () => ({ data: undefined }),
+  // The Who picker (the card's and the task form's) reads roles, tiers and groups.
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useCurrentChapter: () => mocks.currentChapter(),
   useAiSuggestions: () => ({ data: { items: mocks.items.current } }),
@@ -41,6 +48,7 @@ vi.mock("@repo/hooks", () => ({
     data: [
       { user_id: "u-jake", display_name: "Jake Ross" },
       { user_id: "u-sam", display_name: "Sam Lee" },
+      { user_id: "u-alex", display_name: "Alex Kim" },
     ],
   }),
 }));
@@ -81,6 +89,15 @@ function suggestion(id: string, task: Record<string, unknown> = {}) {
     expires_at: "2026-11-24T00:00:00.000Z",
   };
 }
+
+/** Every who-field, as an edit sends them so it replaces the whole answer. */
+const noWho = {
+  assignee_id: null,
+  assignee_ids: null,
+  audience: null,
+  audience_role_id: null,
+  audience_group_id: null,
+};
 
 const acceptButtons = () =>
   screen.getAllByRole("button", { name: "Create task" });
@@ -161,14 +178,17 @@ describe("SuggestedTasks (#4313)", () => {
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    fireEvent.click(screen.getByLabelText("Assignee for Task 1"));
-    fireEvent.click(await screen.findByRole("option", { name: "Everyone" }));
+    await userEvent.click(screen.getByLabelText("Assignee for Task 1"));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /Everyone in the chapter/ }),
+    );
+    await userEvent.keyboard("{Escape}");
     fireEvent.click(acceptButtons()[0]!);
 
     await waitFor(() =>
       expect(mocks.accept).toHaveBeenCalledWith({
         id: "1",
-        task: { audience: "everyone" },
+        task: { ...noWho, audience: "everyone" },
       }),
     );
   });
@@ -183,6 +203,77 @@ describe("SuggestedTasks (#4313)", () => {
     fireEvent.click(acceptButtons()[0]!);
     await waitFor(() =>
       expect(mocks.accept).toHaveBeenCalledWith({ id: "1", task: undefined }),
+    );
+  });
+
+  it("reads a suggestion up for grabs in a role as ready to create, sending no changes", async () => {
+    mocks.items.current = [
+      suggestion("1", {
+        assignee_id: null,
+        audience: "someone",
+        audience_role_id: "r-social",
+      }),
+    ];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.click(acceptButtons()[0]!);
+    await waitFor(() =>
+      expect(mocks.accept).toHaveBeenCalledWith({ id: "1", task: undefined }),
+    );
+  });
+
+  it("puts a suggestion up for grabs between two members picked on the card", async () => {
+    mocks.items.current = [suggestion("1", { assignee_id: null })];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    await userEvent.click(screen.getByLabelText("Assignee for Task 1"));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /Jake Ross/ }),
+    );
+    await userEvent.click(screen.getByRole("checkbox", { name: /Sam Lee/ }));
+    await userEvent.click(screen.getByRole("radio", { name: "One claims it" }));
+    await userEvent.keyboard("{Escape}");
+    fireEvent.click(acceptButtons()[0]!);
+
+    await waitFor(() => expect(mocks.accept).toHaveBeenCalled());
+    const sent = mocks.accept.mock.calls[0]![0];
+    expect(sent.id).toBe("1");
+    expect(sent.task).toEqual({
+      ...noWho,
+      audience: "someone",
+      assignee_ids: expect.arrayContaining(["u-jake", "u-sam"]),
+    });
+  });
+
+  it("keeps a role's up-for-grabs pick through Change before creating", async () => {
+    mocks.items.current = [
+      suggestion("1", {
+        assignee_id: null,
+        audience: "someone",
+        audience_role_id: "r-social",
+      }),
+    ];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change before creating: Task 1" }),
+    );
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Book the bus" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
+
+    await waitFor(() => expect(mocks.accept).toHaveBeenCalled());
+    expect(mocks.accept.mock.calls[0]![0].task).toEqual(
+      expect.objectContaining({
+        title: "Book the bus",
+        ...noWho,
+        audience: "someone",
+        audience_role_id: "r-social",
+      }),
     );
   });
 
@@ -235,6 +326,7 @@ describe("SuggestedTasks (#4313)", () => {
         task: {
           title: "Book the bus",
           description: "From the minutes of Chapter meeting.",
+          ...noWho,
           assignee_id: "u-jake",
           due_date: "2026-11-14",
           due_at: null,
@@ -428,7 +520,12 @@ describe("SuggestedTasks (#4313)", () => {
       await waitFor(() =>
         expect(mocks.accept).toHaveBeenCalledWith({
           id: "1",
-          task: { assignee_id: "u-sam", due_date: "2026-11-16", due_at: null },
+          task: {
+            ...noWho,
+            assignee_id: "u-sam",
+            due_date: "2026-11-16",
+            due_at: null,
+          },
         }),
       );
     } finally {

@@ -69,6 +69,21 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
 }));
 const ai = vi.hoisted(() => ({ available: true as boolean | undefined }));
+// The chapter as the Assign to picker reads it (`use-who-directory.ts`).
+vi.mock("@/lib/tasks/use-who-directory", async () => {
+  const { buildWhoDirectory } = await import("@repo/hooks/task-who-picker");
+  const directory = buildWhoDirectory({
+    members: [
+      { user_id: "user-1", display_name: "Paul Carlson", role_ids: [] },
+      { user_id: "user-2", display_name: "Shawn Klein", role_ids: [] },
+    ],
+    viewerUserId: "user-1",
+  });
+  return {
+    useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),
+  };
+});
+
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => ai,
 }));
@@ -255,22 +270,29 @@ describe("Suggested tasks", () => {
     expect(state.accept).not.toHaveBeenCalled();
     const seed = state.seed as {
       title: string;
-      assigneeId: string | null;
+      who: unknown;
       accept: (form: ValidatedNewTask) => Promise<void>;
     };
     expect(seed.title).toBe("Order shirts");
-    expect(seed.assigneeId).toBeNull();
+    expect(seed.who).toBeNull();
 
     // The form's Accept sends only what the officer changed.
     await seed.accept({
       title: "Order shirts",
-      assignee_id: "u1",
+      who: { kind: "person", userId: "u1" },
       due_date: "2026-11-20",
       subtasks: [],
     } as unknown as ValidatedNewTask);
+    // A changed Who? sends every who-field, so the edit replaces the answer.
     expect(state.accept).toHaveBeenCalledWith({
       id: "s2",
-      task: { assignee_id: "u1" },
+      task: {
+        assignee_id: "u1",
+        assignee_ids: null,
+        audience: null,
+        audience_role_id: null,
+        audience_group_id: null,
+      },
     });
   });
 
@@ -470,33 +492,67 @@ describe("suggestionEdits", () => {
   const form = (over: Record<string, unknown> = {}) =>
     ({
       title: task.title,
-      assignee_id: task.assignee_id,
+      who: { kind: "person", userId: task.assignee_id },
       due_date: task.due_date,
       subtasks: task.subtasks,
       ...over,
     }) as unknown as ValidatedNewTask;
+  const CLEARED = {
+    assignee_id: null,
+    assignee_ids: null,
+    audience: null,
+    audience_role_id: null,
+    audience_group_id: null,
+  };
 
   it("sends nothing when the officer changed nothing", () => {
     expect(suggestionEdits(task as never, form())).toBeUndefined();
   });
 
-  it("sends Everyone as the audience, and a member picked over Everyone as the member (#4295 step 3)", () => {
+  it("sends every who-field when the answer to Who? changes, so the edit replaces it", () => {
     expect(
       suggestionEdits(
         task as never,
-        form({ assignee_id: undefined, audience: "everyone" }),
+        form({ who: { kind: "each", target: { kind: "chapter" } } }),
       ),
-    ).toEqual({ audience: "everyone" });
+    ).toEqual({ ...CLEARED, audience: "everyone" });
     const group = { ...task, assignee_id: null, audience: "everyone" };
     expect(
       suggestionEdits(
         group as never,
-        form({ assignee_id: undefined, audience: "everyone" }),
+        form({ who: { kind: "each", target: { kind: "chapter" } } }),
       ),
     ).toBeUndefined();
     expect(
-      suggestionEdits(group as never, form({ assignee_id: "u2" })),
-    ).toEqual({ assignee_id: "u2" });
+      suggestionEdits(
+        group as never,
+        form({ who: { kind: "person", userId: "u2" } }),
+      ),
+    ).toEqual({ ...CLEARED, assignee_id: "u2" });
+    expect(
+      suggestionEdits(
+        task as never,
+        form({
+          who: { kind: "someone", target: { kind: "role", id: "r1" } },
+        }),
+      ),
+    ).toEqual({ ...CLEARED, audience: "someone", audience_role_id: "r1" });
+  });
+
+  it("reads the same people in another order as no change", () => {
+    const people = {
+      ...task,
+      assignee_id: null,
+      assignee_ids: ["u1", "u2"],
+    };
+    expect(
+      suggestionEdits(
+        people as never,
+        form({
+          who: { kind: "each", target: { kind: "people", userIds: ["u2", "u1"] } },
+        }),
+      ),
+    ).toBeUndefined();
   });
 
   it("sends only the fields that changed", () => {

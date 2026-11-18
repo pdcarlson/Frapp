@@ -41,6 +41,19 @@ export const PG_INVALID_PARAMETER_VALUE = '22023';
 export const PG_CHAPTER_START_LIMIT = 'FR429';
 
 /**
+ * `insufficient_privilege` (SQLSTATE 42501): a function refused the caller on
+ * purpose, as `release_open_task` refuses anyone but the task's assignee.
+ */
+export const PG_INSUFFICIENT_PRIVILEGE = '42501';
+
+/**
+ * Frapp's own SQLSTATE for a task up for grabs that is no longer open, or a
+ * claimed task past giving back (`claim_open_task`, `release_open_task` in
+ * `20261118043407_task_audiences_and_open_tasks.sql`). The API answers 409.
+ */
+export const PG_OPEN_TASK_CONFLICT = 'FR409';
+
+/**
  * Whether an unknown throwable is a Postgres unique violation.
  *
  * Use this where the caught value is untyped — a rejected repository promise,

@@ -1053,6 +1053,43 @@ describe('ActivityService', () => {
       expect(view.needs_you_count).toBe(2);
     });
 
+    it("carries a task for everyone's group on its rows (#5492)", async () => {
+      const { service, taskService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ]);
+      const group = {
+        id: 'group-1',
+        audience: 'everyone' as const,
+        target_id: null,
+        target_name: null,
+        total: 12,
+        done: 3,
+        confirmed: 1,
+      };
+      serveTasks(
+        taskService,
+        [],
+        [
+          task({
+            id: 'copy',
+            assignee_id: OTHER,
+            created_by: ME,
+            group_id: 'group-1',
+            group,
+          }),
+          task({ id: 'solo', assignee_id: OTHER, created_by: ME }),
+        ],
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.tasks.map((row) => [row.id, row.group])).toEqual([
+        ['copy', group],
+        ['solo', null],
+      ]);
+    });
+
     it('reads no tasks while the Tasks module is off', async () => {
       const { service, taskService } = build();
 

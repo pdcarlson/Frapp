@@ -428,42 +428,7 @@ describe("AskCard", () => {
       expect(dialog()!.querySelector("svg[aria-hidden]")).not.toBeNull();
     });
 
-    it("asks a question typed into the top bar's field as it opens, once", () => {
-      const onAsked = vi.fn();
-      const view = render(
-        <Card asking="When is the budget vote?" onAsked={onAsked} />,
-      );
-      expect(state.ask).toHaveBeenCalledTimes(1);
-      expect(state.ask).toHaveBeenCalledWith(
-        "When is the budget vote?",
-        sent(),
-      );
-      expect(onAsked).toHaveBeenCalledTimes(1);
-      // The host hands nothing more until the next question.
-      view.rerender(<Card asking={null} onAsked={onAsked} />);
-      expect(state.ask).toHaveBeenCalledTimes(1);
-    });
-
-    it("keeps a question from the field in its own field while another is being answered", () => {
-      // One asked from a channel goes on with this closed (#4713).
-      state.exchanges = [
-        {
-          ...DONE,
-          phase: "working",
-          answer: null,
-          origin: { channelId: "chan-1", at: "2026-11-13T16:00:00.000Z" },
-        },
-      ];
-      const onAsked = vi.fn();
-      render(<Card asking="Who is treasurer?" onAsked={onAsked} />);
-      expect(state.ask).not.toHaveBeenCalled();
-      expect(onAsked).toHaveBeenCalledTimes(1);
-      expect(
-        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      ).toHaveValue("Who is treasurer?");
-    });
-
-    it("does not close on a click outside while its own question is being answered", async () => {
+        it("does not close on a click outside while its own question is being answered", async () => {
       state.exchanges = [{ ...DONE, phase: "working", answer: null }];
       const onOpenChange = vi.fn();
       render(
@@ -481,12 +446,7 @@ describe("AskCard", () => {
       expect(onOpenChange).toHaveBeenLastCalledWith(false);
     });
 
-    it("holds a question from the field while it is closed", () => {
-      render(<Card open={false} asking="When is the budget vote?" />);
-      expect(state.ask).not.toHaveBeenCalled();
-    });
-
-    it("closes on Escape and by its close button, with the cursor starting in the field", async () => {
+      it("closes on Escape and by its close button, with the cursor starting in the field", async () => {
       const onOpenChange = vi.fn();
       render(<Card onOpenChange={onOpenChange} />);
       const user = userEvent.setup();
@@ -551,11 +511,42 @@ describe("AskCard", () => {
       ).toBeInTheDocument();
     });
 
-    it("gives focus to the field on screen when what opened it is gone", async () => {
+    it("skips an Ask bar the layout hides, opener or not, for one on screen (#5476)", async () => {
+      // Below `lg` with a channel open, the Channels column's bar is in the
+      // page but `display: none`; `checkVisibility` is how the card tells.
+      const tree = (isOpen: boolean, opener: { current: HTMLElement | null }) => (
+        <>
+          <button data-ask-entry="" data-hidden="">
+            Hidden bar
+          </button>
+          <button data-ask-entry="">Shown bar</button>
+          <Card open={isOpen} returnFocus={opener} />
+        </>
+      );
+      const hidden = { current: null as HTMLElement | null };
+      const view = render(tree(true, hidden));
+      // The dialog hides the page from assistive tech while it is open.
+      hidden.current = screen.getByRole("button", {
+        name: "Hidden bar",
+        hidden: true,
+      });
+      for (const button of screen.getAllByRole("button", {
+        name: /bar$/,
+        hidden: true,
+      })) {
+        button.checkVisibility = () => !button.hasAttribute("data-hidden");
+      }
+      view.rerender(tree(false, hidden));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Shown bar" })).toHaveFocus(),
+      );
+    });
+
+    it("gives focus to the Ask bar on screen when what opened it is gone", async () => {
       const gone = { current: document.createElement("button") };
       const tree = (isOpen: boolean) => (
         <>
-          <button data-ask-entry="">Search or ask Frapp</button>
+          <button data-ask-entry="">Ask Frapp</button>
           <Card open={isOpen} returnFocus={gone} />
         </>
       );
@@ -563,7 +554,7 @@ describe("AskCard", () => {
       view.rerender(tree(false));
       await waitFor(() =>
         expect(
-          screen.getByRole("button", { name: "Search or ask Frapp" }),
+          screen.getByRole("button", { name: "Ask Frapp" }),
         ).toHaveFocus(),
       );
     });

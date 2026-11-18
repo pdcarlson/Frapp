@@ -240,9 +240,9 @@ export function useQuickActionsHost({
           <NewTaskSheet
             ref={taskRef}
             now={now}
-            offerEveryone
-            onCreated={(assigneeName, wasSelf) =>
-              confirm(taskCreatedLine(assigneeName, wasSelf))
+            offerGroups
+            onCreated={(assigneeName, wasSelf, upForGrabs) =>
+              confirm(taskCreatedLine(assigneeName, wasSelf, upForGrabs))
             }
           />
         </SheetBoundary>

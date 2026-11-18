@@ -139,7 +139,7 @@ That is the model's judgment, given the context, not a ranking rule.
   That is the chapter the asker is in when they ask.
   Belonging to a second chapter adds nothing to the answer.
 - **Background work acts for a named member.**
-  Drafting minutes acts for the officer who started it.
+  Drafting minutes acts for the officer who started it; the earlier minutes it reads for background are only ones that officer may read and whose meeting invited the same people as tonight's ([`meetings.md` § Drafting from notes](meetings.md#drafting-from-notes), #5477).
   A scheduled feature acts for the officer who turned it on or who will receive its result.
   The run reads only what that member can open at the moment it runs (one exception, which shows nobody anything: [This time last year](#this-time-last-year) reads this year's whole record to decide what to stay quiet about).
   A run with no member to act for does not read the corpus.
@@ -281,7 +281,8 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 - **Where it is.**
   On web the top bar's find field, which reads "Search or ask Frapp", asks from any page and opens the conversation as a dialog where Find opens (changed in #4904 by pdcarlson, 2026-11-13, Paul's pick;
   until then a button in the chat composer opened it over the thread;
-  [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar);
+  [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar).
+  Changed in #5476 by pdcarlson, 2026-11-18 (Paul's pick, after Shawn and he didn't want Ask in the search bar): on web the field only finds, and a floating Ask bar with the crest opens Ask, as on the phone: at the bottom of every tool page, or at the foot of the Channels column when chat is alone, never over a message box (in a channel, `@Frapp` asks). It opens the same dialog;
   on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field only asks, and the Search screen's last row opens it with the searched words (changed in #5139 by pdcarlson, 2026-11-16; from #4904 the field also listed places that matched what was typed;
   [`../ui/mobile/navigation.md`](../ui/mobile/navigation.md) § Global entries).
   With Ask off for the chapter, for a member without `ai:use`, or on a server with no AI, there is no entry anywhere.
@@ -1046,7 +1047,7 @@ Why it never reached him, read on staging that day: no `member_nudges` row had e
 
 ### The card and its tray
 
-Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, then web; until the phone's step of #5464 lands it still draws the task card from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
+Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, and web after; a phone build from before #5464 still draws only the task card, from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
 
 - **What earns a card.** Any of these, for the member, under each module's own rule for who may see it, with the module on:
   an event starting today or tomorrow (in the member's time zone) that they haven't checked in to or snoozed, until it ends;
@@ -1089,6 +1090,7 @@ Activity draws one card under the week card, from `POST /v1/activity/card`, and 
   "Not now" also means nothing new for two days.
 - **The member is in charge of it.**
   "More" on the card offers "Show fewer of these" (nothing new for 14 days) and "Turn these off"; the switch is also in Preferences, "Nudges on Activity", and turning it back on ends any quiet stretch.
+  On the widened card (#5464) "···" offers "Hide this one" and "Turn these off", and Preferences offers the switch to every member, since the card shows without AI.
   There is no setting for how hard the cards push: an officer never gets one either.
 - **The words are checked.**
   A title of at most 40 characters, a body of at most 170 and two sentences, a starting point of at most 150 and one sentence.

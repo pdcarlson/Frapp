@@ -6,7 +6,7 @@ import {
   TaskStatus,
   TaskSubtask,
 } from '../entities/task.entity';
-import type { TaskAudience, TaskProofKind } from '@repo/validation';
+import type { TaskGroupAudience, TaskProofKind } from '@repo/validation';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
@@ -151,6 +151,16 @@ export interface ITaskRepository {
    * subtask rows go with their copies (on delete cascade).
    */
   deleteGroup(chapterId: string, groupId: string): Promise<void>;
+  /**
+   * Delete these copies of a group (#5492), the group's row staying. Only
+   * copies not yet confirmed go: one confirmed since it was read stays, its
+   * points paid on it. Returns the ids deleted.
+   */
+  deleteGroupCopies(
+    chapterId: string,
+    groupId: string,
+    ids: string[],
+  ): Promise<string[]>;
   /** These series of the chapter, any order. */
   findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]>;
   /** A series' latest copy (the furthest `occurrence_date`), or null. */
@@ -273,7 +283,11 @@ export interface CreateTaskSeriesInput {
 export interface CreateTaskGroupInput {
   chapter_id: string;
   created_by: string;
-  audience: TaskAudience;
+  audience: TaskGroupAudience;
+  /** The role or chapter group it goes to; null for everyone and people. */
+  target_id: string | null;
+  /** That role's or group's name now, kept for once it's deleted. */
+  target_name: string | null;
   /** Who gets a copy: one per distinct user id. */
   assignee_ids: string[];
   title: string;

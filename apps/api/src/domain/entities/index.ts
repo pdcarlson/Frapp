@@ -46,6 +46,7 @@ export * from './meeting.entity';
 export * from './member-nudge.entity';
 export * from './member.entity';
 export * from './notification.entity';
+export * from './open-task.entity';
 export * from './pledge-class.entity';
 export * from './point-transaction.entity';
 export * from './poll-vote.entity';

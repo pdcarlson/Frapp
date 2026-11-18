@@ -83,6 +83,14 @@ describe("resolveNotificationTarget", () => {
     ).toBe("/activity?review=t1");
   });
 
+  it("opens the board for a task up for grabs, where Up for grabs sits on top", () => {
+    // "New task up for grabs" (tasks.md § Up for grabs) carries the posting's
+    // id; the board lists it above Today, so the board is the place.
+    expect(
+      resolveNotificationTarget(payload({ screen: "tasks", openTaskId: "o1" })),
+    ).toEqual({ pathname: "/tasks" });
+  });
+
   it("sends points to the task board, which absorbed it", () => {
     // C3 folded points into s08; there is no points route to send anyone to.
     expect(resolveNotificationTarget(payload({ screen: "points" }))).toEqual({

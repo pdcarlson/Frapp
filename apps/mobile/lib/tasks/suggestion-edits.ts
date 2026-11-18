@@ -1,4 +1,9 @@
 import type { AiSuggestion, TaskSuggestionEdits } from "@repo/hooks";
+import {
+  sameTaskWho,
+  taskWhoOf,
+  taskWhoSuggestionFields,
+} from "@repo/validation";
 import type { ValidatedNewTask } from "@/lib/tasks/create-task";
 
 type SuggestedTask = NonNullable<AiSuggestion["task"]>;
@@ -10,11 +15,11 @@ export function suggestionEdits(
 ): TaskSuggestionEdits | undefined {
   const edits: TaskSuggestionEdits = {};
   if (form.title !== task.title) edits.title = form.title;
-  // One answer to Who?: a member, or Everyone (#4295 step 3).
-  if (form.audience) {
-    if (form.audience !== task.audience) edits.audience = form.audience;
-  } else if (form.assignee_id && form.assignee_id !== task.assignee_id) {
-    edits.assignee_id = form.assignee_id;
+  // One answer to Who? (2026-11-18): a member, several, a role, a group or
+  // everyone, each doing it or one claiming it. Changed, every who-field
+  // goes, so the edit replaces the whole answer.
+  if (!sameTaskWho(form.who, taskWhoOf(task))) {
+    Object.assign(edits, taskWhoSuggestionFields(form.who));
   }
   const dueAt = form.due_at ?? null;
   if (form.due_date !== task.due_date || dueAt !== task.due_at) {

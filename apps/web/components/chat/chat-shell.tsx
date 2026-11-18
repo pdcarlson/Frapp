@@ -22,6 +22,7 @@ import { memberLabel } from "@repo/hooks/display-names";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
+import { AskBar } from "@/components/ask/ask-bar";
 import { ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
@@ -3400,6 +3401,15 @@ export function ChatShell({
           ) : null}
         </div>
       </div>
+      {/*
+        Ask Frapp's bar (#5476), at the foot of the list when chat has the
+        page to itself. The thread's composer owns the bottom of the channel,
+        and asks there through `@Frapp`; beside a tool page the bar is at the
+        bottom of the page instead (`dashboard-shell.tsx`).
+      */}
+      {toolBeside ? null : (
+        <AskBar compact className="mx-2 mb-3 mt-1 w-auto shrink-0" />
+      )}
     </>
   );
 

@@ -91,7 +91,8 @@ export const FEATURE_EVENTS = {
     feature: 'tasks',
     properties: [
       'assigned_to_self',
-      // `person` or `everyone` (#4295 step 3), and how many copies it made.
+      // `person`, or the group it went to: `everyone` (#4295 step 3),
+      // `people`, `role` or `group` (2026-11-18); and how many copies it made.
       'audience',
       'group_size',
       'has_due_time',
@@ -116,6 +117,22 @@ export const FEATURE_EVENTS = {
   'task-completion-rejected': {
     feature: 'tasks',
     properties: ['asked_for_photo'],
+  },
+  // Tasks up for grabs (2026-11-18): posted, then claimed or handed out.
+  'open-task-created': {
+    feature: 'tasks',
+    properties: [
+      'scope',
+      'eligible_count',
+      'has_due_time',
+      'has_point_reward',
+      'has_subtasks',
+      'proof_kind',
+    ],
+  },
+  'open-task-claimed': {
+    feature: 'tasks',
+    properties: ['assigned_by_officer'],
   },
 
   // Polls (a poll is a chat message of kind `poll`)

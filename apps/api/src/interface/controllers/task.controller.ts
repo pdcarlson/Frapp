@@ -5,6 +5,8 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   InternalServerErrorException,
   Param,
   ParseUUIDPipe,
@@ -24,6 +26,7 @@ import {
 import { TaskService } from '../../application/services/task.service';
 import { TaskSeriesService } from '../../application/services/task-series.service';
 import { RbacService } from '../../application/services/rbac.service';
+import { OpenTaskService } from '../../application/services/open-task.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -44,6 +47,8 @@ import {
   CreateTaskResponseDto,
   CreateTaskSubtaskDto,
   DeleteTaskQueryDto,
+  RemoveFromTaskGroupDto,
+  RemoveFromTaskGroupResponseDto,
   TaskGroupSummaryDto,
   TaskSeriesSummaryDto,
   TaskSubtaskDto,
@@ -55,6 +60,7 @@ import {
   TaskPhotoUploadUrlResponseDto,
   TaskPhotoUrlResponseDto,
 } from '../dtos/task.dto';
+import { OpenTaskDto } from '../dtos/open-task.dto';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { VerifySessionLocally } from '../decorators/session-check.decorator';
@@ -73,6 +79,7 @@ export class TaskController {
     private readonly taskService: TaskService,
     private readonly taskSeriesService: TaskSeriesService,
     private readonly rbacService: RbacService,
+    private readonly openTaskService: OpenTaskService,
   ) {}
 
   @Get()
@@ -181,8 +188,8 @@ export class TaskController {
       result,
     }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
       assigned_to_self:
-        !body?.audience && result.assignee_id === result.created_by,
-      audience: body?.audience ?? 'person',
+        !result.group && result.assignee_id === result.created_by,
+      audience: result.group?.audience ?? 'person',
       group_size: result.group?.total ?? 1,
       has_due_time: !!result.due_at,
       has_subtasks: (body?.subtasks?.length ?? 0) > 0,
@@ -203,7 +210,10 @@ export class TaskController {
       title: dto.title,
       description: dto.description ?? null,
       assignee_id: dto.assignee_id ?? null,
+      assignee_ids: dto.assignee_ids ?? null,
       audience: dto.audience ?? null,
+      audience_role_id: dto.audience_role_id ?? null,
+      audience_group_id: dto.audience_group_id ?? null,
       created_by: createdBy,
       due_date: dto.due_date,
       due_at: dto.due_at ?? null,
@@ -323,6 +333,21 @@ export class TaskController {
     });
   }
 
+  @Post(':id/release')
+  @ApiOperation({
+    summary: 'Give back a task claimed from Up for grabs',
+    description:
+      'Its assignee only (403 otherwise), before it is finished: marked done, paid or carrying proof is a 409. The task is deleted and its posting is open again; answers the posting. 404 for a task not taken from Up for grabs.',
+  })
+  @ApiCreatedResponse({ type: OpenTaskDto })
+  async release(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OpenTaskDto> {
+    return this.openTaskService.release(chapterId, id, userId);
+  }
+
   @Post(':id/subtasks')
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Add a subtask to the end of a task (#4003)' })
@@ -372,6 +397,22 @@ export class TaskController {
   ) {
     await this.taskService.deleteSubtask(id, subtaskId, chapterId);
     return { success: true };
+  }
+
+  @Post(':id/group/remove')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(SystemPermissions.TASKS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Take members out of a group task: their copies go, the rest stay (#5492)',
+  })
+  @ApiOkResponse({ type: RemoveFromTaskGroupResponseDto })
+  async removeFromGroup(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RemoveFromTaskGroupDto,
+  ): Promise<RemoveFromTaskGroupResponseDto> {
+    return this.taskService.removeFromGroup(id, chapterId, dto.assignee_ids);
   }
 
   @Delete(':id')

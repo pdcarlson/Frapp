@@ -600,7 +600,9 @@ export function taskItem(
     kind,
     subjectKey: task.id,
     taskId: task.id,
-    headline: clip(task.title, 60),
+    // Whole, not clipped: "Ask about this" asks about the task by this
+    // name, and the clients clamp it to two lines.
+    headline: task.title.replace(/\s+/g, ' ').trim(),
     meta,
     urgent: kind !== 'task_praise' && dueDays <= 1,
     chip: TASK_CHIP[kind] ?? `Due ${shortDue}`,

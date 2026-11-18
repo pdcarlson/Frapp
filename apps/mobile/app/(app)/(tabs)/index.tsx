@@ -68,7 +68,10 @@ import {
   useSetChannelNotificationLevel,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
+  resolveAuthorLabel,
+  resolveAuthorName,
 } from "@repo/hooks";
+import { channelPreviewLine } from "@repo/chat-core/channel-preview";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
@@ -112,6 +115,13 @@ import {
   SetupChecklistView,
 } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { AwayCard } from "@/components/chat/away-card";
+import {
+  announcementChannelIds,
+  awayRows,
+  awaySinceLabel,
+} from "@/lib/chat/away-updates";
+import { useChatAway } from "@/lib/chat/use-chat-away";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
@@ -209,7 +219,7 @@ export default function ChatHomeScreen() {
   // boot the outbox flush from this screen. The badges stay live without it:
   // the realtime manager is bound app-wide (`useChatRealtimeBinding`, #3698).
   const viewerId = useViewerUserId();
-  const { byId: memberNames } = useMemberDisplayNames();
+  const { byId: memberNames, nameFor } = useMemberDisplayNames();
 
   // A DM the member hid (#2303) is still in the payload, so a thread opened by
   // id keeps resolving. The list leaves it out.
@@ -618,6 +628,82 @@ export default function ChatHomeScreen() {
     isFocused && listAnswered && !!viewerId && !holdingForLaunch,
   );
 
+  // "While you were away" (#5464): after hours off Chat, the few channels
+  // with something new since (`lib/chat/use-chat-away.ts`). It opens on the
+  // channels it found, leaves once those are read or on its close mark, and
+  // waits for the launch jump, as the checklist below does.
+  const away = useChatAway({ viewerId, chapterId, focused: isFocused });
+  const awayStretch = away.stretch;
+  const announcementIds = useMemo(
+    () => announcementChannelIds(channelsQuery.data),
+    [channelsQuery.data],
+  );
+  const awayLatest = useChannelLatestMessages({
+    enabled: awayStretch !== null && !awayStretch.closed,
+  });
+  const awayList = useMemo(() => {
+    if (!awayStretch || awayStretch.closed || !unreadByChannelId) return null;
+    if (!awayLatest.data) return null;
+    const latestById = new Map(
+      awayLatest.data.map((row) => [row.channel_id, row]),
+    );
+    return awayRows({
+      channels,
+      unread: unreadByChannelId,
+      announcementIds,
+      mutedIds: mutedChannelIds,
+      latestAt: new Map(
+        awayLatest.data.map((row) => [row.channel_id, row.created_at]),
+      ),
+      since: awayStretch.since,
+      onlyIds: awayStretch.ids,
+      previewOf: (channelId) => {
+        const latest = latestById.get(channelId);
+        return latest
+          ? channelPreviewLine(latest, {
+              isOneToOne: false,
+              viewerId,
+              nameOf: (author) => resolveAuthorName(author, nameFor),
+              fallbackLabel: (author) =>
+                resolveAuthorLabel(author, nameFor, null),
+            })
+          : null;
+      },
+    });
+  }, [
+    awayStretch,
+    unreadByChannelId,
+    awayLatest.data,
+    channels,
+    announcementIds,
+    mutedChannelIds,
+    viewerId,
+    nameFor,
+  ]);
+  const { freeze: freezeAway, end: endAway } = away;
+  useEffect(() => {
+    if (!awayStretch || awayList === null) return;
+    // The first rows fix what the card is about; none left ends the stretch.
+    if (awayList.length === 0) endAway();
+    else if (awayStretch.ids === null) {
+      freezeAway(awayList.map((row) => row.channelId));
+    }
+  }, [awayStretch, awayList, freezeAway, endAway]);
+  const awayCard =
+    awayStretch &&
+    !awayStretch.closed &&
+    awayList &&
+    awayList.length > 0 &&
+    !channelsQuery.isPending &&
+    !holdingForLaunch ? (
+      <AwayCard
+        rows={awayList}
+        sinceLabel={awaySinceLabel(awayStretch.since, Date.now())}
+        onOpen={(channelId) => openChannel(channelId)}
+        onClose={away.close}
+      />
+    ) : null;
+
   function openChannel(channelId: string, options?: { landing?: boolean }) {
     // Object form, because the route takes a param. Note this is invisible to
     // `lib/routes.spec.ts`'s literal scan — the `pathname:` matcher added
@@ -761,6 +847,7 @@ export default function ChatHomeScreen() {
         </View>
       }
     >
+      {awayCard}
       <UpNextStrip
         events={eventsQuery.data}
         tasks={tasksQuery.data}

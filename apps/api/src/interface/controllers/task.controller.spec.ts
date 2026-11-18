@@ -6,7 +6,9 @@ import { TaskController } from './task.controller';
 import { TaskService } from '../../application/services/task.service';
 import { TaskSeriesService } from '../../application/services/task-series.service';
 import { RbacService } from '../../application/services/rbac.service';
+import { OpenTaskService } from '../../application/services/open-task.service';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { ForbiddenException } from '@nestjs/common';
 import {
   CreateTaskDto,
@@ -19,6 +21,7 @@ describe('TaskController', () => {
   let taskService: jest.Mocked<TaskService>;
   let taskSeriesService: { update: jest.Mock; delete: jest.Mock };
   let rbacService: jest.Mocked<RbacService>;
+  let openTaskService: { release: jest.Mock };
 
   beforeEach(async () => {
     taskService = {
@@ -37,6 +40,7 @@ describe('TaskController', () => {
     rbacService = {
       memberHasAnyPermission: jest.fn(),
     } as any;
+    openTaskService = { release: jest.fn() };
 
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [TaskController],
@@ -44,6 +48,7 @@ describe('TaskController', () => {
         { provide: TaskService, useValue: taskService },
         { provide: TaskSeriesService, useValue: taskSeriesService },
         { provide: RbacService, useValue: rbacService },
+        { provide: OpenTaskService, useValue: openTaskService },
       ],
     }).compile();
 
@@ -226,7 +231,10 @@ describe('TaskController', () => {
         title: dto.title,
         description: dto.description,
         assignee_id: dto.assignee_id,
+        assignee_ids: null,
         audience: null,
+        audience_role_id: null,
+        audience_group_id: null,
         created_by: userId,
         due_date: dto.due_date,
         due_at: null,
@@ -252,12 +260,58 @@ describe('TaskController', () => {
         title: dto.title,
         description: null,
         assignee_id: dto.assignee_id,
+        assignee_ids: null,
         audience: null,
+        audience_role_id: null,
+        audience_group_id: null,
         created_by: userId,
         due_date: dto.due_date,
         due_at: null,
         point_reward: null,
       });
+    });
+  });
+
+  describe('who a task is for (2026-11-18)', () => {
+    it('passes several people and a role or group through', async () => {
+      taskService.create.mockResolvedValue({ id: 'copy' } as any);
+
+      await controller.create('chapter-1', 'admin-1', {
+        title: 'Table at the fair',
+        audience: 'everyone',
+        audience_role_id: 'role-1',
+        due_date: '2026-11-20',
+      });
+      await controller.create('chapter-1', 'admin-1', {
+        title: 'Table at the fair',
+        assignee_ids: ['u-1', 'u-2'],
+        due_date: '2026-11-20',
+      });
+
+      expect(taskService.create.mock.calls[0][0]).toMatchObject({
+        audience: 'everyone',
+        audience_role_id: 'role-1',
+        audience_group_id: null,
+        assignee_ids: null,
+      });
+      expect(taskService.create.mock.calls[1][0]).toMatchObject({
+        assignee_id: null,
+        assignee_ids: ['u-1', 'u-2'],
+        audience: null,
+      });
+    });
+
+    it('gives a claimed task back as its caller', async () => {
+      openTaskService.release.mockResolvedValue({ id: 'posting-1' });
+
+      await expect(
+        controller.release('chapter-1', 'user-1', 'task-1'),
+      ).resolves.toEqual({ id: 'posting-1' });
+      expect(openTaskService.release).toHaveBeenCalledWith(
+        'chapter-1',
+        'task-1',
+        'user-1',
+      );
     });
   });
 
@@ -293,6 +347,41 @@ describe('TaskController', () => {
       await controller.delete('chapter-1', 't', { scope: 'group' });
 
       expect(taskService.deleteGroup).toHaveBeenCalledWith('t', 'chapter-1');
+    });
+  });
+
+  describe('removeFromGroup (#5492)', () => {
+    it('passes the members to the service and returns the group', async () => {
+      const result = {
+        removed: ['user-2'],
+        group: {
+          id: 'group-1',
+          audience: 'everyone' as const,
+          total: 11,
+          done: 3,
+          confirmed: 1,
+        },
+      };
+      taskService.removeFromGroup = jest.fn().mockResolvedValue(result);
+
+      await expect(
+        controller.removeFromGroup('chapter-1', 't', {
+          assignee_ids: ['user-2'],
+        }),
+      ).resolves.toEqual(result);
+      expect(taskService.removeFromGroup).toHaveBeenCalledWith(
+        't',
+        'chapter-1',
+        ['user-2'],
+      );
+    });
+
+    it('needs tasks:manage', () => {
+      const required = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        TaskController.prototype.removeFromGroup,
+      ) as string[];
+      expect(required).toEqual([SystemPermissions.TASKS_MANAGE]);
     });
   });
 

@@ -75,6 +75,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
     isError: false,
   }),
+  // The edit form's Who picker reads these too (2026-11-18).
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({

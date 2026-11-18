@@ -391,7 +391,7 @@ function PickedPhoto({ file, className }: { file: File; className?: string }) {
  * each: the task's own stored ones (editing) and newly picked files. Holds
  * at most `TASK_PHOTOS_MAX` between them.
  */
-function TaskPhotoPicker({
+export function TaskPhotoPicker({
   id,
   taskId,
   kept = [],
@@ -616,6 +616,7 @@ export function MarkDoneControl({
   onComplete,
   onUploadError,
   size = "toolbar",
+  renderTrigger,
 }: {
   title: string;
   task: MarkDoneTask;
@@ -630,11 +631,39 @@ export function MarkDoneControl({
   onComplete: (proof: CompletionProof) => Promise<boolean | void>;
   onUploadError: (message: string) => void;
   size?: "toolbar" | "sm";
+  /**
+   * A trigger of the caller's own in place of the button and its camera
+   * (the list row's check circle): it gets the press, and the sheet still
+   * opens when the task asks for proof.
+   */
+  renderTrigger?: (props: { onClick: () => void; disabled: boolean }) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const kind = task.proof_kind ?? "none";
   const asks = kind !== "none" || needsChange(task, sentBack);
   const disabled = !!controlProps.disabled;
+  const dialog = open ? (
+    <MarkDoneDialog
+      title={title}
+      task={task}
+      sentBack={needsChange(task, sentBack)}
+      onClose={() => setOpen(false)}
+      onComplete={onComplete}
+      onUploadError={onUploadError}
+    />
+  ) : null;
+  if (renderTrigger) {
+    return (
+      <>
+        {renderTrigger({
+          disabled,
+          onClick: () =>
+            asks ? setOpen(true) : void onComplete({}).catch(() => {}),
+        })}
+        {dialog}
+      </>
+    );
+  }
   return (
     <>
       <Button
@@ -678,16 +707,7 @@ export function MarkDoneControl({
           <Camera className="h-4 w-4" aria-hidden="true" />
         </Button>
       )}
-      {open ? (
-        <MarkDoneDialog
-          title={title}
-          task={task}
-          sentBack={needsChange(task, sentBack)}
-          onClose={() => setOpen(false)}
-          onComplete={onComplete}
-          onUploadError={onUploadError}
-        />
-      ) : null}
+      {dialog}
     </>
   );
 }

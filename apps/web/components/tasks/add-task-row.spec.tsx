@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { TASK_AUDIENCE_COPY } from "@repo/validation";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { AddTaskRow } from "./add-task-row";
@@ -15,6 +16,29 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: photo.requestUrl }),
   useTaskPhotoUrl: () => ({ data: undefined }),
   putSignedUpload: photo.put,
+  // The Who picker's lists: two active members, one alumnus, one role.
+  useCurrentUser: () => ({ data: { id: "u-1" } }),
+  useMembers: () => ({
+    data: [
+      { user_id: "u-1", display_name: "Rush Chair", role_ids: ["role-rush"] },
+      { user_id: "u-2", display_name: "Sam Lee", role_ids: ["role-rush"] },
+      { user_id: "u-3", display_name: "Old Timer", role_ids: [], is_alumni: true },
+    ],
+    isPending: false,
+    isError: false,
+  }),
+  useRoles: () => ({
+    data: [{ id: "role-rush", name: "Recruitment Chair", display_order: 1 }],
+    isPending: false,
+    isError: false,
+  }),
+  useRoleTiers: () => ({ data: [], isPending: false, isError: false }),
+  useGroups: () => ({ data: [], isPending: false, isError: false }),
+  useMemberDisplayNames: () => ({
+    avatarTintFor: () => null,
+    nameFor: () => null,
+    avatarFor: () => null,
+  }),
 }));
 
 // jsdom has no object URLs; a picked photo's preview only needs a string.
@@ -24,29 +48,68 @@ URL.revokeObjectURL = () => undefined;
 /** An open gate: the row's controls are live. */
 const gate = { controlProps: () => ({}) } as unknown as SubscriptionGate;
 
-function open(onCreate = vi.fn().mockResolvedValue(true)) {
-  render(
-    <AddTaskRow
-      members={[{ user_id: "u-1", display_name: "Rush Chair" }]}
-      gate={gate}
-      pending={false}
-      onCreate={onCreate}
-    />,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Add a task" }));
+const form = () => screen.getByRole("form", { name: "Add a task" });
+const add = () => within(form()).getByRole("button", { name: "Add" });
+const photoInput = () =>
+  form().querySelector<HTMLInputElement>('input[type="file"]');
+
+function renderRow(onCreate = vi.fn().mockResolvedValue(true)) {
+  render(<AddTaskRow gate={gate} pending={false} onCreate={onCreate} />);
   return onCreate;
 }
 
-describe("AddTaskRow's due time (#4512)", () => {
-  it("offers Add a time under the due date", () => {
-    open();
-    expect(
-      screen.getByRole("button", { name: "Add a time" }),
-    ).toBeInTheDocument();
+/** Opens More, where steps, notes, repeat and photos live. */
+function openMore() {
+  fireEvent.click(within(form()).getByRole("button", { name: /^more$/i }));
+}
+
+/** Picks one person, which closes nothing: the picker allows any shape. */
+async function pickPerson(name: RegExp) {
+  await userEvent.click(within(form()).getByRole("button", { name: /^who/i }));
+  await userEvent.click(await screen.findByRole("checkbox", { name }));
+  await userEvent.keyboard("{Escape}");
+}
+
+describe("AddTaskRow's line", () => {
+  it("is one line: title, Who, Due, Points and More; Add once there's a title", () => {
+    renderRow();
+    for (const name of ["Task title", "Due date", "Points (optional)"]) {
+      expect(within(form()).getByLabelText(name)).toBeInTheDocument();
+    }
+    expect(within(form()).getByRole("button", { name: "Who" })).toBeInTheDocument();
+    expect(within(form()).getByRole("button", { name: "More" })).toBeInTheDocument();
+    expect(within(form()).queryByRole("button", { name: "Add" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Sweep" },
+    });
+    expect(add()).toBeInTheDocument();
+    // The rest waits under More.
+    expect(within(form()).queryByLabelText("Notes (optional)")).toBeNull();
   });
 
+  it("opens More when New task asks", () => {
+    const { rerender } = render(
+      <AddTaskRow gate={gate} pending={false} onCreate={vi.fn()} expandSignal={0} />,
+    );
+    expect(within(form()).queryByLabelText("Notes (optional)")).toBeNull();
+    rerender(
+      <AddTaskRow gate={gate} pending={false} onCreate={vi.fn()} expandSignal={1} />,
+    );
+    expect(within(form()).getByLabelText("Notes (optional)")).toBeInTheDocument();
+    expect(within(form()).getByLabelText("Task title")).toHaveFocus();
+  });
+
+  it("leaves alumni out of Who", async () => {
+    renderRow();
+    await userEvent.click(within(form()).getByRole("button", { name: /^who/i }));
+    expect(await screen.findByRole("checkbox", { name: /Sam Lee/ })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Old Timer/ })).toBeNull();
+  });
+});
+
+describe("AddTaskRow's due time (#4512)", () => {
   it("refuses a time already gone by, and creates nothing", async () => {
-    const onCreate = open();
+    const onCreate = renderRow();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Sweep" },
     });
@@ -54,12 +117,11 @@ describe("AddTaskRow's due time (#4512)", () => {
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "Jan 6 2020 9am" },
     });
-    fireEvent.submit(screen.getByRole("form", { name: "Add a task" }));
+    fireEvent.submit(form());
     // Every problem is flagged on the one submit, the past time included.
-    expect(screen.getByText("Pick an assignee.")).toBeInTheDocument();
-    expect(
-      await screen.findByText(/That time has already passed/),
-    ).toBeInTheDocument();
+    const alert = await within(form()).findByRole("alert");
+    expect(alert).toHaveTextContent("Pick who it's for.");
+    expect(alert).toHaveTextContent(/That time has already passed/);
     expect(onCreate).not.toHaveBeenCalled();
   });
 });
@@ -67,36 +129,33 @@ describe("AddTaskRow's due time (#4512)", () => {
 describe("AddTaskRow's photos (#4565, #4635)", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("uploads nothing while the task still lacks an assignee and a due date", async () => {
+  it("uploads nothing while the task still lacks who and a due date", async () => {
     photo.requestUrl.mockResolvedValue({
       upload_url: "https://upload",
       storage_path: "chapters/c/tasks/p/mess.jpg",
     });
     photo.put.mockResolvedValue(undefined);
-    const onCreate = open();
+    const onCreate = renderRow();
+    openMore();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Clean the kitchen" },
     });
-    fireEvent.change(screen.getByTestId("add-task-photos-input"), {
+    fireEvent.change(photoInput()!, {
       target: {
-        files: [
-          new File(["x"], "mess.jpg", { type: "image/jpeg" }),
-          new File(["y"], "sink.jpg", { type: "image/jpeg" }),
-        ],
+        files: [new File(["x"], "mess.jpg", { type: "image/jpeg" })],
       },
     });
     fireEvent.click(screen.getByRole("radio", { name: "Photo" }));
-    // Assignee and due date are required; without them nothing is created,
-    // and nothing is uploaded.
-    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    fireEvent.click(add());
     await Promise.resolve();
     expect(photo.requestUrl).not.toHaveBeenCalled();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
   it("refuses a file that isn't a photo before any upload", () => {
-    open();
-    fireEvent.change(screen.getByTestId("add-task-photos-input"), {
+    renderRow();
+    openMore();
+    fireEvent.change(photoInput()!, {
       target: {
         files: [new File(["x"], "slip.pdf", { type: "application/pdf" })],
       },
@@ -118,11 +177,12 @@ describe("AddTaskRow's photos (#4565, #4635)", () => {
         storage_path: "chapters/c/tasks/p/sink.jpg",
       });
     photo.put.mockResolvedValue(undefined);
-    const onCreate = open();
+    const onCreate = renderRow();
+    openMore();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Clean the kitchen" },
     });
-    fireEvent.change(screen.getByTestId("add-task-photos-input"), {
+    fireEvent.change(photoInput()!, {
       target: {
         files: [
           new File(["x"], "mess.jpg", { type: "image/jpeg" }),
@@ -131,36 +191,36 @@ describe("AddTaskRow's photos (#4565, #4635)", () => {
       },
     });
     fireEvent.click(screen.getByRole("radio", { name: "Photo" }));
-    // Pick the assignee and a due date, so the create goes through.
-    fireEvent.click(screen.getByLabelText("Assignee"));
-    fireEvent.click(await screen.findByRole("option", { name: /Rush Chair/ }));
+    await pickPerson(/Rush Chair/);
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "Dec 31 2099" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    fireEvent.click(add());
     await waitFor(() => expect(onCreate).toHaveBeenCalled());
     expect(photo.requestUrl).toHaveBeenCalledTimes(2);
-    expect(onCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(onCreate).toHaveBeenCalledWith({
+      endpoint: "/v1/tasks",
+      body: expect.objectContaining({
         title: "Clean the kitchen",
+        assignee_id: "u-1",
         reference_photo_paths: [
           "chapters/c/tasks/p/mess.jpg",
           "chapters/c/tasks/p/sink.jpg",
         ],
         proof_kind: "photo",
       }),
-    );
+    });
   });
 });
 
 describe("AddTaskRow's Repeat (#5119)", () => {
   it("creates a weekly task with no end on the due day's weekday", async () => {
-    const onCreate = open();
+    const onCreate = renderRow();
+    openMore();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Kitchen duty" },
     });
-    fireEvent.click(screen.getByLabelText("Assignee"));
-    fireEvent.click(await screen.findByRole("option", { name: /Rush Chair/ }));
+    await pickPerson(/Rush Chair/);
     // Dec 31 2099 is a Thursday.
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "Dec 31 2099" },
@@ -168,62 +228,85 @@ describe("AddTaskRow's Repeat (#5119)", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
     expect(screen.getByRole("radio", { name: "Never" })).toBeChecked();
     expect(screen.getByText("Repeats until you stop it.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    fireEvent.click(add());
     await waitFor(() => expect(onCreate).toHaveBeenCalled());
-    expect(onCreate.mock.calls[0]![0].recurrence_rule).toMatch(
+    expect(onCreate.mock.calls[0]![0].body.recurrence_rule).toMatch(
       /^FREQ=WEEKLY;INTERVAL=1;BYDAY=TH;TZID=/,
     );
   });
 
   it("sends no rule for a task that doesn't repeat", async () => {
-    const onCreate = open();
+    const onCreate = renderRow();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Sweep" },
     });
-    fireEvent.click(screen.getByLabelText("Assignee"));
-    fireEvent.click(await screen.findByRole("option", { name: /Rush Chair/ }));
+    await pickPerson(/Rush Chair/);
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "Dec 31 2099" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    fireEvent.click(add());
     await waitFor(() => expect(onCreate).toHaveBeenCalled());
-    expect(onCreate.mock.calls[0]![0].recurrence_rule).toBeUndefined();
+    expect(onCreate.mock.calls[0]![0].body.recurrence_rule).toBeUndefined();
   });
 });
 
-describe("AddTaskRow for everyone (#4295 step 3)", () => {
+describe("AddTaskRow for many people (#4295 step 3, 2026-11-18)", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("sends Everyone as the audience, with proof but no repeat or photos", async () => {
-    const onCreate = open();
+  it("sends Everyone in the chapter as a copy each, with proof but no repeat or photos", async () => {
+    const onCreate = renderRow();
+    openMore();
     fireEvent.change(screen.getByLabelText("Task title"), {
       target: { value: "Fill out the tabling form" },
     });
-    fireEvent.click(screen.getByLabelText("Assignee"));
-    fireEvent.click(await screen.findByRole("option", { name: "Everyone" }));
-    // One active member in this list.
-    expect(
-      screen.getByText("1 active member gets their own copy."),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("add-task-photos-input")).toBeNull();
-    expect(screen.queryByLabelText(/repeat/i)).toBeNull();
+    await userEvent.click(within(form()).getByRole("button", { name: /^who/i }));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /Everyone in the chapter/ }),
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(photoInput()).toBeNull();
     expect(screen.getByText(TASK_AUDIENCE_COPY.noRepeat)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "Link" }));
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "Dec 31 2099" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    fireEvent.click(add());
     await waitFor(() => expect(onCreate).toHaveBeenCalled());
-    const draft = onCreate.mock.calls[0]![0];
-    expect(draft).toEqual(
+    const { endpoint, body } = onCreate.mock.calls[0]![0];
+    expect(endpoint).toBe("/v1/tasks");
+    expect(body).toEqual(
       expect.objectContaining({
         title: "Fill out the tabling form",
         audience: "everyone",
         proof_kind: "link",
       }),
     );
-    expect(draft).not.toHaveProperty("assignee_id");
-    expect(draft.recurrence_rule).toBeUndefined();
-    expect(draft.reference_photo_paths).toBeUndefined();
+    expect(body).not.toHaveProperty("assignee_id");
+    expect(body.recurrence_rule).toBeUndefined();
+    expect(body.reference_photo_paths).toBeUndefined();
+  });
+
+  it("puts One claims it up for grabs, through the open-tasks endpoint", async () => {
+    const onCreate = renderRow();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Drive to the airport" },
+    });
+    await userEvent.click(within(form()).getByRole("button", { name: /^who/i }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Roles and groups" }));
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Recruitment Chair/ }));
+    await userEvent.click(screen.getByRole("radio", { name: "One claims it" }));
+    await userEvent.keyboard("{Escape}");
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "Dec 31 2099" },
+    });
+    fireEvent.click(add());
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(onCreate.mock.calls[0]![0]).toEqual({
+      endpoint: "/v1/open-tasks",
+      body: expect.objectContaining({
+        title: "Drive to the airport",
+        role_id: "role-rush",
+      }),
+    });
   });
 });

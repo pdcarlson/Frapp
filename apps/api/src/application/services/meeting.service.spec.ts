@@ -166,6 +166,18 @@ describe('MeetingService', () => {
         async (_chapterId: string, _since: string, _limit: number) =>
           [...rows.values()].filter((row) => row.status === 'posted'),
       ),
+      findPostedBefore: jest.fn(
+        async (
+          _chapterId: string,
+          _before: string,
+          meetingType: Meeting['meeting_type'],
+          _limit: number,
+        ) =>
+          [...rows.values()].filter(
+            (row) =>
+              row.status === 'posted' && row.meeting_type === meetingType,
+          ),
+      ),
       create: jest.fn(async (data) => {
         const row = meeting({ ...data, id: `mtg-${rows.size + 1}` });
         rows.set(row.id, row);
@@ -620,6 +632,22 @@ describe('MeetingService', () => {
       expect(repo.findPostedSince).toHaveBeenLastCalledWith(
         CHAPTER,
         since.toISOString(),
+        5,
+      );
+      // So does the read of earlier minutes a draft's background uses (#5477).
+      const before = '2026-12-01T00:00:00.000Z';
+      expect(
+        await service.listPostedBefore(CHAPTER, JAKE, before, 'exec', 5),
+      ).toEqual([]);
+      expect(
+        (
+          await service.listPostedBefore(CHAPTER, PRESIDENT, before, 'exec', 5)
+        ).map((row) => row.id),
+      ).toEqual(['mtg-exec']);
+      expect(repo.findPostedBefore).toHaveBeenLastCalledWith(
+        CHAPTER,
+        before,
+        'exec',
         5,
       );
       // Nor can he learn it exists by trying to change or delete it.
