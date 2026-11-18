@@ -517,10 +517,11 @@ export class MeetingDraftFollowUpDto {
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   owner_user_id: string | null;
   @ApiProperty({
-    description: 'The day of the meeting whose minutes it comes from.',
-    example: '2026-11-03',
+    format: 'date-time',
+    description:
+      'When the meeting whose minutes it comes from started. Show its day in the reader’s own time.',
   })
-  from_meeting_date: string;
+  from_meeting_start_time: string;
   @ApiProperty({
     enum: MEETING_FOLLOW_UP_STATUSES,
     description:

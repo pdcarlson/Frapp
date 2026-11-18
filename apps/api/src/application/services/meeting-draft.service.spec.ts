@@ -556,99 +556,125 @@ describe('MeetingDraftService', () => {
       });
     });
 
-    it('reads what it knows from before tonight as the officer, and marks each carried item (#5477)', async () => {
-      const withFollowUps: MeetingDraftOutput = {
-        ...DRAFTED,
-        follow_ups: [
-          {
-            id: 'F1',
-            status: 'carried',
-            quote: 'Priya will email the 6 by Wednesday',
-            source: 'S1',
+    it.each([
+      ['passes', false],
+      ['fails, leaving the first pass standing', true],
+    ])(
+      'reads what it knows from before tonight as the officer, and marks each carried item when the editor pass %s (#5477)',
+      async (_how, editorFails) => {
+        const withFollowUps: MeetingDraftOutput = {
+          ...DRAFTED,
+          follow_ups: [
+            {
+              id: 'F1',
+              status: 'carried',
+              quote: 'Priya will email the 6 by Wednesday',
+              source: 'S1',
+            },
+            // Claimed done with no line of tonight's notes: not mentioned.
+            { id: 'F2', status: 'done', quote: 'washer ordered', source: 'S1' },
+          ],
+        };
+        const { ask, work, meetings, drafts, seen, context } = setup({
+          reply: (request) => {
+            const prompt = String(request.messages.at(-1)?.content ?? '');
+            if (prompt.includes('Candidates (D = decision')) {
+              if (editorFails) return { fail: 'timeout' as const };
+              const reviewed = scriptedReview(prompt);
+              return { text: JSON.stringify(reviewed), object: reviewed };
+            }
+            return {
+              text: JSON.stringify(withFollowUps),
+              object: withFollowUps,
+            };
           },
-          // Claimed done with no line of tonight's notes: not mentioned.
-          { id: 'F2', status: 'done', quote: 'washer ordered', source: 'S1' },
-        ],
-      };
-      const { ask, work, meetings, drafts, seen, context } = setup({
-        reply: (request) => {
-          const prompt = String(request.messages.at(-1)?.content ?? '');
-          if (prompt.includes('Candidates (D = decision')) {
-            const reviewed = scriptedReview(prompt);
-            return { text: JSON.stringify(reviewed), object: reviewed };
-          }
-          return { text: JSON.stringify(withFollowUps), object: withFollowUps };
-        },
-        context: {
-          agenda: ['Treasurer report', 'Formal'],
-          background: {
-            meetings: [
-              {
-                date: '2026-11-03',
-                name: 'Chapter meeting',
-                reports: ['Treasurer'],
-                topics: ['Dues'],
-              },
-            ],
-            carried: [
-              {
-                id: 'F1',
-                text: 'Email members who owe dues',
-                ownerUserId: PRIYA,
-                ownerName: 'Priya Natarajan',
-                dueDate: null,
-                fromDate: '2026-11-03',
-              },
-              {
-                id: 'F2',
-                text: 'Order the washer',
-                ownerUserId: null,
-                ownerName: null,
-                dueDate: null,
-                fromDate: '2026-11-03',
-              },
-            ],
-            standingReports: [
-              { id: 'R1', office: 'Treasurer', lastDate: '2026-11-03' },
-            ],
+          context: {
+            agenda: ['Treasurer report', 'Formal'],
+            background: {
+              meetings: [
+                {
+                  startTime: '2026-11-04T01:00:00.000Z',
+                  name: 'Chapter meeting',
+                  sameSeries: true,
+                  reports: ['Treasurer'],
+                  topics: ['Dues'],
+                },
+              ],
+              carried: [
+                {
+                  id: 'F1',
+                  text: 'Email members who owe dues',
+                  ownerUserId: PRIYA,
+                  ownerName: 'Priya Natarajan',
+                  dueDate: null,
+                  fromStartTime: '2026-11-04T01:00:00.000Z',
+                },
+                {
+                  id: 'F2',
+                  text: 'Order the washer',
+                  ownerUserId: null,
+                  ownerName: null,
+                  dueDate: null,
+                  fromStartTime: '2026-11-04T01:00:00.000Z',
+                },
+              ],
+              standingReports: [
+                {
+                  id: 'R1',
+                  office: 'Treasurer',
+                  lastStartTime: '2026-11-04T01:00:00.000Z',
+                },
+              ],
+            },
           },
-        },
-      });
+        });
+        await ask();
+        await work();
+
+        const [chapterArg, meetingArg, actor] =
+          context.contextFor.mock.calls[0];
+        expect(chapterArg).toBe(CHAPTER);
+        expect(meetingArg.id).toBe(MEETING);
+        expect(actor).toBe(SECRETARY);
+        const firstPass = String(seen[0].messages[0].content);
+        expect(firstPass).toContain('1. Treasurer report');
+        expect(firstPass).toContain('F2. Order the washer');
+
+        const [, , , save] = meetings.update.mock.calls[0];
+        expect(save.content.discussion_log).toBe(
+          [
+            'Open action items carried from earlier minutes',
+            '- Email members who owe dues (Priya Natarajan): still open, carried over.',
+            '- Order the washer: not mentioned tonight, confirm before posting.',
+          ].join('\n'),
+        );
+        const review = drafts.row?.result?.review as {
+          follow_ups: { status: string }[];
+          gaps: string[];
+        };
+        // Read by the first pass and kept through the editor's.
+        expect(review.follow_ups.map((f) => f.status)).toEqual([
+          'carried',
+          'not_mentioned',
+          'not_mentioned',
+        ]);
+        expect(review.gaps).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining('Order the washer'),
+            expect.stringContaining('The Treasurer usually reports'),
+          ]),
+        );
+      },
+    );
+
+    it('writes the draft from tonight alone when its background can\u2019t be read (#5477)', async () => {
+      const { ask, work, meetings, drafts, context } = setup();
+      context.contextFor.mockRejectedValueOnce(new Error('connection reset'));
       await ask();
       await work();
-
-      const [chapterArg, meetingArg, actor] = context.contextFor.mock.calls[0];
-      expect(chapterArg).toBe(CHAPTER);
-      expect(meetingArg.id).toBe(MEETING);
-      expect(actor).toBe(SECRETARY);
-      const firstPass = String(seen[0].messages[0].content);
-      expect(firstPass).toContain('1. Treasurer report');
-      expect(firstPass).toContain('F2. Order the washer');
-
+      expect(drafts.row?.status).toBe('applied');
       const [, , , save] = meetings.update.mock.calls[0];
-      expect(save.content.discussion_log).toBe(
-        [
-          'Open action items from the 2026-11-03 minutes',
-          '- Email members who owe dues (Priya Natarajan): still open, carried over.',
-          '- Order the washer: not mentioned tonight, confirm before posting.',
-        ].join('\n'),
-      );
-      const review = drafts.row?.result?.review as {
-        follow_ups: { status: string }[];
-        gaps: string[];
-      };
-      // Read by the first pass and kept through the editor's.
-      expect(review.follow_ups.map((f) => f.status)).toEqual([
-        'carried',
-        'not_mentioned',
-        'not_mentioned',
-      ]);
-      expect(review.gaps).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining('Order the washer'),
-          expect.stringContaining('The Treasurer usually reports'),
-        ]),
-      );
+      expect(save.content.decisions).toHaveLength(1);
     });
 
     it('reads a one-line 4-hour transcript in parts, then merges each topic into its outcome', async () => {

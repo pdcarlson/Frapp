@@ -1,3 +1,4 @@
+import type { MeetingType } from '@repo/validation';
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
@@ -78,6 +79,7 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
   async findPostedBefore(
     chapterId: string,
     before: string,
+    meetingType: MeetingType,
     limit: number,
   ): Promise<Meeting[]> {
     const { data, error } = await this.supabase
@@ -85,6 +87,7 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .eq('status', 'posted')
+      .eq('meeting_type', meetingType)
       .lt('event_start_time', before)
       .order('event_start_time', { ascending: false })
       .order('created_at', { ascending: false })

@@ -12,18 +12,19 @@ import {
   TOPICS_PER_MEETING_MAX,
   reportingOffices,
   standingReportsOf,
+  stillOpenItems,
   topicLines,
   type MinutesBackground,
   type MinutesBackgroundMeeting,
+  type MinutesCarriedItem,
 } from '#domain/utils/minutes-context';
 import type { MinutesRosterMember } from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
 import { EventService } from './event.service';
 
 /**
- * How many posted minutes before tonight are read to find the few of the
- * same kind. Read rule first, then type and audience, so this is the most
- * rows a draft ever loads for its background.
+ * How many posted minutes of tonight's type before tonight are read to find
+ * the few with the same audience: the most rows a draft's background loads.
  */
 const EARLIER_MINUTES_READ = 25;
 
@@ -37,9 +38,9 @@ export interface MeetingDraftContext {
 
 /**
  * The context packet a minutes draft reads besides tonight's sources
- * (#5477, `spec/behavior/meetings.md` § What the draft knows from earlier
- * meetings): tonight's agenda, and a little of the last few posted minutes
- * of the same kind.
+ * (#5477, `spec/behavior/meetings.md` § Drafting from notes, "What the draft
+ * knows from earlier meetings"): tonight's agenda, and a little of the last
+ * few posted minutes of the same kind.
  *
  * Built when the draft is written, for the officer it acts for, and stored
  * nowhere. Which earlier minutes it reads:
@@ -52,11 +53,13 @@ export interface MeetingDraftContext {
  *   required, invited and left out, and the same rule for everyone else), so
  *   nothing from an officers-only meeting reaches minutes the whole chapter
  *   reads once they are posted;
- * - the same series first, newest first, then the rest; at most three.
+ * - earlier meetings of tonight's series first, then the rest, each newest
+ *   first; at most three. The first is "last meeting".
  *
- * Last meeting's action items are the newest of those minutes' action
- * items. Whether one is done is never known from records: the draft reads it
- * from tonight's sources or asks.
+ * Last meeting's open action items are its own action items and the ones
+ * its minutes carried over and still list as open (`stillOpenItems`).
+ * Whether one is done is never known from records: the draft reads it from
+ * tonight's sources or asks.
  */
 @Injectable()
 export class MeetingDraftContextService {
@@ -91,67 +94,58 @@ export class MeetingDraftContextService {
     );
     if (earlier.length === 0) return { agenda };
 
-    const names = new Map(roster.map((member) => [member.userId, member.name]));
-    const meetings: MinutesBackgroundMeeting[] = earlier.map((row) => {
-      const content = readMeetingContent(row.content);
-      return {
-        date: row.event_start_time.slice(0, 10),
-        name: row.event_name,
-        reports: reportingOffices(content.officer_reports),
-        topics: topicLines(content.discussion_log).slice(
-          0,
-          TOPICS_PER_MEETING_MAX,
-        ),
-      };
-    });
-    const last = earlier[0];
-    const carried = readMeetingContent(last.content)
-      .action_items.filter((item) => item.text.trim().length > 0)
-      .slice(0, CARRIED_ITEMS_MAX)
-      .map((item, index) => ({
-        id: `F${index + 1}`,
-        text: item.text.trim(),
-        ownerUserId: item.owner_user_id,
-        ownerName: item.owner_user_id
-          ? (names.get(item.owner_user_id) ?? null)
-          : null,
-        dueDate: item.due_date,
-        fromDate: last.event_start_time.slice(0, 10),
-      }));
+    const meetings: MinutesBackgroundMeeting[] = earlier.map(
+      ({ row, sameSeries }) => {
+        const content = readMeetingContent(row.content);
+        return {
+          startTime: row.event_start_time,
+          name: row.event_name,
+          sameSeries,
+          reports: reportingOffices(content.officer_reports),
+          topics: topicLines(content.discussion_log).slice(
+            0,
+            TOPICS_PER_MEETING_MAX,
+          ),
+        };
+      },
+    );
     return {
       agenda,
       background: {
         meetings,
-        carried,
+        carried: carriedFrom(earlier[0].row, roster),
         standingReports: standingReportsOf(meetings),
       },
     };
   }
 
-  /** The earlier minutes the background reads, the same series first. */
+  /** The earlier minutes the background reads, tonight's series first. */
   private async earlierMinutes(
     chapterId: string,
     meeting: Meeting,
     tonight: Event,
     userId: string,
-  ): Promise<Meeting[]> {
+  ): Promise<{ row: Meeting; sameSeries: boolean }[]> {
+    if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) return [];
     const rows = (
       await this.meetings.listPostedBefore(
         chapterId,
         userId,
         meeting.event_start_time,
+        meeting.meeting_type,
         EARLIER_MINUTES_READ,
       )
     ).filter(
       (row) =>
         row.id !== meeting.id &&
         row.event_id !== null &&
-        (row.meeting_type as string) !== STANDARDS_MEETING_TYPE &&
         row.meeting_type === meeting.meeting_type &&
         (meeting.meeting_type !== 'other' ||
           sameLabel(row.other_label, meeting.other_label)),
     );
     if (rows.length === 0) return [];
+    // The events themselves: their audience and series, which the read
+    // rule above doesn't hand back, and only those this officer still sees.
     const visible = new Map(
       (
         await this.events.findVisibleByIds(
@@ -162,16 +156,69 @@ export class MeetingDraftContextService {
       ).map((event) => [event.id, event]),
     );
     const series = seriesOf(tonight);
-    const kept = rows.filter((row) => {
+    const kept = rows.flatMap((row) => {
       const event = visible.get(row.event_id as string);
-      return !!event && sameAudience(event, tonight);
+      if (!event || !sameAudience(event, tonight)) return [];
+      return [{ row, sameSeries: seriesOf(event) === series }];
     });
-    const inSeries = kept.filter(
-      (row) => seriesOf(visible.get(row.event_id as string)!) === series,
-    );
-    const rest = kept.filter((row) => !inSeries.includes(row));
-    return [...inSeries, ...rest].slice(0, BACKGROUND_MEETINGS_MAX);
+    return [
+      ...kept.filter((entry) => entry.sameSeries),
+      ...kept.filter((entry) => !entry.sameSeries),
+    ].slice(0, BACKGROUND_MEETINGS_MAX);
   }
+}
+
+/**
+ * Last meeting's open action items: its own, then the ones its minutes
+ * carried over and still list as open, each once.
+ */
+function carriedFrom(
+  last: Meeting,
+  roster: readonly MinutesRosterMember[],
+): MinutesCarriedItem[] {
+  const content = readMeetingContent(last.content);
+  const names = new Map(roster.map((member) => [member.userId, member.name]));
+  const byName = (name: string | null) => {
+    if (!name) return null;
+    const matches = roster.filter(
+      (member) => member.name.toLowerCase() === name.toLowerCase(),
+    );
+    return matches.length === 1 ? matches[0].userId : null;
+  };
+  const items = [
+    ...content.action_items.map((item) => ({
+      text: item.text.trim(),
+      ownerUserId: item.owner_user_id,
+      dueDate: item.due_date,
+    })),
+    ...[
+      ...stillOpenItems(content.old_business),
+      ...stillOpenItems(content.discussion_log),
+    ].map((item) => ({
+      text: item.text,
+      ownerUserId: byName(item.ownerName),
+      dueDate: null,
+    })),
+  ].filter((item) => item.text.length > 0);
+  const seen = new Set<string>();
+  return items
+    .filter((item) => {
+      const key = item.text.toLowerCase().replace(/[.\s]+$/, '');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, CARRIED_ITEMS_MAX)
+    .map((item, index) => ({
+      id: `F${index + 1}`,
+      text: item.text,
+      ownerUserId: item.ownerUserId,
+      ownerName: item.ownerUserId
+        ? (names.get(item.ownerUserId) ?? null)
+        : null,
+      dueDate: item.dueDate,
+      fromStartTime: last.event_start_time,
+    }));
 }
 
 /** A series is its first occurrence; a one-off event is its own. */

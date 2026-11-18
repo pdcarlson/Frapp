@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import type { Meeting } from '#domain/entities/meeting.entity';
 import type { Event } from '#domain/entities/event.entity';
 import type { MinutesRosterMember } from '#domain/utils/minutes-draft';
+import { CARRIED_HEADING } from '#domain/utils/minutes-context';
 import {
   MeetingDraftContextService,
   sameAudience,
@@ -125,6 +126,7 @@ describe('MeetingDraftContextService (#5477)', () => {
       CHAPTER,
       SECRETARY,
       TONIGHT.event_start_time,
+      'chapter',
       expect.any(Number),
     );
     expect(events.findById).toHaveBeenCalledWith(
@@ -141,8 +143,9 @@ describe('MeetingDraftContextService (#5477)', () => {
     expect(context.background).toEqual({
       meetings: [
         {
-          date: '2026-11-03',
+          startTime: '2026-11-03T00:00:00.000Z',
           name: 'Chapter meeting',
+          sameSeries: true,
           reports: ['Treasurer'],
           topics: ['Topic of m1'],
         },
@@ -154,11 +157,15 @@ describe('MeetingDraftContextService (#5477)', () => {
           ownerUserId: PRIYA,
           ownerName: 'Priya Natarajan',
           dueDate: null,
-          fromDate: '2026-11-03',
+          fromStartTime: '2026-11-03T00:00:00.000Z',
         },
       ],
       standingReports: [
-        { id: 'R1', office: 'Treasurer', lastDate: '2026-11-03' },
+        {
+          id: 'R1',
+          office: 'Treasurer',
+          lastStartTime: '2026-11-03T00:00:00.000Z',
+        },
       ],
     });
   });
@@ -206,9 +213,9 @@ describe('MeetingDraftContextService (#5477)', () => {
       SECRETARY,
       ROSTER,
     );
-    expect(context.background?.meetings.map((m) => m.date)).toEqual([
-      '2026-11-04',
-    ]);
+    expect(
+      context.background?.meetings.map((m) => m.startTime.slice(0, 10)),
+    ).toEqual(['2026-11-04']);
     expect(context.background?.carried[0].text).toBe('Do the thing from ok');
   });
 
@@ -233,11 +240,9 @@ describe('MeetingDraftContextService (#5477)', () => {
       SECRETARY,
       ROSTER,
     );
-    expect(context.background?.meetings.map((m) => m.date)).toEqual([
-      '2026-11-03',
-      '2026-10-27',
-      '2026-11-08',
-    ]);
+    expect(
+      context.background?.meetings.map((m) => m.startTime.slice(0, 10)),
+    ).toEqual(['2026-11-03', '2026-10-27', '2026-11-08']);
     // Last meeting is the series' newest, not the newest of any kind.
     expect(context.background?.carried[0].text).toBe(
       'Do the thing from series-1',
@@ -277,8 +282,116 @@ describe('MeetingDraftContextService (#5477)', () => {
     expect(sameAudience(event('a'), event('b', { others_invited: true }))).toBe(
       true,
     );
+    // Each role list counts on its own, everyone else's rule held equal.
+    const closed = { others_invited: false };
     expect(
       sameAudience(event('a'), event('b', { excluded_role_ids: ['pledge'] })),
     ).toBe(false);
+    expect(
+      sameAudience(
+        event('a', { ...closed, required_role_ids: ['officers'] }),
+        event('b', { ...closed, required_role_ids: ['officers', 'chairs'] }),
+      ),
+    ).toBe(false);
+    expect(
+      sameAudience(
+        event('a', { ...closed, optional_role_ids: ['officers'] }),
+        event('b', { ...closed, optional_role_ids: ['officers', 'chairs'] }),
+      ),
+    ).toBe(false);
+  });
+
+  it('never carries minutes of a narrower audience, even with the same rule for everyone else', async () => {
+    const closed = { others_invited: false };
+    const { service } = setup({
+      earlier: [
+        minutes('officers', 'evt-officers', '2026-11-06'),
+        minutes('same', 'evt-same', '2026-11-04'),
+      ],
+      events: [
+        event('evt-officers', { ...closed, optional_role_ids: ['officers'] }),
+        event('evt-same', {
+          ...closed,
+          optional_role_ids: ['officers', 'chairs'],
+        }),
+      ],
+      tonight: event('evt-tonight', {
+        ...closed,
+        optional_role_ids: ['chairs', 'officers'],
+      }),
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      TONIGHT,
+      SECRETARY,
+      ROSTER,
+    );
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from same',
+    ]);
+  });
+
+  it('reads an Other meeting\u2019s earlier minutes only under the same label', async () => {
+    const other = (label: string) => ({
+      meeting_type: 'other' as const,
+      other_label: label,
+    });
+    const { service } = setup({
+      earlier: [
+        minutes('alumni', 'evt-a', '2026-11-06', other('Alumni board')),
+        minutes('housing', 'evt-h', '2026-11-04', other('housing corp ')),
+      ],
+      events: [event('evt-a'), event('evt-h')],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...other('Housing Corp') },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from housing',
+    ]);
+  });
+
+  it('carries again what last meeting carried over and left open', async () => {
+    const { service } = setup({
+      earlier: [
+        minutes('m2', 'evt-2', '2026-11-03', {
+          content: {
+            action_items: [
+              { text: 'Book the DJ', owner_user_id: null, due_date: null },
+            ],
+            discussion_log: [
+              'Formal',
+              '- DJ approved',
+              '',
+              CARRIED_HEADING,
+              '- Order the washer (Priya Natarajan): still open, carried over.',
+              '- Reserve the bus: not mentioned tonight, confirm before posting.',
+              '- Pay the deposit: reported done tonight.',
+              // Frapp's line, carried twice: once is enough.
+              '- Book the DJ: not mentioned tonight, confirm before posting.',
+            ].join('\n'),
+          },
+        }),
+      ],
+      events: [event('evt-2')],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      TONIGHT,
+      SECRETARY,
+      ROSTER,
+    );
+    expect(
+      context.background?.carried.map((item) => [item.text, item.ownerUserId]),
+    ).toEqual([
+      ['Book the DJ', null],
+      ['Order the washer', PRIYA],
+      ['Reserve the bus', null],
+    ]);
+    // The carried block is not an earlier topic.
+    expect(context.background?.meetings[0].topics).toEqual(['Formal']);
   });
 });

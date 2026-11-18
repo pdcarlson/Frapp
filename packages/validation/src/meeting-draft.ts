@@ -280,8 +280,12 @@ export const MeetingDraftFollowUpSchema = z.object({
   /** The action item's text, or the office that reports, as earlier minutes wrote it. */
   text: z.string(),
   owner_user_id: z.string().nullable(),
-  /** The day of the meeting whose minutes it comes from, `YYYY-MM-DD`. */
-  from_meeting_date: z.string(),
+  /**
+   * When the meeting whose minutes it comes from started (ISO), for a
+   * screen to show as a day in the reader's own time; the server's UTC day
+   * is a day off for an evening meeting west of Greenwich.
+   */
+  from_meeting_start_time: z.string(),
   status: z.enum(MEETING_FOLLOW_UP_STATUSES),
   quote: z.string().nullable(),
   from: z.string().nullable(),

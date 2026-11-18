@@ -910,12 +910,16 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const sources = storedSources(draft.sources);
-    const { agenda, background } = await this.context.contextFor(
-      chapterId,
-      meeting,
-      userId,
-      roster,
-    );
+    // The background helps; it is never worth the draft. A read that fails
+    // (a database hiccup) leaves the draft to tonight's sources, as before.
+    const { agenda, background } = await this.context
+      .contextFor(chapterId, meeting, userId, roster)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `minutes draft background unavailable: ${error instanceof Error ? error.name : 'error'}`,
+        );
+        return { agenda: [] as string[], background: undefined };
+      });
     return {
       meetingName: meeting.event_name,
       meetingType: meeting.meeting_type,

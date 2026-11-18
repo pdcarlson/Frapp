@@ -35486,10 +35486,10 @@
             "format": "uuid",
             "nullable": true
           },
-          "from_meeting_date": {
+          "from_meeting_start_time": {
             "type": "string",
-            "description": "The day of the meeting whose minutes it comes from.",
-            "example": "2026-11-03"
+            "format": "date-time",
+            "description": "When the meeting whose minutes it comes from started. Show its day in the reader’s own time."
           },
           "status": {
             "type": "string",
@@ -35516,7 +35516,7 @@
           "kind",
           "text",
           "owner_user_id",
-          "from_meeting_date",
+          "from_meeting_start_time",
           "status",
           "quote",
           "from"
