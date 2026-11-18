@@ -37,6 +37,8 @@ export const SCREEN_TITLES = {
   "calendar-day": "Day",
   // A pushed screen since #4610, opened from Activity, Calendar and Up next.
   tasks: "Tasks",
+  // One task, pushed from a task row (#5492).
+  "task-details": "Task",
   // The thread names a channel, which a capsule has no room for; "Chat" is
   // where the member is going back to.
   "chat-thread": "Chat",
