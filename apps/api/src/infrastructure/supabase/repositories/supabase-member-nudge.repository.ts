@@ -69,14 +69,15 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
   async findRaised(
     chapterId: string,
     userId: string,
-  ): Promise<Pick<MemberNudge, 'task_id' | 'kind'>[]> {
-    // Newest first and capped: a member's open tasks are recent ones, and a
-    // card is at most a couple a week, so the cap is years of cards.
+  ): Promise<Pick<MemberNudge, 'task_id' | 'kind' | 'subject_key'>[]> {
+    // Newest first and capped: what waits on a member is recent, and the
+    // cap is months of cards.
     const { data, error } = await this.supabase
       .from('member_nudges')
-      .select('task_id, kind')
+      .select('task_id, kind, subject_key')
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
+      .neq('status', 'showing')
       .order('created_at', { ascending: false })
       .limit(500);
     if (error) throw new SupabaseQueryError(error);
@@ -144,6 +145,67 @@ export class SupabaseMemberNudgeRepository implements IMemberNudgeRepository {
       .select('id');
     if (error) throw new SupabaseQueryError(error);
     return data.length > 0;
+  }
+
+  async deleteShowing(
+    chapterId: string,
+    userId: string,
+    id: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('member_nudges')
+      .delete()
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('status', 'showing');
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async dismissSubject(
+    chapterId: string,
+    userId: string,
+    subject: Pick<MemberNudge, 'kind' | 'subject_key' | 'task_id'>,
+    now: string,
+  ): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('member_nudges')
+      .update({
+        status: 'dismissed',
+        dismiss_reason: 'not_now',
+        closed_at: now,
+        title: null,
+        body: null,
+        start_here: null,
+      })
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('kind', subject.kind)
+      .eq('subject_key', subject.subject_key)
+      .eq('status', 'showing')
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    if (data.length > 0) return;
+    const row: TablesInsert<'member_nudges'> = {
+      chapter_id: chapterId,
+      user_id: userId,
+      kind: subject.kind,
+      subject_key: subject.subject_key,
+      task_id: subject.task_id,
+      written_by: 'plain',
+      status: 'dismissed',
+      dismiss_reason: 'not_now',
+      title: null,
+      body: null,
+      start_here: null,
+      closed_at: now,
+      expires_at: now,
+    };
+    const inserted = await this.supabase.from('member_nudges').insert(row);
+    // Already raised and closed: waved off once is enough.
+    if (inserted.error && !isUniqueViolation(inserted.error)) {
+      throw new SupabaseQueryError(inserted.error);
+    }
   }
 
   async deleteByUser(userId: string): Promise<void> {

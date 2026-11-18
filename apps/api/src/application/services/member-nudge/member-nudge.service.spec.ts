@@ -50,6 +50,7 @@ function card(overrides: Partial<MemberNudge> = {}): MemberNudge {
     user_id: 'user-1',
     kind: 'task_due_soon',
     task_id: 'task-1',
+    subject_key: 'task-1',
     title: 'A good day to start',
     body: 'A call today keeps Monday calm.',
     start_here: null,
@@ -82,6 +83,8 @@ function setup(options: { tasks?: Task[]; showing?: MemberNudge | null } = {}) {
     markSeen: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(true),
     deleteByUser: jest.fn().mockResolvedValue(undefined),
+    deleteShowing: jest.fn().mockResolvedValue(undefined),
+    dismissSubject: jest.fn().mockResolvedValue(undefined),
     closeExpired: jest.fn().mockResolvedValue(undefined),
     findSettings: jest.fn().mockResolvedValue(null),
     saveSettings: jest.fn(async (chapterId, userId, change, now) => ({
@@ -224,7 +227,10 @@ describe('MemberNudgeService.current', () => {
       allowed: false,
       reason: 'chapter_off',
     });
-    nudges.findShowing.mockResolvedValue({ id: 'card-1' } as MemberNudge);
+    nudges.findShowing.mockResolvedValue({
+      id: 'card-1',
+      kind: 'task_due_soon',
+    } as MemberNudge);
     expect(await service.current(INPUT, NOW)).toBeNull();
     expect(nudges.closeExpired).toHaveBeenCalledWith(
       'chapter-1',

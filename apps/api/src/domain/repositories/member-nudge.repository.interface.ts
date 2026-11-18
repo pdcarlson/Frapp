@@ -10,8 +10,14 @@ export const MEMBER_NUDGE_REPOSITORY = 'MEMBER_NUDGE_REPOSITORY';
 /** What a new card is made of. It is created showing. */
 export type MemberNudgeDraft = Pick<
   MemberNudge,
-  'chapter_id' | 'user_id' | 'kind' | 'task_id' | 'written_by' | 'expires_at'
-> & { title: string; body: string; start_here: string | null };
+  | 'chapter_id'
+  | 'user_id'
+  | 'kind'
+  | 'task_id'
+  | 'subject_key'
+  | 'written_by'
+  | 'expires_at'
+> & { title: string; body: string | null; start_here: string | null };
 
 /**
  * `member_nudges` and `member_nudge_settings` (#4781). Every read and write
@@ -27,11 +33,14 @@ export interface IMemberNudgeRepository {
     userId: string,
     since: string,
   ): Promise<MemberNudge[]>;
-  /** Every `task_id:kind` this member was already shown, ever. */
+  /**
+   * Every card this member was already shown that is no longer showing:
+   * its subject and kind are not raised again.
+   */
   findRaised(
     chapterId: string,
     userId: string,
-  ): Promise<Pick<MemberNudge, 'task_id' | 'kind'>[]>;
+  ): Promise<Pick<MemberNudge, 'task_id' | 'kind' | 'subject_key'>[]>;
   /**
    * Creates a showing card. Null when the member already has one showing or
    * this task was already raised for this kind (a second device got there
@@ -59,6 +68,23 @@ export interface IMemberNudgeRepository {
       closed_at: string;
     },
   ): Promise<boolean>;
+  /**
+   * Deletes a showing card outright, leaving no record that it was raised:
+   * for a card something more pressing replaced before the member acted on
+   * it, so it may come back when it is the most pressing again (#5464).
+   */
+  deleteShowing(chapterId: string, userId: string, id: string): Promise<void>;
+  /**
+   * Records that the member waved this subject off: the showing card for it
+   * is closed `dismissed`, or, for one that was only in the tray, a closed
+   * row is written so it is not raised again. Idempotent.
+   */
+  dismissSubject(
+    chapterId: string,
+    userId: string,
+    subject: Pick<MemberNudge, 'kind' | 'subject_key' | 'task_id'>,
+    now: string,
+  ): Promise<void>;
   /** Deletes every card of this person's, in every chapter. */
   deleteByUser(userId: string): Promise<void>;
 

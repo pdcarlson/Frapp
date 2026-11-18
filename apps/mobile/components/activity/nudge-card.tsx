@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { MemberNudge } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
-import { MEMBER_NUDGE_KINDS, isMemberNudgePraise } from "@repo/validation";
+import { MEMBER_NUDGE_TASK_KINDS, isMemberNudgePraise } from "@repo/validation";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -49,7 +49,9 @@ export function NudgeCard({
   const praise = isMemberNudgePraise(nudge.kind);
   // A kind from a newer server than this build: its two lines and "Not
   // now", and none of the task buttons, which may not fit it.
-  const known = (MEMBER_NUDGE_KINDS as readonly string[]).includes(nudge.kind);
+  const known = (MEMBER_NUDGE_TASK_KINDS as readonly string[]).includes(
+    nudge.kind,
+  );
 
   // On screen is seen: the card sits at the top of the page.
   const { id, seen } = nudge;
