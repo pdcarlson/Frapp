@@ -52,6 +52,7 @@ import {
   type MinutesSource,
 } from '#domain/utils/minutes-draft';
 import { mergeParts, partRequests } from '#domain/utils/minutes-draft-parts';
+import { mergeFollowUps } from '#domain/utils/minutes-context';
 import {
   MinutesNotesOutputSchema,
   buildMinutesNotesPrompt,
@@ -65,6 +66,7 @@ import {
 } from '#domain/utils/minutes-draft-review';
 import { MeetingService } from './meeting.service';
 import { MeetingNotesService } from './meeting-notes.service';
+import { MeetingDraftContextService } from './meeting-draft-context.service';
 import { RbacService } from './rbac.service';
 import type { EnabledModules } from './module-gate';
 import { AiRunService } from './ai-run.service';
@@ -191,6 +193,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     private readonly registry: AiRunRegistry,
     private readonly gateway: AiGatewayService,
     private readonly consent: AiConsentService,
+    private readonly context: MeetingDraftContextService,
   ) {}
 
   onModuleInit(): void {
@@ -618,7 +621,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       throw error;
     }
 
-    const request = await this.draftRequest(chapterId, meeting, draft);
+    const request = await this.draftRequest(chapterId, meeting, draft, userId);
     if (request.sources) {
       // Who may still contribute is checked as late as the call: a
       // note-taker who said No to Frapp AI or left since the officer asked
@@ -818,11 +821,17 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         };
       };
 
+      // Where each carried item stands is read by the first pass, from the
+      // sources; the editor's read never sees them, so they pass through.
+      const followUps = mergeFollowUps(outputs);
       if (reviewed?.status === 'ok') {
         usages.push(reviewed.usage);
         return {
           status: 'ok',
-          value: withNotes(applyReview(outputs, reviewed.value)),
+          value: withNotes({
+            ...applyReview(outputs, reviewed.value),
+            follow_ups: followUps,
+          }),
           usage: usageOf(usages),
         };
       }
@@ -836,6 +845,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         value: withNotes({
           ...merged,
           decisions: dropProcedure(merged.decisions),
+          follow_ups: followUps,
         }),
         usage: usageOf(usages),
       };
@@ -865,11 +875,16 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     assertMeetingDraftable(meeting);
   }
 
-  /** What the model is told: the meeting, the template, the roster, the notes. */
+  /**
+   * What the model is told: the meeting, the template, the roster, the
+   * notes, and what it knows from before tonight (#5477), read as the
+   * officer the draft acts for.
+   */
   private async draftRequest(
     chapterId: string,
     meeting: Meeting,
     draft: MeetingDraft,
+    userId: string,
   ): Promise<MinutesDraftRequest> {
     const [sections, members, roles, attendance] = await Promise.all([
       this.meetings.getTemplate(chapterId),
@@ -895,6 +910,16 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const sources = storedSources(draft.sources);
+    // The background helps; it is never worth the draft. A read that fails
+    // (a database hiccup) leaves the draft to tonight's sources, as before.
+    const { agenda, background } = await this.context
+      .contextFor(chapterId, meeting, userId, roster)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `minutes draft background unavailable: ${error instanceof Error ? error.name : 'error'}`,
+        );
+        return { agenda: [] as string[], background: undefined };
+      });
     return {
       meetingName: meeting.event_name,
       meetingType: meeting.meeting_type,
@@ -904,9 +929,8 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       roster,
       // A draft asked before several note-takers has its notes alone.
       ...(sources.length > 0 ? { sources } : { notes: draft.notes }),
-      // Event agendas (#4934) are not built yet; the prompt takes one when
-      // they are.
-      agenda: [],
+      agenda,
+      ...(background ? { background } : {}),
     };
   }
 
