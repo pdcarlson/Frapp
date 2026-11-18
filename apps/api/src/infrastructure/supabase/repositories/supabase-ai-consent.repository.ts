@@ -46,19 +46,35 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
   async listChapterIdsWithSwitchOn(
     column: keyof ChapterAiSettingsPatch,
   ): Promise<string[]> {
-    // Paged: every chapter has a row since #5294, all on by default, so
-    // this lists most chapters, and one read stops at the project's max rows.
-    const rows = await fetchAllPages<{ chapter_id: string }>(
-      (from, to) =>
-        this.supabase
-          .from('chapter_ai_settings')
-          .select('chapter_id')
-          .eq(column, true)
-          .order('chapter_id')
-          .range(from, to),
-      { pageSize: 500 },
-    );
-    return rows.map((row) => row.chapter_id);
+    // Every chapter, minus those whose stored row turns the switch off. A
+    // chapter with no row reads as on: every switch starts on (#5294), and a
+    // trigger seeds the row, so a missing one is a gap, not a choice (#5511).
+    // Paged: one read stops at the project's max rows.
+    const [chapters, off] = await Promise.all([
+      fetchAllPages<{ id: string }>(
+        (from, to) =>
+          this.supabase
+            .from('chapters')
+            .select('id')
+            .order('id')
+            .range(from, to),
+        { pageSize: 500 },
+      ),
+      fetchAllPages<{ chapter_id: string }>(
+        (from, to) =>
+          this.supabase
+            .from('chapter_ai_settings')
+            .select('chapter_id')
+            .eq(column, false)
+            .order('chapter_id')
+            .range(from, to),
+        { pageSize: 500 },
+      ),
+    ]);
+    const switchedOff = new Set(off.map((row) => row.chapter_id));
+    return chapters
+      .map((row) => row.id)
+      .filter((chapterId) => !switchedOff.has(chapterId));
   }
 
   async saveChapterSettings(

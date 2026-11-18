@@ -41,8 +41,10 @@ export interface IAiConsentRepository {
   ): Promise<ChapterAiSettings>;
 
   /**
-   * Every chapter with this switch on. For a scheduled feature that visits
-   * each such chapter (#3930); nothing a member's request reads.
+   * Every chapter with this switch on: every chapter, minus those whose
+   * stored row turns it off, since a chapter with no row starts with every
+   * switch on (#5294, #5511). For a scheduled feature that visits each such
+   * chapter (#3930); nothing a member's request reads.
    */
   listChapterIdsWithSwitchOn(
     column: keyof ChapterAiSettingsPatch,

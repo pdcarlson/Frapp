@@ -147,4 +147,45 @@ describe('SupabaseAiConsentRepository — tenant scope', () => {
       await expect(repo.findAcceptedUserIds([], 2)).resolves.toEqual([]);
     });
   });
+
+  // A cross-chapter listing for the daily sweep (#3930), so it reads every
+  // chapter by design: no tenant predicate to check here.
+  describe('listChapterIdsWithSwitchOn (#5511)', () => {
+    const NO_ROW = '66666666-6666-4666-8666-666666666666';
+    const ON = '77777777-7777-4777-8777-777777777777';
+    const OFF = '88888888-8888-4888-8888-888888888888';
+
+    beforeEach(() => {
+      const row = (chapterId: string, ask: boolean) => ({
+        id: `settings-${chapterId}`,
+        chapter_id: chapterId,
+        ask_enabled: ask,
+        meeting_notes_enabled: true,
+        chat_source_enabled: true,
+        nudges_enabled: true,
+        updated_by: null,
+        updated_at: null,
+      });
+      harness = createTenantHarness({
+        tables: {
+          chapters: [{ id: NO_ROW }, { id: ON }, { id: OFF }],
+          chapter_ai_settings: [row(ON, true), row(OFF, false)],
+        },
+        untenantedTables: ['chapters', 'chapter_ai_settings'],
+      });
+      repo = new SupabaseAiConsentRepository(harness.client);
+    });
+
+    it('lists every chapter but the one whose row turns the switch off', async () => {
+      await expect(
+        repo.listChapterIdsWithSwitchOn('ask_enabled'),
+      ).resolves.toEqual([NO_ROW, ON]);
+    });
+
+    it('reads the column it is asked for', async () => {
+      await expect(
+        repo.listChapterIdsWithSwitchOn('nudges_enabled'),
+      ).resolves.toEqual([NO_ROW, ON, OFF]);
+    });
+  });
 });
