@@ -100,6 +100,8 @@ const CALLS = new Set([
   'consent.getConsentState',
   'consent.onConsentWithdrawn',
   'conversation.converse',
+  // Dictation's cleanup (#5276): one gateway call, the words handed back.
+  'dictation.clean',
   // The officer's diagnostics routes, and the opening examples (in the
   // route, `suggestions` is `AskSuggestionsService`, which reads).
   'diagnostics.start',

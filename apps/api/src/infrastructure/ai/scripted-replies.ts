@@ -1,4 +1,5 @@
 import { scriptedActMatch, scriptedActPlan } from './scripted-act';
+import { scriptedAskDictation } from './scripted-ask-dictation';
 import {
   scriptedAskAgent,
   scriptedAskAnswer,
@@ -30,6 +31,7 @@ export const SCRIPTED_REPLIES: ScriptedReplies = {
   'ask.agent': scriptedAskAgent,
   'ask.plan': scriptedAskPlan,
   'ask.answer': scriptedAskAnswer,
+  'ask.dictation': scriptedAskDictation,
   'chat.catch-up': scriptedChatCatchUp,
   'minutes.draft': scriptedMinutesDraft,
   'minutes.notes': scriptedMinutesNotes,
