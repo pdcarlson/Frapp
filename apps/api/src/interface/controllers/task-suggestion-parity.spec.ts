@@ -28,6 +28,7 @@ describe('a suggested task and the task form (#4313)', () => {
       { create: fromForm } as never,
       {} as never,
       {} as never,
+      {} as never,
     ).create(CHAPTER, OFFICER, fields);
 
     // The suggestion: accepted as proposed.
@@ -35,9 +36,10 @@ describe('a suggested task and the task form (#4313)', () => {
       id: 'task-2',
       ...input,
     }));
-    const accepting = new TaskSuggestionKind({
-      create: fromSuggestion,
-    } as never);
+    const accepting = new TaskSuggestionKind(
+      { create: fromSuggestion } as never,
+      {} as never,
+    );
     await accepting.commit({
       chapterId: CHAPTER,
       userId: OFFICER,

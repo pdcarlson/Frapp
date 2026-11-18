@@ -95,6 +95,7 @@ describe("taskScreenControls", () => {
       edit: false,
       removePeople: false,
       reopen: false,
+      release: false,
       delete: false,
       deleteForEveryone: false,
     });

@@ -1,5 +1,5 @@
 import type {
-  TaskAudience,
+  TaskGroupAudience,
   TaskGroupProgress,
   TaskProofKind,
 } from '@repo/validation';
@@ -78,14 +78,32 @@ export interface TaskGroup {
   id: string;
   chapter_id: string;
   created_by: string;
-  audience: TaskAudience;
+  /**
+   * Who it went to (Paul, 2026-11-18): the chapter, several people picked one
+   * by one, a role's holders or a chapter group's members.
+   */
+  audience: TaskGroupAudience;
+  /** The role or chapter group it went to; null for everyone and people. */
+  target_id: string | null;
+  /**
+   * That role's or group's name when the task was made, shown once the role
+   * or group is deleted.
+   */
+  target_name: string | null;
   created_at: string;
 }
 
 /** What a task read says about its group (#4295 step 3). */
 export interface TaskGroupSummary extends TaskGroupProgress {
   id: string;
-  audience: TaskAudience;
+  audience: TaskGroupAudience;
+  /** The role or chapter group it went to; null for everyone and people. */
+  target_id: string | null;
+  /**
+   * That role's or group's name: its name now while it exists, otherwise the
+   * one it had when the task was made. Null for everyone and people.
+   */
+  target_name: string | null;
 }
 
 /**
@@ -169,6 +187,12 @@ export interface TaskView extends Task {
    * reads.
    */
   group?: TaskGroupSummary | null;
+  /**
+   * The task up for grabs this was claimed from (2026-11-18), or null. Its
+   * assignee can give it back while it isn't done. Present on the list and
+   * detail reads.
+   */
+  open_task_id?: string | null;
 }
 
 /** Which of a task's photos: the officer's reference or the assignee's proof. */

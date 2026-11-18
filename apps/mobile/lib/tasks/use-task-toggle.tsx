@@ -70,8 +70,22 @@ export interface TaskToggle {
   refusal: string | null;
   /** A one-off line for a write that didn't land, or `null`. */
   notice: string | null;
-  /** The undo the bar offers while its window runs, or `null`. */
-  undo: { id: string; message: string; key: number } | null;
+  /** Says a line of the caller's own in the same place (a lost claim). */
+  setNotice: (notice: string | null) => void;
+  /**
+   * The bar's offer while its window runs, or `null`: take a completion back
+   * (`undo`), or give a task just claimed from Up for grabs back (`release`).
+   */
+  undo: {
+    id: string;
+    message: string;
+    key: number;
+    action: "undo" | "release";
+  } | null;
+  /** Offers Give it back on a task just claimed, in the same bar. */
+  offerRelease: (id: string, message: string) => void;
+  /** Takes the bar down, as its action is pressed. */
+  clearUndo: () => void;
   /** Whether a toggle may be offered on this row now. */
   canToggle: (row: TaskRowModel) => boolean;
   /** Mark done, or Mark not done on a done task, as the checkbox does. */
@@ -184,6 +198,7 @@ export function useTaskToggle(
       // A new key per completion, so a second one inside the window is
       // announced again even though the words are the same.
       key: (open?.key ?? 0) + 1,
+      action: "undo",
     }));
   }, []);
 
@@ -269,11 +284,24 @@ export function useTaskToggle(
   );
   const closeMarking = useCallback(() => setMarking(null), []);
 
+  const offerRelease = useCallback((id: string, message: string) => {
+    setUndo((open) => ({
+      id,
+      message,
+      key: (open?.key ?? 0) + 1,
+      action: "release",
+    }));
+  }, []);
+  const clearUndo = useCallback(() => setUndo(null), []);
+
   return {
     pendingId,
     refusal,
     notice,
+    setNotice,
     undo,
+    offerRelease,
+    clearUndo,
     canToggle,
     toggle,
     takeBack,

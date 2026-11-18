@@ -11,13 +11,14 @@ import {
   useDeleteTask,
   useMemberDisplayNames,
   usePermissionList,
+  useReleaseTask,
   useRemoveFromTaskGroup,
   useTask,
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { can } from "@repo/validation";
+import { can, TASK_AUDIENCE_COPY } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_TASKS } from "@/components/back-row";
@@ -65,6 +66,7 @@ import {
   REMOVE_CONFIRM_BODY,
   REMOVE_EVERYONE_NOTE,
   removedLine,
+  rowGroupLabel,
   removeLabel,
   rowStatus,
   sortCopies,
@@ -73,6 +75,7 @@ import {
   taskScreenControls,
 } from "@/lib/tasks/task-screen";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
+import { RELEASE_FAILED, RELEASED_LINE } from "@/lib/tasks/open-tasks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -330,6 +333,23 @@ function TaskScreen({
       ],
     );
 
+  // Give it back (tasks.md § Up for grabs): the task is deleted and its
+  // posting is open again, so there is nothing left here to show.
+  const releaseTask = useReleaseTask();
+  const runRelease = () => {
+    setDeleteFailed(null);
+    releaseTask.mutate(row.id, {
+      onSuccess: () => {
+        AccessibilityInfo.announceForAccessibility(RELEASED_LINE);
+        goBackTo(router, BACK_TO_TASKS.href);
+      },
+      onError: (error) =>
+        setDeleteFailed(
+          errorCopy(error, RELEASE_FAILED, { serverWritesForMembers: true }),
+        ),
+    });
+  };
+
   const openMore = () => {
     const copyLink = {
       label: "Copy link",
@@ -344,6 +364,14 @@ function TaskScreen({
             {
               label: TASK_ACTION_LABELS.reopen,
               onPress: () => void toggles.toggle(row),
+            },
+          ]
+        : []),
+      ...(controls.release
+        ? [
+            {
+              label: TASK_AUDIENCE_COPY.release,
+              onPress: runRelease,
             },
           ]
         : []),
@@ -384,6 +412,12 @@ function TaskScreen({
       ? "You"
       : nameOf(row.createdBy)
     : null;
+  const groupLabel = rowGroupLabel(row);
+  const progress = row.group ?? { done: 0, total: copies.length };
+  const forLine =
+    groupLabel && !showPeople
+      ? `${groupLabel} · ${TASK_AUDIENCE_COPY.progress(progress.done, progress.total)}`
+      : null;
   const history = useMemo(
     () => taskHistory(row, nameInLine, new Date()),
     [row, nameInLine],
@@ -405,7 +439,7 @@ function TaskScreen({
           />
         </View>
 
-        {due || points || from ? (
+        {due || points || forLine || from ? (
           <View style={styles.facts}>
             {due ? (
               <Fact
@@ -428,6 +462,10 @@ function TaskScreen({
                 }
               />
             ) : null}
+            {/* Who a group task went to, with how far its copies are, as
+                the sheet said it ("Everyone in Philanthropy · 2 of 6
+                done"). Who has it says it for an officer instead. */}
+            {forLine ? <Fact label="For" value={forLine} color={null} /> : null}
             {from ? <Fact label="From" value={from} color={null} /> : null}
           </View>
         ) : null}
@@ -467,7 +505,8 @@ function TaskScreen({
         {showPeople ? (
           <WhoHasIt
             copies={copies}
-            progress={row.group ?? { done: 0, total: copies.length }}
+            who={groupLabel}
+            progress={progress}
             people={{ nameOf, avatarFor, tintFor: avatarTintFor }}
             viewerId={viewerId}
             selecting={selecting}
@@ -650,10 +689,14 @@ function createStyles(tokens: SignetTokens) {
     },
     facts: {
       flexDirection: "row",
-      gap: tokens.spacing.md,
+      flexWrap: "wrap",
+      rowGap: tokens.spacing.sm,
+      columnGap: tokens.spacing.md,
     },
     fact: {
-      flex: 1,
+      // Three to a line; a fourth (For) wraps under them.
+      flexGrow: 1,
+      flexBasis: "28%",
       gap: tokens.spacing.xs,
     },
     factLabel: {

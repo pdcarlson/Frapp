@@ -61,6 +61,7 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     createdAt: null,
     groupId: null,
     group: null,
+    openTaskId: null,
     ...overrides,
   };
 }

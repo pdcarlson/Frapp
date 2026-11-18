@@ -36,14 +36,16 @@ import {
   TASK_RESUBMIT_NEEDS_CHANGE_CODE,
   TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
   TASK_SEND_BACK_REASON_MAX,
-  TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   taskNeedsSignOff,
   taskSignedOffAutomatically,
   TASK_AUDIENCE_COPY,
   type TaskAudience,
+  type TaskGroupAudience,
   type TaskProofKind,
 } from '@repo/validation';
+import { OPEN_TASK_REPOSITORY } from '#domain/repositories/open-task.repository.interface';
+import type { IOpenTaskRepository } from '#domain/repositories/open-task.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -56,13 +58,22 @@ import {
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
-import { RbacService } from './rbac.service';
+import {
+  TaskAudienceService,
+  type TaskAudienceTarget,
+} from './task-audience.service';
+import {
+  checkedDueAt,
+  checkedDueDate,
+  checkedSubtaskTitles,
+} from './task-input-checks';
 import {
   formatTaskDue,
   joinFacts,
   TASK_REVIEW_PUSH_THREAD,
   taskSubmittedCopy,
 } from './push-copy';
+import { displayNameFor, notifyQuietly } from './task-push';
 import { instantOrThrow } from './instant-bound';
 import { planSeriesStart, readTaskRule } from './task-series-schedule';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
@@ -149,13 +160,24 @@ export interface CreateTaskInput {
   chapter_id: string;
   title: string;
   description?: string | null;
-  /** Who the task is for. Exactly one of this and `audience`. */
+  /**
+   * Who the task is for. Exactly one of this, `assignee_ids` and `audience`.
+   */
   assignee_id?: string | null;
   /**
+   * Several people picked one by one (Paul, 2026-11-18): each gets their own
+   * copy, as with `audience`. A list of one is that person's task.
+   */
+  assignee_ids?: string[] | null;
+  /**
    * A task for a group instead of one person (#4295 step 3): each member gets
-   * their own copy. Exactly one of this and `assignee_id`.
+   * their own copy. Exactly one of this, `assignee_id` and `assignee_ids`.
    */
   audience?: TaskAudience | null;
+  /** With `audience`: only this role's holders (2026-11-18). */
+  audience_role_id?: string | null;
+  /** With `audience`: only this chapter group's members (2026-11-18). */
+  audience_group_id?: string | null;
   created_by: string;
   due_date: string;
   /** The moment it is due, when it has a time of day. */
@@ -227,7 +249,7 @@ export type CreateTaskResult = Task & {
 };
 
 /** Copies written or pushed at once when a group task is made or edited. */
-const GROUP_NOTIFY_CONCURRENCY = 10;
+export const GROUP_NOTIFY_CONCURRENCY = 10;
 
 @Injectable()
 export class TaskService {
@@ -241,7 +263,9 @@ export class TaskService {
     private readonly chatService: ChatService,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    private readonly rbac: RbacService,
+    private readonly audiences: TaskAudienceService,
+    @Inject(OPEN_TASK_REPOSITORY)
+    private readonly openTaskRepo: IOpenTaskRepository,
   ) {}
 
   /**
@@ -403,9 +427,10 @@ export class TaskService {
   /**
    * Delete photos a write has just let go of. Best effort: the write already
    * stands, so a failed delete leaves an orphan for the sweep (#2197) and is
-   * reported, never thrown.
+   * reported, never thrown. Also after a task given back to Up for grabs is
+   * deleted (`OpenTaskService.release`).
    */
-  private async releasePhotos(
+  async releasePhotos(
     chapterId: string,
     paths: (string | null | undefined)[],
   ): Promise<void> {
@@ -491,12 +516,14 @@ export class TaskService {
   ): Promise<TaskView[]> {
     if (tasks.length === 0) return tasks;
     const ids = tasks.map((task) => task.id);
-    const [subtasks, withPhotos, series, groups] = await Promise.all([
-      this.taskRepo.findSubtasks(chapterId, ids),
-      this.withPhotos(chapterId, tasks),
-      this.seriesSummaries(chapterId, tasks),
-      this.groupSummaries(chapterId, tasks),
-    ]);
+    const [subtasks, withPhotos, series, groups, claimedFrom] =
+      await Promise.all([
+        this.taskRepo.findSubtasks(chapterId, ids),
+        this.withPhotos(chapterId, tasks),
+        this.seriesSummaries(chapterId, tasks),
+        this.groupSummaries(chapterId, tasks),
+        this.openTaskRepo.findClaimedFrom(chapterId, ids),
+      ]);
     const byTask = new Map<string, TaskSubtask[]>();
     for (const subtask of subtasks) {
       const list = byTask.get(subtask.task_id) ?? [];
@@ -508,6 +535,7 @@ export class TaskService {
       subtasks: byTask.get(task.id) ?? [],
       series: task.series_id ? (series.get(task.series_id) ?? null) : null,
       group: task.group_id ? (groups.get(task.group_id) ?? null) : null,
+      open_task_id: claimedFrom.get(task.id) ?? null,
     }));
   }
 
@@ -530,10 +558,31 @@ export class TaskService {
       this.taskRepo.findGroups(chapterId, ids),
       this.taskRepo.findGroupCopies(chapterId, ids),
     ]);
+    // A role's or group's name as it reads now; the one it had when the task
+    // was made once it's deleted (2026-11-18).
+    const targetsOf = (audience: TaskGroupAudience) => [
+      ...new Set(
+        groups.flatMap((group) =>
+          group.audience === audience && group.target_id
+            ? [group.target_id]
+            : [],
+        ),
+      ),
+    ];
+    const roleIds = targetsOf('role');
+    const groupIds = targetsOf('group');
+    const names =
+      roleIds.length > 0 || groupIds.length > 0
+        ? await this.audiences.liveNames(chapterId, { roleIds, groupIds })
+        : new Map<string, string>();
     for (const group of groups) {
       summaries.set(group.id, {
         id: group.id,
         audience: group.audience,
+        target_id: group.target_id ?? null,
+        target_name: group.target_id
+          ? (names.get(group.target_id) ?? group.target_name ?? null)
+          : null,
         total: 0,
         done: 0,
         confirmed: 0,
@@ -653,7 +702,7 @@ export class TaskService {
     if (task.points_awarded) {
       throw new BadRequestException('This task is already confirmed');
     }
-    const [clean] = this.checkedSubtaskTitles([title]);
+    const [clean] = checkedSubtaskTitles([title]);
     const existing = await this.taskRepo.findSubtasks(chapterId, [taskId]);
     if (existing.length >= TASK_SUBTASKS_MAX) {
       throw new BadRequestException(
@@ -682,34 +731,9 @@ export class TaskService {
     if (!removed) throw new NotFoundException('Subtask not found');
   }
 
-  /** Trimmed, with blanks dropped; refuses too many or too long. */
-  private checkedSubtaskTitles(titles: string[]): string[] {
-    const clean = titles.map((title) => title.trim()).filter(Boolean);
-    if (clean.length === 0 && titles.length > 0) {
-      throw new BadRequestException('A subtask needs a title');
-    }
-    if (clean.length > TASK_SUBTASKS_MAX) {
-      throw new BadRequestException(
-        `A task can have up to ${TASK_SUBTASKS_MAX} subtasks`,
-      );
-    }
-    if (clean.some((title) => title.length > TASK_SUBTASK_TITLE_MAX_LENGTH)) {
-      throw new BadRequestException(
-        `A subtask can be up to ${TASK_SUBTASK_TITLE_MAX_LENGTH} characters`,
-      );
-    }
-    return clean;
-  }
-
   /** A member's display name for a push, or null when it cannot be read. */
-  private async displayNameOf(userId: string): Promise<string | null> {
-    try {
-      const [user] = await this.userRepo.findByIds([userId]);
-      const name = user?.display_name?.trim();
-      return name ? name : null;
-    } catch {
-      return null;
-    }
+  private displayNameOf(userId: string): Promise<string | null> {
+    return displayNameFor(this.userRepo, userId);
   }
 
   /**
@@ -750,20 +774,60 @@ export class TaskService {
   }
 
   async create(input: CreateTaskInput): Promise<CreateTaskResult> {
-    if (input.audience && input.assignee_id) {
-      throw new BadRequestException('Send assignee_id or audience, not both');
+    const people = [...new Set(input.assignee_ids ?? [])];
+    const answers = [
+      !!input.assignee_id,
+      input.assignee_ids != null,
+      !!input.audience,
+    ].filter(Boolean).length;
+    if (answers > 1) {
+      throw new BadRequestException(
+        'Send one of assignee_id, assignee_ids or audience',
+      );
     }
-    if (input.audience) return this.createForGroup(input, input.audience);
-    if (!input.assignee_id) {
+    if (
+      (input.audience_role_id || input.audience_group_id) &&
+      !input.audience
+    ) {
+      throw new BadRequestException(
+        'audience_role_id and audience_group_id go with audience',
+      );
+    }
+    if (input.audience_role_id && input.audience_group_id) {
+      throw new BadRequestException(
+        'Send audience_role_id or audience_group_id, not both',
+      );
+    }
+    if (input.audience) {
+      return this.createForGroup(
+        input,
+        input.audience_role_id
+          ? { kind: 'role', id: input.audience_role_id }
+          : input.audience_group_id
+            ? { kind: 'group', id: input.audience_group_id }
+            : { kind: 'chapter' },
+      );
+    }
+    if (input.assignee_ids != null && people.length !== 1) {
+      return this.createForGroup(input, { kind: 'people', userIds: people });
+    }
+    const assigneeId = input.assignee_id ?? people[0];
+    if (!assigneeId) {
       throw new BadRequestException('A task needs an assignee');
     }
-    const assigneeId = input.assignee_id;
-    const dueDate = new Date(input.due_date);
-    if (Number.isNaN(dueDate.getTime())) {
-      throw new BadRequestException('due_date must be a valid date');
+    // A list of one is that person's task, held to the list's rule: active
+    // members only, as two or more are (`TaskAudienceReader.resolve`).
+    if (
+      input.assignee_ids != null &&
+      !(await this.audiences.reader(input.chapter_id)).activeIds.has(assigneeId)
+    ) {
+      throw new BadRequestException(
+        'Everyone you pick must be an active member of the chapter',
+      );
     }
-    const dueAt = this.checkedDueAt(input.due_date, input.due_at);
-    const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
+    checkedDueDate(input.due_date);
+    const dueAt = checkedDueAt(input.due_date, input.due_at);
+    const subtaskTitles = checkedSubtaskTitles(input.subtasks ?? []);
     const referencePhotos = await this.checkedPhotoPaths(
       input.chapter_id,
       input.reference_photo_paths ?? [],
@@ -882,7 +946,10 @@ export class TaskService {
   /**
    * A task for everyone (#4295 step 3; Paul 2026-11-17, "one group task, a
    * copy each"): a copy per active member, the chapter minus its alumni
-   * (`spec/behavior/alumni.md`), the officer included when they are one. The
+   * (`spec/behavior/alumni.md`), the officer included when they are one. Or,
+   * since 2026-11-18, for everyone holding a role, everyone in a chapter
+   * group, or several people picked one by one (`TaskAudienceService`; the
+   * group keeps the role's or group's id and its name as it was). The
    * group, the copies and their checklists are written in one transaction,
    * then each member gets the usual assignment push (none to the officer for
    * their own copy). It can't repeat, carry reference photos (one stored photo
@@ -891,11 +958,9 @@ export class TaskService {
    */
   private async createForGroup(
     input: CreateTaskInput,
-    audience: TaskAudience,
+    target: TaskAudienceTarget,
   ): Promise<CreateTaskResult> {
-    if (Number.isNaN(new Date(input.due_date).getTime())) {
-      throw new BadRequestException('due_date must be a valid date');
-    }
+    checkedDueDate(input.due_date);
     if (input.recurrence_rule != null) {
       throw new BadRequestException(TASK_AUDIENCE_COPY.noRepeat);
     }
@@ -907,18 +972,20 @@ export class TaskService {
         "A task for everyone can't be posted to chat yet",
       );
     }
-    const dueAt = this.checkedDueAt(input.due_date, input.due_at);
-    const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
-    const assigneeIds = await this.audienceMembers(input.chapter_id);
-    if (assigneeIds.length === 0) {
-      throw new BadRequestException('This chapter has no active members yet');
-    }
+    const dueAt = checkedDueAt(input.due_date, input.due_at);
+    const subtaskTitles = checkedSubtaskTitles(input.subtasks ?? []);
+    const reader = await this.audiences.reader(input.chapter_id);
+    const resolved = await reader.resolve(target);
+    const audience: TaskGroupAudience =
+      resolved.kind === 'chapter' ? 'everyone' : resolved.kind;
 
     const copies = await this.taskRepo.createGroup({
       chapter_id: input.chapter_id,
       created_by: input.created_by,
       audience,
-      assignee_ids: assigneeIds,
+      target_id: resolved.targetId,
+      target_name: resolved.targetName,
+      assignee_ids: resolved.userIds,
       title: input.title,
       description: input.description ?? null,
       due_date: input.due_date,
@@ -946,29 +1013,13 @@ export class TaskService {
       group: {
         id: own.group_id ?? '',
         audience,
+        target_id: resolved.targetId,
+        target_name: resolved.targetName,
         total: copies.length,
         done: 0,
         confirmed: 0,
       },
     };
-  }
-
-  /** The user ids a group task goes to: active members, alumni left out. */
-  private async audienceMembers(chapterId: string): Promise<string[]> {
-    const [members, alumniRoleId] = await Promise.all([
-      this.memberRepo.findByChapter(chapterId),
-      this.rbac.getAlumniRoleId(chapterId),
-    ]);
-    return [
-      ...new Set(
-        members
-          .filter(
-            (member) =>
-              !alumniRoleId || !(member.role_ids ?? []).includes(alumniRoleId),
-          )
-          .map((member) => member.user_id),
-      ),
-    ];
   }
 
   /** A copy of a group task, and its group; a 404 or a 400 otherwise. */
@@ -1255,10 +1306,8 @@ export class TaskService {
         throw new BadRequestException('A task needs a due date');
       }
       const dueDate = (input.due_date ?? task.due_date).slice(0, 10);
-      if (Number.isNaN(new Date(dueDate).getTime())) {
-        throw new BadRequestException('due_date must be a valid date');
-      }
-      const dueAt = this.checkedDueAt(
+      checkedDueDate(dueDate);
+      const dueAt = checkedDueAt(
         dueDate,
         input.due_at === undefined ? task.due_at : input.due_at,
       );
@@ -1396,29 +1445,6 @@ export class TaskService {
 
     if (reassigned) await this.notifyAssigned(updated, actorId);
     return updated;
-  }
-
-  /**
-   * `due_at` as stored, or null for a task with no time. `due_date` is the day
-   * of `due_at` in the creator's zone, which the server does not know, but no
-   * zone is more than 14 hours from UTC: a pair further apart than that is a
-   * client bug, refused rather than stored as a task due on two days.
-   */
-  private checkedDueAt(
-    dueDate: string,
-    dueAt: string | null | undefined,
-  ): string | null {
-    if (!dueAt) return null;
-    const at = Date.parse(dueAt);
-    if (Number.isNaN(at)) {
-      throw new BadRequestException('due_at must be a valid date and time');
-    }
-    const dayStart = Date.parse(`${dueDate.slice(0, 10)}T00:00:00Z`);
-    const hour = 60 * 60 * 1000;
-    if (at < dayStart - 14 * hour || at >= dayStart + 38 * hour) {
-      throw new BadRequestException('due_at must fall on due_date');
-    }
-    return new Date(at).toISOString();
   }
 
   /**
@@ -1922,25 +1948,20 @@ export class TaskService {
     return this.viewWithPhotos(chapterId, updated);
   }
 
-  private async safeNotifyUser(
+  private safeNotifyUser(
     assigneeId: string,
     chapterId: string,
     payload: NotifyPayload,
     taskId: string,
     notificationContext = 'update',
   ): Promise<void> {
-    try {
-      await this.notificationService.notifyUser(assigneeId, chapterId, payload);
-    } catch (error) {
-      // A notification nobody retries (#4096): reported so a failing
-      // notifications write isn't silent.
-      reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'task-notify',
-        message: `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
-        error,
-      });
-    }
+    return notifyQuietly(this.notificationService, this.logger, {
+      userId: assigneeId,
+      chapterId,
+      payload,
+      site: 'task-notify',
+      about: `task ${taskId} (${notificationContext})`,
+    });
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

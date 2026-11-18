@@ -16,6 +16,7 @@ import { screenText } from "@/test/screen-text";
 import { StatusChip } from "@/components/status-chip";
 import { TaskActionBarSpacer } from "@/components/tasks/task-action-bar";
 import type { ActionMenu } from "@/lib/action-menu";
+import { TASK_AUDIENCE_COPY } from "@repo/validation";
 
 /**
  * The task screen (#5492), which replaced the task detail sheet: what it
@@ -110,6 +111,7 @@ let tasks: unknown[] = [];
 let permissions: string[] = ["members:view"];
 const mutateStatus = vi.fn(async () => ({}));
 const deleteTask = vi.fn(async () => ({}));
+const releaseTask = vi.fn<(id: string, options?: unknown) => void>();
 const removeFromGroup = vi.fn(
   async (input: { assigneeIds: string[] }): Promise<unknown> => ({
     removed: input.assigneeIds,
@@ -140,6 +142,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useUpdateTaskStatus: () => ({ mutateAsync: mutateStatus }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useReleaseTask: () => ({ mutate: releaseTask, isPending: false }),
   useRemoveFromTaskGroup: () => ({
     mutateAsync: removeFromGroup,
     isPending: false,
@@ -410,7 +413,7 @@ describe("An officer on a task for everyone: a lot", () => {
     const tree = render();
     const text = screenText(tree);
     expect(text).toContain("WHO HAS IT");
-    expect(text).toContain("2 of 7 done");
+    expect(text).toContain("Everyone · 2 of 7 done");
     expect(text).toContain("Due before the housing meeting.");
     // Overdue leads; five shown, two behind "2 more".
     expect(text).toContain("Dee Moss");
@@ -582,6 +585,73 @@ describe("A member on a task for everyone", () => {
     expect(control(tree, "Edit task")).toBeUndefined();
     press(tree, "More");
     expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Copy link"]);
+    act(() => tree.unmount());
+  });
+
+  it("says who a group task went to, by its real target, and how many have done it (#5503)", () => {
+    task = {
+      ...(GROUP_COPIES[0] as Record<string, unknown>),
+      group: {
+        id: "g1",
+        audience: "group",
+        target_id: "grp-1",
+        target_name: "Philanthropy",
+        total: 6,
+        done: 2,
+        confirmed: 1,
+      },
+    };
+    tasks = [task];
+    const tree = render();
+    expect(screenText(tree)).toContain(
+      `${TASK_AUDIENCE_COPY.everyoneIn("Philanthropy")} · ${TASK_AUDIENCE_COPY.progress(2, 6)}`,
+    );
+    act(() => tree.unmount());
+  });
+});
+
+describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
+  it("is in More until the task is done, and goes back to Tasks once it lands", () => {
+    task = { ...PLAIN, open_task_id: "open-1" };
+    const tree = render();
+    press(tree, "More");
+    const giveBack = menus[0]!.rows.find(
+      (row) => row.label === TASK_AUDIENCE_COPY.release,
+    );
+    expect(giveBack).toBeDefined();
+    act(() => giveBack!.onPress());
+    expect(releaseTask).toHaveBeenCalledWith("t1", expect.anything());
+    const { onSuccess } = releaseTask.mock.calls[0]![1] as {
+      onSuccess: () => void;
+    };
+    act(() => onSuccess());
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
+      "/tasks",
+    );
+    act(() => tree.unmount());
+
+    task = {
+      ...PLAIN,
+      open_task_id: "open-1",
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      completed_at: "2026-11-18T09:00:00.000Z",
+    };
+    menus.length = 0;
+    const done = render();
+    press(done, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).not.toContain(
+      TASK_AUDIENCE_COPY.release,
+    );
+    act(() => done.unmount());
+  });
+
+  it("is not offered on an ordinary task", () => {
+    const tree = render();
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).not.toContain(
+      TASK_AUDIENCE_COPY.release,
+    );
     act(() => tree.unmount());
   });
 });

@@ -80,12 +80,22 @@ export interface TaskRowModel {
   createdAt: string | null;
   /** The group task this is one member's copy of (#4295 step 3), or `null`. */
   groupId: string | null;
-  /** That group's counts as the read carries them, or `null`. */
+  /**
+   * The group this copy is one of (#4295 step 3; 2026-11-18): who the task
+   * went to and how far along the copies are, or `null` for one person's.
+   */
   group: TaskRowGroup | null;
+  /**
+   * The Up for grabs posting it was claimed from, or `null`: its assignee
+   * can give it back until it is done.
+   */
+  openTaskId: string | null;
 }
 
-/** A group task's counts (`TaskGroupSummaryDto`), as a copy's read carries them. */
+/** A group task's summary, as the task reads carry it (`group`). */
 export interface TaskRowGroup {
+  audience: string;
+  targetName: string | null;
   total: number;
   /** Copies marked done, confirmed or still waiting on an officer. */
   done: number;
@@ -95,10 +105,15 @@ export interface TaskRowGroup {
 function toGroup(value: unknown): TaskRowGroup | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const total = num(record, "total");
-  const done = num(record, "done");
-  if (total === null || done === null) return null;
-  return { total, done, confirmed: num(record, "confirmed") ?? 0 };
+  const audience = str(record, "audience");
+  if (!audience) return null;
+  return {
+    audience,
+    targetName: str(record, "target_name"),
+    total: num(record, "total") ?? 0,
+    done: num(record, "done") ?? 0,
+    confirmed: num(record, "confirmed") ?? 0,
+  };
 }
 
 /**
@@ -220,6 +235,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     createdAt: str(row, "created_at"),
     groupId: str(row, "group_id"),
     group: toGroup(row.group),
+    openTaskId: str(row, "open_task_id"),
   };
 }
 

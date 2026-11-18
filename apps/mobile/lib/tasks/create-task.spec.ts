@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { LiveTaskPhoto } from "@repo/hooks";
-import type { TaskProofKind } from "@repo/validation";
+import type { TaskProofKind, TaskWho } from "@repo/validation";
 import {
+  createRequestOf,
   duePresets,
   editDraftOf,
   editTargetOfCardTask,
   formatDueFieldLabel,
   taskEditBody,
   parsePointReward,
+  taskCreatedLine,
   validateNewTask,
+  whoTakesPhotos,
 } from "./create-task";
 
 function at(year: number, month: number, day: number, hour = 12): Date {
@@ -103,26 +106,89 @@ describe("validateNewTask", () => {
   const draft = {
     title: "Collect ride-share forms",
     dueDate: "2026-08-21",
-    assigneeId: "member-1",
+    who: { kind: "person", userId: "member-1" } as TaskWho | null,
     pointsInput: "5",
   };
 
   it("builds the request body CreateTaskDto expects", () => {
-    expect(validateNewTask(draft)).toEqual({
+    const body = validateNewTask(draft);
+    expect(body).toEqual({
       title: "Collect ride-share forms",
-      assignee_id: "member-1",
+      who: { kind: "person", userId: "member-1" },
       due_date: "2026-08-21",
       point_reward: 5,
+    });
+    expect(createRequestOf(body!)).toEqual({
+      route: "task",
+      body: {
+        title: "Collect ride-share forms",
+        assignee_id: "member-1",
+        due_date: "2026-08-21",
+        point_reward: 5,
+      },
     });
   });
 
   it("sends a task for everyone as an audience, with no member (#4295 step 3)", () => {
-    expect(validateNewTask({ ...draft, assigneeId: "everyone" })).toEqual({
-      title: "Collect ride-share forms",
-      audience: "everyone",
-      due_date: "2026-08-21",
-      point_reward: 5,
+    const body = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "chapter" } },
     });
+    expect(createRequestOf(body!)).toEqual({
+      route: "task",
+      body: {
+        title: "Collect ride-share forms",
+        audience: "everyone",
+        due_date: "2026-08-21",
+        point_reward: 5,
+      },
+    });
+  });
+
+  it("sends a copy each for a role or several people (2026-11-18)", () => {
+    const role = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "role", id: "r1" } },
+    });
+    expect(createRequestOf(role!).body).toMatchObject({
+      audience: "everyone",
+      audience_role_id: "r1",
+    });
+    const people = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "people", userIds: ["a", "b"] } },
+    });
+    expect(createRequestOf(people!).body).toMatchObject({
+      assignee_ids: ["a", "b"],
+    });
+    // A list of one is that person.
+    const one = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "people", userIds: ["a"] } },
+    });
+    expect(createRequestOf(one!).body).toMatchObject({ assignee_id: "a" });
+  });
+
+  it("posts one task up for grabs for someone in a set, without photos", () => {
+    const body = validateNewTask({
+      ...draft,
+      who: { kind: "someone", target: { kind: "group", id: "g1" } },
+    });
+    expect(
+      createRequestOf({ ...body!, reference_photo_paths: ["p.jpg"] }),
+    ).toEqual({
+      route: "open",
+      body: {
+        title: "Collect ride-share forms",
+        due_date: "2026-08-21",
+        point_reward: 5,
+        group_id: "g1",
+      },
+    });
+    expect(
+      whoTakesPhotos({ kind: "someone", target: { kind: "chapter" } }),
+    ).toBe(false);
+    expect(whoTakesPhotos({ kind: "person", userId: "a" })).toBe(true);
   });
 
   it("omits point_reward when no points are offered", () => {
@@ -154,7 +220,13 @@ describe("validateNewTask", () => {
 
   it("refuses a draft the server would reject", () => {
     expect(validateNewTask({ ...draft, title: "   " })).toBeNull();
-    expect(validateNewTask({ ...draft, assigneeId: null })).toBeNull();
+    expect(validateNewTask({ ...draft, who: null })).toBeNull();
+    expect(
+      validateNewTask({
+        ...draft,
+        who: { kind: "each", target: { kind: "people", userIds: [] } },
+      }),
+    ).toBeNull();
     expect(validateNewTask({ ...draft, dueDate: "21/08/2026" })).toBeNull();
     expect(validateNewTask({ ...draft, pointsInput: "-4" })).toBeNull();
   });
@@ -180,7 +252,7 @@ describe("editing a task (#4296)", () => {
       title: "Sweep",
       dueDate: "2026-09-29",
       dueTime: "17:30",
-      assigneeId: "u1",
+      who: { kind: "person", userId: "u1" },
       pointsInput: "5",
     });
   });
@@ -189,7 +261,7 @@ describe("editing a task (#4296)", () => {
     expect(
       taskEditBody(task, {
         title: "Sweep",
-        assignee_id: "u1",
+        who: { kind: "person", userId: "u1" },
         due_date: "2026-09-29",
         point_reward: 5,
       }),
@@ -198,7 +270,7 @@ describe("editing a task (#4296)", () => {
     expect(
       taskEditBody(task, {
         title: "Mop",
-        assignee_id: "u2",
+        who: { kind: "person", userId: "u2" },
         due_date: "2026-09-29",
         due_at: at,
       }),
@@ -218,7 +290,7 @@ describe("editing a task (#4296)", () => {
         { ...task, dueAt: at },
         {
           title: "Sweep",
-          assignee_id: "u1",
+          who: { kind: "person", userId: "u1" },
           due_date: "2026-09-29",
           point_reward: 5,
         },
@@ -228,7 +300,7 @@ describe("editing a task (#4296)", () => {
 
   const same = {
     title: "Sweep",
-    assignee_id: "u1",
+    who: { kind: "person", userId: "u1" } as TaskWho,
     due_date: "2026-09-29",
     point_reward: 5,
   };
@@ -300,11 +372,18 @@ describe("editing a task (#4296)", () => {
   });
 });
 
+describe("taskCreatedLine", () => {
+  it("says a task up for grabs was posted there, not assigned", () => {
+    expect(taskCreatedLine("Sam", false)).toBe("Assigned to Sam.");
+    expect(taskCreatedLine(null, false, true)).toBe("Posted to Up for grabs.");
+  });
+});
+
 describe("validateNewTask proof kind (#4635)", () => {
   const base = {
     title: "Sweep",
     dueDate: "2026-09-29",
-    assigneeId: "u1",
+    who: { kind: "person", userId: "u1" } as TaskWho | null,
     pointsInput: "",
   };
   it("sends a proof kind only when it asks for something", () => {

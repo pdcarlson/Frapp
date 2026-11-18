@@ -349,6 +349,8 @@ export class SupabaseTaskRepository implements ITaskRepository {
       p_chapter_id: input.chapter_id,
       p_created_by: input.created_by,
       p_audience: input.audience,
+      p_target_id: input.target_id,
+      p_target_name: input.target_name,
       p_assignee_ids: input.assignee_ids,
       p_title: input.title,
       p_description: input.description,

@@ -38,6 +38,7 @@ export interface WhoHasItPeople {
  */
 export function WhoHasIt({
   copies,
+  who,
   progress,
   people,
   viewerId,
@@ -48,6 +49,8 @@ export function WhoHasIt({
 }: {
   /** Already in order (`sortCopies`). */
   copies: readonly TaskRowModel[];
+  /** Who the task went to ("Everyone in Philanthropy"), said with the count. */
+  who: string | null;
   progress: { done: number; total: number };
   people: WhoHasItPeople;
   viewerId: string | null;
@@ -71,7 +74,9 @@ export function WhoHasIt({
           WHO HAS IT
         </Text>
         <Text style={styles.progress}>
-          {TASK_AUDIENCE_COPY.progress(progress.done, progress.total)}
+          {[who, TASK_AUDIENCE_COPY.progress(progress.done, progress.total)]
+            .filter(Boolean)
+            .join(" · ")}
         </Text>
       </View>
       <View>
@@ -223,6 +228,8 @@ function createStyles(tokens: SignetTokens) {
     progress: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+      flexShrink: 1,
+      textAlign: "right",
     },
     row: {
       flexDirection: "row",

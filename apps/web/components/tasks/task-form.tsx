@@ -2,9 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { useMembers } from "@repo/hooks";
 import { dueEntryFields } from "@repo/formatting";
-import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import {
   AI_SUGGESTION_COPY,
@@ -13,6 +11,7 @@ import {
   TASK_PHOTOS_MAX,
   TASK_TITLE_MAX_LENGTH,
   taskRepeatRuleOf,
+  type TaskWho,
   taskRepeatSummary,
 } from "@repo/validation";
 import { RepeatOptions } from "@/components/shared/repeat-options";
@@ -22,13 +21,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -53,7 +45,8 @@ import {
   uploadFailureMessage,
   useUploadTaskPhotos,
 } from "@/components/tasks/task-photo";
-import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { WhoPicker } from "@/components/tasks/who-picker";
 
 // The draft lives in its own module so the chat shell can build one without
 // loading this form, which it loads only when the + card opens it (#3716).
@@ -73,6 +66,23 @@ type Missing = {
   /** Why the photo can't be sent, or why it didn't upload (#4565). */
   photo?: string | null;
 };
+
+/** The form's Assignee as the Who picker holds it. */
+function whoOfAssignee(assigneeId: string): TaskWho | null {
+  if (assigneeId === TASK_AUDIENCE_EVERYONE) {
+    return { kind: "each", target: { kind: "chapter" } };
+  }
+  return assigneeId ? { kind: "person", userId: assigneeId } : null;
+}
+
+/** A pick back into the Assignee string: a user id, `everyone`, or blank. */
+function assigneeOfWho(who: TaskWho | null): string {
+  if (who?.kind === "person") return who.userId;
+  if (who?.kind === "each" && who.target.kind === "chapter") {
+    return TASK_AUDIENCE_EVERYONE;
+  }
+  return "";
+}
 
 export interface TaskFormProps {
   initialDraft?: TaskDraft;
@@ -113,11 +123,6 @@ export interface TaskFormProps {
      * series starts with a new task.
      */
     repeats?: boolean;
-    /**
-     * Editing everyone's copy of a task for everyone (#4295 step 3): who
-     * stays Everyone, and photos, which belong to one copy, aren't offered.
-     */
-    group?: boolean;
   };
   /**
    * Opened on a suggested task (#4313) to change it before accepting: Accept
@@ -157,8 +162,6 @@ export function TaskForm({
   const field = fieldClass(layout);
   // `POST /v1/tasks` carries no `@FreeTier`: paid-ops (#841).
   const gate = useSubscriptionGate();
-  const membersQuery = useMembers();
-  const members = membersQuery.data ?? [];
   const { toast } = useToast();
   const ids = useId();
   const [draft, setDraft] = useState<TaskDraft>(
@@ -386,40 +389,21 @@ export function TaskForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="grid min-w-0 grid-cols-1 content-start gap-1">
           <Label htmlFor={`${ids}-assignee`}>Assignee</Label>
-          <Select
-            value={draft.assigneeId}
-            onValueChange={(value) => {
-              edit({ assigneeId: value });
+          <WhoPicker
+            ref={assigneeRef}
+            id={`${ids}-assignee`}
+            label="Assignee"
+            placeholder="Pick a member"
+            allow={offerEveryone ? "personOrEveryone" : "person"}
+            className={cn(field, "w-full")}
+            value={whoOfAssignee(draft.assigneeId)}
+            onChange={(next) => {
+              edit({ assigneeId: assigneeOfWho(next) });
               setMissing((prev) => ({ ...prev, assignee: false }));
             }}
-            disabled={gate.controlProps().disabled || editing?.group}
-          >
-            <SelectTrigger
-              ref={assigneeRef}
-              id={`${ids}-assignee`}
-              className={field}
-              aria-invalid={missing.assignee || undefined}
-            >
-              <SelectValue placeholder="Pick a member" />
-            </SelectTrigger>
-            <SelectContent>
-              {offerEveryone || editing?.group ? (
-                <SelectItem value={TASK_AUDIENCE_EVERYONE}>
-                  {TASK_AUDIENCE_COPY.everyone}
-                </SelectItem>
-              ) : null}
-              {members
-                .filter((member) => member.user_id)
-                .map((member) => (
-                  <SelectItem
-                    key={String(member.user_id)}
-                    value={String(member.user_id)}
-                  >
-                    {memberLabel(member.display_name, member.user_id)}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+            disabled={gate.controlProps().disabled}
+            invalid={missing.assignee}
+          />
           {missing.assignee ? (
             <FieldError>Pick an assignee.</FieldError>
           ) : draft.assigneeId === TASK_AUDIENCE_EVERYONE ? (
@@ -489,7 +473,7 @@ export function TaskForm({
               />
             </div>
           )}
-          {forEveryone && !suggestion && !editing?.group ? (
+          {forEveryone && !suggestion ? (
             <p className="text-caption text-muted-foreground">
               {TASK_AUDIENCE_COPY.noRepeat}
             </p>

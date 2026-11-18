@@ -1061,6 +1061,8 @@ describe('ActivityService', () => {
       const group = {
         id: 'group-1',
         audience: 'everyone' as const,
+        target_id: null,
+        target_name: null,
         total: 12,
         done: 3,
         confirmed: 1,

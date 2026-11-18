@@ -8,7 +8,6 @@ import {
   type TaskSubtask,
 } from "@repo/hooks";
 import {
-  TASK_AUDIENCE_EVERYONE,
   TASK_SERIES_SCOPE_COPY,
   noTaskRepeatDraft,
   taskRepeatDraftFromRule,
@@ -51,8 +50,16 @@ export interface EditableTask {
  * day), so a time change seen from another zone isn't a move (#5119).
  */
 function movesDay(task: EditableTask, input: TaskInput): boolean {
+  return movesDayTo(task, input.due_date);
+}
+
+/** Whether a new `due_date` is another day than the task's, read as above. */
+export function movesDayTo(
+  task: { due_date: string; due_at?: string | null },
+  dueDate: string,
+): boolean {
   const before = dueEntryFields(dueEntryFromTask(task)).due_date;
-  return input.due_date.slice(0, 10) !== before.slice(0, 10);
+  return dueDate.slice(0, 10) !== before.slice(0, 10);
 }
 
 /**
@@ -60,7 +67,7 @@ function movesDay(task: EditableTask, input: TaskInput): boolean {
  * only the time travels: the server reads the time of day from `due_at` and
  * refuses any `due_date` but the open copy's own.
  */
-function seriesBody(body: TaskEdit): TaskEdit {
+export function seriesBody(body: TaskEdit): TaskEdit {
   const rest: TaskEdit = { ...body, scope: "series" };
   delete rest.due_date;
   return rest;
@@ -155,87 +162,28 @@ export function taskEditFrom(task: EditableTask, input: TaskInput): TaskEdit {
 }
 
 /**
- * A board tile in edit (#4296): the + card's task form, opened on the task
- * as it stands, in the tile's place, the way Todoist's board turns a card
- * into its editor. Steps are the task's live checklist, added and removed as
- * they're typed, as they are on the tile; the other fields save together.
+ * A chat task card in edit (#4296, #4512): the + card's task form, opened on
+ * the task as it stands, in the card's place. Steps are the task's live
+ * checklist, added and removed as they're typed; the other fields save
+ * together. The Tasks page edits in its panel instead (`task-panel.tsx`).
  */
 export function TaskEditForm({
   task,
   assigneeName,
   gate,
   onClose,
-  group = false,
 }: {
   task: EditableTask;
   /** Whom a new pick would replace, for the line under Assignee. */
   assigneeName: string;
   gate: SubscriptionGate;
   onClose: () => void;
-  /**
-   * Edit everyone's copy of a task for everyone (#4295 step 3), from its
-   * group tile: `task` is one copy, read for the fields they share, and the
-   * save goes to every copy not yet confirmed (`scope: "group"`). Who stays
-   * Everyone, and steps and photos, which each copy holds for itself, are
-   * changed on a member's own copy.
-   */
-  group?: boolean;
 }) {
   const updateTask = useUpdateTask();
   const { confirm, confirmDialog } = useConfirmDialog();
   // The scope `beforeSave` settled on, for the write that follows it.
   const scope = useRef<"instance" | "series">("instance");
   const stored = task.stored_status ?? task.status;
-  if (group) {
-    // Read as Everyone, so the form's Assignee never looks changed.
-    const shared: EditableTask = {
-      ...task,
-      assignee_id: TASK_AUDIENCE_EVERYONE,
-      photos: [],
-    };
-    return (
-      <TaskForm
-        initialDraft={taskDraftFromTask(shared)}
-        onDiscard={onClose}
-        onDone={onClose}
-        onPost={async (input) => {
-          const changed = taskEditFrom(shared, input);
-          delete changed.reference_photo_paths;
-          // Saving with no change against this copy sends the fields as they
-          // stand: an edit cut off partway left other copies behind, and this
-          // brings them level (a copy already there has nothing to change).
-          const body =
-            Object.keys(changed).length > 0
-              ? changed
-              : {
-                  title: input.title,
-                  description: input.description ?? null,
-                  due_date: input.due_date,
-                  due_at: input.due_at ?? null,
-                  point_reward: input.point_reward || null,
-                  ...(input.proof_kind ? { proof_kind: input.proof_kind } : {}),
-                };
-          try {
-            await updateTask.mutateAsync({
-              id: task.id,
-              body: { ...body, scope: "group" },
-            });
-            return { ok: true };
-          } catch (error) {
-            return {
-              ok: false,
-              error: getErrorMessage(error, "Retry in a moment."),
-            };
-          }
-        }}
-        editing={{
-          group: true,
-          steps: null,
-          assigneeNote: () => null,
-        }}
-      />
-    );
-  }
   return (
     <>
       {confirmDialog}

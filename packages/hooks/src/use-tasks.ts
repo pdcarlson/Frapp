@@ -462,13 +462,22 @@ export function useCreateTask() {
     mutationFn: async (body: {
       title: string;
       description?: string;
-      /** Who it is for. Send this or `audience`. */
+      /** Who it is for. Send exactly one of this, `assignee_ids` or `audience`. */
       assignee_id?: string;
+      /**
+       * Several people picked by hand (2026-11-18): each gets their own copy.
+       * Active members only; a list of one is a task for that person.
+       */
+      assignee_ids?: string[];
       /**
        * A task for everyone instead (#4295 step 3): each active member gets
        * their own copy. It can't repeat or carry photos yet.
        */
       audience?: TaskAudience;
+      /** With `audience`: only this role's active holders (2026-11-18). */
+      audience_role_id?: string;
+      /** With `audience`: only this chapter group's active members. */
+      audience_group_id?: string;
       due_date: string;
       /** The moment it is due, when it has a time of day (#4003). */
       due_at?: string;

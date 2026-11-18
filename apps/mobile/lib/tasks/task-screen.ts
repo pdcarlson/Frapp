@@ -13,6 +13,7 @@
 
 import { canReopenOwnTask, isTaskStatus, type TaskStatus } from "@repo/hooks";
 import { formatRelativeDayTime } from "@repo/formatting";
+import { taskGroupLabel } from "@repo/validation";
 import { records, str } from "@/lib/more/narrow";
 import {
   rowSignedOffAutomatically,
@@ -23,6 +24,20 @@ import {
 /** The app link to a task: Copy link's text, which opens this screen. */
 export function taskLink(id: string): string {
   return `frapp://task-details?id=${encodeURIComponent(id)}`;
+}
+
+/**
+ * Who a group task went to, in the shared words (`taskGroupLabel`):
+ * "Everyone", "Everyone in Philanthropy", "6 people". `null` for one
+ * person's task.
+ */
+export function rowGroupLabel(row: TaskRowModel): string | null {
+  if (!row.group) return null;
+  return taskGroupLabel({
+    audience: row.group.audience,
+    target_name: row.group.targetName,
+    total: row.group.total,
+  });
 }
 
 /** A row's status as `taskStatusLabel` and the status hue read it. */
@@ -55,6 +70,8 @@ export interface TaskScreenControls {
   removePeople: boolean;
   /** In More: Mark not done. */
   reopen: boolean;
+  /** In More: Give it back, on a task claimed from Up for grabs. */
+  release: boolean;
   /** In More, destructive. */
   delete: boolean;
   /** In More, destructive and last: every copy of a group task. */
@@ -94,6 +111,9 @@ export function taskScreenControls({
         isAssignee,
         signedOffAutomatically: rowSignedOffAutomatically(row),
       }),
+    // The assignee of a task taken from Up for grabs, until it is done
+    // (`POST /v1/tasks/:id/release`).
+    release: isAssignee && row.openTaskId !== null && !row.isDone,
     delete: canManage,
     deleteForEveryone: canManage && row.groupId !== null,
   };
