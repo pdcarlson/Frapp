@@ -302,7 +302,7 @@ export class MeetingService {
     chapterId: string,
     viewerId: string,
     before: string,
-    meetingType: MeetingType,
+    meetingType: MeetingType | null,
     limit: number,
   ): Promise<Meeting[]> {
     const rows = await this.meetingRepo.findPostedBefore(

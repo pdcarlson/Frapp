@@ -6,6 +6,7 @@ import {
   MEETING_LIST_MAX_ITEMS,
   MEETING_SECTIONS,
   MEETING_TABLED_MAX_ITEMS,
+  MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_TEXT_SECTIONS,
   MEETING_VOTE_MAX,
@@ -15,6 +16,7 @@ import {
   type MeetingActionItem,
   type MeetingContent,
   type MeetingTabledItem,
+  type EventAgendaTabledFrom,
   type MeetingDecision,
   type MeetingDraftConflict,
   type MeetingDraftOutput,
@@ -100,6 +102,25 @@ export interface MinutesSource {
   text: string;
 }
 
+/** One agenda item as the draft reads it (#5534). */
+export interface MinutesAgendaItem {
+  text: string;
+  tabledFrom?: EventAgendaTabledFrom | null;
+}
+
+/** The request's agenda as items, its empty ones left out. */
+export function minutesAgenda(
+  request: Pick<MinutesDraftRequest, 'agenda'>,
+): MinutesAgendaItem[] {
+  return (request.agenda ?? [])
+    .map((item) =>
+      typeof item === 'string'
+        ? { text: oneLine(item), tabledFrom: null }
+        : { text: oneLine(item.text), tabledFrom: item.tabledFrom ?? null },
+    )
+    .filter((item) => item.text.length > 0);
+}
+
 export interface MinutesDraftRequest {
   meetingName: string;
   meetingType: MeetingType;
@@ -116,9 +137,11 @@ export interface MinutesDraftRequest {
   /**
    * The event's agenda, in order, when it has one (#4934): the minutes
    * follow it. The draft passes tonight's (`MeetingDraftContextService`);
-   * empty when the event has none.
+   * empty when the event has none. An item added from an earlier meeting's
+   * Tabled list carries where it was first tabled (#5534), so a matter
+   * tabled again tonight keeps its first date and counts one more time.
    */
-  agenda?: readonly string[];
+  agenda?: readonly (string | MinutesAgendaItem)[];
   /** Set when a long meeting is drafted in parts (`minutes-draft-parts.ts`). */
   part?: { index: number; count: number };
   /**
@@ -181,6 +204,12 @@ export const MINUTES_NOTES_FORMAT = [
  */
 export const TLDR_GUIDE = `tldr: the TL;DR, for a member who reads nothing else; write it last, from the decisions, action items and announcements. At most ${TLDR_MAX_BULLETS} short bullets, fewer for a short meeting, one per line, each starting with "- ", in plain everyday words: what was decided, what members need to do and by when (with the day), and what is coming up (with the date). Only what applies to the members reading it: leave out procedure, who moved or seconded what, and detail only officers need. A day or date only as the sources give it.`;
 
+/**
+ * How the prompt marks an agenda item added from an earlier meeting's
+ * Tabled list (#5534), so a matter tabled again names it.
+ */
+export const TABLED_BEFORE_MARK = '[tabled at an earlier meeting]';
+
 const SECTION_GUIDE: Readonly<Record<string, string>> = {
   tldr: TLDR_GUIDE,
   summary:
@@ -191,8 +220,7 @@ const SECTION_GUIDE: Readonly<Record<string, string>> = {
     'decisions: one entry per outcome the meeting settled: what was approved, rejected, chosen, elected, set or agreed, with the substance (the amount, the conditions, the person, the date). Never a procedural step (see the rules).',
   action_items:
     'action_items: one entry per thing someone agreed to do, every one of them, small ones included.',
-  tabled:
-    'tabled: one entry per matter the meeting tabled, postponed or pushed to a later meeting ("let\u2019s table this", "push it to next week", "come back to it next cabinet"): text names the matter in a few words, as it would be written on the next agenda ("Formal budget"), and quote is the line where it was put off, copied as a decision\u2019s quote is. A matter the meeting settled is not tabled, even if it was put off earlier in the meeting.',
+  tabled: `tabled: one entry per matter the meeting tabled, postponed or pushed to a later meeting ("let\u2019s table this", "push it to next week", "come back to it next cabinet"): text names the matter in a few words, as it would be written on the next agenda ("Formal budget"), and quote is the line where it was put off, copied as a decision\u2019s quote is. A matter the meeting settled is not tabled, even if it was put off earlier in the meeting. When the matter is one of tonight\u2019s agenda items marked ${TABLED_BEFORE_MARK}, agenda_item is that item\u2019s number; otherwise leave agenda_item out.`,
   officer_reports:
     'officer_reports: what each officer reported, one officer per line, led by their office.',
   old_business: 'old_business: items carried over from an earlier meeting.',
@@ -250,9 +278,9 @@ export function buildMinutesDraftPrompt(
     }`;
   });
   const type = meetingTypeLabel(request.meetingType, request.otherLabel);
-  const agenda = (request.agenda ?? [])
-    .map((item) => oneLine(item))
-    .filter((item) => item.length > 0);
+  const agenda = minutesAgenda(request).map((item) =>
+    item.tabledFrom ? `${item.text} ${TABLED_BEFORE_MARK}` : item.text,
+  );
   const sources = sourcesOf(request).map((source) => {
     const attrs = [
       `id="${source.id}"`,
@@ -572,7 +600,9 @@ export function verifyMinutesDraft(
   if (wants('action_items')) content.action_items = actionItems;
   if (wants('tabled')) {
     // What was put off, each kept only with its line in a source (#5522),
-    // each matter once.
+    // each matter once. A matter tonight's agenda carried from an earlier
+    // Tabled list keeps its first date and counts once more (#5534).
+    const carried = minutesAgenda(request);
     const seen = new Set<string>();
     const tabled: MeetingTabledItem[] = [];
     for (const item of output.tabled ?? []) {
@@ -584,12 +614,17 @@ export function verifyMinutesDraft(
         continue;
       }
       seen.add(key);
-      tabled.push({
-        text,
-        first_meeting_id: null,
-        first_start_time: null,
-        times: 1,
-      });
+      const from = tabledAgain(item, text, carried);
+      tabled.push(
+        from
+          ? {
+              text,
+              first_meeting_id: from.meeting_id,
+              first_start_time: from.start_time,
+              times: Math.min(from.times + 1, MEETING_TABLED_MAX_TIMES),
+            }
+          : { text, first_meeting_id: null, first_start_time: null, times: 1 },
+      );
     }
     content.tabled = tabled.slice(0, MEETING_TABLED_MAX_ITEMS);
   }
@@ -1100,4 +1135,33 @@ export function weekdayOf(date: string): string {
 
 function clamp(value: string, max: number): string {
   return value.trim().slice(0, max).trim();
+}
+
+/**
+ * Where a drafted tabled matter was first tabled, when tonight's agenda
+ * carried it from an earlier Tabled list (#5534): the agenda item the draft
+ * names by number, else the one with the same words. Null for a matter
+ * tabled for the first time tonight.
+ */
+export function tabledAgain(
+  drafted: { agenda_item?: number },
+  text: string,
+  agenda: readonly MinutesAgendaItem[],
+): EventAgendaTabledFrom | null {
+  const named =
+    drafted.agenda_item !== undefined && Number.isInteger(drafted.agenda_item)
+      ? agenda[drafted.agenda_item - 1]
+      : undefined;
+  if (named?.tabledFrom) return named.tabledFrom;
+  const words = sameWords(text);
+  return (
+    agenda.find((item) => item.tabledFrom && sameWords(item.text) === words)
+      ?.tabledFrom ?? null
+  );
+}
+
+function sameWords(text: string): string {
+  return oneLine(text)
+    .toLowerCase()
+    .replace(/[.!?;:,\s]+$/, '');
 }

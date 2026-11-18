@@ -20328,6 +20328,199 @@
         ]
       }
     },
+    "/v1/events/{id}/agenda-suggestions": {
+      "get": {
+        "operationId": "AgendaSuggestionController_list_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaSuggestionListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List an upcoming event’s suggested agenda items, tabled matters first",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}/agenda-suggestions/refresh": {
+      "post": {
+        "operationId": "AgendaSuggestionController_refresh_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaSuggestionListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask the model for this event’s suggestions again, replacing its open ones",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}/agenda-suggestions/{suggestionId}/add": {
+      "post": {
+        "operationId": "AgendaSuggestionController_add_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suggestionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddAgendaSuggestionResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a suggestion to the end of the agenda",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}/agenda-suggestions/{suggestionId}/dismiss": {
+      "post": {
+        "operationId": "AgendaSuggestionController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suggestionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Hide a suggestion for this event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
     "/v1/calendar-feed": {
       "post": {
         "operationId": "CalendarFeedController_ensure_v1",
@@ -26481,6 +26674,29 @@
           }
         }
       },
+      "EventAgendaTabledFromDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The posted minutes that first tabled this matter."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "That meeting’s start (ISO 8601)."
+          },
+          "times": {
+            "type": "number",
+            "minimum": 1,
+            "description": "How many meetings have tabled it so far."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "start_time",
+          "times"
+        ]
+      },
       "EventAgendaItemDto": {
         "type": "object",
         "properties": {
@@ -26496,6 +26712,16 @@
           "done": {
             "type": "boolean",
             "description": "Checked off during the meeting."
+          },
+          "tabled_from": {
+            "nullable": true,
+            "description": "Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows \"Tabled from {day}\". Read-only: a save keeps the stored value for the same item id and ignores this field.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventAgendaTabledFromDto"
+              }
+            ]
           }
         },
         "required": [
@@ -37449,6 +37675,97 @@
         },
         "required": [
           "user_id"
+        ]
+      },
+      "AgendaSuggestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tabled",
+              "ai"
+            ],
+            "description": "`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested."
+          },
+          "text": {
+            "type": "string",
+            "description": "The item as it would go on the agenda."
+          },
+          "tabled_from": {
+            "nullable": true,
+            "description": "Where a tabled matter was first tabled; null for `ai`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventAgendaTabledFromDto"
+              }
+            ]
+          },
+          "source_meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The posted minutes it was drawn from (for a tabled matter, the minutes that tabled it most recently), for the link under it."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why the model suggested it, in a few words; null for `tabled`."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "text",
+          "tabled_from",
+          "source_meeting_id",
+          "reason"
+        ]
+      },
+      "AgendaSuggestionListDto": {
+        "type": "object",
+        "properties": {
+          "suggestions": {
+            "description": "Open suggestions, tabled matters first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgendaSuggestionDto"
+            }
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the model last wrote suggestions for this event; null when it never has, so a client asks for them once (`POST …/refresh`)."
+          },
+          "ai_available": {
+            "type": "boolean",
+            "description": "Whether the model can write suggestions for this member: AI on, the chapter’s meeting-notes switch on and the member’s own yes. Tabled matters are listed either way."
+          }
+        },
+        "required": [
+          "suggestions",
+          "generated_at",
+          "ai_available"
+        ]
+      },
+      "AddAgendaSuggestionResponseDto": {
+        "type": "object",
+        "properties": {
+          "agenda": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          }
+        },
+        "required": [
+          "agenda"
         ]
       },
       "CalendarFeedLinkDto": {

@@ -5,6 +5,14 @@ import { MeetingDraftController } from '../../interface/controllers/meeting-draf
 import { MeetingNotesController } from '../../interface/controllers/meeting-notes.controller';
 import { MeetingNotesService } from '../../application/services/meeting-notes.service';
 import { MeetingDraftContextService } from '../../application/services/meeting-draft-context.service';
+import { AgendaSuggestionService } from '../../application/services/agenda-suggestion.service';
+import { AgendaSuggestionController } from '../../interface/controllers/agenda-suggestion.controller';
+import { SupabaseEventAgendaSuggestionRepository } from '../../infrastructure/supabase/repositories/supabase-event-agenda-suggestion.repository';
+import { SupabaseRoleTierRepository } from '../../infrastructure/supabase/repositories/supabase-role-tier.repository';
+import { SupabaseEventTypeRepository } from '../../infrastructure/supabase/repositories/supabase-event-type.repository';
+import { EVENT_AGENDA_SUGGESTION_REPOSITORY } from '#domain/repositories/event-agenda-suggestion.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import { EVENT_TYPE_REPOSITORY } from '#domain/repositories/event-type.repository.interface';
 import { SupabaseMeetingNotesRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-notes.repository';
 import { SupabaseMeetingRecordingRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-recording.repository';
 import { MEETING_NOTES_REPOSITORY } from '#domain/repositories/meeting-notes.repository.interface';
@@ -44,11 +52,18 @@ import { EventModule } from '../event/event.module';
     // A member added as a note-taker is told (#4935).
     NotificationModule,
   ],
-  controllers: [MeetingDraftController, MeetingNotesController],
+  controllers: [
+    MeetingDraftController,
+    MeetingNotesController,
+    // Suggested agenda items (#5534): they read earlier minutes as the
+    // officer, as the draft's background does, on the same AI seams.
+    AgendaSuggestionController,
+  ],
   providers: [
     MeetingDraftService,
     MeetingNotesService,
     MeetingDraftContextService,
+    AgendaSuggestionService,
     MeetingDraftRetentionService,
     AiEnabledGuard,
     {
@@ -66,6 +81,12 @@ import { EventModule } from '../event/event.module';
     },
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    {
+      provide: EVENT_AGENDA_SUGGESTION_REPOSITORY,
+      useClass: SupabaseEventAgendaSuggestionRepository,
+    },
+    { provide: ROLE_TIER_REPOSITORY, useClass: SupabaseRoleTierRepository },
+    { provide: EVENT_TYPE_REPOSITORY, useClass: SupabaseEventTypeRepository },
   ],
   exports: [MeetingDraftService],
 })

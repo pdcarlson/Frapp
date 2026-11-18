@@ -918,7 +918,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         this.logger.warn(
           `minutes draft background unavailable: ${error instanceof Error ? error.name : 'error'}`,
         );
-        return { agenda: [] as string[], background: undefined };
+        return { agenda: [], background: undefined };
       });
     return {
       meetingName: meeting.event_name,

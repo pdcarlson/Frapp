@@ -11,6 +11,7 @@ import {
   unfenced,
   weekdayOf,
   type MinutesDraftRequest,
+  minutesAgenda,
 } from './minutes-draft';
 import { spellingLines } from './minutes-context';
 
@@ -102,9 +103,7 @@ export function buildMinutesNotesPrompt(request: MinutesDraftRequest): {
             : ''
         }${member.checkedIn ? ' *' : ''}`,
     );
-  const agenda = (request.agenda ?? [])
-    .map((item) => oneLine(item))
-    .filter((item) => item.length > 0);
+  const agenda = minutesAgenda(request).map((item) => item.text);
   const sources = sourcesOf(request).map((source) =>
     [
       `<source ${[

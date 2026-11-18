@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import {
@@ -38,13 +39,18 @@ import {
   eventOthersInvited,
 } from '@repo/validation';
 import {
+  keepAgendaTabledFrom,
   normalizeAgenda,
   normalizeAttachments,
   normalizeCheckInZone,
 } from './event-input';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
-import type { EventAttachment } from '@repo/validation';
+import {
+  EVENT_AGENDA_MAX,
+  type EventAgendaItem,
+  type EventAttachment,
+} from '@repo/validation';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
   CreateEventInput,
@@ -569,7 +575,14 @@ export class EventService {
     const { agenda: rawAgenda, attachments: rawAttachments, ...rest } = input;
     const meetingOwn: Partial<Event> = {};
     const agenda = normalizeAgenda(rawAgenda);
-    if (agenda !== undefined) meetingOwn.agenda = agenda;
+    if (agenda !== undefined) {
+      // Where a tabled item came from is the server's to say (#5534): it is
+      // kept by the item's id from what is stored, never read from the
+      // client, so a phone build that drops the key keeps it and none can
+      // name another chapter's minutes.
+      existing ??= await this.findById(id, chapterId);
+      meetingOwn.agenda = keepAgendaTabledFrom(agenda, existing.agenda);
+    }
     if (rawAttachments !== undefined) {
       // The stored list says which documents were attached already.
       existing ??= await this.findById(id, chapterId);
@@ -680,6 +693,31 @@ export class EventService {
     );
 
     return updated;
+  }
+
+  /**
+   * Adds one item to the end of a meeting's agenda (#5534), as the API's own
+   * write: a suggestion added from the Suggested list, the only way an item
+   * gets its `tabled_from`. An item whose id the agenda already holds is not
+   * added twice (an Add sent again); a full agenda is a 409. The caller has
+   * checked the officer may edit the event. Returns the agenda as saved.
+   */
+  async appendAgendaItem(
+    id: string,
+    chapterId: string,
+    item: EventAgendaItem,
+  ): Promise<EventAgendaItem[]> {
+    const event = await this.findById(id, chapterId);
+    const agenda = event.agenda ?? [];
+    if (agenda.some((entry) => entry.id === item.id)) return agenda;
+    if (agenda.length >= EVENT_AGENDA_MAX) {
+      throw new ConflictException(
+        `An agenda holds at most ${EVENT_AGENDA_MAX} items.`,
+      );
+    }
+    const next = [...agenda, item];
+    await this.eventRepo.update(id, chapterId, { agenda: next });
+    return next;
   }
 
   async delete(

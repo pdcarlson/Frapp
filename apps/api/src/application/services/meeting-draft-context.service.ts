@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   STANDARDS_MEETING_TYPE,
   eventOthersInvited,
+  readAgendaTabledFrom,
   readMeetingContent,
 } from '@repo/validation';
 import type { Meeting } from '#domain/entities/meeting.entity';
@@ -18,7 +19,10 @@ import {
   type MinutesBackgroundMeeting,
   type MinutesCarriedItem,
 } from '#domain/utils/minutes-context';
-import type { MinutesRosterMember } from '#domain/utils/minutes-draft';
+import type {
+  MinutesAgendaItem,
+  MinutesRosterMember,
+} from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
 import { EventService } from './event.service';
 
@@ -30,8 +34,12 @@ const EARLIER_MINUTES_READ = 25;
 
 /** What a draft is told from outside tonight's sources. */
 export interface MeetingDraftContext {
-  /** Tonight's agenda, in order (#4934). Empty when it has none. */
-  agenda: string[];
+  /**
+   * Tonight's agenda, in order (#4934), each item with where it was first
+   * tabled when it came from an earlier Tabled list (#5534). Empty when it
+   * has none.
+   */
+  agenda: MinutesAgendaItem[];
   /** Undefined when no earlier minutes qualify. */
   background?: MinutesBackground;
 }
@@ -83,8 +91,11 @@ export class MeetingDraftContextService {
       });
     if (!tonight) return { agenda: [] };
     const agenda = (tonight.agenda ?? [])
-      .map((item) => item.text.trim())
-      .filter((text) => text.length > 0);
+      .map((item) => ({
+        text: item.text.trim(),
+        tabledFrom: readAgendaTabledFrom(item.tabled_from),
+      }))
+      .filter((item) => item.text.length > 0);
 
     const earlier = await this.earlierMinutes(
       chapterId,

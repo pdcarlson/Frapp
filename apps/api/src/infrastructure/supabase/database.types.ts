@@ -71,6 +71,8 @@ import type {
   DiscordImportFile,
   DiscordOAuthState,
   Event,
+  EventAgendaSuggestion,
+  EventAgendaSuggestionRun,
   EventAttendance,
   EventCheckInScreen,
   EventExcuse,
@@ -237,6 +239,8 @@ export interface Database {
       discord_import_files: TableDefinition<DiscordImportFile>;
       discord_imports: TableDefinition<DiscordImport>;
       discord_oauth_states: TableDefinition<DiscordOAuthState>;
+      event_agenda_suggestion_runs: TableDefinition<EventAgendaSuggestionRun>;
+      event_agenda_suggestions: TableDefinition<EventAgendaSuggestion>;
       event_attendance: TableDefinition<EventAttendance>;
       event_check_in_screens: TableDefinition<EventCheckInScreen>;
       event_excuses: TableDefinition<EventExcuse>;

@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v8";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v9";
 
 const DueDate = z
   .string()
@@ -82,6 +82,12 @@ export const MeetingDraftOutputSchema = z.object({
       text: z.string(),
       quote: z.string(),
       source: z.string().optional(),
+      /**
+       * The number of tonight's agenda item this tables again, when the
+       * agenda marks that item as tabled at an earlier meeting (#5534): the
+       * matter then keeps its first date and counts one more time.
+       */
+      agenda_item: z.number().int().optional(),
     }),
   ),
   officer_reports: z.string(),

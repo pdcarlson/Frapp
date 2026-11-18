@@ -6096,6 +6096,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/events/{id}/agenda-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an upcoming event’s suggested agenda items, tabled matters first */
+        get: operations["AgendaSuggestionController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask the model for this event’s suggestions again, replacing its open ones */
+        post: operations["AgendaSuggestionController_refresh_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions/{suggestionId}/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a suggestion to the end of the agenda */
+        post: operations["AgendaSuggestionController_add_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions/{suggestionId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide a suggestion for this event */
+        post: operations["AgendaSuggestionController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/calendar-feed": {
         parameters: {
             query?: never;
@@ -8247,12 +8315,22 @@ export interface components {
             /** @description The `@` picks for the new `content`; read only with it. */
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
+        EventAgendaTabledFromDto: {
+            /** @description The posted minutes that first tabled this matter. */
+            meeting_id: string;
+            /** @description That meeting’s start (ISO 8601). */
+            start_time: string;
+            /** @description How many meetings have tabled it so far. */
+            times: number;
+        };
         EventAgendaItemDto: {
             /** @description The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event. */
             id: string;
             text: string;
             /** @description Checked off during the meeting. */
             done: boolean;
+            /** @description Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows "Tabled from {day}". Read-only: a save keeps the stored value for the same item id and ignores this field. */
+            tabled_from?: components["schemas"]["EventAgendaTabledFromDto"] | null;
         };
         EventAttachmentDto: {
             /** @description The client's id for the attachment. Unique within the event. */
@@ -12170,6 +12248,40 @@ export interface components {
              * @description A member the meeting’s event invites.
              */
             user_id: string;
+        };
+        AgendaSuggestionDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested.
+             * @enum {string}
+             */
+            kind: "tabled" | "ai";
+            /** @description The item as it would go on the agenda. */
+            text: string;
+            /** @description Where a tabled matter was first tabled; null for `ai`. */
+            tabled_from: components["schemas"]["EventAgendaTabledFromDto"] | null;
+            /**
+             * Format: uuid
+             * @description The posted minutes it was drawn from (for a tabled matter, the minutes that tabled it most recently), for the link under it.
+             */
+            source_meeting_id: string | null;
+            /** @description Why the model suggested it, in a few words; null for `tabled`. */
+            reason: string | null;
+        };
+        AgendaSuggestionListDto: {
+            /** @description Open suggestions, tabled matters first. */
+            suggestions: components["schemas"]["AgendaSuggestionDto"][];
+            /**
+             * Format: date-time
+             * @description When the model last wrote suggestions for this event; null when it never has, so a client asks for them once (`POST …/refresh`).
+             */
+            generated_at: string | null;
+            /** @description Whether the model can write suggestions for this member: AI on, the chapter’s meeting-notes switch on and the member’s own yes. Tabled matters are listed either way. */
+            ai_available: boolean;
+        };
+        AddAgendaSuggestionResponseDto: {
+            agenda: components["schemas"]["EventAgendaItemDto"][];
         };
         CalendarFeedLinkDto: {
             /**
@@ -26212,6 +26324,126 @@ export interface operations {
             path: {
                 id: string;
                 userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgendaSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_refresh_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgendaSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_add_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                suggestionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddAgendaSuggestionResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                suggestionId: string;
             };
             cookie?: never;
         };

@@ -91,6 +91,18 @@ const CLAUDE_SONNET = {
   outputUsdPerMillionTokens: 10,
 } as const;
 
+/**
+ * The smallest, fastest model, for short proposals read in a glance (Paul,
+ * 2026-11-18, #5522: "a small, fast model"). Prices read from Anthropic's
+ * model table on 2026-11-18, for prompts up to 100K tokens.
+ */
+const CLAUDE_HAIKU = {
+  provider: 'anthropic',
+  model: 'claude-haiku-5-5',
+  inputUsdPerMillionTokens: 0.1,
+  outputUsdPerMillionTokens: 0.5,
+} as const;
+
 export const AI_MODEL_CATALOG = {
   /** An officer's notes in, minutes in the chapter's template out (#4312). */
   'minutes.draft': {
@@ -124,6 +136,21 @@ export const AI_MODEL_CATALOG = {
     kind: 'structured',
     maxOutputTokens: 8_000,
     effort: 'medium',
+  },
+  /**
+   * Suggested agenda items (#5534): an upcoming meeting, who it invites and
+   * what their roles do, recent minutes of meetings with the same audience,
+   * and what the chapter added and dismissed before, in; a few short items
+   * out, which the caller checks. In the `meetings` family: it reads posted
+   * minutes, so it stands behind the meeting-notes switch and the officer's
+   * own yes.
+   */
+  'agenda.suggest': {
+    ...CLAUDE_HAIKU,
+    family: 'meetings',
+    kind: 'structured',
+    maxOutputTokens: 1_000,
+    effort: 'low',
   },
   /**
    * Which live reads a question needs before it is answered (#450): the

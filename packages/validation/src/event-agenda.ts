@@ -25,14 +25,29 @@ export const EVENT_ATTACHMENTS_MAX = 10;
 export const EVENT_ATTACHMENT_TITLE_MAX = 120;
 
 /**
+ * Where an agenda item tabled at an earlier meeting came from (#5534): the
+ * minutes that first tabled it, that meeting's start, and how many meetings
+ * have tabled it so far. Only the API sets it, when an officer adds a
+ * suggested tabled item; a save keeps it by the item's `id` and never takes
+ * it from the client, so it always names this chapter's minutes.
+ */
+export interface EventAgendaTabledFrom {
+  meeting_id: string;
+  start_time: string;
+  times: number;
+}
+
+/**
  * One agenda item. `id` is the client's, so a row keeps its place while the
  * list is reordered or checked off; `done` is checked off during the meeting
- * by whoever can edit the event.
+ * by whoever can edit the event. `tabled_from` is set on an item added from
+ * an earlier meeting's Tabled list; absent or null otherwise.
  */
 export interface EventAgendaItem {
   id: string;
   text: string;
   done: boolean;
+  tabled_from?: EventAgendaTabledFrom | null;
 }
 
 /** A titled web link. */
@@ -103,13 +118,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function readEventAgenda(value: unknown): EventAgendaItem[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry): EventAgendaItem[] =>
-    isRecord(entry) &&
-    typeof entry.id === "string" &&
-    typeof entry.text === "string"
-      ? [{ id: entry.id, text: entry.text, done: entry.done === true }]
-      : [],
-  );
+  return value.flatMap((entry): EventAgendaItem[] => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      typeof entry.text !== "string"
+    ) {
+      return [];
+    }
+    const item: EventAgendaItem = {
+      id: entry.id,
+      text: entry.text,
+      done: entry.done === true,
+    };
+    const from = readAgendaTabledFrom(entry.tabled_from);
+    return [from ? { ...item, tabled_from: from } : item];
+  });
+}
+
+/**
+ * An agenda item's `tabled_from` as both apps and the API read it, or null
+ * when it has none or it isn't one.
+ */
+export function readAgendaTabledFrom(
+  value: unknown,
+): EventAgendaTabledFrom | null {
+  if (
+    !isRecord(value) ||
+    typeof value.meeting_id !== "string" ||
+    typeof value.start_time !== "string" ||
+    typeof value.times !== "number" ||
+    !Number.isInteger(value.times) ||
+    value.times < 1 ||
+    Number.isNaN(Date.parse(value.start_time))
+  ) {
+    return null;
+  }
+  return {
+    meeting_id: value.meeting_id,
+    start_time: value.start_time,
+    times: value.times,
+  };
 }
 
 /** An event read's attachments, read as defensively as its agenda. */

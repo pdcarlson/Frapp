@@ -44,6 +44,7 @@ export * from './google-calendar-connection.entity';
 export * from './invite.entity';
 export * from './meeting.entity';
 export * from './member-nudge.entity';
+export * from './event-agenda-suggestion.entity';
 export * from './member.entity';
 export * from './notification.entity';
 export * from './open-task.entity';

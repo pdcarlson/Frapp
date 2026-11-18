@@ -139,7 +139,10 @@ describe('MeetingDraftContextService (#5477)', () => {
       CHAPTER,
       SECRETARY,
     );
-    expect(context.agenda).toEqual(['Treasurer report', 'Formal']);
+    expect(context.agenda).toEqual([
+      { text: 'Treasurer report', tabledFrom: null },
+      { text: 'Formal', tabledFrom: null },
+    ]);
     expect(context.background).toEqual({
       meetings: [
         {
