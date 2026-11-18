@@ -959,11 +959,13 @@ export type MentionPickerRow<
  * {@link mentionPickerEntries}, with a row for Frapp when this member has Ask
  * and this composer can ask from where it is (#4713).
  *
- * Once a letter is typed, Frapp is offered by the start of its name only and
- * comes first, as Slack lists an app above people once its name is being
- * typed. On a bare `@` it is the last row, so the first row is still a
- * person: Enter straight after `@` never turns a message into a question.
- * The row takes one of the eight, never a ninth.
+ * It is the first row: on a bare `@`, so a member who never knew they could
+ * ask in a channel finds Frapp the first time they mention anyone (#5476),
+ * and once a letter is typed, by the start of its name only, as Slack lists
+ * an app above people once its name is being typed. Enter straight after
+ * `@` picks Frapp, which still sends nothing: the composer says the draft is
+ * a question before it is sent, and taking `@Frapp` out undoes it. The row
+ * takes one of the eight, never a ninth.
  */
 export function mentionPickerRows<
   M extends MentionCandidate,
@@ -988,7 +990,7 @@ export function mentionPickerRows<
   if (!offered) return mentionPickerEntries(roster, roles, query, limit);
   const rest = mentionPickerEntries(roster, roles, query, limit - 1);
   const ask: MentionAskEntry = { kind: "ask", label: ASK_MENTION_NAME };
-  return typed ? [ask, ...rest] : [...rest, ask];
+  return [ask, ...rest];
 }
 
 /**

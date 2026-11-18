@@ -503,7 +503,21 @@ export function StopGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
-/** A microphone, leading Record. */
+/**
+ * Put back what was there before: Lucide's `Undo2`. Ask's Original chip
+ * (#5276), which puts back the words as spoken in place of the tidied ones.
+ */
+export function UndoGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M9 14 4 9l5-5" {...detail} />
+      <Path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" {...detail} />
+    </Frame>
+  );
+}
+
+/** A microphone, leading Record, and Ask's dictation (#5276). */
 export function MicGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (

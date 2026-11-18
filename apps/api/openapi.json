@@ -7951,7 +7951,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/MeetingSummaryDto"
+                    "$ref": "#/components/schemas/MeetingListItemDto"
                   }
                 }
               }
@@ -16721,6 +16721,209 @@
         ]
       }
     },
+    "/v1/activity/card": {
+      "post": {
+        "description": "The one most useful thing waiting on the caller (an event today or tomorrow they haven't checked in to, an unread @mention, a task of theirs, an open sign-up, an unread announcement, an officer's queue, new minutes, a study goal behind), and up to three more for the tray. A POST because it may raise a new card, which may cost a model call. `line` is null whenever AI is off for the caller or the server: the card shows either way. Times are written in the `X-Time-Zone` zone.",
+        "operationId": "ActivityCardController_card_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityNudgeCardDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's card for Activity, and its tray",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/card/seen": {
+      "post": {
+        "operationId": "ActivityCardController_seen_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityNudgeSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the card was on screen",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/card/dismiss": {
+      "post": {
+        "description": "The caller does not want this one: it is not raised again. A mention or announcement comes back only when something new is posted in its channel. Answers 204 whether or not there was anything to close.",
+        "operationId": "ActivityCardController_dismiss_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityNudgeDismissDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Wave a card or tray item off",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/card/settings": {
+      "get": {
+        "description": "The same switch as `GET /v1/nudges/settings`, without its AI gate: the card shows without AI, so every member can turn it off.",
+        "operationId": "ActivityCardController_settings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own switch for the card",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "put": {
+        "description": "Off also closes the card that is showing.",
+        "operationId": "ActivityCardController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the card on or off for the caller",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/goals": {
       "get": {
         "operationId": "GoalsController_getGoals_v1",
@@ -16856,6 +17059,222 @@
         "summary": "Replace one measure's goals",
         "tags": [
           "Goals"
+        ]
+      }
+    },
+    "/v1/nudges/current": {
+      "post": {
+        "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
+        "operationId": "MemberNudgeController_current_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeCurrentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's card for Activity, if one is due",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/{id}/seen": {
+      "post": {
+        "operationId": "MemberNudgeController_seen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the card was on screen",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/{id}/dismiss": {
+      "post": {
+        "description": "Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.",
+        "operationId": "MemberNudgeController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissMemberNudgeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "No such card is showing for the caller."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close the card",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/settings": {
+      "get": {
+        "operationId": "MemberNudgeController_settings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own switch for these cards",
+        "tags": [
+          "AI"
+        ]
+      },
+      "put": {
+        "description": "Off also closes the card that is showing.",
+        "operationId": "MemberNudgeController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the cards on or off for the caller",
+        "tags": [
+          "AI"
         ]
       }
     },
@@ -18264,6 +18683,60 @@
         ]
       }
     },
+    "/v1/ai/ask/dictation": {
+      "post": {
+        "description": "The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.",
+        "operationId": "AskController_cleanDictation_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskDictationRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskDictationResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tidy up words dictated into Ask",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/ai/ask/diagnostics": {
       "post": {
         "description": "The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.",
@@ -18827,222 +19300,6 @@
         "summary": "Propose fields for one of the caller's drafts from its redacted text",
         "tags": [
           "Backwork"
-        ]
-      }
-    },
-    "/v1/nudges/current": {
-      "post": {
-        "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
-        "operationId": "MemberNudgeController_current_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MemberNudgeCurrentDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The caller's card for Activity, if one is due",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/nudges/{id}/seen": {
-      "post": {
-        "operationId": "MemberNudgeController_seen_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Record that the card was on screen",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/nudges/{id}/dismiss": {
-      "post": {
-        "description": "Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.",
-        "operationId": "MemberNudgeController_dismiss_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DismissMemberNudgeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "404": {
-            "description": "No such card is showing for the caller."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Close the card",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/nudges/settings": {
-      "get": {
-        "operationId": "MemberNudgeController_settings_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The caller's own switch for these cards",
-        "tags": [
-          "AI"
-        ]
-      },
-      "put": {
-        "description": "Off also closes the card that is showing.",
-        "operationId": "MemberNudgeController_updateSettings_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Turn the cards on or off for the caller",
-        "tags": [
-          "AI"
         ]
       }
     },
@@ -26658,7 +26915,7 @@
           }
         }
       },
-      "MeetingSummaryDto": {
+      "MeetingListItemDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -26710,6 +26967,29 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "series_key": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see."
+          },
+          "series_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series."
+          },
+          "decision_count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "action_item_count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "recorded": {
+            "type": "boolean",
+            "description": "A recording was used for these minutes."
           }
         },
         "required": [
@@ -26722,7 +27002,12 @@
           "status",
           "created_by",
           "posted_at",
-          "updated_at"
+          "updated_at",
+          "series_key",
+          "series_rule",
+          "decision_count",
+          "action_item_count",
+          "recorded"
         ]
       },
       "MeetingTemplateDto": {
@@ -33374,6 +33659,201 @@
           "fired_at"
         ]
       },
+      "ActivityNudgeItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The showing card's id, for `seen`; null for a tray item, which is only drawn."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client draws a kind it does not know with a neutral icon.",
+            "example": "event_soon"
+          },
+          "subject_key": {
+            "type": "string",
+            "description": "What the card is about, opaque to the client. Sent back with `kind` to dismiss it."
+          },
+          "headline": {
+            "type": "string",
+            "description": "The thing's own name: an event, a channel, a sign-up's title.",
+            "example": "Chapter Meeting"
+          },
+          "meta": {
+            "type": "string",
+            "description": "When, where or how many, written out in the caller's time zone (`X-Time-Zone`).",
+            "example": "Tonight 7:00 PM · Chapter House · Required"
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "Whether the time or count is pressing enough to draw in colour."
+          },
+          "chip": {
+            "type": "string",
+            "description": "The tray chip's few characters: a count, Tonight, Due Fri.",
+            "example": "Tonight"
+          },
+          "action": {
+            "type": "string",
+            "description": "The button's label.",
+            "example": "Open event"
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "task",
+              "event",
+              "message",
+              "channel",
+              "review",
+              "meeting",
+              "study"
+            ],
+            "description": "What the button opens: a task, an event, a chat message (a sign-up), a channel, the review queue, minutes, or study."
+          },
+          "target_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The id of what it opens: a task, event, message, channel, meeting, or the oldest item in the review queue; null for study."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel a message or channel target is in."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The task a task card is about."
+          },
+          "line": {
+            "type": "string",
+            "nullable": true,
+            "description": "One sentence Frapp AI wrote for the card, or null: a plain card, because AI is off for the caller or the server, or the kind is never written."
+          },
+          "start_here": {
+            "type": "string",
+            "nullable": true,
+            "description": "A task card's suggested place to start, when AI wrote one."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "False until the caller has had the card on screen."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "subject_key",
+          "headline",
+          "meta",
+          "urgent",
+          "chip",
+          "action",
+          "target_type",
+          "target_id",
+          "channel_id",
+          "task_id",
+          "line",
+          "start_here",
+          "seen"
+        ]
+      },
+      "ActivityNudgeCardDto": {
+        "type": "object",
+        "properties": {
+          "card": {
+            "nullable": true,
+            "description": "The one most useful thing waiting on the caller, or null when nothing is, or they turned these cards off.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityNudgeItemDto"
+              }
+            ]
+          },
+          "tray": {
+            "description": "Up to three more, in order, for the tray under the card.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityNudgeItemDto"
+            }
+          }
+        },
+        "required": [
+          "card",
+          "tray"
+        ]
+      },
+      "ActivityNudgeSeenDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ActivityNudgeDismissDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task_due_soon",
+              "task_overdue",
+              "task_sent_back",
+              "task_praise",
+              "event_soon",
+              "mention_unread",
+              "announcement_unread",
+              "signup_open",
+              "officer_queue",
+              "minutes_new",
+              "study_behind"
+            ]
+          },
+          "subject_key": {
+            "type": "string",
+            "description": "The `subject_key` the card or tray item carried."
+          }
+        },
+        "required": [
+          "kind",
+          "subject_key"
+        ]
+      },
+      "MemberNudgeSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The member's own switch for these cards."
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "UpdateMemberNudgeSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
       "RoleGoalDto": {
         "type": "object",
         "properties": {
@@ -33470,6 +33950,96 @@
           "points",
           "service",
           "study"
+        ]
+      },
+      "MemberNudgeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client shows a kind it does not know as a plain card.",
+            "example": "task_due_soon"
+          },
+          "title": {
+            "type": "string",
+            "description": "A few words, plain text."
+          },
+          "body": {
+            "type": "string",
+            "description": "One or two sentences, plain text."
+          },
+          "start_here": {
+            "type": "string",
+            "nullable": true,
+            "description": "A suggested place to start: one sentence, or null when the card has none."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The task the card is about."
+          },
+          "task_title": {
+            "type": "string",
+            "description": "The task's own title."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "False until the member has had the card on screen."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "start_here",
+          "task_id",
+          "task_title",
+          "seen",
+          "created_at"
+        ]
+      },
+      "MemberNudgeCurrentDto": {
+        "type": "object",
+        "properties": {
+          "nudge": {
+            "nullable": true,
+            "description": "The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberNudgeDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "nudge"
+        ]
+      },
+      "DismissMemberNudgeDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_now",
+              "fewer",
+              "thanks"
+            ],
+            "description": "`not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks."
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "CreateDiscordImportDto": {
@@ -34696,6 +35266,33 @@
           "question"
         ]
       },
+      "AskDictationRequestDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.",
+            "example": "um so when is the uh chapter meeting thursday no friday",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "AskDictationResponseDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.",
+            "example": "When is the chapter meeting Friday?"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
       "ActStatusDto": {
         "type": "object",
         "properties": {
@@ -35248,119 +35845,6 @@
         },
         "required": [
           "status"
-        ]
-      },
-      "MemberNudgeDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string",
-            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise today; a client shows a kind it does not know as a plain card.",
-            "example": "task_due_soon"
-          },
-          "title": {
-            "type": "string",
-            "description": "A few words, plain text."
-          },
-          "body": {
-            "type": "string",
-            "description": "One or two sentences, plain text."
-          },
-          "start_here": {
-            "type": "string",
-            "nullable": true,
-            "description": "A suggested place to start: one sentence, or null when the card has none."
-          },
-          "task_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The task the card is about."
-          },
-          "task_title": {
-            "type": "string",
-            "description": "The task's own title."
-          },
-          "seen": {
-            "type": "boolean",
-            "description": "False until the member has had the card on screen."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "body",
-          "start_here",
-          "task_id",
-          "task_title",
-          "seen",
-          "created_at"
-        ]
-      },
-      "MemberNudgeCurrentDto": {
-        "type": "object",
-        "properties": {
-          "nudge": {
-            "nullable": true,
-            "description": "The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/MemberNudgeDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "nudge"
-        ]
-      },
-      "DismissMemberNudgeDto": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string",
-            "enum": [
-              "not_now",
-              "fewer",
-              "thanks"
-            ],
-            "description": "`not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks."
-          }
-        },
-        "required": [
-          "reason"
-        ]
-      },
-      "MemberNudgeSettingsDto": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "The member's own switch for these cards."
-          }
-        },
-        "required": [
-          "enabled"
-        ]
-      },
-      "UpdateMemberNudgeSettingsDto": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "enabled"
         ]
       },
       "AiReportPolicyDto": {

@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ActivityCardService } from '../../application/services/activity-card.service';
+import { ActivityCardController } from '../../interface/controllers/activity-card.controller';
+import { MeetingModule } from '../meeting/meeting.module';
+import { MemberNudgeModule } from '../member-nudge/member-nudge.module';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { ActivityStandingService } from '../../application/services/activity-standing.service';
@@ -69,10 +73,19 @@ import { TaskModule } from '../task/task.module';
     // Each member's goal on points, service and study (#1062).
     GoalsModule,
     NotificationModule,
+    // The card at the top of the page (#5464): new minutes, and the nudge
+    // records and words.
+    MeetingModule,
+    MemberNudgeModule,
   ],
-  controllers: [ActivityController, ChatReminderController],
+  controllers: [
+    ActivityController,
+    ChatReminderController,
+    ActivityCardController,
+  ],
   providers: [
     ActivityService,
+    ActivityCardService,
     ActivityLinkService,
     ActivityStandingService,
     // Last week's recap (`GET /v1/activity/recap`, #4983).

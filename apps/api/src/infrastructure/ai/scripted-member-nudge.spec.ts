@@ -5,7 +5,7 @@ import {
   checkNudgeWords,
   nudgeMessages,
 } from '#domain/utils/member-nudge';
-import type { MemberNudgeKind } from '@repo/validation';
+import type { MemberNudgeTaskKind } from '@repo/validation';
 import type { LanguageModelRequest } from '#domain/adapters/language-model.interface';
 import { scriptedMemberNudge } from './scripted-member-nudge';
 
@@ -38,7 +38,7 @@ const TASK: Task = {
 
 /** The scripted card must be one the real checks would let through. */
 describe('scriptedMemberNudge', () => {
-  it.each<[MemberNudgeKind, Partial<Task>]>([
+  it.each<[MemberNudgeTaskKind, Partial<Task>]>([
     ['task_due_soon', {}],
     ['task_overdue', { due_date: '2026-11-08' }],
     [
