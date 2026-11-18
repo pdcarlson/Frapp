@@ -627,14 +627,21 @@ describe("a proposal in the Ask conversation", () => {
     await act(async () =>
       seed.accept({
         title: "Book the bus",
-        assignee_id: "u1",
+        who: { kind: "person", userId: "u1" },
         due_date: "2026-11-20",
         subtasks: [],
       }),
     );
+    // A changed Who? sends every who-field, so the edit replaces the answer.
     expect(hooks.accept).toHaveBeenCalledWith({
       id: "sg-2",
-      task: { assignee_id: "u1" },
+      task: {
+        assignee_id: "u1",
+        assignee_ids: null,
+        audience: null,
+        audience_role_id: null,
+        audience_group_id: null,
+      },
     });
     expect(screenText(tree)).toContain(ACT_COPY.done_task);
   });

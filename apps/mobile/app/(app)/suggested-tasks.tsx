@@ -22,8 +22,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
-  TASK_AUDIENCE_COPY,
-  taskWhoValue,
+  taskWhoOf,
   LAST_YEAR_COPY,
   aiSuggestionRefusalLine,
   lastYearEventLine,
@@ -58,6 +57,8 @@ import type { NewEventDraft } from "@/lib/events/create-event";
 import { lastYearTemplate } from "@/lib/events/last-year-template";
 import { selectEventDetail } from "@/lib/events/select";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
+import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
+import { whoLabel } from "@/lib/tasks/who-picker";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 
@@ -170,6 +171,9 @@ function SuggestedTasks() {
     enabled: items.some((item) => item.source.type === "meeting"),
   });
   const names = useMemberDisplayNames();
+  // Roles and groups by name, for a suggestion for one ("Everyone in
+  // Recruitment Committee", "Someone in Philanthropy Committee").
+  const { directory } = useWhoDirectory();
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
   const refresh = useRefetchAll([suggestionsQuery]);
@@ -231,7 +235,7 @@ function SuggestedTasks() {
 
   async function acceptRow(item: Waiting) {
     // A task needs who and when; the form is where the officer says them.
-    if (!taskWhoValue(item.task) || !item.task.due_date) {
+    if (!taskWhoOf(item.task) || !item.task.due_date) {
       setFormFor(item);
       return;
     }
@@ -301,8 +305,9 @@ function SuggestedTasks() {
   const seed: TaskSuggestionSeed | undefined = formFor
     ? {
         title: formFor.task.title,
-        // A member's id, or Everyone (#4295 step 3).
-        assigneeId: taskWhoValue(formFor.task) || null,
+        // One member, several, a role, a group or everyone, each doing it
+        // or one claiming it (2026-11-18).
+        who: taskWhoOf(formFor.task),
         dueDay: formFor.task.due_date,
         dueAt: formFor.task.due_at,
         subtasks: formFor.task.subtasks,
@@ -315,20 +320,21 @@ function SuggestedTasks() {
       }
     : undefined;
 
+  /** Who a suggestion names, in the picker's words, or `null` for nobody. */
+  function suggestionWho(task: SuggestedTask): string | null {
+    const who = taskWhoOf(task);
+    if (!who) return null;
+    if (who.kind === "person") {
+      return memberLabel(names.nameFor(who.userId), who.userId);
+    }
+    return whoLabel(who, directory);
+  }
+
   const row = (item: Waiting) => (
     <SuggestionRow
       key={item.id}
       item={item}
-      who={
-        item.task.audience
-          ? TASK_AUDIENCE_COPY.everyone
-          : item.task.assignee_id
-            ? memberLabel(
-                names.nameFor(item.task.assignee_id),
-                item.task.assignee_id,
-              )
-            : null
-      }
+      who={suggestionWho(item.task)}
       busy={busy?.id === item.id ? busy.doing : null}
       disabled={busy !== null}
       problem={problems[item.id] ?? null}
@@ -429,7 +435,7 @@ function SuggestedTasks() {
           key={formFor.id}
           ref={formRef}
           suggestion={seed}
-          offerEveryone
+          offerGroups
           onClosed={() => setFormFor(null)}
         />
       ) : null}

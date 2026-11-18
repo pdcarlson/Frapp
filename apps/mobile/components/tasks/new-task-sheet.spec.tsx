@@ -71,15 +71,36 @@ const mutate = vi.fn(
   (_body: unknown, options: { onError: (error: unknown) => void }) =>
     options.onError(failure),
 );
+const createOpen = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => "user-1",
   useChapterRoster: () => ({ data: [] }),
   useCreateTask: () => ({ mutate, isPending: createPending }),
+  useCreateOpenTask: () => ({ mutate: createOpen, isPending: false }),
   useUpdateTask: () => ({ mutate: vi.fn(), isPending: false }),
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: mintPhoto }),
 }));
+
+// The chapter as the Assign to picker reads it (`use-who-directory.ts`):
+// three active members, and a committee two of them hold.
+vi.mock("@/lib/tasks/use-who-directory", async () => {
+  const { buildWhoDirectory } = await import("@/lib/tasks/who-picker");
+  const directory = buildWhoDirectory({
+    members: [
+      { user_id: "user-1", display_name: "Paul Carlson", role_ids: [] },
+      { user_id: "user-2", display_name: "Shawn Klein", role_ids: ["r1"] },
+      { user_id: "user-3", display_name: "Sam Lee", role_ids: ["r1"] },
+    ],
+    roles: [{ id: "r1", name: "Recruitment Committee", tier_id: null }],
+    viewerUserId: "user-1",
+    fallbackName: (id: string) => `Member ${id}`,
+  });
+  return {
+    useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),
+  };
+});
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -189,6 +210,15 @@ describe("New task on a module-off refusal (#2718)", () => {
     act(() => tree.unmount());
   });
 });
+
+/** The Assign to picker (`who-picker-sheet.tsx`), by its props. */
+const whoPicker = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.props.directory !== undefined &&
+      typeof node.props.onChange === "function" &&
+      typeof node.type !== "string",
+  );
 
 /** The create sheet itself: the modal that carries `onDismiss`, not the picker. */
 const sheetModal = (tree: ReactTestRenderer) =>
@@ -503,16 +533,9 @@ describe("New task draft across visits", () => {
     );
   const sentBody = () =>
     mutate.mock.calls.at(-1)?.[0] as { title: string; due_date: string };
-  /**
-   * Picks a member in the assignee picker. Its list is a string stand-in that
-   * never draws rows (vitest.setup.ts), so the row is built from `renderItem`.
-   */
+  /** Picks a member in the Assign to picker, as its rows do. */
   const pickAssignee = (tree: ReactTestRenderer, userId: string) => {
-    const list = tree.root.find(
-      (node) => node.type === ("BottomSheetFlatList" as never),
-    );
-    const row = list.props.renderItem({ item: { userId, name: null } });
-    act(() => row.props.onPress());
+    act(() => whoPicker(tree).props.onChange({ kind: "person", userId }));
   };
   const isSelected = (tree: ReactTestRenderer, label: string) =>
     chip(tree, label).props.accessibilityState.selected as boolean;
@@ -585,8 +608,8 @@ describe("New task draft across visits", () => {
     act(() => pointsField(tree).props.onChangeText("5"));
     act(() => chip(tree, "Friday").props.onPress());
     pickAssignee(tree, "user-2");
-    expect(assigneeRow(tree).props.accessibilityLabel).not.toBe(
-      "Assignee: You",
+    expect(assigneeRow(tree).props.accessibilityLabel).toBe(
+      "Assignee: Shawn Klein",
     );
     act(() => createButton(tree).props.onPress());
     createPending = true;
@@ -613,7 +636,10 @@ describe("New task draft across visits", () => {
     expect(titleValue(tree)).toBe("");
     expect(pointsField(tree).props.value).toBe("");
     expect(isSelected(tree, "Today")).toBe(true);
-    expect(assigneeRow(tree).props.accessibilityLabel).toBe("Assignee: You");
+    // Back on the viewer, by name.
+    expect(assigneeRow(tree).props.accessibilityLabel).toBe(
+      "Assignee: Paul Carlson",
+    );
     expect(titleField(tree).props.editable).toBe(true);
     // A visit reopened since stays open.
     expect(dismiss).not.toHaveBeenCalled();
@@ -813,6 +839,9 @@ describe("New task from a chat's + (#3865)", () => {
 describe("Accepting a suggested task through the form (#4313)", () => {
   const accept = vi.fn();
   function renderSuggestion(assigneeId: string | null = null) {
+    const who = assigneeId
+      ? ({ kind: "person", userId: assigneeId } as const)
+      : null;
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
@@ -821,7 +850,7 @@ describe("Accepting a suggested task through the form (#4313)", () => {
             now={new Date("2026-09-27T12:00:00Z")}
             suggestion={{
               title: "Book the hall",
-              assigneeId,
+              who,
               dueDay: "2026-10-02",
               dueAt: null,
               subtasks: ["Call the venue"],
@@ -866,7 +895,7 @@ describe("Accepting a suggested task through the form (#4313)", () => {
             keptDraft="tasks-create"
             suggestion={{
               title: "Book the hall",
-              assigneeId: null,
+              who: null,
               dueDay: "2026-10-02",
               dueAt: null,
               subtasks: [],
@@ -901,7 +930,7 @@ describe("Accepting a suggested task through the form (#4313)", () => {
     expect(accept).toHaveBeenCalledTimes(1);
     expect(accept.mock.calls[0]![0]).toMatchObject({
       title: "Book the hall",
-      assignee_id: "user-2",
+      who: { kind: "person", userId: "user-2" },
       due_date: "2026-10-02",
       subtasks: ["Call the venue"],
     });
@@ -914,7 +943,9 @@ describe("Accepting a suggested task through the form (#4313)", () => {
       await act(async () => acceptButton(tree).props.onPress());
     }
     for (const [body] of accept.mock.calls) {
-      expect((body as { assignee_id?: string }).assignee_id).not.toBe("user-1");
+      expect((body as { who?: { userId?: string } }).who?.userId).not.toBe(
+        "user-1",
+      );
     }
     act(() => tree.unmount());
   });
@@ -1074,55 +1105,43 @@ describe("NewTaskSheet — dismissed by its host while closed (#5059)", () => {
   });
 });
 
-describe("NewTaskSheet for everyone (#4295 step 3)", () => {
+describe("NewTaskSheet for more than one person (#4295 step 3; 2026-11-18)", () => {
   function renderOffering(): ReactTestRenderer {
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
         <FrappThemeProvider>
-          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerEveryone />
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
         </FrappThemeProvider>,
       );
     });
     return tree;
   }
 
-  /** The picker's Everyone row, read off its pinned header. */
-  function everyoneRow(tree: ReactTestRenderer) {
-    const list = tree.root.find(
-      (node) => node.type === ("BottomSheetFlatList" as never),
-    );
-    const walk = (node: unknown): { props: { onPress: () => void } } | null => {
-      if (!node || typeof node !== "object") return null;
-      const props = (node as { props?: Record<string, unknown> }).props;
-      if (!props) return null;
-      if (props.accessibilityHint === TASK_AUDIENCE_COPY.everyoneHint(null)) {
-        return node as { props: { onPress: () => void } };
-      }
-      const children = ([] as unknown[]).concat(props.children ?? []);
-      for (const child of children) {
-        const found = walk(child);
-        if (found) return found;
-      }
-      return null;
-    };
-    return walk(list.props.ListHeaderComponent);
-  }
+  const assigneeLabel = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        /^Assignee: /.test(String(node.props.accessibilityLabel)),
+    ).props.accessibilityLabel as string;
 
-  it("offers Everyone, sets the photos aside, and sends audience in place of a member", () => {
+  beforeEach(() => {
+    createOpen.mockReset();
+  });
+
+  it("offers everyone, sets the photos aside, and sends audience in place of a member", () => {
     const tree = renderOffering();
-    const row = everyoneRow(tree);
-    expect(row).not.toBeNull();
-    act(() => row!.props.onPress());
+    expect(whoPicker(tree).props.single).toBe(false);
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "chapter" },
+      }),
+    );
 
-    expect(
-      tree.root.find(
-        (node) =>
-          node.type === ("Pressable" as never) &&
-          node.props.accessibilityLabel === "Assignee: Everyone",
-      ),
-    ).toBeTruthy();
+    expect(assigneeLabel(tree)).toBe("Assignee: Everyone");
     expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.noPhotos);
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.everyoneHint(3));
     expect(
       tree.root.findAll(
         (node) => (node.type as { name?: string }).name === "TaskPhotoPicker",
@@ -1136,9 +1155,85 @@ describe("NewTaskSheet for everyone (#4295 step 3)", () => {
     act(() => tree.unmount());
   });
 
-  it("doesn't offer Everyone where the host didn't ask for it", () => {
+  it("sends a copy each to a role's holders", () => {
+    const tree = renderOffering();
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "role", id: "r1" },
+      }),
+    );
+    expect(assigneeLabel(tree)).toBe(
+      "Assignee: Everyone in Recruitment Committee",
+    );
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.eachHint(2));
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+      audience: "everyone",
+      audience_role_id: "r1",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("puts one task up for grabs among several people, through its own create", () => {
+    const tree = renderOffering();
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "someone",
+        target: { kind: "people", userIds: ["user-2", "user-3"] },
+      }),
+    );
+    expect(assigneeLabel(tree)).toBe("Assignee: One of Shawn and Sam");
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.someoneHint(2));
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as { name?: string }).name === "TaskPhotoPicker",
+      ),
+    ).toHaveLength(0);
+    submitTask(tree);
+    expect(mutate).not.toHaveBeenCalled();
+    expect(createOpen).toHaveBeenCalledTimes(1);
+    expect(createOpen.mock.calls[0]![0]).toEqual({
+      title: "Sweep the porch",
+      due_date: expect.any(String),
+      user_ids: ["user-2", "user-3"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says a task up for grabs was posted there", () => {
+    const onCreated = vi.fn();
+    createOpen.mockImplementation((_body, options) => options.onSuccess());
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            onCreated={onCreated}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "someone",
+        target: { kind: "chapter" },
+      }),
+    );
+    submitTask(tree);
+    expect(onCreated).toHaveBeenCalledWith(
+      TASK_AUDIENCE_COPY.anyone,
+      false,
+      true,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("offers one person only where the host didn't ask for more", () => {
     const tree = render();
-    expect(everyoneRow(tree)).toBeNull();
+    expect(whoPicker(tree).props.single).toBe(true);
     act(() => tree.unmount());
   });
 });

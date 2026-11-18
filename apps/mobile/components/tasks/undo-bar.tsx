@@ -35,10 +35,16 @@ export function UndoBar({
   message,
   onUndo,
   aboveCreate = false,
+  actionLabel = "Undo",
 }: {
   message: string;
   onUndo: () => void;
   aboveCreate?: boolean;
+  /**
+   * The one action's word: Undo, or another way back from what just
+   * happened, such as Give it back after a claim (the Tasks overhaul § 3).
+   */
+  actionLabel?: string;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -49,8 +55,10 @@ export function UndoBar({
   useEffect(() => {
     // A screen-reader user hears what happened and that Undo is there, since
     // focus stays on the row they tapped.
-    AccessibilityInfo.announceForAccessibility(`${message}. Undo available.`);
-  }, [message]);
+    AccessibilityInfo.announceForAccessibility(
+      `${message}. ${actionLabel} available.`,
+    );
+  }, [message, actionLabel]);
 
   const askLift = useAskBarLift();
   const offset =
@@ -66,11 +74,11 @@ export function UndoBar({
       </Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Undo"
+        accessibilityLabel={actionLabel}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         onPress={onUndo}
       >
-        <Text style={[styles.undo, { color: accent }]}>Undo</Text>
+        <Text style={[styles.undo, { color: accent }]}>{actionLabel}</Text>
       </Pressable>
     </GlassSurface>
   );

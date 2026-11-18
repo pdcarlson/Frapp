@@ -7,6 +7,7 @@ import {
   isTaskStatus,
   taskStatusLabel,
 } from "@repo/hooks";
+import { TASK_AUDIENCE_COPY, taskGroupLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -67,6 +68,12 @@ export interface TaskDetailSheetProps {
    * task. Also lets the checklist add and remove steps.
    */
   onEdit?: () => void;
+  /**
+   * Give it back (the Tasks overhaul § 3): a task claimed from Up for grabs,
+   * offered to its assignee until it is done. The screen leaves it out
+   * otherwise.
+   */
+  onRelease?: () => void;
   onDismiss?: () => void;
 }
 
@@ -74,7 +81,7 @@ export const TaskDetailSheet = forwardRef<
   BottomSheetModal,
   TaskDetailSheetProps
 >(function TaskDetailSheet(
-  { row, assignedBy, onToggle, refusal, onEdit, onDismiss },
+  { row, assignedBy, onToggle, refusal, onEdit, onRelease, onDismiss },
   ref,
 ) {
   const { tokens } = useFrappTheme();
@@ -186,6 +193,21 @@ export const TaskDetailSheet = forwardRef<
                 <Fact label="Due" value={due.replace(/^Due /, "")} />
               ) : null}
               {chip ? <Fact label="Points" value={chip.label} /> : null}
+              {/* Who it went to, for a copy of a group task: "Everyone in
+                  Recruitment Committee · 3 of 6 done". */}
+              {row.group ? (
+                <Fact
+                  label="For"
+                  value={`${taskGroupLabel({
+                    audience: row.group.audience,
+                    target_name: row.group.targetName,
+                    total: row.group.total,
+                  })} · ${TASK_AUDIENCE_COPY.progress(
+                    row.group.done,
+                    row.group.total,
+                  )}`}
+                />
+              ) : null}
               {assignedBy ? (
                 <Fact label="Assigned by" value={assignedBy} />
               ) : null}
@@ -245,6 +267,21 @@ export const TaskDetailSheet = forwardRef<
               >
                 <Text style={styles.quietLabel}>
                   {TASK_ACTION_LABELS.reopen}
+                </Text>
+              </PressableRow>
+            ) : null}
+
+            {/* Quiet too: back to Up for grabs for someone else, until it
+                is done (the API's rule). */}
+            {row.openTaskId && !row.isDone && onRelease ? (
+              <PressableRow
+                accessibilityRole="button"
+                accessibilityHint={`It goes back on ${TASK_AUDIENCE_COPY.upForGrabs}.`}
+                onPress={onRelease}
+                style={styles.quietButton}
+              >
+                <Text style={styles.quietLabel}>
+                  {TASK_AUDIENCE_COPY.release}
                 </Text>
               </PressableRow>
             ) : null}

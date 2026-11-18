@@ -111,6 +111,14 @@ let events: unknown[] | undefined = [];
 const eventsEnabled: (boolean | undefined)[] = [];
 
 /** Each query's `refetch`, kept across renders so a pull can be asserted on. */
+/** Up for grabs: the postings read, and each open-task write. */
+let openTasks: unknown[] | undefined = [];
+let openTasksError = false;
+const claimMutate = vi.fn();
+const releaseMutate = vi.fn();
+const assignMutate = vi.fn();
+const deleteMutate = vi.fn();
+
 const refetch = vi.hoisted(() => ({
   viewer: vi.fn(async () => undefined),
   tasks: vi.fn(async () => undefined),
@@ -144,6 +152,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useUpdateTaskStatus: () => ({ mutateAsync }),
   useChapterRoster: () => ({ data: [] }),
+  useOpenTasks: () => ({
+    data: openTasks,
+    isError: openTasksError,
+    refetch: vi.fn(async () => undefined),
+  }),
+  useClaimOpenTask: () => ({ mutate: claimMutate, isPending: false }),
+  useReleaseTask: () => ({ mutate: releaseMutate, isPending: false }),
+  useAssignOpenTask: () => ({ mutate: assignMutate, isPending: false }),
+  useDeleteOpenTask: () => ({ mutate: deleteMutate, isPending: false }),
 }));
 
 // Suggested tasks' entry has its own spec
@@ -188,6 +205,9 @@ vi.mock("@/lib/haptics", () => ({
 
 import TasksScreen from "@/app/(app)/tasks";
 import { UndoBar } from "@/components/tasks/undo-bar";
+import { OpenTaskRow } from "@/components/tasks/open-task-row";
+import { OpenTaskSheet } from "@/components/tasks/open-task-sheet";
+import { TASK_AUDIENCE_COPY } from "@repo/validation";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -227,6 +247,12 @@ beforeEach(() => {
   mutateAsync.mockClear();
   successHaptic.mockReset();
   chapterId = "chapter-1";
+  openTasks = [];
+  openTasksError = false;
+  claimMutate.mockReset();
+  releaseMutate.mockReset();
+  assignMutate.mockReset();
+  deleteMutate.mockReset();
 });
 
 /**
@@ -857,6 +883,153 @@ describe("Mark done with proof on the board (#4635)", () => {
     await expect(
       sheet(tree)!.onComplete({ proof_link: "https://x.example" }),
     ).rejects.toBe(FAILED);
+    act(() => tree.unmount());
+  });
+});
+
+/** The Tasks overhaul § 3: open tasks a member may claim, above Today. */
+describe("Up for grabs", () => {
+  /** Three days out, as the local calendar reads it, so it says "Due ...". */
+  const soon = new Date(Date.now() + 3 * 86_400_000);
+  const SOON = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, "0")}-${String(soon.getDate()).padStart(2, "0")}`;
+  const POSTING = {
+    id: "open-1",
+    chapter_id: "chapter-1",
+    created_by: "user-9",
+    title: "Drive the van",
+    description: null,
+    due_date: SOON,
+    due_at: null,
+    point_reward: 10,
+    proof_kind: "none",
+    subtask_titles: [],
+    scope: "group",
+    scope_id: "g-1",
+    scope_name: "Philanthropy",
+    scope_user_ids: null,
+    status: "open",
+    claimed_task_id: null,
+    claimed_by: null,
+    claimed_at: null,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+    eligible_count: 6,
+    viewer_can_claim: true,
+  };
+  const openRows = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(OpenTaskRow);
+  type MutateOptions = {
+    onSuccess?: (data: unknown) => void;
+    onError?: (error: unknown) => void;
+  };
+
+  it("draws nothing while nothing is open", () => {
+    const tree = render();
+    expect(openRows(tree)).toHaveLength(0);
+    expect(screenText(tree)).not.toContain("UP FOR GRABS");
+    act(() => tree.unmount());
+  });
+
+  it("sits above the board with its points, group and due, and a Claim", () => {
+    openTasks = [POSTING, { ...POSTING, id: "open-2", status: "claimed" }];
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("UP FOR GRABS");
+    expect(text.indexOf("UP FOR GRABS")).toBeLessThan(
+      text.indexOf("Sweep the porch"),
+    );
+    // A claimed posting is not drawn.
+    expect(openRows(tree)).toHaveLength(1);
+    expect(text).toMatch(/10 points · Philanthropy · Due /);
+    expect(openRows(tree)[0]!.props.onClaim).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("draws no Claim on a posting the viewer may not claim", () => {
+    openTasks = [{ ...POSTING, viewer_can_claim: false }];
+    const tree = render();
+    expect(openRows(tree)[0]!.props.onClaim).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("claims, says it's yours, and Give it back releases the new task", () => {
+    openTasks = [POSTING];
+    const tree = render();
+    act(() => openRows(tree)[0]!.props.onClaim());
+    expect(claimMutate).toHaveBeenCalledWith("open-1", expect.anything());
+    const options = claimMutate.mock.calls[0]![1] as MutateOptions;
+    act(() => options.onSuccess?.({ id: "task-9" }));
+    const bar = tree.root.findByType(UndoBar);
+    expect(bar.props.message).toMatch(/^It's yours\. Due /);
+    expect(bar.props.actionLabel).toBe(TASK_AUDIENCE_COPY.release);
+    act(() => bar.props.onUndo());
+    expect(releaseMutate).toHaveBeenCalledWith("task-9", expect.anything());
+    expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("says another member claimed it first, and drops the row", () => {
+    openTasks = [POSTING];
+    const tree = render();
+    act(() => openRows(tree)[0]!.props.onClaim());
+    const options = claimMutate.mock.calls[0]![1] as MutateOptions;
+    act(() => options.onError?.({ statusCode: 409, message: "Claimed" }));
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.alreadyClaimed);
+    expect(openRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("says so in one line when the read fails", () => {
+    openTasks = undefined;
+    openTasksError = true;
+    const tree = render();
+    expect(screenText(tree)).toContain(
+      `Couldn't load ${TASK_AUDIENCE_COPY.upForGrabs}`,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("opens a posting's sheet; Assign to someone and Delete only for an officer", () => {
+    openTasks = [POSTING];
+    const member = render();
+    act(() => openRows(member)[0]!.props.onOpen());
+    let sheet = member.root.findByType(OpenTaskSheet);
+    expect(sheet.props.posting?.id).toBe("open-1");
+    expect(sheet.props.who).toBe("Someone in Philanthropy");
+    expect(sheet.props.onClaim).toBeDefined();
+    expect(sheet.props.onAssign).toBeUndefined();
+    expect(sheet.props.onDelete).toBeUndefined();
+    act(() => member.unmount());
+
+    permissions = ["tasks:manage", "members:view"];
+    const officer = render();
+    act(() => openRows(officer)[0]!.props.onOpen());
+    sheet = officer.root.findByType(OpenTaskSheet);
+    expect(sheet.props.onAssign).toBeDefined();
+    expect(sheet.props.onDelete).toBeDefined();
+    act(() => officer.unmount());
+    permissions = [];
+  });
+});
+
+describe("Give it back from a claimed task's sheet", () => {
+  it("is offered on a task claimed from the board, until it's done", () => {
+    tasks = [{ ...TASKS[0], open_task_id: "open-1" }, TASKS[1]];
+    const tree = render();
+    act(() => row(tree).props.onOpen());
+    const sheet = tree.root.findByType(TaskDetailSheet);
+    expect(sheet.props.row?.id).toBe("task-1");
+    expect(sheet.props.onRelease).toBeDefined();
+    act(() => sheet.props.onRelease());
+    expect(releaseMutate).toHaveBeenCalledWith("task-1", expect.anything());
+    act(() => tree.unmount());
+    tasks = TASKS;
+  });
+
+  it("is not offered on an ordinary task", () => {
+    const tree = render();
+    act(() => row(tree).props.onOpen());
+    expect(tree.root.findByType(TaskDetailSheet).props.onRelease).toBeUndefined();
     act(() => tree.unmount());
   });
 });

@@ -10,17 +10,17 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_SUGGESTION_COPY,
   TASK_AUDIENCE_COPY,
-  TASK_AUDIENCE_EVERYONE,
   TASK_PHOTOS_MAX,
   TASK_PROOF_KIND_HINTS,
   TASK_PROOF_KIND_LABELS,
   TASK_PROOF_KINDS,
   aiSuggestionRefusalLine,
   type TaskProofKind,
+  type TaskWho,
 } from "@repo/validation";
 import {
   memberFallbackLabel,
-  useChapterRoster,
+  useCreateOpenTask,
   useCreateTask,
   useRequestTaskPhotoUploadUrl,
   useUpdateTask,
@@ -46,14 +46,13 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   sheetFieldStyles,
-  TallSheetHeader,
   useSheetBackgroundStyle,
   useGuardedSheetRef,
-  useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { WhoPickerSheet } from "@/components/tasks/who-picker-sheet";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
@@ -74,6 +73,8 @@ import {
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   DEFAULT_DUE_CHOICE,
+  createRequestOf,
+  whoTakesPhotos,
   dueChoiceOf,
   editDraftOf,
   taskEditBody,
@@ -96,7 +97,13 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
-import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
+import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
+import {
+  isGroupWho,
+  whoHint,
+  whoLabel,
+  whoOfLegacyAssignee,
+} from "@/lib/tasks/who-picker";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).
@@ -162,8 +169,15 @@ import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 export interface NewTaskSheetProps {
   /** Injected so the presets are deterministic under test. */
   now?: Date;
-  /** Fired after a successful create, with the assignee's name for the confirmation. */
-  onCreated?: (assigneeName: string | null, wasSelf: boolean) => void;
+  /**
+   * Fired after a successful create, with who it went to for the
+   * confirmation, and whether it went on Up for grabs instead of to anyone.
+   */
+  onCreated?: (
+    assigneeName: string | null,
+    wasSelf: boolean,
+    upForGrabs: boolean,
+  ) => void;
   /**
    * Set when the sheet was opened from a chat's + (#3865): the create goes
    * through chat-core's `postTask` into that channel, the call web's `/task`
@@ -194,11 +208,14 @@ export interface NewTaskSheetProps {
    */
   suggestion?: TaskSuggestionSeed;
   /**
-   * Offer Everyone first in Assign to (#4295 step 3): each active member
-   * gets their own copy. For a new task or a suggestion only; a chat's +
-   * posts one card for one member, and an edit keeps its one member.
+   * Offer more than one person in Assign to (#4295 step 3; Paul,
+   * 2026-11-18): several people, a role, a group or everyone in the
+   * chapter, each doing it or one of them claiming it from Up for grabs
+   * (`who-picker-sheet.tsx`). For a new task or a suggestion only; a chat's
+   * + posts one card for one member, and an edit hands its task to one
+   * member, so they pick one person.
    */
-  offerEveryone?: boolean;
+  offerGroups?: boolean;
   /** Fired when the sheet has closed, however it closed. */
   onClosed?: () => void;
   /**
@@ -220,7 +237,9 @@ type KeptTask = {
   dueTime: string | null;
   subtasks: string[];
   subtaskText: string;
-  assigneeId: string | null;
+  who: TaskWho | null;
+  /** A draft kept before `who`: a member's id, or "everyone". */
+  assigneeId?: string | null;
   proofKind: TaskProofKind;
   pickedPhotos: PendingTaskPhoto[];
   /** An edit only: the task's own reference photos still kept, by id. */
@@ -232,7 +251,7 @@ type KeptTask = {
 /** The fields an edit's kept draft is laid over the task by. */
 type TaskEditFields = Pick<
   KeptTask,
-  "title" | "pointsInput" | "due" | "dueTime" | "assigneeId" | "proofKind"
+  "title" | "pointsInput" | "due" | "dueTime" | "who" | "proofKind"
 > & { keptPhotoIds: string[] };
 
 const TASK_EDIT_KEYS = [
@@ -240,7 +259,7 @@ const TASK_EDIT_KEYS = [
   "pointsInput",
   "due",
   "dueTime",
-  "assigneeId",
+  "who",
   "proofKind",
 ] as const satisfies readonly (keyof TaskEditFields)[];
 
@@ -252,7 +271,7 @@ function taskEditFieldsOf(task: TaskEditTarget): TaskEditFields {
     pointsInput: draft.pointsInput ?? "",
     due: { kind: "date", date: draft.dueDate },
     dueTime: draft.dueTime ?? null,
-    assigneeId: draft.assigneeId,
+    who: draft.who,
     proofKind: draft.proofKind ?? "none",
     keptPhotoIds: task.referencePhotos.map((photo) => photo.id),
   };
@@ -294,14 +313,22 @@ function pickEditFields(kept: KeptTask): Omit<TaskEditFields, "keptPhotoIds"> {
     pointsInput: kept.pointsInput,
     due: kept.due,
     dueTime: kept.dueTime,
-    assigneeId: kept.assigneeId,
+    who: keptWho(kept),
     proofKind: kept.proofKind,
   };
 }
 
+/** Who a kept draft holds, read from a draft kept before `who` too. */
+function keptWho(kept: KeptTask): TaskWho | null {
+  return kept.who !== undefined
+    ? kept.who
+    : whoOfLegacyAssignee(kept.assigneeId);
+}
+
 export interface TaskSuggestionSeed {
   title: string;
-  assigneeId: string | null;
+  /** Who the suggestion names, or `null` when it names nobody. */
+  who: TaskWho | null;
   /** `YYYY-MM-DD`, or null when the meeting gave no day. */
   dueDay: string | null;
   dueAt: string | null;
@@ -311,32 +338,6 @@ export interface TaskSuggestionSeed {
    * error, whose refusal codes the sheet puts into words.
    */
   accept: (task: ValidatedNewTask) => Promise<void>;
-}
-
-interface RosterMember {
-  userId: string;
-  name: string | null;
-}
-
-/**
- * The roster, read off the generated types rather than hand-narrowed.
- *
- * `GET /v1/members/roster` is one of the few reads that **does** declare a
- * response schema, so the SDK gives its rows a real type — which is why
- * `useMemberDisplayNames` says "No `unknown`-parsing here". Narrowing it by
- * string key anyway would turn a future `display_name` rename from a compile
- * error into a picker that silently renders every brother as "Member".
- *
- * `display_name` is `NOT NULL DEFAULT ''`, so empty is normalized to `null` —
- * absent and empty are the same "no name set" case, as `narrow.ts` documents.
- */
-function selectRoster(
-  data: readonly { user_id: string; display_name: string }[] | undefined,
-): RosterMember[] {
-  return (data ?? []).map((row) => ({
-    userId: row.user_id,
-    name: row.display_name.trim().length > 0 ? row.display_name : null,
-  }));
 }
 
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
@@ -351,7 +352,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       onClosed,
       suggestion,
       keptDraft,
-      offerEveryone = false,
+      offerGroups = false,
     },
     ref,
   ) {
@@ -360,10 +361,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { accent } = brand;
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
-    const pickerSheet = useTallSheetProps();
     const pickerRef = useRef<BottomSheetModal>(null);
     const closeSheet = useSheetClose(ref);
-    const closePicker = useSheetClose(pickerRef);
     // Its hosts (the composer among them) dismiss it on a blur or a channel
     // switch, up or not (#5059): the ref they hold only reaches a sheet that
     // is up.
@@ -371,8 +370,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       useGuardedSheetRef(ref);
 
     const viewerUserId = useViewerUserId();
-    const rosterQuery = useChapterRoster();
+    const whoRead = useWhoDirectory({ groups: offerGroups });
+    const { directory } = whoRead;
     const createTask = useCreateTask();
+    const createOpenTask = useCreateOpenTask();
     const updateTask = useUpdateTask();
     // The task as it stands, as the fields start (an edit only).
     const original = useMemo(
@@ -386,7 +387,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           ? editDraftOf({
               id: "",
               title: suggestion.title,
-              assigneeId: suggestion.assigneeId ?? "",
+              assigneeId: "",
               dueDay: suggestion.dueDay,
               dueAt: suggestion.dueAt,
               pointReward: null,
@@ -449,12 +450,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       () => opening?.subtaskText ?? "",
     );
     // Defaults to the viewer, so the common case needs no picker interaction.
-    const [assigneeId, setAssigneeId] = useState<string | null>(
+    const [who, setWho] = useState<TaskWho | null>(
       opening
-        ? opening.assigneeId
+        ? keptWho(opening)
         : editBase
-          ? editBase.assigneeId
-          : (suggestion?.assigneeId ?? null),
+          ? editBase.who
+          : (suggestion?.who ?? null),
     );
     // Photos and proof (#4635): the task's own reference photos still kept
     // (an edit), the ones picked here, which go up on Save, and the proof
@@ -479,7 +480,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         dueTime,
         subtasks,
         subtaskText,
-        assigneeId,
+        who,
         proofKind,
         pickedPhotos,
         ...(editBase
@@ -496,7 +497,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         dueTime,
         subtasks,
         subtaskText,
-        assigneeId,
+        who,
         proofKind,
         pickedPhotos.map(({ image }) => image.uri),
         keptPhotos.map((photo) => photo.id),
@@ -510,7 +511,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const pickingPhotos = useRef(false);
     const requestPhotoUrl = useRequestTaskPhotoUploadUrl();
     const [titleFocused, setTitleFocused] = useState(false);
-    const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
     /**
      * The member copy for a gate refusal, or `null`. A refusal is a different
@@ -529,23 +529,30 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // s20's log sheet.
     const sending = useRef(false);
 
-    const roster = useMemo(
-      () => selectRoster(rosterQuery.data),
-      [rosterQuery.data],
-    );
-
     // A suggestion the meeting named nobody for stays unassigned until the
-    // officer picks: defaulting it to them would be a guess.
+    // officer picks: defaulting it to them would be a guess. A host that
+    // offers one person only never keeps more than one.
+    const pickedWho =
+      who && !offerGroups && who.kind !== "person" ? null : who;
+    const effectiveWho: TaskWho | null =
+      pickedWho ??
+      (suggestion || !viewerUserId
+        ? null
+        : { kind: "person", userId: viewerUserId });
     const effectiveAssigneeId =
-      assigneeId ?? (suggestion ? null : viewerUserId);
-    // A task for everyone can't carry photos yet (#4295 step 3), so the
-    // photo picker steps aside and none are sent; proof still applies.
-    const forEveryone =
-      offerEveryone && effectiveAssigneeId === TASK_AUDIENCE_EVERYONE;
-    const assignee = roster.find((row) => row.userId === effectiveAssigneeId);
-    const assigneeName = forEveryone
-      ? TASK_AUDIENCE_COPY.everyone
-      : (assignee?.name ?? null);
+      effectiveWho?.kind === "person" ? effectiveWho.userId : null;
+    // A copy each can't carry photos yet (#4295 step 3), and a task up for
+    // grabs takes none, so the photo picker steps aside and none are sent;
+    // proof still applies.
+    const forGroup = isGroupWho(effectiveWho);
+    const photosAllowed = whoTakesPhotos(effectiveWho);
+    const upForGrabs = effectiveWho?.kind === "someone";
+    const groupLabel = forGroup ? whoLabel(effectiveWho, directory) : null;
+    const assigneeName = forGroup
+      ? groupLabel
+      : (directory.people.find(
+          (person) => person.named && person.userId === effectiveAssigneeId,
+        )?.name ?? null);
     const assigneeIsViewer =
       effectiveAssigneeId !== null && effectiveAssigneeId === viewerUserId;
     /**
@@ -557,8 +564,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
      * task to themselves — and the post-create confirmation, which compares ids,
      * would then contradict the field.
      */
-    const assigneeLabel = forEveryone
-      ? TASK_AUDIENCE_COPY.everyone
+    const assigneeLabel = forGroup
+      ? (groupLabel ?? TASK_AUDIENCE_COPY.everyone)
       : assigneeIsViewer
         ? (assigneeName ?? "You")
         : (assigneeName ??
@@ -581,14 +588,18 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       ? { date: original.dueDate, chipId: null }
       : resolveDue(due, at);
     const pending =
-      createTask.isPending || updateTask.isPending || posting || uploading;
+      createTask.isPending ||
+      createOpenTask.isPending ||
+      updateTask.isPending ||
+      posting ||
+      uploading;
 
     const draft = {
       title,
       dueDate,
       dueTime,
       subtasks: [...subtasks, subtaskText],
-      assigneeId: effectiveAssigneeId,
+      who: effectiveWho,
       pointsInput,
       proofKind,
     };
@@ -613,7 +624,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setDueTime(null);
       setSubtasks([]);
       setSubtaskText("");
-      setAssigneeId(null);
+      setWho(null);
       setProofKind("none");
       setPickedPhotos([]);
       setPhotoProblem(null);
@@ -698,7 +709,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     /** Gives the draft up, and the visit's state with it: Cancel. */
     const reset = useCallback(() => {
       clearDraft();
-      setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
       setTitleFocused(false);
@@ -713,7 +723,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const closed = useCallback(() => {
       markClosed();
       setTitleFocused(false);
-      setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
       onClosed?.();
@@ -789,20 +798,28 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           return;
         }
         if (!postToChannel) {
-          createTask.mutate(body, {
+          // One person or a copy each to `POST /v1/tasks`; one task up for
+          // grabs to `POST /v1/open-tasks` (`createRequestOf`).
+          const request = createRequestOf(body);
+          const callbacks = {
             onSuccess: () => handlers.onSuccess(),
             onError: handlers.onError,
-          });
+          };
+          if (request.route === "open") {
+            createOpenTask.mutate(request.body, callbacks);
+          } else {
+            createTask.mutate(request.body, callbacks);
+          }
           return;
         }
-        // A chat card is for one member; this route never offers Everyone.
-        const { assignee_id } = body;
-        if (!assignee_id) {
+        // A chat card is for one member; this route offers one person only.
+        if (body.who.kind !== "person") {
           handlers.onError(new Error("A chat task needs one member."));
           return;
         }
+        const { who: chatWho, ...chatTask } = body;
         setPosting(true);
-        void postToChannel({ ...body, assignee_id })
+        void postToChannel({ ...chatTask, assignee_id: chatWho.userId })
           .catch((cause: unknown): DispatchResult => ({
             ok: false,
             error: "Couldn't create task",
@@ -819,6 +836,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       },
       [
         createTask,
+        createOpenTask,
         dismiss,
         isSameVisit,
         postToChannel,
@@ -846,7 +864,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       const handlers = {
         onSuccess: (posted?: DispatchResult) => {
           sending.current = false;
-          const wasSelf = body.assignee_id === viewerUserId;
+          const wasSelf =
+            body.who.kind === "person" && body.who.userId === viewerUserId;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
           // rules), felt once the task exists.
           // Not for a lost answer: the task may not exist.
@@ -859,8 +878,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           // A sheet closed and reopened since is the member's new visit, and
           // the create doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
-          // "Assigned to everyone." for a task for everyone.
-          onCreated?.(forEveryone ? "everyone" : assigneeName, wasSelf);
+          // "Assigned to everyone." for a task for the chapter, "Assigned
+          // to Everyone in Recruitment Committee." for a role's, "Posted to
+          // Up for grabs." for one to claim.
+          const everyone =
+            body.who.kind === "each" && body.who.target.kind === "chapter";
+          onCreated?.(
+            everyone ? "everyone" : assigneeName,
+            wasSelf,
+            body.who.kind === "someone",
+          );
           if (posted) onPosted?.(posted);
         },
         onError: (error: unknown) => {
@@ -892,9 +919,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           setSubmitFailed(true);
         },
       };
-      // A task for everyone sends no photos, even ones picked before
-      // Everyone was chosen.
-      if (forEveryone) {
+      // A task for a group, or up for grabs, sends no photos, even ones
+      // picked before the group was chosen.
+      if (!photosAllowed) {
         dispatchBody(body, sentFrom, handlers);
         return;
       }
@@ -919,7 +946,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       body,
       canSubmit,
       visit,
-      forEveryone,
+      photosAllowed,
       pickedPhotos,
       attachPhotos,
       uploadPicked,
@@ -934,14 +961,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       holdKept,
       releaseKept,
     ]);
-
-    const filteredRoster = useMemo(() => {
-      const needle = search.trim().toLowerCase();
-      if (needle.length === 0) return roster;
-      return roster.filter((row) =>
-        (row.name ?? "").toLowerCase().includes(needle),
-      );
-    }, [roster, search]);
 
     return (
       <>
@@ -1067,11 +1086,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 <View style={styles.group}>
                   <Text style={styles.groupLabel}>Photos</Text>
                   <Text style={styles.note}>
-                    {forEveryone
-                      ? TASK_AUDIENCE_COPY.noPhotos
-                      : `What the job looks like (optional, up to ${TASK_PHOTOS_MAX}).`}
+                    {photosAllowed
+                      ? `What the job looks like (optional, up to ${TASK_PHOTOS_MAX}).`
+                      : upForGrabs
+                        ? `A task ${TASK_AUDIENCE_COPY.upForGrabs.toLowerCase()} can't carry photos yet.`
+                        : TASK_AUDIENCE_COPY.noPhotos}
                   </Text>
-                  {forEveryone ? null : (
+                  {!photosAllowed ? null : (
                     <TaskPhotoPicker
                       taskId={editing?.id}
                       kept={keptPhotos}
@@ -1091,7 +1112,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                       adding={addingPhotos}
                     />
                   )}
-                  {photoProblem && !forEveryone ? (
+                  {photoProblem && photosAllowed ? (
                     <Text style={styles.error}>{photoProblem}</Text>
                   ) : null}
                 </View>
@@ -1121,10 +1142,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               accessibilityHint="Choose who this task is for."
               accessibilityState={{ disabled: pending }}
               disabled={pending}
-              onPress={() => {
-                setSearch("");
-                pickerRef.current?.present();
-              }}
+              onPress={() => pickerRef.current?.present()}
               style={styles.assigneeRow}
             >
               <View style={styles.avatar}>
@@ -1138,9 +1156,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               <Text style={styles.assigneeHint}>assignee</Text>
             </Pressable>
 
-            {forEveryone ? (
+            {forGroup ? (
               <Text style={styles.note}>
-                {TASK_AUDIENCE_COPY.everyoneHint(null)}
+                {whoHint(effectiveWho, directory)}
               </Text>
             ) : null}
 
@@ -1183,7 +1201,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                     ? posting
                       ? AI_SUGGESTION_COPY.accepting
                       : AI_SUGGESTION_COPY.accept
-                    : createTask.isPending
+                    : createTask.isPending || createOpenTask.isPending
                       ? "Creating…"
                       : "Create task"
               }
@@ -1196,112 +1214,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           </BottomSheetView>
         </BottomSheetModal>
 
-        {/* A second, stacked sheet rather than an inline list.
-          `BottomSheetFlatList` must be a **direct** child of the sheet: nested
-          inside a `BottomSheetView` under `enableDynamicSizing`, the view writes
-          its frame height and the scrollable writes its content height to the
-          same animated `contentHeight`, so a 60-member roster snaps the sheet to
-          full screen and then jumps back on the next layout pass. Fixed
-          snap points here for the same reason — a list has no natural height to
-          size to. Snap points alone don't turn dynamic sizing off in v5: it
-          defaults on and adds a content-height detent below 100%, so a short or
-          filtered roster would open the picker short and shrink it per
-          keystroke. */}
-        <BottomSheetModal
+        {/* A second, stacked sheet rather than an inline list, tall, with
+          its scroller the modal's direct child (`who-picker-sheet.tsx`):
+          nested in a `BottomSheetView` under dynamic sizing, a long roster
+          snapped the sheet to full screen and back. */}
+        <WhoPickerSheet
           ref={pickerRef}
-          stackBehavior={SHEET_STACK_BEHAVIOR}
-          // A tall sheet (`components.md` § Surface size): the whole roster,
-          // and a search the keyboard would otherwise squeeze into a sliver of
-          // the old 70% box.
-          {...pickerSheet}
-          keyboardBehavior="interactive"
-          backgroundStyle={backgroundStyle}
-          handleComponent={SheetGrabber}
-          backdropComponent={SheetScrim}
-        >
-          <SheetBackToClose onClose={closePicker} />
-          <BottomSheetFlatList
-            onAccessibilityEscape={closePicker}
-            data={filteredRoster}
-            keyExtractor={(row: RosterMember) => row.userId}
-            contentContainerStyle={styles.pickerContent}
-            keyboardShouldPersistTaps="handled"
-            // The title and search stay pinned while the roster scrolls under
-            // them, so the field is still there after a long scroll.
-            stickyHeaderIndices={[0]}
-            ListHeaderComponent={
-              <View style={styles.pickerHeader}>
-                <TallSheetHeader title="Assign to" onClose={closePicker} />
-                {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
-                  plain `TextInput`, and inside a gorhom sheet a plain input
-                  breaks the sheet's keyboard coordination — `patterns.md` makes
-                  `BottomSheetTextInput` mandatory here. */}
-                <BottomSheetTextInput
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder="Search members"
-                  placeholderTextColor={tokens.color.text.muted}
-                  accessibilityLabel="Search members"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.field}
-                />
-                {offerEveryone && search.trim().length === 0 ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: forEveryone }}
-                    accessibilityHint={TASK_AUDIENCE_COPY.everyoneHint(null)}
-                    onPress={() => {
-                      setAssigneeId(TASK_AUDIENCE_EVERYONE);
-                      setSearch("");
-                      pickerRef.current?.dismiss();
-                    }}
-                    style={styles.pickerRow}
-                  >
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>
-                        {initialsFor(TASK_AUDIENCE_COPY.everyone)}
-                      </Text>
-                    </View>
-                    <Text style={styles.fieldValue} numberOfLines={1}>
-                      {TASK_AUDIENCE_COPY.everyone}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            }
-            ListEmptyComponent={
-              <Text style={styles.pickerEmpty}>
-                {rosterQuery.isPending
-                  ? "Loading your chapter…"
-                  : "No members match that search."}
-              </Text>
-            }
-            renderItem={({ item }: { item: RosterMember }) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{
-                  selected: item.userId === effectiveAssigneeId,
-                }}
-                onPress={() => {
-                  setAssigneeId(item.userId);
-                  setSearch("");
-                  pickerRef.current?.dismiss();
-                }}
-                style={styles.pickerRow}
-              >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {initialsFor(item.name)}
-                  </Text>
-                </View>
-                <Text style={styles.fieldValue} numberOfLines={1}>
-                  {item.name ?? memberFallbackLabel(item.userId)}
-                </Text>
-              </Pressable>
-            )}
-          />
-        </BottomSheetModal>
+          value={pickedWho ?? effectiveWho}
+          onChange={setWho}
+          directory={directory}
+          people={whoRead.people}
+          sets={whoRead.sets}
+          single={!offerGroups}
+        />
       </>
     );
   },
@@ -1373,28 +1298,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       // 12.5/400 and is the smallest role available.
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-    },
-    pickerContent: {
-      paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing.xl,
-    },
-    pickerHeader: {
-      gap: tokens.spacing.sm,
-      paddingBottom: tokens.spacing.sm,
-      // Sticky, so it paints the sheet's own fill over the rows passing under.
-      backgroundColor: tokens.color.surface.popover,
-    },
-    pickerEmpty: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingVertical: tokens.spacing.md,
-    },
-    pickerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),
