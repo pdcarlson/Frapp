@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { StyleSheet } from "react-native";
+import { BackHandler, StyleSheet } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import * as Haptics from "expo-haptics";
@@ -111,9 +111,15 @@ describe("ItemActionsMenu", () => {
       (node) => node.props.testID === "item-actions-backdrop",
     );
     act(() => backdrop.props.onPress());
-    const modal = tree.root.find((node) => (node.type as unknown) === "Modal");
-    act(() => modal.props.onRequestClose());
+    // Drawn in the app's own tree (#5517), so back is a listener it holds.
+    const [, back] = vi
+      .mocked(BackHandler.addEventListener)
+      .mock.calls.at(-1) as unknown as [string, () => boolean];
+    expect(back()).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(2);
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "Modal"),
+    ).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

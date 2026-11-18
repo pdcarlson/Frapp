@@ -99,7 +99,8 @@ export const reactNativeStub = {
   // below.
   FlatList: "FlatList",
   ActivityIndicator: "ActivityIndicator",
-  // A channel row's long-press menu (`channel-actions-menu.tsx`) opens in one.
+  // A task's photo viewer (`components/tasks/task-photos.tsx`) opens in one;
+  // the glass menu's spec checks that it never does (#5517).
   Modal: "Modal",
   KeyboardAvoidingView: "KeyboardAvoidingView",
   Share: {

@@ -1,11 +1,5 @@
 import { type ReactNode, useState } from "react";
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -15,6 +9,8 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
+import { InOverlayLayer } from "@/components/overlay-layer";
+import { useBackToClose } from "@/lib/overlay";
 import { typeRole } from "@/lib/theme";
 import {
   GLASS_GROUP_BREAK,
@@ -35,21 +31,24 @@ const GAP = 12;
  * or an event's row opens it now (#5492). The menus draw their own rows; this
  * is everything around them, written once:
  *
- * - a transparent `Modal`, so it sits over the tab bar and every sheet;
+ * - drawn in the app's overlay layer (`overlay-layer.tsx`), so it sits over
+ *   the tab bar and every sheet but under the update gate, never in a
+ *   `Modal`, which would draw over the gate (patterns.md § Overlays, #5517);
+ *   the app under it leaves the accessibility tree while it is up;
  * - below the press when it fits, above it when it doesn't, never past the
  *   safe area either way (it measures itself first, drawn clear until then);
  * - a small lift out of the pressed row, a plain fade with Reduce Motion on;
- * - closed by a tap outside, Android's back (`onRequestClose`) and
+ * - closed by a tap outside, Android's back (`useBackToClose`) and
  *   VoiceOver's escape gesture.
  *
  * Moving a screen reader's focus onto the menu is the body's, since only the
- * body knows its first element (`useFocusOnOpen`).
+ * body knows its first element (`useFocusOnOpen`). The body renders under the
+ * layer's providers, not the screen's (`InOverlayLayer`).
  */
 export function GlassMenu({
   visible,
   pageY,
   onClose,
-  onDismiss,
   backdropTestID,
   children,
 }: {
@@ -57,26 +56,17 @@ export function GlassMenu({
   /** Where the press landed, in window coordinates. */
   pageY: number;
   onClose: () => void;
-  /** iOS only: the modal has finished going (`Modal`'s `onDismiss`). */
-  onDismiss?: () => void;
   backdropTestID?: string;
   children: ReactNode;
 }) {
+  useBackToClose(visible, onClose);
+  if (!visible) return null;
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={onClose}
-      onDismiss={onDismiss}
-    >
-      {visible ? (
-        <Placed pageY={pageY} onClose={onClose} backdropTestID={backdropTestID}>
-          {children}
-        </Placed>
-      ) : null}
-    </Modal>
+    <InOverlayLayer>
+      <Placed pageY={pageY} onClose={onClose} backdropTestID={backdropTestID}>
+        {children}
+      </Placed>
+    </InOverlayLayer>
   );
 }
 

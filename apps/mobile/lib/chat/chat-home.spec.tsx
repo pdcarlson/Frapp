@@ -1165,7 +1165,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menu(tree).props.target?.channelId).toBe(general.id);
   });
 
-  it("gives a channel manager Background beside Display, and sets it once the menu has closed (#4031)", async () => {
+  it("gives a channel manager Background beside Display, and sets it as the menu closes (#4031)", async () => {
     permissionList.value = ["channels:manage"];
     setChannelBackground.mockResolvedValue(undefined);
     channelsData.value = [general];
@@ -1183,14 +1183,12 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         node.props.testID === "chat-background-swatch-midnight",
     );
     expect(midnight.props.accessibilityRole).toBe("radio");
-    act(() => midnight.props.onPress());
-    expect(menu(tree).props.target).toBeNull();
-    // iOS: nothing is written until the modal reports it has gone.
-    expect(setChannelBackground).not.toHaveBeenCalled();
-    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
+    // The menu is in the app's own tree, not a `Modal` (#5517), so there is
+    // no presented window to wait out on either platform.
     await act(async () => {
-      modal.props.onDismiss();
+      midnight.props.onPress();
     });
+    expect(menu(tree).props.target).toBeNull();
     expect(setChannelBackground).toHaveBeenCalledWith({
       channelId: general.id,
       background: "midnight",
@@ -1215,10 +1213,8 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.testID === "chat-background-swatch-photo",
     );
-    act(() => photoSwatch.props.onPress());
-    const modal = menu(tree).find((node) => (node.type as unknown) === "Modal");
     await act(async () => {
-      modal.props.onDismiss();
+      photoSwatch.props.onPress();
     });
 
     const [pick, deps] = save.mock.calls[0]!;
@@ -1243,35 +1239,6 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       "Not allowed here.",
     );
     save.mockRestore();
-  });
-
-  it("runs a background pick on the close itself where the modal reports no dismiss (Android) (#4031)", async () => {
-    const { Platform } = await import("react-native");
-    const os = Platform.OS;
-    (Platform as { OS: string }).OS = "android";
-    try {
-      permissionList.value = ["channels:manage"];
-      setChannelBackground.mockResolvedValue(undefined);
-      channelsData.value = [general];
-      const tree = render();
-      longPress(tree, "general");
-      pressItem(tree, "Background");
-      const letters = menu(tree).find(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.testID === "chat-background-swatch-letters",
-      );
-      await act(async () => {
-        letters.props.onPress();
-      });
-      expect(setChannelBackground).toHaveBeenCalledWith({
-        channelId: general.id,
-        background: "letters",
-        storagePath: undefined,
-      });
-    } finally {
-      (Platform as { OS: string }).OS = os;
-    }
   });
 
   it("offers Background to no one without channels:manage, and never on the audit log (#4031)", () => {
