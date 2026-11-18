@@ -1158,6 +1158,7 @@ function otherLabelFor(
 /** Only the known sections of a patch, so a stray key is never stored. */
 function pickContent(patch: MeetingContentPatch): MeetingContentPatch {
   const out: MeetingContentPatch = {};
+  if (patch.tldr !== undefined) out.tldr = patch.tldr;
   if (patch.summary !== undefined) out.summary = patch.summary;
   if (patch.announcements !== undefined)
     out.announcements = patch.announcements;

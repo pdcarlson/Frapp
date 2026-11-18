@@ -8562,7 +8562,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8588,6 +8588,8 @@ export interface components {
             due_date: string | null;
         };
         MeetingContentDto: {
+            /** @description The TL;DR: a few "- " bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it. */
+            tldr: string;
             summary: string;
             announcements: string;
             decisions: components["schemas"]["MeetingDecisionDto"][];
@@ -8625,7 +8627,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -8665,6 +8667,7 @@ export interface components {
             new_event?: components["schemas"]["NewMeetingEventDto"];
         };
         MeetingContentPatchDto: {
+            tldr?: string;
             summary?: string;
             announcements?: string;
             decisions?: components["schemas"]["MeetingDecisionDto"][];

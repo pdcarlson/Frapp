@@ -149,6 +149,7 @@ vi.mock("@/components/shared/confirm-dialog", () => ({
 const { MinutesPage } = await import("./minutes-page");
 
 const EMPTY = {
+  tldr: "",
   summary: "",
   announcements: "",
   decisions: [],
@@ -333,6 +334,26 @@ describe("MinutesPage", () => {
     expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
     // A member who can't edit gets no Edit or Delete, so no menu at all.
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+  });
+
+  it("leads posted minutes with the TL;DR, as bullets, above the Summary (#5523)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          tldr: "- Formal budget approved\n- Book the venue by Friday",
+          summary: "Budget approved.",
+        },
+        sections: ["tldr", "summary", "discussion_log"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((node) => node.textContent);
+    expect(headings.slice(0, 2)).toEqual(["TL;DR", "Summary"]);
+    expect(screen.getByText("Formal budget approved")).toBeTruthy();
+    expect(screen.getByText("Book the venue by Friday")).toBeTruthy();
   });
 
   it("keeps changing posted minutes out of the way: Copy link an icon, Edit and a red Delete behind the dots (Paul, 2026-11-18)", () => {
