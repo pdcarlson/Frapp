@@ -1,4 +1,5 @@
 export * from "./act";
+export * from "./activity-cards";
 export * from "./ai-copy";
 // Report this (#4315): the reasons, the request, and the words about what a
 // report keeps.

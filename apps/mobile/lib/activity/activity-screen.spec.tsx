@@ -205,6 +205,14 @@ const standing = vi.hoisted(() => ({
 }));
 
 /** The Activity card (#5464): what the server sent, and what the card did. */
+const cards = vi.hoisted(() => ({
+  layout: undefined as
+    | { card_order: string[]; hidden_cards: string[]; saved: boolean }
+    | undefined,
+  save: vi.fn(),
+  reset: vi.fn(),
+  refetch: vi.fn(() => Promise.resolve()),
+}));
 const nudge = vi.hoisted(() => ({
   ask: false,
   data: null as null | Record<string, unknown>,
@@ -260,6 +268,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
   useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
+  // The member's arrangement (#5520): the role's default unless a test saves one.
+  useActivityLayout: () => ({ data: cards.layout, refetch: cards.refetch }),
+  useSaveActivityLayout: () => ({ mutate: cards.save }),
+  useResetActivityLayout: () => ({ mutate: cards.reset }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
   }),
@@ -315,6 +327,7 @@ import { SectionCount, SectionHeader } from "@/components/list-section";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
+import { ActivityEditor } from "@/components/activity/activity-editor";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { ProgressRing } from "@/components/activity/progress-ring";
 import { ReviewCard } from "@/components/activity/review-card";
@@ -424,6 +437,9 @@ const reviewToggle = (tree: ReactTestRenderer) =>
 
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
+    cards.layout = undefined;
+    cards.save.mockClear();
+    cards.reset.mockClear();
     standing.value = {
       data: undefined,
       isPending: false,
@@ -1886,6 +1902,66 @@ describe("Activity screen (#3897)", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: activityKeys.chapter("chapter-1"),
       exact: true,
+    });
+  });
+
+  describe("the member's cards (#5520)", () => {
+    const editLink = (tree: ReactTestRenderer) =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Choose which cards Activity shows, and their order." &&
+          typeof node.props.onPress === "function",
+      );
+
+    it("leaves out a card the member hid", () => {
+      cards.layout = {
+        card_order: ["todo", "calendar"],
+        hidden_cards: ["calendar"],
+        saved: true,
+      };
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-calendar-row",
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("edits in place of the page; Done saves only a change", () => {
+      const tree = render();
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const editor = tree.root.findByType(ActivityEditor);
+      act(() => {
+        editor.props.onDone(editor.props.initial);
+      });
+      expect(cards.save).not.toHaveBeenCalled();
+
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const again = tree.root.findByType(ActivityEditor);
+      const hidden = {
+        shown: again.props.initial.shown.filter((k: string) => k !== "links"),
+        hidden: ["links"],
+      };
+      act(() => {
+        again.props.onDone(hidden);
+      });
+      expect(cards.save).toHaveBeenCalledWith(hidden, expect.anything());
+      expect(tree.root.findAllByType(ActivityEditor)).toHaveLength(0);
+    });
+
+    it("starts an officer with To review before their own To do", () => {
+      links.permissions = ["tasks:manage"];
+      const tree = render();
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const { shown } = tree.root.findByType(ActivityEditor).props.initial;
+      expect(shown.indexOf("review")).toBeLessThan(shown.indexOf("todo"));
     });
   });
 

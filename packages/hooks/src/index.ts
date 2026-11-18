@@ -1,5 +1,6 @@
 export * from "./activity-agenda";
 export * from "./activity-archive";
+export * from "./activity-cards";
 export * from "./activity-faces";
 export * from "./activity-recap";
 export * from "./activity-rows";
@@ -51,6 +52,7 @@ export * from "./unset-features";
 export * from "./use-act";
 export * from "./use-activity";
 export * from "./use-activity-feed";
+export * from "./use-activity-layout";
 export * from "./use-activity-links";
 export * from "./use-activity-nudge";
 export * from "./use-activity-snooze";

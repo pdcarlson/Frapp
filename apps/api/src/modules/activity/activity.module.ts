@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ActivityCardService } from '../../application/services/activity-card.service';
 import { ActivityCardController } from '../../interface/controllers/activity-card.controller';
+import { ActivityLayoutService } from '../../application/services/activity-layout.service';
+import { ActivityLayoutController } from '../../interface/controllers/activity-layout.controller';
+import { SupabaseActivityLayoutRepository } from '../../infrastructure/supabase/repositories/supabase-activity-layout.repository';
+import { ACTIVITY_LAYOUT_REPOSITORY } from '#domain/repositories/activity-layout.repository.interface';
 import { MeetingModule } from '../meeting/meeting.module';
 import { MemberNudgeModule } from '../member-nudge/member-nudge.module';
 import { ActivityService } from '../../application/services/activity.service';
@@ -82,6 +86,7 @@ import { TaskModule } from '../task/task.module';
     ActivityController,
     ChatReminderController,
     ActivityCardController,
+    ActivityLayoutController,
   ],
   providers: [
     ActivityService,
@@ -150,6 +155,13 @@ import { TaskModule } from '../task/task.module';
     // which events they may see.
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
+    // How each member ordered and hid their cards (#5520). This module is the
+    // table's only reader and writer.
+    ActivityLayoutService,
+    {
+      provide: ACTIVITY_LAYOUT_REPOSITORY,
+      useClass: SupabaseActivityLayoutRepository,
+    },
   ],
   // For Frapp AI's standing tools (#4901), which read the standing as `GET
   // /v1/activity/standing` does.

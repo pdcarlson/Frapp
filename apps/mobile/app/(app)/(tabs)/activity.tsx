@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -21,6 +22,13 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   ACTIVITY_ARCHIVE_EMPTY,
   ACTIVITY_ARCHIVE_SECTION_NAMES,
+  activityCardRole,
+  arrangeActivityCards,
+  sameActivityArrangement,
+  useActivityLayout,
+  useResetActivityLayout,
+  useSaveActivityLayout,
+  type ActivityCardArrangement,
   ACTIVITY_SHOW_EVERYTHING,
   ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
@@ -82,6 +90,7 @@ import {
   type LinkSheetActions,
   type ReminderSheetActions,
 } from "@/components/activity/activity-sheet";
+import { ActivityEditor } from "@/components/activity/activity-editor";
 import { NudgeCard } from "@/components/activity/nudge-card";
 import {
   activityNudgeAskPrompt,
@@ -120,6 +129,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_TILE_HUE } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { localIsoDate } from "@repo/formatting";
+import type { ActivityCardKey } from "@repo/validation";
 
 /**
  * Activity: the member's week, what they still have to do, and what waits on
@@ -212,14 +222,49 @@ export default function ActivityScreen() {
     });
     return () => sub.remove();
   }, [showArchive]);
-  const refreshPage = useRefetchAll([activity, standing]);
-  const refreshArchive = useRefetchAll([archive]);
-  const refresh = showArchive ? refreshArchive : refreshPage;
   const { linkActions, undo, rereadOnClose, skipNextCloseReread } =
     useLinkActions();
   const reminderActions = useReminderActions(skipNextCloseReread);
 
   const permissions = useMyPermissions().data?.permissions;
+  // The member's cards, in their order (#5520, § Cards): saved on their
+  // account so web draws the same page, and their role's default until they
+  // save one, or while the read is out or failed.
+  const layout = useActivityLayout();
+  const cardRole = activityCardRole(permissions);
+  const arrangement = useMemo(
+    () => arrangeActivityCards(layout.data, cardRole),
+    [layout.data, cardRole],
+  );
+  const shows = (key: ActivityCardKey) => arrangement.shown.includes(key);
+  // Pull to refresh reads the arrangement too, so an edit made on web shows.
+  const refreshPage = useRefetchAll([activity, standing, layout]);
+  const refreshArchive = useRefetchAll([archive]);
+  const refresh = showArchive ? refreshArchive : refreshPage;
+  const saveLayout = useSaveActivityLayout();
+  const resetLayout = useResetActivityLayout();
+  // Edit Activity in place of the page, as the Archive is, until Done.
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing || Platform.OS !== "android") return undefined;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setEditing(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [editing]);
+  const finishEditing = (next: ActivityCardArrangement) => {
+    setEditing(false);
+    if (sameActivityArrangement(next, arrangement)) return;
+    saveLayout.mutate(next, {
+      onError: (error) =>
+        alertFailure({
+          title: "Couldn't save your cards",
+          error,
+          fallback: "They're arranged on this phone until you leave Activity.",
+        }),
+    });
+  };
   const summary = useMemo(
     () => (activity.data ? activityWeekSummary(activity.data, now) : null),
     [activity.data, now],
@@ -452,7 +497,8 @@ export default function ActivityScreen() {
   // asked for on every Activity. Any failure is no card. It is asked again
   // after a sheet closes, since acting is what the card was for.
   const ai = useAiSurfaces();
-  const nudgeRead = useActivityNudge();
+  // A hidden card isn't asked for: the read can cost a model call.
+  const nudgeRead = useActivityNudge({ enabled: shows("nudge") });
   // Never the week card's Next a second time: when the card's pick is the
   // Next row, the tray's first takes its place.
   const nudge = useMemo(
@@ -527,6 +573,23 @@ export default function ActivityScreen() {
   };
 
   function renderBody() {
+    if (editing) {
+      return (
+        <ActivityEditor
+          initial={arrangement}
+          role={cardRole}
+          saved={layout.data?.saved ?? false}
+          onDone={finishEditing}
+          onReset={() => {
+            setEditing(false);
+            resetLayout.mutate(undefined, {
+              onError: (error) =>
+                alertFailure({ title: "Couldn't reset your cards", error }),
+            });
+          }}
+        />
+      );
+    }
     if (showArchive) {
       return (
         <ArchiveView
@@ -559,7 +622,7 @@ export default function ActivityScreen() {
             </View>
           </SkeletonRegion>
           {/* The month needs none of this read, so its door is never gone. */}
-          <CalendarRow />
+          {shows("calendar") ? <CalendarRow /> : null}
         </>
       );
     }
@@ -574,11 +637,63 @@ export default function ActivityScreen() {
             onRetry={() => void activity.refetch()}
             isRetrying={activity.isFetching}
           />
-          <CalendarRow />
+          {shows("calendar") ? <CalendarRow /> : null}
         </>
       );
     }
-    if (!summary || !agenda) return <CalendarRow />;
+    if (!summary || !agenda) {
+      return shows("calendar") ? <CalendarRow /> : null;
+    }
+    // Each card the member may move or hide, drawn where their arrangement
+    // puts it. A card with nothing in it is null, as before: no empty card.
+    // Narrowed to a kind by the week card, the page is the To do list, so the
+    // groups under it step out.
+    const group = (id: (typeof below)[number]["id"]) => {
+      const found = below.find((g) => g.id === id);
+      return found ? (
+        <GroupSection group={found} rowActions={rowActions} onOpen={open} />
+      ) : null;
+    };
+    const cards: Record<ActivityCardKey, ReactNode> = {
+      nudge: nudge?.card ? (
+        <NudgeCard
+          card={nudge.card}
+          tray={nudge.tray}
+          canAsk={ai.ask}
+          onOpen={openNudge}
+          onAsk={(item) => setAskDraft(activityNudgeAskPrompt(item))}
+          onDismiss={(item) => nudgeActions.dismiss(item)}
+          onTurnOff={() => setNudgesEnabled.mutate(false)}
+          onSeen={(id) => nudgeActions.markSeen(id)}
+        />
+      ) : null,
+      recap: recap.data ? <RecapCard recap={recap.data} now={now} /> : null,
+      semester: standing.isPending ? (
+        <SemesterStripSkeleton />
+      ) : standing.data ? (
+        <SemesterStrip standing={standing.data} onOpen={openStanding} />
+      ) : null,
+      review: review ? (
+        <ReviewCard review={review} rowActions={rowActions} onOpen={open} />
+      ) : null,
+      todo: (
+        <ToDoSection
+          days={agenda.days}
+          unavailable={agenda.unavailable}
+          filter={filter}
+          // The one thing left is already on the week card.
+          onCard={agenda.next !== null}
+          onShowAll={() => setPicked("all")}
+          rowActions={rowActions}
+          onOpen={open}
+          sectionRef={sectionRef}
+        />
+      ),
+      calendar: <CalendarRow />,
+      reminders: group("reminders"),
+      waiting: group("made-by-you"),
+      links: group("links"),
+    };
     return (
       <View
         ref={bodyView}
@@ -604,47 +719,10 @@ export default function ActivityScreen() {
           rowActions={rowActions}
           onOpenNext={open}
         />
-        {nudge?.card ? (
-          <NudgeCard
-            card={nudge.card}
-            tray={nudge.tray}
-            canAsk={ai.ask}
-            onOpen={openNudge}
-            onAsk={(item) => setAskDraft(activityNudgeAskPrompt(item))}
-            onDismiss={(item) => nudgeActions.dismiss(item)}
-            onTurnOff={() => setNudgesEnabled.mutate(false)}
-            onSeen={(id) => nudgeActions.markSeen(id)}
-          />
-        ) : null}
-        {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
-        {standing.isPending ? (
-          <SemesterStripSkeleton />
-        ) : standing.data ? (
-          <SemesterStrip standing={standing.data} onOpen={openStanding} />
-        ) : null}
-        {review ? (
-          <ReviewCard review={review} rowActions={rowActions} onOpen={open} />
-        ) : null}
-        <ToDoSection
-          days={agenda.days}
-          unavailable={agenda.unavailable}
-          filter={filter}
-          // The one thing left is already on the week card.
-          onCard={agenda.next !== null}
-          onShowAll={() => setPicked("all")}
-          rowActions={rowActions}
-          onOpen={open}
-          sectionRef={sectionRef}
-        />
-        <CalendarRow />
-        {below.map((group) => (
-          <GroupSection
-            key={group.id}
-            group={group}
-            rowActions={rowActions}
-            onOpen={open}
-          />
+        {arrangement.shown.map((key) => (
+          <Fragment key={key}>{cards[key]}</Fragment>
         ))}
+        <EditActivityLink onPress={() => setEditing(true)} />
         {snoozedRows.length > 0 ? (
           <SnoozedPart
             rows={snoozedRows}
@@ -1099,6 +1177,26 @@ function CalendarRow() {
   );
 }
 
+/**
+ * Edit Activity (#5520), at the foot of the page above Snoozed and the
+ * Archive, where Bevel puts Edit Home and Apple Fitness puts Edit Summary.
+ * A plain bordered control: the accent stays with the page's one ask.
+ */
+function EditActivityLink({ onPress }: { onPress: () => void }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityHint="Choose which cards Activity shows, and their order."
+      onPress={onPress}
+      style={({ pressed }) => [styles.editLink, pressed && styles.pressed]}
+    >
+      <Text style={styles.editLinkText}>Edit Activity</Text>
+    </Pressable>
+  );
+}
+
 /** The door to the Archive, at the foot of the page. */
 function ArchiveLink({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();
@@ -1404,6 +1502,18 @@ function createStyles(tokens: SignetTokens) {
     archiveEmpty: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
+    },
+    editLink: {
+      minHeight: tokens.touch.minimum,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    editLinkText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     showAllText: {
       ...typeRole({

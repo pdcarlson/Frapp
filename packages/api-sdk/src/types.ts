@@ -5135,6 +5135,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own order of their Activity cards
+         * @description Which cards the caller shows, in order, and which they hid, in this chapter. When they have never saved one, both lists are empty and `saved` is false: show the default for their role.
+         */
+        get: operations["ActivityLayoutController_get_v1"];
+        /**
+         * Save the order of the caller's Activity cards
+         * @description Replaces the whole arrangement: send both lists every time. A card may be named only once, in one list or the other. Any well-formed key is kept, including one this server does not know. Follows the caller to their other devices.
+         */
+        put: operations["ActivityLayoutController_save_v1"];
+        post?: never;
+        /**
+         * Put the caller's Activity cards back to the default
+         * @description Forgets the caller's saved order, so Activity shows the default for their role again. Answers 204 whether or not anything was saved.
+         */
+        delete: operations["ActivityLayoutController_reset_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/goals": {
         parameters: {
             query?: never;
@@ -11173,6 +11201,44 @@ export interface components {
         };
         UpdateMemberNudgeSettingsDto: {
             enabled: boolean;
+        };
+        ActivityLayoutDto: {
+            /**
+             * @description The cards the member shows, top to bottom. Empty when nothing is saved.
+             * @example [
+             *       "todo",
+             *       "calendar",
+             *       "recap"
+             *     ]
+             */
+            card_order: string[];
+            /**
+             * @description The cards the member hid. Empty when nothing is saved.
+             * @example [
+             *       "links"
+             *     ]
+             */
+            hidden_cards: string[];
+            /** @description Whether the member has saved an arrangement. False means show the default for the member's role. A card the app knows that neither list names is placed as that default places it; a key the app doesn't know is skipped. */
+            saved: boolean;
+        };
+        UpdateActivityLayoutDto: {
+            /**
+             * @description The cards to show, top to bottom. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.
+             * @example [
+             *       "todo",
+             *       "calendar",
+             *       "recap"
+             *     ]
+             */
+            card_order: string[];
+            /**
+             * @description The cards to hide. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.
+             * @example [
+             *       "links"
+             *     ]
+             */
+            hidden_cards: string[];
         };
         RoleGoalDto: {
             /** Format: uuid */
@@ -24003,6 +24069,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MemberNudgeSettingsDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityLayoutDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_save_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateActivityLayoutDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityLayoutDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
