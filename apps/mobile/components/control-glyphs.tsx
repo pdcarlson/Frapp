@@ -167,6 +167,35 @@ export function MinusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
+ * Hand it to someone else: a task's Reassign in its long-press menu (#5492).
+ * Lucide's `User`, a head over shoulders, as web's assignee field draws it.
+ */
+export function PersonGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Circle cx={12} cy={8} r={4} {...detail} />
+      <Path d="M4 21a8 8 0 0116 0" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Delete, in a long-press menu (#5492): Lucide's `Trash2`, as web's row
+ * menus draw it beside Delete.
+ */
+export function TrashGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" {...detail} />
+      <Path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" {...detail} />
+      <Path d="M10 11v6M14 11v6" {...detail} />
+    </Frame>
+  );
+}
+
+/**
  * More: a screen's other actions in the system menu (the task screen, #5492).
  * Web draws Lucide's `Ellipsis` for the same intent; three dots, filled, as
  * iOS's own More draws them.

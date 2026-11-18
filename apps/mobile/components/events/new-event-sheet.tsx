@@ -188,6 +188,11 @@ export interface NewEventSheetProps {
   /** Fired after the event is deleted from the sheet. */
   onDeleted?: () => void;
   /**
+   * Fired when the sheet has closed, however it closed: a host that mounts
+   * it for one edit (an event row's long-press Edit, #5492) unmounts it then.
+   */
+  onClosed?: () => void;
+  /**
    * Keeps an edit's draft past its host, under this name (`event-edit:<id>`,
    * #4872): event details goes when the member goes back, and Edit on the
    * same event opens on what was typed. Only what the officer changed is
@@ -285,6 +290,39 @@ function askSeriesScope(copy: {
   });
 }
 
+/**
+ * Delete's question, for the Edit sheet's Delete event and an event row's
+ * long-press Delete (#5492): a repeating event not yet started asks this one
+ * or all upcoming, anything else asks once. Resolves the scope to send, or
+ * `null` on Cancel.
+ */
+export function askEventDelete(
+  event: Parameters<typeof deleteOffersSeriesChoice>[0],
+): Promise<EventEditScope | null> {
+  if (deleteOffersSeriesChoice(event, new Date())) {
+    return askSeriesScope({
+      title: SERIES_SCOPE_COPY.deleteTitle,
+      message: SERIES_SCOPE_COPY.deleteMessage,
+      seriesDestructive: true,
+    });
+  }
+  return new Promise<EventEditScope | null>((resolve) => {
+    Alert.alert(
+      "Delete this event?",
+      "It comes off the chapter's calendar for everyone.",
+      [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => resolve("instance"),
+        },
+      ],
+      { cancelable: true, onDismiss: () => resolve(null) },
+    );
+  });
+}
+
 const GATE_COPY = {
   subscription: SUBSCRIPTION_REFUSAL_COPY.event,
   module: MODULE_REFUSAL_COPY.event,
@@ -292,7 +330,17 @@ const GATE_COPY = {
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
   function NewEventSheet(
-    { now, onCreated, chat, editing, template, onSaved, onDeleted, keptDraft },
+    {
+      now,
+      onCreated,
+      chat,
+      editing,
+      template,
+      onSaved,
+      onDeleted,
+      onClosed,
+      keptDraft,
+    },
     ref,
   ) {
     const { tokens } = useFrappTheme();
@@ -442,7 +490,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
-    }, [markClosed]);
+      onClosed?.();
+    }, [markClosed, onClosed]);
 
     const cancel = useCallback(() => {
       if (sending.current) return;
@@ -536,31 +585,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     async function confirmDelete(target: EventEditTarget) {
       if (pending || sending.current) return;
       Keyboard.dismiss();
-      let scope: EventEditScope | null;
       sending.current = true;
-      if (deleteOffersSeriesChoice(target.event, new Date())) {
-        scope = await askSeriesScope({
-          title: SERIES_SCOPE_COPY.deleteTitle,
-          message: SERIES_SCOPE_COPY.deleteMessage,
-          seriesDestructive: true,
-        });
-      } else {
-        scope = await new Promise<EventEditScope | null>((resolve) => {
-          Alert.alert(
-            "Delete this event?",
-            "It comes off the chapter's calendar for everyone.",
-            [
-              { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
-              {
-                text: "Delete",
-                style: "destructive",
-                onPress: () => resolve("instance"),
-              },
-            ],
-            { cancelable: true, onDismiss: () => resolve(null) },
-          );
-        });
-      }
+      const scope = await askEventDelete(target.event);
       sending.current = false;
       if (!scope) return;
       sending.current = true;

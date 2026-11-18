@@ -8,8 +8,14 @@ import {
   livePicks,
   markDoneBarLabel,
   removedLine,
+  taskMenuKeys,
   taskScreenControls,
 } from "./task-screen";
+import {
+  DEFAULT_DUE_CHOICE,
+  duplicateWho,
+  taskDuplicateOf,
+} from "./create-task";
 
 const NOW = new Date(2026, 10, 18, 12, 0);
 
@@ -100,6 +106,8 @@ describe("taskScreenControls", () => {
       release: false,
       delete: false,
       deleteForEveryone: false,
+      reassign: false,
+      duplicate: false,
     });
   });
 
@@ -166,6 +174,163 @@ describe("taskScreenControls", () => {
     });
     expect(controls.removePeople).toBe(true);
     expect(controls.deleteForEveryone).toBe(true);
+  });
+});
+
+describe("taskMenuKeys (#5492)", () => {
+  const keysFor = (
+    overrides: Record<string, unknown>,
+    viewerId: string,
+    canManage: boolean,
+    scope?: "copy" | "group",
+  ) =>
+    taskMenuKeys(
+      taskScreenControls({
+        row: row(overrides),
+        viewerId,
+        canManage,
+        toggleRefused: false,
+      }),
+      scope,
+    );
+
+  it("gives a member only Mark done on their own task", () => {
+    expect(keysFor({}, "me", false)).toEqual(["markDone"]);
+  });
+
+  it("gives a member nothing on a task that isn't theirs", () => {
+    expect(keysFor({}, "other", false)).toEqual([]);
+  });
+
+  it("gives an officer on a member's task everything but Remove people, Delete last", () => {
+    expect(keysFor({}, "officer", true)).toEqual([
+      "markDone",
+      "edit",
+      "reassign",
+      "duplicate",
+      "delete",
+    ]);
+  });
+
+  it("gives an officer on a group's copy Remove people and Delete for everyone, and no Reassign", () => {
+    expect(keysFor({ group_id: "g1" }, "officer", true)).toEqual([
+      "markDone",
+      "edit",
+      "removePeople",
+      "duplicate",
+      "delete",
+      "deleteForEveryone",
+    ]);
+  });
+
+  it("gives a Calendar row standing for every copy only the group's actions", () => {
+    expect(keysFor({ group_id: "g1" }, "officer", true, "group")).toEqual([
+      "removePeople",
+      "duplicate",
+      "deleteForEveryone",
+    ]);
+  });
+
+  it("leaves a confirmed task with no Mark done, Edit or Reassign", () => {
+    const confirmed = {
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      points_awarded: true,
+    };
+    expect(keysFor(confirmed, "officer", true)).toEqual([
+      "duplicate",
+      "delete",
+    ]);
+    expect(keysFor(confirmed, "me", false)).toEqual([]);
+  });
+
+  it("gives the assignee Mark not done on their unconfirmed completion", () => {
+    expect(
+      keysFor({ status: "COMPLETED", stored_status: "COMPLETED" }, "me", false),
+    ).toEqual(["reopen"]);
+  });
+});
+
+describe("taskDuplicateOf (#5492)", () => {
+  it("copies the words, points, proof, steps and who, as a new task", () => {
+    const prefill = taskDuplicateOf(
+      row({
+        description: "Mop too.",
+        proof_kind: "photo",
+        subtasks: [
+          { id: "s1", title: "Sweep", done: true },
+          { id: "s2", title: "Mop", done: false },
+        ],
+      }),
+      [],
+      NOW,
+    );
+    expect(prefill).toEqual({
+      title: "Sweep the porch",
+      description: "Mop too.",
+      who: { kind: "person", userId: "me" },
+      pointsInput: "5",
+      proofKind: "photo",
+      subtasks: ["Sweep", "Mop"],
+      due: { kind: "date", date: "2026-11-20" },
+      dueTime: null,
+    });
+  });
+
+  it("falls back to Today for a day that has gone", () => {
+    expect(
+      taskDuplicateOf(row({ due_date: "2026-11-01" }), [], NOW).due,
+    ).toEqual(DEFAULT_DUE_CHOICE);
+  });
+
+  it("keeps today but drops a time already passed, so New task opens ready to create", () => {
+    // NOW is noon on Nov 18; due at 9 that morning, and at 6 that evening.
+    const at = (hour: number) => new Date(2026, 10, 18, hour, 0).toISOString();
+    const passed = taskDuplicateOf(
+      row({ due_date: "2026-11-18", due_at: at(9) }),
+      [],
+      NOW,
+    );
+    expect(passed.due).toEqual({ kind: "date", date: "2026-11-18" });
+    expect(passed.dueTime).toBeNull();
+    const ahead = taskDuplicateOf(
+      row({ due_date: "2026-11-18", due_at: at(18) }),
+      [],
+      NOW,
+    );
+    expect(ahead.dueTime).toBe("18:00");
+  });
+
+  it("sends a group's copy to the group again", () => {
+    const everyone = row({
+      group_id: "g1",
+      group: { audience: "everyone", total: 3, done: 0, confirmed: 0 },
+    });
+    expect(duplicateWho(everyone, [])).toEqual({
+      kind: "each",
+      target: { kind: "chapter" },
+    });
+    const role = row({
+      group_id: "g1",
+      group: { audience: "role", target_id: "r1", total: 3 },
+    });
+    expect(duplicateWho(role, [])).toEqual({
+      kind: "each",
+      target: { kind: "role", id: "r1" },
+    });
+    const people = row({
+      group_id: "g1",
+      group: { audience: "people", total: 2 },
+    });
+    expect(
+      duplicateWho(people, [
+        row({ id: "a", assignee_id: "u1", group_id: "g1" }),
+        row({ id: "b", assignee_id: "u2", group_id: "g1" }),
+      ]),
+    ).toEqual({
+      kind: "each",
+      target: { kind: "people", userIds: ["u1", "u2"] },
+    });
   });
 });
 

@@ -70,6 +70,40 @@ export function draftFromEvent(target: EventEditTarget): NewEventDraft {
 }
 
 /**
+ * New event, filled in from an event for its long-press Duplicate (#5492),
+ * as Apple Calendar's and Fantastical's Duplicate copy one: everything the
+ * form holds, as a one-time event (repeating it is the officer's choice in
+ * the form). An event that has started moves on by whole weeks to its next
+ * same weekday and hour, keeping its length, since the form refuses a start
+ * that has passed.
+ */
+export function duplicateEventTemplate(
+  event: EventDetail,
+  now: Date,
+): NewEventDraft {
+  const draft = draftFromEvent({ event, seriesRule: null, parent: null });
+  const { start, end } = draft;
+  if (!start || !end || Number.isNaN(start.getTime()) || start > now) {
+    return draft;
+  }
+  const length = end.getTime() - start.getTime();
+  // Whole weeks by the calendar, so a clock change between keeps the hour,
+  // the jump first and then a week at a time until it is ahead: a jump
+  // counted in milliseconds can land an hour short across a spring-forward.
+  const weeks = Math.floor(
+    (now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
+  );
+  const moved = new Date(start);
+  moved.setDate(moved.getDate() + 7 * weeks);
+  while (moved <= now) moved.setDate(moved.getDate() + 7);
+  return {
+    ...draft,
+    start: moved,
+    end: new Date(moved.getTime() + Math.max(length, 0)),
+  };
+}
+
+/**
  * The draft as a patch of what changed, or the reasons it can't be saved.
  *
  * The create rules apply, with one difference: an event already under way

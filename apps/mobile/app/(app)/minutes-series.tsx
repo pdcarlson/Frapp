@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   seriesCadenceLabel,
-  useMeeting,
   useMeetings,
   useMemberDisplayNames,
+  useSeriesOpenActionItems,
+  type SeriesOpenActionItems,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { SignetTokens } from "@repo/theme/signet";
@@ -13,8 +14,8 @@ import {
   MEETING_COPY,
   MEETING_LIST_COPY,
   isBetaOffModule,
+  TASK_AUDIENCE_COPY,
   meetingDueLabel,
-  readMeetingContent,
 } from "@repo/validation";
 import type { BackTarget } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
@@ -36,19 +37,18 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const BACK_TO_MINUTES: BackTarget = { label: "Minutes", href: "/minutes" };
 
-/** How many of a series' latest posted minutes the action items come from. */
-export const SERIES_ACTION_SOURCES = 3;
-
 /**
  * One repeating meeting's minutes (#5290), opened from the Minutes list's
- * Series row: its meetings by date, and the action items its latest minutes
- * set, which is the question a weekly meeting asks ("what did we say we'd
- * do?"). Granola keeps a recurring meeting's earlier notes beside the new
- * one in the same spirit.
+ * Series row: the action items still open across all its posted minutes,
+ * newest meeting first, then its meetings by date. That is the question a
+ * weekly meeting asks ("what did we say we'd do?"); Granola keeps a recurring
+ * meeting's earlier notes beside the new one in the same spirit.
  *
- * Action items carry no done state yet, so these are the items of the latest
- * {@link SERIES_ACTION_SOURCES} posted minutes, newest first, rather
- * than "still open" ones (#5482 decides how one is marked done).
+ * Open is Tasks' answer (#5482; Paul's pick, 2026-11-18): an item is open
+ * until the suggested task it became is done, and an item nobody made a task
+ * of stays open. The server answers that for the whole series in one read
+ * (`GET /v1/meetings/series/:key/open-action-items`), from each minutes'
+ * content and its tasks together.
  */
 export default function MinutesSeriesScreen() {
   if (isBetaOffModule("meetings")) return <Redirect href="/you" />;
@@ -60,7 +60,8 @@ function MinutesSeriesBody() {
   const params = useLocalSearchParams<{ key?: string | string[] }>();
   const key = Array.isArray(params.key) ? params.key[0] : (params.key ?? "");
   const meetingsQuery = useMeetings();
-  const refresh = useRefetchAll([meetingsQuery]);
+  const openQuery = useSeriesOpenActionItems(key || null);
+  const refresh = useRefetchAll([meetingsQuery, openQuery]);
   // The clock as the screen opened: groups and times stay put while it is open.
   const [now] = useState(Date.now);
   const rows: MinutesListRow[] = seriesRows(meetingsQuery.data ?? [], key);
@@ -104,10 +105,9 @@ function MinutesSeriesBody() {
     newest.event_start_time,
     rows.map((row) => row.event_start_time),
   );
-  const latest = rows
-    .filter((row) => row.status === "posted")
-    .slice(0, SERIES_ACTION_SOURCES);
-  const sources = latest.filter((row) => row.action_item_count > 0);
+  const hasItems = rows.some(
+    (row) => row.status === "posted" && row.action_item_count > 0,
+  );
   const years = new Map<number, MinutesListRow[]>();
   for (const row of rows) {
     const year = new Date(row.event_start_time).getFullYear();
@@ -123,21 +123,12 @@ function MinutesSeriesBody() {
         .join(" · ")}
       refresh={refresh}
     >
-      {latest.length > 0 ? (
-        <>
-          <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
-          {sources.length > 0 ? (
-            sources.map((source) => (
-              <SourceActionItems
-                key={source.id}
-                id={source.id}
-                day={minutesRowTime(source.event_start_time, now)}
-              />
-            ))
-          ) : (
-            <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>
-          )}
-        </>
+      {hasItems ? (
+        <OpenActionItems
+          open={openQuery.data}
+          pending={openQuery.isPending}
+          now={now}
+        />
       ) : null}
       {[...years.entries()].map(([year, members]) => (
         <View key={year}>
@@ -170,17 +161,26 @@ function MinutesSeriesBody() {
 }
 
 /**
- * One posted minutes' action items, as their own card: what, who, when it's
- * due, and from when. A row's shape while they load; a line if they can't.
+ * The series' open action items: one card per minutes that still has some,
+ * newest first, each item with who, when it's due, how a task for everyone
+ * is going, and from when. A row's shape while they load; a line if they
+ * can't; a line once none is open.
  */
-function SourceActionItems({ id, day }: { id: string; day: string }) {
+function OpenActionItems({
+  open,
+  pending,
+  now,
+}: {
+  open: SeriesOpenActionItems[] | undefined;
+  pending: boolean;
+  now: number;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const names = useMemberDisplayNames();
-  const query = useMeeting(id);
-  const meeting = query.data;
-  if (!meeting) {
-    return query.isPending ? (
+  let body: ReactNode;
+  if (!open) {
+    body = pending ? (
       <ListSection>
         <ListRowSkeleton index={0} description />
       </ListSection>
@@ -189,30 +189,50 @@ function SourceActionItems({ id, day }: { id: string; day: string }) {
         {MEETING_LIST_COPY.loadFailedTitle}
       </InlineNote>
     );
+  } else if (open.length === 0) {
+    body = <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>;
+  } else {
+    body = open.map((source) => {
+      const day = minutesRowTime(source.event_start_time, now);
+      return (
+        <ListSection key={source.meeting_id}>
+          {source.items.map((item) => (
+            <View
+              key={`${source.meeting_id}-${item.index}`}
+              style={styles.item}
+            >
+              <Text style={styles.text}>{item.text}</Text>
+              <Text style={styles.meta}>
+                {[
+                  item.owner_user_id
+                    ? memberLabel(
+                        names.nameFor(item.owner_user_id),
+                        item.owner_user_id,
+                      )
+                    : MEETING_LIST_COPY.noOwner,
+                  item.due_date ? meetingDueLabel(item.due_date) : null,
+                  item.group
+                    ? TASK_AUDIENCE_COPY.progress(
+                        item.group.done,
+                        item.group.total,
+                      )
+                    : null,
+                  MEETING_LIST_COPY.seriesActionsFrom(day),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </View>
+          ))}
+        </ListSection>
+      );
+    });
   }
-  const items = readMeetingContent(meeting.content).action_items;
   return (
-    <ListSection>
-      {items.map((item, index) => (
-        <View key={`${id}-${index}`} style={styles.item}>
-          <Text style={styles.text}>{item.text}</Text>
-          <Text style={styles.meta}>
-            {[
-              item.owner_user_id
-                ? memberLabel(
-                    names.nameFor(item.owner_user_id),
-                    item.owner_user_id,
-                  )
-                : MEETING_LIST_COPY.noOwner,
-              item.due_date ? meetingDueLabel(item.due_date) : null,
-              MEETING_LIST_COPY.seriesActionsFrom(day),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </Text>
-        </View>
-      ))}
-    </ListSection>
+    <>
+      <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
+      {body}
+    </>
   );
 }
 

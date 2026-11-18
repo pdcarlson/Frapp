@@ -130,6 +130,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now give a task to everyone in a committee or group, or to a few people at once, and put a task up for grabs so the first person to claim it gets it.",
       "Drafted minutes now list last meeting's open action items, each marked reported done, carried over, or not mentioned for you to confirm, and ask about usual reports missing from tonight's notes.",
       "A task suggested from the minutes can now go to a committee, a few people, or up for grabs, with the same picker as the Tasks page.",
+      "Minutes now open with a TL;DR: a few short lines saying what was decided, what you need to do and by when, and what's coming up.",
     ],
     web: [
       "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",
@@ -145,6 +146,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The top of Activity now shows the one thing waiting on you, like a meeting tonight, a mention or a sign-up, with the next few beside it.",
       "After time away, the top of Chat shows the channels with something new since you left, with your mentions first.",
       "Long-pressing a message opens its menu where the keyboard would be, so the message stays in view above it, highlighted.",
+      "Tapping a task now opens it as its own page with its steps, proof and history, and officers can take people out of a task sent to everyone.",
+      "A repeating meeting's series screen now lists only the action items still open across all its minutes, and an item drops off once the task it became is done.",
+      "Press and hold a task or an event to mark it done, edit it, hand it to someone else, duplicate it or delete it, with each choice shown only to people allowed to use it.",
     ],
   },
   {

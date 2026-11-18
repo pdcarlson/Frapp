@@ -12602,6 +12602,55 @@
         ]
       }
     },
+    "/v1/meetings/series/{key}/open-action-items": {
+      "get": {
+        "operationId": "MeetingActionItemTasksController_seriesOpen_v1",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesOpenActionItemsDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The action items still open across one repeating meeting’s posted minutes, newest first: open until the task each became is done (#5482)",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/ai/consent": {
       "get": {
         "description": "The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.",
@@ -31025,6 +31074,70 @@
           "index",
           "done",
           "group"
+        ]
+      },
+      "OpenActionItemDto": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The action item’s place in its minutes’ list, from 0."
+          },
+          "text": {
+            "type": "string"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "description": "A calendar day, `YYYY-MM-DD`."
+          },
+          "group": {
+            "nullable": true,
+            "description": "A task for everyone: how many of its copies are done.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActionItemTaskGroupDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "index",
+          "text",
+          "owner_user_id",
+          "due_date",
+          "group"
+        ]
+      },
+      "SeriesOpenActionItemsDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpenActionItemDto"
+            }
+          }
+        },
+        "required": [
+          "meeting_id",
+          "event_start_time",
+          "items"
         ]
       },
       "AiConsentSheetProviderDto": {

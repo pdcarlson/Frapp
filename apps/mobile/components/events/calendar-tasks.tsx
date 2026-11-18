@@ -17,6 +17,11 @@ import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
 import { Frame, paint } from "@/components/glyph-recipe";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -26,7 +31,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * stands, in the lead tile an event's row has (#4679). An empty ring is
  * still to do (red when overdue), a ring with a check is done and waiting
  * on an officer, a filled green check is confirmed. Rules and words:
- * `@repo/hooks/calendar-tasks`.
+ * `@repo/hooks/calendar-tasks`. A long press opens the task's menu
+ * (`useCalendarTaskMenu`, #5492).
  */
 
 function TaskMark({
@@ -129,17 +135,22 @@ function BirthdayRow({
   );
 }
 
+/** A task's long-press menu on the Calendar (`useCalendarTaskMenu`). */
+export type CalendarTaskMenuFor = (item: CalendarTask) => ItemMenuHandle | null;
+
 /** A task or a birthday under the picked day. */
 export function CalendarTaskRow({
   item,
   isFirst,
   nameOf,
   onOpenTask,
+  menuFor,
 }: {
   item: CalendarItem;
   isFirst: boolean;
   nameOf: (userId: string) => string;
   onOpenTask: (taskId: string) => void;
+  menuFor?: CalendarTaskMenuFor;
 }) {
   if (item.kind === "birthdays") {
     return <BirthdayRow item={item} isFirst={isFirst} />;
@@ -150,25 +161,38 @@ export function CalendarTaskRow({
       isFirst={isFirst}
       nameOf={nameOf}
       onOpenTask={onOpenTask}
+      menu={menuFor?.(item) ?? null}
     />
   );
 }
 
 /**
- * One task under the picked day. The member's own opens it on the Tasks
- * tab; one they assigned opens in place to list each assignee and where
- * they stand, since that is what an officer checks it for.
+ * The task a row opens: the member's own, or the one copy of a task they
+ * gave one person. A row for several copies opens in place instead.
+ */
+function openedTaskId(item: CalendarTask): string | null {
+  if (item.kind === "mine") return item.taskId;
+  return item.assignees.length === 1 ? item.assignees[0]!.taskId : null;
+}
+
+/**
+ * One task under the picked day. The member's own opens the task's screen,
+ * as one they gave a single person does (#5492); one they gave several opens
+ * in place to list each assignee and where they stand, since that is what an
+ * officer checks it for. A long press opens its menu.
  */
 function TaskRow({
   item,
   isFirst,
   nameOf,
   onOpenTask,
+  menu,
 }: {
   item: CalendarTask;
   isFirst: boolean;
   nameOf: (userId: string) => string;
   onOpenTask: (taskId: string) => void;
+  menu: ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const rowStyles = createEventRowStyles(tokens);
@@ -182,6 +206,7 @@ function TaskRow({
         ? `${nameOf(item.assignees[0]!.userId)} · ${item.progress}`
         : `Assigned by you · ${item.progress}`;
   const canExpand = item.kind === "assigned" && item.assignees.length > 1;
+  const opens = openedTaskId(item);
 
   return (
     <View>
@@ -189,18 +214,19 @@ function TaskRow({
         accessibilityRole="button"
         accessibilityLabel={calendarTaskAccessibleLabel(item)}
         accessibilityHint={
-          item.kind === "mine"
-            ? "Opens it on Tasks."
+          opens
+            ? "Opens the task."
             : canExpand
               ? "Shows who it went to."
               : undefined
         }
         accessibilityState={canExpand ? { expanded } : undefined}
-        disabled={item.kind === "assigned" && !canExpand}
         onPress={() => {
-          if (item.kind === "mine") onOpenTask(item.taskId);
+          if (opens) onOpenTask(opens);
           else if (canExpand) setExpanded((open) => !open);
         }}
+        onLongPress={longPressOf(menu)}
+        {...itemMenuAccessibility(menu)}
         style={[rowStyles.leadRow, isFirst ? null : rowStyles.flatDivider]}
       >
         {/* The mark sits in the event rows' tile, so a day's events and
@@ -238,7 +264,7 @@ function TaskRow({
             direction={expanded ? "down" : "right"}
             color={tokens.color.text.mutedForeground}
           />
-        ) : item.kind === "mine" ? (
+        ) : opens ? (
           // It opens the task's screen, so it draws the chevron of a row
           // that opens.
           <ForwardGlyph color={tokens.color.text.mutedForeground} />
@@ -282,12 +308,20 @@ function TaskRow({
 export function CalendarTaskChip({
   item,
   onOpenTask,
+  menuFor,
 }: {
   item: CalendarItem;
   onOpenTask: (taskId: string) => void;
+  menuFor?: CalendarTaskMenuFor;
 }) {
   if (item.kind === "birthdays") return <BirthdayChip item={item} />;
-  return <TaskChip item={item} onOpenTask={onOpenTask} />;
+  return (
+    <TaskChip
+      item={item}
+      onOpenTask={onOpenTask}
+      menu={menuFor?.(item) ?? null}
+    />
+  );
 }
 
 /** A birthday in the All day strip (#4959): the cake and the name. */
@@ -311,24 +345,27 @@ function BirthdayChip({ item }: { item: CalendarBirthday }) {
 function TaskChip({
   item,
   onOpenTask,
+  menu,
 }: {
   item: CalendarTask;
   onOpenTask: (taskId: string) => void;
+  menu: ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const done = item.state === "waiting" || item.state === "confirmed";
+  const opens = openedTaskId(item);
   return (
     <Pressable
-      accessibilityRole={item.kind === "mine" ? "button" : "text"}
+      accessibilityRole={opens || menu ? "button" : "text"}
       accessibilityLabel={calendarTaskAccessibleLabel(item)}
-      accessibilityHint={
-        item.kind === "mine" ? "Opens it on Tasks." : undefined
-      }
-      disabled={item.kind !== "mine"}
+      accessibilityHint={opens ? "Opens the task." : undefined}
+      disabled={!opens && !menu}
       onPress={() => {
-        if (item.kind === "mine") onOpenTask(item.taskId);
+        if (opens) onOpenTask(opens);
       }}
+      onLongPress={longPressOf(menu)}
+      {...itemMenuAccessibility(menu)}
       style={({ pressed }) => [
         styles.chip,
         pressed ? { backgroundColor: tokens.color.surface.card } : null,

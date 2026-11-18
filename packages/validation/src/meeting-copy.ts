@@ -142,9 +142,9 @@ export const MEETING_LIST_COPY = {
     count === 1 ? "1 meeting" : `${count} meetings`,
   lastOn: (day: string) => `last ${day}`,
   /** The series screen (#5290). */
-  seriesActions: "Action items",
+  seriesActions: "Open action items",
   seriesActionsFrom: (day: string) => `from ${day}`,
-  seriesActionsNone: "No action items in the latest minutes.",
+  seriesActionsNone: "Nothing open from these meetings.",
   noOwner: "Nobody named",
   /** Present, Late and Excused: who checked in to the meeting's event. */
   present: "Present",

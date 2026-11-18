@@ -1,5 +1,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo } from "react";
+import { StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import { EVENTS_COPY } from "@repo/validation";
@@ -24,6 +25,8 @@ import { EventsTimeGrid } from "@/components/events/events-time-grid";
 import { useCalendarItemsByDay } from "@/lib/events/calendar-items";
 import { calendarHourStart } from "@/lib/events/create-event";
 import { useNewEventAt } from "@/lib/events/use-new-event-at";
+import { useEventMenu } from "@/lib/events/use-event-menu";
+import { useCalendarTaskMenu } from "@/lib/tasks/use-task-menu";
 import { parseCalendarDayParam } from "@/lib/events/calendar-day";
 import { selectAllEventRows } from "@/lib/events/select";
 
@@ -63,6 +66,9 @@ export default function CalendarDayScreen() {
   const refresh = useRefetchAll([eventsQuery, tasksQuery, birthdaysQuery]);
 
   const newEvent = useNewEventAt(now);
+  // Long-press menus on the grid's events and the All day strip (#5492).
+  const eventMenu = useEventMenu();
+  const taskMenu = useCalendarTaskMenu();
 
   const title = day.toLocaleDateString(undefined, {
     weekday: "long",
@@ -104,6 +110,8 @@ export default function CalendarDayScreen() {
         onOpenTask={(taskId) =>
           router.push({ pathname: "/task-details", params: { id: taskId } })
         }
+        eventMenuFor={eventMenu.menuFor}
+        taskMenuFor={taskMenu.menuForCalendarTask}
         canCreate={canCreateEvents}
         onCreateAt={(hourDay, hour) => {
           const start = calendarHourStart(hourDay, hour, now);
@@ -114,9 +122,18 @@ export default function CalendarDayScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_EVENTS} title={title} refresh={refresh}>
-      {renderBody()}
-      {newEvent.sheet}
-    </ScreenShell>
+    // The task menu's Undo floats over the screen, so it sits beside the
+    // shell rather than in its scroll, as the board's does.
+    <View style={styles.frame}>
+      <ScreenShell back={BACK_TO_EVENTS} title={title} refresh={refresh}>
+        {renderBody()}
+        {newEvent.sheet}
+        {eventMenu.host}
+        {taskMenu.host}
+      </ScreenShell>
+      {taskMenu.undoBar}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({ frame: { flex: 1 } });

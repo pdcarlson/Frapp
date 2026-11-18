@@ -12,6 +12,11 @@ import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
+import {
   formatDueSubtitle,
   formatPointsChip,
   isDueUrgent,
@@ -36,7 +41,8 @@ import { markDoneLabel } from "@/lib/tasks/task-photos";
  * Only the checkbox changes the task; a tap anywhere else on the row opens the
  * task's own screen (owner audit 2026-11-06, P6.1; a sheet until #5492). The
  * whole row used to be the checkbox, so a stray tap while scrolling marked a
- * task done. The box
+ * task done. A long press opens the task's menu (`useTaskMenu`, #5492). The
+ * box
  * unchecks too, while no officer has confirmed it, so a mis-tap is one tap to
  * take back, as a checked reminder is.
  *
@@ -77,6 +83,11 @@ export interface TaskRowProps {
   isPending?: boolean;
   /** The first row of its group draws no hairline above it. */
   isFirst?: boolean;
+  /**
+   * The task's long-press menu (#5492), whose actions a screen reader is
+   * offered by name too. Omitted, the row has no long press.
+   */
+  menu?: ItemMenuHandle | null;
 }
 
 /** The checkbox's hit area past its drawn 24pt, to a 44pt target. */
@@ -204,6 +215,24 @@ function PointsChip({
   );
 }
 
+/**
+ * The row's named actions: the box's move, then the menu's (one Mark done,
+ * not two), and its long press.
+ */
+function rowActions(
+  menu: ItemMenuHandle | null | undefined,
+  onToggle: (() => void) | undefined,
+  toggleLabel: string,
+) {
+  return {
+    onLongPress: longPressOf(menu),
+    ...itemMenuAccessibility(
+      menu,
+      onToggle ? [{ name: "toggle", label: toggleLabel, run: onToggle }] : [],
+    ),
+  };
+}
+
 export function TaskRow({
   row,
   now,
@@ -211,6 +240,7 @@ export function TaskRow({
   onOpen,
   isPending = false,
   isFirst = false,
+  menu,
 }: TaskRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -291,13 +321,8 @@ export function TaskRow({
       accessibilityHint="Opens the task."
       // The box's move as a named action, so it is one swipe-up away on
       // VoiceOver and in TalkBack's actions menu, rather than the row's
-      // default tap, which opens the task.
-      accessibilityActions={
-        onToggle ? [{ name: "toggle", label: facts.toggleLabel }] : undefined
-      }
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "toggle") onToggle?.();
-      }}
+      // default tap, which opens the task; then the menu's.
+      {...rowActions(menu, onToggle, facts.toggleLabel)}
       onPress={onOpen}
       style={rowStyle}
     >
@@ -320,6 +345,7 @@ export function TaskTile({
   onToggle,
   onOpen,
   isPending = false,
+  menu,
 }: Omit<TaskRowProps, "isFirst" | "onOpen"> & { onOpen: () => void }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -333,12 +359,7 @@ export function TaskTile({
       accessibilityState={{ checked: row.isDone, busy: isPending }}
       accessibilityLabel={facts.label}
       accessibilityHint="Opens the task."
-      accessibilityActions={
-        onToggle ? [{ name: "toggle", label: facts.toggleLabel }] : undefined
-      }
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "toggle") onToggle?.();
-      }}
+      {...rowActions(menu, onToggle, facts.toggleLabel)}
       onPress={onOpen}
       style={[
         styles.tile,

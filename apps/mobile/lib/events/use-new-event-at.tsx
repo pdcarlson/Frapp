@@ -8,14 +8,17 @@ import { emptyEventDraft, type NewEventDraft } from "@/lib/events/create-event";
  * New event, filled in to start at a time the screen picks: the Calendar's
  * header + (the picked day, #5113) and the Day grid's tap on an hour
  * (#4818). `open(start)` presents a fresh sheet (a `null` start is the
- * sheet's own default); render `sheet` once in the screen. One sheet per
- * press (`key`), since a template seeds the draft once.
+ * sheet's own default); `openWith(template)` presents one filled in from a
+ * whole draft (an event's long-press Duplicate, #5492). Render `sheet` once
+ * in the screen. One sheet per press (`key`), since a template seeds the
+ * draft once.
  *
  * The new event landing on the month or the grid is the visible
  * confirmation; a screen reader hears it said.
  */
 export function useNewEventAt(now: Date): {
   open: (start: NewEventDraft["start"]) => void;
+  openWith: (template: NewEventDraft) => void;
   sheet: ReactNode;
 } {
   const ref = useRef<BottomSheetModal>(null);
@@ -27,11 +30,13 @@ export function useNewEventAt(now: Date): {
     if (createAt) ref.current?.present();
   }, [createAt]);
 
-  const open = (start: NewEventDraft["start"]) =>
+  const openWith = (template: NewEventDraft) =>
     setCreateAt((previous) => ({
       key: (previous?.key ?? 0) + 1,
-      template: { ...emptyEventDraft(), start },
+      template,
     }));
+  const open = (start: NewEventDraft["start"]) =>
+    openWith({ ...emptyEventDraft(), start });
 
   const sheet = createAt ? (
     <NewEventSheet
@@ -45,5 +50,5 @@ export function useNewEventAt(now: Date): {
     />
   ) : null;
 
-  return { open, sheet };
+  return { open, openWith, sheet };
 }

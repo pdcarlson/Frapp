@@ -1,20 +1,5 @@
 import { useRef, useState } from "react";
-import {
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useReducedMotion,
-  withTiming,
-} from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   CHANNEL_LEVEL_DETAIL,
   CHANNEL_NOTIFICATIONS_LABEL,
@@ -36,7 +21,7 @@ import {
   type ChatBackgroundKey,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
-import { GlassSurface } from "@/components/glass-surface";
+import { GlassMenu, glassMenuRowStyles } from "@/components/glass-menu";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
 import { useFocusOnOpen } from "@/lib/overlay";
@@ -92,11 +77,6 @@ export interface ChannelActionsMenuTarget {
   canSetBackground?: boolean;
 }
 
-/** The menu's width, and the gap it keeps from the press and the screen edge. */
-const MENU_WIDTH = 260;
-const EDGE = 16;
-const GAP = 12;
-
 /**
  * A channel row's long-press menu on s04 (owner, 2026-11-06): the actions web
  * offers on a right-click, in our own glass menu rather than the system alert
@@ -110,7 +90,9 @@ const GAP = 12;
  *
  * No title bar and no Cancel row (components.md § Chrome weight): a quiet
  * caption names the channel, and a tap outside, Android back and VoiceOver's
- * escape gesture close it. A pick closes it too.
+ * escape gesture close it. A pick closes it too. The glass, its place beside
+ * the press and its motion are `GlassMenu`'s, which a task's and an event's
+ * long press open too (`item-actions-menu.tsx`, #5492).
  */
 export function ChannelActionsMenu({
   target,
@@ -161,13 +143,12 @@ export function ChannelActionsMenu({
   };
 
   return (
-    <Modal
+    <GlassMenu
       visible={target !== null}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={onClose}
+      pageY={target?.pageY ?? 0}
+      onClose={onClose}
       onDismiss={runAfterClose}
+      backdropTestID="channel-actions-backdrop"
     >
       {target ? (
         <MenuBody
@@ -187,7 +168,7 @@ export function ChannelActionsMenu({
           writeBlockedReason={writeBlockedReason}
         />
       ) : null}
-    </Modal>
+    </GlassMenu>
   );
 }
 
@@ -215,9 +196,6 @@ function MenuBody({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens);
-  const reduceMotion = useReducedMotion();
-  const { height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const [view, setView] = useState<
     "menu" | "levels" | "display" | "background"
   >("menu");
@@ -235,19 +213,8 @@ function MenuBody({
   const displayLocked = useChannelDisplayLocked(target.channelId);
   const showLockToggle =
     target.canSetDisplayLock === true && onSetDisplayLock !== undefined;
-  const [menuHeight, setMenuHeight] = useState<number | null>(null);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
   useFocusOnOpen(titleRef, true);
-
-  // Below the press when it fits, above it when it doesn't, and never past
-  // the safe area either way.
-  const top = (() => {
-    if (menuHeight === null) return target.pageY + GAP;
-    const floor = height - insets.bottom - EDGE - menuHeight;
-    const below = target.pageY + GAP;
-    if (below <= floor) return below;
-    return Math.max(insets.top + EDGE, target.pageY - GAP - menuHeight);
-  })();
 
   // A pick while the level is unknown would overwrite a level the member
   // can't see, and one offline would only fail, so both lock the row.
@@ -304,290 +271,260 @@ function MenuBody({
     { key: "display", divided: target.actions.member.length > 0 },
     // Beside Display, as on web's channel menu; it changes the channel for
     // everyone, so only a manager sees it.
-    ...(showBackground
-      ? [{ key: "background" as const, divided: true }]
-      : []),
+    ...(showBackground ? [{ key: "background" as const, divided: true }] : []),
     // The officer's rows sit under a thicker break, so Delete is never the
     // row right under the thumb that pressed.
     ...target.actions.officer.map((key) => ({ key, divided: true })),
   ];
 
   return (
-    <View
-      style={StyleSheet.absoluteFill}
-      accessibilityViewIsModal
-      onAccessibilityEscape={onClose}
-    >
-      <Animated.View
-        entering={FadeIn.duration(160)}
-        exiting={FadeOut.duration(120)}
-        style={StyleSheet.absoluteFill}
-      >
-        <Pressable
-          testID="channel-actions-backdrop"
-          accessible={false}
-          importantForAccessibility="no"
-          onPress={onClose}
-          style={[StyleSheet.absoluteFill, styles.scrim]}
-        />
-      </Animated.View>
-      <Animated.View
-        entering={reduceMotion ? FadeIn.duration(120) : popIn}
-        onLayout={(event) => setMenuHeight(event.nativeEvent.layout.height)}
-        style={[styles.anchor, { top, opacity: menuHeight === null ? 0 : 1 }]}
-      >
-        <GlassSurface style={styles.menu}>
-          {view === "menu" ? (
-            <View accessibilityRole="menu">
-              <Text ref={titleRef} numberOfLines={1} style={styles.caption}>
-                {target.name}
-              </Text>
-              {rows.map(({ key, divided }, index) => {
-                const destructive = key === "delete";
-                const firstOfficer =
-                  index ===
-                  target.actions.member.length + 1 + (showBackground ? 1 : 0);
-                // Background writes to the server too, so offline locks it with
-                // the same reason (a photo would otherwise be picked and
-                // shrunk only to fail at the upload).
-                const blockedReason =
-                  key === "notifications"
-                    ? levelsBlockedReason
-                    : key === "background"
-                      ? writeBlockedReason
-                      : null;
-                const disabled = blockedReason !== null;
-                const detail =
-                  key === "display"
-                    ? channelDensityDetail(densityOverride, displayLocked)
-                    : key === "background"
-                      ? background.data
-                        ? channelBackground
-                          ? CHAT_BACKGROUND_LABELS[channelBackground]
-                          : "Chapter default"
-                        : null
-                      : key === "notifications" && target.level
-                      ? CHANNEL_LEVEL_DETAIL[target.level]
-                      : null;
-                return (
-                  <Pressable
-                    key={key}
-                    accessibilityRole="menuitem"
-                    accessibilityLabel={
-                      detail ? `${label(key)}, ${detail}` : label(key)
-                    }
-                    accessibilityHint={blockedReason ?? undefined}
-                    accessibilityState={disabled ? { disabled } : undefined}
-                    disabled={disabled}
-                    onPress={() => run(key)}
-                    style={({ pressed }) => [
-                      styles.row,
-                      divided ? styles.divided : null,
-                      firstOfficer ? styles.officerBreak : null,
-                      pressed ? styles.pressed : null,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.rowLabel,
-                        destructive ? styles.destructive : null,
-                        disabled ? styles.disabledLabel : null,
-                      ]}
-                    >
-                      {label(key)}
-                    </Text>
-                    {key === "notifications" ||
-                    key === "display" ||
-                    key === "background" ? (
-                      <View style={styles.trailing}>
-                        {detail ? (
-                          <Text style={styles.detail}>{detail}</Text>
-                        ) : null}
-                        <ChevronGlyph
-                          direction="right"
-                          color={tokens.color.text.mutedForeground}
-                        />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : view === "background" ? (
-            <BackgroundView
-              name={target.name}
-              value={background.data ? channelBackground : undefined}
-              loaded={background.data !== undefined || background.isError}
-              onBack={() => setView("menu")}
-              onPick={(pick) => {
-                // Re-picking a built-in already in place writes nothing; a
-                // photo always opens the library, to replace it. Only when the
-                // setting was actually read: after a failed read nothing is
-                // known, so every pick writes.
-                if (
-                  background.data !== undefined &&
-                  pick !== "photo" &&
-                  pick === channelBackground
-                ) {
-                  onClose();
-                  return;
-                }
-                onSetBackground?.(target.channelId, pick);
-              }}
-            />
-          ) : view === "display" ? (
-            <View accessibilityRole="menu">
+    <>
+      {view === "menu" ? (
+        <View accessibilityRole="menu">
+          <Text ref={titleRef} numberOfLines={1} style={styles.caption}>
+            {target.name}
+          </Text>
+          {rows.map(({ key, divided }, index) => {
+            const destructive = key === "delete";
+            const firstOfficer =
+              index ===
+              target.actions.member.length + 1 + (showBackground ? 1 : 0);
+            // Background writes to the server too, so offline locks it with
+            // the same reason (a photo would otherwise be picked and
+            // shrunk only to fail at the upload).
+            const blockedReason =
+              key === "notifications"
+                ? levelsBlockedReason
+                : key === "background"
+                  ? writeBlockedReason
+                  : null;
+            const disabled = blockedReason !== null;
+            const detail =
+              key === "display"
+                ? channelDensityDetail(densityOverride, displayLocked)
+                : key === "background"
+                  ? background.data
+                    ? channelBackground
+                      ? CHAT_BACKGROUND_LABELS[channelBackground]
+                      : "Chapter default"
+                    : null
+                  : key === "notifications" && target.level
+                    ? CHANNEL_LEVEL_DETAIL[target.level]
+                    : null;
+            return (
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Back to ${target.name}`}
-                onPress={() => setView("menu")}
+                key={key}
+                accessibilityRole="menuitem"
+                accessibilityLabel={
+                  detail ? `${label(key)}, ${detail}` : label(key)
+                }
+                accessibilityHint={blockedReason ?? undefined}
+                accessibilityState={disabled ? { disabled } : undefined}
+                disabled={disabled}
+                onPress={() => run(key)}
                 style={({ pressed }) => [
-                  styles.backRow,
+                  styles.row,
+                  divided ? styles.divided : null,
+                  firstOfficer ? styles.groupBreak : null,
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <ChevronGlyph
-                  direction="left"
-                  color={tokens.color.text.mutedForeground}
-                />
-                <Text style={styles.backLabel}>Display</Text>
-              </Pressable>
-              {showLockToggle ? (
-                <Pressable
-                  accessibilityRole="switch"
-                  accessibilityLabel={ALWAYS_FORMAL_LABEL}
-                  accessibilityState={{ checked: displayLocked }}
-                  onPress={() => {
-                    onClose();
-                    onSetDisplayLock?.(target.channelId, !displayLocked);
-                  }}
-                  style={({ pressed }) => [
-                    styles.row,
-                    styles.divided,
-                    pressed ? styles.pressed : null,
+                <Text
+                  style={[
+                    styles.rowLabel,
+                    destructive ? styles.destructive : null,
+                    disabled ? styles.disabledLabel : null,
                   ]}
                 >
-                  <Text style={styles.rowLabel}>{ALWAYS_FORMAL_LABEL}</Text>
-                  <View
-                    style={styles.check}
-                    accessibilityElementsHidden
-                    importantForAccessibility="no-hide-descendants"
-                  >
-                    {displayLocked ? (
-                      <CheckGlyph color={brand.accent} size={16} />
-                    ) : null}
-                  </View>
-                </Pressable>
-              ) : null}
-              {displayLocked ? (
-                <Text style={[styles.caption, styles.divided]}>
-                  {CHANNEL_DISPLAY_LOCKED_NOTE}
+                  {label(key)}
                 </Text>
-              ) : null}
-              {channelDensityChoices(defaultDensity).map((choice) => {
-                // Locked, the member's own pick doesn't apply here, so none
-                // is marked and none can be picked (#3787).
-                const selected =
-                  !displayLocked && choice.value === densityOverride;
-                return (
-                  <Pressable
-                    key={choice.value ?? "default"}
-                    accessibilityRole="menuitem"
-                    accessibilityLabel={choice.label}
-                    accessibilityState={{ selected, disabled: displayLocked }}
-                    disabled={displayLocked}
-                    onPress={() => {
-                      onClose();
-                      if (!selected) {
-                        setChannelDensity(target.channelId, choice.value);
-                      }
-                    }}
-                    style={({ pressed }) => [
-                      styles.row,
-                      styles.divided,
-                      pressed ? styles.pressed : null,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.rowLabel,
-                        displayLocked ? styles.disabledLabel : null,
-                      ]}
-                    >
-                      {choice.label}
-                    </Text>
-                    <View
-                      style={styles.check}
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      {selected ? (
-                        <CheckGlyph color={brand.accent} size={16} />
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
-            <View accessibilityRole="menu">
+                {key === "notifications" ||
+                key === "display" ||
+                key === "background" ? (
+                  <View style={styles.trailing}>
+                    {detail ? (
+                      <Text style={styles.detail}>{detail}</Text>
+                    ) : null}
+                    <ChevronGlyph
+                      direction="right"
+                      color={tokens.color.text.mutedForeground}
+                    />
+                  </View>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : view === "background" ? (
+        <BackgroundView
+          name={target.name}
+          value={background.data ? channelBackground : undefined}
+          loaded={background.data !== undefined || background.isError}
+          onBack={() => setView("menu")}
+          onPick={(pick) => {
+            // Re-picking a built-in already in place writes nothing; a
+            // photo always opens the library, to replace it. Only when the
+            // setting was actually read: after a failed read nothing is
+            // known, so every pick writes.
+            if (
+              background.data !== undefined &&
+              pick !== "photo" &&
+              pick === channelBackground
+            ) {
+              onClose();
+              return;
+            }
+            onSetBackground?.(target.channelId, pick);
+          }}
+        />
+      ) : view === "display" ? (
+        <View accessibilityRole="menu">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Back to ${target.name}`}
+            onPress={() => setView("menu")}
+            style={({ pressed }) => [
+              styles.backRow,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <ChevronGlyph
+              direction="left"
+              color={tokens.color.text.mutedForeground}
+            />
+            <Text style={styles.backLabel}>Display</Text>
+          </Pressable>
+          {showLockToggle ? (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel={ALWAYS_FORMAL_LABEL}
+              accessibilityState={{ checked: displayLocked }}
+              onPress={() => {
+                onClose();
+                onSetDisplayLock?.(target.channelId, !displayLocked);
+              }}
+              style={({ pressed }) => [
+                styles.row,
+                styles.divided,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.rowLabel}>{ALWAYS_FORMAL_LABEL}</Text>
+              <View
+                style={styles.check}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
+                {displayLocked ? (
+                  <CheckGlyph color={brand.accent} size={16} />
+                ) : null}
+              </View>
+            </Pressable>
+          ) : null}
+          {displayLocked ? (
+            <Text style={[styles.caption, styles.divided]}>
+              {CHANNEL_DISPLAY_LOCKED_NOTE}
+            </Text>
+          ) : null}
+          {channelDensityChoices(defaultDensity).map((choice) => {
+            // Locked, the member's own pick doesn't apply here, so none
+            // is marked and none can be picked (#3787).
+            const selected = !displayLocked && choice.value === densityOverride;
+            return (
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Back to ${target.name}`}
-                onPress={() => setView("menu")}
+                key={choice.value ?? "default"}
+                accessibilityRole="menuitem"
+                accessibilityLabel={choice.label}
+                accessibilityState={{ selected, disabled: displayLocked }}
+                disabled={displayLocked}
+                onPress={() => {
+                  onClose();
+                  if (!selected) {
+                    setChannelDensity(target.channelId, choice.value);
+                  }
+                }}
                 style={({ pressed }) => [
-                  styles.backRow,
+                  styles.row,
+                  styles.divided,
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <ChevronGlyph
-                  direction="left"
-                  color={tokens.color.text.mutedForeground}
-                />
-                <Text style={styles.backLabel}>
-                  {CHANNEL_NOTIFICATIONS_LABEL}
+                <Text
+                  style={[
+                    styles.rowLabel,
+                    displayLocked ? styles.disabledLabel : null,
+                  ]}
+                >
+                  {choice.label}
                 </Text>
+                <View
+                  style={styles.check}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                >
+                  {selected ? (
+                    <CheckGlyph color={brand.accent} size={16} />
+                  ) : null}
+                </View>
               </Pressable>
-              {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
-                const selected = option.level === target.level;
-                const label =
-                  selected && target.fromChapterLevel
-                    ? `${option.label} (your default)`
-                    : option.label;
-                return (
-                  <Pressable
-                    key={option.level}
-                    accessibilityRole="menuitem"
-                    accessibilityLabel={`${label}. ${option.description}`}
-                    accessibilityState={{ selected }}
-                    onPress={() => {
-                      onClose();
-                      if (!selected) onSetLevel(target.channelId, option.level);
-                    }}
-                    style={({ pressed }) => [
-                      styles.row,
-                      styles.divided,
-                      pressed ? styles.pressed : null,
-                    ]}
-                  >
-                    <Text style={styles.rowLabel}>{label}</Text>
-                    <View
-                      style={styles.check}
-                      accessibilityElementsHidden
-                      importantForAccessibility="no-hide-descendants"
-                    >
-                      {selected ? (
-                        <CheckGlyph color={brand.accent} size={16} />
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </GlassSurface>
-      </Animated.View>
-    </View>
+            );
+          })}
+        </View>
+      ) : (
+        <View accessibilityRole="menu">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Back to ${target.name}`}
+            onPress={() => setView("menu")}
+            style={({ pressed }) => [
+              styles.backRow,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <ChevronGlyph
+              direction="left"
+              color={tokens.color.text.mutedForeground}
+            />
+            <Text style={styles.backLabel}>{CHANNEL_NOTIFICATIONS_LABEL}</Text>
+          </Pressable>
+          {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
+            const selected = option.level === target.level;
+            const label =
+              selected && target.fromChapterLevel
+                ? `${option.label} (your default)`
+                : option.label;
+            return (
+              <Pressable
+                key={option.level}
+                accessibilityRole="menuitem"
+                accessibilityLabel={`${label}. ${option.description}`}
+                accessibilityState={{ selected }}
+                onPress={() => {
+                  onClose();
+                  if (!selected) onSetLevel(target.channelId, option.level);
+                }}
+                style={({ pressed }) => [
+                  styles.row,
+                  styles.divided,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.rowLabel}>{label}</Text>
+                <View
+                  style={styles.check}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                >
+                  {selected ? (
+                    <CheckGlyph color={brand.accent} size={16} />
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+    </>
   );
 }
 
@@ -620,7 +557,10 @@ function BackgroundView({
         accessibilityRole="button"
         accessibilityLabel={`Back to ${name}`}
         onPress={onBack}
-        style={({ pressed }) => [styles.backRow, pressed ? styles.pressed : null]}
+        style={({ pressed }) => [
+          styles.backRow,
+          pressed ? styles.pressed : null,
+        ]}
       >
         <ChevronGlyph
           direction="left"
@@ -641,59 +581,11 @@ function BackgroundView({
   );
 }
 
-/** The menu's entrance: a small lift out of the pressed row, to full size. */
-function popIn() {
-  "worklet";
-  return {
-    initialValues: { opacity: 0, transform: [{ scale: 0.92 }] },
-    animations: {
-      opacity: withTiming(1, { duration: 140 }),
-      transform: [{ scale: withTiming(1, { duration: 180 }) }],
-    },
-  };
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
-    anchor: {
-      position: "absolute",
-      left: EDGE,
-      width: MENU_WIDTH,
-    },
-    // The quick-actions panel's glass, at a menu's radius.
-    menu: { borderRadius: 22 },
-    caption: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      paddingHorizontal: tokens.spacing.md,
-      paddingTop: tokens.spacing.md,
-      paddingBottom: tokens.spacing.xs,
-    },
-    row: {
-      minHeight: 48,
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: tokens.spacing.md,
-      gap: tokens.spacing.sm,
-    },
-    // Hairlines between rows, never under the last: with no Cancel row, a
-    // closing rule would underline the menu's own edge.
-    divided: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: tokens.color.border.hairline,
-    },
-    officerBreak: {
-      borderTopWidth: 6,
-      borderTopColor: "rgba(0,0,0,0.18)",
-    },
-    pressed: { backgroundColor: "rgba(255,255,255,0.08)" },
-    rowLabel: {
-      ...typeRole(tokens.typography.role.body),
-      flex: 1,
-      color: tokens.color.text.foreground,
-    },
-    destructive: { color: tokens.color.semantic.destructiveText },
+    // Caption, rows, hairlines, the officers' break and the red, as every
+    // glass menu draws them.
+    ...glassMenuRowStyles(tokens),
     disabledLabel: { color: tokens.color.text.mutedForeground },
     trailing: {
       flexDirection: "row",

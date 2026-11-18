@@ -57,8 +57,9 @@ import { goBackTo } from "@/lib/href";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
-import type { TaskEditTarget } from "@/lib/tasks/create-task";
+import { editTargetOfRow, type TaskEditTarget } from "@/lib/tasks/create-task";
 import {
+  confirmTaskDelete,
   groupCopies,
   livePicks,
   markDoneBarLabel,
@@ -118,13 +119,21 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Mail's Edit puts a circle on each message: a confirmed copy is dimmed and
  * can't be picked, and the bar becomes one red Remove pill and a Cancel. It
  * asks first in the platform alert, since the copies are deleted and can't be
- * brought back, then `POST /v1/tasks/:id/group/remove`.
+ * brought back, then `POST /v1/tasks/:id/group/remove`. A row's long-press
+ * Remove people (#5492) pushes this screen with `select=1`, and it opens in
+ * select mode.
  */
 export default function TaskDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    select?: string | string[];
+  }>();
   const taskId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
+  // `select=1`: a row's long-press Remove people (#5492).
+  const startSelecting =
+    (Array.isArray(params.select) ? params.select[0] : params.select) === "1";
 
   const taskQuery = useTask(taskId);
   const row = useMemo(
@@ -172,15 +181,20 @@ export default function TaskDetailsScreen() {
     );
   }
 
-  return <TaskScreen row={row} styles={styles} />;
+  return (
+    <TaskScreen row={row} styles={styles} startSelecting={startSelecting} />
+  );
 }
 
 function TaskScreen({
   row,
   styles,
+  startSelecting: selectOnArrival,
 }: {
   row: TaskRowModel;
   styles: ReturnType<typeof createStyles>;
+  /** Open in Remove people's select mode, once Who has it can show. */
+  startSelecting: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -246,6 +260,20 @@ function TaskScreen({
     setSelecting(false);
     setPicked(new Set());
   };
+  // Arrived from a row's Remove people: select mode as soon as the copies
+  // are read, once, and the param cleared so a return here doesn't reopen it.
+  const arrivedSelecting = useRef(false);
+  const canStartSelecting = controls.removePeople && showPeople;
+  useEffect(() => {
+    if (!selectOnArrival || arrivedSelecting.current || !canStartSelecting) {
+      return;
+    }
+    arrivedSelecting.current = true;
+    setPeopleNote(null);
+    setPicked(new Set());
+    setSelecting(true);
+    router.setParams({ select: undefined });
+  }, [selectOnArrival, canStartSelecting, router]);
   const pick = (userId: string) =>
     setPicked((current) => {
       const next = new Set(current);
@@ -298,18 +326,8 @@ function TaskScreen({
     if (editing) editRef.current?.present();
   }, [editing]);
   const startEdit = () => {
-    if (!row.assigneeId || !row.dueDay) return;
-    setEditing({
-      id: row.id,
-      title: row.title,
-      assigneeId: row.assigneeId,
-      dueDay: row.dueDay,
-      dueAt: row.dueAt,
-      pointReward: row.pointReward,
-      storedStatus: row.storedStatus,
-      referencePhotos: row.photos.filter((photo) => photo.kind === "reference"),
-      proofKind: row.proofKind,
-    });
+    const target = editTargetOfRow(row);
+    if (target) setEditing(target);
   };
 
   // Delete, after the platform alert, then back to the board.
@@ -327,22 +345,7 @@ function TaskScreen({
     }
   };
   const confirmDelete = (everyone: boolean) =>
-    Alert.alert(
-      everyone
-        ? `Delete "${row.title}" for everyone?`
-        : `Delete "${row.title}"?`,
-      everyone
-        ? "Every member's copy goes, including ones already marked done. This can't be undone."
-        : "This can't be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: everyone ? "Delete for everyone" : "Delete task",
-          style: "destructive",
-          onPress: () => void runDelete(everyone),
-        },
-      ],
-    );
+    confirmTaskDelete(row.title, everyone, () => void runDelete(everyone));
 
   // Give it back (tasks.md § Up for grabs): the task is deleted and its
   // posting is open again, so there is nothing left here to show. It lands on
