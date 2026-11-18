@@ -105,6 +105,59 @@ describe('GoogleDriveApiClient', () => {
     ).toContain('description,parents');
   });
 
+  // #5434: what a file link is judged by, asked for and read.
+  it('reads who can open an item, whether it is trashed, and its resource key', async () => {
+    const client = new GoogleDriveApiClient(ACCOUNT);
+    withToken();
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        id: 'f',
+        name: 'Bylaws',
+        mimeType: 'application/vnd.google-apps.document',
+        permissionIds: ['anyoneWithLink', '0123'],
+        trashed: true,
+        resourceKey: '0-key',
+      }),
+    );
+
+    const item = await client.getItem('f', '0-key');
+
+    expect(item).toMatchObject({
+      permissionIds: ['anyoneWithLink', '0123'],
+      trashed: true,
+      resourceKey: '0-key',
+    });
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(new URL(String(url)).searchParams.get('fields')).toContain(
+      'permissionIds,trashed,resourceKey',
+    );
+    expect(init.headers['X-Goog-Drive-Resource-Keys']).toBe('f/0-key');
+    expect(init.headers.Authorization).toBe('Bearer token-1');
+  });
+
+  it('sends the resource key on a download and an export, and no header without one', async () => {
+    const client = new GoogleDriveApiClient(ACCOUNT);
+    withToken();
+    fetchMock
+      .mockResolvedValueOnce(new Response(new Uint8Array([1])))
+      .mockResolvedValueOnce(new Response(new Uint8Array([2])))
+      .mockResolvedValueOnce(new Response(new Uint8Array([3])));
+
+    await client.download('f', 10, '0-key');
+    await client.exportAs('g', 'application/pdf', 10, '0-key');
+    await client.download('h', 10);
+
+    expect(
+      fetchMock.mock.calls[1][1].headers['X-Goog-Drive-Resource-Keys'],
+    ).toBe('f/0-key');
+    expect(
+      fetchMock.mock.calls[2][1].headers['X-Goog-Drive-Resource-Keys'],
+    ).toBe('g/0-key');
+    expect(fetchMock.mock.calls[3][1].headers).not.toHaveProperty(
+      'X-Goog-Drive-Resource-Keys',
+    );
+  });
+
   // #5185: a code only this server can make, the same each time for one
   // chapter and folder, different for another, and none without a key.
   it('makes a stable connect code keyed by the account’s proof secret', () => {

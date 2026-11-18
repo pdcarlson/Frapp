@@ -35,6 +35,14 @@ describe('placeCitations', () => {
     expect(placed.at).toBe(end('They are due by October 15.'));
   });
 
+  it('ends a sentence after its closing bold, so a marker stays on its claim (#5429)', () => {
+    const bold = '**Dues are $50.** Pay by Friday.';
+    const [placed] = placeCitations(bold, [
+      { sourceId: 'dues', quote: 'dues are $50', at: 4 },
+    ]);
+    expect(placed.at).toBe('**Dues are $50.**'.length);
+  });
+
   it('keeps a position already at a sentence end', () => {
     const at = end('Dues are $225 per active member.');
     expect(

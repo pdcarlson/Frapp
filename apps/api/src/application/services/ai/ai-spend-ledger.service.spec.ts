@@ -88,8 +88,8 @@ describe('AiSpendLedgerService', () => {
         CALL,
         162_000,
         {
-          chapterMonthlyMicroUsd: 25_000_000,
-          memberDailyMicroUsd: 2_000_000,
+          chapterMonthlyMicroUsd: 50_000_000,
+          memberDailyMicroUsd: 10_000_000,
           platformMonthlyMicroUsd: 150_000_000,
         },
         expect.any(Date),

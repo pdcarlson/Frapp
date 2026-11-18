@@ -21,13 +21,13 @@
     "@sentry/nextjs": "^11.12.0",
     "@tailwindcss/postcss": "^4.3.5",
     "next": "^16.4.6",
-    "posthog-js": "^1.448.0",
+    "posthog-js": "^1.449.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@types/node": "^26.6.6",

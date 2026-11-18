@@ -52,7 +52,7 @@ export const QUICK_ACTION_COLUMNS = 3;
 /**
  * Every action, in the order a member who never edits the panel sees them.
  * The starting set is the first six of these the member may use
- * (`QUICK_ACTION_START`), so a President on a chapter that drafts minutes
+ * (`QUICK_ACTION_START`), so a President
  * starts with New minutes, Search, New event, New task, Invite and Message,
  * and a member whose role logs hours with Search, Message, Log hours and
  * Study. New minutes and Search lead (Paul, 2026-11-17, #5287: "there's no
@@ -109,13 +109,6 @@ export type QuickActionAccess = {
   permissions: readonly string[];
   /** The chapter's `enabled_modules`, once read. Unread counts as on. */
   enabledModules: Record<string, boolean> | null | undefined;
-  /**
-   * Whether the server drafts minutes from notes here (`useAiSurfaces`
-   * `meetingNotes`). New minutes waits on it for now: without drafting the
-   * phone has nothing to write minutes with until #5288 gives it a body to
-   * type in.
-   */
-  meetingNotes?: boolean;
 };
 
 /**
@@ -127,13 +120,11 @@ export type QuickActionAccess = {
 export function availableQuickActions({
   permissions,
   enabledModules,
-  meetingNotes = false,
 }: QuickActionAccess): QuickActionKey[] {
   const on = (key: string) => isModuleEnabled(enabledModules, key);
   const allowed: Record<QuickActionKey, boolean> = {
     // `POST /v1/meetings` checks `meetings:record` behind the module.
-    newMinutes:
-      on("meetings") && can("meetings:record", permissions) && meetingNotes,
+    newMinutes: on("meetings") && can("meetings:record", permissions),
     // Members, messages and events come from `GET /v1/search`, which checks
     // `members:view`, as the Directory behind Message does.
     search: can("members:view", permissions),

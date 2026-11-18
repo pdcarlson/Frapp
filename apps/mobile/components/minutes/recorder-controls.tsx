@@ -26,13 +26,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 
 const ROUND = 48;
-const ROUND_LARGE = 72;
 
 /**
- * A round icon control: 48pt (above the 44pt touch floor), or 72pt for the
- * recorder's own controls pinned at the bottom, which are pressed without
- * looking across a table. `tone="stop"` draws the recorder's red; the rest
- * are the quiet surface.
+ * A round icon control, 48pt (above the 44pt touch floor). `tone="stop"`
+ * draws the recorder's red; the rest are the quiet surface.
  */
 export function RoundControl({
   label,
@@ -40,7 +37,6 @@ export function RoundControl({
   onPress,
   disabled = false,
   tone = "quiet",
-  size = "regular",
   children,
 }: {
   label: string;
@@ -48,7 +44,6 @@ export function RoundControl({
   onPress: () => void;
   disabled?: boolean;
   tone?: "quiet" | "stop";
-  size?: "regular" | "large";
   /** The glyph, from `components/control-glyphs.tsx`. */
   children: React.ReactNode;
 }) {
@@ -64,7 +59,6 @@ export function RoundControl({
       onPress={onPress}
       style={({ pressed }) => [
         styles.round,
-        size === "large" ? styles.large : null,
         tone === "stop" ? styles.stop : null,
         pressed ? styles.pressed : null,
         disabled ? styles.disabled : null,
@@ -188,11 +182,6 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 1,
       borderColor: tokens.color.border.input,
       backgroundColor: tokens.color.surface.popover,
-    },
-    large: {
-      width: ROUND_LARGE,
-      height: ROUND_LARGE,
-      borderRadius: ROUND_LARGE / 2,
     },
     stop: {
       borderColor: tokens.color.semantic.destructive,

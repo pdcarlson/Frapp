@@ -73,17 +73,28 @@ export function canSeeFolder(
   return documentListAdmits(folder.who_can_see, viewer.holder);
 }
 
-/** Whether `userId` is the file's own uploader, who always sees it. */
+/**
+ * Whether `userId` is the file's own uploader, who always sees it and may set
+ * its list. A file the member added by its Drive link (#5434) is theirs, as an
+ * upload is; a folder copy is filed under whoever connected the folder and is
+ * nobody's in that sense.
+ */
 export function isOwnUpload(
-  document: Pick<ChapterDocument, 'uploaded_by' | 'drive_file_id'>,
+  document: Pick<
+    ChapterDocument,
+    'uploaded_by' | 'drive_file_id' | 'drive_link_status'
+  >,
   userId: string,
 ): boolean {
-  return document.uploaded_by === userId && document.drive_file_id === null;
+  return (
+    document.uploaded_by === userId &&
+    (document.drive_file_id === null || document.drive_link_status !== null)
+  );
 }
 
 /**
- * Whether the viewer sees a file: its uploader always does (a Drive copy has
- * no uploader in that sense); anyone else passes its folder's list and its
+ * Whether the viewer sees a file: its uploader always does (a folder copy
+ * has no uploader in that sense); anyone else passes its folder's list and its
  * own. A file filed under a name no folder row claims has no folder list to
  * pass; renaming and deleting a folder move its files in one transaction so
  * that never happens to a restricted one.
@@ -91,7 +102,11 @@ export function isOwnUpload(
 export function canSeeDocument(
   document: Pick<
     ChapterDocument,
-    'folder' | 'who_can_see' | 'uploaded_by' | 'drive_file_id'
+    | 'folder'
+    | 'who_can_see'
+    | 'uploaded_by'
+    | 'drive_file_id'
+    | 'drive_link_status'
   >,
   folderLists: ReadonlyMap<string, readonly string[] | null>,
   viewer: DocumentViewer,

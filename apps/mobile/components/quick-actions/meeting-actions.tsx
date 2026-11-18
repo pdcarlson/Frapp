@@ -80,9 +80,10 @@ const REQUEST_LIVES_MS = 8000;
  * minutes open and the officer records again from their row, which asks
  * first, as it always has.
  *
- * Record is offered where the minutes screen's own Record is: the member
- * holds `meetings:record`, the module is on, the chapter drafts from notes,
- * this server can write a recording out, and this build has a microphone.
+ * New minutes is offered to every member who holds `meetings:record` with
+ * the module on (#5288). Record is offered where the minutes screen's own
+ * Record is: the
+ * chapter drafts from notes, this server can write a recording out, and this build has a microphone.
  * Recording where it can't be written out is #5289. While the phone holds a
  * recording, Record isn't offered, so a second recording is never started
  * from here; the recording's own pill opens it.
@@ -102,12 +103,16 @@ export function useMeetingQuickActions({
   const canRecord = can("meetings:record", usePermissionList());
   const ai = useAiSurfaces();
   const { state, recorder } = useMeetingRecorder();
-  const mayStart = on && canRecord && ai.meetingNotes;
+  // Minutes start for every officer who records them (#5288); recording
+  // still needs drafting, which is what a transcript is for (#5289 records
+  // without it).
+  const mayStart = on && canRecord;
   const availability = useMeetingRecorderAvailability({
-    enabled: mayStart && !!recorder,
+    enabled: mayStart && ai.meetingNotes && !!recorder,
   });
   const recordable =
     mayStart &&
+    ai.meetingNotes &&
     !!recorder &&
     availability.data?.available === true &&
     availability.data.blocked !== "chapter_off";

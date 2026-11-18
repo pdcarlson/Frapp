@@ -73,6 +73,8 @@ describe('ChapterDocumentService', () => {
     drive_modified_at: null,
     drive_url: null,
     drive_held_folder_id: null,
+    drive_link_status: null,
+    drive_synced_at: null,
     who_can_see: null,
   };
 
@@ -96,6 +98,8 @@ describe('ChapterDocumentService', () => {
       create: jest.fn(),
       delete: jest.fn(),
       findDriveCopies: jest.fn().mockResolvedValue([]),
+      findLinkedDriveFileIds: jest.fn().mockResolvedValue(new Set()),
+      findByDriveFileId: jest.fn().mockResolvedValue(null),
       updateDriveCopy: jest.fn(),
       setPinnedAt: jest.fn(),
       setWhoCanSee: jest.fn(),
@@ -967,6 +971,22 @@ describe('ChapterDocumentService', () => {
       );
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
       expect(mockDocumentRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('delete, a Drive file added by link (#5434)', () => {
+    it('lets it go: deleting it unlinks it, and Drive is untouched', async () => {
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...baseDocument,
+        drive_file_id: 'drive-1',
+        drive_link_status: 'active',
+      });
+      mockStorageProvider.deleteFile.mockResolvedValue();
+      mockDocumentRepo.delete.mockResolvedValue();
+
+      await service.delete('doc-1', 'ch-1', 'user-1');
+
+      expect(mockDocumentRepo.delete).toHaveBeenCalledWith('doc-1', 'ch-1');
     });
   });
 

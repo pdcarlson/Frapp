@@ -56,7 +56,8 @@ const RECORDING_OPTIONS = {
   sampleRate: MEETING_RECORDER_FORMAT.sampleRate,
   numberOfChannels: MEETING_RECORDER_FORMAT.channels,
   bitRate: MEETING_RECORDER_FORMAT.bitRate,
-  isMeteringEnabled: false,
+  // The recorder bar's live level (#5288).
+  isMeteringEnabled: true,
   directory: "document",
   ...(Platform.OS === "ios"
     ? { outputFormat: IOS_FORMAT_AAC, audioQuality: IOS_QUALITY_HIGH }
@@ -81,6 +82,16 @@ const RESTING_MODE = {
   shouldPlayInBackground: false,
   shouldRouteThroughEarpiece: false,
 };
+
+/**
+ * How loud the room is, 0 to 1, from the recorder's dBFS reading: the 50 dB
+ * above -60 is where a voice across a table moves, so quiet reads low and a
+ * voice near the phone fills the bar.
+ */
+export function levelOf(dbfs: number): number {
+  if (!Number.isFinite(dbfs)) return 0;
+  return Math.min(1, Math.max(0, (dbfs + 60) / 50));
+}
 
 const nameOf = (uri: string) => uri.slice(uri.lastIndexOf("/") + 1);
 
@@ -161,6 +172,19 @@ export function createRecorderDevice({
           isRecording: status.isRecording,
           seconds: status.durationMillis / 1000,
         };
+      } catch {
+        return null;
+      }
+    },
+
+    level() {
+      if (!recorder) return null;
+      try {
+        const status = recorder.getStatus();
+        if (!status.isRecording || typeof status.metering !== "number") {
+          return null;
+        }
+        return levelOf(status.metering);
       } catch {
         return null;
       }

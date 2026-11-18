@@ -37,6 +37,12 @@ vi.mock("@/lib/minutes/recorder/session", () => ({
     recorder: session.hasRecorder ? session.recorder : null,
   }),
 }));
+const meter = vi.hoisted(() => ({
+  level: null as null | (() => number | null),
+}));
+vi.mock("@/lib/minutes/recorder/device", () => ({
+  meetingRecorderDevice: () => (meter.level ? { level: meter.level } : null),
+}));
 const openSettings = vi.hoisted(() => vi.fn());
 vi.mock("react-native", async () => {
   const { reactNativeStub } = await import("@/test/react-native-stub");
@@ -169,6 +175,7 @@ const RECORDING: RecorderState = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  meter.level = null;
   session.hasRecorder = true;
   confirm.mockResolvedValue(true);
   ensureConsent.mockResolvedValue(true);
@@ -335,7 +342,7 @@ describe("the recorder on the minutes screen", () => {
       tree.root.findAll(
         (node) =>
           node.props.accessibilityLabel ===
-          `${MEETING_RECORDER_COPY.steps.transcribed}, in progress`,
+          `${MEETING_RECORDER_COPY.stepsRunning.transcribed}, in progress`,
       ).length,
     ).toBeGreaterThan(0);
     await press(tree, MEETING_RECORDER_COPY.stopTranscribing);
@@ -388,5 +395,56 @@ describe("the recorder on the minutes screen", () => {
       const tree = render(IDLE, null);
       expect(tree.toJSON()).toBeNull();
     });
+  });
+});
+
+describe("The recorder bar's live level (#5288)", () => {
+  /** The level's bars, by the height each is drawn at. */
+  const heights = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          Array.isArray(node.props.style) &&
+          node.props.style.some(
+            (part: unknown) =>
+              !!part &&
+              typeof part === "object" &&
+              "height" in part &&
+              "backgroundColor" in part,
+          ),
+      )
+      .map((node) =>
+        (node.props.style as { height?: number }[]).reduce(
+          (height, part) => part?.height ?? height,
+          0,
+        ),
+      );
+
+  it("rises with what the microphone hears while it records", () => {
+    vi.useFakeTimers();
+    try {
+      meter.level = () => 1;
+      const tree = render(RECORDING);
+      const quiet = Math.max(...heights(tree));
+      act(() => vi.advanceTimersByTime(360));
+      expect(Math.max(...heights(tree))).toBeGreaterThan(quiet);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lies flat while paused, and reads nothing", () => {
+    vi.useFakeTimers();
+    try {
+      meter.level = vi.fn(() => 1);
+      const tree = render({ ...RECORDING, paused: "user" } as RecorderState);
+      const flat = Math.max(...heights(tree));
+      act(() => vi.advanceTimersByTime(360));
+      expect(Math.max(...heights(tree))).toBe(flat);
+      expect(meter.level).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

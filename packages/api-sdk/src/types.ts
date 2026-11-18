@@ -6018,6 +6018,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a Google Drive file can be added by link here, and the address to share one with. */
+        get: operations["GoogleDriveLinkController_info_v1"];
+        put?: never;
+        /** Add one Google Drive file by its link. It is copied into Documents now and kept matching Drive. */
+        post: operations["GoogleDriveLinkController_add_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive-links/{documentId}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check a linked document against Google Drive now. */
+        post: operations["GoogleDriveLinkController_syncNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -9743,6 +9778,16 @@ export interface components {
             drive_url: string | null;
             /** @description Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`). */
             drive_held_folder_id: string | null;
+            /**
+             * @description Set on a Google Drive file added by its link (#5434), which Frapp keeps matching Drive: `active`, or `no_access` once Google answers that Frapp can't see it any more (the copy stays as it was). Null on an upload or a folder copy.
+             * @enum {string|null}
+             */
+            drive_link_status: "active" | "no_access" | null;
+            /**
+             * Format: date-time
+             * @description When a linked document last matched its Google Drive file. Null unless `drive_link_status` is set.
+             */
+            drive_synced_at: string | null;
             /** @description Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's */
             who_can_see: string[] | null;
         };
@@ -11674,6 +11719,23 @@ export interface components {
              */
             folder_link: string;
             /** @description Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
+        };
+        GoogleDriveLinkInfoDto: {
+            /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the link field. */
+            available: boolean;
+            /** @description The address a file that not anyone with the link can open is shared with */
+            service_account_email: string | null;
+        };
+        AddGoogleDriveLinkDto: {
+            /**
+             * @description A Google Docs, Sheets, Slides or Drive file link (or the file id)
+             * @example https://docs.google.com/document/d/1AbC.../edit
+             */
+            link: string;
+            /** @description Folder to file it in; left out for the top level */
+            folder?: Record<string, never>;
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
             who_can_see?: string[] | null;
         };
         MeetingRecordingUploadDto: {
@@ -25500,6 +25562,94 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GoogleDriveStatusDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveLinkController_info_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveLinkInfoDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveLinkController_add_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddGoogleDriveLinkDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveLinkController_syncNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

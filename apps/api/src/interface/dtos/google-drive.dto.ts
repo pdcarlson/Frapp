@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
-import { WhoCanSee } from './chapter-document.dto';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { FILE_WHO_CAN_SEE, WhoCanSee } from './chapter-document.dto';
 
 /** A chapter's connected Google Drive folder (#5157). */
 export class GoogleDriveConnectionDto {
@@ -74,5 +74,44 @@ export class ConnectGoogleDriveDto {
   @WhoCanSee(
     "Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept.",
   )
+  who_can_see?: string[] | null;
+}
+
+/** Whether a member can add a Drive file by link here (#5434). */
+export class GoogleDriveLinkInfoDto {
+  @ApiProperty({
+    description:
+      'Whether this server offers Google Drive. False until its service account is set; clients then hide the link field.',
+  })
+  available: boolean;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The address a file that not anyone with the link can open is shared with',
+  })
+  service_account_email: string | null;
+}
+
+export class AddGoogleDriveLinkDto {
+  @ApiProperty({
+    description:
+      'A Google Docs, Sheets, Slides or Drive file link (or the file id)',
+    example: 'https://docs.google.com/document/d/1AbC.../edit',
+  })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(2000)
+  link: string;
+
+  @ApiPropertyOptional({
+    description: 'Folder to file it in; left out for the top level',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  folder?: string | null;
+
+  @WhoCanSee(FILE_WHO_CAN_SEE)
   who_can_see?: string[] | null;
 }

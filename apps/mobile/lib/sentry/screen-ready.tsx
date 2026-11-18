@@ -1,6 +1,7 @@
 import { View } from "react-native";
 import { useIsFocused } from "expo-router";
 import { TimeToFullDisplay } from "@sentry/react-native";
+import { useLaunchReport } from "@/lib/launch/launch-gate";
 
 /**
  * Marks the moment a screen shows what a member opened it for, so Sentry can
@@ -22,12 +23,18 @@ import { TimeToFullDisplay } from "@sentry/react-native";
  * realtime updates. Unfocused, a true `ready` would stamp its own moment onto
  * the next screen's navigation.
  *
+ * The same flag holds the launch logo (#5449, `lib/launch/launch-gate.ts`):
+ * on a cold launch or an update reload, the logo stays until the focused
+ * screen reports ready here, so a screen that times its full display also
+ * never shows the member its skeleton on launch.
+ *
  * Absolutely positioned, so the zero-size view the SDK draws (a native
  * reporter, or a plain `View` where that is missing, as in Expo Go) takes no
  * part in its parent's layout or `gap`.
  */
 export function ScreenReady({ ready }: { ready: boolean }) {
   const focused = useIsFocused();
+  useLaunchReport(focused ? ready : null);
   return (
     <View style={{ position: "absolute" }} pointerEvents="none">
       <TimeToFullDisplay ready={ready && focused} />

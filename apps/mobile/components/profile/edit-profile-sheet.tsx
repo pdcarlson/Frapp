@@ -1,5 +1,18 @@
-import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  forwardRef,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type TextInput,
+} from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
@@ -90,8 +103,41 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * `BottomSheetScrollView` as the sheet's direct child, which is the
  * combination `spec/ui/mobile/patterns.md` § Bottom sheets requires of a
  * scrollable sheet.
+ *
+ * ## It opens at the field that was tapped (#5280)
+ *
+ * The You tab's name and Details rows each name a field (`openAt`), and the
+ * sheet opens with that field in view and its input focused, the keyboard up:
+ * tapping Bio lands in the bio, not on Name with the bio four fields down.
+ * Slack's and LinkedIn's profile editors do the same from a tapped field. The
+ * scroll waits for the sheet to settle open (`onChange`): until then the
+ * library pins the scroll view in place (`lib/sheet-scrollables.tsx`), so an
+ * earlier `scrollTo` would be undone.
+ *
+ * It scrolls only as far as it must, the way iOS Contacts brings a field into
+ * view: a field already clear of where the keyboard will be stays put, with
+ * the header and its Cancel above it, and the sheet never scrolls past the end
+ * of its content. The keyboard the focus raises shrinks the sheet's body
+ * (`keyboardBehavior="interactive"`), so the field is checked once more
+ * against what is left, and nothing after that: the member's own scrolling
+ * and a later keyboard are theirs.
  */
 const SNAP_POINTS = ["88%"];
+
+/** A field the sheet can open at: each one that has an input. */
+export type EditProfileField = Exclude<ProfileDraftField, "birthdayVisibility">;
+
+/**
+ * The share of the sheet's body a keyboard leaves clear, for the check made
+ * before it has opened.
+ */
+const KEYBOARD_FREE = 1 / 2;
+
+const BIRTHDAY_FIELDS: EditProfileField[] = [
+  "birthdayMonth",
+  "birthdayDay",
+  "birthdayYear",
+];
 
 const copy = PROFILE_FIELD_COPY;
 
@@ -101,13 +147,23 @@ const copy = PROFILE_FIELD_COPY;
  */
 const YEAR_FIELD_WIDTH = 96;
 
+/** A typed graduation year as a number, or null while it isn't one. */
+function draftYear(typed: string): number | null {
+  const year = typed.trim();
+  return /^\d+$/.test(year) ? Number(year) : null;
+}
+
 /** Matches the web profile form's bio field, which draws three lines. */
 const BIO_LINES = 3;
 
 export const EditProfileSheet = forwardRef<
   BottomSheetModal,
-  { profile: ViewerProfile | null }
->(function EditProfileSheet({ profile }, ref) {
+  {
+    profile: ViewerProfile | null;
+    /** The field to bring into view and focus once the sheet is open. */
+    openAt?: EditProfileField;
+  }
+>(function EditProfileSheet({ profile, openAt }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -149,14 +205,19 @@ export const EditProfileSheet = forwardRef<
   // form would refuse (a blank name), so Save is off.
   const dirty = typed !== null && (result.ok ? hasChanges(result.patch) : true);
   // City and Company wait for the graduation year (`showsAfterGraduation`):
-  // the year as typed, and the stored City and Company, so clearing one
-  // doesn't hide the field mid-edit.
-  const yearShown = shown.graduationYear.trim();
-  const afterGraduation = showsAfterGraduation({
-    graduationYear: /^\d+$/.test(yearShown) ? Number(yearShown) : null,
-    city: original.city,
-    company: original.company,
-  });
+  // the year as typed or as stored, and the stored City and Company, so
+  // clearing one doesn't hide the field mid-edit. The stored year counts
+  // because the You tab draws the City and Company rows from it (#5280): a
+  // year typed ahead and kept from a failed save must not leave those rows
+  // opening a sheet without their fields. A year typed back hides nothing
+  // until it is saved.
+  const afterGraduation = [shown, original].some((draft) =>
+    showsAfterGraduation({
+      graduationYear: draftYear(draft.graduationYear),
+      city: original.city,
+      company: original.company,
+    }),
+  );
   const canSave = dirty && !updateUser.isPending;
   const birthdayVisibility = parseBirthdayVisibility(shown.birthdayVisibility);
   const birthdayTyped =
@@ -179,11 +240,81 @@ export const EditProfileSheet = forwardRef<
   const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
     useSheetVisit(ref);
 
+  // Opening at a field (#5280): where each field's block sits in the scroll
+  // content (its top and bottom), the input to focus, the sheet's body and
+  // content heights, how far the sheet has scrolled it, and where this visit
+  // stands: been there yet, and waiting for the keyboard's shrink.
+  const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
+  const inputs = useRef(new Map<EditProfileField, TextInput>());
+  const blocks = useRef(
+    new Map<EditProfileField, { top: number; bottom: number }>(),
+  );
+  const viewport = useRef({ height: 0, content: 0 });
+  const scrolled = useRef(0);
+  const reachedOpenAt = useRef(false);
+  const awaitingKeyboard = useRef(false);
+
+  /** Records a block's place; the birthday's runs from its heading (`top`) to its row (`bottom`). */
+  const anchor =
+    (names: EditProfileField[], part: "block" | "top" | "bottom" = "block") =>
+    (event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      for (const name of names) {
+        const block = blocks.current.get(name) ?? {
+          top: y,
+          bottom: y + height,
+        };
+        if (part !== "bottom") block.top = y;
+        if (part !== "top") block.bottom = y + height;
+        blocks.current.set(name, block);
+      }
+    };
+
+  /** Scrolls the opened-at field into the top `share` of the body, if it isn't there. */
+  const bringIntoView = (share: number) => {
+    const block = openAt === undefined ? undefined : blocks.current.get(openAt);
+    const { height, content } = viewport.current;
+    if (block === undefined || height === 0) return;
+    const margin = tokens.spacing.lg;
+    const from = scrolled.current;
+    if (
+      block.top - margin >= from &&
+      block.bottom + margin <= from + height * share
+    ) {
+      return;
+    }
+    // Just under the top edge, and never past the end of the content.
+    const target = Math.min(
+      Math.max(0, block.top - margin),
+      Math.max(0, content - height),
+    );
+    if (target === from) return;
+    scrolled.current = target;
+    scrollRef.current?.scrollTo({ y: target, animated: true });
+  };
+
+  const goToOpenAt = (index: number) => {
+    if (index < 0 || reachedOpenAt.current || openAt === undefined) return;
+    reachedOpenAt.current = true;
+    // Every row's field is drawn (`afterGraduation` above), so this holds
+    // unless a caller asks for one the sheet has no input for.
+    const input = inputs.current.get(openAt);
+    if (input === undefined) return;
+    bringIntoView(KEYBOARD_FREE);
+    // A field is read-only while a save runs, so it takes no keyboard.
+    if (updateUser.isPending) return;
+    awaitingKeyboard.current = true;
+    input.focus();
+  };
+
   // However the sheet closes mid-save (Cancel, a swipe, the scrim), the edits
   // stay until the save settles: the PATCH is already sent, and a failure has
   // to reopen on what was typed.
   const closed = () => {
     markClosed();
+    reachedOpenAt.current = false;
+    awaitingKeyboard.current = false;
+    scrolled.current = 0;
     if (updateUser.isPending) setFocused(null);
     else reset();
   };
@@ -229,7 +360,7 @@ export const EditProfileSheet = forwardRef<
   };
 
   const field = (
-    name: ProfileDraftField,
+    name: EditProfileField,
     label: string,
     options: {
       placeholder: string;
@@ -248,6 +379,8 @@ export const EditProfileSheet = forwardRef<
     },
   ) => (
     <View
+      // A field sharing a row is placed by its row's `anchor`.
+      onLayout={options.grow === undefined ? anchor([name]) : undefined}
       style={[
         styles.fieldGroup,
         options.grow === undefined
@@ -259,6 +392,10 @@ export const EditProfileSheet = forwardRef<
     >
       <Text style={styles.label}>{label}</Text>
       <BottomSheetTextInput
+        ref={(input: TextInput | null | undefined) => {
+          if (input) inputs.current.set(name, input);
+          else inputs.current.delete(name);
+        }}
         value={shown[name]}
         onChangeText={edit(name)}
         // Read-only while a save runs: the save sent what was typed when Save
@@ -316,10 +453,24 @@ export const EditProfileSheet = forwardRef<
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
       onAnimate={onAnimate}
+      onChange={goToOpenAt}
       onDismiss={closed}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
+        ref={scrollRef}
+        onLayout={(event) => {
+          viewport.current.height = event.nativeEvent.layout.height;
+          // The keyboard the focus raised has shrunk the body: the field must
+          // still be in view of what is left.
+          if (awaitingKeyboard.current) {
+            awaitingKeyboard.current = false;
+            bringIntoView(1);
+          }
+        }}
+        onContentSizeChange={(_width, height) => {
+          viewport.current.content = height;
+        }}
         onAccessibilityEscape={closeSheet}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
@@ -338,7 +489,7 @@ export const EditProfileSheet = forwardRef<
           maxLength: PHONE_MAX_LENGTH,
           hint: copy.phone.hint,
         })}
-        <View style={styles.row}>
+        <View style={styles.row} onLayout={anchor(["major", "graduationYear"])}>
           {field("major", copy.major.label, {
             placeholder: copy.major.placeholder,
             autoCapitalize: "words",
@@ -356,10 +507,13 @@ export const EditProfileSheet = forwardRef<
         {rowError(["major", "graduationYear"])}
         {/* The birthday (#4959): month, day and an optional year as digits,
             then the switch that shares it with the chapter (#5282). */}
-        <View style={styles.sectionHead}>
+        <View
+          style={styles.sectionHead}
+          onLayout={anchor(BIRTHDAY_FIELDS, "top")}
+        >
           <Text style={styles.sectionTitle}>{BIRTHDAY_COPY.label}</Text>
         </View>
-        <View style={styles.row}>
+        <View style={styles.row} onLayout={anchor(BIRTHDAY_FIELDS, "bottom")}>
           {field("birthdayMonth", BIRTHDAY_COPY.monthLabel, {
             accessibleLabel: "Birthday month, 1 to 12",
             placeholder: "MM",

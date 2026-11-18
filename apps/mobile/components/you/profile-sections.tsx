@@ -9,7 +9,13 @@ import {
   profileIdentityLine,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { BIRTHDAY_COPY, can, formatBirthday } from "@repo/validation";
+import {
+  BIRTHDAY_COPY,
+  can,
+  formatBirthday,
+  showsAfterGraduation,
+} from "@repo/validation";
+import type { EditProfileField } from "@/components/profile/edit-profile-sheet";
 import {
   PROFILE_PHOTO_SIZE,
   ProfilePhoto,
@@ -52,8 +58,9 @@ import { pageSurfaces } from "@/lib/surfaces";
  *
  * Canvas draws Email, Phone, Pledge class and Big brother. No big-brother
  * column exists, so that one is omitted. The rows are Email, Phone (#3711),
- * four more of the fields the API's `UpdateUserDto` lets a member edit
- * (major, graduation year, city, company), and after Graduation the member's
+ * Birthday (#4959), and more of the fields the API's `UpdateUserDto` lets a
+ * member edit (major, graduation year, and city and company when the editor
+ * shows them, below), and after Graduation the member's
  * pledge class and order number (#3939), which live on the membership and are
  * drawn only when an officer has set them. Display name heads the screen and
  * bio gets its own card.
@@ -62,8 +69,14 @@ import { pageSurfaces } from "@/lib/surfaces";
  *
  * Tap what you want to change (#3711, Paul 2026-11-07: "The pencil button
  * isn't obvious; drop it"). Your name, the bio card, and every row that is
- * yours to set (Phone, Major, Graduation, City, Company, and Bio while it is
- * empty) call `onEdit`, which opens `EditProfileSheet` (#3387). Email is the
+ * yours to set (Phone, Birthday, Major, Graduation, City, Company, and Bio
+ * while it is empty) call `onEdit` with their field, which opens
+ * `EditProfileSheet` (#3387) at that field with its keyboard up (#5280).
+ * City and Company are drawn only when the sheet has their fields
+ * (`showsAfterGraduation` on the stored profile, Paul's 2026-11-06 rule that
+ * an undergrad doesn't see them; his pick on #5280, 2026-11-17, that the rows
+ * follow the editor). The sheet keeps them while the stored year says so, even
+ * under a draft year typed ahead, so no row opens a sheet without its field. Email is the
  * account's address and the pledge class rows are an officer's, so those
  * don't. The photo edits in place (#732): `ProfilePhoto` picks, uploads and
  * confirms it. The screen draws these only once the profile has loaded,
@@ -77,7 +90,7 @@ export function ProfileHead({
   onEdit,
 }: {
   profile: ViewerProfile | null;
-  onEdit: () => void;
+  onEdit: (field: EditProfileField) => void;
 }) {
   const { tokens } = useFrappTheme();
   // Your initials wear the color the chapter sees on them (#3860).
@@ -103,7 +116,7 @@ export function ProfileHead({
         <Pressable
           accessibilityRole="button"
           accessibilityHint="Edits your profile"
-          onPress={onEdit}
+          onPress={() => onEdit("displayName")}
           hitSlop={8}
           style={({ pressed }) => (pressed ? styles.pressed : null)}
         >
@@ -167,7 +180,7 @@ export function ProfileDetails({
   onEdit,
 }: {
   profile: ViewerProfile | null;
-  onEdit: () => void;
+  onEdit: (field: EditProfileField) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -195,6 +208,14 @@ export function ProfileDetails({
   // resolves, and it is the same address — so the row never sits blank while
   // the profile loads.
   const email = profile?.email ?? sessionEmail ?? null;
+  // The same rule the sheet and web `/profile` draw City and Company by.
+  const afterGraduation =
+    profile !== null &&
+    showsAfterGraduation({
+      graduationYear: profile.graduationYear,
+      city: profile.currentCity,
+      company: profile.currentCompany,
+    });
 
   return (
     <>
@@ -206,21 +227,21 @@ export function ProfileDetails({
           label="Phone"
           value={profile?.phone ?? "Not set"}
           accessibilityHint={EDIT_HINT}
-          onPress={onEdit}
+          onPress={() => onEdit("phone")}
         />
         <ListRow
           variant="detail"
           label={BIRTHDAY_COPY.label}
           value={ownBirthdayLabel(profile)}
           accessibilityHint={EDIT_HINT}
-          onPress={onEdit}
+          onPress={() => onEdit("birthdayMonth")}
         />
         <ListRow
           variant="detail"
           label="Major"
           value={profile?.major ?? "Not set"}
           accessibilityHint={EDIT_HINT}
-          onPress={onEdit}
+          onPress={() => onEdit("major")}
         />
         <ListRow
           variant="detail"
@@ -229,7 +250,7 @@ export function ProfileDetails({
             profile?.graduationYear ? String(profile.graduationYear) : "Not set"
           }
           accessibilityHint={EDIT_HINT}
-          onPress={onEdit}
+          onPress={() => onEdit("graduationYear")}
         />
         {classRows.map((row) => (
           <ListRow
@@ -239,27 +260,31 @@ export function ProfileDetails({
             value={row.value}
           />
         ))}
-        <ListRow
-          variant="detail"
-          label="City"
-          value={profile?.currentCity ?? "Not set"}
-          accessibilityHint={EDIT_HINT}
-          onPress={onEdit}
-        />
-        <ListRow
-          variant="detail"
-          label="Company"
-          value={profile?.currentCompany ?? "Not set"}
-          accessibilityHint={EDIT_HINT}
-          onPress={onEdit}
-        />
+        {afterGraduation ? (
+          <>
+            <ListRow
+              variant="detail"
+              label="City"
+              value={profile?.currentCity ?? "Not set"}
+              accessibilityHint={EDIT_HINT}
+              onPress={() => onEdit("city")}
+            />
+            <ListRow
+              variant="detail"
+              label="Company"
+              value={profile?.currentCompany ?? "Not set"}
+              accessibilityHint={EDIT_HINT}
+              onPress={() => onEdit("company")}
+            />
+          </>
+        ) : null}
         {profile?.bio ? null : (
           <ListRow
             variant="detail"
             label="Bio"
             value="Not set"
             accessibilityHint={EDIT_HINT}
-            onPress={onEdit}
+            onPress={() => onEdit("bio")}
           />
         )}
       </ListSection>
@@ -270,7 +295,7 @@ export function ProfileDetails({
           <Pressable
             accessibilityRole="button"
             accessibilityHint={EDIT_HINT}
-            onPress={onEdit}
+            onPress={() => onEdit("bio")}
             style={({ pressed }) => [
               styles.bioCard,
               pressed ? styles.pressed : null,

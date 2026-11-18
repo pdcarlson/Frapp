@@ -264,14 +264,16 @@ describe("the app jobs run only after a live, tagged full ship, for a value name
 
 describe("unticked, a run is what it was", () => {
   it("nothing else in the dispatch reads the input", () => {
-    for (const j of workflowJobs(CALLER).filter((x) => !["mobile-plan", "mobile", "ota"].includes(x.jobId))) {
+    // `mobile-outcome` is the app release's alert: it runs only when `mobile-plan` did.
+    for (const j of workflowJobs(CALLER).filter((x) => !["mobile-plan", "mobile", "ota", "mobile-outcome"].includes(x.jobId))) {
       assert.doesNotMatch(String(j.if ?? ""), /mobile/, `${j.jobId}'s if: reads the mobile input`);
     }
     const text = readFileSync(CALLER, "utf8")
       .split("\n")
       .filter((l) => !/^\s*#/.test(l));
     const reads = text.filter((l) => /inputs\.mobile_build|needs\.mobile\b(?!-)/.test(l)).map((l) => l.trim());
-    // The plan's own reads, the update's `auto` clause, and the summary's,
+    // The plan's own reads, the update's `auto` clause, the app release
+    // alert's (only an `auto` run can close it), and the summary's,
     // for one message on a failed tag, run below.
     assert.deepEqual(reads, [
       `if: ${jobOf(CALLER, "mobile-plan").if}`,
@@ -279,6 +281,7 @@ describe("unticked, a run is what it was", () => {
       "if: ${{ inputs.mobile_build == 'auto' }}",
       "MOBILE_BUILD: ${{ inputs.mobile_build }}",
       `if: ${jobOf(CALLER, "ota").if}`,
+      "BUILD: ${{ inputs.mobile_build }}",
       "MOBILE_BUILD: ${{ inputs.mobile_build }}",
     ]);
   });

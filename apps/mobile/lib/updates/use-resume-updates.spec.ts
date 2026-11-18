@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  LAUNCH_BACKGROUND,
+  LAUNCH_EMBLEM_SIZE,
+} from "@/lib/launch/launch-look";
 
 const state = vi.hoisted(() => ({
   updates: {
@@ -25,10 +29,22 @@ const state = vi.hoisted(() => ({
   online: true,
   captureException: vi.fn(),
   busy: false,
+  // What Metro resolves the splash PNG to: a file URL on iOS and for a
+  // downloaded update, a bare resource name for an APK-embedded asset.
+  assetUri: "file:///assets/splash-icon.png",
 }));
 
 vi.mock("expo-updates", () => state.updates);
 vi.mock("react-native", () => ({
+  // The reload screen's emblem, as Metro resolves the splash PNG on a phone.
+  Image: {
+    resolveAssetSource: () => ({
+      uri: state.assetUri,
+      width: 1024,
+      height: 1024,
+      scale: 1,
+    }),
+  },
   AppState: {
     addEventListener: (_: string, listener: (next: string) => void) => {
       state.listener = listener;
@@ -47,6 +63,11 @@ vi.mock("@/lib/notifications/push", () => ({
     state.tapListener = listener;
     return { remove: () => (state.tapListener = null) };
   },
+}));
+// The splash PNG is a Metro asset id on a phone; vitest can't load the file.
+vi.mock("@/lib/launch/launch-look", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/launch/launch-look")>()),
+  launchEmblem: () => 1,
 }));
 vi.mock("@sentry/react-native", () => ({
   captureException: state.captureException,
@@ -99,14 +120,33 @@ describe("expoUpdatesPort", () => {
     expect(expoUpdatesPort().enabled).toBe(false);
   });
 
-  it("reloads behind the splash's own colour, with no spinner", async () => {
+  it("reloads behind the launch logo's emblem and colour, with no spinner (#5449)", async () => {
     await expoUpdatesPort().reload();
     expect(state.updates.reloadAsync).toHaveBeenCalledWith({
       reloadScreenOptions: expect.objectContaining({
-        backgroundColor: "#050505",
+        backgroundColor: LAUNCH_BACKGROUND,
+        image: expect.objectContaining({
+          width: LAUNCH_EMBLEM_SIZE,
+          height: LAUNCH_EMBLEM_SIZE,
+        }),
         spinner: { enabled: false },
       }),
     });
+  });
+
+  it("leaves the emblem off when Android has only a resource name for it, which would force a spinner", async () => {
+    state.assetUri = "assets_images_splashicon";
+    try {
+      await expoUpdatesPort().reload();
+      const calls = state.updates.reloadAsync.mock.calls as unknown as Array<
+        [{ reloadScreenOptions: { image?: unknown; spinner: unknown } }]
+      >;
+      const options = calls.at(-1)![0];
+      expect(options.reloadScreenOptions.image).toBeUndefined();
+      expect(options.reloadScreenOptions.spinner).toEqual({ enabled: false });
+    } finally {
+      state.assetUri = "file:///assets/splash-icon.png";
+    }
   });
 });
 

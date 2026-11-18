@@ -287,6 +287,15 @@ announcement before what members said, and chat is named as chat.
 > the first source a model reads. C1 (a source is never an instruction) and C6 (a claim stands only
 > on a quote found word for word) are what contain that.
 
+(Added 2026-11-17, #5429.) **An answer is drawn as markdown, and a link in it is not a link.** Bold,
+italic, code and lists render on both clients (`@repo/chat-core/ask-markdown`), so model output is
+no longer inert text. Links are left out on purpose: a planted `[the dues page](url)` would be a
+link in Frapp's own voice whose address the reader can't see, and its query string could carry what
+the asker can read to whoever planted it, one click away, in an answer and again in every channel a
+posted answer reaches. So the renderer's allowlist drops the link and keeps its words, the address
+is not shown, and the prompts ask for no links. Images were never in the allowlist, so nothing is
+fetched on render. `ask-answer.spec.tsx` (web) and `ask-turn.spec.tsx` (phone) hold the case.
+
 (Added 2026-11-12, #3946.) Catch me up reads chat directly, not through the index, and keeps the
 same rules: `ChatCatchUpService` checks the reader's channel access and each author's yes before the
 call, the conversation is the user turn and the instructions the system channel (C1), the call has

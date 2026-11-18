@@ -383,7 +383,10 @@ export function recordingPipeline(
   const keys = ["recorded", "uploaded", "transcribed", "drafted"] as const;
   return keys.map((key, index) => ({
     key,
-    label: MEETING_RECORDER_COPY.steps[key],
+    label:
+      index === at
+        ? MEETING_RECORDER_COPY.stepsRunning[key]
+        : MEETING_RECORDER_COPY.steps[key],
     state: index < at ? "done" : index === at ? "active" : "waiting",
     progress: index === at && key === "uploaded" ? uploadProgress : null,
   }));

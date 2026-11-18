@@ -20112,6 +20112,127 @@
         ]
       }
     },
+    "/v1/google-drive-links": {
+      "get": {
+        "operationId": "GoogleDriveLinkController_info_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveLinkInfoDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether a Google Drive file can be added by link here, and the address to share one with.",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "post": {
+        "operationId": "GoogleDriveLinkController_add_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGoogleDriveLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add one Google Drive file by its link. It is copied into Documents now and kept matching Drive.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/google-drive-links/{documentId}/sync": {
+      "post": {
+        "operationId": "GoogleDriveLinkController_syncNow_v1",
+        "parameters": [
+          {
+            "name": "documentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check a linked document against Google Drive now.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/meetings/{id}/recording": {
       "get": {
         "operationId": "MeetingRecordingController_get_v1",
@@ -30861,6 +30982,21 @@
             "nullable": true,
             "description": "Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`)."
           },
+          "drive_link_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "no_access"
+            ],
+            "nullable": true,
+            "description": "Set on a Google Drive file added by its link (#5434), which Frapp keeps matching Drive: `active`, or `no_access` once Google answers that Frapp can't see it any more (the copy stays as it was). Null on an upload or a folder copy."
+          },
+          "drive_synced_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When a linked document last matched its Google Drive file. Null unless `drive_link_status` is set."
+          },
           "who_can_see": {
             "nullable": true,
             "description": "Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's",
@@ -30888,6 +31024,8 @@
           "drive_modified_at",
           "drive_url",
           "drive_held_folder_id",
+          "drive_link_status",
+          "drive_synced_at",
           "who_can_see"
         ]
       },
@@ -36041,6 +36179,50 @@
         },
         "required": [
           "folder_link"
+        ]
+      },
+      "GoogleDriveLinkInfoDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether this server offers Google Drive. False until its service account is set; clients then hide the link field."
+          },
+          "service_account_email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The address a file that not anyone with the link can open is shared with"
+          }
+        },
+        "required": [
+          "available",
+          "service_account_email"
+        ]
+      },
+      "AddGoogleDriveLinkDto": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "type": "string",
+            "description": "A Google Docs, Sheets, Slides or Drive file link (or the file id)",
+            "example": "https://docs.google.com/document/d/1AbC.../edit"
+          },
+          "folder": {
+            "type": "object",
+            "description": "Folder to file it in; left out for the top level"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "link"
         ]
       },
       "MeetingRecordingUploadDto": {

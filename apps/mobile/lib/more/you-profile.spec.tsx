@@ -8,6 +8,7 @@ import { ListRow } from "@/components/list-section";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
+import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
 
 /**
  * The profile on the You tab (#3839): its head (photo and name) and its
@@ -192,31 +193,85 @@ describe("Profile tap to edit (#3711)", () => {
     tree.unmount();
   });
 
-  it("opens the sheet from the name", () => {
+  /** The field the sheet was last told to open at. */
+  const openAt = (tree: ReactTestRenderer) =>
+    tree.root.findByType(EditProfileSheet).props.openAt;
+
+  it("opens the sheet from the name, at Name", () => {
     const { tree, present } = renderWithSheet();
     const [name] = nameButton(tree);
     act(() => name!.props.onPress());
     expect(present).toHaveBeenCalledTimes(1);
+    expect(openAt(tree)).toBe("displayName");
     tree.unmount();
   });
 
-  it("opens the sheet from each row the member sets, and not from Email", () => {
+  // #5280: each row opens the sheet at its own field, not at the top.
+  it("opens the sheet from each row the member sets, at that row's field, and not from Email", () => {
+    currentUser = {
+      ...LOADED_USER,
+      data: { ...LOADED_USER.data, graduation_year: 2020 },
+    };
     const { tree, present } = renderWithSheet();
-    const rows = detailListRows(tree);
-    const tappable = rows
-      .filter((row) => typeof row.props.onPress === "function")
-      .map((row) => row.props.label);
-    expect(tappable).toEqual([
-      "Phone",
-      "Birthday",
-      "Major",
-      "Graduation",
-      "City",
-      "Company",
-      "Bio",
+    const rows = detailListRows(tree).filter(
+      (row) => typeof row.props.onPress === "function",
+    );
+    const opened = rows.map((row) => {
+      act(() => row.props.onPress());
+      return [row.props.label, openAt(tree)];
+    });
+    expect(opened).toEqual([
+      ["Phone", "phone"],
+      ["Birthday", "birthdayMonth"],
+      ["Major", "major"],
+      ["Graduation", "graduationYear"],
+      ["City", "city"],
+      ["Company", "company"],
+      ["Bio", "bio"],
     ]);
-    act(() => rows.find((row) => row.props.label === "Phone")!.props.onPress());
+    expect(present).toHaveBeenCalledTimes(rows.length);
+    tree.unmount();
+  });
+
+  it("opens the sheet from the bio card at Bio", () => {
+    currentUser = {
+      ...LOADED_USER,
+      data: { ...LOADED_USER.data, bio: "Hometown: Troy." },
+    };
+    const { tree, present } = renderWithSheet();
+    const [card] = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityHint === "Opens a sheet to edit your profile",
+    );
+    act(() => card!.props.onPress());
     expect(present).toHaveBeenCalledTimes(1);
+    expect(openAt(tree)).toBe("bio");
+    tree.unmount();
+  });
+
+  // #5280, Paul's pick 2026-11-17: City and Company follow the editor, which
+  // shows them from the graduation year on (`showsAfterGraduation`), so an
+  // undergrad has no row that opens a sheet without its field.
+  it.each([
+    ["no graduation year", {}, false],
+    ["a graduation year still ahead", { graduation_year: 2099 }, false],
+    ["a graduation year reached", { graduation_year: 2020 }, true],
+    [
+      "a year ahead and a city already set",
+      { graduation_year: 2099, current_city: "Troy, NY" },
+      true,
+    ],
+  ])("draws City and Company for %s: %s", (_case, fields, shown) => {
+    currentUser = { ...LOADED_USER, data: { ...LOADED_USER.data, ...fields } };
+    const tree = render();
+    const labels = detailListRows(tree).map((row) => row.props.label);
+    if (shown)
+      expect(labels).toEqual(expect.arrayContaining(["City", "Company"]));
+    else {
+      expect(labels).not.toContain("City");
+      expect(labels).not.toContain("Company");
+    }
     tree.unmount();
   });
 
@@ -274,7 +329,12 @@ describe("Profile head and Details", () => {
   });
 
   it("sets every Details row as a fact row", () => {
+    currentUser = {
+      ...LOADED_USER,
+      data: { ...LOADED_USER.data, graduation_year: 2020 },
+    };
     const tree = render();
+    currentUser = LOADED_USER;
     const rows = tree.root.findAllByType(ListRow).slice(-8);
     expect(rows.map((row) => row.props.label)).toEqual([
       "Email",
@@ -396,8 +456,6 @@ describe("Profile pledge class and order number (#3939)", () => {
       "Birthday",
       "Major",
       "Graduation",
-      "City",
-      "Company",
       "Bio",
     ]);
     expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });

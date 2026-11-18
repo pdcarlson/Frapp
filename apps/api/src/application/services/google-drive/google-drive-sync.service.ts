@@ -230,6 +230,7 @@ export class GoogleDriveSyncService {
           chapterId,
           connection.created_at,
         ),
+        await this.documents.findLinkedDriveFileIds(chapterId),
       );
     // Folders first: a rename re-files the copies in it, so they are read
     // after.
@@ -345,6 +346,12 @@ export class GoogleDriveSyncService {
     startedAt: number,
     /** Folders other chapters connected first: never read into this one. */
     elsewhere: ReadonlySet<string>,
+    /**
+     * Files the chapter added by their own link (#5434): already in
+     * Documents, and the link's to keep, so the folder neither copies them a
+     * second time nor counts them.
+     */
+    linked: ReadonlySet<string>,
   ): Promise<{
     planned: PlannedFile[];
     folders: PlannedFolder[];
@@ -430,6 +437,7 @@ export class GoogleDriveSyncService {
           queue.push({ id: item.id, depth: next.depth + 1 });
           continue;
         }
+        if (linked.has(item.id)) continue;
         const file = planFile(item, next.id);
         if (!file || planned.length >= DRIVE_MAX_FILES) {
           skipped += 1;
@@ -584,7 +592,7 @@ export class GoogleDriveSyncService {
       throw error;
     }
 
-    const storagePath = `chapters/${chapterId}/documents/${randomUUID()}/${safeObjectFilename(file.filename)}`;
+    const storagePath = driveCopyPath(chapterId, file.filename);
     await this.storage.uploadFile(
       DOCUMENTS_BUCKET,
       storagePath,
@@ -611,21 +619,31 @@ export class GoogleDriveSyncService {
         );
       return true;
     }
-    await this.documents.create({
-      chapter_id: chapterId,
-      title: file.title,
-      description: null,
-      folder: placement.folder,
-      storage_path: storagePath,
-      uploaded_by: connection.connected_by,
-      content_type: file.contentType,
-      byte_size: bytes.byteLength,
-      document_type: null,
-      effective_date: null,
-      drive_file_id: file.item.id,
-      drive_modified_at: file.item.modifiedTime,
-      drive_url: file.item.webViewLink,
-    });
+    try {
+      await this.documents.create({
+        chapter_id: chapterId,
+        title: file.title,
+        description: null,
+        folder: placement.folder,
+        storage_path: storagePath,
+        uploaded_by: connection.connected_by,
+        content_type: file.contentType,
+        byte_size: bytes.byteLength,
+        document_type: null,
+        effective_date: null,
+        drive_file_id: file.item.id,
+        drive_modified_at: file.item.modifiedTime,
+        drive_url: file.item.webViewLink,
+      });
+    } catch (error) {
+      // A member linked this file (#5434) after the pass read its list: the
+      // link keeps it, and this copy goes.
+      if (!isUniqueViolation(error)) throw error;
+      await this.storage
+        .deleteFile(DOCUMENTS_BUCKET, storagePath)
+        .catch(() => {});
+      return false;
+    }
     return true;
   }
 
@@ -780,8 +798,13 @@ function shuffled<T>(items: T[]): T[] {
   return out;
 }
 
+/** Where a new copy of a Drive file is stored. */
+export function driveCopyPath(chapterId: string, filename: string): string {
+  return `chapters/${chapterId}/documents/${randomUUID()}/${safeObjectFilename(filename)}`;
+}
+
 /** Postgres hands back `+00:00` where Drive wrote `.000Z`: compare instants. */
-function sameInstant(stored: string | null, drive: string): boolean {
+export function sameInstant(stored: string | null, drive: string): boolean {
   if (!stored || !drive) return false;
   const a = Date.parse(stored);
   return !Number.isNaN(a) && a === Date.parse(drive);

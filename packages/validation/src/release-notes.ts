@@ -120,6 +120,20 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-18",
+    title: "New in this update",
+    changes: [
+      "A meeting's transcript now opens on its own page instead of under the minutes.",
+    ],
+    phone: [
+      "Tapping a detail on your profile, like your bio or your birthday, now opens the editor right at that field with the keyboard ready.",
+      "Minutes open as a note you type in while the meeting records, with the recorder as a bar at the bottom, and a chapter without AI drafting can now write the summary and post minutes from the phone.",
+      "Opening the app now shows the Frapp logo until your chats are ready, then goes straight to them instead of grey placeholder rows.",
+      "Adding agenda items to an event keeps the box you type in, and the item you just added, above the keyboard.",
+      "While a recording turns into minutes, the step under way now says what it is doing, such as Drafting, with a spinner.",
+    ],
+  },
+  {
     date: "2026-11-17",
     title: "New in this update",
     changes: [
@@ -137,6 +151,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Drafted minutes now come with full notes, topic by topic with every point and detail, and posted minutes keep the meeting's transcript for members to read and for Frapp AI to answer from.",
       "Sharing your birthday with your chapter is now one clearly labelled switch on your profile, shown once you enter the date.",
       "While Ask Frapp works, you now see each step it takes and what it found, folded into one row you can tap open once the answer arrives.",
+      "Ask Frapp's answers now show bold, lists and code the way chat does, instead of the asterisks and dashes they were written with, and copying an answer leaves those out.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
@@ -161,6 +176,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity now opens on a strip of the next seven days, where coloured dots show which days have events, tasks or polls due, and tapping a day takes you to it.",
       "In Ask Frapp, what you send now shows right away just above the box with the keyboard up, the newest words stay in view as the keyboard opens and closes, and dragging the conversation puts the keyboard away.",
       "An event's host checks themselves in with one tap, a member at an event with no code on screen checks in with one tap too, and Scan code is the button wherever a code is needed.",
+      "Messages now has its own tab, with a count of unread conversations, and the calendar opens from the Calendar row on Activity as one month you can tap into a day.",
     ],
   },
   {

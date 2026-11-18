@@ -23,7 +23,11 @@ const state = vi.hoisted(() => ({
   isPending: false,
   error: null as unknown,
   refetch: vi.fn(),
-  surfaces: { available: true as boolean | undefined, meetingNotes: true },
+  surfaces: {
+    available: true as boolean | undefined,
+    meetingNotes: true,
+    ready: true,
+  },
   draft: { status: "none" } as Record<string, unknown> | null,
   draftEnabled: undefined as boolean | undefined,
   draftPending: false,
@@ -41,6 +45,9 @@ const state = vi.hoisted(() => ({
   rowArgs: null as Record<string, unknown> | null,
   stage: null as Record<string, unknown> | null,
   controls: 0,
+  summaryProps: null as Record<string, unknown> | null,
+  summaryFlush: vi.fn(),
+  event: undefined as Record<string, unknown> | undefined,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -78,6 +85,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   usePostMeeting: () => ({ mutateAsync: state.post, isPending: false }),
+  useEvent: () => ({ data: state.event }),
   useMemberDisplayNames: () => ({ nameFor: () => null }),
 }));
 vi.mock("@/lib/ai/availability", () => ({
@@ -111,6 +119,19 @@ vi.mock("@/components/minutes/notes-panel", async () => {
       state.notesSheet += 1;
       state.notesProps = props;
       return null;
+    }),
+  };
+});
+vi.mock("@/components/minutes/summary-note", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    SummaryNote: forwardRef(function SummaryNote(
+      props: Record<string, unknown>,
+      ref: React.Ref<{ flush: () => Promise<string | null> }>,
+    ) {
+      useImperativeHandle(ref, () => ({ flush: state.summaryFlush }));
+      state.summaryProps = props;
+      return React.createElement("SummaryNote");
     }),
   };
 });
@@ -208,7 +229,7 @@ beforeEach(() => {
   state.meeting = meeting();
   state.isPending = false;
   state.error = null;
-  state.surfaces = { available: true, meetingNotes: true };
+  state.surfaces = { available: true, meetingNotes: true, ready: true };
   state.draft = { status: "none" };
   state.suggestions = [];
   state.notesSheet = 0;
@@ -220,6 +241,8 @@ beforeEach(() => {
   state.controls = 0;
   state.recorder = { phase: "idle", refusal: null };
   state.notesProps = null;
+  state.summaryProps = null;
+  state.event = undefined;
   state.draftPending = false;
   state.refetch.mockImplementation(async () => ({ data: state.meeting }));
   state.post.mockResolvedValue({});
@@ -296,7 +319,7 @@ describe("Recording on the minutes screen", () => {
     expect(state.recordingEnabled).toBe(false);
 
     state.meeting = meeting();
-    state.surfaces = { available: true, meetingNotes: false };
+    state.surfaces = { available: true, meetingNotes: false, ready: true };
     render();
     expect(state.recordingEnabled).toBe(false);
     expect(state.stage).toBeNull();
@@ -385,7 +408,7 @@ describe("Recording on the minutes screen", () => {
     expect(state.notesProps).toMatchObject({ autoDraft: false });
   });
 
-  it("shows the transcript on the screen on a tap, not in a sheet", () => {
+  it("opens the transcript on its own screen, never under the minutes", () => {
     state.recording = {
       ...available,
       status: "ready",
@@ -394,9 +417,13 @@ describe("Recording on the minutes screen", () => {
     };
     const tree = render();
     const row = MEETING_RECORDER_COPY.transcriptRow(1800);
-    expect(drawnText(tree.root)).not.toContain("Call to order.");
     act(() => button(tree, row).props.onPress());
-    expect(drawnText(tree.root)).toContain("Speaker 1  Call to order.");
+    // An hour of lines would push the minutes away (Paul, 2026-11-18).
+    expect(drawnText(tree.root)).not.toContain("Call to order.");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/minutes-transcript",
+      params: { id: "m1" },
+    });
   });
 });
 
@@ -425,21 +452,69 @@ describe("Minutes on the phone", () => {
     expect(state.panelDraft).toHaveBeenCalledTimes(1);
   });
 
-  it("offers no notes without drafting, and sends an editor with nothing written to the web", () => {
-    state.surfaces = { available: false, meetingNotes: false };
+  it("without drafting, the note is the minutes' Summary, posted from here once it has words (#5288)", async () => {
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     state.meeting = meeting({ content: EMPTY });
     const tree = render();
     expect(state.draftEnabled).toBe(false);
     expect(state.notesSheet).toBe(0);
-    expect(screenText(tree)).toContain(MEETING_COPY.writeOnWeb);
+    expect(state.summaryProps).not.toBeNull();
     expect(button(tree, MEETING_COPY.post)).toBeUndefined();
+
+    act(() =>
+      (state.summaryProps?.onWritten as (written: boolean) => void)(true),
+    );
+    state.summaryFlush.mockResolvedValue("2026-11-17T20:00:00Z");
+    await act(async () => button(tree, MEETING_COPY.post).props.onPress());
+    // The typed Summary is saved first, then the version is read fresh, so
+    // a save on the web since isn't refused as stale for nothing.
+    expect(state.summaryFlush).toHaveBeenCalledTimes(1);
+    expect(state.summaryFlush.mock.invocationCallOrder[0]).toBeLessThan(
+      state.refetch.mock.invocationCallOrder[0],
+    );
+    expect(state.post).toHaveBeenCalledWith({
+      id: "m1",
+      expectedUpdatedAt: "v1",
+    });
+  });
+
+  it("shows no Summary while the AI reads are out or failed, so notes never land in it", () => {
+    state.surfaces = { available: true, meetingNotes: false, ready: false };
+    state.meeting = meeting({ content: EMPTY });
+    render();
+    expect(state.summaryProps).toBeNull();
+    state.surfaces = {
+      available: undefined,
+      meetingNotes: false,
+      ready: true,
+    };
+    render();
+    expect(state.summaryProps).toBeNull();
+  });
+
+  it("doesn't post when the Summary couldn't be saved", async () => {
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
+    const tree = render();
+    state.summaryFlush.mockResolvedValue(null);
+    await act(async () => button(tree, MEETING_COPY.post).props.onPress());
+    expect(state.post).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain(MEETING_COPY.postFailed);
   });
 
   it("still posts from here what was written on the web, without drafting", () => {
-    state.surfaces = { available: false, meetingNotes: false };
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     const tree = render();
     expect(button(tree, MEETING_COPY.post)).toBeDefined();
-    expect(screenText(tree)).not.toContain(MEETING_COPY.writeOnWeb);
+  });
+
+  it("shows the note's chips: when, type, check-ins and who reads it", () => {
+    state.meeting = meeting({
+      attendees: { present: ["u1", "u2"], late: ["u3"], excused: ["u4"] },
+    });
+    state.event = { others_invited: true, excluded_role_ids: [] };
+    const text = screenText(render());
+    expect(text).toContain(MEETING_COPY.checkedIn(3));
+    expect(text).toContain(MEETING_COPY.audienceEveryone);
   });
 
   it("keeps Post at the bottom when the microphone was refused", () => {
@@ -510,7 +585,7 @@ describe("Minutes on the phone", () => {
       params: { meetingId: "m1" },
     });
 
-    state.surfaces = { available: false, meetingNotes: false };
+    state.surfaces = { available: false, meetingNotes: false, ready: true };
     render();
     expect(state.suggestionsEnabled).toBe(false);
   });

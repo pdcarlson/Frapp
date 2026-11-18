@@ -3,24 +3,32 @@ import { AppState, Linking } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { onlineManager } from "@tanstack/react-query";
 import * as Updates from "expo-updates";
-import { signetDarkTokens } from "@repo/theme/signet";
+import {
+  LAUNCH_BACKGROUND,
+  reloadScreenEmblem,
+} from "@/lib/launch/launch-look";
 import { isMeetingRecorderBusy } from "@/lib/minutes/recorder/session";
 import { addNotificationResponseListener } from "@/lib/notifications/push";
 import { createResumeUpdates, type UpdatesPort } from "./resume-updates";
 
 /**
- * The screen a reload shows for the moment it takes: the app's own
- * background, with no spinner, fading out, so it reads as the app opening
- * rather than a load. Read from the token, so the next ladder change can't
- * leave it behind (#4392). The native splash (`app.json`
- * `expo-splash-screen.backgroundColor`) still says #0A0A0A until the next
- * `expo.version` bump can carry it (#4392).
+ * The screen a reload shows until the app draws again: the launch logo's
+ * emblem on its background, with no spinner, so an update reload reads as the
+ * app opening, and the launch logo the new code draws first takes over from
+ * it with nothing to see (#5449, `lib/launch/launch-look.ts`). It was the
+ * app's bare surface token until then (#4392); it matches the native splash
+ * now, and both follow the splash when the next `expo.version` bump moves it
+ * to the token.
  */
-const RELOAD_SCREEN = {
-  backgroundColor: signetDarkTokens.color.surface.background,
-  spinner: { enabled: false },
-  fade: true,
-} as const;
+function reloadScreen() {
+  const image = reloadScreenEmblem();
+  return {
+    backgroundColor: LAUNCH_BACKGROUND,
+    ...(image ? { image, imageResizeMode: "contain" as const } : {}),
+    spinner: { enabled: false },
+    fade: true,
+  };
+}
 
 /** expo-updates as {@link createResumeUpdates} needs it. */
 export function expoUpdatesPort(): UpdatesPort {
@@ -35,7 +43,7 @@ export function expoUpdatesPort(): UpdatesPort {
         await Updates.fetchUpdateAsync();
       }
     },
-    reload: () => Updates.reloadAsync({ reloadScreenOptions: RELOAD_SCREEN }),
+    reload: () => Updates.reloadAsync({ reloadScreenOptions: reloadScreen() }),
   };
 }
 

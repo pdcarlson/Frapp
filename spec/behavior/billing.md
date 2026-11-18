@@ -121,11 +121,12 @@ Built 2026-11-12 (#714). Every call is held against three caps **before** it is 
 
 | Cap | Period | Default | Variable | Stops |
 | --- | --- | --- | --- | --- |
-| Chapter | calendar month, UTC | $25 | `AI_CHAPTER_MONTHLY_CAP_USD` | one chapter's AI until the month turns ("monthly cap reached — contact treasurer") |
-| Member | day, UTC, in one chapter | $2 | `AI_MEMBER_DAILY_CAP_USD` | one member, or a runaway script, from spending the chapter's month |
+| Chapter | calendar month, UTC | $50 | `AI_CHAPTER_MONTHLY_CAP_USD` | one chapter's AI until the month turns ("monthly cap reached — contact treasurer") |
+| Member | day, UTC, in one chapter | $10 | `AI_MEMBER_DAILY_CAP_USD` | one member, or a runaway script, from spending the chapter's month |
 | Platform, per provider | calendar month, UTC, every chapter | Anthropic $150, Google $50, AssemblyAI $25 | `AI_ANTHROPIC_MONTHLY_CAP_USD`, `AI_GOOGLE_MONTHLY_CAP_USD`, `AI_ASSEMBLYAI_MONTHLY_CAP_USD` | Frapp from overspending a provider account |
 
-- The defaults are guards for the beta, not prices (`apps/api/src/config/ai-spend-config.ts`). The chapter's is the research's 90th-percentile month on Sonnet (#714, 2026-10-08); the platform's leave room under the provider credits ADR-28 plans on, after the evals' share. Each is overridable per environment; a malformed value fails boot rather than falling back.
+- The defaults are guards for the beta, not prices (`apps/api/src/config/ai-spend-config.ts`). The chapter's was the research's 90th-percentile month on Sonnet ($25, #714, 2026-10-08); Paul raised it to $50 and the member's day from $2 to $10 on 2026-11-18, once the minutes ran on Opus and one long meeting held about $2.70; the platform's leave room under the provider credits ADR-28 plans on, after the evals' share. Each is overridable per environment; a malformed value fails boot rather than falling back.
+- Staging widens the chapter and member defaults to $100 a month and $25 a day (Paul, 2026-11-18: his staging chapter was refused its minutes after one long meeting, since an Opus minutes call holds about $0.67 up front against what was then a $2 day). Staging is where the team tries unfinished AI features, and its chapters are the team's; the wider caps still bound one member, so a loop can't take the provider month every staging chapter shares. A process is staging when `NODE_ENV=staging` and its database isn't production's; anything else, production and laptops included, keeps the defaults above. A set variable wins in either place.
 - The chapter cap is the allowance plus the overage cap. With the overage cap at $0 (the default below), it is the allowance alone, and no chapter can run up a bill. A cap the treasurer sets per chapter (#1310) replaces the default for that chapter: it is an argument to `reserve_ai_spend`, not a new table.
 - Scripted calls (local runs, tests) are held against the chapter and member caps at catalog prices, and against no platform cap, since they cost nothing.
 - A hold that lands exactly on a cap is granted. A member's cap is per chapter.

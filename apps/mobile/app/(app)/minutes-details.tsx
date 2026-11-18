@@ -1,15 +1,10 @@
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
 import {
   useAiSuggestions,
+  useEvent,
   useMeeting,
   useMeetingDraft,
   useMeetingRecording,
@@ -30,6 +25,7 @@ import {
   meetingWhenLabel,
   readMeetingContent,
   type MeetingType,
+  eventLimitsAudience,
   isBetaOffModule,
 } from "@repo/validation";
 import type { BackTarget } from "@/components/back-row";
@@ -46,7 +42,10 @@ import {
   useMeetingRecorderRow,
 } from "@/components/minutes/recorder";
 import { RecordingPlayer } from "@/components/minutes/recording-player";
-import { TranscriptLines } from "@/components/minutes/transcript-lines";
+import {
+  SummaryNote,
+  type SummaryNoteHandle,
+} from "@/components/minutes/summary-note";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -56,7 +55,7 @@ import {
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
-import { StatusChip } from "@/components/status-chip";
+import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
@@ -75,16 +74,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * **Everyone reads.** The page is the minutes as a document: the event's
  * name, what kind of meeting and when, then each section.
  *
- * **An officer who may edit a draft takes and finishes it here, on one
- * screen** (Paul, 2026-11-17: "I don't want a pop-up sheet for everything").
- * From the top: the recorder's stage (a big running clock while it records,
- * then four steps ticking off to a draft), the minutes to review once they
- * are in, and the officer's own notes, typed in place. The one action of the
- * moment is pinned at the bottom: pause and stop while recording, Post once
- * there is something to post, Draft minutes for typed notes, Record the
- * meeting to begin. A finished transcript drafts by itself, so after Stop
- * the minutes arrive without another press. Changing a section's wording by
- * hand is still on the web (the phone has no section editor yet).
+ * **An officer who may edit a draft takes and finishes it here, as a note**
+ * (Paul, 2026-11-17: "I don't want a pop-up sheet for everything"; #5288,
+ * Granola's note is the model). From the top: the event's name, its chips
+ * (when, type, check-ins, who reads it), then the officer's notes typed on
+ * the page and saved as they type, with the keyboard able to stay up while
+ * it records. Where the chapter drafts from notes they are the officer's
+ * notes and the draft fills the minutes in; where it doesn't they are the
+ * minutes' Summary, posted from here. The one action of the moment is pinned
+ * at the bottom: the recorder's bar (pause, the live level, the clock, stop)
+ * while recording, Post once there is something to post, Draft minutes for
+ * typed notes, Record the meeting to begin. After Stop a card ticks off the
+ * upload and the transcript, and a finished transcript drafts by itself.
+ * Decisions and action items are still written on the web (#4412).
  *
  * Posting asks nothing first, as on the web (Paul, 2026-11-16), though it
  * tells every invited member once.
@@ -168,10 +170,18 @@ function LoadedMinutes({
   const router = useRouter();
   const names = useMemberDisplayNames();
   const notesRef = useRef<NotesPanelHandle>(null);
+  const summaryRef = useRef<SummaryNoteHandle>(null);
+  const [summaryWritten, setSummaryWritten] = useState(false);
   const post = usePostMeeting();
   const [problem, setProblem] = useState<string | null>(null);
   const [draftable, setDraftable] = useState(false);
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // A transcript runs to an hour of lines, so it opens on its own screen
+  // rather than under the minutes (Paul, 2026-11-18).
+  const openTranscript = () =>
+    router.push({
+      pathname: "/minutes-transcript",
+      params: { id: meeting.id },
+    });
 
   const isDraft = meeting.status === "draft";
   const finishing = isDraft && meeting.can_edit;
@@ -230,6 +240,22 @@ function LoadedMinutes({
     [meeting.content],
   );
   const empty = isMeetingContentEmpty(content);
+  // Without drafting the note is the minutes' Summary, typed and posted here
+  // (#5288); the other sections still come from the web. Only once the AI
+  // reads have answered that drafting is off: while they load, or when one
+  // failed, an officer's notes must not land in the Summary members read.
+  const summaryShown =
+    finishing &&
+    (ai.available === false || (ai.available === true && ai.ready)) &&
+    !notesOffered;
+  const rest = useMemo(() => ({ ...content, summary: "" }), [content]);
+  const writtenHere = summaryShown && summaryWritten;
+
+  // Who reads the minutes is who the event invites.
+  const eventQuery = useEvent(meeting.event_id ?? "");
+  const checkedIn = meeting.attendees
+    ? meeting.attendees.present.length + meeting.attendees.late.length
+    : 0;
 
   const meetingRefresh = useCallback(() => refetch(), [refetch]);
   const refresh = useRefetchAll([
@@ -243,17 +269,22 @@ function LoadedMinutes({
     setProblem(null);
     // No "are you sure" (Paul, 2026-11-16): posting is the officer's plain
     // intent, and posted minutes can still be edited.
-    // No section is edited on the phone, so the version to post is whatever
-    // the server holds now: the one this member just read.
-    const fresh = await refetch();
-    if (!fresh) {
+    // The Summary typed here is saved first; a save refused as stale stops
+    // the post, and the note offers their version. Then the version to post
+    // is whatever the server holds now, read fresh.
+    if (summaryShown && !(await summaryRef.current?.flush())) {
+      setProblem(MEETING_COPY.postFailed);
+      return;
+    }
+    const expectedUpdatedAt = (await refetch())?.updated_at ?? null;
+    if (!expectedUpdatedAt) {
       setProblem(MEETING_COPY.postFailed);
       return;
     }
     try {
       await post.mutateAsync({
         id: meeting.id,
-        expectedUpdatedAt: fresh.updated_at,
+        expectedUpdatedAt,
       });
     } catch (error) {
       setProblem(errorCopy(error, MEETING_COPY.postFailed));
@@ -283,7 +314,7 @@ function LoadedMinutes({
   let footer: ReactNode = null;
   if (finishing || heldHere) {
     if (recorderFooter && recorderLeads) footer = recorderFooter;
-    else if (finishing && !busy && !drafting && !empty) {
+    else if (finishing && !busy && !drafting && (!empty || writtenHere)) {
       footer = (
         <SheetPrimaryButton
           label={MEETING_COPY.post}
@@ -306,14 +337,49 @@ function LoadedMinutes({
     } else if (recorderFooter) footer = recorderFooter;
   }
 
+  const notes =
+    finishing && draftState ? (
+      <NotesPanel
+        ref={notesRef}
+        meetingId={meeting.id}
+        eventStart={meeting.event_start_time}
+        state={draftState}
+        hasContent={!empty}
+        recording={recorderOffered ? recordingState : null}
+        getVersion={async () => (await refetch())?.updated_at ?? null}
+        onSettled={() => void refetch()}
+        autoDraft={!!transcript && empty}
+        onDraftable={setDraftable}
+      />
+    ) : null;
+  // The minutes to review. While the recorder works and nothing is written
+  // there is nothing to show, so the note has the screen.
+  const bodyHidden =
+    (empty && finishing && (busy || recordLeads || drafting)) ||
+    // Typed on the note, or nothing written yet: the note is the page.
+    (summaryShown && isMeetingContentEmpty(rest)) ||
+    (finishing && empty && !!notes);
+  const body = bodyHidden ? null : (
+    <MinutesBody
+      meeting={meeting}
+      content={summaryShown ? rest : content}
+      nameFor={names.nameFor}
+    />
+  );
+  const audience = eventQuery.data
+    ? eventLimitsAudience(eventQuery.data)
+      ? MEETING_COPY.audienceInvited
+      : MEETING_COPY.audienceEveryone
+    : null;
+
   return (
     <>
       <ScreenShell
         back={BACK_TO_MINUTES}
         title={meeting.event_name}
-        subtitle={`${type} meeting, ${meetingWhenLabel(meeting.event_start_time)}`}
         refresh={refresh}
         keyboardShouldPersistTaps="handled"
+        avoidKeyboard={finishing}
         footer={
           footer || problem ? (
             <>
@@ -330,51 +396,43 @@ function LoadedMinutes({
           ) : undefined
         }
       >
-        <View style={styles.stateRow}>
+        <View style={styles.chips}>
           {isDraft ? (
             <StatusChip
               label={MEETING_COPY.draftBadge}
               hue={tokens.color.semantic.warning}
             />
           ) : (
-            <Text style={styles.meta}>
-              {MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}
-            </Text>
+            <HairlineChip
+              label={MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}
+            />
           )}
+          <HairlineChip label={meetingWhenLabel(meeting.event_start_time)} />
+          <HairlineChip label={`${type} meeting`} />
+          {checkedIn > 0 ? (
+            <HairlineChip label={MEETING_COPY.checkedIn(checkedIn)} />
+          ) : null}
+          {audience ? <HairlineChip label={audience} /> : null}
         </View>
 
         {recorderShown ? <RecorderStage row={recorder} steps={steps} /> : null}
 
-        {/* The minutes themselves: the draft to review once it is in. While
-            the recorder works and nothing is written there is nothing to
-            show, so the stage above has the screen. */}
-        {empty && finishing && (busy || recordLeads || drafting) ? null : (
-          <MinutesBody
+        {summaryShown ? (
+          <SummaryNote
+            ref={summaryRef}
             meeting={meeting}
-            content={content}
-            nameFor={names.nameFor}
-          />
-        )}
-
-        {/* Nothing to write with here: no drafting, so no notes or recorder. */}
-        {finishing && empty && !notesOffered ? (
-          <Text style={styles.meta}>{MEETING_COPY.writeOnWeb}</Text>
-        ) : null}
-
-        {finishing && draftState ? (
-          <NotesPanel
-            ref={notesRef}
-            meetingId={meeting.id}
-            eventStart={meeting.event_start_time}
-            state={draftState}
-            hasContent={!empty}
-            recording={recorderOffered ? recordingState : null}
-            getVersion={async () => (await refetch())?.updated_at ?? null}
-            onSettled={() => void refetch()}
-            autoDraft={!!transcript && empty}
-            onDraftable={setDraftable}
+            reload={refetch}
+            onWritten={setSummaryWritten}
           />
         ) : null}
+
+        {/* Before anything is drafted the notes are the page; once the
+            minutes are in they lead and the notes sit under them. The notes
+            keep one slot, so the minutes arriving never remounts the box
+            being typed in. */}
+        {empty ? null : body}
+        {notes}
+        {empty ? body : null}
 
         {transcript && recordingState ? (
           <View style={styles.transcript}>
@@ -389,11 +447,10 @@ function LoadedMinutes({
                 label={MEETING_RECORDER_COPY.transcriptRow(
                   recordingState.duration_seconds ?? 0,
                 )}
-                value={transcriptOpen ? "Hide" : "Show"}
-                onPress={() => setTranscriptOpen((open) => !open)}
+                accessibilityHint={MEETING_COPY.transcriptHint}
+                onPress={openTranscript}
               />
             </ListSection>
-            {transcriptOpen ? <TranscriptLines transcript={transcript} /> : null}
           </View>
         ) : null}
 
@@ -403,13 +460,10 @@ function LoadedMinutes({
             <ListSection>
               <ListRow
                 label={MEETING_COPY.transcript}
-                value={transcriptOpen ? "Hide" : "Show"}
-                onPress={() => setTranscriptOpen((open) => !open)}
+                accessibilityHint={MEETING_COPY.transcriptHint}
+                onPress={openTranscript}
               />
             </ListSection>
-            {transcriptOpen ? (
-              <TranscriptLines transcript={meeting.transcript} />
-            ) : null}
           </View>
         ) : null}
 
@@ -456,10 +510,11 @@ function MinutesSkeleton() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    stateRow: {
+    chips: {
       flexDirection: "row",
+      flexWrap: "wrap",
       alignItems: "center",
-      minHeight: 24,
+      gap: tokens.spacing.xs,
     },
     meta: {
       ...typeRole(tokens.typography.role.caption),

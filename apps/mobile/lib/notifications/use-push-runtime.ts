@@ -86,6 +86,7 @@ import {
   type ExcuseDecisionAction,
 } from "./push-actions";
 import { settleChatLaunch } from "@/lib/chat/last-channel";
+import { useLaunchHold } from "@/lib/launch/launch-gate";
 import {
   clearStoredPushTokenRow,
   readStoredPushTokenRow,
@@ -158,6 +159,11 @@ export function usePushRuntime(): void {
     /** Approve or Decline pressed on an excuse push (#4686). */
     decision: ExcuseDecisionAction | null;
   } | null>(null);
+
+  // A tap that launched the app opens its screen once the session is back,
+  // and the launch logo stays up until it has (`lib/launch/launch-gate.ts`),
+  // rather than lifting onto chat home first.
+  useLaunchHold(pendingTap !== null);
 
   // Mutation objects are new every render; the effects below must not re-run on
   // that, only on the auth edges they actually care about.
