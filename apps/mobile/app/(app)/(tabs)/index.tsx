@@ -112,6 +112,15 @@ import {
   SetupChecklistView,
 } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { AwayCard } from "@/components/chat/away-card";
+import {
+  announcementChannelIds,
+  awayRows,
+  awaySince,
+  awaySinceLabel,
+  readLastChatVisit,
+  writeLastChatVisit,
+} from "@/lib/chat/away-updates";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
@@ -618,6 +627,72 @@ export default function ChatHomeScreen() {
     isFocused && listAnswered && !!viewerId && !holdingForLaunch,
   );
 
+  // "While you were away" (#5464): after hours off Chat, the few channels
+  // that matter since. The visit is stored per member and chapter on the
+  // phone; the card keeps its "since" for this stretch, so it stays while
+  // the member reads through it, and leaves once its channels are read.
+  const [awayFrom, setAwayFrom] = useState<number | null>(null);
+  const [awayClosed, setAwayClosed] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!viewerId || !chapterId) return;
+      let live = true;
+      void readLastChatVisit(viewerId, chapterId).then((previous) => {
+        if (!live) return;
+        const now = Date.now();
+        const since = awaySince(previous, now);
+        if (since !== null) {
+          setAwayFrom(since);
+          setAwayClosed(false);
+        }
+        writeLastChatVisit(viewerId, chapterId, now);
+      });
+      return () => {
+        live = false;
+        writeLastChatVisit(viewerId, chapterId, Date.now());
+      };
+    }, [viewerId, chapterId]),
+  );
+  const announcementIds = useMemo(
+    () => announcementChannelIds(channelsQuery.data),
+    [channelsQuery.data],
+  );
+  const awayLatest = useChannelLatestMessages({
+    enabled: awayFrom !== null && !awayClosed,
+  });
+  const awayList = useMemo(
+    () =>
+      awayFrom === null || awayClosed || !unreadByChannelId
+        ? []
+        : awayRows({
+            channels,
+            unread: unreadByChannelId,
+            announcementIds,
+            mutedIds: mutedChannelIds,
+            latest: awayLatest.data,
+            nameOf: (userId) => memberNames[userId],
+          }),
+    [
+      awayFrom,
+      awayClosed,
+      unreadByChannelId,
+      channels,
+      announcementIds,
+      mutedChannelIds,
+      awayLatest.data,
+      memberNames,
+    ],
+  );
+  const awayCard =
+    awayFrom !== null && awayList.length > 0 ? (
+      <AwayCard
+        rows={awayList}
+        sinceLabel={awaySinceLabel(awayFrom, Date.now())}
+        onOpen={(channelId) => openChannel(channelId)}
+        onClose={() => setAwayClosed(true)}
+      />
+    ) : null;
+
   function openChannel(channelId: string, options?: { landing?: boolean }) {
     // Object form, because the route takes a param. Note this is invisible to
     // `lib/routes.spec.ts`'s literal scan — the `pathname:` matcher added
@@ -761,6 +836,7 @@ export default function ChatHomeScreen() {
         </View>
       }
     >
+      {awayCard}
       <UpNextStrip
         events={eventsQuery.data}
         tasks={tasksQuery.data}
