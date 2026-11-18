@@ -37,17 +37,37 @@ const ROW = 44;
 const GAP = 4;
 const FIELD = 48;
 
-/** Scroll content the fakes below read: the field's place and the offset. */
-const page = { offset: 0, items: 3, keyboardUp: false };
+/** Content under the field: attachments, the minutes row, the padding. */
+const BELOW = 160;
+
+/**
+ * Scroll content the fakes below read: the field's place and the offset.
+ * `risen` is whether the avoiding area has caught up with an open keyboard
+ * (on Android its padding can still be growing at `keyboardDidShow`), and
+ * `above` is how far sections above the agenda have grown since it loaded.
+ */
+const page = {
+  offset: 0,
+  items: 3,
+  keyboardUp: false,
+  risen: true,
+  above: 0,
+};
 
 /** The field's top in the scroll content, under `items` rows. */
 function fieldTop(items: number) {
-  return AGENDA_TOP + items * (ROW + GAP);
+  return AGENDA_TOP + page.above + items * (ROW + GAP);
 }
 
-/** The scroll view's frame: it ends at the keyboard while it is up. */
+/** The scroll view's frame: it ends at the keyboard once the area rises. */
 function frameHeight() {
-  return (page.keyboardUp ? KEYBOARD_TOP : SCREEN - 34) - TOP_INSET;
+  return (
+    (page.keyboardUp && page.risen ? KEYBOARD_TOP : SCREEN - 34) - TOP_INSET
+  );
+}
+
+function contentHeight() {
+  return fieldTop(page.items) + FIELD + BELOW;
 }
 
 type Measure = (
@@ -59,7 +79,7 @@ const frame = {
 };
 const content = {
   measureInWindow: ((cb) =>
-    cb(0, TOP_INSET - page.offset, 393, 2000)) as Measure,
+    cb(0, TOP_INSET - page.offset, 393, contentHeight())) as Measure,
 };
 const fieldView = {
   measureInWindow: ((cb) =>
@@ -70,8 +90,10 @@ const fieldView = {
       FIELD,
     )) as Measure,
 };
+// A scroll view stops at the end of its content, as Android's clamps each
+// frame of an animated scroll to the range it has then.
 const scrollTo = vi.fn(({ y }: { y: number }) => {
-  page.offset = y;
+  page.offset = Math.min(y, Math.max(0, contentHeight() - frameHeight()));
 });
 const fakeScroll = {
   getNativeScrollRef: () => frame,
@@ -84,19 +106,20 @@ type Handlers = Omit<ReturnType<typeof useKeepAboveKeyboard>, "hold">;
 /** The field's handlers, as the last render handed them out. */
 const handed = new Map<"field" | "lone", Handlers>();
 
-function Field() {
+/** The agenda section: its hook stays mounted while the field comes and goes. */
+function Field({ shown }: { shown: boolean }) {
   const { hold, ...keep } = useKeepAboveKeyboard();
   // The spec calls the handlers the field's own props would.
   handed.set("field", keep);
-  return <View ref={hold} onLayout={keep.onLayout} />;
+  return shown ? <View ref={hold} onLayout={keep.onLayout} /> : null;
 }
 
-function Screen() {
+function Screen({ shown = true }: { shown?: boolean }) {
   const scrollRef = useRef<ScrollView | null>(fakeScroll);
   const reveal = useScrollReveal(scrollRef, { top: BACK_ROW, margin: MARGIN });
   return (
     <ScrollRevealProvider value={reveal}>
-      <Field />
+      <Field shown={shown} />
     </ScrollRevealProvider>
   );
 }
@@ -132,6 +155,8 @@ beforeEach(() => {
   page.offset = 0;
   page.items = 3;
   page.keyboardUp = false;
+  page.risen = true;
+  page.above = 0;
   scrollTo.mockClear();
   didShow.length = 0;
   vi.mocked(Keyboard.addListener).mockImplementation(((
@@ -151,6 +176,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
@@ -195,6 +221,7 @@ describe("the agenda field on an iPhone-size Event details (#5463)", () => {
       page.items = items;
       render();
       act(() => handed.get("field")!.onFocus());
+      await settle();
       // Focus alone, with the keyboard still opening, moves nothing.
       expect(scrollTo).not.toHaveBeenCalled();
       act(() => openKeyboard());
@@ -214,8 +241,59 @@ describe("the agenda field on an iPhone-size Event details (#5463)", () => {
   );
 
   it("moves nothing while the keyboard is down", async () => {
+    // Long enough that the field sits below the screen's own bottom edge, so
+    // only the keyboard check keeps it still.
+    page.items = 15;
     render();
     act(() => handed.get("field")!.onFocus());
+    act(() => handed.get("field")!.onLayout());
+    act(() => handed.get("field")!.onType());
+    await settle();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("reveals again once the avoiding area has risen", async () => {
+    vi.useFakeTimers();
+    page.items = 3;
+    render();
+    act(() => handed.get("field")!.onFocus());
+    // Android: the event comes while the area's padding is still growing,
+    // so the first scroll stops at the end of the old range.
+    page.risen = false;
+    act(() => openKeyboard());
+    await settle();
+    expect(fieldBottomOnScreen()).toBeGreaterThan(KEYBOARD_TOP - MARGIN);
+    page.risen = true;
+    act(() => vi.advanceTimersByTime(400));
+    await settle();
+    expect(fieldBottomOnScreen()).toBe(KEYBOARD_TOP - MARGIN);
+  });
+
+  it("brings the field back on the next keystroke after a section above grows", async () => {
+    page.items = 8;
+    render();
+    act(() => handed.get("field")!.onFocus());
+    act(() => openKeyboard());
+    await settle();
+    expect(fieldBottomOnScreen()).toBe(KEYBOARD_TOP - MARGIN);
+    // The check-in card opens on the clock and grows; the field's own
+    // layout in its section doesn't change.
+    page.above = 60;
+    expect(fieldBottomOnScreen()).toBeGreaterThan(KEYBOARD_TOP);
+    act(() => handed.get("field")!.onType());
+    await settle();
+    expect(fieldBottomOnScreen()).toBe(KEYBOARD_TOP - MARGIN);
+  });
+
+  it("forgets the focus of a field that unmounted while focused", async () => {
+    page.items = 12;
+    const tree = render();
+    act(() => handed.get("field")!.onFocus());
+    // The agenda fills on Return: the field goes, sending no blur.
+    act(() => tree.update(<Screen shown={false} />));
+    // Another field opens the keyboard, and a Remove brings the field back.
+    act(() => openKeyboard());
+    act(() => tree.update(<Screen shown />));
     act(() => handed.get("field")!.onLayout());
     await settle();
     expect(scrollTo).not.toHaveBeenCalled();

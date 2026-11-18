@@ -254,6 +254,7 @@ function EventAgendaSection({
               onChangeText={(text) => {
                 setDraft(text);
                 setProblem(null);
+                keep.onType();
               }}
               onFocus={() => {
                 setFocused(true);
@@ -516,6 +517,7 @@ function AddLinkForm({
           onChangeText={(text) => {
             setUrl(text);
             setProblem(null);
+            keep.onType();
           }}
           onFocus={() => {
             setFocused("url");
@@ -545,7 +547,10 @@ function AddLinkForm({
       >
         <TextInput
           value={title}
-          onChangeText={setTitle}
+          onChangeText={(text) => {
+            setTitle(text);
+            keep.onType();
+          }}
           onFocus={() => {
             setFocused("title");
             keep.onFocus();
@@ -615,7 +620,10 @@ function PickDocument({
       <View style={[styles.ring, focused ? styles.ringActive : null]}>
         <TextInput
           value={search}
-          onChangeText={setSearch}
+          onChangeText={(text) => {
+            setSearch(text);
+            keep.onType();
+          }}
           onFocus={() => {
             setFocused(true);
             keep.onFocus();

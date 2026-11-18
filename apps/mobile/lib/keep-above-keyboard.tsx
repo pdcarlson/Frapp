@@ -11,25 +11,40 @@ import { Keyboard, type ScrollView, type View } from "react-native";
 /**
  * Keeps a field typed in a long screen's body above the keyboard: while it
  * has focus, its part of the page is scrolled into the band between the
- * pinned back row and the keyboard's top, when the keyboard opens and again
- * whenever that part moves. Event details' agenda is the case it was built
- * for: each item added from the field under the list pushes the field down a
- * row, and the newest item and the field went under the keyboard
- * (`spec/behavior/events.md` § Agenda and attachments). Reminders and Notes
- * keep the line being typed above the keyboard the same way.
+ * pinned back row and the keyboard's top: when the keyboard opens (and once
+ * more as it settles), when that part moves within its own section, and on
+ * each keystroke. Event details' agenda is the case it was built for: each
+ * item added from the field under the list pushes the field down a row, and
+ * the newest item and the field went under the keyboard (#5463,
+ * `spec/behavior/events.md` § Agenda and attachments). Apple's Reminders and
+ * Notes apps keep the line being typed above the keyboard the same way.
  *
  * The screen owns the scroll view, so it makes the reveal
  * (`useScrollReveal`) and provides it around its `ScreenShell` (a provider
  * inside the shell would wrap the whole body into one child and lose the
  * shell's gap). The field's component takes `useKeepAboveKeyboard` and puts
  * its `hold` (a callback ref) and `onLayout` on the view that holds the
- * field, and `onFocus` and `onBlur` on the field. The screen passes
+ * field, and `onFocus`, `onBlur` and `onType` on the field. The screen passes
  * `avoidKeyboard` to the shell too, so the scroll view ends at the keyboard
  * and a field near the end of the page has room to scroll up.
  *
  * Nothing is moved while the keyboard is down, so a layout change elsewhere
  * on the page never scrolls it.
+ *
+ * Why not `react-native-keyboard-controller`'s `KeyboardAwareScrollView`,
+ * which does the same on the UI thread: the scroll view belongs to
+ * `ScreenShell`, one of the eight frozen files
+ * (`.claude/skills/ui-development/SKILL.md`), and that library is switched
+ * off in Expo Go (`lib/keyboard.tsx`), where every field would lose the
+ * reveal. This works on every run path through the shell's own `scrollRef`.
  */
+
+/**
+ * How long after `keyboardDidShow` the reveal runs again: past the keyboard's
+ * own animation (about 250ms on both platforms), which the avoiding area
+ * follows. Derived from the libraries' source, not measured on a device.
+ */
+const KEYBOARD_SETTLE_MS = 350;
 
 /** Scrolls the screen's body so `target` sits in its visible band. */
 export type ScrollReveal = (target: View) => void;
@@ -145,8 +160,8 @@ export function useScrollReveal(
 /**
  * A field's side: `hold` (a callback ref) and `onLayout` go on the view that
  * holds the field (with anything that should show with it, such as its error
- * line), and `onFocus` and `onBlur` on the field, or on each field of a small
- * form that shares the view. Outside a `ScrollRevealProvider` it does
+ * line), and `onFocus`, `onBlur` and `onType` (from its `onChangeText`) on the
+ * field, or on each field of a small form that shares the view. Outside a `ScrollRevealProvider` it does
  * nothing. Take `hold` apart from the rest (`const { hold, ...keep } =`):
  * React's lint treats whatever is passed as a `ref` as a ref, and reading the
  * other handlers off the same object during render would then count as
@@ -156,6 +171,7 @@ export function useKeepAboveKeyboard() {
   const reveal = useContext(ScrollRevealContext);
   const held = useRef<View | null>(null);
   const focused = useRef(false);
+  const settling = useRef<ReturnType<typeof setTimeout> | null>(null);
   const show = useCallback(() => {
     if (!reveal || !focused.current || !held.current) return;
     if (!Keyboard.isVisible()) return;
@@ -163,10 +179,20 @@ export function useKeepAboveKeyboard() {
   }, [reveal]);
   useEffect(() => {
     if (!reveal) return undefined;
-    // After the keyboard has opened (or changed size), when the screen's
-    // avoiding area has risen with it: Android sends no "will" events.
-    const opened = Keyboard.addListener("keyboardDidShow", show);
-    return () => opened.remove();
+    // After the keyboard has opened (or changed size): Android sends no
+    // "will" events. Once more when the screen's avoiding area has surely
+    // risen, since on Android the event can come while its padding is still
+    // growing and the scroll range can't reach the field yet. A reveal that
+    // finds the field in view moves nothing.
+    const opened = Keyboard.addListener("keyboardDidShow", () => {
+      show();
+      if (settling.current) clearTimeout(settling.current);
+      settling.current = setTimeout(show, KEYBOARD_SETTLE_MS);
+    });
+    return () => {
+      opened.remove();
+      if (settling.current) clearTimeout(settling.current);
+    };
   }, [reveal, show]);
   const onFocus = useCallback(() => {
     focused.current = true;
@@ -178,6 +204,12 @@ export function useKeepAboveKeyboard() {
   }, []);
   const hold = useCallback((view: View | null) => {
     held.current = view;
+    // A field that unmounts while focused (the agenda filling on Return)
+    // sends no blur, so its view going away ends its focus.
+    if (!view) focused.current = false;
   }, []);
-  return { hold, onLayout: show, onFocus, onBlur };
+  // `onType` on each keystroke: a section above that grew (the check-in
+  // card opening on the clock) moves the field without its own layout
+  // changing, and the next keystroke brings it back.
+  return { hold, onLayout: show, onType: show, onFocus, onBlur };
 }

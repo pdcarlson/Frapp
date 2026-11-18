@@ -316,7 +316,10 @@ function ExcuseComposer({
       <View style={styles.composerRow}>
         <TextInput
           value={reason}
-          onChangeText={setReason}
+          onChangeText={(text) => {
+            setReason(text);
+            keep.onType();
+          }}
           placeholder="Exam review, away game, sick…"
           placeholderTextColor={tokens.color.text.muted}
           maxLength={EVENT_EXCUSE_REASON_MAX}
