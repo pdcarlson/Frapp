@@ -1078,6 +1078,14 @@ export class ChannelLatestMessageDto {
       'The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”.',
   })
   has_gif: boolean;
+
+  @ApiProperty({
+    enum: ['sent', 'read'],
+    nullable: true,
+    description:
+      'Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row.',
+  })
+  read_status: 'sent' | 'read' | null;
 }
 
 /**

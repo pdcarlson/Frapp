@@ -1,13 +1,13 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import { errorCopy, useAiConsent, useFrappAiChoice } from "@repo/hooks";
 import { AI_SETTINGS_COPY, FRAPP_AI_COPY } from "@repo/validation";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { MeetFrappAiDialog } from "@/components/ai/meet-frapp-ai";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
-import { Switch } from "@/components/ui/switch";
+import { SettingsSwitchCard } from "@/components/personal-settings/settings-switch-card";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 
@@ -31,8 +31,6 @@ export function AiSection() {
   const consentQuery = useAiConsent();
   const choice = useFrappAiChoice();
   const [meetOpen, setMeetOpen] = useState(false);
-  const switchId = useId();
-  const statusId = `${switchId}-status`;
   const consent = consentQuery.data;
 
   if (isOffline && anyReadUncached(consentQuery)) {
@@ -74,29 +72,16 @@ export function AiSection() {
 
   return (
     <ProfileSection id="ai" title={FRAPP_AI_COPY.settingsTitle}>
-      <div className="flex items-start justify-between gap-8 rounded-[14px] border border-border px-4 py-4">
-        <div className="min-w-0 space-y-0.5">
-          <label
-            htmlFor={switchId}
-            className="text-sm font-medium text-foreground"
-          >
-            {FRAPP_AI_COPY.settingsSwitch}
-          </label>
-          <p id={statusId} className="text-caption text-muted-foreground">
-            {FRAPP_AI_COPY.settingsCaption}
-          </p>
-        </div>
-        <Switch
-          id={switchId}
-          checked={consent.answer === "yes"}
-          disabled={isOffline || choice.pending}
-          onCheckedChange={(next) => {
-            if (next) setMeetOpen(true);
-            else void turnOff();
-          }}
-          aria-describedby={statusId}
-        />
-      </div>
+      <SettingsSwitchCard
+        label={FRAPP_AI_COPY.settingsSwitch}
+        caption={FRAPP_AI_COPY.settingsCaption}
+        checked={consent.answer === "yes"}
+        disabled={isOffline || choice.pending}
+        onCheckedChange={(next) => {
+          if (next) setMeetOpen(true);
+          else void turnOff();
+        }}
+      />
       <MeetFrappAiDialog
         open={meetOpen}
         onAnswered={(on) => {

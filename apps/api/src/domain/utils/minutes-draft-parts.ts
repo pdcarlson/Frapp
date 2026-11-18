@@ -1,5 +1,6 @@
 import { MEETING_NOTES_COPY, type MeetingDraftOutput } from '@repo/validation';
 import type { MinutesDraftRequest } from './minutes-draft';
+import { interleavedBullets } from './minutes-text';
 
 /**
  * Drafting a long meeting in parts (Paul, 2026-11-16: a 4-hour recording
@@ -153,6 +154,7 @@ export function mergeParts(
     announcements: lines(parts.map((part) => part.announcements)),
     decisions: distinct(parts.flatMap((part) => part.decisions)),
     action_items: distinct(parts.flatMap((part) => part.action_items)),
+    tabled: distinct(parts.flatMap((part) => part.tabled ?? [])),
     officer_reports: lines(parts.map((part) => part.officer_reports)),
     old_business: lines(parts.map((part) => part.old_business)),
     new_business: lines(parts.map((part) => part.new_business)),
@@ -161,6 +163,9 @@ export function mergeParts(
       .map((part) => part.discussion_log.trim())
       .filter((text) => text.length > 0)
       .join('\n\n'),
+    // A bullet from each part in turn, so the verifier's first few cover the
+    // whole meeting. The review pass, when it runs, writes one for all of it.
+    tldr: interleavedBullets(parts.map((part) => part.tldr ?? '')),
     open_questions: [...questions],
     conflicts: parts.flatMap((part) => part.conflicts ?? []),
   };

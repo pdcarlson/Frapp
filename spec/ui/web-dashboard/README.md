@@ -448,8 +448,12 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
   It is the phone's Activity tab on web, from the same model in `@repo/hooks` (`activityWeekSummary`, `activityAgenda`, `activityReview`, `activityGroups`, `activityStandingGauges`), so the two say the same things in the same order ([`../mobile/screens.md`](../mobile/screens.md), Activity;
   [`principles.md`](../design-system/principles.md) P6).
-  Top to bottom: the week card, Last week (Sunday to Tuesday), This semester, To review, To do, Reminders, Waiting on others, Links.
+  Top to bottom: the week card, then the member's cards in their order ([`activity.md` § Cards](../../behavior/activity.md#cards)), then Edit Activity, Snoozed and Archive.
+  Each role starts from its own default order ([`activity.md` § Cards](../../behavior/activity.md#cards) names the rule; `ACTIVITY_DEFAULT_CARD_ORDER` holds it).
+  The Frapp card and the Calendar row hold their places in the order and draw nothing on web yet (#5520 step 5); Edit Activity marks them "On your phone".
+  Until 2026-11-18 the order was fixed: the week card, Last week, This semester, To review, To do, Reminders, Waiting on others, Links. *Changed in #5520 by `pdcarlson`, 2026-11-18.*
   It is drawn and checked for four people ([`principles.md` § Three people](../design-system/principles.md#three-people)): a member with nothing due, an average member, a committee chair and the president.
+- **Edit Activity** (`components/activity/activity-editor.tsx`), a full-width secondary button under the cards, swaps the page for the editor as Archive does: Shown (This week first, fixed, then each card with Hide, Move up and Move down as icon buttons, To do without Hide) and Hidden (each with Show), Reset to the default once the member has saved one, and Done, which saves and goes back. `‹ Activity` is Done too. A failed save is a toast, and the page goes back to the saved arrangement.
 - **It lays out by its own width, never the window's.**
   The page is usually a pane beside chat about a phone wide (480px), and the whole window only when chat is closed, so its breakpoints are container queries on the page (`@container`): under 768px of page it is the phone's column, and from 768px the week card puts Next beside the ring and the gauges share one row.
   A window breakpoint would draw the wide layout in the narrow pane.
@@ -617,6 +621,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
     Under Chat the nav has a **Direct messages** row (paper-plane glyph) that opens the same chat panel on the member's direct and group messages instead of the chapter's channels, the way Slack's DMs entry, Discord's Direct Messages home and Teams' separate Chat entry keep conversations apart from channels.
     It is one panel: the row for the list on screen closes it, the other row switches it in place, and either opens it when closed; the two are never open side by side, which would not fit beside a tool page.
     The Channels list then holds channels only, and the Direct messages list holds DMs and group DMs, with Pinned above them and Hidden conversations below, no heading of its own, and no officer reordering (a DM has no place in the chapter's order).
+    Each Direct messages row is two lines like the phone's: the name with the last message's time at its end (`formatConversationTime`, the full date and time as its tooltip), and the last line, led by a sent check or a read double check in the chapter accent when it is the member's own, with the count badge at its end (#5519, Paul, 2026-11-18; [`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Read Receipts → Shown to the sender).
     Channels land on their last channel as before; Direct messages open only the DM the member last had open there, and with none ask them to pick one, since opening one they didn't pick would mark it read unseen ([`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Where Chat opens).
     `/chat`'s top-bar title follows the list ([§ Top bar](#top-bar)).
     The Chat row lights for channels and @-mentions; the Direct messages row carries a mention-red count of conversations with anything unread, the count the phone's Messages tab shows.
@@ -902,7 +907,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | Group | Section | `?section=` | Holds |
 | ----- | ------- | ----------- | ----- |
 | My account | Notifications | _(none)_ | Quiet hours (`user_settings`) |
-| My account | Appearance and chat | `appearance` | Chat density, kept on the browser. No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
+| My account | Appearance and chat | `appearance` | Chat density, kept on the browser, and the Read receipts switch, an account setting (#5519; [`chat/README.md` § Shown to the sender](../../behavior/chat/README.md#shown-to-the-sender)). No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
 | My account | Linked apps | `apps` | One row per connected app, each marked with a green check when connected, greyed when not and red once expired (#5407): Google Calendar and Discord for the active chapter, then the ways the account signs in (email, Google, Apple, read from Supabase Auth). `?section=discord` opens it. The API's Discord link handshake and Google's sign-in return here |
 | My account | Calendar | `calendar` | The Google Calendar row again, with the subscription link (Copy link, made only on that tap, and the Apple, Outlook and Reset menu) |
 | My account | Account | `account` | Replay the tour, sign out, delete account |

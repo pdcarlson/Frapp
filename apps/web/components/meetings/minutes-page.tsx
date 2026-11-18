@@ -39,6 +39,7 @@ import {
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_OTHER_LABEL_MAX_LENGTH,
+  MEETING_TABLED_MAX_ITEMS,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_TYPES,
   MEETING_TYPE_LABELS,
@@ -50,6 +51,7 @@ import {
   meetingDraftSourceFor,
   MEETING_NOTE_TAKERS_COPY,
   meetingSectionHasContent,
+  meetingTabledFromLabel,
   meetingTypeLabel,
   readMeetingContent,
   shownMeetingSections,
@@ -57,6 +59,7 @@ import {
   type MeetingContent,
   type MeetingDecision,
   type MeetingSectionKey,
+  type MeetingTabledItem,
   type MeetingTextSection,
   type MeetingType,
   parseMinutesNotes,
@@ -131,6 +134,9 @@ function cleanContent(content: MeetingContent): MeetingContent {
       .map((decision) => ({ ...decision, text: decision.text.trim() }))
       .filter((decision) => decision.text.length > 0),
     action_items: content.action_items
+      .map((item) => ({ ...item, text: item.text.trim() }))
+      .filter((item) => item.text.length > 0),
+    tabled: content.tabled
       .map((item) => ({ ...item, text: item.text.trim() }))
       .filter((item) => item.text.length > 0),
   };
@@ -828,6 +834,15 @@ function Minutes({
                   tasks={actionItemTasks}
                 />
               )
+            ) : key === "tabled" ? (
+              editing ? (
+                <TabledEditor
+                  items={draft.content.tabled}
+                  onChange={(tabled) => editContent({ tabled })}
+                />
+              ) : (
+                <TabledView items={view.content.tabled} />
+              )
             ) : editing ? (
               <GrowingTextarea
                 aria-labelledby={`${ids}-${key}`}
@@ -836,6 +851,9 @@ function Minutes({
                 // Grows with the text, so a long summary reads whole.
                 className="min-h-28"
                 rows={key === "summary" ? 6 : 4}
+                placeholder={
+                  key === "tldr" ? MEETING_COPY.tldrPlaceholder : undefined
+                }
                 onChange={(event) =>
                   editContent({
                     [key]: event.target.value,
@@ -843,7 +861,6 @@ function Minutes({
                 }
               />
             ) : key === "summary" ? (
-              // The lead: what a member reads if they read nothing else.
               <p className="whitespace-pre-wrap break-words text-base leading-relaxed">
                 {view.content.summary}
               </p>
@@ -851,6 +868,9 @@ function Minutes({
               <LinesView
                 text={view.content[key as MeetingTextSection]}
                 outline={key === "discussion_log"}
+                // The lead (#5523): what a member reads if they read
+                // nothing else, a size up from the sections under it.
+                lead={key === "tldr"}
               />
             )}
           </section>
@@ -1143,10 +1163,21 @@ function ActionItemsView({
  * way Granola lays out meeting notes. A plain line that opens with its
  * topic ("Treasurer: ...") shows the topic in bold, so it can be skimmed.
  */
-function LinesView({ text, outline }: { text: string; outline: boolean }) {
+function LinesView({
+  text,
+  outline,
+  lead = false,
+}: {
+  text: string;
+  outline: boolean;
+  lead?: boolean;
+}) {
   const lines = parseMinutesNotes(text, { outline });
   return (
-    <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
+    <ul
+      role="list"
+      className={`space-y-1.5 leading-relaxed ${lead ? "text-base" : "text-sm"}`}
+    >
       {lines.map((line, index) => {
         if (line.kind === "topic") {
           return (
@@ -1329,6 +1360,107 @@ function DecisionsEditor({
           onClick={() => onChange([...decisions, { text: "", vote: null }])}
         >
           Add a decision
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What the meeting tabled (#5522): each matter, with where it was first
+ * tabled when an earlier meeting did.
+ */
+function TabledView({ items }: { items: MeetingTabledItem[] }) {
+  return (
+    <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
+      {items.map((item, index) => {
+        const from = meetingTabledFromLabel(item);
+        return (
+          <li key={index} className="flex gap-2 break-words">
+            <span aria-hidden className="select-none text-muted-foreground">
+              •
+            </span>
+            <span className="min-w-0">
+              {item.text}
+              {from ? (
+                <span className="block text-caption text-muted-foreground">
+                  {from}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The Table action by hand (#5522): add a matter the meeting put off, or
+ * take out one the draft listed that wasn't. A matter carried in from an
+ * earlier meeting keeps its date and count.
+ */
+function TabledEditor({
+  items,
+  onChange,
+}: {
+  items: MeetingTabledItem[];
+  onChange: (next: MeetingTabledItem[]) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => {
+        const from = meetingTabledFromLabel(item);
+        return (
+          <div key={index} className="space-y-1">
+            <div className="flex items-start gap-2">
+              <GrowingTextarea
+                aria-label={`Tabled item ${index + 1}`}
+                placeholder="What was put off"
+                rows={1}
+                className="min-h-10"
+                value={item.text}
+                maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
+                onChange={(event) =>
+                  onChange(
+                    items.map((entry, at) =>
+                      at === index
+                        ? { ...entry, text: event.target.value }
+                        : entry,
+                    ),
+                  )
+                }
+              />
+              <IconButton
+                label={`Remove tabled item ${index + 1}`}
+                onClick={() => onChange(items.filter((_, at) => at !== index))}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+            </div>
+            {from ? (
+              <p className="text-caption text-muted-foreground">{from}</p>
+            ) : null}
+          </div>
+        );
+      })}
+      {items.length < MEETING_TABLED_MAX_ITEMS ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() =>
+            onChange([
+              ...items,
+              {
+                text: "",
+                first_meeting_id: null,
+                first_start_time: null,
+                times: 1,
+              },
+            ])
+          }
+        >
+          Table an item
         </Button>
       ) : null}
     </div>

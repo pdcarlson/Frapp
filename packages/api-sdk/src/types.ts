@@ -5135,6 +5135,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own order of their Activity cards
+         * @description Which cards the caller shows, in order, and which they hid, in this chapter. When they have never saved one, both lists are empty and `saved` is false: show the default for their role.
+         */
+        get: operations["ActivityLayoutController_get_v1"];
+        /**
+         * Save the order of the caller's Activity cards
+         * @description Replaces the whole arrangement: send both lists every time. A card may be named only once, in one list or the other. Any well-formed key is kept, including one this server does not know. Follows the caller to their other devices.
+         */
+        put: operations["ActivityLayoutController_save_v1"];
+        post?: never;
+        /**
+         * Put the caller's Activity cards back to the default
+         * @description Forgets the caller's saved order, so Activity shows the default for their role again. Answers 204 whether or not anything was saved.
+         */
+        delete: operations["ActivityLayoutController_reset_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/goals": {
         parameters: {
             query?: never;
@@ -7211,6 +7239,8 @@ export interface components {
              * @description When the custom status line clears. Null: until the member clears it.
              */
             custom_status_expires_at: string | null;
+            /** @description Read receipts on direct messages (#5519). `true` until the member turns them off. */
+            read_receipts: boolean;
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -7241,6 +7271,8 @@ export interface components {
              * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
              */
             custom_status_expires_at?: string | null;
+            /** @description Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is. */
+            read_receipts?: boolean;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -7314,6 +7346,11 @@ export interface components {
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
             /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
             has_gif: boolean;
+            /**
+             * @description Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row.
+             * @enum {string|null}
+             */
+            read_status: "sent" | "read" | null;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
@@ -8562,7 +8599,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "tabled" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8587,11 +8624,30 @@ export interface components {
              */
             due_date: string | null;
         };
+        MeetingTabledItemDto: {
+            text: string;
+            /**
+             * Format: uuid
+             * @description The minutes that first tabled it; null when these minutes did.
+             */
+            first_meeting_id: string | null;
+            /**
+             * Format: date-time
+             * @description That meeting's start; null with first_meeting_id.
+             */
+            first_start_time: string | null;
+            /** @description How many meetings have tabled it, this one included. */
+            times: number;
+        };
         MeetingContentDto: {
+            /** @description The TL;DR: a few "- " bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it. */
+            tldr: string;
             summary: string;
             announcements: string;
             decisions: components["schemas"]["MeetingDecisionDto"][];
             action_items: components["schemas"]["MeetingActionItemDto"][];
+            /** @description What the meeting tabled. Empty on minutes from before it. */
+            tabled: components["schemas"]["MeetingTabledItemDto"][];
             officer_reports: string;
             old_business: string;
             new_business: string;
@@ -8625,7 +8681,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "tabled" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -8665,10 +8721,12 @@ export interface components {
             new_event?: components["schemas"]["NewMeetingEventDto"];
         };
         MeetingContentPatchDto: {
+            tldr?: string;
             summary?: string;
             announcements?: string;
             decisions?: components["schemas"]["MeetingDecisionDto"][];
             action_items?: components["schemas"]["MeetingActionItemDto"][];
+            tabled?: components["schemas"]["MeetingTabledItemDto"][];
             officer_reports?: string;
             old_business?: string;
             new_business?: string;
@@ -11243,6 +11301,44 @@ export interface components {
         };
         UpdateMemberNudgeSettingsDto: {
             enabled: boolean;
+        };
+        ActivityLayoutDto: {
+            /**
+             * @description The cards the member shows, top to bottom. Empty when nothing is saved.
+             * @example [
+             *       "todo",
+             *       "calendar",
+             *       "recap"
+             *     ]
+             */
+            card_order: string[];
+            /**
+             * @description The cards the member hid. Empty when nothing is saved.
+             * @example [
+             *       "links"
+             *     ]
+             */
+            hidden_cards: string[];
+            /** @description Whether the member has saved an arrangement. False means show the default for the member's role. A card the app knows that neither list names is placed as that default places it; a key the app doesn't know is skipped. */
+            saved: boolean;
+        };
+        UpdateActivityLayoutDto: {
+            /**
+             * @description The cards to show, top to bottom. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.
+             * @example [
+             *       "todo",
+             *       "calendar",
+             *       "recap"
+             *     ]
+             */
+            card_order: string[];
+            /**
+             * @description The cards to hide. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.
+             * @example [
+             *       "links"
+             *     ]
+             */
+            hidden_cards: string[];
         };
         RoleGoalDto: {
             /** Format: uuid */
@@ -24073,6 +24169,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MemberNudgeSettingsDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityLayoutDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_save_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateActivityLayoutDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityLayoutDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

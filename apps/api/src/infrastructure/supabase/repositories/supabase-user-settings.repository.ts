@@ -71,6 +71,8 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       'status_expires_at',
       'custom_status',
       'custom_status_expires_at',
+      // The Read receipts switch (#5519).
+      'read_receipts',
     ] as const) {
       if (data[key] !== undefined) {
         Object.assign(row, { [key]: data[key] });

@@ -14,6 +14,8 @@ import {
   usePermissionList,
   useSetChapterChatLevel,
   useSetActivityNudgesEnabled,
+  READ_RECEIPTS_COPY,
+  useReadReceiptsSetting,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -236,6 +238,7 @@ export default function PreferencesScreen() {
   const setNudgesEnabled = useSetActivityNudgesEnabled();
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
+  const readReceipts = useReadReceiptsSetting();
   // The chapter-wide chat level (#3840). Unknown until read, so the row
   // states no level rather than claiming "All messages" before it knows.
   const chatLevelSheetRef = useRef<BottomSheetModal>(null);
@@ -488,7 +491,29 @@ export default function PreferencesScreen() {
           accessibilityHint="Choose how tightly messages are drawn in chat."
           onPress={() => chatDensitySheetRef.current?.present()}
         />
+        {/* Read receipts (#5519): two-way, as WhatsApp's switch is. Drawn
+            once settings have answered, so it never shows on and then flips
+            off for a member who turned it off. */}
+        {readReceipts.ready ? (
+          <ListRow
+            label={READ_RECEIPTS_COPY.label}
+            description={READ_RECEIPTS_COPY.description}
+            trailing={
+              <Toggle
+                value={readReceipts.enabled}
+                disabled={readReceipts.pending}
+                onValueChange={readReceipts.setEnabled}
+                accessibilityLabel={READ_RECEIPTS_COPY.label}
+              />
+            }
+          />
+        ) : null}
       </ListSection>
+      {readReceipts.failed ? (
+        <Text style={styles.footnoteError}>
+          {READ_RECEIPTS_COPY.saveFailed}
+        </Text>
+      ) : null}
 
       {/* The card at the top of Activity (#5464), which shows with or
           without AI, so its switch sits outside the AI section. */}

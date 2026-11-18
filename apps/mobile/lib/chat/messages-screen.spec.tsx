@@ -90,6 +90,7 @@ const {
       payload: Record<string, unknown> | null;
       attachment_count: number;
       created_at: string;
+      read_status?: string | null;
     }[],
   },
   leaveMutateAsync: vi.fn(),
@@ -415,7 +416,7 @@ describe("Messages lists direct messages only", () => {
 });
 
 describe("Messages previews", () => {
-  it("previews each row with the sender, You, or nothing in a 1:1 DM, and draws no time", () => {
+  it("previews each row with the sender, You, or nothing in a 1:1 DM", () => {
     latestData.value = [
       latest(dmAlice.id, "2026-09-25T15:00:00Z", {
         content: "minutes doc is up",
@@ -428,9 +429,39 @@ describe("Messages previews", () => {
     );
     // No message yet: still two lines, so every row is the same height.
     expect(rowNamed(tree, "Exec board").props.preview).toBe("No messages yet");
-    expect(rows(tree).every((row) => row.props.timestamp === undefined)).toBe(
-      true,
-    );
+    // A time only where there is a last message (#5519).
+    expect(rowNamed(tree, "Alice Chen").props.time).toEqual(expect.any(String));
+    expect(rowNamed(tree, "Alice Chen").props.timeLabel).toContain("2026");
+    expect(rowNamed(tree, "Exec board").props.time).toBeNull();
+  });
+
+  // #5519: the check is the server's word, on the member's own line only.
+  it("carries the server's sent or read check on the member's own last line, in place of You", () => {
+    latestData.value = [
+      latest(dmAlice.id, "2026-09-25T15:00:00Z", {
+        sender_id: VIEWER,
+        read_status: "read",
+      }),
+      latest(group.id, "2026-09-25T17:00:00Z", {
+        sender_id: VIEWER,
+        read_status: "sent",
+      }),
+    ];
+    const tree = render();
+    expect(rowNamed(tree, "Alice Chen").props.readStatus).toBe("read");
+    expect(rowNamed(tree, "Alice Chen").props.preview).toBe("see you at 6");
+    expect(rowNamed(tree, "Exec board").props.readStatus).toBe("sent");
+  });
+
+  it("draws no check on someone else's line, or where the server sent none", () => {
+    latestData.value = [
+      latest(dmAlice.id, "2026-09-25T15:00:00Z", { read_status: "read" }),
+      latest(group.id, "2026-09-25T17:00:00Z", { sender_id: VIEWER }),
+    ];
+    const tree = render();
+    expect(rowNamed(tree, "Alice Chen").props.readStatus).toBeNull();
+    expect(rowNamed(tree, "Exec board").props.readStatus).toBeNull();
+    expect(rowNamed(tree, "Exec board").props.preview).toBe("You: see you at 6");
   });
 
   it("says You for the member's own last line in a DM", () => {

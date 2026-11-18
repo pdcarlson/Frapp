@@ -47,6 +47,10 @@ function dueDay(value: string): string {
  * and writing their name into a passage would keep a copy that no rename or
  * account deletion reaches (`data-retention.md`). Who owns what is live
  * data, which Ask reads through a tool, not from the index.
+ *
+ * The TL;DR (#5523) is left out too: it restates the decisions, action
+ * items and announcements indexed here, in a model's words, and a second
+ * passage saying the same thing only crowds an answer's sources.
  */
 export function minutesSections(content: MeetingContent): CorpusSection[] {
   const sections: CorpusSection[] = [];
@@ -81,6 +85,7 @@ export function minutesSections(content: MeetingContent): CorpusSection[] {
       })
       .join('\n\n'),
   );
+  add('tabled', content.tabled.map((item) => item.text).join('\n\n'));
   add('officer_reports', content.officer_reports);
   add('old_business', content.old_business);
   add('new_business', content.new_business);

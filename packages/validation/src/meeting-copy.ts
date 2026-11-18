@@ -4,6 +4,7 @@ import {
   type MeetingType,
   type MeetingVote,
 } from "./meetings";
+import { ordinal } from "./recurrence";
 
 /**
  * Words the minutes screens share, on web and on the phone, so the two never
@@ -51,6 +52,23 @@ export function meetingDueLabel(
   if (!year || !month || !day) return "";
   return meetingDayLabel(new Date(year, month - 1, day, 12).toISOString(), now);
 }
+
+/**
+ * Where a tabled matter came from (#5522): "Tabled from Tuesday, November 11
+ * · 2nd time", or nothing when these minutes tabled it first.
+ */
+export function meetingTabledFromLabel(
+  item: { first_start_time: string | null; times: number },
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(item.first_start_time, now);
+  const parts = [
+    day ? `Tabled from ${day}` : "",
+    item.times > 1 ? `${ordinal(item.times)} time` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
 
 export function meetingSectionLabel(key: MeetingSectionKey): string {
   return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;
@@ -166,7 +184,13 @@ export const MEETING_COPY = {
    * until the phone has a section editor (#4412).
    */
   summaryPlaceholder: "Type what was said and decided.",
-  restOnWeb: "Decisions and action items are added on the web.",
+  restOnWeb: "The TL;DR, decisions and action items are added on the web.",
+  /**
+   * The TL;DR's box (#5523): a draft fills it; without drafting the
+   * minute-taker writes it, as they write the Summary.
+   */
+  tldrPlaceholder:
+    "A few short lines for every member: what was decided, what they need to do and by when, what's coming up.",
   saveFailed: "Not saved yet. It tries again as you type.",
   /** The note's chips (#5288). */
   checkedIn: (count: number) => `${count} checked in`,

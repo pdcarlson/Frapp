@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v6";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v8";
 
 const DueDate = z
   .string()
@@ -73,10 +73,29 @@ export const MeetingDraftOutputSchema = z.object({
       source: z.string().optional(),
     }),
   ),
+  /**
+   * Matters the meeting tabled (#5522), each with the line where it was
+   * tabled, kept only when that line is in a source, as a decision is.
+   */
+  tabled: z.array(
+    z.object({
+      text: z.string(),
+      quote: z.string(),
+      source: z.string().optional(),
+    }),
+  ),
   officer_reports: z.string(),
   old_business: z.string(),
   new_business: z.string(),
   discussion_log: z.string(),
+  /**
+   * The TL;DR (#5523): a few plain "- " bullets for a member who reads
+   * nothing else. Last of the sections, so a model writing in order writes
+   * it after the decisions and action items it has listed. Not checked
+   * against the sources: the API asks the officer to compare it when the
+   * checks took an item out or settled a conflict.
+   */
+  tldr: z.string(),
   /** What the notes leave unsaid, one plain sentence each. */
   open_questions: z.array(z.string()),
   /**

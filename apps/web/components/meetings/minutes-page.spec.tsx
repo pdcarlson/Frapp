@@ -149,6 +149,8 @@ vi.mock("@/components/shared/confirm-dialog", () => ({
 const { MinutesPage } = await import("./minutes-page");
 
 const EMPTY = {
+  tldr: "",
+  tabled: [],
   summary: "",
   announcements: "",
   decisions: [],
@@ -335,6 +337,57 @@ describe("MinutesPage", () => {
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
   });
 
+  it("leads posted minutes with the TL;DR, as bullets, above the Summary (#5523)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          tldr: "- Formal budget approved\n- Book the venue by Friday",
+          summary: "Budget approved.",
+        },
+        sections: ["tldr", "summary", "discussion_log"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((node) => node.textContent);
+    expect(headings.slice(0, 2)).toEqual(["TL;DR", "Summary"]);
+    expect(screen.getByText("Formal budget approved")).toBeTruthy();
+    expect(screen.getByText("Book the venue by Friday")).toBeTruthy();
+  });
+
+  it("lists what was tabled, with where a carried item was first tabled (#5522)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          summary: "Budget approved.",
+          tabled: [
+            {
+              text: "Formal budget",
+              first_meeting_id: null,
+              first_start_time: null,
+              times: 1,
+            },
+            {
+              text: "Rush shirts",
+              first_meeting_id: "33333333-3333-4333-8333-333333333333",
+              first_start_time: "2026-11-03T23:00:00.000Z",
+              times: 2,
+            },
+          ],
+        },
+        sections: ["summary", "tabled", "discussion_log"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByRole("heading", { name: "Tabled" })).toBeTruthy();
+    expect(screen.getByText("Formal budget")).toBeTruthy();
+    expect(screen.getByText("Rush shirts")).toBeTruthy();
+    expect(screen.getByText(/^Tabled from .* · 2nd time$/)).toBeTruthy();
+  });
+
   it("keeps changing posted minutes out of the way: Copy link an icon, Edit and a red Delete behind the dots (Paul, 2026-11-18)", () => {
     loaded(minutes({ can_edit: true, can_delete: true }));
     render(<MinutesPage id="m-1" />);
@@ -516,6 +569,45 @@ describe("MinutesPage", () => {
     });
     await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
     expect(mocks.update.mock.calls[0]![0].body.content.decisions).toEqual([]);
+  });
+
+  it("tables an item by hand and takes one out, saving what's left (#5522)", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: {
+        ...EMPTY,
+        tabled: [
+          {
+            text: "Rush shirts",
+            first_meeting_id: null,
+            first_start_time: null,
+            times: 1,
+          },
+        ],
+      },
+      sections: ["summary", "tabled", "discussion_log"],
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue(draft);
+    render(<MinutesPage id="m-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Table an item" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Tabled item 2" }), {
+      target: { value: "Formal budget " },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove tabled item 1" }),
+    );
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
+    expect(mocks.update.mock.calls[0]![0].body.content.tabled).toEqual([
+      {
+        text: "Formal budget",
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      },
+    ]);
   });
 
   it("says someone else saved, and keeps the typing, when a save is stale", async () => {

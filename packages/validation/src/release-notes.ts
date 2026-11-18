@@ -130,6 +130,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now give a task to everyone in a committee or group, or to a few people at once, and put a task up for grabs so the first person to claim it gets it.",
       "Drafted minutes now list last meeting's open action items, each marked reported done, carried over, or not mentioned for you to confirm, and ask about usual reports missing from tonight's notes.",
       "A task suggested from the minutes can now go to a committee, a few people, or up for grabs, with the same picker as the Tasks page.",
+      "Minutes now open with a TL;DR: a few short lines saying what was decided, what you need to do and by when, and what's coming up.",
+      "Activity's cards are now yours to arrange: Edit Activity at the foot of the page hides a card, brings it back or moves it, and your phone and the web keep the same order.",
+      "Messages now show when each conversation's last message was sent, and your own direct messages show one check once sent and two once read, with a Read receipts switch in Settings to turn that off.",
     ],
     web: [
       "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",

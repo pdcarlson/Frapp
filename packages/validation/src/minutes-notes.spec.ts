@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { meetingDayLabel, meetingTabledFromLabel } from "./meeting-copy";
 import {
   ALWAYS_MEETING_SECTIONS,
   normalizeMeetingSections,
   parseMinutesNotes,
+  readMeetingContent,
 } from "./meetings";
 
 describe("the notes outline (#5410)", () => {
@@ -66,12 +68,56 @@ describe("the notes outline (#5410)", () => {
   });
 });
 
-describe("the notes are always on", () => {
-  it("adds them to a saved template that left them out", () => {
+describe("the notes, the TL;DR and Tabled are always on", () => {
+  it("adds them to a saved template that left them out, in catalog order", () => {
+    expect(ALWAYS_MEETING_SECTIONS).toEqual([
+      "tldr",
+      "tabled",
+      "discussion_log",
+    ]);
     expect(normalizeMeetingSections(["summary", "decisions"])).toEqual([
+      "tldr",
       "summary",
       "decisions",
-      ...ALWAYS_MEETING_SECTIONS,
+      "tabled",
+      "discussion_log",
     ]);
+  });
+});
+
+describe("tabled items (#5522)", () => {
+  it("reads only well-formed items, and none from minutes before them", () => {
+    expect(readMeetingContent({ summary: "Old" }).tabled).toEqual([]);
+    expect(
+      readMeetingContent({
+        tabled: [
+          {
+            text: "Formal budget",
+            first_meeting_id: null,
+            first_start_time: null,
+            times: 1,
+          },
+          { text: "", first_meeting_id: null, first_start_time: null, times: 1 },
+          { text: "No count" },
+        ],
+      }).tabled.map((item) => item.text),
+    ).toEqual(["Formal budget"]);
+  });
+
+  it("says where a carried item was first tabled, and how often", () => {
+    const now = new Date(2026, 10, 20, 12);
+    const from = new Date(2026, 10, 11, 19).toISOString();
+    expect(
+      meetingTabledFromLabel(
+        { first_start_time: from, times: 2 },
+        now,
+      ),
+    ).toBe(`Tabled from ${meetingDayLabel(from, now)} · 2nd time`);
+    expect(
+      meetingTabledFromLabel({ first_start_time: null, times: 1 }, now),
+    ).toBe("");
+    expect(
+      meetingTabledFromLabel({ first_start_time: from, times: 13 }, now),
+    ).toContain("13th time");
   });
 });

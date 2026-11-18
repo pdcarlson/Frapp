@@ -59,6 +59,8 @@ const request = (
 const output = (
   overrides: Partial<MeetingDraftOutput> = {},
 ): MeetingDraftOutput => ({
+  tldr: '',
+  tabled: [],
   summary: 'The chapter met.',
   announcements: '',
   decisions: [],
@@ -82,7 +84,7 @@ describe('buildMinutesDraftPrompt', () => {
   it('carries the notes whole, between markers, and reads them back', () => {
     const prompt = buildMinutesDraftPrompt(request());
     expect(notesInPrompt(prompt.messages[0].content)).toBe(NOTES);
-    expect(prompt.promptVersion).toBe('minutes-draft@v6');
+    expect(prompt.promptVersion).toBe('minutes-draft@v8');
   });
 
   it('says the day of the week, so "by Wednesday" resolves', () => {
@@ -98,6 +100,17 @@ describe('buildMinutesDraftPrompt', () => {
     expect(content).toContain('- decisions:');
     expect(content).not.toContain('- action_items:');
     expect(content).not.toContain('attendees');
+  });
+
+  it('asks for the TL;DR first, written last from the outcomes (#5523)', () => {
+    const { content } = buildMinutesDraftPrompt(request()).messages[0];
+    const sections = content.slice(content.indexOf('Sections to fill:'));
+    expect(sections.indexOf('- tldr:')).toBeLessThan(
+      sections.indexOf('- summary:'),
+    );
+    expect(content).toContain('write it last');
+    expect(content).toContain('what members need to do and by when');
+    expect(content).toContain('leave out procedure');
   });
 
   it('lists the roster with offices and who checked in', () => {
@@ -135,6 +148,130 @@ describe('buildMinutesDraftPrompt', () => {
 });
 
 describe('verifyMinutesDraft', () => {
+  it('keeps the TL;DR as at most six "- " bullets (#5523)', () => {
+    const { content } = verifyMinutesDraft(
+      output({
+        tldr: [
+          'TL;DR:',
+          '1. DJ for formal approved, up to $1,200',
+          '',
+          '• Pay dues by Wednesday',
+          '* Formal is December 5',
+          '- One',
+          '- Two',
+          '- Three',
+          '- Four',
+        ].join('\n'),
+      }),
+      request(),
+    );
+    expect(content.tldr).toBe(
+      [
+        '- DJ for formal approved, up to $1,200',
+        '- Pay dues by Wednesday',
+        '- Formal is December 5',
+        '- One',
+        '- Two',
+        '- Three',
+      ].join('\n'),
+    );
+  });
+
+  it('keeps what a bullet says, and drops only a marker left on its own', () => {
+    const { content } = verifyMinutesDraft(
+      output({
+        tldr: [
+          '-$25 refund for anyone who paid twice',
+          'Before formal, members need to:',
+          '2.',
+          '- Formal is December 5',
+        ].join('\n'),
+      }),
+      request(),
+    );
+    expect(content.tldr).toBe(
+      [
+        '- -$25 refund for anyone who paid twice',
+        '- Before formal, members need to:',
+        '- Formal is December 5',
+      ].join('\n'),
+    );
+  });
+
+  it('asks the officer to check the TL;DR when an item was left out', () => {
+    const { review } = verifyMinutesDraft(
+      output({
+        tldr: '- Dues raised to $200',
+        decisions: [
+          {
+            text: 'Raised dues to $200.',
+            vote: null,
+            quote: 'not in the notes',
+          },
+        ],
+      }),
+      request(),
+    );
+    expect(review.left_out).toBe(1);
+    expect(review.gaps[0]).toContain('Check the TL;DR');
+  });
+
+  it('says nothing about the TL;DR when every item stood', () => {
+    const { review } = verifyMinutesDraft(
+      output({ tldr: '- Formal is December 5' }),
+      request(),
+    );
+    expect(review.gaps.join(' ')).not.toContain('TL;DR');
+  });
+
+  it('keeps a tabled matter only with its line in the notes, each once (#5522)', () => {
+    const line = NOTES.split('\n').find((l) => l.trim().length > 0)!;
+    const { content, review } = verifyMinutesDraft(
+      output({
+        tabled: [
+          { text: 'Formal budget', quote: line },
+          { text: 'formal budget', quote: line },
+          { text: 'Rush shirts', quote: 'not a line of the notes' },
+        ],
+      }),
+      request(),
+    );
+    expect(content.tabled).toEqual([
+      {
+        text: 'Formal budget',
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      },
+    ]);
+    expect(review.left_out).toBe(1);
+  });
+
+  it('puts a tabled matter’s quote back to its line, as a decision’s is', () => {
+    const line = NOTES.split('\n')
+      .find((l) => l.trim().length > 0)!
+      .trim();
+    const { content } = verifyMinutesDraft(
+      output({
+        tabled: [{ text: 'Formal budget', quote: `${line.toUpperCase()}.` }],
+      }),
+      request(),
+    );
+    expect(content.tabled?.map((item) => item.text)).toEqual(['Formal budget']);
+  });
+
+  it('asks for what was tabled, never a matter that was settled', () => {
+    const { content } = buildMinutesDraftPrompt(request()).messages[0];
+    expect(content).toContain('- tabled:');
+    expect(content).toContain('A matter the meeting settled is not tabled');
+  });
+
+  it('reads a reply with no TL;DR as an empty one', () => {
+    const drafted = output();
+    delete (drafted as Partial<MeetingDraftOutput>).tldr;
+    expect(verifyMinutesDraft(drafted, request()).content.tldr).toBe('');
+  });
+
   it('keeps a decision whose line is in the notes, with its vote', () => {
     const { content, review } = verifyMinutesDraft(
       output({

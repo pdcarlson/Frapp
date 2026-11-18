@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import {
   BOOT_CHECK_BUILD,
   BOOT_CHECK_SOURCE,
+  CLOUD_RUN_PLATFORM,
   OWN_INPUTS,
   checkDeployConfig,
   checkMinimumVersions,
@@ -210,7 +211,20 @@ describe("check-deploy-config: what counts as injected, and redaction", () => {
       config: { B_NAME: "value-b", A_NAME: "value-a" },
       childEnv: CHILD_ENV,
     });
-    assert.match(result.message, /KEYS A_NAME,B_NAME$/);
+    assert.match(result.message, /KEYS A_NAME,B_NAME,K_SERVICE$/);
+  });
+
+  it("checks as Cloud Run, where the API boots, so a key-less service account passes (#5542)", () => {
+    const cloudRunOnly =
+      "exports.validateEnv = (c) => { if (c.GOOGLE_DRIVE_SERVICE_ACCOUNT && !c.K_SERVICE) throw new Error('Only Cloud Run signs in without a key file.'); };";
+    const config = { ...STORE, GOOGLE_DRIVE_SERVICE_ACCOUNT: "drive@nonprod.iam.gserviceaccount.com" };
+    const onCloudRun = runBootCheck({ root: tree({ boot: cloudRunOnly }), config, childEnv: CHILD_ENV });
+    assert.equal(onCloudRun.status, "ok", onCloudRun.message);
+    // Counted and redacted as Infisical's names only: the platform's are not a secret.
+    assert.match(onCloudRun.message, /accepts the 9 names Infisical injected/);
+    const elsewhere = runBootCheck({ root: tree({ boot: cloudRunOnly }), config, childEnv: CHILD_ENV, platform: {} });
+    assert.equal(elsewhere.status, "failed");
+    assert.equal(CLOUD_RUN_PLATFORM.K_SERVICE.length > 0, true);
   });
 
   it("redacts longest first, and leaves values too short to mean anything", () => {

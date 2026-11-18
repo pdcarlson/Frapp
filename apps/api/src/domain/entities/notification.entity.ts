@@ -85,6 +85,13 @@ export interface UserSettings {
   custom_status?: string | null;
   /** When the custom line clears. Null: until the member clears it. */
   custom_status_expires_at?: string | null;
+  /**
+   * Read receipts (#5519): whether the member's reads of a direct message are
+   * reported to the people in it, and theirs to them. Two-way, off by choice.
+   * Optional so fixtures that predate it still type-check; the column defaults
+   * to true.
+   */
+  read_receipts?: boolean;
   updated_at: string;
 }
 
@@ -104,5 +111,6 @@ export type UserSettingsValues = Pick<
       | 'status_expires_at'
       | 'custom_status'
       | 'custom_status_expires_at'
+      | 'read_receipts'
     >
   >;

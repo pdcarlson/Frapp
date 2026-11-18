@@ -52,6 +52,7 @@ const USER_SETTINGS_DEFAULTS: UserSettingsValues = {
   status_expires_at: null,
   custom_status: null,
   custom_status_expires_at: null,
+  read_receipts: true,
 };
 
 /** True when `expiresAt` is set and is not later than `now`. */
@@ -83,6 +84,7 @@ function toUserSettingsValues(
     custom_status_expires_at: customExpired
       ? null
       : (row.custom_status_expires_at ?? null),
+    read_receipts: row.read_receipts ?? true,
   };
 }
 
@@ -1149,6 +1151,7 @@ export class NotificationService {
         | 'status_expires_at'
         | 'custom_status'
         | 'custom_status_expires_at'
+        | 'read_receipts'
       >
     >,
   ): Promise<UserSettingsValues> {
@@ -1173,6 +1176,8 @@ export class NotificationService {
     // `!= null`: the DTO's `@IsOptional` lets `theme: null` through, and the
     // column is NOT NULL, so null means "not supplied" here, never a clear.
     if (data.theme != null) write.theme = data.theme;
+    // The same for the read-receipts switch: NOT NULL, so null is not a clear.
+    if (data.read_receipts != null) write.read_receipts = data.read_receipts;
 
     // A status and its end time are one choice: picking a status replaces the
     // old end time, so switching from "DND for 1 hour" to Invisible does not

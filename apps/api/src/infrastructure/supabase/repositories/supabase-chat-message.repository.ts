@@ -130,6 +130,12 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       attachment_count: Number(row.attachment_count) || 0,
       // Absent until `20261114153147` is applied; a missing column is no GIF.
       has_gif: row.has_gif === true,
+      // Absent until `20261118173407` is applied, and anything but the two
+      // words is no status, so a row never claims a read it can't vouch for.
+      read_status:
+        row.read_status === 'sent' || row.read_status === 'read'
+          ? row.read_status
+          : null,
     }));
   }
 

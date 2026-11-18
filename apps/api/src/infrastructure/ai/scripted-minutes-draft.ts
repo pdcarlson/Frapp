@@ -30,6 +30,9 @@ export const scriptedMinutesDraft: ScriptedHandler = (request) => {
 };
 
 const DECISION = /\b(voted?|passed|failed|approved|motion|decided|agreed)\b/i;
+/** "let's table the formal budget", "push rush shirts to next week" (#5522). */
+const TABLED =
+  /\b(?:table[ds]?|tabling)\s+(?:it|this|that|the|our)\b|\bpostpone[ds]?\b|\bpush(?:ed)?\b.*\bnext (?:week|meeting|time)\b/i;
 const ACTION =
   /\b(will|to (?:book|send|email|call|post|order|buy|pick|write|collect|drop|talk|set|reserve|draft|follow|check|ask|bring|make|get|schedule|contact|update|submit|plan)|needs? to|someone needs)\b/i;
 const ANNOUNCEMENT =
@@ -73,10 +76,12 @@ function draftFrom(
     announcements: '',
     decisions: [],
     action_items: [],
+    tabled: [],
     officer_reports: '',
     old_business: '',
     new_business: '',
     discussion_log: '',
+    tldr: '',
     open_questions: [],
     conflicts: [],
   };
@@ -90,6 +95,10 @@ function draftFrom(
     if (ADDRESSED_TO_AI.test(line)) continue;
     if (POINTS.test(line)) continue;
     const text = sentence(line);
+    // Put off, and still an outcome: it goes on to decisions as well.
+    if (TABLED.test(line)) {
+      draft.tabled.push({ text, quote: line, source: at.source });
+    }
     if (DECISION.test(line)) {
       const count = /(\d+)\s*(?:-|–|to)\s*(\d+)/.exec(line);
       items.push({
@@ -137,6 +146,15 @@ function draftFrom(
     lines.length === 0
       ? ''
       : `The meeting covered ${count(discussion.length + announcements.length, 'item')}, made ${count(draft.decisions.length, 'decision')} and left ${count(draft.action_items.length, 'action item')}.`;
+  // The TL;DR (#5523): what was decided, then what's to do, then what's
+  // coming up, each the line's own words.
+  draft.tldr = [
+    ...draft.decisions.map((decision) => decision.text),
+    ...draft.action_items.map((item) => item.text),
+    ...announcements,
+  ]
+    .map((text) => `- ${text}`)
+    .join('\n');
   return draft;
 }
 
@@ -341,6 +359,7 @@ export function scriptedReview(prompt: string): ReviewedMinutes {
     old_business: section('old_business'),
     new_business: section('new_business'),
     discussion_log: section('discussion_log'),
+    tldr: section('tldr'),
     open_questions: section('open_questions').split('\n').filter(Boolean),
   };
 }

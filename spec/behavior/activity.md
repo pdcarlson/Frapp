@@ -6,7 +6,8 @@ chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../pro
 
 This file owns the reads behind the page, `GET /v1/activity`, its
 [standing](#standing), `GET /v1/activity/standing`, its [recap](#recap),
-`GET /v1/activity/recap`, and its [archive](#archive), `GET /v1/activity/archive`. The page itself (where it sits, how
+`GET /v1/activity/recap`, its [archive](#archive), `GET /v1/activity/archive`, and how each member
+arranged its [cards](#cards), `/v1/activity/layout`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
 the phone's screen, the Activity tab (#4610), is in
@@ -148,6 +149,48 @@ page on both clients. See [Week](#week).
   rather than show it as empty.
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
+
+## Cards
+
+The page is a stack of cards each member orders and hides (#5520; Paul's pick, 2026-11-18, after
+Bevel's Edit Home and Apple Fitness's Edit Summary). Before it, the page's sections sat in one fixed
+order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
+
+- **The cards** are named by key (`ACTIVITY_CARD_KEYS` in `@repo/validation`): the Frapp card
+  (`nudge`), Last week (`recap`), To review (`review`), To do (`todo`), Calendar (`calendar`),
+  Reminders (`reminders`), Waiting on others (`waiting`), Links (`links`) and This semester
+  (`semester`). The week card is not one: it is always first and can't be hidden, as Fitness keeps
+  its rings. To do can move but can't be hidden, because the week card's lines narrow it and the
+  week strip's days jump to it.
+- **A card with nothing in it draws nothing**, wherever it sits, as each section always has. So
+  every card is in every default, and a member never sees an empty To review.
+- **Each member's arrangement is theirs, per chapter**, on their account (`activity_layouts`), so
+  the phone and web draw the same page. `GET /v1/activity/layout` returns the cards shown, in
+  order, the cards hidden, and whether the member has saved one (`saved`). `PUT` replaces both
+  lists; `DELETE` forgets them, so the role's default applies again. Any member may read and
+  write their own; no one reads another's.
+- **The API stores any well-formed key**, lower-case words joined by hyphens (at most 32
+  characters, 32 keys a list, none twice), not only the keys it knows, so a newer client's card
+  survives an older API. A client skips a key it doesn't know.
+- **Until a member saves, their role's default applies** (`ACTIVITY_DEFAULT_CARD_ORDER` in
+  `@repo/hooks`). An officer is anyone holding `tasks:manage` or `service:approve`, the people To
+  review is for, and their default puts To review before their own To do, then Waiting on others.
+  Everyone else's puts To do first. The default also applies while the read is out or has failed,
+  so the page never waits on it.
+- **A card newer than a member's save** goes where the default puts it: after the nearest card
+  before it in the default that they show.
+- **Edit Activity**, at the foot of the page, lists the cards in place of the page until Done:
+  minus hides one, plus brings it back where the default puts it, and arrows move it one place.
+  Done saves only when something changed; Reset to the default is offered once they have saved.
+  A failed save puts the saved arrangement back and says so. Edit Activity is offered only once the member's
+  saved arrangement and role have loaded, since an editor opened on the default would save it over
+  theirs. Leaving the editor by Android's back button or web's `‹ Activity` is Done.
+- **A save keeps the keys a client doesn't know.** The PUT replaces the row, so a client carries
+  over the stored keys it skips: a hidden one stays hidden, and a shown one keeps its place after the
+  card it followed. An older phone saving can't bring back a card hidden on web.
+- **A hidden Frapp card isn't asked for**, so its read waits for the arrangement to load: it can cost a model call
+  ([`ai.md` § The card and its tray](ai.md#the-card-and-its-tray)). Hiding it hides only the card;
+  Preferences' "Nudges on Activity" still owns whether the server makes one at all.
 
 ## Week
 

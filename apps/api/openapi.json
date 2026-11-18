@@ -17346,6 +17346,119 @@
         ]
       }
     },
+    "/v1/activity/layout": {
+      "get": {
+        "description": "Which cards the caller shows, in order, and which they hid, in this chapter. When they have never saved one, both lists are empty and `saved` is false: show the default for their role.",
+        "operationId": "ActivityLayoutController_get_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLayoutDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own order of their Activity cards",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "put": {
+        "description": "Replaces the whole arrangement: send both lists every time. A card may be named only once, in one list or the other. Any well-formed key is kept, including one this server does not know. Follows the caller to their other devices.",
+        "operationId": "ActivityLayoutController_save_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateActivityLayoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLayoutDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the order of the caller's Activity cards",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "description": "Forgets the caller's saved order, so Activity shows the default for their role again. Answers 204 whether or not anything was saved.",
+        "operationId": "ActivityLayoutController_reset_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put the caller's Activity cards back to the default",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/goals": {
       "get": {
         "operationId": "GoalsController_getGoals_v1",
@@ -23514,6 +23627,10 @@
             "description": "When the custom status line clears. Null: until the member clears it.",
             "nullable": true,
             "format": "date-time"
+          },
+          "read_receipts": {
+            "type": "boolean",
+            "description": "Read receipts on direct messages (#5519). `true` until the member turns them off."
           }
         },
         "required": [
@@ -23524,7 +23641,8 @@
           "status",
           "status_expires_at",
           "custom_status",
-          "custom_status_expires_at"
+          "custom_status_expires_at",
+          "read_receipts"
         ]
       },
       "UpdateUserSettingsDto": {
@@ -23583,6 +23701,10 @@
             "nullable": true,
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "read_receipts": {
+            "type": "boolean",
+            "description": "Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is."
           }
         }
       },
@@ -23759,6 +23881,15 @@
           "has_gif": {
             "type": "boolean",
             "description": "The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”."
+          },
+          "read_status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "read"
+            ],
+            "nullable": true,
+            "description": "Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row."
           }
         },
         "required": [
@@ -23772,7 +23903,8 @@
           "attachment_count",
           "created_at",
           "forwarded_from",
-          "has_gif"
+          "has_gif",
+          "read_status"
         ]
       },
       "ChannelAccessOptionDto": {
@@ -27441,10 +27573,12 @@
             "items": {
               "type": "string",
               "enum": [
+                "tldr",
                 "summary",
                 "announcements",
                 "decisions",
                 "action_items",
+                "tabled",
                 "discussion_log",
                 "attendees",
                 "officer_reports",
@@ -27532,9 +27666,46 @@
           "due_date"
         ]
       },
+      "MeetingTabledItemDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "first_meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The minutes that first tabled it; null when these minutes did."
+          },
+          "first_start_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "That meeting's start; null with first_meeting_id."
+          },
+          "times": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 99,
+            "description": "How many meetings have tabled it, this one included."
+          }
+        },
+        "required": [
+          "text",
+          "first_meeting_id",
+          "first_start_time",
+          "times"
+        ]
+      },
       "MeetingContentDto": {
         "type": "object",
         "properties": {
+          "tldr": {
+            "type": "string",
+            "description": "The TL;DR: a few \"- \" bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it."
+          },
           "summary": {
             "type": "string"
           },
@@ -27553,6 +27724,13 @@
               "$ref": "#/components/schemas/MeetingActionItemDto"
             }
           },
+          "tabled": {
+            "description": "What the meeting tabled. Empty on minutes from before it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingTabledItemDto"
+            }
+          },
           "officer_reports": {
             "type": "string"
           },
@@ -27567,10 +27745,12 @@
           }
         },
         "required": [
+          "tldr",
           "summary",
           "announcements",
           "decisions",
           "action_items",
+          "tabled",
           "officer_reports",
           "old_business",
           "new_business",
@@ -27672,10 +27852,12 @@
             "items": {
               "type": "string",
               "enum": [
+                "tldr",
                 "summary",
                 "announcements",
                 "decisions",
                 "action_items",
+                "tabled",
                 "discussion_log",
                 "attendees",
                 "officer_reports",
@@ -27814,6 +27996,10 @@
       "MeetingContentPatchDto": {
         "type": "object",
         "properties": {
+          "tldr": {
+            "type": "string",
+            "maxLength": 20000
+          },
           "summary": {
             "type": "string",
             "maxLength": 20000
@@ -27834,6 +28020,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MeetingActionItemDto"
+            }
+          },
+          "tabled": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingTabledItemDto"
             }
           },
           "officer_reports": {
@@ -34909,6 +35102,75 @@
         },
         "required": [
           "enabled"
+        ]
+      },
+      "ActivityLayoutDto": {
+        "type": "object",
+        "properties": {
+          "card_order": {
+            "description": "The cards the member shows, top to bottom. Empty when nothing is saved.",
+            "example": [
+              "todo",
+              "calendar",
+              "recap"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hidden_cards": {
+            "description": "The cards the member hid. Empty when nothing is saved.",
+            "example": [
+              "links"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "Whether the member has saved an arrangement. False means show the default for the member's role. A card the app knows that neither list names is placed as that default places it; a key the app doesn't know is skipped."
+          }
+        },
+        "required": [
+          "card_order",
+          "hidden_cards",
+          "saved"
+        ]
+      },
+      "UpdateActivityLayoutDto": {
+        "type": "object",
+        "properties": {
+          "card_order": {
+            "maxItems": 32,
+            "description": "The cards to show, top to bottom. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.",
+            "example": [
+              "todo",
+              "calendar",
+              "recap"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hidden_cards": {
+            "maxItems": 32,
+            "description": "The cards to hide. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.",
+            "example": [
+              "links"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "card_order",
+          "hidden_cards"
         ]
       },
       "RoleGoalDto": {
