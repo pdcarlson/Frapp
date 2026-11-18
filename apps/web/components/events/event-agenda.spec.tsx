@@ -16,6 +16,13 @@ const state = vi.hoisted(() => ({
   toastFailure: vi.fn(),
   gateAllowed: true,
   change: vi.fn(),
+  flush: vi.fn(async () => {}),
+  suggestions: [] as unknown[],
+  aiAvailable: false,
+  writing: false,
+  refresh: vi.fn(),
+  add: vi.fn(async () => {}),
+  dismiss: vi.fn(async () => {}),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -29,7 +36,26 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useEventListsEditor: (
     _eventId: string,
     lists: { agenda: EventAgendaItem[]; attachments: EventAttachment[] },
-  ) => ({ ...lists, saving: false, change: state.change }),
+  ) => ({
+    ...lists,
+    saving: false,
+    change: state.change,
+    flush: state.flush,
+    settle: state.flush,
+  }),
+  useAgendaSuggestions: () => ({
+    suggestions: state.suggestions,
+    aiAvailable: state.aiAvailable,
+    loading: false,
+    writing: state.writing,
+    refreshFailed: false,
+    refresh: state.refresh,
+  }),
+  useAgendaSuggestionActions: () => ({
+    add: state.add,
+    dismiss: state.dismiss,
+    adding: false,
+  }),
 }));
 
 vi.mock("@/components/shared/subscription-gate", () => ({
@@ -332,6 +358,7 @@ describe("EventMeetingLists", () => {
         eventId="e1"
         lists={{ agenda, attachments }}
         canEdit
+        upcoming={false}
         documentsOn
       />,
     );
@@ -349,6 +376,7 @@ describe("EventMeetingLists", () => {
         eventId="e1"
         lists={{ agenda, attachments }}
         canEdit
+        upcoming={false}
         documentsOn
       />,
     );
@@ -358,5 +386,116 @@ describe("EventMeetingLists", () => {
       "agenda",
       "attachments",
     ]);
+  });
+});
+
+describe("Suggested agenda items (#5534)", () => {
+  const tabled = {
+    id: "s1",
+    kind: "tabled",
+    text: "Formal budget",
+    tabled_from: {
+      meeting_id: "m-first",
+      start_time: "2026-11-11T23:00:00.000Z",
+      times: 2,
+    },
+    source_meeting_id: "m-last",
+    reason: null,
+  };
+  const suggested = {
+    id: "s2",
+    kind: "ai",
+    text: "Venue check-in",
+    tabled_from: null,
+    source_meeting_id: "m-last",
+    reason: "Still open from last week",
+  };
+
+  beforeEach(() => {
+    state.suggestions = [tabled, suggested];
+    state.aiAvailable = true;
+    state.writing = false;
+  });
+
+  it("lists tabled matters with where they came from, then the model's, for an upcoming meeting", () => {
+    render(
+      <EventMeetingLists
+        eventId="e1"
+        lists={{ agenda: [], attachments: [] }}
+        canEdit
+        upcoming
+        documentsOn
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Suggested" });
+    expect(section).toHaveTextContent("Formal budget");
+    expect(
+      screen.getByRole("link", { name: /Tabled from .* · 2nd time/ }),
+    ).toHaveAttribute("href", "/meetings/m-first");
+    expect(section).toHaveTextContent("Still open from last week");
+  });
+
+  it("adds and dismisses", async () => {
+    const user = userEvent.setup();
+    render(
+      <EventMeetingLists
+        eventId="e1"
+        lists={{ agenda: [], attachments: [] }}
+        canEdit
+        upcoming
+        documentsOn
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Add "Formal budget" to the agenda' }),
+    );
+    expect(state.add).toHaveBeenCalledWith("s1");
+    await user.click(
+      screen.getByRole("button", { name: 'Dismiss "Venue check-in"' }),
+    );
+    expect(state.dismiss).toHaveBeenCalledWith("s2");
+  });
+
+  it("shows nothing for a meeting that has ended, or to a member who can't edit", () => {
+    const { rerender } = render(
+      <EventMeetingLists
+        eventId="e1"
+        lists={{ agenda: [], attachments: [] }}
+        canEdit
+        upcoming={false}
+        documentsOn
+      />,
+    );
+    expect(screen.queryByRole("region", { name: "Suggested" })).toBeNull();
+    rerender(
+      <EventMeetingLists
+        eventId="e1"
+        lists={{ agenda: [], attachments: [] }}
+        canEdit={false}
+        upcoming
+        documentsOn
+      />,
+    );
+    expect(screen.queryByRole("region", { name: "Suggested" })).toBeNull();
+  });
+
+  it("shows an added tabled item's chip on the agenda, to everyone", () => {
+    render(
+      <EventAgendaSection
+        agenda={[
+          {
+            id: "a1",
+            text: "Formal budget",
+            done: false,
+            tabled_from: tabled.tabled_from,
+          },
+        ]}
+        canEdit={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("link", { name: /Tabled from .* · 2nd time/ }),
+    ).toHaveAttribute("href", "/meetings/m-first");
   });
 });

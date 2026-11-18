@@ -11,12 +11,21 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Link2, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Link2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   useChapterRoster,
   useCurrentUser,
   useDeleteMeeting,
+  useEvent,
   useMeeting,
   useMeetingActionItemTasks,
   useMeetingDraft,
@@ -40,6 +49,7 @@ import {
   MEETING_LIST_MAX_ITEMS,
   MEETING_OTHER_LABEL_MAX_LENGTH,
   MEETING_TABLED_MAX_ITEMS,
+  MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_TYPES,
   MEETING_TYPE_LABELS,
@@ -63,6 +73,8 @@ import {
   type MeetingTextSection,
   type MeetingType,
   parseMinutesNotes,
+  agendaMatterKey,
+  readEventAgenda,
 } from "@repo/validation";
 import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -71,6 +83,7 @@ import {
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
 import { Badge } from "@/components/ui/badge";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -838,6 +851,7 @@ function Minutes({
               editing ? (
                 <TabledEditor
                   items={draft.content.tabled}
+                  eventId={meeting.event_id}
                   onChange={(tabled) => editContent({ tabled })}
                 />
               ) : (
@@ -1402,13 +1416,64 @@ function TabledView({ items }: { items: MeetingTabledItem[] }) {
  */
 function TabledEditor({
   items,
+  eventId,
   onChange,
 }: {
   items: MeetingTabledItem[];
+  /** The meeting's event, whose agenda offers a quick Table per item. */
+  eventId: string | null;
   onChange: (next: MeetingTabledItem[]) => void;
 }) {
+  const event = useEvent(eventId ?? "");
+  const tabledWords = new Set(items.map((item) => agendaMatterKey(item.text)));
+  // Each agenda item not tabled yet, as a chip (#5534): one tap tables it,
+  // and one carried from an earlier Tabled list keeps its first date and
+  // counts once more.
+  const offered = readEventAgenda(event.data?.agenda).filter(
+    (item) =>
+      item.text.trim().length > 0 &&
+      !tabledWords.has(agendaMatterKey(item.text)),
+  );
+  const full = items.length >= MEETING_TABLED_MAX_ITEMS;
   return (
     <div className="space-y-3">
+      {offered.length > 0 && !full ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-caption text-muted-foreground">
+            From the agenda:
+          </span>
+          {offered.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-label={`Table "${item.text}"`}
+              onClick={() =>
+                onChange([
+                  ...items,
+                  {
+                    text: item.text,
+                    first_meeting_id: item.tabled_from?.meeting_id ?? null,
+                    first_start_time: item.tabled_from?.start_time ?? null,
+                    times: item.tabled_from
+                      ? Math.min(
+                          item.tabled_from.times + 1,
+                          MEETING_TABLED_MAX_TIMES,
+                        )
+                      : 1,
+                  },
+                ])
+              }
+              className={cn(
+                "inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border border-border px-2.5 text-caption hover:bg-card-hover pointer-coarse:min-h-11",
+                FOCUS_RING_OFFSET,
+              )}
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">Table {item.text}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {items.map((item, index) => {
         const from = meetingTabledFromLabel(item);
         return (

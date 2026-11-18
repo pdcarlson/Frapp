@@ -8,9 +8,12 @@ import {
   View,
 } from "react-native";
 import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   selectDownloadUrl,
+  useAgendaSuggestionActions,
+  useAgendaSuggestions,
   useCurrentChapter,
   useDocumentDownloadUrl,
   useDocuments,
@@ -18,6 +21,8 @@ import {
   type EventLists,
 } from "@repo/hooks";
 import {
+  AGENDA_SUGGESTION_COPY,
+  agendaTabledFromLabel,
   agendaProblem,
   attachmentLinkProblem,
   attachmentLinkTitle,
@@ -32,7 +37,9 @@ import {
   normalizeAttachmentUrl,
   proofLinkDomain,
   toggleAgendaItem,
+  type AgendaSuggestion,
   type EventAgendaItem,
+  type EventAgendaTabledFrom,
   type EventAttachment,
 } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
@@ -77,11 +84,17 @@ export function EventMeetingLists({
   eventId,
   lists,
   canEdit,
+  upcoming,
 }: {
   eventId: string;
   lists: EventLists;
   /** Holds `events:update` (a real answer), and the event is there. */
   canEdit: boolean;
+  /**
+   * The meeting hasn't ended and the chapter has minutes on: Suggested
+   * shows only then.
+   */
+  upcoming: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -98,13 +111,25 @@ export function EventMeetingLists({
     setFailed(false);
     editor.change(field, update);
   };
+  // While an Add is out the agenda's controls wait: the server is writing
+  // the list, and an edit now would send the copy without the new item.
+  const [adding, setAdding] = useState(false);
   return (
     <>
       <EventAgendaSection
         agenda={editor.agenda}
         canEdit={editable}
+        locked={adding}
         onChange={(update) => change("agenda", update)}
       />
+      {editable && upcoming ? (
+        <AgendaSuggestions
+          eventId={eventId}
+          full={editor.agenda.length >= EVENT_AGENDA_MAX}
+          settleAgenda={editor.settle}
+          onAdding={setAdding}
+        />
+      ) : null}
       <EventAttachmentsSection
         attachments={editor.attachments}
         canEdit={editable}
@@ -124,10 +149,13 @@ export function EventMeetingLists({
 function EventAgendaSection({
   agenda,
   canEdit,
+  locked = false,
   onChange,
 }: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  /** The controls show but wait (a suggestion is being added). */
+  locked?: boolean;
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -178,7 +206,8 @@ function EventAgendaSection({
           {canEdit ? (
             <Pressable
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: item.done }}
+              accessibilityState={{ checked: item.done, disabled: locked }}
+              disabled={locked}
               accessibilityLabel={item.text}
               onPress={() =>
                 onChange((current) => toggleAgendaItem(current, item.id))
@@ -188,9 +217,14 @@ function EventAgendaSection({
               <View style={[styles.box, item.done ? styles.boxDone : null]}>
                 {item.done ? <CheckGlyph color={muted} size={12} /> : null}
               </View>
-              <Text style={[styles.text, item.done ? styles.textDone : null]}>
-                {item.text}
-              </Text>
+              <View style={styles.textColumn}>
+                <Text style={[styles.text, item.done ? styles.textDone : null]}>
+                  {item.text}
+                </Text>
+                {item.tabled_from ? (
+                  <TabledFromLink from={item.tabled_from} />
+                ) : null}
+              </View>
             </Pressable>
           ) : (
             <View
@@ -201,16 +235,21 @@ function EventAgendaSection({
               }
             >
               <Text style={styles.number}>{index + 1}.</Text>
-              <Text style={[styles.text, item.done ? styles.textDone : null]}>
-                {item.text}
-              </Text>
+              <View style={styles.textColumn}>
+                <Text style={[styles.text, item.done ? styles.textDone : null]}>
+                  {item.text}
+                </Text>
+                {item.tabled_from ? (
+                  <TabledFromLink from={item.tabled_from} />
+                ) : null}
+              </View>
             </View>
           )}
           {canEdit ? (
             <View style={styles.controls}>
               <IconButton
                 label={`Move "${item.text}" up`}
-                disabled={index === 0}
+                disabled={locked || index === 0}
                 onPress={() => move(item.id, -1)}
               >
                 <DisclosureGlyph
@@ -220,7 +259,7 @@ function EventAgendaSection({
               </IconButton>
               <IconButton
                 label={`Move "${item.text}" down`}
-                disabled={index === agenda.length - 1}
+                disabled={locked || index === agenda.length - 1}
                 onPress={() => move(item.id, 1)}
               >
                 <DisclosureGlyph
@@ -234,6 +273,7 @@ function EventAgendaSection({
               </IconButton>
               <IconButton
                 label={`Remove "${item.text}"`}
+                disabled={locked}
                 onPress={() =>
                   onChange((current) =>
                     current.filter((entry) => entry.id !== item.id),
@@ -269,6 +309,7 @@ function EventAgendaSection({
               }
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Add an agenda item"
+              editable={!locked}
               maxLength={EVENT_AGENDA_ITEM_MAX}
               returnKeyType="done"
               // Return adds the item and keeps the keyboard up for the next,
@@ -286,6 +327,153 @@ function EventAgendaSection({
       {canEdit && full ? (
         <Text style={styles.caption}>
           An agenda holds {EVENT_AGENDA_MAX} items.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * "Tabled from Tuesday, November 11 · 2nd time" under an agenda item or a
+ * suggestion (#5534), opening the minutes of that day. Web's
+ * `TabledFromLink`; the minutes open only for their audience.
+ */
+function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const router = useRouter();
+  const label = agendaTabledFromLabel(from);
+  if (!label) return null;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      hitSlop={8}
+      onPress={() =>
+        router.push({
+          pathname: "/minutes-details",
+          params: { id: from.meeting_id },
+        })
+      }
+      style={({ pressed }) => (pressed ? styles.pressed : null)}
+    >
+      <Text style={styles.caption}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Suggested agenda items (#5534) under the agenda, for whoever can edit it:
+ * web's `AgendaSuggestions`. Tabled matters from earlier meetings with the
+ * same people first, then the model's; each row has Add and Dismiss, the way
+ * Fellow suggests talking points under a meeting's agenda. Nothing shows
+ * when there's nothing to suggest.
+ */
+function AgendaSuggestions({
+  eventId,
+  full,
+  settleAgenda,
+  onAdding,
+}: {
+  eventId: string;
+  full: boolean;
+  /** Wait for the agenda's own saves to land (the editor's `settle`). */
+  settleAgenda: () => Promise<void>;
+  onAdding: (adding: boolean) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const muted = tokens.color.text.mutedForeground;
+  const list = useAgendaSuggestions(eventId);
+  const actions = useAgendaSuggestionActions(eventId, {
+    flushAgenda: settleAgenda,
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  if (list.suggestions.length === 0 && !list.writing && !list.refreshFailed) {
+    return null;
+  }
+
+  async function act(row: AgendaSuggestion, action: "add" | "dismiss") {
+    setBusy(row.id);
+    setFailed(null);
+    if (action === "add") onAdding(true);
+    try {
+      await actions[action](row.id);
+    } catch {
+      setFailed(
+        action === "add"
+          ? AGENDA_SUGGESTION_COPY.addFailed
+          : AGENDA_SUGGESTION_COPY.dismissFailed,
+      );
+    } finally {
+      setBusy(null);
+      if (action === "add") onAdding(false);
+    }
+  }
+
+  return (
+    <View style={styles.section} accessibilityLabel="Suggested">
+      <View style={styles.headerRow}>
+        <Text style={styles.sectionLabel}>
+          {AGENDA_SUGGESTION_COPY.heading.toUpperCase()}
+        </Text>
+        {list.aiAvailable && !list.writing ? (
+          <TextAction
+            compact
+            label={AGENDA_SUGGESTION_COPY.refresh}
+            onPress={list.refresh}
+          />
+        ) : null}
+      </View>
+      {list.suggestions.map((row) => (
+        <View key={row.id} style={styles.line}>
+          <View style={[styles.row, styles.textColumn]}>
+            <Text style={styles.text}>{row.text}</Text>
+            {row.tabled_from ? (
+              <TabledFromLink from={row.tabled_from} />
+            ) : row.reason ? (
+              <Text style={styles.caption}>{row.reason}</Text>
+            ) : null}
+          </View>
+          <View style={styles.controls}>
+            <TextAction
+              compact
+              label={AGENDA_SUGGESTION_COPY.add}
+              hint={AGENDA_SUGGESTION_COPY.addLabel(row.text)}
+              disabled={full || busy !== null}
+              onPress={() => void act(row, "add")}
+            />
+            <IconButton
+              label={AGENDA_SUGGESTION_COPY.dismissLabel(row.text)}
+              disabled={busy !== null}
+              onPress={() => void act(row, "dismiss")}
+            >
+              <CloseGlyph color={muted} />
+            </IconButton>
+          </View>
+        </View>
+      ))}
+      {list.writing ? (
+        <View style={styles.headerRow}>
+          <ActivityIndicator size="small" color={muted} />
+          <Text style={styles.caption}>{AGENDA_SUGGESTION_COPY.writing}</Text>
+        </View>
+      ) : null}
+      {full && list.suggestions.length > 0 ? (
+        <Text style={styles.caption}>
+          {AGENDA_SUGGESTION_COPY.full(EVENT_AGENDA_MAX)}
+        </Text>
+      ) : null}
+      {list.refreshFailed && !list.writing ? (
+        <Text style={styles.caption}>
+          {AGENDA_SUGGESTION_COPY.refreshFailed}
+        </Text>
+      ) : null}
+      {failed ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {failed}
         </Text>
       ) : null}
     </View>
@@ -732,6 +920,19 @@ function createStyles(tokens: SignetTokens, accent?: string) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
       fontVariant: ["tabular-nums"],
+    },
+    textColumn: {
+      flex: 1,
+      flexDirection: "column",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      gap: 2,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
     },
     text: {
       flex: 1,

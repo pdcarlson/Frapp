@@ -43,7 +43,8 @@ export interface IMeetingRepository {
   findPostedBefore(
     chapterId: string,
     before: string,
-    meetingType: MeetingType,
+    /** One type, or null for every type but Standards (#5534). */
+    meetingType: MeetingType | null,
     limit: number,
   ): Promise<Meeting[]>;
   /**

@@ -882,28 +882,41 @@ describe('MeetingService', () => {
           expected_updated_at: carried.meeting.updated_at,
           content: {
             tabled: [
-              tabled('rush shirts', null),
+              // The same matter however it ends (#5534's shared key).
+              tabled('rush shirts.', null),
               tabled('Formal budget', null),
             ],
           },
         });
         expect(redrafted.content.tabled).toEqual([
-          tabled('rush shirts', EARLIER, 2),
+          tabled('rush shirts.', EARLIER, 2),
           tabled('Formal budget', null),
         ]);
       });
 
-      it('refuses one whose first minutes aren’t this chapter’s', async () => {
-        await expect(
-          service.update(CHAPTER, 'mtg-1', SECRETARY, {
-            expected_updated_at: meeting().updated_at,
-            content: {
-              tabled: [
-                tabled('Formal budget', '99999999-9999-4999-8999-999999999999'),
-              ],
-            },
-          }),
-        ).rejects.toBeInstanceOf(BadRequestException);
+      it('drops where it came from when those minutes aren’t this chapter’s, or are gone (#5534)', async () => {
+        // Not refused: an agenda item can carry minutes deleted since, and a
+        // draft that tables it again must still save.
+        const saved = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: {
+            tabled: [
+              tabled(
+                'Formal budget',
+                '99999999-9999-4999-8999-999999999999',
+                2,
+              ),
+            ],
+          },
+        });
+        expect(saved.content.tabled).toEqual([
+          {
+            text: 'Formal budget',
+            first_meeting_id: null,
+            first_start_time: null,
+            times: 2,
+          },
+        ]);
       });
 
       it('refuses a first date it couldn’t read back', async () => {

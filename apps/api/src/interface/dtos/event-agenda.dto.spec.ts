@@ -44,4 +44,32 @@ describe('event DTOs: agenda and attachments', () => {
     }));
     expect(await errorsOn(UpdateEventDto, { agenda })).toContain('agenda');
   });
+
+  it('takes an item sent back with its tabled_from, or with null (#5534)', async () => {
+    const tabled_from = {
+      meeting_id: '0a000000-0000-4000-8000-0000000005a1',
+      start_time: '2026-11-11T23:00:00+00:00',
+      times: 2,
+    };
+    expect(
+      await errorsOn(UpdateEventDto, {
+        agenda: [
+          { id: 'a1', text: 'Formal budget', done: false, tabled_from },
+          { id: 'a2', text: 'Dues', done: false, tabled_from: null },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      await errorsOn(UpdateEventDto, {
+        agenda: [
+          {
+            id: 'a1',
+            text: 'Formal budget',
+            done: false,
+            tabled_from: { ...tabled_from, times: 0 },
+          },
+        ],
+      }),
+    ).toContain('agenda');
+  });
 });
