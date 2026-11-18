@@ -468,8 +468,16 @@ export function useSaveMeetingNotes() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (data, { id }) => {
+    onSuccess: (data, { id, notes }) => {
       queryClient.setQueryData(meetingNotesKey(chapterId, id), data);
+      // The draft read's `notes` are the caller's own notes, the same store:
+      // keep it in step, so the officer's notes box reopens on what was saved
+      // rather than on the notes from before (#5288).
+      queryClient.setQueryData<MeetingDraftState>(
+        meetingDraftKey(chapterId, id),
+        (draft) =>
+          draft ? { ...draft, notes: notes.replace(/\s+$/u, "") } : draft,
+      );
       void queryClient.invalidateQueries({
         queryKey: noteTakingKey(chapterId),
       });

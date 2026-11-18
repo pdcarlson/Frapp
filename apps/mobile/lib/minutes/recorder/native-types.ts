@@ -9,6 +9,8 @@ interface NativeRecorderStatus {
   isRecording: boolean;
   durationMillis: number;
   url: string | null;
+  /** The input's loudness in dBFS, with metering on. */
+  metering?: number;
 }
 
 export interface NativeRecorder {

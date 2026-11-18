@@ -13,7 +13,6 @@ import {
   resolveQuickActions,
   writeSavedQuickActions,
 } from "@/lib/quick-actions";
-import { useAiSurfaces } from "@/lib/ai/availability";
 
 export type QuickActionsState = {
   /** What the panel shows, in order. */
@@ -49,11 +48,9 @@ export function useQuickActions(): QuickActionsState {
   const userId = useViewerUserId();
   const chapterId = useActiveChapterId() ?? null;
 
-  const ai = useAiSurfaces();
-  const meetingNotes = ai.meetingNotes;
   const available = useMemo(
-    () => availableQuickActions({ permissions, enabledModules, meetingNotes }),
-    [permissions, enabledModules, meetingNotes],
+    () => availableQuickActions({ permissions, enabledModules }),
+    [permissions, enabledModules],
   );
 
   // The saved arrangement, tagged with whose it is, so a chapter switch shows
@@ -96,12 +93,8 @@ export function useQuickActions(): QuickActionsState {
     [keys, available, storeKey, userId, chapterId],
   );
 
-  // New minutes waits on the AI read too, or an arrangement saved before it
-  // answered would be missing it.
   const ready =
-    permissionsQuery.data !== undefined &&
-    chapterQuery.data !== undefined &&
-    ai.ready;
+    permissionsQuery.data !== undefined && chapterQuery.data !== undefined;
 
   return { shown, available, save, ready };
 }

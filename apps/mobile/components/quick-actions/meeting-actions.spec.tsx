@@ -274,6 +274,9 @@ describe("Record, on New minutes", () => {
     ["AI off on the server", () => (data.available = null)],
     ["the chapter's switch off", () => (data.blocked = "chapter_off")],
     ["a build with no microphone", () => (data.hasRecorder = false)],
+    // New minutes still starts them there (#5288); recording without
+    // drafting is #5289.
+    ["no drafting from notes", () => (data.meetingNotes = false)],
   ])("is not offered with %s, though New minutes is", (_why, set) => {
     set();
     render();
