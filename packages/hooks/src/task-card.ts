@@ -20,7 +20,7 @@ import type { TaskStatus, TaskSubtask } from "./use-tasks";
 
 /**
  * The member-facing word for each status, on every task surface: the web
- * board's columns, the mobile board's rows and detail sheet, and both chat
+ * board's columns, the mobile board's rows and task screen, and both chat
  * cards. One table, so a task never reads one way on web and another on mobile.
  *
  * `COMPLETED` is the assignee's half of the job, not the end of it: an officer
@@ -50,7 +50,7 @@ export const TASK_NEEDS_CHANGES_LABEL = "Needs changes";
 
 /**
  * The verbs every task surface puts on its controls, so web's buttons, the
- * mobile sheet and both chat cards name each move the same way.
+ * mobile task screen and both chat cards name each move the same way.
  */
 export const TASK_ACTION_LABELS = {
   start: "Start",

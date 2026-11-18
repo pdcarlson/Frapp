@@ -638,6 +638,35 @@ describe("Tasks as a pushed screen (#4610)", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
   });
 
+  it("says a task given back from its screen is up for grabs again, through the focus that lands here", async () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.setParams).mockClear();
+    // The board is under the task's screen; going back to it brings the
+    // param and a focus together.
+    const tree = render();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      released: "1",
+    });
+    act(() => refocus());
+    expect(screenText(tree)).toContain(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
+    );
+    expect(router.setParams).toHaveBeenCalledWith({ released: undefined });
+    // The next focus takes it down, as any line under the points card.
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screenText(tree)).toContain(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
+    );
+    act(() => refocus());
+    expect(screenText(tree)).not.toContain(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
+    );
+    act(() => tree.unmount());
+  });
+
   it("draws no + while the chapter has Tasks off", () => {
     permissions = ["tasks:manage", "members:view"];
     enabledModules = { tasks: false };

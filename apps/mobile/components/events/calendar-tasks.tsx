@@ -239,7 +239,8 @@ function TaskRow({
             color={tokens.color.text.mutedForeground}
           />
         ) : item.kind === "mine" ? (
-          // It opens on Tasks, so it draws the chevron of a row that opens.
+          // It opens the task's screen, so it draws the chevron of a row
+          // that opens.
           <ForwardGlyph color={tokens.color.text.mutedForeground} />
         ) : null}
       </PressableRow>

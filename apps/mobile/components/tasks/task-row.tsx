@@ -34,8 +34,9 @@ import { markDoneLabel } from "@/lib/tasks/task-photos";
  * ## Two targets: the box completes, the row opens
  *
  * Only the checkbox changes the task; a tap anywhere else on the row opens the
- * task's detail sheet (owner audit 2026-11-06, P6.1). The whole row used to be
- * the checkbox, so a stray tap while scrolling marked a task done. The box
+ * task's own screen (owner audit 2026-11-06, P6.1; a sheet until #5492). The
+ * whole row used to be the checkbox, so a stray tap while scrolling marked a
+ * task done. The box
  * unchecks too, while no officer has confirmed it, so a mis-tap is one tap to
  * take back, as a checked reminder is.
  *
@@ -67,7 +68,7 @@ export interface TaskRowProps {
    * box then draws inert, never a no-op handler.
    */
   onToggle?: () => void;
-  /** Opens the task's detail sheet. Any tap on the row outside the box. */
+  /** Opens the task's screen (#5492). Any tap on the row outside the box. */
   onOpen?: () => void;
   /**
    * True while this row's own PATCH sequence is in flight. The Tasks screen
@@ -108,7 +109,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
     !row.isDone && row.subtasks.length > 0
       ? `${row.subtasks.filter((subtask) => subtask.done).length} of ${row.subtasks.length}`
       : null;
-  // Its reference photos, counted (#4635); they open from the task's sheet.
+  // Its reference photos, counted (#4635); they open from the task's screen.
   const references = row.photos.filter(
     (photo) => photo.kind === "reference",
   ).length;
@@ -125,7 +126,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
   // reserves the mention red for direct address, and an overdue task is not
   // someone speaking to you.
   // Red once overdue (#4133): past the local due day, or already OVERDUE by
-  // the server's clock, which the detail sheet and web also read.
+  // the server's clock, which the task screen and web also read.
   const urgent =
     !row.isDone &&
     (row.isOverdue || (!!row.dueDate && isDueUrgent(row.dueDate, now)));
@@ -310,7 +311,7 @@ export function TaskRow({
  * (`components/grid-line.tsx` lays the lines out). The card is the row stood
  * on end, the box and points chip over the title and its due line, and it
  * takes the row's two targets: the box completes or takes back, anywhere else
- * opens the task's detail sheet, where Edit sits for an officer. Linear's and
+ * opens the task's screen, where Edit sits for an officer. Linear's and
  * Asana's board cards carry the same facts as their list rows.
  */
 export function TaskTile({

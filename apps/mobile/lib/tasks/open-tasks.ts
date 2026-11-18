@@ -86,8 +86,16 @@ export function claimedTaskId(data: unknown): string | null {
   return typeof id === "string" ? id : null;
 }
 
-/** Said once Give it back lands, on the board and on the task's screen. */
+/**
+ * Said once Give it back lands, as the board's line under its points card:
+ * from the board's own toast, and from the task's screen, which returns to
+ * the board with {@link RELEASED_PARAM} so the line shows there (and
+ * announces it before it goes).
+ */
 export const RELEASED_LINE = `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`;
+
+/** `/tasks?released=1`: the task screen's Give it back landed. */
+export const RELEASED_PARAM = "released";
 
 /** Said when Give it back didn't land. */
 export const RELEASE_FAILED = "Couldn't give that task back. Try again.";

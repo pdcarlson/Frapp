@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { taskStatusLabel, type MemberAvatarTint } from "@repo/hooks";
-import { TASK_AUDIENCE_COPY } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { MemberAvatar } from "@/components/member-avatar";
 import { StatusChip } from "@/components/status-chip";
 import { PressableRow } from "@/components/list-section";
 import { eyebrowStyle } from "@/components/eyebrow";
-import { CheckGlyph, DisclosureGlyph } from "@/components/control-glyphs";
+import { DisclosureGlyph } from "@/components/control-glyphs";
+import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { GroupProgress } from "@/components/tasks/group-progress";
 import { initialsFor } from "@/lib/more/narrow";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
@@ -16,9 +17,6 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /** Rows shown before "N more": a little and a lot (Paul, 2026-11-18). */
 export const WHO_HAS_IT_COLLAPSED = 5;
-
-const AVATAR_SIZE = 28;
-const PICK_SIZE = 22;
 
 export interface WhoHasItPeople {
   nameOf: (userId: string) => string;
@@ -69,16 +67,10 @@ export function WhoHasIt({
 
   return (
     <View style={styles.section}>
-      <View style={styles.header}>
-        <Text style={styles.label} accessibilityRole="header">
-          WHO HAS IT
-        </Text>
-        <Text style={styles.progress}>
-          {[who, TASK_AUDIENCE_COPY.progress(progress.done, progress.total)]
-            .filter(Boolean)
-            .join(" · ")}
-        </Text>
-      </View>
+      <Text style={styles.label} accessibilityRole="header">
+        WHO HAS IT
+      </Text>
+      <GroupProgress who={who} done={progress.done} total={progress.total} />
       <View>
         {shown.map((copy, index) => (
           <CopyRow
@@ -159,14 +151,14 @@ function CopyRow({
           ]}
         >
           {picked ? (
-            <CheckGlyph color={tokens.color.semantic.onSemantic} size={14} />
+            <CheckGlyph color={tokens.color.semantic.onSemantic} />
           ) : null}
         </View>
       ) : null}
       <MemberAvatar
         uri={people.avatarFor(userId)}
         initials={initialsFor(name)}
-        size={AVATAR_SIZE}
+        size={tokens.spacing.xl}
         style={styles.avatar}
         textStyle={styles.avatarText}
         tint={people.tintFor(userId)}
@@ -211,25 +203,15 @@ function CopyRow({
 }
 
 function createStyles(tokens: SignetTokens) {
+  // 24pt, the member rows' avatar (`components.md` § Chat member list).
+  const AVATAR_SIZE = tokens.spacing.xl;
   return StyleSheet.create({
     section: {
       gap: tokens.spacing.xs,
     },
-    header: {
-      flexDirection: "row",
-      alignItems: "baseline",
-      justifyContent: "space-between",
-      gap: tokens.spacing.sm,
-    },
     label: {
       ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
-    },
-    progress: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      flexShrink: 1,
-      textAlign: "right",
     },
     row: {
       flexDirection: "row",
@@ -242,14 +224,16 @@ function createStyles(tokens: SignetTokens) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
     },
+    // A disabled control's fade (`SheetPrimaryButton`'s).
     dimmed: {
-      opacity: 0.4,
+      opacity: 0.5,
     },
+    // The board's checkbox at its size, round: a pick, not a completion.
     pick: {
-      width: PICK_SIZE,
-      height: PICK_SIZE,
-      borderRadius: PICK_SIZE / 2,
-      borderWidth: 1.5,
+      width: AVATAR_SIZE,
+      height: AVATAR_SIZE,
+      borderRadius: avatarRadius(AVATAR_SIZE),
+      borderWidth: 1,
       borderColor: tokens.color.border.control,
       alignItems: "center",
       justifyContent: "center",

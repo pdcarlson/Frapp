@@ -9,17 +9,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
+import { usePressFeedback } from "@/components/list-section";
 import { floatingTabBarBottom } from "@/lib/floating-chrome";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-
-/** A round control's size: §2's 40pt compact step, inside the 44pt slop. */
-export const TASK_BAR_BUTTON = 40;
-
-/** The bar's padding around its controls. */
-const BAR_PAD = 6;
-
-/** The bar's drawn height: a control and its padding. */
-export const TASK_BAR_HEIGHT = TASK_BAR_BUTTON + BAR_PAD * 2;
 
 /**
  * The task screen's controls (#5492): a glass capsule floating at the bottom,
@@ -29,7 +21,9 @@ export const TASK_BAR_HEIGHT = TASK_BAR_BUTTON + BAR_PAD * 2;
  * leaves room under its last section with {@link TaskActionBarSpacer}.
  *
  * Its children are {@link TaskBarPill}, the one thing to do, and
- * {@link TaskBarIcon}s, each a 40pt round with an accessibility label.
+ * {@link TaskBarIcon}s, each a ghost round icon button with a spoken label.
+ * Every control is the touch floor, 44pt (`touch.minimum`, foundations §9),
+ * with `spacing.xs` between them and around them.
  */
 export function TaskActionBar({ children }: { children: ReactNode }) {
   const { tokens } = useFrappTheme();
@@ -49,16 +43,23 @@ export function TaskActionBar({ children }: { children: ReactNode }) {
   );
 }
 
+/** The bar's drawn height: a control and the padding around it. */
+function barHeight(tokens: SignetTokens): number {
+  return tokens.touch.minimum + tokens.spacing.xs * 2;
+}
+
 /** Room under the page's last section, so the bar never covers it. */
 export function TaskActionBarSpacer() {
   const { tokens } = useFrappTheme();
-  return <View style={{ height: TASK_BAR_HEIGHT + tokens.spacing.lg }} />;
+  return <View style={{ height: barHeight(tokens) + tokens.spacing.lg }} />;
 }
 
 /**
  * The bar's one labelled control: a pill with a glyph and its verb, filled
  * with `fill` (the chapter accent for Mark done, the only accent control on
- * the screen; destructive red for Remove in select mode).
+ * the screen; destructive red for Remove in select mode). Its press and
+ * disabled states are the primary button's (`SheetPrimaryButton`), with the
+ * shared ripple on Android.
  */
 export function TaskBarPill({
   label,
@@ -81,6 +82,7 @@ export function TaskBarPill({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback({ onCard: true });
   return (
     <Pressable
       accessibilityRole="button"
@@ -89,12 +91,12 @@ export function TaskBarPill({
       accessibilityState={{ disabled, busy }}
       disabled={disabled || busy}
       onPress={onPress}
-      hitSlop={(tokens.touch.minimum - TASK_BAR_BUTTON) / 2}
+      android_ripple={disabled ? undefined : feedback.ripple}
       style={({ pressed }) => [
         styles.pill,
         { backgroundColor: fill },
-        disabled ? styles.disabled : null,
-        pressed && !disabled ? styles.pressed : null,
+        disabled ? styles.pillDisabled : null,
+        pressed && !disabled ? styles.pillPressed : null,
       ]}
     >
       {busy ? (
@@ -111,7 +113,11 @@ export function TaskBarPill({
   );
 }
 
-/** A 40pt round icon control; the word is its accessibility label. */
+/**
+ * A round icon control, ghost on the glass as `components.md` § Icon-only
+ * actions draws an icon button; the word is its accessibility label. It
+ * lifts on a press as a row does (`usePressFeedback`).
+ */
 export function TaskBarIcon({
   label,
   hint,
@@ -128,27 +134,31 @@ export function TaskBarIcon({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback({ onCard: true });
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      hitSlop={(tokens.touch.minimum - TASK_BAR_BUTTON) / 2}
-      style={({ pressed }) => [
-        styles.round,
-        disabled ? styles.disabled : null,
-        pressed && !disabled ? styles.pressed : null,
-      ]}
-    >
-      {children}
-    </Pressable>
+    <View style={styles.roundClip}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        onPress={onPress}
+        android_ripple={disabled ? undefined : feedback.ripple}
+        style={({ pressed }) => [
+          styles.round,
+          disabled ? styles.pillDisabled : null,
+          disabled ? null : feedback.lift(pressed),
+        ]}
+      >
+        {children}
+      </Pressable>
+    </View>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
+  const control = tokens.touch.minimum;
   return StyleSheet.create({
     dock: {
       position: "absolute",
@@ -158,42 +168,45 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
     },
     bar: {
-      borderRadius: TASK_BAR_HEIGHT / 2,
+      borderRadius: barHeight(tokens) / 2,
       maxWidth: "100%",
     },
     row: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.xs,
-      padding: BAR_PAD,
+      padding: tokens.spacing.xs,
     },
     pill: {
-      height: TASK_BAR_BUTTON,
-      minWidth: TASK_BAR_BUTTON * 2,
-      borderRadius: TASK_BAR_BUTTON / 2,
+      height: control,
+      borderRadius: control / 2,
       paddingHorizontal: tokens.spacing.lg,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: tokens.spacing.sm,
-      flexShrink: 1,
+      overflow: "hidden",
     },
     pillLabel: {
       ...typeRole(tokens.typography.role.label),
     },
+    // The primary button's (`sheet-scaffold.tsx`).
+    pillDisabled: {
+      opacity: 0.5,
+    },
+    pillPressed: {
+      opacity: 0.85,
+    },
+    // Rounds the lift and the Android ripple (see `usePressFeedback`).
+    roundClip: {
+      borderRadius: control / 2,
+      overflow: "hidden",
+    },
     round: {
-      width: TASK_BAR_BUTTON,
-      height: TASK_BAR_BUTTON,
-      borderRadius: TASK_BAR_BUTTON / 2,
+      width: control,
+      height: control,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: tokens.color.surface.card,
-    },
-    disabled: {
-      opacity: 0.4,
-    },
-    pressed: {
-      opacity: 0.7,
     },
   });
 }

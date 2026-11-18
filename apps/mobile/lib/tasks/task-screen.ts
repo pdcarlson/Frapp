@@ -11,7 +11,12 @@
  * task is confirmed. There is no creator rule.
  */
 
-import { canReopenOwnTask, isTaskStatus, type TaskStatus } from "@repo/hooks";
+import {
+  canReopenOwnTask,
+  isTaskStatus,
+  TASK_ACTION_LABELS,
+  type TaskStatus,
+} from "@repo/hooks";
 import { formatRelativeDayTime } from "@repo/formatting";
 import { taskGroupLabel } from "@repo/validation";
 import { records, str } from "@/lib/more/narrow";
@@ -20,11 +25,8 @@ import {
   toTaskRow,
   type TaskRowModel,
 } from "@/lib/tasks/board";
-
-/** The app link to a task: Copy link's text, which opens this screen. */
-export function taskLink(id: string): string {
-  return `frapp://task-details?id=${encodeURIComponent(id)}`;
-}
+import { checkboxSequence } from "@/lib/tasks/transitions";
+import { markDoneLabel } from "@/lib/tasks/task-photos";
 
 /**
  * Who a group task went to, in the shared words (`taskGroupLabel`):
@@ -94,7 +96,13 @@ export function taskScreenControls({
   const isAssignee = viewerId !== null && row.assigneeId === viewerId;
   const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
   return {
-    markDone: !row.isDone && (isAssignee || canManage) && !toggleRefused,
+    // A status this build doesn't know has no sequence to send, so no Mark
+    // done that would do nothing (the board's `canToggle` guard).
+    markDone:
+      !row.isDone &&
+      (isAssignee || canManage) &&
+      !toggleRefused &&
+      checkboxSequence(row).length > 0,
     // The board's rule for its sheet's Edit (#4296): the edit form needs an
     // assignee and a day, and a confirmed task can't change.
     edit:
@@ -161,15 +169,9 @@ export function taskHistory(
     row.createdBy ? `Assigned by ${nameOf(row.createdBy)}` : "Assigned",
     row.createdAt,
   );
-  if (row.isDone) {
-    add(
-      "done",
-      row.assigneeId
-        ? `Marked done by ${nameOf(row.assigneeId)}`
-        : "Marked done",
-      row.completedAt,
-    );
-  }
+  // No name: the read has no `completed_by`, and an officer may mark a
+  // member's task done for them.
+  if (row.isDone) add("done", "Marked done", row.completedAt);
   add("sent-back", "Sent back", row.sentBackAt, row.sentBackReason);
   // A completion that needed no sign-off is confirmed as it is marked done:
   // its one line is Marked done.
@@ -237,9 +239,25 @@ export function copyRemovable(copy: TaskRowModel): boolean {
 export function removalAllowed(
   picked: ReadonlySet<string>,
   copies: readonly TaskRowModel[],
-): { ok: boolean; everyone: boolean } {
-  const everyone = copies.length > 0 && picked.size >= copies.length;
-  return { ok: picked.size > 0 && !everyone, everyone };
+): { ok: boolean; everyone: boolean; count: number } {
+  const count = livePicks(picked, copies).size;
+  const everyone = copies.length > 0 && count >= copies.length;
+  return { ok: count > 0 && !everyone, everyone, count };
+}
+
+/**
+ * The picks that still name a copy Remove may take out: a refetch can drop a
+ * copy (taken out elsewhere) or confirm one meanwhile, and a pick left over
+ * from it must not count, or send.
+ */
+export function livePicks(
+  picked: ReadonlySet<string>,
+  copies: readonly TaskRowModel[],
+): ReadonlySet<string> {
+  const removable = new Set(
+    copies.filter(copyRemovable).map((copy) => copy.assigneeId),
+  );
+  return new Set([...picked].filter((userId) => removable.has(userId)));
 }
 
 /** "Remove 3", the select mode's one pill. */
@@ -256,6 +274,9 @@ export const REMOVE_CONFIRM_BODY =
   "Their copies of this task are deleted. Everyone else keeps theirs.";
 
 export function removedLine(count: number): string {
+  // Every pick had left already (taken out from another phone or the web):
+  // nothing changed, and saying "0 people" would read as a failure.
+  if (count === 0) return "They were already off this task.";
   return count === 1
     ? "Took 1 person out of this task."
     : `Took ${count} people out of this task.`;
@@ -264,3 +285,21 @@ export function removedLine(count: number): string {
 /** Said in select mode once every copy is picked. */
 export const REMOVE_EVERYONE_NOTE =
   "That's everyone. Use Delete for everyone in More instead.";
+
+/**
+ * Mark done's words in the bar. With two or more round controls beside it
+ * (an officer's Edit, Remove people, More), "Mark done with a photo" would
+ * not fit a 320pt phone, so the pill says "Mark done" and the proof it asks
+ * for is its spoken hint and the first thing its sheet asks; with one round
+ * or none there is room for the whole verb.
+ */
+export function markDoneBarLabel(
+  proofKind: TaskRowModel["proofKind"],
+  rounds: number,
+): { label: string; hint: string | undefined } {
+  const full = markDoneLabel(TASK_ACTION_LABELS.complete, proofKind);
+  if (rounds < 2 || full === TASK_ACTION_LABELS.complete) {
+    return { label: full, hint: undefined };
+  }
+  return { label: TASK_ACTION_LABELS.complete, hint: `${full}.` };
+}

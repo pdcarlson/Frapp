@@ -250,11 +250,7 @@ describe("app stack", () => {
       .screens.map((screen) => screen.props.name as string)
       // `ask` only redirects to Chat home, and `chat` (a message's link,
       // #3723) only hands off to the thread: neither draws a screen.
-      // `task-details` redirects to the board until the task screen fills
-      // it (#5492 step 3), which takes this entry out.
-      .filter(
-        (name) => !["(tabs)", "ask", "chat", "task-details"].includes(name),
-      );
+      .filter((name) => !["(tabs)", "ask", "chat"].includes(name));
 
     for (const name of pushed) {
       const source = readFileSync(join(appGroup, `${name}.tsx`), "utf8");

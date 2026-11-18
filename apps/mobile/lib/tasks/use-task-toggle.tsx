@@ -108,7 +108,11 @@ export interface TaskToggle {
 export function useTaskToggle(
   /** Reads a task as it stands now, so a refetch redraws the proof sheet. */
   findRow: (id: string | null) => TaskRowModel | null,
-  options: { onActive?: () => void } = {},
+  options: {
+    /** The viewer, who alone may take back a completion of their own. */
+    viewerId?: string | null;
+    onActive?: () => void;
+  } = {},
 ): TaskToggle {
   const updateStatus = useUpdateTaskStatus();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -189,18 +193,31 @@ export function useTaskToggle(
     problem: string | null;
   } | null>(null);
 
-  /** Felt and offered once a completion lands: the haptic and the undo. */
-  const completed = useCallback((id: string) => {
-    successHaptic();
-    setUndo((open) => ({
-      id,
-      message: "Marked done",
-      // A new key per completion, so a second one inside the window is
-      // announced again even though the words are the same.
-      key: (open?.key ?? 0) + 1,
-      action: "undo",
-    }));
-  }, []);
+  /**
+   * Felt once a completion lands, and the undo offered with it. Only to the
+   * assignee: the server's take-back (`COMPLETED → IN_PROGRESS`) is theirs
+   * alone, and an officer who marked someone else's task done would get a
+   * 400 from Undo (moving it back is Send back).
+   */
+  const viewerId = options.viewerId ?? null;
+  const completed = useCallback(
+    (row: TaskRowModel) => {
+      successHaptic();
+      if (viewerId === null || row.assigneeId !== viewerId) {
+        setUndo((open) => (open?.id === row.id ? null : open));
+        return;
+      }
+      setUndo((open) => ({
+        id: row.id,
+        message: "Marked done",
+        // A new key per completion, so a second one inside the window is
+        // announced again even though the words are the same.
+        key: (open?.key ?? 0) + 1,
+        action: "undo",
+      }));
+    },
+    [viewerId],
+  );
 
   const toggle = useCallback(
     async (row: TaskRowModel) => {
@@ -219,7 +236,7 @@ export function useTaskToggle(
       const { outcome, error } = await run(row.id, sequence);
       // The confirming action (`spec/ui/mobile/README.md` § Native-feel
       // rules), felt once the server holds the task done.
-      if (outcome === "ok" && completes) completed(row.id);
+      if (outcome === "ok" && completes) completed(row);
       // The task asks for proof this read didn't know of: its sheet asks.
       const proofProblem = taskProofRefusal(error);
       if (proofProblem) setMarking({ id: row.id, problem: proofProblem });
@@ -249,7 +266,7 @@ export function useTaskToggle(
       }
       const { outcome, error } = await run(row.id, sequence, proof);
       if (outcome === "ok") {
-        completed(row.id);
+        completed(row);
         return;
       }
       if (outcome !== "skipped") throw error;

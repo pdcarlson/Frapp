@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as Clipboard from "expo-clipboard";
 import {
   TASK_ACTION_LABELS,
   taskStatusLabel,
@@ -50,17 +49,19 @@ import {
   TaskBarPill,
 } from "@/components/tasks/task-action-bar";
 import { WhoHasIt } from "@/components/tasks/who-has-it";
+import { GroupProgress } from "@/components/tasks/group-progress";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { showActionMenu } from "@/lib/action-menu";
 import { goBackTo } from "@/lib/href";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
-import { markDoneLabel } from "@/lib/tasks/task-photos";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
 import type { TaskEditTarget } from "@/lib/tasks/create-task";
 import {
   groupCopies,
+  livePicks,
+  markDoneBarLabel,
   removalAllowed,
   removeConfirmTitle,
   REMOVE_CONFIRM_BODY,
@@ -71,11 +72,14 @@ import {
   rowStatus,
   sortCopies,
   taskHistory,
-  taskLink,
   taskScreenControls,
 } from "@/lib/tasks/task-screen";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
-import { RELEASE_FAILED, RELEASED_LINE } from "@/lib/tasks/open-tasks";
+import {
+  RELEASE_FAILED,
+  RELEASED_LINE,
+  RELEASED_PARAM,
+} from "@/lib/tasks/open-tasks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -91,7 +95,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## What it shows
  *
  * The status as a colour chip in the shared words (`taskStatusLabel`); a row
- * of three facts, Due, Points and From, as Linear's issue header lists them;
+ * of three facts, Due, Points and From, as Linear's issue header lists them,
+ * and on a group's copy who it went to with its meter;
  * the description; the checklist; the photos and proof; for an officer on a
  * task sent to everyone, Who has it (each member's copy, "3 of 12 done");
  * then History, read off the task's own timestamps, as Todoist's task page
@@ -103,7 +108,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * A floating glass bar under the thumb, as Things 3 keeps a to-do's controls
  * (`TaskActionBar`). Mark done is the one thing to do and the only control in
  * the chapter accent, a pill with its verb; Edit, Remove people and More are
- * 40pt rounds. More opens the system menu: Copy link, Mark not done, Delete
+ * 44pt rounds. More opens the system menu: Mark not done, Give it back, Delete
  * and, on a group task, Delete for everyone. Each shows only to a viewer the
  * API lets use it (`taskScreenControls`).
  *
@@ -199,7 +204,7 @@ function TaskScreen({
     (id: string | null) => (id === row.id ? row : null),
     [row],
   );
-  const toggles = useTaskToggle(findRow);
+  const toggles = useTaskToggle(findRow, { viewerId });
   const controls = taskScreenControls({
     row,
     viewerId,
@@ -225,6 +230,13 @@ function TaskScreen({
   const [peopleNote, setPeopleNote] = useState<string | null>(null);
   const removal = removalAllowed(picked, copies);
   const removeFromGroup = useRemoveFromTaskGroup();
+
+  // Back where the member came from (the board, the Calendar), or to the
+  // board on a cold link with nothing under this screen.
+  const leave = () => {
+    if (router.canGoBack()) router.back();
+    else goBackTo(router, BACK_TO_TASKS.href);
+  };
   const startSelecting = () => {
     setPeopleNote(null);
     setPicked(new Set());
@@ -252,9 +264,7 @@ function TaskScreen({
       setPeopleNote(line);
       AccessibilityInfo.announceForAccessibility(line);
       // The copy on screen was one of them: there is nothing left to show.
-      if (row.assigneeId && result.removed.includes(row.assigneeId)) {
-        goBackTo(router, BACK_TO_TASKS.href);
-      }
+      if (row.assigneeId && result.removed.includes(row.assigneeId)) leave();
     } catch (error) {
       setPeopleNote(
         errorCopy(error, "Couldn't take them out. Try again.", {
@@ -264,7 +274,8 @@ function TaskScreen({
     }
   };
   const confirmRemove = () => {
-    const assigneeIds = [...picked];
+    // Only picks still among the copies: one that left on a refetch isn't sent.
+    const assigneeIds = [...livePicks(picked, copies)];
     // The platform alert, as other deletes ask: the copies can't come back,
     // so there is no undo to offer instead.
     Alert.alert(removeConfirmTitle(assigneeIds.length), REMOVE_CONFIRM_BODY, [
@@ -310,7 +321,7 @@ function TaskScreen({
       await deleteTask.mutateAsync(
         everyone ? { id: row.id, scope: "group" } : row.id,
       );
-      goBackTo(router, BACK_TO_TASKS.href);
+      leave();
     } catch (error) {
       setDeleteFailed(errorCopy(error, "Couldn't delete the task. Try again."));
     }
@@ -334,14 +345,20 @@ function TaskScreen({
     );
 
   // Give it back (tasks.md § Up for grabs): the task is deleted and its
-  // posting is open again, so there is nothing left here to show.
+  // posting is open again, so there is nothing left here to show. It lands on
+  // the board, where the posting is back under Up for grabs and the board
+  // says so in its line (`released=1`); from the Calendar that is a step
+  // sideways, which is the point: the task is no longer the member's.
   const releaseTask = useReleaseTask();
   const runRelease = () => {
     setDeleteFailed(null);
     releaseTask.mutate(row.id, {
       onSuccess: () => {
         AccessibilityInfo.announceForAccessibility(RELEASED_LINE);
-        goBackTo(router, BACK_TO_TASKS.href);
+        goBackTo(router, {
+          pathname: "/tasks",
+          params: { [RELEASED_PARAM]: "1" },
+        });
       },
       onError: (error) =>
         setDeleteFailed(
@@ -350,59 +367,54 @@ function TaskScreen({
     });
   };
 
-  const openMore = () => {
-    const copyLink = {
-      label: "Copy link",
-      onPress: () =>
-        void Clipboard.setStringAsync(taskLink(row.id)).then(() =>
-          AccessibilityInfo.announceForAccessibility("Link copied"),
-        ),
-    };
-    const rest = [
-      ...(controls.reopen
-        ? [
-            {
-              label: TASK_ACTION_LABELS.reopen,
-              onPress: () => void toggles.toggle(row),
-            },
-          ]
-        : []),
-      ...(controls.release
-        ? [
-            {
-              label: TASK_AUDIENCE_COPY.release,
-              onPress: runRelease,
-            },
-          ]
-        : []),
-      ...(controls.delete
-        ? [
-            {
-              label: "Delete",
-              style: "destructive" as const,
-              onPress: () => confirmDelete(false),
-            },
-          ]
-        : []),
-      ...(controls.deleteForEveryone
-        ? [
-            {
-              label: "Delete for everyone",
-              style: "destructive" as const,
-              onPress: () => confirmDelete(true),
-            },
-          ]
-        : []),
-    ];
+  // More's rows, in order, the destructive ones last. No Copy link: the web
+  // has no page for one task to link to yet, and a `frapp://` link reads as
+  // dead text in chat.
+  const moreRows = [
+    ...(controls.reopen
+      ? [
+          {
+            label: TASK_ACTION_LABELS.reopen,
+            onPress: () => void toggles.toggle(row),
+          },
+        ]
+      : []),
+    ...(controls.release
+      ? [
+          {
+            label: TASK_AUDIENCE_COPY.release,
+            onPress: runRelease,
+          },
+        ]
+      : []),
+    ...(controls.delete
+      ? [
+          {
+            label: "Delete",
+            style: "destructive" as const,
+            onPress: () => confirmDelete(false),
+          },
+        ]
+      : []),
+    ...(controls.deleteForEveryone
+      ? [
+          {
+            label: "Delete for everyone",
+            style: "destructive" as const,
+            onPress: () => confirmDelete(true),
+          },
+        ]
+      : []),
+  ];
+  // At most three, which Android's dialog can draw: Mark not done needs the
+  // task done and Give it back needs it not done, so only one of them shows
+  // beside Delete and Delete for everyone.
+  const openMore = () =>
     showActionMenu({
       title: row.title,
-      rows: [copyLink, ...rest],
+      rows: moreRows,
       userInterfaceStyle: "dark",
-      // Android's dialog draws three buttons at most: the task's own moves
-      // keep their place and Copy link gives way.
-      android: rest.length >= 3 ? { rows: rest } : undefined,
     });
-  };
 
   const status = rowStatus(row);
   const due = formatDueDate(row.dueDate);
@@ -414,24 +426,35 @@ function TaskScreen({
     : null;
   const groupLabel = rowGroupLabel(row);
   const progress = row.group ?? { done: 0, total: copies.length };
-  const forLine =
-    groupLabel && !showPeople
-      ? `${groupLabel} · ${TASK_AUDIENCE_COPY.progress(progress.done, progress.total)}`
-      : null;
+  // Who a group task went to, for anyone Who has it doesn't show to.
+  const showFor = groupLabel !== null && !showPeople;
   const history = useMemo(
     () => taskHistory(row, nameInLine, new Date()),
     [row, nameInLine],
   );
   const notice = toggles.refusal ?? toggles.notice ?? deleteFailed;
-  const markDoneText = markDoneLabel(
-    TASK_ACTION_LABELS.complete,
-    row.proofKind,
-  );
   const pending = toggles.pendingId === row.id;
+  const showRemovePeople = controls.removePeople && showPeople;
+  const showMore = moreRows.length > 0;
+  const markDoneText = markDoneBarLabel(
+    row.proofKind,
+    [controls.edit, showRemovePeople, showMore].filter(Boolean).length,
+  );
+  // A member's task with nothing to do and nothing in More draws no bar.
+  const barShown =
+    controls.markDone || controls.edit || showRemovePeople || showMore;
 
   return (
     <View style={styles.frame}>
-      <ScreenShell back={BACK_TO_TASKS} title={row.title}>
+      <ScreenShell
+        back={BACK_TO_TASKS}
+        title={row.title}
+        // An officer types steps in the checklist's field, low on the page:
+        // the body rises with the keyboard, and a tap on a step's × while it
+        // is up works on the first tap.
+        avoidKeyboard
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.chipRow}>
           <StatusChip
             label={taskStatusLabel(status)}
@@ -439,7 +462,7 @@ function TaskScreen({
           />
         </View>
 
-        {due || points || forLine || from ? (
+        {due || points || from ? (
           <View style={styles.facts}>
             {due ? (
               <Fact
@@ -462,11 +485,22 @@ function TaskScreen({
                 }
               />
             ) : null}
-            {/* Who a group task went to, with how far its copies are, as
-                the sheet said it ("Everyone in Philanthropy · 2 of 6
-                done"). Who has it says it for an officer instead. */}
-            {forLine ? <Fact label="For" value={forLine} color={null} /> : null}
             {from ? <Fact label="From" value={from} color={null} /> : null}
+          </View>
+        ) : null}
+
+        {/* Who a group task went to and how far its copies are, on a line
+            of its own ("Everyone in Philanthropy · 2 of 6 done" can't fit a
+            third of the row), with its meter. Who has it says it for an
+            officer instead. */}
+        {showFor ? (
+          <View style={styles.forFact}>
+            <Text style={styles.factLabel}>For</Text>
+            <GroupProgress
+              who={groupLabel}
+              done={progress.done}
+              total={progress.total}
+            />
           </View>
         ) : null}
 
@@ -536,7 +570,7 @@ function TaskScreen({
           </View>
         ) : null}
 
-        <TaskActionBarSpacer />
+        {barShown || selecting ? <TaskActionBarSpacer /> : null}
       </ScreenShell>
 
       {selecting ? (
@@ -545,7 +579,7 @@ function TaskScreen({
             <CloseGlyph color={tokens.color.text.foreground} />
           </TaskBarIcon>
           <TaskBarPill
-            label={removeLabel(picked.size)}
+            label={removeLabel(removal.count)}
             fill={tokens.color.semantic.destructive}
             ink={tokens.color.semantic.onSemantic}
             disabled={!removal.ok}
@@ -554,11 +588,12 @@ function TaskScreen({
             onPress={confirmRemove}
           />
         </TaskActionBar>
-      ) : (
+      ) : barShown ? (
         <TaskActionBar>
           {controls.markDone ? (
             <TaskBarPill
-              label={markDoneText}
+              label={markDoneText.label}
+              hint={markDoneText.hint}
               glyph={(ink) => <CheckGlyph color={ink} />}
               fill={accent}
               ink={tokens.color.gold.onHouse}
@@ -575,7 +610,7 @@ function TaskScreen({
               <PencilGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}
-          {controls.removePeople && showPeople ? (
+          {showRemovePeople ? (
             <TaskBarIcon
               label="Remove people"
               hint="Pick members to take out of this task."
@@ -584,11 +619,13 @@ function TaskScreen({
               <MinusGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}
-          <TaskBarIcon label="More" onPress={openMore}>
-            <MoreGlyph color={tokens.color.text.foreground} />
-          </TaskBarIcon>
+          {showMore ? (
+            <TaskBarIcon label="More" onPress={openMore}>
+              <MoreGlyph color={tokens.color.text.foreground} />
+            </TaskBarIcon>
+          ) : null}
         </TaskActionBar>
-      )}
+      ) : null}
 
       {toggles.undo ? (
         <UndoBar
@@ -687,16 +724,16 @@ function createStyles(tokens: SignetTokens) {
     chipRow: {
       flexDirection: "row",
     },
+    // Due, Points and From, a third of the row each; For has its own line.
     facts: {
       flexDirection: "row",
-      flexWrap: "wrap",
-      rowGap: tokens.spacing.sm,
-      columnGap: tokens.spacing.md,
+      gap: tokens.spacing.md,
     },
     fact: {
-      // Three to a line; a fourth (For) wraps under them.
-      flexGrow: 1,
-      flexBasis: "28%",
+      flex: 1,
+      gap: tokens.spacing.xs,
+    },
+    forFact: {
       gap: tokens.spacing.xs,
     },
     factLabel: {

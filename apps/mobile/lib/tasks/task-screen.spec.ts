@@ -5,7 +5,9 @@ import {
   removalAllowed,
   sortCopies,
   taskHistory,
-  taskLink,
+  livePicks,
+  markDoneBarLabel,
+  removedLine,
   taskScreenControls,
 } from "./task-screen";
 
@@ -45,7 +47,7 @@ describe("taskHistory", () => {
     );
     expect(lines.map((line) => line.title)).toEqual([
       "Assigned by Name officer",
-      "Marked done by you",
+      "Marked done",
       "Confirmed",
     ]);
   });
@@ -197,17 +199,79 @@ describe("Who has it", () => {
     expect(removalAllowed(new Set(), copies)).toEqual({
       ok: false,
       everyone: false,
+      count: 0,
     });
     expect(removalAllowed(new Set(["b", "c"]), copies).ok).toBe(true);
+    // "a" is confirmed, so it can't be among the picks: the rest isn't everyone.
     expect(removalAllowed(new Set(["a", "b", "c", "d"]), copies)).toEqual({
+      ok: true,
+      everyone: false,
+      count: 3,
+    });
+    const open = copies.filter((copy) => copy.assigneeId !== "a");
+    expect(removalAllowed(new Set(["b", "c", "d"]), open)).toEqual({
       ok: false,
       everyone: true,
+      count: 3,
+    });
+  });
+
+  it("counts only picks still among the removable copies, so a stale one can't read as everyone", () => {
+    const copies = groupCopies(data, "g1");
+    // "x" left on a refetch, "a" is confirmed.
+    expect([...livePicks(new Set(["b", "x", "a"]), copies)]).toEqual(["b"]);
+    const two = copies.filter((copy) => ["b", "c"].includes(copy.assigneeId!));
+    expect(removalAllowed(new Set(["b", "gone", "also-gone"]), two)).toEqual({
+      ok: true,
+      everyone: false,
+      count: 1,
     });
   });
 });
 
-describe("taskLink", () => {
-  it("is the app link that opens the task screen", () => {
-    expect(taskLink("t 1")).toBe("frapp://task-details?id=t%201");
+describe("removedLine", () => {
+  it("says nothing changed when every pick had already left", () => {
+    expect(removedLine(0)).toBe("They were already off this task.");
+    expect(removedLine(1)).toBe("Took 1 person out of this task.");
+    expect(removedLine(2)).toBe("Took 2 people out of this task.");
+  });
+});
+
+describe("Mark done in the bar", () => {
+  it("offers no Mark done on a status this build can't move", () => {
+    expect(
+      taskScreenControls({
+        row: row({ status: "ARCHIVED", stored_status: "ARCHIVED" }),
+        viewerId: "me",
+        canManage: true,
+        toggleRefused: false,
+      }).markDone,
+    ).toBe(false);
+  });
+
+  it("gives an officer who isn't the assignee Mark done", () => {
+    expect(
+      taskScreenControls({
+        row: row(),
+        viewerId: "officer",
+        canManage: true,
+        toggleRefused: false,
+      }).markDone,
+    ).toBe(true);
+  });
+
+  it("shortens the verb beside two or more rounds, and says the proof in its hint", () => {
+    expect(markDoneBarLabel("photo", 1)).toEqual({
+      label: "Mark done with a photo",
+      hint: undefined,
+    });
+    expect(markDoneBarLabel("photo", 3)).toEqual({
+      label: "Mark done",
+      hint: "Mark done with a photo.",
+    });
+    expect(markDoneBarLabel("none", 3)).toEqual({
+      label: "Mark done",
+      hint: undefined,
+    });
   });
 });

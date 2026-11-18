@@ -68,6 +68,7 @@ import {
   claimedTaskId,
   RELEASE_FAILED,
   RELEASED_LINE,
+  RELEASED_PARAM,
   openTaskWho,
   selectOpenTasks,
 } from "@/lib/tasks/open-tasks";
@@ -232,6 +233,7 @@ export default function TasksScreen() {
   // to the app on this screen also re-reads the clock (see `now` above): a
   // member who leaves the app here overnight comes back to today's board.
   const toggles = useTaskToggle(findRow, {
+    viewerId: viewerUserId,
     onActive: () => setNow(new Date()),
   });
   const { pendingId, refusal, notice, undo, canToggle, toggle, takeBack } =
@@ -288,7 +290,19 @@ export default function TasksScreen() {
   // quick action is (`availableQuickActions`).
   const createRef = useRef<BottomSheetModal>(null);
   const [createMounted, setCreateMounted] = useState(false);
-  const [created, setCreated] = useState<string | null>(null);
+  // The line under the points card. `keep` holds it through the focus that
+  // brought the member here, for one set as they arrived (Give it back from
+  // the task's screen), which that focus would otherwise clear.
+  const [createdLine, setCreatedLine] = useState<{
+    text: string;
+    keep: boolean;
+  } | null>(null);
+  const created = createdLine?.text ?? null;
+  const setCreated = useCallback(
+    (text: string | null) =>
+      setCreatedLine(text === null ? null : { text, keep: false }),
+    [],
+  );
   useEffect(() => {
     if (createMounted) createRef.current?.present();
   }, [createMounted]);
@@ -296,13 +310,38 @@ export default function TasksScreen() {
     setCreated(null);
     if (createMounted) createRef.current?.present();
     else setCreateMounted(true);
-  }, [createMounted]);
+  }, [createMounted, setCreated]);
   useFocusEffect(
     useCallback(() => {
-      setCreated(null);
+      setCreatedLine((line) => (line?.keep ? { ...line, keep: false } : null));
       return undefined;
     }, []),
   );
+
+  // `/tasks?released=1`: the task's screen gave a task back to Up for grabs
+  // and came here, where the posting is back; the board says so in its line,
+  // as after its own toast's Give it back, then clears the param.
+  const { [RELEASED_PARAM]: released } = useLocalSearchParams<{
+    [RELEASED_PARAM]?: string;
+  }>();
+  const [releaseSeen, setReleaseSeen] = useState(false);
+  if (released === "1" && !releaseSeen) {
+    setReleaseSeen(true);
+    setCreatedLine({ text: RELEASED_LINE, keep: true });
+  } else if (released !== "1" && releaseSeen) {
+    setReleaseSeen(false);
+  }
+  useEffect(() => {
+    if (!releaseSeen) return undefined;
+    router.setParams({ [RELEASED_PARAM]: undefined });
+    // The arrival's focus may come just before the param or just after it;
+    // once this turn is over the line is an ordinary one, which the next
+    // focus clears.
+    const settle = setTimeout(() =>
+      setCreatedLine((line) => (line?.keep ? { ...line, keep: false } : line)),
+    );
+    return () => clearTimeout(settle);
+  }, [releaseSeen, router]);
 
   const rosterQuery = useChapterRoster();
   const { setNotice, offerRelease, clearUndo } = toggles;
@@ -369,7 +408,7 @@ export default function TasksScreen() {
         },
       });
     },
-    [claimOpen, now, openTasksReadAt, offerRelease, setNotice],
+    [claimOpen, now, openTasksReadAt, offerRelease, setNotice, setCreated],
   );
 
   /**
@@ -391,7 +430,7 @@ export default function TasksScreen() {
           ),
       });
     },
-    [releaseTask, clearUndo, setNotice],
+    [releaseTask, clearUndo, setNotice, setCreated],
   );
 
   // A posting's sheet, by id, so it redraws as the list reads again and
@@ -430,7 +469,7 @@ export default function TasksScreen() {
         },
       );
     },
-    [assignOpen, nameOf, viewerUserId, postingFailed],
+    [assignOpen, nameOf, viewerUserId, postingFailed, setCreated],
   );
   const deletePosting = useCallback(
     (posting: OpenTask) => {

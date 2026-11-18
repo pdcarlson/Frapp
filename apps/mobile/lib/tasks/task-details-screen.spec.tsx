@@ -2,8 +2,7 @@
 import React from "react";
 import { act } from "react";
 import * as expoRouter from "expo-router";
-import { AccessibilityInfo, Alert } from "react-native";
-import * as Clipboard from "expo-clipboard";
+import { AccessibilityInfo, Alert, StyleSheet } from "react-native";
 import {
   create,
   type ReactTestInstance,
@@ -14,7 +13,12 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { StatusChip } from "@/components/status-chip";
-import { TaskActionBarSpacer } from "@/components/tasks/task-action-bar";
+import {
+  TaskActionBar,
+  TaskActionBarSpacer,
+} from "@/components/tasks/task-action-bar";
+import { UndoBar } from "@/components/tasks/undo-bar";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import type { ActionMenu } from "@/lib/action-menu";
 import { TASK_AUDIENCE_COPY } from "@repo/validation";
 
@@ -254,10 +258,11 @@ describe("A member's own plain task: a little", () => {
     act(() => tree.unmount());
   });
 
-  it("offers only Mark done and More, and Mark done marks it done", async () => {
+  it("offers only Mark done, and Mark done marks it done and offers Undo", async () => {
     const tree = render();
     expect(control(tree, "Mark done")).toBeDefined();
-    expect(control(tree, "More")).toBeDefined();
+    // Nothing for More to hold on a member's open task.
+    expect(control(tree, "More")).toBeUndefined();
     expect(control(tree, "Edit task")).toBeUndefined();
     expect(control(tree, "Remove people")).toBeUndefined();
     await act(async () => {
@@ -272,18 +277,43 @@ describe("A member's own plain task: a little", () => {
       id: "t1",
       body: { status: "COMPLETED" },
     });
+    // Their own completion: they may take it back.
+    expect(tree.root.findAllByType(UndoBar)).toHaveLength(1);
     act(() => tree.unmount());
   });
 
-  it("holds More to Copy link, which copies the task's app link", async () => {
+  it("says a gate refusal on Mark done, and withdraws Mark done", async () => {
+    mutateStatus.mockRejectedValueOnce({
+      statusCode: 403,
+      error: "Forbidden",
+      message:
+        "Chapter subscription is not active; complete checkout to use this feature.",
+    });
+    const tree = render();
+    await act(async () => {
+      control(tree, "Mark done")!.props.onPress();
+    });
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(control(tree, "Mark done")).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("says why when a Mark not done is refused", async () => {
+    task = {
+      ...PLAIN,
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: 15,
+      completed_at: "2026-11-18T09:00:00.000Z",
+    };
+    mutateStatus.mockRejectedValueOnce({ statusCode: 400, message: "No" });
     const tree = render();
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Copy link"]);
     await act(async () => {
       menus[0]!.rows[0]!.onPress();
     });
-    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
-      "frapp://task-details?id=t1",
+    expect(screenText(tree)).toContain(
+      "Couldn't mark that task not done. An officer may have confirmed it already.",
     );
     act(() => tree.unmount());
   });
@@ -349,13 +379,28 @@ describe("The task's states", () => {
     expect(tree.root.findByType(StatusChip).props.label).toBe(
       "Waiting on an officer",
     );
-    expect(screenText(tree)).toContain("Marked done by you");
+    expect(screenText(tree)).toContain("Marked done");
+    expect(screenText(tree)).not.toContain("Marked done by");
     expect(control(tree, "Mark done")).toBeUndefined();
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual([
-      "Copy link",
-      "Mark not done",
-    ]);
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Mark not done"]);
+    act(() => tree.unmount());
+  });
+
+  it("still offers Mark not done on a completion signed off as it was marked (no points, no proof)", () => {
+    task = {
+      ...PLAIN,
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: null,
+      points_awarded: true,
+      completed_at: "2026-11-13T10:00:00.000Z",
+      confirmed_at: "2026-11-13T10:00:00.000Z",
+    };
+    const tree = render();
+    expect(tree.root.findByType(StatusChip).props.label).toBe("Done");
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Mark not done"]);
     act(() => tree.unmount());
   });
 
@@ -372,8 +417,9 @@ describe("The task's states", () => {
     const tree = render();
     expect(tree.root.findByType(StatusChip).props.label).toBe("Confirmed");
     expect(screenText(tree)).toContain("Confirmed");
-    press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Copy link"]);
+    // No control left for a member: no bar, and no room kept for one.
+    expect(tree.root.findAllByType(TaskActionBar)).toHaveLength(0);
+    expect(tree.root.findAllByType(TaskActionBarSpacer)).toHaveLength(0);
     act(() => tree.unmount());
   });
 
@@ -430,11 +476,68 @@ describe("An officer on a task for everyone: a lot", () => {
     expect(control(tree, "Remove people")).toBeDefined();
     press(tree, "More");
     expect(menus[0]!.rows.map((row) => row.label)).toEqual([
-      "Copy link",
       "Delete",
       "Delete for everyone",
     ]);
     expect(menus[0]!.rows.at(-1)!.style).toBe("destructive");
+    act(() => tree.unmount());
+  });
+
+  it("deletes only this copy from More's plain Delete", async () => {
+    const tree = render();
+    press(tree, "More");
+    act(() => menus[0]!.rows.find((row) => row.label === "Delete")!.onPress());
+    const [title, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
+    expect(title).toBe('Delete "Fill in the housing form"?');
+    await act(async () => {
+      buttons!.find((button) => button.style === "destructive")!.onPress?.();
+    });
+    expect(deleteTask).toHaveBeenCalledWith(`copy-${ME}`);
+    act(() => tree.unmount());
+  });
+
+  it("goes back where the member came from after a delete, when there is somewhere", async () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.canGoBack).mockReturnValue(true);
+    const tree = render();
+    press(tree, "More");
+    act(() => menus[0]!.rows.find((row) => row.label === "Delete")!.onPress());
+    await act(async () => {
+      vi.mocked(Alert.alert)
+        .mock.calls[0]![2]!.find((button) => button.style === "destructive")!
+        .onPress?.();
+    });
+    expect(router.back).toHaveBeenCalledTimes(1);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    vi.mocked(router.canGoBack).mockReturnValue(false);
+    act(() => tree.unmount());
+  });
+
+  it("says Mark done in a crowded bar, the proof it asks for in the hint (320pt)", () => {
+    task = {
+      ...(GROUP_COPIES[0] as Record<string, unknown>),
+      proof_kind: "photo",
+    };
+    const tree = render();
+    // Edit, Remove people and More beside it: the whole verb won't fit.
+    expect(control(tree, "Mark done with a photo")).toBeUndefined();
+    const pill = control(tree, "Mark done")!;
+    expect(pill.props.accessibilityHint).toBe("Mark done with a photo.");
+    act(() => tree.unmount());
+  });
+
+  it("gives an officer Mark done on a member's copy, and no Undo once it lands", async () => {
+    task = GROUP_COPIES[3] as Record<string, unknown>;
+    const tree = render("copy-u-cal");
+    await act(async () => {
+      control(tree, "Mark done")!.props.onPress();
+    });
+    expect(mutateStatus).toHaveBeenCalledWith({
+      id: "copy-u-cal",
+      body: { status: "COMPLETED" },
+    });
+    // Taking it back is the assignee's alone (Send back is the officer's).
+    expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
     act(() => tree.unmount());
   });
 
@@ -583,8 +686,7 @@ describe("A member on a task for everyone", () => {
     expect(screenText(tree)).not.toContain("WHO HAS IT");
     expect(control(tree, "Remove people")).toBeUndefined();
     expect(control(tree, "Edit task")).toBeUndefined();
-    press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Copy link"]);
+    expect(control(tree, "More")).toBeUndefined();
     act(() => tree.unmount());
   });
 
@@ -606,6 +708,10 @@ describe("A member on a task for everyone", () => {
     expect(screenText(tree)).toContain(
       `${TASK_AUDIENCE_COPY.everyoneIn("Philanthropy")} · ${TASK_AUDIENCE_COPY.progress(2, 6)}`,
     );
+    // Shown as a meter too, a third of the way.
+    const meter = tree.root.findByProps({ testID: "group-progress-meter" });
+    const fill = meter.children[0] as ReactTestInstance;
+    expect(StyleSheet.flatten(fill.props.style).width).toBe("33%");
     act(() => tree.unmount());
   });
 });
@@ -625,8 +731,13 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
       onSuccess: () => void;
     };
     act(() => onSuccess());
-    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
-      "/tasks",
+    // To the board, which says so in its line (`tasks-screen.spec.tsx`).
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith({
+      pathname: "/tasks",
+      params: { released: "1" },
+    });
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
     );
     act(() => tree.unmount());
 
@@ -648,10 +759,8 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
 
   it("is not offered on an ordinary task", () => {
     const tree = render();
-    press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).not.toContain(
-      TASK_AUDIENCE_COPY.release,
-    );
+    // More holds nothing at all on a member's ordinary open task.
+    expect(control(tree, "More")).toBeUndefined();
     act(() => tree.unmount());
   });
 });
