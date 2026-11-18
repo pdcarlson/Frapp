@@ -1152,6 +1152,15 @@ const channelAskState = vi.hoisted(() => ({
   turns: [] as { id: string }[],
   turnsFor: [] as (string | null | undefined)[],
 }));
+// Ask Frapp's bar (#5476): who gets it is `ask-bar.tsx`'s question
+// (`ask-entry.spec.tsx`); here only where the shell puts it.
+vi.mock("@/components/ask/ask-bar", () => ({
+  AskBar: ({ compact }: { compact?: boolean }) => (
+    <button data-testid="ask-bar" data-compact={compact ? "" : undefined}>
+      Ask Frapp
+    </button>
+  ),
+}));
 vi.mock("@/components/ask/ask-in-channel", () => ({
   useChannelAsk: () => channelAskState.ask,
   useChannelAskAccess: () =>
@@ -4926,6 +4935,21 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     } finally {
       push.mockRestore();
     }
+  });
+
+  it("puts Ask Frapp's bar at the foot of the Channels column with chat alone, and not beside a tool (#5476)", () => {
+    stubWidth(1440);
+    const view = render(<ChatShell />);
+    const bar = screen.getByTestId("ask-bar");
+    expect(bar).toHaveAttribute("data-compact");
+    // In the Channels column, never in the thread with its message box.
+    expect(screen.getByRole("region", { name: "Channels" })).toContainElement(
+      bar,
+    );
+    view.unmount();
+    // Beside a tool page the page's own bar asks (`dashboard-shell.tsx`).
+    render(<ChatShell toolBeside />);
+    expect(screen.queryByTestId("ask-bar")).toBeNull();
   });
 
   it("closes the member column beside a tool, and opens the list as a Panel instead", () => {

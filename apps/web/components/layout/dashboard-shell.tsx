@@ -63,6 +63,8 @@ import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
 import { MeetFrappAiHost } from "@/components/ai/meet-frapp-ai-host";
 import { GetTheAppCard } from "@/components/layout/get-the-app-card";
+import { AskBar } from "@/components/ask/ask-bar";
+import { useAskEntry } from "@/components/ask/ask-host";
 import { RolePreviewBanner } from "@/components/roles/role-preview-banner";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
@@ -161,6 +163,9 @@ export function DashboardShell({
   defaultToolShare = 0.5,
   defaultMembersHidden = false,
 }: DashboardShellProps) {
+  // Ask Frapp's floating bar (#5476) sits at the bottom of the page, so a
+  // page with it reserves room under its last row.
+  const askBar = useAskEntry() !== null;
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -725,20 +730,43 @@ export function DashboardShell({
               />
               <div
                 data-tool-page=""
-                className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6"
+                className={cn(
+                  "flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+                  // The bar's 48, its 24 off the bottom, and 24 more, so the
+                  // last row scrolls clear of it. A control the page pins to
+                  // its own bottom (`sticky bottom-*`) adds `--ask-bar-room`,
+                  // the bar's 72, so it sits above the bar rather than under.
+                  askBar && "pb-24 [--ask-bar-room:4.5rem]",
+                )}
               >
                 {children}
               </div>
+              {askBar ? <FloatingAskBar /> : null}
             </div>
           ) : chatShown ? null : (
             // `/chat` with chat closed: the home view, from the side-by-side
             // width up (below it `/chat` is the chat page).
-            <div className="hidden min-h-0 min-w-0 flex-1 min-[1056px]:flex">
+            <div className="relative hidden min-h-0 min-w-0 flex-1 min-[1056px]:flex">
               <ChapterHome />
+              {askBar ? <FloatingAskBar /> : null}
             </div>
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Ask Frapp's bar (#5476, Paul's pick of 2026-11-18), floating 24px above the
+ * bottom of the page column and centred in it, at most 520px wide, as the
+ * phone's bar floats above its tab bar. The strip around it lets clicks
+ * through to the page; only the bar takes them.
+ */
+function FloatingAskBar() {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
+      <AskBar className="pointer-events-auto max-w-[520px]" />
     </div>
   );
 }

@@ -241,6 +241,22 @@ function DockedPanel({
         child !== box && child instanceof HTMLElement && !child.inert,
     );
     for (const child of covered) child.inert = true;
+    // A child that joins the column while the panel is up is covered too:
+    // Ask Frapp's floating bar mounts once Ask access resolves, which can be
+    // after a deep link opened the panel (#5476). It is released with the
+    // rest when the panel closes.
+    const joined = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (node === box || !(node instanceof HTMLElement) || node.inert) {
+            continue;
+          }
+          node.inert = true;
+          covered.push(node);
+        }
+      }
+    });
+    joined.observe(column, { childList: true });
     // A `PanelDescription` is the panel's description, as a sheet's is its
     // dialog's, so a screen reader reads it with the title when focus lands.
     // Set before the focus, and only when one is drawn, so the id never
@@ -283,6 +299,7 @@ function DockedPanel({
     document.addEventListener("focusin", onFocusIn);
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => {
+      joined.disconnect();
       observer.disconnect();
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("pointerdown", onPointerDown, true);

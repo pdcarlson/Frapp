@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Ask Frapp's front door on web (#4904, Paul's pick of 2026-11-13): no
- * control of its own. The host hands the top bar's field a way in
- * (`useAskEntry`) and draws the conversation over whatever page is up.
+ * Ask Frapp's front door on web: the floating Ask bar (#5476, Paul's pick of
+ * 2026-11-18). The host hands the bar a way in (`useAskEntry`) and draws the
+ * conversation over whatever page is up.
  */
 
 const who = vi.hoisted(() => ({
@@ -69,17 +69,14 @@ vi.mock("@/components/ask/ask-card", async () => {
     AskCard: (props: {
       open: boolean;
       onOpenChange: (open: boolean) => void;
-      asking: string | null;
-      onAsked: () => void;
     }) => {
       useEffect(() => {
         card.mounts += 1;
       }, []);
       if (!props.open) return null;
       return (
-        <div data-testid="ask-card" data-asking={props.asking ?? ""}>
+        <div data-testid="ask-card">
           <button onClick={() => props.onOpenChange(false)}>close card</button>
-          <button onClick={props.onAsked}>take question</button>
         </div>
       );
     },
@@ -88,7 +85,7 @@ vi.mock("@/components/ask/ask-card", async () => {
 
 const { AskHost, useAskEntry } = await import("./ask-host");
 
-/** A page with the top bar's field on it, as `find-bar.tsx` reaches Ask. */
+/** A page with an entry on it, as `ask-bar.tsx` reaches Ask. */
 function Page({ name = "chat" }: { name?: string }) {
   const ask = useAskEntry();
   return (
@@ -96,9 +93,6 @@ function Page({ name = "chat" }: { name?: string }) {
       {ask ? (
         <>
           <button onClick={() => ask.openWith()}>open</button>
-          <button onClick={() => ask.openWith("  When is formal?  ")}>
-            ask
-          </button>
           <output>{ask.open ? "open" : "closed"}</output>
         </>
       ) : null}
@@ -244,26 +238,10 @@ describe("the way in", () => {
 
     await user.click(entry()!);
     expect(screen.getByRole("status")).toHaveTextContent("open");
-    expect(screen.getByTestId("ask-card")).toHaveAttribute("data-asking", "");
+    expect(screen.getByTestId("ask-card")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "close card" }));
     expect(screen.getByRole("status")).toHaveTextContent("closed");
-  });
-
-  it("hands the conversation a question typed into the field, trimmed, until it is taken", async () => {
-    render(
-      <AskHost>
-        <Page />
-      </AskHost>,
-    );
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "ask" }));
-    expect(screen.getByTestId("ask-card")).toHaveAttribute(
-      "data-asking",
-      "When is formal?",
-    );
-    await user.click(screen.getByRole("button", { name: "take question" }));
-    expect(screen.getByTestId("ask-card")).toHaveAttribute("data-asking", "");
   });
 
   it("keeps one conversation across pages: the page changes, the conversation does not remount", async () => {
@@ -282,13 +260,13 @@ describe("the way in", () => {
     expect(card.mounts).toBe(1);
   });
 
-  it("drops a question waiting to be asked when the member loses Ask", async () => {
+  it("closes for good when the member loses Ask: it does not open itself when Ask returns", async () => {
     const view = render(
       <AskHost>
         <Page />
       </AskHost>,
     );
-    await userEvent.setup().click(screen.getByRole("button", { name: "ask" }));
+    await userEvent.setup().click(entry()!);
     who.previewing = true;
     view.rerender(
       <AskHost>
@@ -301,9 +279,6 @@ describe("the way in", () => {
         <Page />
       </AskHost>,
     );
-    // It does not open itself, and it does not ask what was typed before.
     expect(screen.queryByTestId("ask-card")).toBeNull();
-    await userEvent.setup().click(entry()!);
-    expect(screen.getByTestId("ask-card")).toHaveAttribute("data-asking", "");
   });
 });

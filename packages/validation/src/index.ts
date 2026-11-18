@@ -31,10 +31,9 @@ export * from "./ask-effort";
 export * from "./ask-entities";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";
-// An Ask Frapp answer posted to a channel (#4713).
-export * from "./ask-find";
 // What Ask opens on: the day, a greeting, the first-open starter (#4904).
 export * from "./ask-greeting";
+// An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-post";
 export * from "./ask-source-chip";
 // Ask's working state as a list of steps (#5427).
