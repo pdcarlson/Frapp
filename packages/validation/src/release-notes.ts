@@ -145,6 +145,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The top of Activity now shows the one thing waiting on you, like a meeting tonight, a mention or a sign-up, with the next few beside it.",
       "After time away, the top of Chat shows the channels with something new since you left, with your mentions first.",
       "Long-pressing a message opens its menu where the keyboard would be, so the message stays in view above it, highlighted.",
+      "Tapping a task now opens it as its own page with its steps, proof and history, and officers can take people out of a task sent to everyone.",
     ],
   },
   {
