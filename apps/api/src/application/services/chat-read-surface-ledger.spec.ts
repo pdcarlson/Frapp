@@ -749,6 +749,13 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 2,
     entries: [MEMBER_TEXT],
   },
+  // The one `notifyUser` behind TaskService's and OpenTaskService's pushes
+  // (`notifyQuietly`, 2026-11-18); its callers above say what each push
+  // names: the task as an officer titled it, and a member's name.
+  'application/services/task-push.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/task.service.ts': {
     // +1 for a task for everyone (#4295 step 3): each copy's assignment push.
     calls: 9,
