@@ -392,7 +392,7 @@ export function useKeptFormDraft<T>(
  * fields the member changed from `base` (the record as the form opened on it)
  * come from `kept`, the rest from `now`, so a draft kept past its form never
  * sends back a field someone else has changed since. Web's event editor and
- * the phone's Edit event and Edit task sheets share it.
+ * the phone's Edit event sheet share it.
  *
  * Fields in one `together` group move as one: an end time the member moved
  * comes back with the start it was moved against, never over a start someone

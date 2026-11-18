@@ -61,28 +61,6 @@ vi.mock("@/lib/chapter-branding", async () => {
   return chapterBrandingMock(MUTED_GOLD_BRANDING);
 });
 
-// The edit sheet is the board's (#4296), covered by its own spec; here only
-// what it was opened on matters.
-const editSheet = vi.hoisted(() => ({
-  editing: null as unknown,
-  keptDraft: undefined as string | undefined,
-  present: vi.fn(),
-}));
-vi.mock("@/components/tasks/new-task-sheet", async () => {
-  const React = await import("react");
-  return {
-    NewTaskSheet: React.forwardRef(function NewTaskSheet(
-      props: { editing: unknown; keptDraft?: string },
-      ref: React.Ref<{ present: () => void }>,
-    ) {
-      editSheet.editing = props.editing;
-      editSheet.keptDraft = props.keptDraft;
-      React.useImperativeHandle(ref, () => ({ present: editSheet.present }));
-      return null;
-    }),
-  };
-});
-
 // Mark done's and Send back's sheets (#4635) have their own specs; here only
 // that the card opens them, on what, and what their submit sends.
 const sheets = vi.hoisted(() => ({
@@ -647,30 +625,19 @@ describe("TaskCard — Edit (#4512)", () => {
     ).length > 0;
 
   beforeEach(() => {
-    editSheet.editing = null;
-    editSheet.present.mockClear();
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
     state.live = editable();
   });
 
-  it("opens the board's edit sheet on the task for a tasks:manage holder", async () => {
+  it("opens the task's screen in its edit mode for a tasks:manage holder (#5514)", async () => {
     state.permissions = ["tasks:manage"];
     const tree = render("admin-1");
     await press(tree, "Edit");
-    expect(editSheet.editing).toEqual({
-      id: "task-1",
-      title: "Fix the laundry room door",
-      assigneeId: ASSIGNEE,
-      dueDay: "2026-11-06",
-      dueAt: "2026-11-06T22:00:00.000Z",
-      pointReward: 15,
-      storedStatus: "TODO",
-      referencePhotos: [],
-      proofKind: "none",
+    // Edited in place there, not in a sheet over the thread.
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: "task-1", edit: "1" },
     });
-    // Mounted is not shown: the sheet has to be presented.
-    expect(editSheet.present).toHaveBeenCalledTimes(1);
-    // Kept past a close and the thread, by task (#4872).
-    expect(editSheet.keptDraft).toBe("task-edit:task-1");
   });
 
   it("holds Edit like the card's other writes while a write would be lost", () => {

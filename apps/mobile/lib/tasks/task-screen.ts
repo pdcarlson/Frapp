@@ -43,6 +43,7 @@ import {
 } from "@/lib/tasks/board";
 import { checkboxSequence } from "@/lib/tasks/transitions";
 import { markDoneLabel } from "@/lib/tasks/task-photos";
+import { taskEditable } from "@/lib/tasks/task-edit";
 
 /**
  * Who a group task went to, in the shared words (`taskGroupLabel`):
@@ -113,8 +114,8 @@ export interface TaskScreenControls {
   /** In More, destructive and last: every copy of a group task. */
   deleteForEveryone: boolean;
   /**
-   * The long-press menu's Reassign: an edit opened on Assign to. Not on a
-   * group's copy, since a group edit refuses `assignee_id`.
+   * The long-press menu's Reassign: the screen's edit, opened on Assign to.
+   * Not on a group's copy, since a group edit refuses `assignee_id`.
    */
   reassign: boolean;
   /** The long-press menu's Duplicate: New task, filled in from this one. */
@@ -151,13 +152,9 @@ export function taskScreenControls({
   };
   const awaitsReview =
     !toggleRefused && taskAwaitsReview(reviewed, { viewerId, canManage });
-  // The board's rule for its sheet's Edit (#4296): the edit form needs an
-  // assignee and a day, and a confirmed task can't change.
-  const edit =
-    canManage &&
-    !row.pointsAwarded &&
-    row.assigneeId !== null &&
-    row.dueDay !== null;
+  // The screen's edit in place (#5514): a confirmed task can't change, and
+  // the fields need an assignee and a day.
+  const edit = taskEditable(row, canManage);
   return {
     // A status this build doesn't know has no sequence to send, so no Mark
     // done that would do nothing (the board's `canToggle` guard).

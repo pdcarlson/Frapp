@@ -131,6 +131,9 @@ const rejectTask = vi.fn<
 >(async () => ({}));
 const addSubtask = vi.fn();
 const deleteSubtask = vi.fn();
+const updateTask = vi.fn<
+  (input: { id: string; body: Record<string, unknown> }) => Promise<unknown>
+>(async () => undefined);
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -155,6 +158,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
   useRejectTask: () => ({ mutateAsync: rejectTask, isPending: false }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useUpdateTask: () => ({ mutateAsync: updateTask, isPending: false }),
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useReleaseTask: () => ({ mutate: releaseTask, isPending: false }),
   useRemoveFromTaskGroup: () => ({
     mutateAsync: removeFromGroup,
@@ -171,19 +176,29 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
-vi.mock("@/lib/kept-sheet-draft", () => ({
-  useDropKeptSheetDraft: () => undefined,
-}));
 // The sheets have their own specs; here only that the screen opens them, on
-// what.
-vi.mock("@/components/tasks/new-task-sheet", async () => {
-  const { forwardRef, createElement } = await import("react");
+// what. Assign to's picker, over the edit's Who (#5514), records each present.
+const whoPicker = vi.hoisted(() => ({ presented: 0 }));
+vi.mock("@/components/tasks/who-picker-sheet", async () => {
+  const { forwardRef, createElement, useImperativeHandle } =
+    await import("react");
   return {
-    NewTaskSheet: forwardRef(function NewTaskSheet(props: object) {
-      return createElement("NewTaskSheet", props);
+    WhoPickerSheet: forwardRef(function WhoPickerSheet(
+      props: object,
+      ref: React.Ref<{ present: () => void }>,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: () => {
+          whoPicker.presented += 1;
+        },
+      }));
+      return createElement("WhoPickerSheet", props);
     }),
   };
 });
+vi.mock("@/lib/tasks/use-who-directory", () => ({
+  useWhoDirectory: () => ({ directory: {}, people: {}, sets: {} }),
+}));
 vi.mock("@/components/tasks/mark-done-sheet", async () => {
   const { createElement } = await import("react");
   return {
@@ -244,6 +259,15 @@ function control(
   )[0];
 }
 
+/** The text field a screen reader names `label`. */
+function field(tree: ReactTestRenderer, label: string): ReactTestInstance {
+  return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "TextInput" &&
+      node.props.accessibilityLabel === label,
+  );
+}
+
 const press = (tree: ReactTestRenderer, label: string) => {
   const found = control(tree, label);
   expect(found, label).toBeDefined();
@@ -256,6 +280,7 @@ beforeEach(() => {
   tasks = [];
   permissions = ["members:view"];
   menus.length = 0;
+  whoPicker.presented = 0;
   vi.clearAllMocks();
 });
 
@@ -586,15 +611,25 @@ describe("An officer on a task for everyone: a lot", () => {
     act(() => tree.unmount());
   });
 
-  it("opens the Edit task sheet on this copy, its draft kept by task (#4872)", () => {
+  it("edits every copy not yet confirmed in place, with scope group (#5514)", async () => {
     const tree = render();
     press(tree, "Edit task");
-    const edit = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "NewTaskSheet" && !!node.props.editing,
+    expect(screenText(tree)).toContain("Edit task");
+    expect(screenText(tree)).toContain(
+      "Changes go to every copy not yet confirmed.",
     );
-    expect(edit.props.editing.id).toBe(`copy-${ME}`);
-    expect(edit.props.keptDraft).toBe(`task-edit:copy-${ME}`);
+    // Who and photos change per copy only: a group's edit leaves them out.
+    expect(control(tree, `Assignee: ${NAMES[ME]}`)).toBeUndefined();
+    expect(screenText(tree)).not.toContain("Photos");
+    const title = field(tree, "Task title");
+    act(() => title.props.onChangeText("Fill in the housing form by Friday"));
+    await act(async () => {
+      title.props.onBlur();
+    });
+    expect(updateTask).toHaveBeenCalledWith({
+      id: `copy-${ME}`,
+      body: { title: "Fill in the housing form by Friday", scope: "group" },
+    });
     act(() => tree.unmount());
   });
 
@@ -878,11 +913,10 @@ describe("An officer's Confirm and Send back (#5513)", () => {
     expect(control(tree, "Edit task")).toBeUndefined();
     expect(moreLabels(tree)).toEqual(["Edit", "Delete"]);
     act(() => menus[0]!.rows[0]!.onPress());
-    const edit = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "NewTaskSheet" && !!node.props.editing,
-    );
-    expect(edit.props.editing.id).toBe("t1");
+    // The screen turns into its editor, in place (#5514).
+    expect(field(tree, "Task title").props.value).toBe("Sweep the porch");
+    expect(control(tree, "Done")).toBeDefined();
+    expect(control(tree, CONFIRM)).toBeUndefined();
     act(() => tree.unmount());
   });
 
@@ -1058,5 +1092,190 @@ describe("An officer's Confirm and Send back (#5513)", () => {
     permissions = ["members:view"];
     task = WAITING;
     none();
+  });
+});
+
+describe("An officer edits a task in place (#5514)", () => {
+  const dayPicker = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        (node.type as unknown) === "DateTimePicker" &&
+        node.props.mode === "date",
+    );
+  const done = async (tree: ReactTestRenderer) => {
+    await act(async () => {
+      control(tree, "Done")!.props.onPress();
+    });
+  };
+
+  beforeEach(() => {
+    permissions = ["members:view", "tasks:manage"];
+    task = PLAIN;
+  });
+
+  it("turns the screen into its editor, each field saving on its own, and Done puts it back", async () => {
+    const tree = render();
+    press(tree, "Edit task");
+    // The bar is one Done; the facts and the description are fields now.
+    expect(control(tree, "Mark done")).toBeUndefined();
+    expect(field(tree, "Task title").props.value).toBe("Sweep the porch");
+    expect(screenText(tree)).toContain("Edit task");
+
+    const notes = field(tree, "Notes");
+    act(() => notes.props.onChangeText("Bring a broom."));
+    await act(async () => {
+      notes.props.onBlur();
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { description: "Bring a broom." },
+    });
+
+    const points = field(tree, "Point reward");
+    act(() => points.props.onChangeText("10"));
+    await act(async () => {
+      points.props.onSubmitEditing();
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { point_reward: 10 },
+    });
+
+    // A picked day waits a moment (the wheel reports each stop); Done
+    // sends it at once.
+    act(() =>
+      dayPicker(tree).props.onValueChange({}, new Date(2026, 10, 21, 12)),
+    );
+    expect(updateTask).toHaveBeenCalledTimes(2);
+    await done(tree);
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { due_date: "2026-11-21", due_at: null },
+    });
+    expect(updateTask).toHaveBeenCalledTimes(3);
+    expect(control(tree, "Done")).toBeUndefined();
+    expect(control(tree, "Edit task")).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("sends a field once when Done follows its blur, and waits on that save", async () => {
+    let land!: () => void;
+    updateTask.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => (land = () => resolve(undefined))),
+    );
+    const tree = render();
+    press(tree, "Edit task");
+    const title = field(tree, "Task title");
+    act(() => title.props.onChangeText("Mop the porch"));
+    act(() => title.props.onBlur());
+    act(() => control(tree, "Done")!.props.onPress());
+    // Still out: Done holds the screen in edit mode.
+    expect(control(tree, "Done")).toBeDefined();
+    await act(async () => land());
+    expect(updateTask).toHaveBeenCalledTimes(1);
+    expect(control(tree, "Done")).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("keeps what was typed and says the API's words when a save is refused", async () => {
+    updateTask.mockRejectedValueOnce({
+      statusCode: 400,
+      error: "Bad Request",
+      message: "This task was confirmed, so it can't change.",
+    });
+    const tree = render();
+    press(tree, "Edit task");
+    act(() => field(tree, "Task title").props.onChangeText("Mop the porch"));
+    await done(tree);
+    expect(updateTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { title: "Mop the porch" },
+    });
+    // Still editing, the draft kept, the refusal said.
+    expect(control(tree, "Done")).toBeDefined();
+    expect(field(tree, "Task title").props.value).toBe("Mop the porch");
+    expect(screenText(tree)).toContain(
+      "This task was confirmed, so it can't change.",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("asks before a new assignee starts a task under way over, then hands it on", async () => {
+    task = { ...PLAIN, status: "IN_PROGRESS", stored_status: "IN_PROGRESS" };
+    const tree = render();
+    press(tree, "Edit task");
+    expect(control(tree, `Assignee: ${NAMES[ME]}`)).toBeDefined();
+    const picker = tree.root.find(
+      (node) => (node.type as unknown) === "WhoPickerSheet",
+    );
+    act(() => picker.props.onChange({ kind: "person", userId: OFFICER }));
+    const [title, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
+    expect(title).toBe("Give it to Jordan Lee?");
+    expect(updateTask).not.toHaveBeenCalled();
+    await act(async () => {
+      buttons!.find((button) => button.text === "Give it to them")!.onPress?.();
+    });
+    expect(updateTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { assignee_id: OFFICER },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("opens in edit mode from a row's Edit or a card's (edit=1), on Assign to from Reassign (who=1)", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      id: "t1",
+      who: "1",
+    });
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <TaskDetailsScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(field(tree, "Task title")).toBeDefined();
+    expect(whoPicker.presented).toBe(1);
+    // Cleared, so coming back to the screen doesn't open the editor again.
+    expect(vi.mocked(expoRouter.useRouter)().setParams).toHaveBeenCalledWith({
+      edit: undefined,
+      who: undefined,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("offers no edit once confirmed, not even from edit=1", () => {
+    task = {
+      ...PLAIN,
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: 15,
+      points_awarded: true,
+      completed_at: "2026-11-18T09:00:00.000Z",
+      confirmed_at: "2026-11-18T10:00:00.000Z",
+    };
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      id: "t1",
+      edit: "1",
+    });
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <TaskDetailsScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(control(tree, "Edit task")).toBeUndefined();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "TextInput" &&
+          node.props.accessibilityLabel === "Task title",
+      ),
+    ).toHaveLength(0);
+    act(() => tree.unmount());
   });
 });

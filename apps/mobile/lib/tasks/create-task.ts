@@ -27,12 +27,7 @@ import {
  * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
-import type {
-  CreateOpenTaskBody,
-  EditableCardTask,
-  LiveTaskPhoto,
-  useCreateTask,
-} from "@repo/hooks";
+import type { CreateOpenTaskBody, useCreateTask } from "@repo/hooks";
 import {
   TASK_AUDIENCE_COPY,
   TASK_SUBTASKS_MAX,
@@ -242,8 +237,7 @@ export interface ValidatedNewTask {
   description?: string;
   /**
    * Reference photos' storage paths, in order (#4635): added by the sheet
-   * once the picked photos are up, never by {@link validateNewTask}. On an
-   * edit, the set as it should stand.
+   * once the picked photos are up, never by {@link validateNewTask}.
    */
   reference_photo_paths?: string[];
 }
@@ -260,8 +254,6 @@ export interface ValidatedNewTask {
 export function validateNewTask(
   draft: NewTaskDraft,
   now: Date = new Date(),
-  /** An edit's stored due, which may have passed (`dueTimePassed`). */
-  kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
 ): ValidatedNewTask | null {
   const title = draft.title.trim();
   if (title.length === 0 || title.length > TITLE_MAX_LENGTH) return null;
@@ -269,7 +261,7 @@ export function validateNewTask(
   if (!who) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)) return null;
   if (draft.dueTime && !/^\d{2}:\d{2}$/.test(draft.dueTime)) return null;
-  if (dueTimePassed(draft, now, kept)) return null;
+  if (dueTimePassed(draft, now)) return null;
 
   const points = parsePointReward(draft.pointsInput);
   if (points.kind === "invalid") return null;
@@ -291,59 +283,6 @@ export function validateNewTask(
   const description = draft.description?.trim();
   if (description) body.description = description;
   return body;
-}
-
-/** A task as an edit opens it (#4296): what the sheet's fields start from. */
-export interface TaskEditTarget {
-  id: string;
-  title: string;
-  assigneeId: string;
-  /** The stored `due_date`. */
-  dueDay: string;
-  /** The stored `due_at`, or `null` for a task due by the day. */
-  dueAt: string | null;
-  pointReward: number | null;
-  /** The stored status: a new assignee starts anything past To do over. */
-  storedStatus: string | null;
-  /** Its reference photos, in order (#4635). */
-  referencePhotos: LiveTaskPhoto[];
-  /** What Mark done needs (#4635). */
-  proofKind: TaskProofKind;
-}
-
-/** A chat or Activity card's live task as the edit sheet opens it (#4512). */
-export function editTargetOfCardTask(task: EditableCardTask): TaskEditTarget {
-  return {
-    id: task.id,
-    title: task.title,
-    assigneeId: task.assignee_id,
-    dueDay: task.due_date,
-    dueAt: task.due_at,
-    pointReward: task.point_reward,
-    storedStatus: task.stored_status ?? null,
-    referencePhotos: task.photos.filter((photo) => photo.kind === "reference"),
-    proofKind: task.proof_kind,
-  };
-}
-
-/**
- * A board or Calendar row as the edit sheet opens it, or `null` when the
- * form can't hold it: it needs an assignee and a day (`taskScreenControls`'
- * Edit rule).
- */
-export function editTargetOfRow(row: TaskRowModel): TaskEditTarget | null {
-  if (!row.assigneeId || !row.dueDay) return null;
-  return {
-    id: row.id,
-    title: row.title,
-    assigneeId: row.assigneeId,
-    dueDay: row.dueDay,
-    dueAt: row.dueAt,
-    pointReward: row.pointReward,
-    storedStatus: row.storedStatus,
-    referencePhotos: row.photos.filter((photo) => photo.kind === "reference"),
-    proofKind: row.proofKind,
-  };
 }
 
 /**
@@ -428,81 +367,6 @@ export function taskDuplicateOf(
     due: ahead ? { kind: "date", date: dueDate } : DEFAULT_DUE_CHOICE,
     dueTime: time,
   };
-}
-
-/**
- * The sheet's draft for a task as it stands. A timed task opens on the day
- * and time of its `due_at` on this device, the inverse of `dueEntryFields`.
- */
-export function editDraftOf(task: TaskEditTarget): NewTaskDraft {
-  // The entry web's edit form opens on too, so both read a task's time alike.
-  const { dueDate, dueTime } = splitDueEntry(
-    dueEntryFromTask({ due_date: task.dueDay, due_at: task.dueAt }),
-  );
-  return {
-    title: task.title,
-    dueDate,
-    dueTime,
-    subtasks: [],
-    who: { kind: "person", userId: task.assigneeId },
-    pointsInput: task.pointReward ? String(task.pointReward) : "",
-    proofKind: task.proofKind,
-  };
-}
-
-/** What `PATCH /v1/tasks/:id` takes (#4296). */
-export interface TaskEditBody {
-  title?: string;
-  assignee_id?: string;
-  due_date?: string;
-  due_at?: string | null;
-  point_reward?: number | null;
-  /** The reference photos as they should stand (#4635). */
-  reference_photo_paths?: string[];
-  proof_kind?: TaskProofKind;
-}
-
-/**
- * Only what the officer changed, the due date and time as a pair, as the
- * API reads them. Empty when nothing changed, so Save sends nothing. The
- * reference photos go as the whole set as it should stand, and only when it
- * differs from the task's, in content or order.
- */
-export function taskEditBody(
-  task: TaskEditTarget,
-  next: ValidatedNewTask,
-): TaskEditBody {
-  const body: TaskEditBody = {};
-  if (next.title !== task.title) body.title = next.title;
-  // An edit hands the task to one member; the picker offers no more.
-  if (next.who.kind === "person" && next.who.userId !== task.assigneeId) {
-    body.assignee_id = next.who.userId;
-  }
-  const dueAt = next.due_at ?? null;
-  const storedAt = task.dueAt ? new Date(task.dueAt).toISOString() : null;
-  // A timed task's day is its time's day: an unchanged `due_at` is an
-  // unchanged due, even read on a device whose zone puts it on another day.
-  const dueChanged =
-    dueAt !== storedAt || (dueAt === null && next.due_date !== task.dueDay);
-  if (dueChanged) {
-    body.due_date = next.due_date;
-    body.due_at = dueAt;
-  }
-  const points = next.point_reward || null;
-  if (points !== (task.pointReward || null)) body.point_reward = points;
-  const proofKind = next.proof_kind ?? "none";
-  if (proofKind !== task.proofKind) body.proof_kind = proofKind;
-  if (next.reference_photo_paths) {
-    const stored = task.referencePhotos.map((photo) => photo.storage_path);
-    const wanted = next.reference_photo_paths;
-    if (
-      wanted.length !== stored.length ||
-      wanted.some((path, i) => path !== stored[i])
-    ) {
-      body.reference_photo_paths = wanted;
-    }
-  }
-  return body;
 }
 
 /**

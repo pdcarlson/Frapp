@@ -287,24 +287,25 @@ describe("an officer on a member's task", () => {
     ]);
   });
 
-  it("Edit opens the edit sheet, and Reassign opens it on Assign to", () => {
+  it("Edit opens the task's screen in its edit mode, and Reassign there on Assign to (#5514)", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
     const tree = render();
     longPress(tree);
     pick(tree, "Edit");
-    let [sheet] = sheets(tree);
-    expect(sheet!.props.editing).toMatchObject({
-      id: "t1",
-      assigneeId: ME,
-      dueDay: "2099-11-20",
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/task-details",
+      params: { id: "t1", edit: "1" },
     });
-    expect(sheet!.props.openOnWho).toBe(false);
-    expect(sheet!.props.keptDraft).toBe("task-edit:t1");
-    act(() => sheet!.props.onClosed());
 
     longPress(tree);
     pick(tree, "Reassign");
-    [sheet] = sheets(tree);
-    expect(sheet!.props.openOnWho).toBe(true);
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/task-details",
+      params: { id: "t1", who: "1" },
+    });
+    // No sheet rises for either: the task is edited in place there.
+    expect(sheets(tree)).toHaveLength(0);
   });
 
   it("Duplicate opens New task filled in from the task, as a new task", () => {
@@ -312,7 +313,6 @@ describe("an officer on a member's task", () => {
     longPress(tree);
     pick(tree, "Duplicate");
     const [sheet] = sheets(tree);
-    expect(sheet!.props.editing).toBeUndefined();
     expect(sheet!.props.keptDraft).toBeUndefined();
     expect(sheet!.props.prefill).toMatchObject({
       title: "Sweep the porch",

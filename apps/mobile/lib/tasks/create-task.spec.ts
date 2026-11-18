@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { LiveTaskPhoto } from "@repo/hooks";
-import type { TaskProofKind, TaskWho } from "@repo/validation";
+import type { TaskWho } from "@repo/validation";
 import {
   createRequestOf,
   duePresets,
-  editDraftOf,
-  editTargetOfCardTask,
   formatDueFieldLabel,
-  taskEditBody,
   parsePointReward,
   taskCreatedLine,
   validateNewTask,
@@ -229,146 +225,6 @@ describe("validateNewTask", () => {
     ).toBeNull();
     expect(validateNewTask({ ...draft, dueDate: "21/08/2026" })).toBeNull();
     expect(validateNewTask({ ...draft, pointsInput: "-4" })).toBeNull();
-  });
-});
-
-describe("editing a task (#4296)", () => {
-  const task = {
-    id: "t1",
-    title: "Sweep",
-    assigneeId: "u1",
-    dueDay: "2026-09-29",
-    dueAt: null as string | null,
-    pointReward: 5 as number | null,
-    storedStatus: "TODO",
-    referencePhotos: [] as LiveTaskPhoto[],
-    proofKind: "none" as TaskProofKind,
-  };
-
-  it("opens a timed task on its local day and time", () => {
-    const at = new Date(2026, 8, 29, 17, 30);
-    const draft = editDraftOf({ ...task, dueAt: at.toISOString() });
-    expect(draft).toMatchObject({
-      title: "Sweep",
-      dueDate: "2026-09-29",
-      dueTime: "17:30",
-      who: { kind: "person", userId: "u1" },
-      pointsInput: "5",
-    });
-  });
-
-  it("sends only the changed fields, the due as a pair", () => {
-    expect(
-      taskEditBody(task, {
-        title: "Sweep",
-        who: { kind: "person", userId: "u1" },
-        due_date: "2026-09-29",
-        point_reward: 5,
-      }),
-    ).toEqual({});
-    const at = new Date(2026, 8, 29, 17, 0).toISOString();
-    expect(
-      taskEditBody(task, {
-        title: "Mop",
-        who: { kind: "person", userId: "u2" },
-        due_date: "2026-09-29",
-        due_at: at,
-      }),
-    ).toEqual({
-      title: "Mop",
-      assignee_id: "u2",
-      due_date: "2026-09-29",
-      due_at: at,
-      point_reward: null,
-    });
-  });
-
-  it("takes the time off with due_at null", () => {
-    const at = new Date(2026, 8, 29, 17, 0).toISOString();
-    expect(
-      taskEditBody(
-        { ...task, dueAt: at },
-        {
-          title: "Sweep",
-          who: { kind: "person", userId: "u1" },
-          due_date: "2026-09-29",
-          point_reward: 5,
-        },
-      ),
-    ).toEqual({ due_date: "2026-09-29", due_at: null });
-  });
-
-  const same = {
-    title: "Sweep",
-    who: { kind: "person", userId: "u1" } as TaskWho,
-    due_date: "2026-09-29",
-    point_reward: 5,
-  };
-  const photo = (id: string): LiveTaskPhoto => ({
-    id,
-    kind: "reference",
-    storage_path: `chapters/c/tasks/${id}/p.jpg`,
-  });
-
-  it("sends a changed proof kind, and None when it goes back to none (#4635)", () => {
-    expect(taskEditBody(task, { ...same, proof_kind: "photo" })).toEqual({
-      proof_kind: "photo",
-    });
-    expect(taskEditBody({ ...task, proofKind: "link" }, { ...same })).toEqual({
-      proof_kind: "none",
-    });
-  });
-
-  it("sends the reference photos as the whole set, only when it changed", () => {
-    const held = { ...task, referencePhotos: [photo("a"), photo("b")] };
-    expect(
-      taskEditBody(held, {
-        ...same,
-        reference_photo_paths: [
-          photo("a").storage_path,
-          photo("b").storage_path,
-        ],
-      }),
-    ).toEqual({});
-    expect(
-      taskEditBody(held, {
-        ...same,
-        reference_photo_paths: [photo("b").storage_path],
-      }),
-    ).toEqual({ reference_photo_paths: [photo("b").storage_path] });
-    expect(taskEditBody(held, { ...same, reference_photo_paths: [] })).toEqual({
-      reference_photo_paths: [],
-    });
-  });
-
-  it("opens an edit on a card's task with its photos and proof kind", () => {
-    expect(
-      editTargetOfCardTask({
-        id: "t",
-        title: "Sweep",
-        description: null,
-        assignee_id: "u1",
-        due_date: "2026-09-29",
-        due_at: null,
-        point_reward: null,
-        status: "TODO",
-        stored_status: undefined,
-        subtasks: [],
-        photos: [photo("a"), { ...photo("b"), kind: "proof" }],
-        proof_kind: "link",
-        series: null,
-      }),
-    ).toEqual({
-      id: "t",
-      title: "Sweep",
-      assigneeId: "u1",
-      dueDay: "2026-09-29",
-      dueAt: null,
-      pointReward: null,
-      storedStatus: null,
-      referencePhotos: [photo("a")],
-      proofKind: "link",
-    });
   });
 });
 

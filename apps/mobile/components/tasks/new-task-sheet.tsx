@@ -23,9 +23,7 @@ import {
   useCreateOpenTask,
   useCreateTask,
   useRequestTaskPhotoUploadUrl,
-  useUpdateTask,
   useViewerUserId,
-  type LiveTaskPhoto,
 } from "@repo/hooks";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import {
@@ -66,8 +64,10 @@ import {
   type PendingTaskPhoto,
 } from "@/lib/tasks/task-photos";
 import {
+  dueEntryFromTask,
   dueTimePassed,
   localIsoDate,
+  splitDueEntry,
   suggestedDueTime,
 } from "@repo/formatting";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
@@ -76,9 +76,6 @@ import {
   createRequestOf,
   whoTakesPhotos,
   dueChoiceOf,
-  editDraftOf,
-  taskEditBody,
-  type TaskEditTarget,
   type TaskPrefill,
   duePresets,
   parsePointReward,
@@ -88,11 +85,7 @@ import {
   type ValidatedNewTask,
 } from "@/lib/tasks/create-task";
 import { successHaptic } from "@/lib/haptics";
-import {
-  keepEditsOver,
-  useKeptSheetDraft,
-  useKeptSheetOpening,
-} from "@/lib/kept-sheet-draft";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
@@ -186,16 +179,6 @@ export interface NewTaskSheetProps {
   postToChannel?: (input: TaskInput) => Promise<DispatchResult>;
   onPosted?: (result: DispatchResult) => void;
   /**
-   * Edit this task instead of making one (#4296): the same fields, opened on
-   * the task as it stands, titled "Edit task" and saved with Save. Steps are
-   * added and removed in the task's own sheet, so the subtask field is left
-   * out. The host mounts one sheet per task edited (`key` on its id), so the
-   * draft starts from the task, and a close gives it up.
-   */
-  editing?: TaskEditTarget;
-  /** Fired after an edit saves. */
-  onSaved?: () => void;
-  /**
    * Accept a suggested task through the form (#4313): the fields open on what
    * the minutes suggested, titled "Change before creating", and the button
    * creates it. Who it is for starts empty when the meeting named nobody, never
@@ -212,17 +195,11 @@ export interface NewTaskSheetProps {
    */
   prefill?: TaskPrefill;
   /**
-   * An edit opened for Reassign (#5492): Assign to's picker rises over the
-   * sheet as soon as it is up, so the member picks who first.
-   */
-  openOnWho?: boolean;
-  /**
    * Offer more than one person in Assign to (#4295 step 3; Paul,
    * 2026-11-18): several people, a role, a group or everyone in the
    * chapter, each doing it or one of them claiming it from Up for grabs
    * (`who-picker-sheet.tsx`). For a new task or a suggestion only; a chat's
-   * + posts one card for one member, and an edit hands its task to one
-   * member, so they pick one person.
+   * + posts one card for one member, so they pick one person.
    */
   offerGroups?: boolean;
   /** Fired when the sheet has closed, however it closed. */
@@ -230,9 +207,7 @@ export interface NewTaskSheetProps {
   /**
    * Keeps the sheet's draft past its host, under this name (#4593): the
    * Tasks screen's sheet goes when the member goes back, and its draft is
-   * there the next time they make a task from that screen. An edit names its
-   * task (`task-edit:<id>`, #4872), and its draft keeps only what the member
-   * changed, over the task as it is when the sheet opens again. Not for a
+   * there the next time they make a task from that screen. Not for a
    * suggestion, whose sheet starts from what it opens on.
    */
   keptDraft?: string;
@@ -251,81 +226,7 @@ type KeptTask = {
   assigneeId?: string | null;
   proofKind: TaskProofKind;
   pickedPhotos: PendingTaskPhoto[];
-  /** An edit only: the task's own reference photos still kept, by id. */
-  keptPhotoIds?: string[];
-  /** An edit only: the task as the sheet opened on it (`keepEditsOver`). */
-  base?: TaskEditFields;
 };
-
-/** The fields an edit's kept draft is laid over the task by. */
-type TaskEditFields = Pick<
-  KeptTask,
-  "title" | "pointsInput" | "due" | "dueTime" | "who" | "proofKind"
-> & { keptPhotoIds: string[] };
-
-const TASK_EDIT_KEYS = [
-  "title",
-  "pointsInput",
-  "due",
-  "dueTime",
-  "who",
-  "proofKind",
-] as const satisfies readonly (keyof TaskEditFields)[];
-
-/** The task as an edit opens it, in the kept draft's terms. */
-function taskEditFieldsOf(task: TaskEditTarget): TaskEditFields {
-  const draft = editDraftOf(task);
-  return {
-    title: draft.title,
-    pointsInput: draft.pointsInput ?? "",
-    due: { kind: "date", date: draft.dueDate },
-    dueTime: draft.dueTime ?? null,
-    who: draft.who,
-    proofKind: draft.proofKind ?? "none",
-    keptPhotoIds: task.referencePhotos.map((photo) => photo.id),
-  };
-}
-
-/**
- * An edit's kept draft over the task as it is now (#4872): what the member
- * changed wins, and the rest is the task's. A photo they removed stays
- * removed; one added on another device since stays.
- */
-function keptEditOver(kept: KeptTask, task: TaskEditTarget): KeptTask {
-  const now = taskEditFieldsOf(task);
-  const base = kept.base ?? now;
-  const fields = keepEditsOver<TaskEditFields>(
-    { ...base, ...pickEditFields(kept) },
-    base,
-    now,
-    TASK_EDIT_KEYS,
-  );
-  const removed = new Set(
-    base.keptPhotoIds.filter((id) => !kept.keptPhotoIds?.includes(id)),
-  );
-  const keptPhotoIds = now.keptPhotoIds.filter((id) => !removed.has(id));
-  return {
-    ...kept,
-    ...fields,
-    keptPhotoIds,
-    // Photos added on another device since can leave less room than the
-    // member's picks took: the task's own come first, and the picks fill
-    // what is left, so Save never sends more than the server takes.
-    pickedPhotos: kept.pickedPhotos.slice(0, photoRoom(keptPhotoIds.length)),
-    base: now,
-  };
-}
-
-function pickEditFields(kept: KeptTask): Omit<TaskEditFields, "keptPhotoIds"> {
-  return {
-    title: kept.title,
-    pointsInput: kept.pointsInput,
-    due: kept.due,
-    dueTime: kept.dueTime,
-    who: keptWho(kept),
-    proofKind: kept.proofKind,
-  };
-}
 
 /** Who a kept draft holds, read from a draft kept before `who` too. */
 function keptWho(kept: KeptTask): TaskWho | null {
@@ -356,12 +257,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       onCreated,
       postToChannel,
       onPosted,
-      editing,
-      onSaved,
       onClosed,
       suggestion,
       prefill,
-      openOnWho = false,
       keptDraft,
       offerGroups = false,
     },
@@ -373,7 +271,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const pickerRef = useRef<BottomSheetModal>(null);
-    const whoOpened = useRef(false);
     const closeSheet = useSheetClose(ref);
     // Its hosts (the composer among them) dismiss it on a blur or a channel
     // switch, up or not (#5059): the ref they hold only reaches a sheet that
@@ -386,27 +283,17 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { directory } = whoRead;
     const createTask = useCreateTask();
     const createOpenTask = useCreateOpenTask();
-    const updateTask = useUpdateTask();
-    // The task as it stands, as the fields start (an edit only).
-    const original = useMemo(
-      () => (editing ? editDraftOf(editing) : null),
-      [editing],
-    );
-    // What the minutes suggested, as the fields start (a suggestion only).
+    // What the minutes suggested, as the fields start (a suggestion only): a
+    // timed suggestion on the day and time of its `due_at` on this device.
     const suggested = useMemo(
       () =>
         suggestion?.dueDay
-          ? editDraftOf({
-              id: "",
-              title: suggestion.title,
-              assigneeId: "",
-              dueDay: suggestion.dueDay,
-              dueAt: suggestion.dueAt,
-              pointReward: null,
-              storedStatus: null,
-              referencePhotos: [],
-              proofKind: "none",
-            })
+          ? splitDueEntry(
+              dueEntryFromTask({
+                due_date: suggestion.dueDay,
+                due_at: suggestion.dueAt,
+              }),
+            )
           : null,
       [suggestion],
     );
@@ -418,48 +305,28 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
-    // The draft kept from the screen's last visit (`keptDraft`); an edit's
-    // over the task as it is now.
+    // The draft kept from the screen's last visit (`keptDraft`).
     const keptName = keptDraft && !suggestion && !prefill ? keptDraft : null;
-    const keptOpening = useKeptSheetOpening<KeptTask>(keptName);
-    const [opening] = useState(() =>
-      keptOpening && editing ? keptEditOver(keptOpening, editing) : keptOpening,
-    );
-    // The task as this sheet opened on it: what an edit's fields start from,
-    // and what its kept draft is measured against.
-    const [editBase] = useState(() =>
-      editing ? taskEditFieldsOf(editing) : undefined,
-    );
+    const opening = useKeptSheetOpening<KeptTask>(keptName);
     const [title, setTitle] = useState(
-      opening?.title ??
-        editBase?.title ??
-        suggestion?.title ??
-        prefill?.title ??
-        "",
+      opening?.title ?? suggestion?.title ?? prefill?.title ?? "",
     );
     const [pointsInput, setPointsInput] = useState(
-      opening?.pointsInput ??
-        editBase?.pointsInput ??
-        prefill?.pointsInput ??
-        "",
+      opening?.pointsInput ?? prefill?.pointsInput ?? "",
     );
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
       opening
         ? opening.due
-        : editBase
-          ? editBase.due
-          : suggested
-            ? { kind: "date", date: suggested.dueDate }
-            : (prefill?.due ?? DEFAULT_DUE_CHOICE),
+        : suggested
+          ? { kind: "date", date: suggested.dueDate }
+          : (prefill?.due ?? DEFAULT_DUE_CHOICE),
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(
       opening
         ? opening.dueTime
-        : editBase
-          ? editBase.dueTime
-          : (suggested?.dueTime ?? prefill?.dueTime ?? null),
+        : (suggested?.dueTime ?? prefill?.dueTime ?? null),
     );
     // The steps (#4003), and the one being typed, which sends as the last.
     const [subtasks, setSubtasks] = useState<string[]>(() => [
@@ -470,23 +337,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     );
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [who, setWho] = useState<TaskWho | null>(
-      opening
-        ? keptWho(opening)
-        : editBase
-          ? editBase.who
-          : (suggestion?.who ?? prefill?.who ?? null),
+      opening ? keptWho(opening) : (suggestion?.who ?? prefill?.who ?? null),
     );
-    // Photos and proof (#4635): the task's own reference photos still kept
-    // (an edit), the ones picked here, which go up on Save, and the proof
-    // control. A suggestion carries none, so its form leaves them out.
+    // Photos and proof (#4635): the ones picked here, which go up on Create,
+    // and the proof control. A suggestion carries none, so its form leaves
+    // them out.
     const [proofKind, setProofKind] = useState<TaskProofKind>(
-      opening?.proofKind ?? editBase?.proofKind ?? prefill?.proofKind ?? "none",
+      opening?.proofKind ?? prefill?.proofKind ?? "none",
     );
-    const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(() => {
-      const photos = editing?.referencePhotos ?? [];
-      const ids = opening?.keptPhotoIds;
-      return ids ? photos.filter((photo) => ids.includes(photo.id)) : photos;
-    });
     const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>(
       () => opening?.pickedPhotos ?? [],
     );
@@ -502,12 +360,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         who,
         proofKind,
         pickedPhotos,
-        ...(editBase
-          ? {
-              keptPhotoIds: keptPhotos.map((photo) => photo.id),
-              base: editBase,
-            }
-          : {}),
       },
       JSON.stringify([
         title,
@@ -519,7 +371,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         who,
         proofKind,
         pickedPhotos.map(({ image }) => image.uri),
-        keptPhotos.map((photo) => photo.id),
       ]),
       opening,
     );
@@ -594,23 +445,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               : "Member"));
 
     // See the header: a relative chip re-reads today, a held date stays put.
-    //
-    // An edit keeps a task's own due date even once it has passed: an
-    // overdue task's title or points can change without moving it to today.
-    const keepsPastDue =
-      original !== null &&
-      due.kind === "date" &&
-      due.date === original.dueDate &&
-      due.date < localIsoDate(at);
-    const { date: dueDate, chipId: dueChipId } = keepsPastDue
-      ? { date: original.dueDate, chipId: null }
-      : resolveDue(due, at);
+    const { date: dueDate, chipId: dueChipId } = resolveDue(due, at);
     const pending =
-      createTask.isPending ||
-      createOpenTask.isPending ||
-      updateTask.isPending ||
-      posting ||
-      uploading;
+      createTask.isPending || createOpenTask.isPending || posting || uploading;
 
     const draft = {
       title,
@@ -622,15 +459,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       proofKind,
       description: prefill?.description ?? null,
     };
-    const body = validateNewTask(draft, at, original ?? undefined);
-    const timePassed = dueTimePassed(draft, at, original ?? undefined);
-    // A new assignee starts a task that is under way over (the API resets
-    // it), so the sheet says so before Save rather than after.
-    const restarts =
-      editing !== undefined &&
-      effectiveAssigneeId !== editing.assigneeId &&
-      editing.storedStatus !== null &&
-      editing.storedStatus !== "TODO";
+    const body = validateNewTask(draft, at);
+    const timePassed = dueTimePassed(draft, at);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit = body !== null && !pending && refusal === null;
 
@@ -655,14 +485,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       pickingPhotos.current = true;
       setAddingPhotos(true);
       try {
-        const result = await pickTaskPhotos(
-          photoRoom(keptPhotos.length + pickedPhotos.length),
-        );
+        const result = await pickTaskPhotos(photoRoom(pickedPhotos.length));
         if (result.status === "picked") {
           setPickedPhotos((current) => [
             ...current,
             ...result.images
-              .slice(0, photoRoom(keptPhotos.length + current.length))
+              .slice(0, photoRoom(current.length))
               .map((image) => ({ image })),
           ]);
           setPhotoProblem(result.refused);
@@ -673,28 +501,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         pickingPhotos.current = false;
         setAddingPhotos(false);
       }
-    }, [keptPhotos.length, pickedPhotos.length]);
+    }, [pickedPhotos.length]);
 
-    /**
-     * The body with its `reference_photo_paths` (#4635): the newly uploaded
-     * ones on a create, the whole set as it should stand on an edit.
-     */
+    /** The body with the newly uploaded `reference_photo_paths` (#4635). */
     const attachPhotos = useCallback(
-      (base: ValidatedNewTask, paths: string[]): ValidatedNewTask => {
-        if (editing) {
-          return {
-            ...base,
-            reference_photo_paths: [
-              ...keptPhotos.map((photo) => photo.storage_path),
-              ...paths,
-            ],
-          };
-        }
-        return paths.length > 0
-          ? { ...base, reference_photo_paths: paths }
-          : base;
-      },
-      [editing, keptPhotos],
+      (base: ValidatedNewTask, paths: string[]): ValidatedNewTask =>
+        paths.length > 0 ? { ...base, reference_photo_paths: paths } : base,
+      [],
     );
 
     /**
@@ -752,13 +565,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // `isPending` reaches a render.
     const cancel = useCallback(() => {
       if (sending.current) return;
-      // An edit's sheet goes with the close (the host unmounts it), so its
-      // fields keep what they show while it slides away; only the kept draft
-      // is given up.
-      if (editing) clearKept();
-      else reset();
+      reset();
       dismiss();
-    }, [reset, dismiss, editing, clearKept]);
+    }, [reset, dismiss]);
 
     /** Sends the body, photos already up, by whichever route opened the sheet. */
     const dispatchBody = useCallback(
@@ -770,30 +579,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           onError: (error: unknown) => void;
         },
       ) => {
-        if (editing) {
-          const changes = taskEditBody(editing, body);
-          if (Object.keys(changes).length === 0) {
-            sending.current = false;
-            clearKept();
-            dismiss();
-            return;
-          }
-          updateTask.mutate(
-            { id: editing.id, body: changes },
-            {
-              onSuccess: () => {
-                sending.current = false;
-                successHaptic();
-                // Saved: nothing left to keep for this task.
-                clearKept();
-                if (isSameVisit(sentFrom)) dismiss();
-                onSaved?.();
-              },
-              onError: handlers.onError,
-            },
-          );
-          return;
-        }
         if (suggestion) {
           setPosting(true);
           void suggestion.accept(body).then(
@@ -853,18 +638,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             handlers.onSuccess(result);
           });
       },
-      [
-        createTask,
-        createOpenTask,
-        dismiss,
-        isSameVisit,
-        postToChannel,
-        editing,
-        updateTask,
-        onSaved,
-        suggestion,
-        clearKept,
-      ],
+      [createTask, createOpenTask, isSameVisit, postToChannel, suggestion],
     );
 
     const submit = useCallback(() => {
@@ -992,12 +766,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           handleComponent={SheetGrabber}
           backdropComponent={SheetScrim}
           onAnimate={onAnimate}
-          onChange={(index) => {
-            // Reassign: once the sheet is up, its picker rises over it.
-            if (!openOnWho || whoOpened.current || index < 0) return;
-            whoOpened.current = true;
-            pickerRef.current?.present();
-          }}
           onDismiss={closed}
         >
           <SheetBackToClose onClose={closeSheet} />
@@ -1006,13 +774,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             style={styles.body}
           >
             <SheetHeader
-              title={
-                editing
-                  ? "Edit task"
-                  : suggestion
-                    ? AI_SUGGESTION_COPY.change
-                    : "New task"
-              }
+              title={suggestion ? AI_SUGGESTION_COPY.change : "New task"}
               onCancel={cancel}
               cancelDisabled={pending}
             />
@@ -1091,16 +853,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               />
             </View>
 
-            {editing ? null : (
-              <SubtaskDraftField
-                items={subtasks}
-                onChange={setSubtasks}
-                text={subtaskText}
-                onTextChange={setSubtaskText}
-                disabled={pending}
-                fieldStyle={styles.field}
-              />
-            )}
+            <SubtaskDraftField
+              items={subtasks}
+              onChange={setSubtasks}
+              text={subtaskText}
+              onTextChange={setSubtaskText}
+              disabled={pending}
+              fieldStyle={styles.field}
+            />
 
             {/* Photos of what the job is, and what Mark done needs (#4635),
               the way Google Classroom and Canvas set what a submission takes.
@@ -1119,14 +879,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                   </Text>
                   {!photosAllowed ? null : (
                     <TaskPhotoPicker
-                      taskId={editing?.id}
-                      kept={keptPhotos}
                       picked={pickedPhotos.map(({ image }) => image)}
-                      onRemoveKept={(photoId) =>
-                        setKeptPhotos((current) =>
-                          current.filter((photo) => photo.id !== photoId),
-                        )
-                      }
                       onRemovePicked={(index) =>
                         setPickedPhotos((current) =>
                           current.filter((_, i) => i !== index),
@@ -1187,12 +940,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               </Text>
             ) : null}
 
-            {restarts ? (
-              <Text style={styles.note}>
-                Saving starts it over at To do for {assigneeLabel}.
-              </Text>
-            ) : null}
-
             {timePassed ? (
               <Text style={styles.error}>
                 That time has already passed today. Pick a later time or another
@@ -1210,25 +957,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
             {submitFailed ? (
               <Text style={styles.error}>
-                {editing
-                  ? "That didn't save. Your changes are still here. Try again."
-                  : "That didn't save. Your task is still here — try again."}
+                That didn&apos;t save. Your task is still here — try again.
               </Text>
             ) : null}
 
             <SheetPrimaryButton
               label={
-                editing
-                  ? updateTask.isPending
-                    ? "Saving…"
-                    : "Save"
-                  : suggestion
-                    ? posting
-                      ? AI_SUGGESTION_COPY.accepting
-                      : AI_SUGGESTION_COPY.accept
-                    : createTask.isPending || createOpenTask.isPending
-                      ? "Creating…"
-                      : "Create task"
+                suggestion
+                  ? posting
+                    ? AI_SUGGESTION_COPY.accepting
+                    : AI_SUGGESTION_COPY.accept
+                  : createTask.isPending || createOpenTask.isPending
+                    ? "Creating…"
+                    : "Create task"
               }
               onPress={submit}
               disabled={!canSubmit}
