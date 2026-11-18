@@ -488,7 +488,9 @@ Slack draws a slash command's reply this way ("Only visible to you"), and Discor
   While the draft names `@Frapp`, the line by the message box reads "Only you will see this question and Frapp's answer."
   On the phone it takes the typing line's place, so nothing moves, and the send button is named Ask Frapp.
 - **Frapp in the `@` list** is offered only to a member with Ask, in a message box that can ask.
-  On a bare `@` it is the last row, so Enter straight after `@` still picks a person; once its name is being typed it is first, as Slack lists an app above people.
+  It is the first row, on a bare `@` and once its name is being typed, as Slack lists an app above people, so a member who never knew they could ask in a channel finds Frapp the first time they mention anyone; its crest is drawn in the chapter's colour on the chapter's tint.
+  Enter straight after `@` picks Frapp, which still sends nothing: the line by the message box says the draft is a question, and taking `@Frapp` out undoes it.
+  Changed in #5476 by pdcarlson, 2026-11-18 (Paul, after Shawn asked "how do I ask in the channel"): until then a bare `@` listed Frapp last, so Enter after `@` still picked a person, and nothing showed a member Frapp until they typed its name.
   It takes one of the eight rows, never a ninth.
 - **Where the answer sits.**
   Under the message that was newest when the question was sent, and it stays there as the channel moves on.
@@ -544,7 +546,7 @@ Slack draws a slash command's reply this way ("Only visible to you"), and Discor
 
 > **Added 2026-11-13 (#4713, the building session's, Paul's to change).**
 > Not stated before: the handle counting anywhere in the message;
-> Frapp last on a bare `@`;
+> Frapp last on a bare `@` (changed in #5476 by pdcarlson, 2026-11-18: first);
 > the answer anchored under the newest message rather than at the bottom of the channel;
 > New conversation clearing channel answers too;
 > a question from a channel left to finish when Ask closes;
