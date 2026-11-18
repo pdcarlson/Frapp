@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ASK_COPY } from "@repo/validation";
 
 /**
- * The real host, field stand-in and conversation together (#4904). `ask-host.spec.tsx`
+ * The real host, the Ask bar and the conversation together (#4904; the bar
+ * since #5476). `ask-host.spec.tsx`
  * and `ask-card.spec.tsx` each stand the other in, so neither sees what
  * passes between them: which element opened the conversation, where focus
  * goes when it closes, and what the conversation does when Ask itself comes
@@ -56,32 +57,19 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
   }),
 }));
 
-const { AskHost, useAskEntry } = await import("./ask-host");
-
-/** The top bar's field, as `find-bar.tsx` reaches Ask and takes focus back. */
-function Field() {
-  const ask = useAskEntry();
-  if (!ask) return null;
-  return (
-    <button
-      data-ask-entry=""
-      onClick={(event) => ask.openWith(undefined, event.currentTarget)}
-    >
-      Search or ask Frapp
-    </button>
-  );
-}
+const { AskHost } = await import("./ask-host");
+const { AskBar } = await import("./ask-bar");
 
 function Page() {
   return (
     <AskHost>
-      <Field />
+      <AskBar />
       <input aria-label="Message" />
     </AskHost>
   );
 }
 
-const entry = () => screen.getByRole("button", { name: "Search or ask Frapp" });
+const entry = () => screen.getByRole("button", { name: ASK_COPY.name });
 const card = () => screen.queryByRole("dialog", { name: ASK_COPY.name });
 const field = () => screen.getByRole("textbox", { name: ASK_COPY.placeholder });
 
@@ -90,7 +78,15 @@ beforeEach(() => {
 });
 
 describe("the entry and the conversation together", () => {
-  it("opens from the field with the cursor in the conversation, and gives focus back to the field", async () => {
+  it("draws the bar as the field it opens: the crest, the words and the arrow", () => {
+    render(<Page />);
+    expect(entry()).toHaveTextContent(ASK_COPY.placeholder);
+    expect(entry()).toHaveAttribute("data-ask-entry");
+    expect(entry()).toHaveAttribute("aria-expanded", "false");
+    expect(entry().querySelectorAll("svg")).toHaveLength(2);
+  });
+
+  it("opens from the bar with the cursor in the conversation, and gives focus back to the bar", async () => {
     const user = userEvent.setup();
     render(<Page />);
     expect(card()).toBeNull();
@@ -119,9 +115,7 @@ describe("the entry and the conversation together", () => {
     who.previewing = true;
     view.rerender(<Page />);
     expect(card()).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Search or ask Frapp" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: ASK_COPY.name })).toBeNull();
     who.previewing = false;
     view.rerender(<Page />);
     expect(entry()).toBeInTheDocument();

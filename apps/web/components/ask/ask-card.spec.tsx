@@ -428,42 +428,7 @@ describe("AskCard", () => {
       expect(dialog()!.querySelector("svg[aria-hidden]")).not.toBeNull();
     });
 
-    it("asks a question typed into the top bar's field as it opens, once", () => {
-      const onAsked = vi.fn();
-      const view = render(
-        <Card asking="When is the budget vote?" onAsked={onAsked} />,
-      );
-      expect(state.ask).toHaveBeenCalledTimes(1);
-      expect(state.ask).toHaveBeenCalledWith(
-        "When is the budget vote?",
-        sent(),
-      );
-      expect(onAsked).toHaveBeenCalledTimes(1);
-      // The host hands nothing more until the next question.
-      view.rerender(<Card asking={null} onAsked={onAsked} />);
-      expect(state.ask).toHaveBeenCalledTimes(1);
-    });
-
-    it("keeps a question from the field in its own field while another is being answered", () => {
-      // One asked from a channel goes on with this closed (#4713).
-      state.exchanges = [
-        {
-          ...DONE,
-          phase: "working",
-          answer: null,
-          origin: { channelId: "chan-1", at: "2026-11-13T16:00:00.000Z" },
-        },
-      ];
-      const onAsked = vi.fn();
-      render(<Card asking="Who is treasurer?" onAsked={onAsked} />);
-      expect(state.ask).not.toHaveBeenCalled();
-      expect(onAsked).toHaveBeenCalledTimes(1);
-      expect(
-        screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
-      ).toHaveValue("Who is treasurer?");
-    });
-
-    it("does not close on a click outside while its own question is being answered", async () => {
+        it("does not close on a click outside while its own question is being answered", async () => {
       state.exchanges = [{ ...DONE, phase: "working", answer: null }];
       const onOpenChange = vi.fn();
       render(
@@ -481,12 +446,7 @@ describe("AskCard", () => {
       expect(onOpenChange).toHaveBeenLastCalledWith(false);
     });
 
-    it("holds a question from the field while it is closed", () => {
-      render(<Card open={false} asking="When is the budget vote?" />);
-      expect(state.ask).not.toHaveBeenCalled();
-    });
-
-    it("closes on Escape and by its close button, with the cursor starting in the field", async () => {
+      it("closes on Escape and by its close button, with the cursor starting in the field", async () => {
       const onOpenChange = vi.fn();
       render(<Card onOpenChange={onOpenChange} />);
       const user = userEvent.setup();
@@ -555,7 +515,7 @@ describe("AskCard", () => {
       const gone = { current: document.createElement("button") };
       const tree = (isOpen: boolean) => (
         <>
-          <button data-ask-entry="">Search or ask Frapp</button>
+          <button data-ask-entry="">Ask Frapp</button>
           <Card open={isOpen} returnFocus={gone} />
         </>
       );
@@ -563,7 +523,7 @@ describe("AskCard", () => {
       view.rerender(tree(false));
       await waitFor(() =>
         expect(
-          screen.getByRole("button", { name: "Search or ask Frapp" }),
+          screen.getByRole("button", { name: "Ask Frapp" }),
         ).toHaveFocus(),
       );
     });

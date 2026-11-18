@@ -53,9 +53,10 @@ import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
  * composer button out of place and picked one field for search and Ask
  * (`ask-host.tsx`). So the conversation takes the Find dialog's place and
  * measures (`find-dialog.tsx`): the same width, the same distance from the
- * top, the same surface and scrim. A question typed into the field arrives
- * already asked (`asking`). It is a real dialog now, so it is reachable from
- * every page and Escape or a click outside closes it.
+ * top, the same surface and scrim. It is a real dialog now, so it is reachable from
+ * every page and Escape or a click outside closes it. Since #5476 (Paul,
+ * 2026-11-18) the field only finds, and the floating Ask bar (`ask-bar.tsx`)
+ * opens this dialog in the same place.
  *
  * **Following a link closes it.** A source, a channel an answer names and
  * the page a confirmed card leaves for all open under the dialog, so a
@@ -105,8 +106,8 @@ import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
  * the card comes up and is true at the moment of asking.
  */
 /**
- * The entry on screen: the top bar's field carries the attribute
- * (`find-bar.tsx`). Focus goes back to it when whatever opened the
+ * The entry on screen: the floating Ask bar carries the attribute
+ * (`ask-bar.tsx`). Focus goes back to it when whatever opened the
  * conversation is gone, as a row inside the Find dialog is.
  */
 const ASK_ENTRY_SELECTOR = "[data-ask-entry]";
@@ -118,17 +119,11 @@ export function AskCard({
   open,
   onOpenChange,
   returnFocus,
-  asking = null,
-  onAsked,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The control that opened it, which takes focus back when it closes. */
   returnFocus?: RefObject<HTMLElement | null>;
-  /** A question typed into the top bar's field, to send as it opens. */
-  asking?: string | null;
-  /** The question was sent (or could not be): it is not to be sent twice. */
-  onAsked?: () => void;
 }) {
   const {
     exchanges,
@@ -193,26 +188,6 @@ export function AskCard({
   }, [open, refetchStatus]);
 
   const shown = open;
-
-  // A question typed into the top bar's field is asked as the dialog opens.
-  // Handing it back first makes this run once for each question.
-  useEffect(() => {
-    if (!open || !asking) return;
-    onAsked?.();
-    // One question at a time. While another is being answered (one asked
-    // from a channel goes on with this closed), the words wait in the field
-    // rather than being lost.
-    if (working) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- the handed question is consumed above (onAsked), so this is its one landing place
-      setDraft(asking);
-      return;
-    }
-    void ask(asking, {
-      savedNoticeShown: saving,
-      actions: mayAct,
-      gate: ensureConsent,
-    });
-  }, [open, asking, onAsked, working, ask, saving, mayAct, ensureConsent]);
 
   // The field grows with what is typed.
   useGrowWithText(field, draft, shown);
