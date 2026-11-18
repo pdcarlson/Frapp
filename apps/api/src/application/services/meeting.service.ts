@@ -291,6 +291,27 @@ export class MeetingService {
     return this.readableRows(chapterId, viewerId, rows);
   }
 
+  /**
+   * The newest posted minutes of one type the viewer may read for meetings
+   * held before `before`, at most `limit` read: the earlier minutes a draft
+   * reads (#5477), by the same read rule as `list`.
+   */
+  async listPostedBefore(
+    chapterId: string,
+    viewerId: string,
+    before: string,
+    meetingType: MeetingType,
+    limit: number,
+  ): Promise<Meeting[]> {
+    const rows = await this.meetingRepo.findPostedBefore(
+      chapterId,
+      before,
+      meetingType,
+      limit,
+    );
+    return this.readableRows(chapterId, viewerId, rows);
+  }
+
   /** The rows of `rows` the viewer may read (`readable`), in their order. */
   private async readableRows(
     chapterId: string,

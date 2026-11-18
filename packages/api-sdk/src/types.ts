@@ -11927,6 +11927,28 @@ export interface components {
             /** @enum {string|null} */
             settled_by: "recording" | "authority" | "author" | null;
         };
+        MeetingDraftFollowUpDto: {
+            /** @enum {string} */
+            kind: "action_item" | "report";
+            /** @description The action item, or the office that reports, as earlier minutes wrote it. Never from tonight. */
+            text: string;
+            /** Format: uuid */
+            owner_user_id: string | null;
+            /**
+             * Format: date-time
+             * @description When the meeting whose minutes it comes from started. Show its day in the reader’s own time.
+             */
+            from_meeting_start_time: string;
+            /**
+             * @description Where it stands tonight. Anything but not_mentioned comes with the line of tonight’s notes that says so.
+             * @enum {string}
+             */
+            status: "done" | "carried" | "given" | "not_mentioned";
+            /** @description Tonight’s line about it, word for word; null when nothing tonight mentions it. */
+            quote: string | null;
+            /** @description Whose line it is: a note-taker’s name, or "Recording". */
+            from: string | null;
+        };
         MeetingDraftReviewDto: {
             /** @description What the notes leave unsaid, for the officer to fill in. */
             gaps: string[];
@@ -11935,6 +11957,8 @@ export interface components {
             left_out: number;
             /** @description Where note-takers’ notes or the recording disagreed, and how each was settled (#4935). */
             conflicts: components["schemas"]["MeetingDraftConflictDto"][];
+            /** @description Last meeting’s action items and the standing reports the draft carried from earlier minutes, and where each stands tonight (#5477). This build always sends it, empty when there were none; optional so a client reads an older server the same way. */
+            follow_ups?: components["schemas"]["MeetingDraftFollowUpDto"][];
         };
         MeetingDraftDto: {
             /** @enum {string} */

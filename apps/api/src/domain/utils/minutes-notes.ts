@@ -12,6 +12,7 @@ import {
   weekdayOf,
   type MinutesDraftRequest,
 } from './minutes-draft';
+import { spellingLines } from './minutes-context';
 
 /**
  * The notes pass (#5410): the meeting written up as notes, topic by topic,
@@ -130,6 +131,7 @@ export function buildMinutesNotesPrompt(request: MinutesDraftRequest): {
           '',
         ]
       : []),
+    ...spellingLines(request.background),
     'Sources:',
     ...sources,
   ].join('\n');

@@ -25,6 +25,18 @@ import {
 } from '@repo/validation';
 import type { LanguageModelMessage } from '../adapters/language-model.interface';
 import { isQuoteGrounded } from './quote-grounding';
+import { oneLine, unfenced } from './minutes-text';
+import {
+  BACKGROUND_RULES,
+  backgroundBlock,
+  checkFollowUps,
+  echoChecker,
+  followUpGaps,
+  followUpLines,
+  hasBackground,
+  withFollowUpLines,
+  type MinutesBackground,
+} from './minutes-context';
 
 /**
  * Minutes drafted from an officer's notes (#4312, `spec/behavior/meetings.md`
@@ -96,11 +108,17 @@ export interface MinutesDraftRequest {
   notes?: string;
   /**
    * The event's agenda, in order, when it has one (#4934): the minutes
-   * follow it. Empty until event agendas exist.
+   * follow it. The draft passes tonight's (`MeetingDraftContextService`);
+   * empty when the event has none.
    */
   agenda?: readonly string[];
   /** Set when a long meeting is drafted in parts (`minutes-draft-parts.ts`). */
   part?: { index: number; count: number };
+  /**
+   * What the draft knows from earlier minutes (#5477, `minutes-context.ts`):
+   * never a source, never quoted, never written as said tonight.
+   */
+  background?: MinutesBackground;
 }
 
 /** The sources a request reads: `sources`, or `notes` as the one source. */
@@ -133,18 +151,7 @@ export const ROLES_PER_MEMBER_MAX = 6;
 
 /** Each source is fenced: `<source id="S1" ...>` … `</source>`. */
 export const SOURCE_CLOSE = '</source>';
-/**
- * A fence typed into a source would open or end one early. A whole tag on
- * one line goes; an unclosed "<source" loses only that word, so "<Source:
- * treasurer report" keeps the rest of its line and every line after it.
- */
-const FENCE_TAG = /<\/?\s*source\b[^<>\n]*>/gi;
-const FENCE_OPEN = /<\/?\s*source\b/gi;
-
-/** A source's text with every fence-shaped piece taken out. */
-export function unfenced(text: string): string {
-  return text.replace(FENCE_TAG, '').replace(FENCE_OPEN, '');
-}
+export { oneLine, unfenced } from './minutes-text';
 
 /**
  * How the notes are laid out: a topic on its own line, then its points as
@@ -264,13 +271,19 @@ export function buildMinutesDraftPrompt(
           '',
         ]
       : []),
+    ...(hasBackground(request.background)
+      ? [...backgroundBlock(request.background), '']
+      : []),
     'Sources:',
     ...sources,
   ].join('\n');
 
+  const rules = hasBackground(request.background)
+    ? `${SYSTEM_RULES}\n${BACKGROUND_RULES}`
+    : SYSTEM_RULES;
   return {
     promptVersion: MEETING_DRAFT_PROMPT_VERSION,
-    system: `${SYSTEM_RULES}\n\n${TYPE_GUIDE[request.meetingType]}`,
+    system: `${rules}\n\n${TYPE_GUIDE[request.meetingType]}`,
     messages: [{ role: 'user', content }],
   };
 }
@@ -520,12 +533,44 @@ export function verifyMinutesDraft(
     });
   }
 
+  // Nothing from earlier minutes is written as said tonight (#5477): a line
+  // that repeats the background and no source goes, and is counted.
+  const dropEchoes = echoChecker(
+    request.background,
+    sources.map((source) => source.text).join('\n'),
+  );
+  let echoes = 0;
   const content: Partial<MeetingContent> = {};
   for (const key of MEETING_TEXT_SECTIONS) {
-    if (wants(key)) content[key] = clamp(output[key], MEETING_TEXT_MAX_LENGTH);
+    if (!wants(key)) continue;
+    const { text, dropped } = dropEchoes(output[key]);
+    echoes += dropped;
+    content[key] = clamp(text, MEETING_TEXT_MAX_LENGTH);
   }
   if (wants('decisions')) content.decisions = decisions;
   if (wants('action_items')) content.action_items = actionItems;
+
+  // Last meeting's action items and the standing reports, where each stands
+  // tonight: the model's reading only with a line of a source, and in
+  // Frapp's own words under old business.
+  const followUps = checkFollowUps(
+    request.background,
+    output.follow_ups,
+    (quote, named) => locate(quote, named, sources),
+  );
+  let carriedCut = false;
+  const carriedLines = followUpLines(followUps, (userId) => {
+    const member = request.roster.find((m) => m.userId === userId);
+    return member ? member.name : null;
+  });
+  if (carriedLines) {
+    // Old business when the template has it; the discussion log, which
+    // every template has, otherwise.
+    const into = wants('old_business') ? 'old_business' : 'discussion_log';
+    const placed = withFollowUpLines(content[into] ?? '', carriedLines);
+    content[into] = placed.text;
+    carriedCut = placed.cut;
+  }
 
   // Frapp's own gaps first, so the list's limit never cuts them.
   const ownGaps = [
@@ -533,6 +578,19 @@ export function verifyMinutesDraft(
       (about) =>
         `The notes disagree about "${about}", and one version couldn't be matched to its notes. Check it and fill it in.`,
     ),
+    ...followUpGaps(followUps),
+    ...(carriedCut
+      ? [
+          'With last meeting’s action items added, the section they went into ran past its limit, so its last drafted lines were left out. Check the end of it against the notes.',
+        ]
+      : []),
+    ...(echoes > 0
+      ? [
+          echoes === 1
+            ? 'A drafted sentence repeated earlier minutes rather than tonight\u2019s notes, so it was taken out.'
+            : `${echoes} drafted sentences repeated earlier minutes rather than tonight\u2019s notes, so they were taken out.`,
+        ]
+      : []),
     ...(unlisted > 0
       ? [
           unlisted === 1
@@ -551,7 +609,13 @@ export function verifyMinutesDraft(
 
   return {
     content,
-    review: { gaps, sources: sourceNotes, left_out: leftOut, conflicts },
+    review: {
+      gaps,
+      sources: sourceNotes,
+      left_out: leftOut,
+      conflicts,
+      follow_ups: followUps,
+    },
     ownersCleared,
     votesCleared,
   };
@@ -765,6 +829,11 @@ function withRecoveredQuotes(
       ...conflict,
       versions: conflict.versions.map(fix),
     })),
+    follow_ups: output.follow_ups?.map((entry) =>
+      entry.quote
+        ? { ...entry, quote: recoverQuote(entry.quote, sources) }
+        : entry,
+    ),
   };
 }
 
@@ -975,8 +1044,4 @@ export function weekdayOf(date: string): string {
 
 function clamp(value: string, max: number): string {
   return value.trim().slice(0, max).trim();
-}
-
-export function oneLine(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
 }

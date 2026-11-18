@@ -36,6 +36,10 @@ import type { MeetingNotesService } from './meeting-notes.service';
 import type { MinutesSource } from '#domain/utils/minutes-draft';
 import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import type { RbacService } from './rbac.service';
+import type {
+  MeetingDraftContext,
+  MeetingDraftContextService,
+} from './meeting-draft-context.service';
 
 const CHAPTER = 'ch-1';
 const MEETING = '0a000000-0000-4000-8000-000000000001';
@@ -235,6 +239,8 @@ interface Setup {
   permissions?: string[];
   /** The notes pass's answer (default: none scripted, so it fails). */
   notes?: ScriptedReply;
+  /** What the draft knows from before tonight (default: nothing). */
+  context?: MeetingDraftContext;
 }
 
 function setup(options: Setup = {}) {
@@ -295,6 +301,9 @@ function setup(options: Setup = {}) {
     getForMember: jest.fn().mockResolvedValue({ status: 'running' }),
   };
   const registry = new AiRunRegistry();
+  const context = {
+    contextFor: jest.fn().mockResolvedValue(options.context ?? { agenda: [] }),
+  };
   const service = new MeetingDraftService(
     drafts,
     {
@@ -322,6 +331,7 @@ function setup(options: Setup = {}) {
     registry,
     gateway,
     consent as unknown as AiConsentService,
+    context as unknown as MeetingDraftContextService,
   );
 
   const ask = (notes = NOTES, expected = V1) =>
@@ -359,6 +369,7 @@ function setup(options: Setup = {}) {
     seenNotes,
     ask,
     work,
+    context,
   };
 }
 
@@ -543,6 +554,127 @@ describe('MeetingDraftService', () => {
         action_item_count: 2,
         left_out_count: 1,
       });
+    });
+
+    it.each([
+      ['passes', false],
+      ['fails, leaving the first pass standing', true],
+    ])(
+      'reads what it knows from before tonight as the officer, and marks each carried item when the editor pass %s (#5477)',
+      async (_how, editorFails) => {
+        const withFollowUps: MeetingDraftOutput = {
+          ...DRAFTED,
+          follow_ups: [
+            {
+              id: 'F1',
+              status: 'carried',
+              quote: 'Priya will email the 6 by Wednesday',
+              source: 'S1',
+            },
+            // Claimed done with no line of tonight's notes: not mentioned.
+            { id: 'F2', status: 'done', quote: 'washer ordered', source: 'S1' },
+          ],
+        };
+        const { ask, work, meetings, drafts, seen, context } = setup({
+          reply: (request) => {
+            const prompt = String(request.messages.at(-1)?.content ?? '');
+            if (prompt.includes('Candidates (D = decision')) {
+              if (editorFails) return { fail: 'timeout' as const };
+              const reviewed = scriptedReview(prompt);
+              return { text: JSON.stringify(reviewed), object: reviewed };
+            }
+            return {
+              text: JSON.stringify(withFollowUps),
+              object: withFollowUps,
+            };
+          },
+          context: {
+            agenda: ['Treasurer report', 'Formal'],
+            background: {
+              meetings: [
+                {
+                  startTime: '2026-11-04T01:00:00.000Z',
+                  name: 'Chapter meeting',
+                  sameSeries: true,
+                  reports: ['Treasurer'],
+                  topics: ['Dues'],
+                },
+              ],
+              carried: [
+                {
+                  id: 'F1',
+                  text: 'Email members who owe dues',
+                  ownerUserId: PRIYA,
+                  ownerName: 'Priya Natarajan',
+                  dueDate: null,
+                  fromStartTime: '2026-11-04T01:00:00.000Z',
+                },
+                {
+                  id: 'F2',
+                  text: 'Order the washer',
+                  ownerUserId: null,
+                  ownerName: null,
+                  dueDate: null,
+                  fromStartTime: '2026-11-04T01:00:00.000Z',
+                },
+              ],
+              standingReports: [
+                {
+                  id: 'R1',
+                  office: 'Treasurer',
+                  lastStartTime: '2026-11-04T01:00:00.000Z',
+                },
+              ],
+            },
+          },
+        });
+        await ask();
+        await work();
+
+        const [chapterArg, meetingArg, actor] =
+          context.contextFor.mock.calls[0];
+        expect(chapterArg).toBe(CHAPTER);
+        expect(meetingArg.id).toBe(MEETING);
+        expect(actor).toBe(SECRETARY);
+        const firstPass = String(seen[0].messages[0].content);
+        expect(firstPass).toContain('1. Treasurer report');
+        expect(firstPass).toContain('F2. Order the washer');
+
+        const [, , , save] = meetings.update.mock.calls[0];
+        expect(save.content.discussion_log).toBe(
+          [
+            'Open action items carried from earlier minutes',
+            '- Email members who owe dues (Priya Natarajan): still open, carried over.',
+            '- Order the washer: not mentioned tonight, confirm before posting.',
+          ].join('\n'),
+        );
+        const review = drafts.row?.result?.review as {
+          follow_ups: { status: string }[];
+          gaps: string[];
+        };
+        // Read by the first pass and kept through the editor's.
+        expect(review.follow_ups.map((f) => f.status)).toEqual([
+          'carried',
+          'not_mentioned',
+          'not_mentioned',
+        ]);
+        expect(review.gaps).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining('Order the washer'),
+            expect.stringContaining('The Treasurer usually reports'),
+          ]),
+        );
+      },
+    );
+
+    it('writes the draft from tonight alone when its background can\u2019t be read (#5477)', async () => {
+      const { ask, work, meetings, drafts, context } = setup();
+      context.contextFor.mockRejectedValueOnce(new Error('connection reset'));
+      await ask();
+      await work();
+      expect(drafts.row?.status).toBe('applied');
+      const [, , , save] = meetings.update.mock.calls[0];
+      expect(save.content.decisions).toHaveLength(1);
     });
 
     it('reads a one-line 4-hour transcript in parts, then merges each topic into its outcome', async () => {
