@@ -124,6 +124,11 @@ test("staging: checks api-staging's /health/ready and emails every alert to the 
   assert.match(fiveXx.filter, /response_code_class="5xx"/);
   assert.equal(fiveXx.thresholdValue, 10);
   assert.equal(fiveXx.evaluationMissingData, "EVALUATION_MISSING_DATA_INACTIVE", "a quiet minute ends the burst");
+  // Google refuses evaluationMissingData on a condition whose duration is 0s.
+  for (const p of r.policies) {
+    const c = p.conditions[0].conditionThreshold;
+    if (c?.evaluationMissingData) assert.notEqual(c.duration, "0s", p.displayName);
+  }
 
   const memory = named("memory near the limit").conditionThreshold;
   assert.match(memory.filter, /run\.googleapis\.com\/container\/memory\/utilizations/);
