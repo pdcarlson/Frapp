@@ -635,6 +635,10 @@ export function EventDetailSheet({
                 // Not while the event is gone or never loaded: every write
                 // would 404, as Edit and Delete already know.
                 canEdit={canEditInPlace && !eventUnavailable}
+                upcoming={
+                  typeof resolvedEvent?.end_time === "string" &&
+                  Date.parse(resolvedEvent.end_time) > Date.now()
+                }
                 documentsOn={documentsOn}
               />
             ) : null}

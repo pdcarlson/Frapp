@@ -96,6 +96,10 @@ const signDocument = vi.fn<(id: string) => Promise<unknown>>(async () => ({
 // The agenda editor's writes, spied rather than sent (its own spec is
 // `packages/hooks/src/use-event-agenda.spec.tsx`).
 const listsChange = vi.fn();
+// Suggested agenda items (#5534), as the hooks hand them over.
+let agendaSuggestions: unknown[] = [];
+const addSuggestion = vi.fn(async () => {});
+const dismissSuggestion = vi.fn(async () => {});
 // Whether a write would be lost (offline, a lapsed chapter).
 let writeBlockedReason: string | null = null;
 
@@ -148,6 +152,19 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     _id: string,
     server: { agenda: unknown[]; attachments: unknown[] },
   ) => ({ ...server, saving: false, change: listsChange, flush: vi.fn() }),
+  useAgendaSuggestions: () => ({
+    suggestions: agendaSuggestions,
+    aiAvailable: true,
+    loading: false,
+    writing: false,
+    refreshFailed: false,
+    refresh: vi.fn(),
+  }),
+  useAgendaSuggestionActions: () => ({
+    add: addSuggestion,
+    dismiss: dismissSuggestion,
+    adding: false,
+  }),
   useDocuments: () => ({ data: [], isPending: false, isError: false }),
   useDocumentDownloadUrl: () => ({ mutateAsync: signDocument }),
   useEvent: () => ({
@@ -1091,6 +1108,74 @@ describe("Event details agenda and attachments (#4934)", () => {
     event = WITH_LISTS;
     enabledModules = { meetings: false };
     expect(screenText(render())).toContain("MEETING MINUTES");
+  });
+
+  it("shows where a tabled agenda item came from, to a member (#5534)", () => {
+    event = {
+      ...WITH_LISTS,
+      agenda: [
+        {
+          id: "a1",
+          text: "Formal budget",
+          done: false,
+          tabled_from: {
+            meeting_id: "m-first",
+            start_time: "2026-11-11T23:00:00.000Z",
+            times: 2,
+          },
+        },
+      ],
+    };
+    const tree = render();
+    const link = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "link" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Tabled from") &&
+        typeof node.props.onPress === "function",
+    );
+    expect(link.props.accessibilityLabel).toContain("2nd time");
+    // A member never sees Suggested.
+    expect(screenText(tree)).not.toContain("SUGGESTED");
+  });
+
+  it("offers Suggested items to an editor of an upcoming meeting, with Add and Dismiss (#5534)", async () => {
+    event = {
+      ...WITH_LISTS,
+      start_time: "2099-01-01T18:00:00.000Z",
+      end_time: "2099-01-01T19:00:00.000Z",
+    };
+    permissions = ["members:view", "events:update"];
+    agendaSuggestions = [
+      {
+        id: "s1",
+        kind: "ai",
+        text: "Venue check-in",
+        tabled_from: null,
+        source_meeting_id: "m-last",
+        reason: "Still open from last week",
+      },
+    ];
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("SUGGESTED");
+    expect(text).toContain("Venue check-in");
+    expect(text).toContain("Still open from last week");
+    const dismiss = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === 'Dismiss "Venue check-in"' &&
+        typeof node.props.onPress === "function",
+    );
+    await act(async () => dismiss.props.onPress());
+    expect(dismissSuggestion).toHaveBeenCalledWith("s1");
+    const add = tree.root.find(
+      (node) =>
+        node.props.accessibilityHint === 'Add "Venue check-in" to the agenda' &&
+        typeof node.props.onPress === "function",
+    );
+    await act(async () => add.props.onPress());
+    expect(addSuggestion).toHaveBeenCalledWith("s1");
+    agendaSuggestions = [];
   });
 
   it("lets an events:update holder check an item off in place", () => {

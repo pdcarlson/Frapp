@@ -4,6 +4,7 @@ import type { MeetingMinutes } from "@repo/hooks";
 
 const mocks = vi.hoisted(() => ({
   meeting: { current: null as unknown },
+  event: { current: undefined as unknown },
   actionItemTasks: { current: [] as unknown[] },
   permissions: { current: [] as string[] },
   markAttendance: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useLinkMeetingEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEvents: () => ({ data: [] }),
+  useEvent: () => ({ data: mocks.event.current }),
   useMeetings: () => ({ data: [] }),
   useCurrentUser: () => ({
     data: { id: "11111111-1111-4111-8111-111111111111" },
@@ -608,6 +610,51 @@ describe("MinutesPage", () => {
         times: 1,
       },
     ]);
+  });
+
+  it("tables an agenda item in one tap, keeping a carried one's first date (#5534)", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+      sections: ["summary", "tabled", "discussion_log"],
+    });
+    loaded(draft);
+    mocks.event.current = {
+      agenda: [
+        { id: "a1", text: "Treasurer report", done: true },
+        {
+          id: "a2",
+          text: "Formal budget",
+          done: false,
+          tabled_from: {
+            meeting_id: "22222222-2222-4222-8222-222222222222",
+            start_time: "2026-11-11T23:00:00+00:00",
+            times: 1,
+          },
+        },
+      ],
+    };
+    mocks.update.mockResolvedValue(draft);
+    render(<MinutesPage id="m-1" />);
+    fireEvent.click(
+      screen.getByRole("button", { name: 'Table "Formal budget"' }),
+    );
+    // Tabled now: no longer offered.
+    expect(
+      screen.queryByRole("button", { name: 'Table "Formal budget"' }),
+    ).toBeNull();
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
+    expect(mocks.update.mock.calls[0]![0].body.content.tabled).toEqual([
+      {
+        text: "Formal budget",
+        first_meeting_id: "22222222-2222-4222-8222-222222222222",
+        first_start_time: "2026-11-11T23:00:00+00:00",
+        times: 2,
+      },
+    ]);
+    mocks.event.current = undefined;
   });
 
   it("says someone else saved, and keeps the typing, when a save is stale", async () => {

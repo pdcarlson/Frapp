@@ -319,6 +319,7 @@ export default function EventDetailsScreen() {
           // A real events:update answer, and an event still there: every
           // write to one deleted since would 404.
           canEdit={canDecideExcuses && !eventGone}
+          upcoming={Date.parse(event.end_time) > now.getTime()}
         />
 
         {event.notes ? (

@@ -8,9 +8,12 @@ import {
   View,
 } from "react-native";
 import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   selectDownloadUrl,
+  useAgendaSuggestionActions,
+  useAgendaSuggestions,
   useCurrentChapter,
   useDocumentDownloadUrl,
   useDocuments,
@@ -18,6 +21,8 @@ import {
   type EventLists,
 } from "@repo/hooks";
 import {
+  AGENDA_SUGGESTION_COPY,
+  agendaTabledFromLabel,
   agendaProblem,
   attachmentLinkProblem,
   attachmentLinkTitle,
@@ -32,7 +37,9 @@ import {
   normalizeAttachmentUrl,
   proofLinkDomain,
   toggleAgendaItem,
+  type AgendaSuggestion,
   type EventAgendaItem,
+  type EventAgendaTabledFrom,
   type EventAttachment,
 } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
@@ -77,11 +84,14 @@ export function EventMeetingLists({
   eventId,
   lists,
   canEdit,
+  upcoming,
 }: {
   eventId: string;
   lists: EventLists;
   /** Holds `events:update` (a real answer), and the event is there. */
   canEdit: boolean;
+  /** The meeting hasn't ended: Suggested shows only for one still to come. */
+  upcoming: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -105,6 +115,13 @@ export function EventMeetingLists({
         canEdit={editable}
         onChange={(update) => change("agenda", update)}
       />
+      {editable && upcoming ? (
+        <AgendaSuggestions
+          eventId={eventId}
+          full={editor.agenda.length >= EVENT_AGENDA_MAX}
+          flushAgenda={editor.flush}
+        />
+      ) : null}
       <EventAttachmentsSection
         attachments={editor.attachments}
         canEdit={editable}
@@ -188,9 +205,14 @@ function EventAgendaSection({
               <View style={[styles.box, item.done ? styles.boxDone : null]}>
                 {item.done ? <CheckGlyph color={muted} size={12} /> : null}
               </View>
-              <Text style={[styles.text, item.done ? styles.textDone : null]}>
-                {item.text}
-              </Text>
+              <View style={styles.textColumn}>
+                <Text style={[styles.text, item.done ? styles.textDone : null]}>
+                  {item.text}
+                </Text>
+                {item.tabled_from ? (
+                  <TabledFromLink from={item.tabled_from} />
+                ) : null}
+              </View>
             </Pressable>
           ) : (
             <View
@@ -201,9 +223,14 @@ function EventAgendaSection({
               }
             >
               <Text style={styles.number}>{index + 1}.</Text>
-              <Text style={[styles.text, item.done ? styles.textDone : null]}>
-                {item.text}
-              </Text>
+              <View style={styles.textColumn}>
+                <Text style={[styles.text, item.done ? styles.textDone : null]}>
+                  {item.text}
+                </Text>
+                {item.tabled_from ? (
+                  <TabledFromLink from={item.tabled_from} />
+                ) : null}
+              </View>
             </View>
           )}
           {canEdit ? (
@@ -286,6 +313,140 @@ function EventAgendaSection({
       {canEdit && full ? (
         <Text style={styles.caption}>
           An agenda holds {EVENT_AGENDA_MAX} items.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * "Tabled from Tuesday, November 11 · 2nd time" under an agenda item or a
+ * suggestion (#5534), opening the minutes of that day. Web's
+ * `TabledFromLink`; the minutes open only for their audience.
+ */
+function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const router = useRouter();
+  const label = agendaTabledFromLabel(from);
+  if (!label) return null;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      hitSlop={8}
+      onPress={() =>
+        router.push({
+          pathname: "/minutes-details",
+          params: { id: from.meeting_id },
+        })
+      }
+      style={({ pressed }) => (pressed ? styles.pressed : null)}
+    >
+      <Text style={styles.caption}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Suggested agenda items (#5534) under the agenda, for whoever can edit it:
+ * web's `AgendaSuggestions`. Tabled matters from earlier meetings with the
+ * same people first, then the model's; each row has Add and Dismiss, the way
+ * Fellow suggests talking points under a meeting's agenda. Nothing shows
+ * when there's nothing to suggest.
+ */
+function AgendaSuggestions({
+  eventId,
+  full,
+  flushAgenda,
+}: {
+  eventId: string;
+  full: boolean;
+  flushAgenda: () => Promise<void>;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const muted = tokens.color.text.mutedForeground;
+  const list = useAgendaSuggestions(eventId);
+  const actions = useAgendaSuggestionActions(eventId, { flushAgenda });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  if (list.suggestions.length === 0 && !list.writing) return null;
+
+  async function act(row: AgendaSuggestion, action: "add" | "dismiss") {
+    setBusy(row.id);
+    setFailed(null);
+    try {
+      await actions[action](row.id);
+    } catch {
+      setFailed(
+        action === "add"
+          ? "Couldn't add that to the agenda. Try again in a moment."
+          : "Couldn't dismiss that suggestion. Try again in a moment.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <View style={styles.section} accessibilityLabel="Suggested">
+      <View style={styles.headerRow}>
+        <Text style={styles.sectionLabel}>
+          {AGENDA_SUGGESTION_COPY.heading.toUpperCase()}
+        </Text>
+        {list.aiAvailable && !list.writing ? (
+          <TextAction
+            compact
+            label={AGENDA_SUGGESTION_COPY.refresh}
+            onPress={list.refresh}
+          />
+        ) : null}
+      </View>
+      {list.suggestions.map((row) => (
+        <View key={row.id} style={styles.line}>
+          <View style={[styles.row, styles.textColumn]}>
+            <Text style={styles.text}>{row.text}</Text>
+            {row.tabled_from ? (
+              <TabledFromLink from={row.tabled_from} />
+            ) : row.reason ? (
+              <Text style={styles.caption}>{row.reason}</Text>
+            ) : null}
+          </View>
+          <View style={styles.controls}>
+            <TextAction
+              compact
+              label={AGENDA_SUGGESTION_COPY.add}
+              hint={AGENDA_SUGGESTION_COPY.addLabel(row.text)}
+              disabled={full || busy !== null}
+              onPress={() => void act(row, "add")}
+            />
+            <IconButton
+              label={AGENDA_SUGGESTION_COPY.dismissLabel(row.text)}
+              disabled={busy !== null}
+              onPress={() => void act(row, "dismiss")}
+            >
+              <CloseGlyph color={muted} />
+            </IconButton>
+          </View>
+        </View>
+      ))}
+      {list.writing ? (
+        <View style={styles.headerRow}>
+          <ActivityIndicator size="small" color={muted} />
+          <Text style={styles.caption}>{AGENDA_SUGGESTION_COPY.writing}</Text>
+        </View>
+      ) : null}
+      {full && list.suggestions.length > 0 ? (
+        <Text style={styles.caption}>
+          The agenda is full ({EVENT_AGENDA_MAX} items). Remove one to add a
+          suggestion.
+        </Text>
+      ) : null}
+      {failed ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {failed}
         </Text>
       ) : null}
     </View>
@@ -732,6 +893,19 @@ function createStyles(tokens: SignetTokens, accent?: string) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
       fontVariant: ["tabular-nums"],
+    },
+    textColumn: {
+      flex: 1,
+      flexDirection: "column",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      gap: 2,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
     },
     text: {
       flex: 1,

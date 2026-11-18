@@ -10,8 +10,11 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
+  useAgendaSuggestionActions,
+  useAgendaSuggestions,
   selectDownloadUrl,
   useDocumentDownloadUrl,
   useDocuments,
@@ -19,6 +22,8 @@ import {
   type EventLists,
 } from "@repo/hooks";
 import {
+  AGENDA_SUGGESTION_COPY,
+  agendaTabledFromLabel,
   agendaProblem,
   attachmentLinkProblem,
   attachmentLinkTitle,
@@ -32,7 +37,9 @@ import {
   normalizeAttachmentUrl,
   proofLinkDomain,
   toggleAgendaItem,
+  type AgendaSuggestion,
   type EventAgendaItem,
+  type EventAgendaTabledFrom,
   type EventAttachment,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -69,12 +76,15 @@ export function EventMeetingLists({
   eventId,
   lists,
   canEdit,
+  upcoming,
   documentsOn,
 }: {
   eventId: string;
   lists: EventLists;
   /** Holds `events:update`, and the event is there to write to. */
   canEdit: boolean;
+  /** The meeting hasn't ended: Suggested shows only for one still to come. */
+  upcoming: boolean;
   documentsOn: DocumentsModule;
 }) {
   // A paid write, like the sheet's Edit: a lapsed chapter or an offline
@@ -96,6 +106,13 @@ export function EventMeetingLists({
         canEdit={editable}
         onChange={(update) => editor.change("agenda", update)}
       />
+      {editable && upcoming ? (
+        <AgendaSuggestions
+          eventId={eventId}
+          full={editor.agenda.length >= EVENT_AGENDA_MAX}
+          flushAgenda={editor.flush}
+        />
+      ) : null}
       <EventAttachmentsSection
         attachments={editor.attachments}
         canEdit={editable}
@@ -178,6 +195,9 @@ export function EventAgendaSection({
                   <span className="sr-only">Done: </span>
                 ) : null}
                 {item.text}
+                {item.tabled_from ? (
+                  <TabledFromLink from={item.tabled_from} />
+                ) : null}
               </span>
               {canEdit ? (
                 <span className="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
@@ -255,6 +275,134 @@ export function EventAgendaSection({
       {canEdit && full ? (
         <p className="text-caption text-muted-foreground">
           An agenda holds {EVENT_AGENDA_MAX} items.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * "Tabled from Tuesday, November 11 · 2nd time" under an agenda item or a
+ * suggestion (#5534), linking to the minutes of that day. Everyone who sees
+ * the agenda sees it; the minutes themselves open only for their audience.
+ */
+function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
+  const label = agendaTabledFromLabel(from);
+  if (!label) return null;
+  return (
+    <Link
+      href={`/meetings/${from.meeting_id}`}
+      className={cn(
+        "block w-fit rounded-sm text-caption text-muted-foreground no-underline hover:underline",
+        FOCUS_RING_OFFSET,
+      )}
+    >
+      {label}
+    </Link>
+  );
+}
+
+/**
+ * Suggested agenda items (#5534, `spec/behavior/events.md` § Suggested
+ * agenda items) under the agenda, for whoever can edit it: what earlier
+ * meetings with the same people tabled, first, then what the model
+ * suggests. Each row has Add and Dismiss, the way Fellow suggests talking
+ * points under a meeting's agenda and Linear offers suggested labels: one
+ * tap takes it, one tap waves it off. Nothing shows when there's nothing
+ * to suggest.
+ */
+function AgendaSuggestions({
+  eventId,
+  full,
+  flushAgenda,
+}: {
+  eventId: string;
+  full: boolean;
+  flushAgenda: () => Promise<void>;
+}) {
+  const list = useAgendaSuggestions(eventId);
+  const actions = useAgendaSuggestionActions(eventId, { flushAgenda });
+  const [busy, setBusy] = useState<string | null>(null);
+
+  if (list.suggestions.length === 0 && !list.writing) return null;
+
+  async function act(row: AgendaSuggestion, action: "add" | "dismiss") {
+    setBusy(row.id);
+    try {
+      await actions[action](row.id);
+    } catch (error) {
+      toastFailure({
+        title:
+          action === "add"
+            ? "Couldn't add that to the agenda"
+            : "Couldn't dismiss that suggestion",
+        error,
+        fallback: "Try again in a moment.",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section aria-label={AGENDA_SUGGESTION_COPY.heading} className={SECTION}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={LABEL}>{AGENDA_SUGGESTION_COPY.heading}</p>
+        {list.aiAvailable && !list.writing ? (
+          <button type="button" className={QUIET_LINK} onClick={list.refresh}>
+            {AGENDA_SUGGESTION_COPY.refresh}
+          </button>
+        ) : null}
+      </div>
+      {list.suggestions.length > 0 ? (
+        <ul className="grid gap-1">
+          {list.suggestions.map((row) => (
+            <li
+              key={row.id}
+              className="flex min-h-9 items-center gap-2 pointer-coarse:min-h-11"
+            >
+              <span className="min-w-0 flex-1 break-words text-sm">
+                {row.text}
+                {row.tabled_from ? (
+                  <TabledFromLink from={row.tabled_from} />
+                ) : row.reason ? (
+                  <span className="block text-caption text-muted-foreground">
+                    {row.reason}
+                  </span>
+                ) : null}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={full || busy !== null}
+                aria-label={AGENDA_SUGGESTION_COPY.addLabel(row.text)}
+                onClick={() => void act(row, "add")}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                {AGENDA_SUGGESTION_COPY.add}
+              </Button>
+              <IconButton
+                label={AGENDA_SUGGESTION_COPY.dismissLabel(row.text)}
+                disabled={busy !== null}
+                onClick={() => void act(row, "dismiss")}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {list.writing ? (
+        <p className="flex items-center gap-2 text-caption text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          {AGENDA_SUGGESTION_COPY.writing}
+        </p>
+      ) : null}
+      {full && list.suggestions.length > 0 ? (
+        <p className="text-caption text-muted-foreground">
+          The agenda is full ({EVENT_AGENDA_MAX} items). Remove one to add a
+          suggestion.
         </p>
       ) : null}
     </section>
