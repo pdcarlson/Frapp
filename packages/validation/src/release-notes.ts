@@ -127,6 +127,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Typing @ in a channel now lists Frapp first, so you can ask it a question right where you are.",
       "Suggested tasks from minutes come one at a time, with who and when filled in where the minutes left them out, and action items tick themselves off as their tasks are done.",
       "Drafted minutes leave out side conversations and remarks about people, and spell misheard names the way your roster does.",
+      "Officers can now give a task to everyone in a committee or group, or to a few people at once, and put a task up for grabs so the first person to claim it gets it.",
     ],
     web: [
       "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",
