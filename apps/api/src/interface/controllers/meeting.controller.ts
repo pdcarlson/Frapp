@@ -43,6 +43,7 @@ import {
 import {
   ListMeetingsQueryDto,
   MeetingDto,
+  MeetingListItemDto,
   MeetingSummaryDto,
   MeetingTemplateDto,
   PostMeetingDto,
@@ -65,6 +66,14 @@ function summaryOf(meeting: Meeting): MeetingSummaryDto {
     updated_at: meeting.updated_at,
   };
 }
+
+const NO_FACTS = {
+  series_key: null,
+  series_rule: null,
+  decision_count: 0,
+  action_item_count: 0,
+  recorded: false,
+};
 
 function dtoOf(view: MeetingView): MeetingDto {
   return {
@@ -101,14 +110,21 @@ export class MeetingController {
     summary:
       'Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts',
   })
-  @ApiOkResponse({ type: MeetingSummaryDto, isArray: true })
+  @ApiOkResponse({ type: MeetingListItemDto, isArray: true })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query() query: ListMeetingsQueryDto,
-  ): Promise<MeetingSummaryDto[]> {
-    const rows = await this.meetings.list(chapterId, userId, query.event_id);
-    return rows.map(summaryOf);
+  ): Promise<MeetingListItemDto[]> {
+    const { rows, facts } = await this.meetings.listWithFacts(
+      chapterId,
+      userId,
+      query.event_id,
+    );
+    return rows.map((row) => ({
+      ...summaryOf(row),
+      ...(facts.get(row.id) ?? NO_FACTS),
+    }));
   }
 
   @Get('template')

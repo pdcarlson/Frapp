@@ -7951,7 +7951,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/MeetingSummaryDto"
+                    "$ref": "#/components/schemas/MeetingListItemDto"
                   }
                 }
               }
@@ -26866,7 +26866,7 @@
           }
         }
       },
-      "MeetingSummaryDto": {
+      "MeetingListItemDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -26918,6 +26918,29 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "series_key": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see."
+          },
+          "series_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series."
+          },
+          "decision_count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "action_item_count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "recorded": {
+            "type": "boolean",
+            "description": "A recording was used for these minutes."
           }
         },
         "required": [
@@ -26930,7 +26953,12 @@
           "status",
           "created_by",
           "posted_at",
-          "updated_at"
+          "updated_at",
+          "series_key",
+          "series_rule",
+          "decision_count",
+          "action_item_count",
+          "recorded"
         ]
       },
       "MeetingTemplateDto": {

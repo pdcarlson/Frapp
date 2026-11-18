@@ -1,0 +1,1 @@
+Minutes are easier to find: each has a coloured tile for its meeting type and tags for drafts, recordings, decisions and action items, and once you have more than a few, a repeating meeting folds into one series with its own list, alongside search and type filters.
