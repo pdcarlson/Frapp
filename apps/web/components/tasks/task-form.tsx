@@ -76,7 +76,7 @@ function whoOfAssignee(assigneeId: string): TaskWho | null {
 }
 
 /** A pick back into the Assignee string: a user id, `everyone`, or blank. */
-function assigneeOfWho(who: TaskWho | null): string {
+export function assigneeOfWho(who: TaskWho | null): string {
   if (who?.kind === "person") return who.userId;
   if (who?.kind === "each" && who.target.kind === "chapter") {
     return TASK_AUDIENCE_EVERYONE;
