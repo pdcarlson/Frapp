@@ -109,6 +109,7 @@ export * from "./use-members";
 export * from "./use-message-reminders";
 export * from "./use-notifications";
 export * from "./use-now";
+export * from "./use-open-tasks";
 export * from "./use-org-config";
 export * from "./use-own-status-at";
 export * from "./use-pledge-classes";
