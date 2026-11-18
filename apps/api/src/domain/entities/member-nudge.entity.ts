@@ -5,8 +5,13 @@ import type {
 
 export type MemberNudgeStatus = 'showing' | 'dismissed' | 'done' | 'expired';
 
-/** Who wrote a card's words: the model, or Frapp's fixed sentence. */
-export type MemberNudgeAuthor = 'ai' | 'fixed';
+/**
+ * Who wrote a card's words: the model, Frapp's fixed sentence (the model's
+ * failed a check or could not be reached), or nobody: a `plain` card carries
+ * only the thing's own name and time, because AI is off for this member or
+ * this server, or its kind is never written (#5464).
+ */
+export type MemberNudgeAuthor = 'ai' | 'fixed' | 'plain';
 
 /**
  * One card on a member's Activity (`member_nudges`, #4781). The words are
@@ -18,8 +23,20 @@ export interface MemberNudge {
   chapter_id: string;
   user_id: string;
   kind: MemberNudgeKind;
-  task_id: string;
+  /** The task a task card is about; null for every other kind. */
+  task_id: string | null;
+  /**
+   * What the card is about, for every kind: a task's or event's id, or a
+   * channel and its latest message (`member-nudge-items.ts`). A card is
+   * raised once per subject and kind.
+   */
+  subject_key: string;
+  /** A task card's title; any other card's headline when it was raised. */
   title: string | null;
+  /**
+   * A task card's sentence, or the one sentence AI added to any other card.
+   * Null on a showing card that has none (`plain`).
+   */
   body: string | null;
   /** "A suggested place to start", or null when the card has none. */
   start_here: string | null;

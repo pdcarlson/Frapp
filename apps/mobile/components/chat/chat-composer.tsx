@@ -97,9 +97,9 @@ import {
  * the caret out of the handle, closes it; with no member matching it says so,
  * as web's does.
  *
- * **Frapp is in that list for a member with Ask** (`ask`, #4713), last on a
- * bare `@` and first once its name is being typed, with the crest and "Only
- * you see the answer". A message that names `@Frapp` is a question for Frapp
+ * **Frapp is in that list for a member with Ask** (`ask`, #4713), as its
+ * first row (#5476; the order is `mentionPickerRows`'s), with the crest and
+ * "Only you see the answer". A message that names `@Frapp` is a question for Frapp
  * and is never posted (`components/ask/ask-in-channel.tsx`); the screen
  * decides that on Send, and while the draft names it the send button is
  * called "Ask Frapp" and the screen says above the composer that only the

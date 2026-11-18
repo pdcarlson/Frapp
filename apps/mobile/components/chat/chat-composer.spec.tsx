@@ -7,6 +7,7 @@ import {
   type ReactTestRenderer,
 } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { StyleSheet } from "react-native";
 
 // These screens paint with the chapter accent (`useChapterBranding`), which
 // reads the current chapter through the client provider these specs don't
@@ -18,7 +19,7 @@ vi.mock("@/lib/chapter-branding", async () => {
     await import("@/test/chapter-branding");
   return chapterBrandingMock(PURPLE_BRANDING);
 });
-import { FrappThemeProvider } from "@/lib/theme";
+import { FrappThemeProvider, tint } from "@/lib/theme";
 import { FrappCrest } from "@/components/frapp-crest";
 import {
   ChatComposer,
@@ -683,7 +684,7 @@ describe("ChatComposer @-mention picker", () => {
       expect(byLabel(typed("@frapp").tree, FRAPP)).toBeUndefined();
     });
 
-    it("is last on a bare @, after the people the member is more likely to mean", () => {
+    it("is first on a bare @, so a member finds it unprompted (#5476)", () => {
       const { tree } = typed("@", 1, { ask });
       const labels = tree.root
         .findAll(
@@ -695,10 +696,10 @@ describe("ChatComposer @-mention picker", () => {
         )
         .map((node) => node.props.accessibilityLabel as string);
       expect(labels).toEqual([
+        FRAPP,
         "Mention Paul Carlson",
         "Mention Pat O'Brien",
         "Mention Sam (VP)",
-        FRAPP,
       ]);
     });
 
@@ -709,6 +710,10 @@ describe("ChatComposer @-mention picker", () => {
         (node) => node.props.testID === "mention-ask-glyph",
       );
       expect(glyph.findByType(FrappCrest).props.color).toBe("#CB9FFF");
+      // On the chapter's tint, not the grey disc a role gets (#5476).
+      expect(StyleSheet.flatten(glyph.props.style).backgroundColor).toBe(
+        tint("#CB9FFF"),
+      );
       act(() => row.props.onPress());
       expect(props.onChangeText).toHaveBeenCalledWith("@Frapp ");
     });
