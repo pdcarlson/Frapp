@@ -10,7 +10,7 @@ import {
 import { formatPointsChip } from "@repo/formatting";
 import { useCallback, useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { StyleSheet, Text, View } from "react-native";
+import { type ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
@@ -38,7 +38,7 @@ import {
 import { type EventEditTarget } from "@/lib/events/edit-event";
 import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
 import { SelfCheckInLink } from "@/components/events/self-check-in-link";
-import { BACK_TO_EVENTS } from "@/components/back-row";
+import { BACK_TO_EVENTS, pinnedBackClearance } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
@@ -76,6 +76,10 @@ import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 import { EventMeetingLists } from "@/components/events/event-agenda";
 import { useNotesLabel } from "@/lib/minutes/meetings-on";
+import {
+  ScrollRevealProvider,
+  useScrollReveal,
+} from "@/lib/keep-above-keyboard";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -121,6 +125,18 @@ import { useNotesLabel } from "@/lib/minutes/meetings-on";
  * line here too. The chips sit under it, because `ScreenShell` draws the title
  * first and is frozen; they used to share a row with the place, which wrapped
  * a long location beside them.
+ *
+ * ## The keyboard
+ *
+ * An editor types agenda items, a link or a Chapter Files search, and a
+ * member their excuse, in fields on the page itself, the agenda's well down
+ * it. The body rises with the keyboard (`avoidKeyboard`), and the screen
+ * scrolls the focused field into view above it and keeps it there as items
+ * are added (`lib/keep-above-keyboard.tsx`, #5463): on a 3-item agenda the
+ * field used to open under the keyboard, and each item added went under it
+ * too. A tap on a row's control while the keyboard is up works on the first
+ * tap (`keyboardShouldPersistTaps`), so an officer can reorder or check off
+ * between items without closing it.
  */
 
 export default function EventDetailsScreen() {
@@ -218,6 +234,13 @@ export default function EventDetailsScreen() {
   */
   const now = useNowDate();
   const notesLabel = useNotesLabel();
+  // The body's scroll view, which keeps a focused field above the keyboard.
+  const scrollRef = useRef<ScrollView>(null);
+  const reveal = useScrollReveal(scrollRef, {
+    // The pinned back row floats over the top of the scroll view.
+    top: pinnedBackClearance(tokens),
+    margin: tokens.spacing.md,
+  });
 
   if (!eventId) {
     return (
@@ -257,9 +280,14 @@ export default function EventDetailsScreen() {
   const requiredOfViewer = requiredOf(event.attendance);
 
   return (
-    <>
+    // Around the shell, not inside it: a provider in the body would fold the
+    // whole body into one child and lose the shell's gap between sections.
+    <ScrollRevealProvider value={reveal}>
       <ScreenShell
         back={BACK_TO_EVENTS}
+        scrollRef={scrollRef}
+        avoidKeyboard
+        keyboardShouldPersistTaps="handled"
         backAction={
           grants.edit ? (
             // A pencil, as Profile's edit: the same back-row slot.
@@ -368,7 +396,7 @@ export default function EventDetailsScreen() {
           onDeleted={() => goBackTo(router, BACK_TO_EVENTS.href)}
         />
       ) : null}
-    </>
+    </ScrollRevealProvider>
   );
 }
 

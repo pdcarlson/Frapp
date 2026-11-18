@@ -56,6 +56,41 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
     );
   });
 
+  // #5463: Event details' agenda, link and excuse fields live in components,
+  // so the route scan below doesn't see them. The shell's area must stay on
+  // for the whole screen (switching it remounts the body and drops focus),
+  // and the screen must provide the reveal that scrolls a field above it.
+  it("(app)/event-details.tsx rises with the keyboard and keeps its fields above it", () => {
+    const source = readFileSync(
+      join(APP_DIR, "(app)/event-details.tsx"),
+      "utf8",
+    );
+    // Bare, so `avoidKeyboard={editing}` can't pass.
+    expect(source).toMatch(/<ScreenShell\b[^>]*\bavoidKeyboard\b(?!\s*=)/);
+    expect(source).toMatch(/<ScreenShell\b[^>]*\bscrollRef=\{scrollRef\}/);
+    expect(source).toMatch(/<ScrollRevealProvider value=\{reveal\}>/);
+  });
+
+  // The field half of #5463: each field's view and its focus, typing and
+  // blur reach the hook, or the screen's reveal has nothing to show. The
+  // agenda section holds the agenda field, the Add a link form (two fields
+  // sharing one view) and the Chapter Files search; the excuse line is one.
+  it.each([
+    ["components/events/event-agenda.tsx", { views: 3, fields: 4 }],
+    ["components/events/event-excuses.tsx", { views: 1, fields: 1 }],
+  ])("%s keeps each field above the keyboard", (file, { views, fields }) => {
+    const source = readFileSync(join(APP_DIR, "..", file), "utf8");
+    const count = (pattern: RegExp) => source.match(pattern)?.length ?? 0;
+    expect(
+      count(/const \{ hold, \.\.\.keep \} = useKeepAboveKeyboard\(\);/g),
+    ).toBe(views);
+    expect(count(/\bref=\{hold\}/g)).toBe(views);
+    expect(count(/\bonLayout=\{keep\.onLayout\}/g)).toBe(views);
+    expect(count(/\bkeep\.onFocus\b/g)).toBe(fields);
+    expect(count(/\bkeep\.onBlur\b/g)).toBe(fields);
+    expect(count(/\bkeep\.onType\(\)/g)).toBe(fields);
+  });
+
   it("sign-in leaves iOS to its scroll view's own keyboard inset", () => {
     // Its ScrollView sets `automaticallyAdjustKeyboardInsets`; a padding view
     // around it on iOS would count the keyboard twice.
