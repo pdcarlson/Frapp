@@ -1374,6 +1374,96 @@ describe("ChannelList as the Direct messages list (#3774)", () => {
     expect(rows[1]).toContain("Alpha team");
   });
 
+  // #5519: a time on each row, and the viewer's own last line's check.
+  it("draws each row's time and its sent or read check, with words for a screen reader", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        unreadByChannelId={
+          new Map([["c-group", { unreadCount: 2, mentionCount: 0 }]])
+        }
+        latestAt={
+          new Map([
+            ["c-dm", "2026-11-12T01:00:00.000Z"],
+            ["c-group", "2026-11-12T02:00:00.000Z"],
+          ])
+        }
+        previews={
+          new Map([
+            ["c-dm", "thanks, see you there"],
+            ["c-group", "Cole: I do, sending it tonight"],
+          ])
+        }
+        rowMeta={
+          new Map([
+            [
+              "c-dm",
+              {
+                time: "Yesterday",
+                timeLabel: "Nov 11, 2026, 5:00 PM",
+                readStatus: "read" as const,
+              },
+            ],
+            [
+              "c-group",
+              { time: "4:46 PM", timeLabel: null, readStatus: null },
+            ],
+          ])
+        }
+        sidebar={sidebarControls()}
+      />,
+    );
+    const dmRow = screen.getByRole("button", { name: /thanks, see you there/ });
+    expect(dmRow.querySelector("[data-row-time]")?.getAttribute("title")).toBe(
+      "Nov 11, 2026, 5:00 PM",
+    );
+    expect(dmRow.querySelector('[data-read-status="read"]')).not.toBeNull();
+    // The button's name says it in words: when, then Read before the line.
+    expect(dmRow).toHaveAccessibleName(
+      /Nov 11, 2026, 5:00 PM.*Read:.*thanks, see you there/,
+    );
+
+    // Someone else's last line: a time, no check, and the badge on the line.
+    const groupRow = screen.getByRole("button", { name: /Rush planning/ });
+    expect(groupRow.querySelector("[data-row-time]")?.textContent).toContain(
+      "4:46 PM",
+    );
+    expect(groupRow.querySelector("[data-read-status]")).toBeNull();
+    expect(groupRow.textContent).toContain("2");
+  });
+
+  it("draws a sent check muted, and no time or check without a latest row", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        rowMeta={
+          new Map([
+            [
+              "c-dm",
+              { time: "Monday", timeLabel: null, readStatus: "sent" as const },
+            ],
+          ])
+        }
+        sidebar={sidebarControls()}
+      />,
+    );
+    const sent = document.querySelector('[data-read-status="sent"]');
+    expect(sent).toHaveClass("text-muted");
+    const groupRow = screen.getByRole("button", { name: /Rush planning/ });
+    expect(groupRow.querySelector("[data-row-time]")).toBeNull();
+    expect(groupRow.querySelector("[data-read-status]")).toBeNull();
+  });
+
   it("puts an open hidden DM first, and keeps Hidden conversations rows one line", () => {
     const hiddenOpen: ChatChannel = { ...group, hidden: true };
     const hiddenOther: ChatChannel = {

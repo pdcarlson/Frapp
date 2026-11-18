@@ -1082,6 +1082,7 @@ describe("Long-press menu on the board (#5492)", () => {
     const tree = render();
     expect(hold(tree, row(tree))).toEqual([
       "Mark done",
+      "Start",
       "Edit",
       "Reassign",
       "Duplicate",
@@ -1111,7 +1112,14 @@ describe("Long-press menu on the board (#5492)", () => {
       (pressHost(tile).props.accessibilityActions as { label: string }[]).map(
         (action) => action.label,
       ),
-    ).toEqual(["Mark done", "Edit", "Reassign", "Duplicate", "Delete"]);
+    ).toEqual([
+      "Mark done",
+      "Start",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
     expect(hold(tree, tile)).toContain("Duplicate");
     act(() => tree.unmount());
   });

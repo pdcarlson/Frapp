@@ -30,6 +30,7 @@ import {
   PIN_ACTION,
 } from "./channel-row";
 import { channelMarkFor } from "@repo/hooks/channel-start";
+import { PURPLE_BRANDING as PURPLE } from "@/test/chapter-branding";
 
 /**
  * The rules under test are the two `foundations.md:67-68` states this row
@@ -579,5 +580,74 @@ describe("ChannelRow mark (#4134)", () => {
     const flat = flatten(sigil.props.style);
     expect(flat.width).toBeUndefined();
     expect(flat.minWidth).toBe(signetDarkTokens.typography.role.title.size);
+  });
+});
+
+// #5519: a Messages row's time, and the check on the member's own last line.
+describe("ChannelRow time and read check (#5519)", () => {
+  const messagesRow = (
+    props: Partial<React.ComponentProps<typeof ChannelRow>> = {},
+  ) =>
+    renderRow({
+      name: "Alice Chen",
+      isDirect: true,
+      preview: "see you at 6",
+      time: "4:46 PM",
+      timeLabel: "Nov 18, 2026, 4:46 PM",
+      ...props,
+    });
+  const byTestId = (tree: ReactTestRenderer, id: string) =>
+    tree.root.findAll((node) => node.props.testID === id, { deep: true });
+  const texts = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown as string) === "Text", {
+        deep: true,
+      })
+      .map((node) => node.props.children);
+
+  it("draws the time on the name line", () => {
+    expect(texts(messagesRow())).toContain("4:46 PM");
+  });
+
+  it("draws one check for sent and two in the chapter accent for read", () => {
+    const sent = messagesRow({ readStatus: "sent" });
+    expect(byTestId(sent, "channel-row-sent")).toHaveLength(1);
+    expect(byTestId(sent, "channel-row-read")).toHaveLength(0);
+
+    const read = messagesRow({ readStatus: "read" });
+    const mark = byTestId(read, "channel-row-read")[0]!;
+    const glyph = mark.findAll((node) => node.props.color !== undefined)[0]!;
+    expect(glyph.props.color).toBe(PURPLE.accent);
+    // A sent check stays muted, never the accent.
+    const sentGlyph = byTestId(sent, "channel-row-sent")[0]!.findAll(
+      (node) => node.props.color !== undefined,
+    )[0]!;
+    expect(sentGlyph.props.color).toBe(signetDarkTokens.color.text.muted);
+  });
+
+  it("draws no check without a status, and no time on a one-line row", () => {
+    const none = messagesRow();
+    expect(byTestId(none, "channel-row-sent")).toHaveLength(0);
+    expect(byTestId(none, "channel-row-read")).toHaveLength(0);
+    expect(texts(renderRow({ time: null }))).not.toContain("4:46 PM");
+  });
+
+  it("keeps the badge on a Messages row, on its last line", () => {
+    const style = findBadgeStyle(messagesRow({ unreadCount: 2 }));
+    expect(style?.backgroundColor).toBe(signetDarkTokens.color.semantic.mention);
+  });
+
+  it("says Read or Sent after the line, then when", () => {
+    expect(
+      accessibilityLabelFor({
+        name: "Alice Chen",
+        isDirect: true,
+        unreadCount: 0,
+        mentionCount: 0,
+        preview: "see you at 6",
+        readStatus: "read",
+        timeLabel: "Nov 18, 2026, 4:46 PM",
+      }),
+    ).toBe("Alice Chen, see you at 6, Read, Nov 18, 2026, 4:46 PM");
   });
 });

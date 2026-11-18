@@ -11,7 +11,18 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronRight, ListFilter, Plus } from "lucide-react";
+import {
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronRight,
+  ListFilter,
+  Plus,
+} from "lucide-react";
+import {
+  CONVERSATION_READ_STATUS_LABEL,
+  type ConversationReadStatus,
+} from "@repo/chat-core/channel-preview";
 import {
   arrangeChannelSidebar,
   canHideConversation,
@@ -260,6 +271,62 @@ function ChannelRowName({
 }
 
 /**
+ * A row's count: the mention-red badge when it addresses the member, else,
+ * for a merely unread row, the same words for a screen reader alone. One
+ * copy, so a channel row and a Direct messages row (which draws it at the end
+ * of its last line, #5519) can't announce unread differently.
+ */
+function RowCount({
+  counts,
+  isDirect,
+  showBadge,
+  announce,
+}: {
+  counts: ChannelUnread;
+  isDirect: boolean;
+  showBadge: boolean;
+  announce: boolean;
+}) {
+  if (showBadge) {
+    return (
+      <Badge
+        variant="mention"
+        className="h-6 justify-center px-2"
+        aria-label={unreadAnnouncement(counts, isDirect)}
+      >
+        {badgeLabel(counts.unreadCount, counts.mentionCount)}
+      </Badge>
+    );
+  }
+  // No number to draw, but a screen reader still hears it.
+  return announce ? (
+    <span className="sr-only">{unreadAnnouncement(counts, isDirect)}</span>
+  ) : null;
+}
+
+/**
+ * One check for sent, two for read (#5519), before the viewer's own last line:
+ * the shapes the phone draws (`CheckGlyph`, `CheckAllGlyph`). Read takes the
+ * chapter accent, sent stays muted. The words are for a screen reader.
+ */
+function ReadStatusMark({ status }: { status: ConversationReadStatus }) {
+  const Glyph = status === "read" ? CheckCheck : Check;
+  return (
+    <>
+      <Glyph
+        data-read-status={status}
+        aria-hidden="true"
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          status === "read" ? "text-accent-text" : "text-muted",
+        )}
+      />
+      <span className="sr-only">{CONVERSATION_READ_STATUS_LABEL[status]}:</span>
+    </>
+  );
+}
+
+/**
  * Badge text. A mention badge leads with `@` and shows the **mention** count,
  * not the total — s04 draws `@ 2` on a row whose unread total is higher. Same
  * rule mobile's `channel-row.tsx` ships, and the same 99+ cap.
@@ -299,6 +366,14 @@ export function unreadAnnouncement(
   return plural(unreadCount, "unread message");
 }
 
+/** What a Direct messages row draws beside its name and last line (#5519). */
+export interface ConversationRowMeta {
+  time: string | null;
+  /** The same instant in full, for the tooltip and a screen reader. */
+  timeLabel: string | null;
+  readStatus: ConversationReadStatus | null;
+}
+
 /** Sorts an open hidden DM, which has no latest row, ahead of any real time. */
 const OPEN_HIDDEN_FIRST = "9999-12-31T23:59:59.999Z";
 
@@ -325,6 +400,13 @@ export interface ChannelListProps {
    * line until it answers, so none changes height when the lines land.
    */
   previews?: ReadonlyMap<string, string>;
+  /**
+   * Direct messages only (#5519): each conversation's last-message time
+   * (`formatConversationTime`) at the end of its name line, and the sent or
+   * read check before its last line when that message is the viewer's
+   * (`conversationReadStatus`). A conversation with no entry draws neither.
+   */
+  rowMeta?: ReadonlyMap<string, ConversationRowMeta>;
   channels: ChatChannel[];
   activeChannelId: string | null;
   /** Viewer's `users.id`, subtracted when naming a DM by its other participant. */
@@ -508,6 +590,7 @@ export function ChannelList({
   kind = "channels",
   latestAt,
   previews,
+  rowMeta,
   channels,
   activeChannelId,
   viewerId,
@@ -838,6 +921,7 @@ export function ChannelList({
   const renderRow = (channel: ChatChannel, sectionKey?: string) => {
     const isActive = channel.id === activeChannelId;
     const twoLine = kind === "direct" && (!channel.hidden || isActive);
+    const meta = twoLine ? rowMeta?.get(channel.id) : undefined;
     const countsKnown = unreadByChannelId !== undefined;
     const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
     // Red is "you were addressed", and foundations §5 spells that
@@ -959,22 +1043,54 @@ export function ChannelList({
               }
             />
             {twoLine ? (
-              <span className="flex min-w-0 flex-col">
-                <ChannelRowName
-                  title={titleFor(channel)}
-                  muted={!!channel.muted}
-                  lift={!isActive}
-                />
-                {/*
-                  Caption, muted, never bold: the name carries the unread
-                  weight, as on the phone. A non-breaking space holds the line
-                  while the previews load.
-                */}
-                <span
-                  data-preview=""
-                  className="truncate text-caption font-normal text-muted-foreground"
-                >
-                  {previews?.get(channel.id) ?? "\u00a0"}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <ChannelRowName
+                    title={titleFor(channel)}
+                    muted={!!channel.muted}
+                    lift={!isActive}
+                  />
+                  {/* When the last line was sent, at the end of the name
+                      line, as WhatsApp and iMessage put it (#5519). */}
+                  {meta?.time ? (
+                    <time
+                      data-row-time=""
+                      title={meta.timeLabel ?? undefined}
+                      className="ml-auto shrink-0 text-caption font-normal tabular-nums text-muted-foreground"
+                    >
+                      <span aria-hidden="true">{meta.time}</span>
+                      <span className="sr-only">
+                        {meta.timeLabel ?? meta.time}
+                      </span>
+                    </time>
+                  ) : null}
+                </span>
+                <span className="flex min-w-0 items-center gap-1">
+                  {meta?.readStatus ? (
+                    <ReadStatusMark status={meta.readStatus} />
+                  ) : null}
+                  {/*
+                    Caption, muted, never bold: the name carries the unread
+                    weight, as on the phone. A non-breaking space holds the
+                    line while the previews load.
+                  */}
+                  <span
+                    data-preview=""
+                    className="min-w-0 flex-1 truncate text-caption font-normal text-muted-foreground"
+                  >
+                    {previews?.get(channel.id) ?? "\u00a0"}
+                  </span>
+                  {/* The badge ends the last line, under the time (#5519).
+                      No height of its own, so a row never moves when one
+                      arrives. */}
+                  <span className="flex h-0 shrink-0 items-center">
+                    <RowCount
+                      counts={counts}
+                      isDirect={isDm(channel)}
+                      showBadge={countsKnown && hasMention}
+                      announce={isUnread}
+                    />
+                  </span>
                 </span>
               </span>
             ) : (
@@ -984,8 +1100,9 @@ export function ChannelList({
                 lift={!isActive}
               />
             )}
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              {/*
+            {twoLine ? null : (
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {/*
               No read-only mark here any more (#2877). The lock that used to
               sit at this end meant "read-only" while the same glyph at the
               start of a row means "private", and the Discord import makes
@@ -993,24 +1110,17 @@ export function ChannelList({
               row. The channel says it is read-only where that matters, in
               its composer.
             */}
-              {/* A number only when it addresses the member, as Discord does:
+                {/* A number only when it addresses the member, as Discord does:
                   a merely unread channel says so with its bold name
                   (2026-11-07). */}
-              {countsKnown && hasMention ? (
-                <Badge
-                  variant="mention"
-                  className="h-6 justify-center px-2"
-                  aria-label={unreadAnnouncement(counts, isDm(channel))}
-                >
-                  {badgeLabel(counts.unreadCount, counts.mentionCount)}
-                </Badge>
-              ) : isUnread ? (
-                // No number to draw, but a screen reader still hears it.
-                <span className="sr-only">
-                  {unreadAnnouncement(counts, isDm(channel))}
-                </span>
-              ) : null}
-            </span>
+                <RowCount
+                  counts={counts}
+                  isDirect={isDm(channel)}
+                  showBadge={countsKnown && hasMention}
+                  announce={isUnread}
+                />
+              </span>
+            )}
           </button>
         </li>
       </ChannelRowMenu>

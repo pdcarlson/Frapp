@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   Suspense,
   useEffect,
   useMemo,
@@ -13,6 +14,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/lib/hooks/use-toast";
+import { ActivityEditor } from "./activity-editor";
 import {
   ErrorState,
   OfflineState,
@@ -36,7 +39,7 @@ import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { cn } from "@/lib/utils";
-import { can } from "@repo/validation";
+import { can, type ActivityCardKey } from "@repo/validation";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import {
   ActivityLinkRow,
@@ -98,6 +101,13 @@ import {
   useActivityFaces,
   useNowDate,
   useMyPermissions,
+  activityCardRole,
+  arrangeActivityCards,
+  sameActivityArrangement,
+  useActivityLayout,
+  useResetActivityLayout,
+  useSaveActivityLayout,
+  type ActivityCardArrangement,
   type ActivityAgendaDay,
   type ActivityArchiveGroup,
   type ActivityAgendaFilter,
@@ -962,6 +972,34 @@ export function ActivityPage() {
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
+  // The member's cards, in their order (#5520, `activity.md` § Cards), saved
+  // on their account so the phone draws the same page; their role's default
+  // until they save one, or while the read is out or failed.
+  const layout = useActivityLayout();
+  const cardRole = activityCardRole(permissions.data?.permissions);
+  const arrangement = useMemo(
+    () => arrangeActivityCards(layout.data, cardRole),
+    [layout.data, cardRole],
+  );
+  const { toast } = useToast();
+  const saveLayout = useSaveActivityLayout();
+  const resetLayout = useResetActivityLayout();
+  // Offered only once the member's arrangement and role are known: an
+  // editor opened on the default would save it over their own.
+  const [editing, setEditing] = useState(false);
+  const canEdit = layout.isSuccess && permissions.data !== undefined;
+  const finishEditing = (next: ActivityCardArrangement) => {
+    setEditing(false);
+    if (sameActivityArrangement(next, arrangement)) return;
+    saveLayout.mutate(next, {
+      onError: () =>
+        toast({
+          variant: "destructive",
+          title: "Couldn't save your cards",
+          description: "Your cards are back the way they were saved.",
+        }),
+    });
+  };
   const linkActions = useActivityLinkActions();
   const reminderActions = useActivityReminderActions();
   const actionGate = activityRowActionGate(useSubscriptionGate());
@@ -1083,11 +1121,68 @@ export function ActivityPage() {
   const rowOnCard = (item: ActivityRow): ReactNode => (
     <Row key={item.key} row={item} kit={kit} onCard />
   );
+  // Each card the member may move or hide, where their arrangement puts it.
+  // A card with nothing in it is null, as before. The Frapp card and the
+  // Calendar row are the phone's for now (#5520 step 5), so web keeps their
+  // place in the order and draws nothing there.
+  const group = (id: ActivityGroup["id"]) => {
+    const found = below.find((g) => g.id === id);
+    return found ? <GroupSection group={found} kit={kit} /> : null;
+  };
+  const cards: Record<ActivityCardKey, ReactNode> = {
+    nudge: null,
+    calendar: null,
+    recap: recap.data ? <RecapCard recap={recap.data} now={now} /> : null,
+    semester: standing.isPending ? (
+      <SemesterStripSkeleton />
+    ) : standing.data ? (
+      <SemesterStrip standing={standing.data} />
+    ) : null,
+    review: review ? (
+      <ReviewCard review={review} renderRow={rowOnCard} />
+    ) : null,
+    todo: agenda ? (
+      <ToDoSection
+        days={agenda.days}
+        unavailable={agenda.unavailable}
+        filter={filter}
+        // The one thing left is already on the week card.
+        onCard={agenda.next !== null}
+        onShowAll={() => {
+          // The note and its button leave with the narrowing, so the
+          // week line that set it takes the focus they held.
+          document.getElementById(`activity-week-line-${filter}`)?.focus();
+          setPicked("all");
+        }}
+        kit={kit}
+      />
+    ) : null,
+    reminders: group("reminders"),
+    waiting: group("made-by-you"),
+    links: group("links"),
+  };
 
   return (
     <ActivityFaces.Provider value={faceFor}>
       <div className="@container">
-        {showArchive ? (
+        {editing ? (
+          <ActivityEditor
+            initial={arrangement}
+            role={cardRole}
+            saved={layout.data?.saved ?? false}
+            onDone={finishEditing}
+            onReset={() => {
+              setEditing(false);
+              resetLayout.mutate(undefined, {
+                onError: () =>
+                  toast({
+                    variant: "destructive",
+                    title: "Couldn't reset your cards",
+                  }),
+              });
+            }}
+          />
+        ) : showArchive ? (
           <ArchiveView
             viewerId={userId}
             now={now}
@@ -1105,36 +1200,19 @@ export function ActivityPage() {
                 onFilter={setPicked}
               />
             ) : null}
-            {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
-            {standing.isPending ? (
-              <SemesterStripSkeleton />
-            ) : standing.data ? (
-              <SemesterStrip standing={standing.data} />
-            ) : null}
-            {review ? (
-              <ReviewCard review={review} renderRow={rowOnCard} />
-            ) : null}
-            {agenda ? (
-              <ToDoSection
-                days={agenda.days}
-                unavailable={agenda.unavailable}
-                filter={filter}
-                // The one thing left is already on the week card.
-                onCard={agenda.next !== null}
-                onShowAll={() => {
-                  // The note and its button leave with the narrowing, so the
-                  // week line that set it takes the focus they held.
-                  document
-                    .getElementById(`activity-week-line-${filter}`)
-                    ?.focus();
-                  setPicked("all");
-                }}
-                kit={kit}
-              />
-            ) : null}
-            {below.map((group) => (
-              <GroupSection key={group.id} group={group} kit={kit} />
+            {arrangement.shown.map((key) => (
+              <Fragment key={key}>{cards[key]}</Fragment>
             ))}
+            {canEdit ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() => setEditing(true)}
+              >
+                Edit Activity
+              </Button>
+            ) : null}
             {snoozedRows.length > 0 ? (
               <SnoozedSection rows={snoozedRows} kit={kit} />
             ) : null}

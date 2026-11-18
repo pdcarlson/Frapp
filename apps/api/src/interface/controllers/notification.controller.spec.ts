@@ -264,6 +264,7 @@ describe('NotificationController', () => {
         status_expires_at: null,
         custom_status: null,
         custom_status_expires_at: null,
+        read_receipts: true,
       };
 
       notificationService.getSettings.mockResolvedValue(expectedResult);
@@ -290,6 +291,7 @@ describe('NotificationController', () => {
         status_expires_at: null,
         custom_status: null,
         custom_status_expires_at: null,
+        read_receipts: true,
       };
 
       notificationService.updateSettings.mockResolvedValue(expectedResult);

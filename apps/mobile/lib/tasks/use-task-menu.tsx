@@ -23,6 +23,7 @@ import {
   MinusGlyph,
   PencilGlyph,
   PersonGlyph,
+  PlayGlyph,
   TrashGlyph,
   UndoGlyph,
 } from "@/components/control-glyphs";
@@ -35,6 +36,7 @@ import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { alertFailure } from "@/lib/failure-alert";
 import type { TaskRowModel } from "@/lib/tasks/board";
+import { useStartTask } from "@/lib/tasks/use-start-task";
 import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import {
   editTargetOfRow,
@@ -68,6 +70,8 @@ import {
  *   checkbox, so a task that asks for proof opens Mark done's sheet and a
  *   completion offers the same Undo. A screen with no checkbox of its own
  *   (the Calendar) takes `useCalendarTaskMenu`, which brings its own.
+ * - Start is the assignee's To do → In progress (`useStartTask`), as chat's
+ *   task card and the task screen's More offer it.
  * - Edit and Reassign open the board's edit sheet (New task in edit mode),
  *   Reassign with Assign to's picker over it.
  * - Remove people opens the task's screen in its select mode (`select=1`).
@@ -89,6 +93,12 @@ export function useTaskMenu({
   menuFor: (row: TaskRowModel) => ItemMenuHandle | null;
   /** A Calendar row: one task, or every copy of a group task the viewer gave. */
   menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
+  /**
+   * A task by id, read off the viewer's tasks: one copy, or (`group`) every
+   * copy of the group it belongs to, as Activity's one row for a task for
+   * everyone. `null` when the read doesn't hold it.
+   */
+  menuForTask: TaskMenuForTask;
   host: ReactNode;
 } {
   const router = useRouter();
@@ -140,6 +150,8 @@ export function useTaskMenu({
     [deleteTask],
   );
 
+  const startTask = useStartTask();
+
   const actionFor = useCallback(
     (key: TaskMenuKey, row: TaskRowModel): ItemMenuAction => {
       switch (key) {
@@ -149,6 +161,13 @@ export function useTaskMenu({
             label: markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind),
             glyph: (color) => <CheckGlyph color={color} />,
             run: () => void toggle.toggle(row),
+          };
+        case "start":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.start,
+            glyph: (color) => <PlayGlyph color={color} />,
+            run: () => startTask(row.id),
           };
         case "reopen":
           return {
@@ -220,7 +239,7 @@ export function useTaskMenu({
         }
       }
     },
-    [toggle, router, tasksData, runDelete],
+    [toggle, router, tasksData, runDelete, startTask],
   );
 
   const build = useCallback(
@@ -236,9 +255,10 @@ export function useTaskMenu({
         toggleRefused: toggle.refusal !== null,
       });
       const keys = taskMenuKeys(controls, scope).filter(
-        // Mid-write, the box is held; so is the menu's Mark done.
+        // Mid-write, the box is held; so are the menu's status moves.
         (key) =>
-          (key !== "markDone" && key !== "reopen") || toggle.canToggle(row),
+          (key !== "markDone" && key !== "start" && key !== "reopen") ||
+          toggle.canToggle(row),
       );
       return menu.handleFor({
         title,
@@ -251,6 +271,16 @@ export function useTaskMenu({
   const menuFor = useCallback(
     (row: TaskRowModel) => build(row, row.title, "copy"),
     [build],
+  );
+
+  const menuForTask = useCallback<TaskMenuForTask>(
+    (id, title, scope = "copy") => {
+      const row = rowById(id);
+      if (!row) return null;
+      // A copy with no group can't stand for one.
+      return build(row, title, row.groupId === null ? "copy" : scope);
+    },
+    [rowById, build],
   );
 
   const menuForCalendarTask = useCallback(
@@ -310,12 +340,19 @@ export function useTaskMenu({
     </>
   );
 
-  return { menuFor, menuForCalendarTask, host };
+  return { menuFor, menuForCalendarTask, menuForTask, host };
 }
 
+/** `useTaskMenu`'s menu for a task by id (`menuForTask`). */
+export type TaskMenuForTask = (
+  id: string,
+  title: string,
+  scope?: "copy" | "group",
+) => ItemMenuHandle | null;
+
 /**
- * The task menu for a screen with no checkbox (the Calendar and its Day
- * screen): its own Mark done, with Mark done's sheet and Undo, and a failed
+ * The task menu for a screen with no checkbox (the Calendar, its Day screen
+ * and Activity): its own Mark done, with Mark done's sheet and Undo, and a failed
  * one said in the platform alert, since the screen has no line for it.
  *
  * `host` holds the menu and the sheets, which draw over everything, so it
@@ -325,18 +362,22 @@ export function useTaskMenu({
  */
 export function useCalendarTaskMenu(): {
   menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
+  menuForTask: TaskMenuForTask;
   host: ReactNode;
   undoBar: ReactNode;
+  /** Which offer the bar holds, new with each completion; `null` with none. */
+  undoKey: number | null;
 } {
   const viewerId = useViewerUserId();
   const toggles = useTaskToggle(useTaskRowById(), { viewerId });
-  const { menuForCalendarTask, host } = useTaskMenu({ toggles });
+  const { menuForCalendarTask, menuForTask, host } = useTaskMenu({ toggles });
   const line = toggles.refusal ?? toggles.notice;
   useEffect(() => {
     if (line) Alert.alert(line);
   }, [line]);
   return {
     menuForCalendarTask,
+    menuForTask,
     host: (
       <>
         {host}
@@ -350,5 +391,6 @@ export function useCalendarTaskMenu(): {
         onUndo={() => void toggles.takeBack(toggles.undo!.id)}
       />
     ) : null,
+    undoKey: toggles.undo?.key ?? null,
   };
 }

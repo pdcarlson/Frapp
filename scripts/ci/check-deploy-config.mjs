@@ -37,7 +37,9 @@
 // path `/` (`docs/internal/environment/SECRETS_MANAGEMENT.md` § 5), and the
 // Cloud Run deploy pins each revision to those versions. So this proves what
 // Infisical holds, and nothing about Secret Manager: a failed or stale sync is
-// invisible from here.
+// invisible from here. It also gets what Cloud Run itself sets
+// (`CLOUD_RUN_PLATFORM`), because the API boots there and some settings are
+// valid only there.
 //
 // ── In a child process with no store in its environment ─────────────────────
 // Loading the module runs third-party code from this commit's `node_modules`
@@ -121,6 +123,17 @@ import { parseEnvBaseline } from "./lib/vercel-build-env.mjs";
 /** The boot check's source, and where the API's build puts it. */
 export const BOOT_CHECK_SOURCE = join("apps", "api", "src", "config", "env.validation.ts");
 export const BOOT_CHECK_BUILD = join("apps", "api", "dist", "config", "env.validation.js");
+
+/**
+ * What Cloud Run sets on every revision, added to the config the boot check is
+ * handed. The API deploys only to Cloud Run (`deploy-cloud-run.mjs`, which
+ * reserves these names), and `validateEnv` accepts some settings only there:
+ * `GOOGLE_DRIVE_SERVICE_ACCOUNT` or `GOOGLE_VERTEX_PROJECT` without a key file
+ * sign in as the service's own identity (`runtime-platform.ts`). Checked
+ * without it, a config the service accepts was refused and every deploy
+ * stopped (#5542). The value is a stand-in: only its presence is read.
+ */
+export const CLOUD_RUN_PLATFORM = Object.freeze({ K_SERVICE: "deploy-config-check" });
 
 const FLAGS = ["CHECK_API_BOOT", "DEPLOYS_FUNCTIONS", "VERIFIES_API"];
 
@@ -221,10 +234,11 @@ function runChild(modulePath) {
 }
 
 /**
- * Run the deployed commit's `validateEnv` on `config` in the child. Returns
- * `{ status: "ok" | "skipped" | "failed", message }`.
+ * Run the deployed commit's `validateEnv` on `config`, plus what the platform
+ * sets (`CLOUD_RUN_PLATFORM`), in the child. Only `config`'s values are
+ * redacted and counted. Returns `{ status: "ok" | "skipped" | "failed", message }`.
  */
-export function runBootCheck({ root, config, childEnv, exists = existsSync, spawn = spawnSync }) {
+export function runBootCheck({ root, config, childEnv, platform = CLOUD_RUN_PLATFORM, exists = existsSync, spawn = spawnSync }) {
   if (!exists(join(root, BOOT_CHECK_SOURCE))) {
     return {
       status: "skipped",
@@ -237,7 +251,8 @@ export function runBootCheck({ root, config, childEnv, exists = existsSync, spaw
   const result = spawn(process.execPath, [SELF, CHILD_FLAG, join(root, BOOT_CHECK_BUILD)], {
     cwd: root,
     env: childEnv,
-    input: JSON.stringify(config),
+    // The platform's names last, as Cloud Run sets them over anything configured.
+    input: JSON.stringify({ ...config, ...platform }),
     stdio: ["pipe", "ignore", "ignore", "pipe"],
     timeout: CHILD_TIMEOUT_MS,
   });

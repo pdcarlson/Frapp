@@ -648,3 +648,43 @@ describe('SupabaseChatMessageRepository — compareAndSetFlag', () => {
     expect(stored(DELETED)).toMatchObject({ flag: null, is_deleted: true });
   });
 });
+
+describe('SupabaseChatMessageRepository — findLatestPerChannel read status (#5519)', () => {
+  const row = (read_status: unknown) => ({
+    channel_id: CHANNEL_A,
+    message_id: POLL_A,
+    sender_id: USER_SHARED,
+    author_name: null,
+    content: 'see you at 6',
+    kind: 'text',
+    payload: null,
+    attachment_count: 0,
+    created_at: '2026-11-18T18:00:00Z',
+    forwarded_from: null,
+    has_gif: false,
+    ...(read_status === undefined ? {} : { read_status }),
+  });
+  const repoAnswering = (rows: unknown[]) =>
+    new SupabaseChatMessageRepository({
+      rpc: jest.fn().mockResolvedValue({ data: rows, error: null }),
+    } as unknown as FrappSupabaseClient);
+
+  it('serves sent and read as they come, and anything else as no status', async () => {
+    const latest = await repoAnswering([
+      row('sent'),
+      row('read'),
+      row(null),
+      row('delivered'),
+      // A database the migration hasn't reached has no column at all.
+      row(undefined),
+    ]).findLatestPerChannel(CHAPTER_A, USER_SHARED);
+
+    expect(latest.map((r) => r.read_status)).toEqual([
+      'sent',
+      'read',
+      null,
+      null,
+      null,
+    ]);
+  });
+});

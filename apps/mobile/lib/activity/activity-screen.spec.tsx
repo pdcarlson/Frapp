@@ -5,7 +5,11 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+} from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activityKeys, activityStandingKeys } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -205,9 +209,19 @@ const standing = vi.hoisted(() => ({
 }));
 
 /** The Activity card (#5464): what the server sent, and what the card did. */
+const cards = vi.hoisted(() => ({
+  layout: undefined as
+    | { card_order: string[]; hidden_cards: string[]; saved: boolean }
+    | undefined,
+  save: vi.fn(),
+  reset: vi.fn(),
+  refetch: vi.fn(() => Promise.resolve()),
+  pending: false,
+}));
 const nudge = vi.hoisted(() => ({
   ask: false,
   data: null as null | Record<string, unknown>,
+  enabledCalls: [] as boolean[],
   dismiss: vi.fn(),
   markSeen: vi.fn(),
   recheck: vi.fn(),
@@ -222,13 +236,43 @@ vi.mock("@/lib/ai/availability", () => ({
 }));
 vi.mock("@/components/ask/ask-sheet", () => ({ AskSheet: () => null }));
 
+/** Members the roster holds besides the officer, for a group's faces. */
+const roster = vi.hoisted(() => ({ members: [] as string[] }));
+
+/** The reads and writes behind a row's long-press menu (#5492). */
+const menuReads = vi.hoisted(() => ({
+  tasks: [] as Record<string, unknown>[],
+  events: [] as Record<string, unknown>[],
+  updateStatus: vi.fn<(input: unknown) => Promise<object>>(() =>
+    Promise.resolve({}),
+  ),
+  /** `GET /v1/tasks/:id`, for a review push the read lists no row for. */
+  fetchTask: vi.fn<(id: string) => Promise<unknown>>(() =>
+    Promise.reject(new Error("Not found")),
+  ),
+  deleteTask: vi.fn(() => Promise.resolve({})),
+  deleteEvent: vi.fn(),
+}));
+// The sheets a menu opens have their own specs; here only what opens them.
+vi.mock("@/components/tasks/new-task-sheet", async () => {
+  const { forwardRef, createElement } = await import("react");
+  return {
+    NewTaskSheet: forwardRef(function NewTaskSheet(props: object) {
+      return createElement("NewTaskSheet", props);
+    }),
+  };
+});
+
 const snoozeWrites = vi.hoisted(() => ({
   snooze: vi.fn(() => Promise.resolve()),
   unsnooze: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActivityNudge: () => ({ data: nudge.data }),
+  useActivityNudge: (options?: { enabled?: boolean }) => {
+    nudge.enabledCalls.push(options?.enabled ?? true);
+    return { data: nudge.data };
+  },
   useActivityNudgeActions: () => ({
     dismiss: nudge.dismiss,
     markSeen: nudge.markSeen,
@@ -256,10 +300,33 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: chapter.data,
     isPending: chapter.isPending,
   }),
+  // What a row's long press reads (#5492): the viewer's tasks and the
+  // chapter's events, as the board and the Calendar read them.
+  useTasks: () => ({ data: menuReads.tasks, isSuccess: true }),
+  useEvents: () => ({ data: menuReads.events, isSuccess: true }),
+  usePermissionList: () => links.permissions,
+  // A real mutation under the hook's own key, so the screen sees it settle.
+  useUpdateTaskStatus: () =>
+    useMutation({
+      mutationKey: ["tasks", "update-task-status"],
+      mutationFn: menuReads.updateStatus,
+    }),
+  useFetchTask: () => menuReads.fetchTask,
+  useDeleteTask: () => ({ mutateAsync: menuReads.deleteTask }),
+  useDeleteEvent: () => ({ mutate: menuReads.deleteEvent }),
   useConfirmTask: () => ({ mutateAsync: writes.confirm }),
   useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
   useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
+  // The member's arrangement (#5520): the role's default unless a test saves one.
+  useActivityLayout: () => ({
+    data: cards.layout,
+    refetch: cards.refetch,
+    isSuccess: !cards.pending,
+    isPending: cards.pending,
+  }),
+  useSaveActivityLayout: () => ({ mutate: cards.save }),
+  useResetActivityLayout: () => ({ mutate: cards.reset }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
   }),
@@ -268,7 +335,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRestoreActivityLink: () => ({ mutateAsync: links.restore }),
   useSetMessageReminder: () => ({ mutateAsync: reminderWrites.set }),
   useClearMessageReminder: () => ({ mutateAsync: reminderWrites.clear }),
-  // The roster knows the officer only: anyone else has left (#4402, faces).
+  // The roster knows the officer only, unless a test adds members: anyone
+  // else has left (#4402, faces).
   useActivityFaces: () => (id: string) =>
     id === "officer"
       ? {
@@ -276,7 +344,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           avatarUrl: "https://photos.example/olive.png",
           tint: { fill: "#102030", text: "#405060" },
         }
-      : null,
+      : roster.members.includes(id)
+        ? {
+            name: `Member ${id}`,
+            avatarUrl: null,
+            tint: { fill: "#102030", text: "#405060" },
+          }
+        : null,
 }));
 
 /** The props the screen last handed its sheet. */
@@ -284,6 +358,7 @@ const sheet = vi.hoisted(() => ({
   props: null as null | {
     row: { key: string } | null;
     viewerId: string | null;
+    canManage?: boolean;
     rowActionState?: string;
     onClosed: () => void;
     onActed: () => void;
@@ -315,6 +390,8 @@ import { SectionCount, SectionHeader } from "@/components/list-section";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
+import { ActivityEditor } from "@/components/activity/activity-editor";
+import { ItemActionsMenu } from "@/components/item-actions-menu";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { ProgressRing } from "@/components/activity/progress-ring";
 import { ReviewCard } from "@/components/activity/review-card";
@@ -337,6 +414,8 @@ const screen = () => (
 
 /** Every mounted focus effect, run again: the member came back. */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
+/** The member pushed a screen over this one. Refocus before the test ends. */
+const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 
 /**
  * Each re-read invalidates the list and the standing together, so a count of
@@ -424,6 +503,10 @@ const reviewToggle = (tree: ReactTestRenderer) =>
 
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
+    cards.layout = undefined;
+    cards.pending = false;
+    cards.save.mockClear();
+    cards.reset.mockClear();
     standing.value = {
       data: undefined,
       isPending: false,
@@ -436,6 +519,15 @@ describe("Activity screen (#3897)", () => {
     // Reset here, not at a test's end: a failing test must not leave the
     // next one rendering as an officer.
     links.permissions = [];
+    roster.members = [];
+    menuReads.tasks = [];
+    menuReads.events = [];
+    menuReads.updateStatus.mockClear();
+    menuReads.fetchTask
+      .mockReset()
+      .mockImplementation(() => Promise.reject(new Error("Not found")));
+    menuReads.deleteTask.mockClear();
+    menuReads.deleteEvent.mockClear();
     chapter.data = undefined;
     chapter.isPending = false;
     writes.confirm.mockReset().mockResolvedValue(undefined);
@@ -1533,10 +1625,24 @@ describe("Activity screen (#3897)", () => {
     const tree = render();
     expect(sheet.props?.row).toBeNull();
     act(() => {
+      row(tree, "Food bank").props.onPress();
+    });
+    expect(sheet.props?.row?.key).toBe("needs:hours:entry-1");
+    expect(sheet.props?.viewerId).toBe("me");
+  });
+
+  it("pushes a task's own screen, never the sheet (#5492)", () => {
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
       row(tree, "Book the venue").props.onPress();
     });
-    expect(sheet.props?.row?.key).toBe("needs:task:task-1");
-    expect(sheet.props?.viewerId).toBe("me");
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: "task-1" },
+    });
+    expect(sheet.props?.row ?? null).toBeNull();
   });
 
   it("re-reads before opening a review push's task, so a warm cache can't miss it", async () => {
@@ -1555,25 +1661,39 @@ describe("Activity screen (#3897)", () => {
         polls: [],
       },
     });
-    const fresh = read();
-    fresh.needs_you.tasks = fresh.needs_you.tasks.map((t) => ({
-      ...t,
-      unread: true,
-    }));
+    // The completion waits on the officer's sign-off: its sheet holds
+    // Confirm and Send back, which the task's screen doesn't (#5492).
+    const fresh = read({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [
+          task({
+            id: "task-9",
+            title: "Sweep the porch",
+            assignee_id: "sam",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            unread: true,
+          }),
+        ],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
     const refetch = vi.fn(() => Promise.resolve({ data: fresh }));
     activity.value = { ...activity.value, data: stale, refetch };
     links.markRead.mockClear();
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
-      review: "task-1",
+      review: "task-9",
     });
     try {
       render();
       await act(async () => {});
       expect(refetch).toHaveBeenCalledTimes(1);
-      expect(sheet.props?.row?.key).toBe("needs:task:task-1");
+      expect(sheet.props?.row?.key).toBe("needs-confirm:task:task-9");
       // Opened from the push reads it, as a tap on the row does.
       expect(links.markRead).toHaveBeenCalledWith([
-        { kind: "task", item_id: "task-1" },
+        { kind: "task", item_id: "task-9" },
       ]);
       expect(setParams).toHaveBeenCalledWith({ review: undefined });
     } finally {
@@ -1660,23 +1780,28 @@ describe("Activity screen (#3897)", () => {
   it("hands the sheet the row as the latest read has it", () => {
     const tree = render();
     act(() => {
-      row(tree, "Book the venue").props.onPress();
+      row(tree, "Food bank").props.onPress();
     });
+    const data = read();
     activity.value = {
       ...activity.value,
-      data: read({
+      data: {
+        ...data,
         needs_you: {
-          ...read().needs_you,
-          tasks: [task({ title: "Book the venue (moved)" })],
+          ...data.needs_you,
+          hours_approvals: data.needs_you.hours_approvals.map((entry) => ({
+            ...entry,
+            description: "Food bank (moved)",
+          })),
         },
-      }),
+      },
     };
     act(() => {
       tree.update(screen());
     });
     expect(
       (sheet.props?.row as unknown as { title: string } | null)?.title,
-    ).toBe("Book the venue (moved)");
+    ).toBe("Food bank (moved)");
   });
 
   describe("Last week (#4983)", () => {
@@ -1889,6 +2014,80 @@ describe("Activity screen (#3897)", () => {
     });
   });
 
+  describe("the member's cards (#5520)", () => {
+    const editLink = (tree: ReactTestRenderer) =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Choose which cards Activity shows, and their order." &&
+          typeof node.props.onPress === "function",
+      );
+
+    it("leaves out a card the member hid", () => {
+      cards.layout = {
+        card_order: ["todo", "calendar"],
+        hidden_cards: ["calendar"],
+        saved: true,
+      };
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-calendar-row",
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("edits in place of the page; Done saves only a change", () => {
+      const tree = render();
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const editor = tree.root.findByType(ActivityEditor);
+      act(() => {
+        editor.props.onDone(editor.props.initial);
+      });
+      expect(cards.save).not.toHaveBeenCalled();
+
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const again = tree.root.findByType(ActivityEditor);
+      const hidden = {
+        shown: again.props.initial.shown.filter((k: string) => k !== "links"),
+        hidden: ["links"],
+      };
+      act(() => {
+        again.props.onDone(hidden);
+      });
+      expect(cards.save).toHaveBeenCalledWith(hidden, expect.anything());
+      expect(tree.root.findAllByType(ActivityEditor)).toHaveLength(0);
+    });
+
+    it("waits for the arrangement before offering Edit Activity or asking for the Frapp card", () => {
+      cards.pending = true;
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityHint ===
+              "Choose which cards Activity shows, and their order." &&
+            typeof node.props.onPress === "function",
+        ),
+      ).toHaveLength(0);
+      expect(nudge.enabledCalls.at(-1)).toBe(false);
+    });
+
+    it("starts an officer with To review before their own To do", () => {
+      links.permissions = ["tasks:manage"];
+      const tree = render();
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const { shown } = tree.root.findByType(ActivityEditor).props.initial;
+      expect(shown.indexOf("review")).toBeLessThan(shown.indexOf("todo"));
+    });
+  });
+
   it("re-reads on a pull, the gesture its couldn't-load note names", async () => {
     const tree = render();
     const refetch = vi.mocked(activity.value.refetch);
@@ -1987,7 +2186,7 @@ describe("Activity screen (#3897)", () => {
       expect(button(tree, "Food bank").props.disabled).toBe(true);
       // Nor is it offered to a screen reader any more; Snooze still is.
       expect(rowPress(tree, "Food bank").props.accessibilityActions).toEqual([
-        { name: "rowMenu", label: "Snooze" },
+        { name: "menu:snooze", label: "Snooze" },
       ]);
       await act(async () => {
         button(tree, "Food bank").props.onPress();
@@ -2387,7 +2586,7 @@ describe("Activity screen (#3897)", () => {
       const press = rowPress(tree, "Food bank");
       expect(press.props.accessibilityActions).toEqual([
         { name: "rowAction", label: "Approve" },
-        { name: "rowMenu", label: "Snooze" },
+        { name: "menu:snooze", label: "Snooze" },
       ]);
       // The button itself is no second focus stop inside the row's.
       expect(button(tree, "Food bank").props.accessible).toBe(false);
@@ -2801,6 +3000,724 @@ describe("Activity screen (#3897)", () => {
       expect(
         alone.findAll((node) => node.props.testID === "activity-row-progress"),
       ).toHaveLength(0);
+    });
+  });
+
+  describe("a task for everyone is one row (#5492)", () => {
+    /** One task sent to 30 members, as Paul's screenshot had it. */
+    const group = (overrides: Record<string, unknown> = {}) => ({
+      id: "group-1",
+      audience: "everyone",
+      target_id: null,
+      target_name: null,
+      total: 30,
+      done: 12,
+      confirmed: 4,
+      task_id: "copy-7",
+      title: "Clean the house",
+      description: null,
+      due_date: "2099-01-01",
+      due_at: null,
+      point_reward: 5,
+      proof_kind: "none",
+      overdue: false,
+      preview_assignee_ids: ["m1", "gone", "m2", "m3", "m4"],
+      created_at: "2026-11-17T00:00:00.000Z",
+      ...overrides,
+    });
+    const copies = Array.from({ length: 30 }, (_, index) =>
+      task({
+        id: `copy-${index}`,
+        title: "Clean the house",
+        assignee_id: `m${index}`,
+        assignee_name: `Member ${index}`,
+        created_by: "me",
+      }),
+    );
+    const madeRead = (items?: unknown[]) =>
+      read({
+        made_by_you: {
+          polls: [],
+          events: [],
+          tasks: copies,
+          ...(items ? { task_items: items } : {}),
+        },
+      });
+    const groupRow = (tree: ReactTestRenderer) => row(tree, "Clean the house");
+
+    beforeEach(() => {
+      roster.members = ["m1", "m2", "m3", "m4"];
+    });
+
+    it("draws 30 copies as one row: Everyone, three faces and +27, a bar of 30", () => {
+      activity.value = {
+        ...activity.value,
+        data: madeRead([{ kind: "group", group: group() }]),
+      };
+      const tree = render();
+      expect(
+        rowLabels(tree).filter((title) => title === "Clean the house"),
+      ).toHaveLength(1);
+      expect(screenText(tree)).not.toContain("Show all");
+      const drawn = groupRow(tree);
+      const press = drawn.find(
+        (node) => typeof node.props.accessibilityLabel === "string",
+      );
+      // Said with its title; the detail is the hint.
+      expect(press.props.accessibilityLabel).toBe(
+        "Clean the house, 12 of 30 done",
+      );
+      // The 30 is said once, in the bar: not in the detail.
+      expect(press.props.accessibilityHint).toMatch(/^Everyone · Due /);
+      // Three faces of those the roster holds ("gone" has left), then the
+      // rest counted.
+      const stack = drawn.find(
+        (node) => node.props.testID === "activity-face-stack",
+      );
+      expect(
+        stack.findAll(
+          (node) =>
+            (node.type as unknown) === "View" &&
+            node.props.testID === "activity-face-stack-face",
+        ),
+      ).toHaveLength(3);
+      expect(drawnText(stack)).toContain("+27");
+      const bar = drawn.find(
+        (node) => node.props.testID === "activity-row-progress",
+      );
+      expect(drawnText(bar)).toContain("12 of 30");
+      // Nothing overdue: no badge.
+      expect(drawn.findAllByType(StatusChip)).toHaveLength(0);
+    });
+
+    it("badges it Overdue in the destructive hue when any copy is", () => {
+      activity.value = {
+        ...activity.value,
+        data: madeRead([{ kind: "group", group: group({ overdue: true }) }]),
+      };
+      const chip = groupRow(render()).findByType(StatusChip);
+      expect(chip.props.label).toBe("Overdue");
+      expect(chip.props.hue).toBe(tokens.color.semantic.destructive);
+    });
+
+    it("pushes the task's screen on the group's copy", () => {
+      activity.value = {
+        ...activity.value,
+        data: madeRead([{ kind: "group", group: group() }]),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => groupRow(tree).props.onPress());
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "copy-7" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
+    });
+
+    it("lists each copy from an API before task_items", () => {
+      activity.value = { ...activity.value, data: madeRead() };
+      const tree = render();
+      // The first three, then the rest behind Show all.
+      expect(
+        rowLabels(tree).filter((title) => title === "Clean the house"),
+      ).toHaveLength(3);
+      expect(screenText(tree)).toContain("Show all 30");
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-face-stack",
+        ),
+      ).toHaveLength(0);
+    });
+  });
+
+  describe("a row's long press (#5492)", () => {
+    /** A task as the viewer's `GET /v1/tasks` serves it. */
+    const listed = (overrides: Record<string, unknown> = {}) => ({
+      id: "task-1",
+      title: "Book the venue",
+      description: null,
+      created_by: "officer",
+      assignee_id: "me",
+      status: "TODO",
+      stored_status: "TODO",
+      due_date: "2099-01-01",
+      due_at: null,
+      point_reward: null,
+      points_awarded: false,
+      proof_kind: "none",
+      subtasks: [],
+      photos: [],
+      group_id: null,
+      group: null,
+      ...overrides,
+    });
+    const rowPress = (tree: ReactTestRenderer, label: string) =>
+      row(tree, label).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+    /** Long-presses the row and returns the glass menu's rows, in order. */
+    const longPress = (tree: ReactTestRenderer, label: string) => {
+      act(() =>
+        rowPress(tree, label).props.onLongPress({
+          nativeEvent: { pageY: 300 },
+        }),
+      );
+      return menuRows(tree);
+    };
+    /** The open menu's items (the task and event hooks mount one each, closed). */
+    const menuItems = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(ItemActionsMenu)
+        .flatMap((menu) =>
+          menu.findAll(
+            (node) =>
+              (node.type as unknown) === "Pressable" &&
+              node.props.accessibilityRole === "menuitem",
+          ),
+        );
+    const menuRows = (tree: ReactTestRenderer) =>
+      menuItems(tree).map((node) => node.props.accessibilityLabel as string);
+    const pick = (tree: ReactTestRenderer, label: string) =>
+      act(() =>
+        menuItems(tree)
+          .find((node) => node.props.accessibilityLabel === label)!
+          .props.onPress(),
+      );
+
+    /**
+     * A task write through the query client's own cache, as any screen's
+     * hook sends one: in flight across a render, then landed.
+     */
+    const writeElsewhere = async (name: string) => {
+      let land!: () => void;
+      const landed = new Promise<void>((resolve) => {
+        land = resolve;
+      });
+      let done!: Promise<unknown>;
+      await act(async () => {
+        done = queryClient
+          .getMutationCache()
+          .build(queryClient, {
+            mutationKey: ["tasks", name],
+            mutationFn: () => landed,
+          })
+          .execute(undefined);
+        // The cache tells its observers on the next tick.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => {
+        land();
+        await done;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+
+    /** What each status write sent, in order. */
+    const statusWrites = () =>
+      menuReads.updateStatus.mock.calls.map(([input]) => input);
+
+    it("offers a member their task's Mark done, Start and Snooze", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const tree = render();
+      expect(longPress(tree, "Book the venue")).toEqual([
+        "Mark done",
+        "Start",
+        "Snooze",
+      ]);
+      await act(async () => pick(tree, "Mark done"));
+      // The board's checkbox writes: To do, then done.
+      expect(statusWrites()).toEqual([
+        { id: "task-1", body: { status: "IN_PROGRESS" } },
+        { id: "task-1", body: { status: "COMPLETED" } },
+      ]);
+    });
+
+    it("starts a To do from the menu, as chat's card did", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const tree = render();
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Start"));
+      expect(statusWrites()).toEqual([
+        { id: "task-1", body: { status: "IN_PROGRESS" } },
+      ]);
+    });
+
+    it("reads Activity again once a write from its menu settles, and not for one made elsewhere", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      invalidate.mockClear();
+      // A write made elsewhere (the board, a card) while Activity is mounted.
+      await writeElsewhere("update-task-status");
+      expect(listRereads(invalidate)).toBe(0);
+      expect(nudge.recheck).not.toHaveBeenCalled();
+      // The menu's own: read again, and the card asked again.
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Start"));
+      expect(listRereads(invalidate)).toBe(1);
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+      invalidate.mockRestore();
+    });
+
+    it("leaves a write made after Activity loses focus to the focus reread", async () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [listed({ id: "out", assignee_id: "sam" })];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "out",
+                  title: "Assigned",
+                  assignee_id: "sam",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      // What Edit's sheet sends on save, in flight across a render.
+      const otherWrite = () => writeElsewhere("update-task");
+      try {
+        // Edit opens its sheet: picked, so a save from it rereads.
+        longPress(tree, "Assigned");
+        pick(tree, "Edit");
+        invalidate.mockClear();
+        await otherWrite();
+        expect(listRereads(invalidate), "a save from the menu's sheet").toBe(1);
+        // Picked again, then the member leaves before any write: whatever
+        // is written while Activity is behind another screen isn't its.
+        longPress(tree, "Assigned");
+        pick(tree, "Edit");
+        act(() => blur());
+        invalidate.mockClear();
+        await otherWrite();
+        expect(listRereads(invalidate)).toBe(0);
+      } finally {
+        act(() => refocus());
+        invalidate.mockRestore();
+      }
+    });
+
+    it("offers an officer the task's actions on one they assigned, with no Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [listed({ id: "out", assignee_id: "sam" })];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "out",
+                  title: "Assigned",
+                  assignee_id: "sam",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      expect(longPress(tree, "Assigned")).toEqual([
+        "Mark done",
+        "Edit",
+        "Reassign",
+        "Duplicate",
+        "Delete",
+      ]);
+    });
+
+    it("offers a group's row the group's actions, as the Calendar's does", () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [
+        listed({
+          id: "copy-7",
+          title: "Clean the house",
+          assignee_id: "m7",
+          group_id: "group-1",
+          group: { id: "group-1", audience: "everyone", total: 30, done: 12 },
+        }),
+      ];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "group",
+                group: {
+                  id: "group-1",
+                  audience: "everyone",
+                  target_id: null,
+                  target_name: null,
+                  total: 30,
+                  done: 12,
+                  confirmed: 4,
+                  task_id: "copy-7",
+                  title: "Clean the house",
+                  description: null,
+                  due_date: "2099-01-01",
+                  due_at: null,
+                  point_reward: null,
+                  proof_kind: "none",
+                  overdue: false,
+                  preview_assignee_ids: [],
+                  created_at: "2026-11-17T00:00:00.000Z",
+                },
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      expect(longPress(tree, "Clean the house")).toEqual([
+        "Remove people",
+        "Duplicate",
+        "Delete for everyone",
+      ]);
+      pick(tree, "Remove people");
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "copy-7", select: "1" },
+      });
+      // Each is a named action for a screen reader too.
+      expect(
+        rowPress(tree, "Clean the house").props.accessibilityActions,
+      ).toEqual([
+        { name: "menu:removePeople", label: "Remove people" },
+        { name: "menu:duplicate", label: "Duplicate" },
+        { name: "menu:deleteForEveryone", label: "Delete for everyone" },
+      ]);
+    });
+
+    it("offers an event row Edit, Duplicate and Delete, and still Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.events = [
+        {
+          id: "ev-1",
+          name: "Chapter",
+          location: null,
+          start_time: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+          end_time: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+          point_value: null,
+          is_mandatory: false,
+        },
+      ];
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [eventIn(3)] }),
+      };
+      const tree = render();
+      // Destructive last, under the break.
+      expect(longPress(tree, "Chapter")).toEqual([
+        "Edit",
+        "Duplicate",
+        "Snooze",
+        "Delete",
+      ]);
+      expect(rowPress(tree, "Chapter").props.accessibilityActions).toEqual([
+        { name: "menu:edit", label: "Edit" },
+        { name: "menu:duplicate", label: "Duplicate" },
+        { name: "menu:delete", label: "Delete" },
+        { name: "menu:snooze", label: "Snooze" },
+      ]);
+    });
+
+    /** An event the chapter's list holds, for its menu. */
+    const listedEvent = (id = "ev-1") => ({
+      id,
+      name: "Chapter",
+      location: null,
+      start_time: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+      end_time: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+      point_value: null,
+      is_mandatory: false,
+    });
+
+    it("offers Unsnooze on a snoozed row beside its event's actions", async () => {
+      links.permissions = ["*"];
+      menuReads.events = [listedEvent()];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            eventIn(3, {
+              snoozed_until: new Date(Date.now() + 86_400_000).toISOString(),
+            }),
+          ],
+        }),
+      };
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      try {
+        const tree = render();
+        act(() =>
+          tree.root
+            .findAll(
+              (node) =>
+                (node.type as unknown) === "Pressable" &&
+                drawnText(node) === "Snoozed (1)",
+            )[0]!
+            .props.onPress(),
+        );
+        expect(longPress(tree, "Chapter")).toEqual([
+          "Edit",
+          "Duplicate",
+          "Unsnooze",
+          "Delete",
+        ]);
+        alert.mockClear();
+        pick(tree, "Unsnooze");
+        // Asked first, as before the menu.
+        const [title, , buttons] = alert.mock.calls.at(-1)!;
+        expect(title).toBe("Chapter");
+        await act(async () => {
+          buttons!.find((button) => button.text === "Unsnooze")!.onPress!();
+        });
+        expect(snoozeWrites.unsnooze).toHaveBeenCalledWith({
+          kind: "event",
+          item_id: "ev-1",
+        });
+      } finally {
+        alert.mockRestore();
+      }
+    });
+
+    it("offers an Archive row its item's actions, never Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.events = [listedEvent("ev-old")];
+      archive.value = {
+        ...archive.value,
+        data: {
+          events: [
+            eventIn(-48, {
+              id: "ev-old",
+              name: "Old meeting",
+              checked_in: true,
+            }),
+          ],
+          tasks: [],
+          polls: [],
+          unavailable: [],
+        },
+      };
+      const tree = render();
+      act(() => {
+        tree.root
+          .findAll(
+            (node) =>
+              (node.type as unknown) === "Pressable" &&
+              drawnText(node) === "Archive",
+          )[0]!
+          .props.onPress();
+      });
+      expect(longPress(tree, "Old meeting")).toEqual([
+        "Edit",
+        "Duplicate",
+        "Delete",
+      ]);
+    });
+
+    it("opens a completion waiting on the officer as its review, wherever it sits", () => {
+      links.permissions = ["*"];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "done-1",
+                  title: "Swept the porch",
+                  assignee_id: "sam",
+                  created_by: "me",
+                  status: "COMPLETED",
+                  stored_status: "COMPLETED",
+                  point_reward: null,
+                  proof_kind: "photo",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => row(tree, "Swept the porch").props.onPress());
+      // Not the task screen, which has no Confirm or Send back.
+      expect(push).not.toHaveBeenCalled();
+      expect(sheet.props?.row?.key).toBe("made:task:done-1");
+      // The sheet decides by the same rule, on the same viewer.
+      expect(sheet.props?.canManage).toBe(true);
+    });
+
+    describe("a review push for a task the read lists no row for", () => {
+      /** A copy of a task for everyone, as `GET /v1/tasks/:id` reads it. */
+      const copy = (overrides: Record<string, unknown> = {}) => ({
+        id: "copy-3",
+        title: "Clean the house",
+        assignee_id: "m3",
+        created_by: "me",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        due_date: "2099-01-01",
+        due_at: null,
+        point_reward: 5,
+        points_awarded: false,
+        proof_kind: "none",
+        confirmed_at: null,
+        ...overrides,
+      });
+      const pushFor = async (read: unknown) => {
+        const router = vi.mocked(useRouter)() as unknown as {
+          setParams?: (params: unknown) => void;
+        };
+        router.setParams = vi.fn();
+        links.permissions = ["*"];
+        menuReads.fetchTask.mockResolvedValue(read);
+        activity.value = {
+          ...activity.value,
+          refetch: vi.fn(() => Promise.resolve({ data: activity.value.data })),
+        };
+        vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+          review: "copy-3",
+        });
+        const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+        push.mockClear();
+        try {
+          render();
+          await act(async () => {});
+        } finally {
+          vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+          delete router.setParams;
+        }
+        expect(menuReads.fetchTask).toHaveBeenCalledWith("copy-3");
+        return push;
+      };
+
+      it("reads it by id and opens its review when it waits on the viewer", async () => {
+        const push = await pushFor(copy());
+        expect(push).not.toHaveBeenCalled();
+        expect(sheet.props?.row?.key).toBe("needs-confirm:task:copy-3");
+      });
+
+      it("pushes its screen once it no longer waits on them", async () => {
+        const push = await pushFor(
+          copy({
+            confirmed_at: "2026-11-18T00:00:00.000Z",
+            points_awarded: true,
+          }),
+        );
+        expect(push).toHaveBeenCalledWith({
+          pathname: "/task-details",
+          params: { id: "copy-3" },
+        });
+        expect(sheet.props?.row ?? null).toBeNull();
+      });
+    });
+
+    it("asks the card again on the way back from a task the week card's Next pushed", () => {
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      try {
+        act(() => row(tree, "Book the venue").props.onPress());
+        expect(push).toHaveBeenCalledWith({
+          pathname: "/task-details",
+          params: { id: "task-1" },
+        });
+        act(() => blur());
+        expect(nudge.recheck).not.toHaveBeenCalled();
+      } finally {
+        act(() => refocus());
+      }
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+      // Once: a later return asks nothing more.
+      act(() => {
+        blur();
+        refocus();
+      });
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the newest Undo, a link's or a Mark done's, never hiding one behind the other", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      links.hidden.mockResolvedValue(undefined);
+      const linkRow = {
+        link: { id: "l1" },
+        title: "Google Form",
+      } as unknown as Parameters<
+        NonNullable<typeof sheet.props>["linkActions"]["hide"]
+      >[0];
+      const tree = render();
+      const bars = () =>
+        tree.root
+          .findAllByType(UndoBar)
+          .map((bar) => bar.props.message as string);
+      await act(async () => sheet.props!.linkActions.hide(linkRow));
+      expect(bars()).toEqual(["Hidden"]);
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Mark done"));
+      // The Mark done's replaces the link's, rather than wait behind it.
+      expect(bars()).toEqual(["Marked done"]);
+      await act(async () => sheet.props!.linkActions.hide(linkRow));
+      expect(bars()).toEqual(["Hidden"]);
+    });
+
+    it("gives a member's event row only Snooze, on the press itself", () => {
+      links.permissions = ["members:view"];
+      menuReads.events = [];
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [eventIn(3)] }),
+      };
+      const sheetSpy = vi
+        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+        .mockImplementation(() => undefined);
+      const dialog = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      try {
+        const tree = render();
+        // `Alert.alert` is the setup's mock: only this press's calls count.
+        sheetSpy.mockClear();
+        dialog.mockClear();
+        act(() => rowPress(tree, "Chapter").props.onLongPress());
+        // No glass menu: the times open at once, as before the menu.
+        expect(menuRows(tree)).toEqual([]);
+        expect(sheetSpy.mock.calls.length + dialog.mock.calls.length).toBe(1);
+      } finally {
+        sheetSpy.mockRestore();
+        dialog.mockRestore();
+      }
     });
   });
 

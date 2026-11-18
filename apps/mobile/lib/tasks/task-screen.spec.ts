@@ -100,6 +100,8 @@ describe("taskScreenControls", () => {
       }),
     ).toEqual({
       markDone: true,
+      // Their own To do: chat's card offered Start, and so do these (#5492).
+      start: true,
       edit: false,
       removePeople: false,
       reopen: false,
@@ -109,6 +111,30 @@ describe("taskScreenControls", () => {
       reassign: false,
       duplicate: false,
     });
+  });
+
+  it("gives Start to the assignee of a To do only: not once started, not an officer, not while refused", () => {
+    const start = (
+      overrides: Record<string, unknown>,
+      viewerId: string,
+      canManage = false,
+      toggleRefused = false,
+    ) =>
+      taskScreenControls({
+        row: row(overrides),
+        viewerId,
+        canManage,
+        toggleRefused,
+      }).start;
+    expect(start({}, "me")).toBe(true);
+    // Overdue still reads its stored To do.
+    expect(start({ status: "OVERDUE" }, "me")).toBe(true);
+    expect(
+      start({ status: "IN_PROGRESS", stored_status: "IN_PROGRESS" }, "me"),
+    ).toBe(false);
+    // The API's move is the assignee's, whatever the officer holds.
+    expect(start({}, "officer", true)).toBe(false);
+    expect(start({}, "me", false, true)).toBe(false);
   });
 
   it("gives no Mark done to someone who neither has the task nor manages tasks, or while refused", () => {
@@ -194,8 +220,8 @@ describe("taskMenuKeys (#5492)", () => {
       scope,
     );
 
-  it("gives a member only Mark done on their own task", () => {
-    expect(keysFor({}, "me", false)).toEqual(["markDone"]);
+  it("gives a member only Mark done and Start on their own To do", () => {
+    expect(keysFor({}, "me", false)).toEqual(["markDone", "start"]);
   });
 
   it("gives a member nothing on a task that isn't theirs", () => {

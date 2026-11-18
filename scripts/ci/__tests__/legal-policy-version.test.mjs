@@ -60,6 +60,9 @@
 //   Privacy pin. Its added end, that Frapp AI then tidies the text before the
 //   member chooses whether to send it (same day, from the PR's review), was
 //   approved and ruled non-material by the owner too.
+//   The read-receipts sentence in section 1 (2026-11-18, #5519, in the
+//   wording Paul approved) moved only the Privacy pin on those precedents,
+//   pending the owner's material-or-not ruling in its PR.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -98,7 +101,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "November 2026",
-    fingerprint: "378058610b7e3563",
+    fingerprint: "0fc56f87cbeee9d2",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

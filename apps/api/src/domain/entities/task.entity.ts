@@ -93,6 +93,22 @@ export interface TaskGroup {
   created_at: string;
 }
 
+/**
+ * What a group's progress and its Activity row need of each copy (#5492):
+ * whose it is and where it stands, without its text, proof or notes, so
+ * counting a group of 150 reads a few columns of each copy, not every one.
+ */
+export type TaskGroupCopyState = Pick<
+  Task,
+  | 'id'
+  | 'group_id'
+  | 'assignee_id'
+  | 'status'
+  | 'points_awarded'
+  | 'due_date'
+  | 'due_at'
+>;
+
 /** What a task read says about its group (#4295 step 3). */
 export interface TaskGroupSummary extends TaskGroupProgress {
   id: string;

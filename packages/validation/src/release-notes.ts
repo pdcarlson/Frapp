@@ -131,6 +131,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Drafted minutes now list last meeting's open action items, each marked reported done, carried over, or not mentioned for you to confirm, and ask about usual reports missing from tonight's notes.",
       "A task suggested from the minutes can now go to a committee, a few people, or up for grabs, with the same picker as the Tasks page.",
       "Minutes now open with a TL;DR: a few short lines saying what was decided, what you need to do and by when, and what's coming up.",
+      "Activity's cards are now yours to arrange: Edit Activity at the foot of the page hides a card, brings it back or moves it, and your phone and the web keep the same order.",
+      "Messages now show when each conversation's last message was sent, and your own direct messages show one check once sent and two once read, with a Read receipts switch in Settings to turn that off.",
+      "Minutes now keep a list of what was tabled, and a draft picks it up from your notes or the recording.",
     ],
     web: [
       "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",
@@ -149,6 +152,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Tapping a task now opens it as its own page with its steps, proof and history, and officers can take people out of a task sent to everyone.",
       "A repeating meeting's series screen now lists only the action items still open across all its minutes, and an item drops off once the task it became is done.",
       "Press and hold a task or an event to mark it done, edit it, hand it to someone else, duplicate it or delete it, with each choice shown only to people allowed to use it.",
+      "In Activity, a task you sent to everyone is one row with their faces and how many are done, a task opens its own page, and a long press on a task or event shows its actions.",
     ],
   },
   {

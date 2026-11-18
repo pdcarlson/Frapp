@@ -17,7 +17,11 @@ import {
   readTaskPayload,
 } from "@repo/chat-core/cards";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useReviewServiceEntry, type ActivityRow } from "@repo/hooks";
+import {
+  activityRowAwaitsReview,
+  useReviewServiceEntry,
+  type ActivityRow,
+} from "@repo/hooks";
 import {
   MESSAGE_REMINDER_PRESETS,
   messageReminderPresetTime,
@@ -107,9 +111,12 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 
 /**
  * The sheet an Activity row opens: the record, drawn with the card chat draws
- * for it, so a member votes, marks a task done, confirms it or checks in here
- * with the controls they already know from chat (#3897). Web's twin is
- * `apps/web/components/activity/activity-panel.tsx`.
+ * for it, so a member votes, confirms a completion or checks in here with the
+ * controls they already know from chat (#3897). Web's twin is
+ * `apps/web/components/activity/activity-panel.tsx`. A task row pushes the
+ * task's own screen instead (#5492; Paul, 2026-11-18: the sheet is "lazy"),
+ * apart from a completion waiting on the viewer's sign-off
+ * (`ReviewTaskSheet`).
  *
  * The cards are chat's own components, unchanged. Each reads its record's
  * live state by id and its buttons call the same routes they call in chat.
@@ -136,6 +143,7 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 export function ActivitySheet({
   row,
   viewerId,
+  canManage = false,
   rowActionState = "idle",
   onClosed,
   onActed,
@@ -144,6 +152,11 @@ export function ActivitySheet({
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
+  /**
+   * `tasks:manage` (and Tasks on), as the screen read it for
+   * `activityRowAwaitsReview`: which task rows open here as a review.
+   */
+  canManage?: boolean;
   /**
    * Where the row's own Confirm, Approve or Check in stands (#4437, #4427), so the sheet
    * opened from that row doesn't offer the same approval a second time.
@@ -198,6 +211,7 @@ export function ActivitySheet({
                 key={row.key}
                 row={row}
                 viewerId={viewerId}
+                canManage={canManage}
                 rowActionState={rowActionState}
                 onActed={onActed}
                 onNavigate={closeSheet}
@@ -219,6 +233,7 @@ export function ActivitySheet({
 function SheetCard({
   row,
   viewerId,
+  canManage,
   rowActionState,
   onActed,
   onNavigate,
@@ -227,6 +242,7 @@ function SheetCard({
 }: {
   row: ActivityRow;
   viewerId: string;
+  canManage: boolean;
   rowActionState: ActivityRowActionState;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
@@ -236,7 +252,16 @@ function SheetCard({
 }) {
   switch (row.kind) {
     case "task":
-      return <TaskSheet row={row} viewerId={viewerId} />;
+      // Only what waits on the viewer's sign-off: every other task row
+      // pushes the task's own screen (#5492).
+      // The screen's own rule (`activityRowAwaitsReview`), on the same
+      // viewer, so it never routes a row here that draws nothing.
+      return activityRowAwaitsReview(row, { viewerId, canManage }) ? (
+        <ReviewTaskSheet row={row} viewerId={viewerId} />
+      ) : null;
+    case "task-group":
+      // A task for everyone pushes the task's screen, never this sheet.
+      return null;
     case "event":
       return (
         <EventSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
@@ -454,7 +479,14 @@ function createLinkStyles(tokens: SignetTokens) {
   });
 }
 
-function TaskSheet({
+/**
+ * A completion waiting on the viewer's sign-off (`activityRowAwaitsReview`:
+ * the To review card's rows, and any task row whose task waits on them):
+ * chat's task card, with its proof above Confirm and Send back (#4635). The
+ * one task that still opens a sheet: the task's screen (#5492) has no
+ * Confirm or Send back yet, and those are what this row is for.
+ */
+function ReviewTaskSheet({
   row,
   viewerId,
 }: {

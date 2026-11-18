@@ -1025,6 +1025,7 @@ describe("Calendar long-press menus", () => {
     openMenu(mine);
     expect(labels(tree)).toEqual([
       "Mark done",
+      "Start",
       "Edit",
       "Reassign",
       "Duplicate",
@@ -1094,6 +1095,7 @@ describe("Calendar long-press menus", () => {
     openMenu(chip);
     expect(labels(tree)).toEqual([
       "Mark done",
+      "Start",
       "Edit",
       "Reassign",
       "Duplicate",

@@ -76,6 +76,11 @@ export interface TaskScreenControls {
   edit: boolean;
   /** The minus, on a group task's copy. */
   removePeople: boolean;
+  /**
+   * In More: Start, the assignee's To do → In progress (#5492), which chat's
+   * task card offers and the screen otherwise didn't.
+   */
+  start: boolean;
   /** In More: Mark not done. */
   reopen: boolean;
   /** In More: Give it back, on a task claimed from Up for grabs. */
@@ -133,6 +138,9 @@ export function taskScreenControls({
         isAssignee,
         signedOffAutomatically: rowSignedOffAutomatically(row),
       }),
+    // The API's assignee transition: their own task, still To do. The
+    // stored status, as the card reads it, so an overdue To do starts too.
+    start: isAssignee && stored === "TODO" && !toggleRefused,
     // The assignee of a task taken from Up for grabs, until it is done
     // (`POST /v1/tasks/:id/release`).
     release: isAssignee && row.openTaskId !== null && !row.isDone,
@@ -147,6 +155,7 @@ export function taskScreenControls({
 /** A task's long-press menu rows (#5492), in the order they are drawn. */
 export type TaskMenuKey =
   | "markDone"
+  | "start"
   | "reopen"
   | "edit"
   | "reassign"
@@ -171,6 +180,7 @@ export function taskMenuKeys(
   const keys: TaskMenuKey[] = [];
   if (scope === "copy") {
     if (controls.markDone) keys.push("markDone");
+    if (controls.start) keys.push("start");
     if (controls.reopen) keys.push("reopen");
     if (controls.edit) keys.push("edit");
     if (controls.reassign) keys.push("reassign");

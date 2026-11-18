@@ -2,6 +2,7 @@ import {
   Task,
   TaskPhoto,
   TaskGroup,
+  TaskGroupCopyState,
   TaskSeries,
   TaskStatus,
   TaskSubtask,
@@ -32,6 +33,12 @@ export interface TaskListFilter {
   notAssigneeId?: string;
   /** Only tasks this member created. */
   createdBy?: string;
+  /**
+   * `true`: only one-person tasks, leaving out every copy of a task for
+   * everyone (`group_id` is null), so a list of what someone assigned can
+   * count each group once beside them (#5492).
+   */
+  groupless?: boolean;
   /** Only tasks in this stored status. */
   status?: TaskStatus;
   /** `true`: only confirmed tasks; `false`: only unconfirmed ones. */
@@ -146,6 +153,24 @@ export interface ITaskRepository {
   findGroups(chapterId: string, ids: string[]): Promise<TaskGroup[]>;
   /** Every copy of these groups, any order. */
   findGroupCopies(chapterId: string, groupIds: string[]): Promise<Task[]>;
+  /**
+   * Every copy of these groups as {@link TaskGroupCopyState}, a few columns
+   * each, by id: for counting a group and drawing its row (#5492).
+   */
+  findGroupCopyStates(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<TaskGroupCopyState[]>;
+  /**
+   * The groups this member made that still have a copy not confirmed, newest
+   * first, at most `limit` (#5492). A group whose every copy is confirmed is
+   * finished, and left out in SQL so it never takes a slot from a live one.
+   */
+  findUnfinishedGroupsByCreator(
+    chapterId: string,
+    createdBy: string,
+    limit: number,
+  ): Promise<TaskGroup[]>;
   /**
    * Delete a group's copies and then its row (#4295 step 3). Photo and
    * subtask rows go with their copies (on delete cascade).

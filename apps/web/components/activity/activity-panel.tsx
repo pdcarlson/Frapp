@@ -39,6 +39,7 @@ import { useActivityPoll } from "./use-activity-poll";
 
 const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
   task: "Task",
+  "task-group": "Task",
   poll: "Poll",
   event: "Event",
   hours: "Service hours",
@@ -151,6 +152,10 @@ function PanelCard({
           reviewQueue={reviewQueue}
         />
       );
+    case "task-group":
+      // Web lists each copy of a task for everyone (`activityGroups` without
+      // `taskItems`): this panel has no group to open (#5492).
+      return null;
     case "event":
       return <EventPanel row={row} />;
     case "poll":
