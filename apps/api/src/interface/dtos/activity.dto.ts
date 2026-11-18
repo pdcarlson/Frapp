@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, getSchemaPath } from '@nestjs/swagger';
 import { TASK_PROOF_KINDS, type TaskProofKind } from '@repo/validation';
 import { Type } from 'class-transformer';
 import {
@@ -54,6 +54,8 @@ import type {
   ActivityProgress,
   ActivitySection,
   ActivityTask,
+  ActivityTaskGroup,
+  ActivityTaskItem,
   ActivityView,
   ActivityWeek,
   ActivityWeekCount,
@@ -185,6 +187,82 @@ export class ActivityTaskDto implements ActivityTask {
       'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
   })
   snoozed_until: string | null;
+}
+
+/**
+ * A task for everyone as one row of `made_by_you.task_items` (#5492): the
+ * group's `TaskGroupSummary`, plus what its copies share and enough of them to
+ * draw and open the row.
+ */
+export class ActivityTaskGroupDto
+  extends TaskGroupSummaryDto
+  implements ActivityTaskGroup
+{
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'A copy to open the group by (`GET /v1/tasks/{id}`, which carries the group): the caller’s own when they hold one, else an overdue copy, else one still open, else any.',
+  })
+  task_id: string;
+
+  @ApiProperty({
+    description:
+      'What the copies share, read from one not yet confirmed: a group edit leaves a confirmed copy as it was.',
+  })
+  title: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  description: string | null;
+
+  @ApiProperty({ format: 'date', example: '2026-11-20' })
+  due_date: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'The moment it is due, when it has a time of day.',
+  })
+  due_at: string | null;
+
+  @ApiProperty({ type: Number, nullable: true })
+  point_reward: number | null;
+
+  @ApiProperty({ enum: TASK_PROOF_KINDS })
+  proof_kind: TaskProofKind;
+
+  @ApiProperty({ description: 'Whether any copy is overdue.' })
+  overdue: boolean;
+
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    maxItems: 5,
+    description:
+      'Up to 5 of the members it went to, for faces: those overdue first, then those still open, then the rest. `total` says how many there are in all.',
+  })
+  preview_assignee_ids: string[];
+
+  @ApiProperty({ format: 'date-time', description: 'When the group was made.' })
+  created_at: string;
+}
+
+/** A one-person task in `made_by_you.task_items`. */
+export class ActivityTaskItemTaskDto {
+  @ApiProperty({ enum: ['task'] })
+  kind: 'task';
+
+  @ApiProperty({ type: () => ActivityTaskDto })
+  task: ActivityTaskDto;
+}
+
+/** A task for everyone, once, in `made_by_you.task_items`. */
+export class ActivityTaskItemGroupDto {
+  @ApiProperty({ enum: ['group'] })
+  kind: 'group';
+
+  @ApiProperty({ type: () => ActivityTaskGroupDto })
+  group: ActivityTaskGroupDto;
 }
 
 export class ActivityHoursEntryDto implements ActivityHoursEntry {
@@ -792,9 +870,29 @@ export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityTaskDto],
     description:
-      'Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.',
+      'Tasks the caller assigned, newest first, at most 25, each copy of a task for everyone its own row. A current client reads `task_items` instead, where a task for everyone is one row; this list is served unchanged for builds from before it, which list those not yet confirmed and find a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
+
+  @ApiProperty({
+    type: 'array',
+    items: {
+      oneOf: [
+        { $ref: getSchemaPath(ActivityTaskItemTaskDto) },
+        { $ref: getSchemaPath(ActivityTaskItemGroupDto) },
+      ],
+      discriminator: {
+        propertyName: 'kind',
+        mapping: {
+          task: getSchemaPath(ActivityTaskItemTaskDto),
+          group: getSchemaPath(ActivityTaskItemGroupDto),
+        },
+      },
+    },
+    description:
+      'What the caller assigned that isn’t finished, newest first, at most 25, a task for everyone counted once (#5492): `kind: task`, a one-person task not yet confirmed; `kind: group`, a task for everyone with a copy not yet confirmed, as one row. A confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`.',
+  })
+  task_items: ActivityTaskItem[];
 
   @ApiProperty({
     type: [ActivityFileDto],

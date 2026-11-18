@@ -18,6 +18,7 @@ import {
   Task,
   TaskStatus,
   type TaskGroup,
+  type TaskGroupCopyState,
   type TaskPhoto,
   type TaskSeries,
   type TaskSubtask,
@@ -143,6 +144,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (query.assigneeId) q = q.eq('assignee_id', query.assigneeId);
     if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
     if (query.createdBy) q = q.eq('created_by', query.createdBy);
+    if (query.groupless) q = q.is('group_id', null);
     if (query.status) q = q.eq('status', query.status);
     if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
     if (query.confirmed === false) q = q.is('confirmed_at', null);
@@ -387,26 +389,77 @@ export class SupabaseTaskRepository implements ITaskRepository {
     chapterId: string,
     groupIds: string[],
   ): Promise<Task[]> {
-    if (groupIds.length === 0) return [];
-    const copies: Task[] = [];
+    return this.inGroupBatches(groupIds, (batch) =>
+      fetchAllPages(
+        (from, to) =>
+          this.supabase
+            .from('tasks')
+            .select('*')
+            .eq('chapter_id', chapterId)
+            .in('group_id', batch)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: TASK_PAGE_SIZE },
+      ),
+    );
+  }
+
+  async findGroupCopyStates(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<TaskGroupCopyState[]> {
+    return this.inGroupBatches(groupIds, (batch) =>
+      fetchAllPages(
+        (from, to) =>
+          this.supabase
+            .from('tasks')
+            .select(
+              'id, group_id, assignee_id, status, points_awarded, due_date, due_at',
+            )
+            .eq('chapter_id', chapterId)
+            .in('group_id', batch)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: TASK_PAGE_SIZE },
+      ),
+    );
+  }
+
+  /**
+   * `read` over `groupIds` in batches that keep the URL short, every row of
+   * each: a chapter's group can outgrow one response, so `read` pages.
+   */
+  private async inGroupBatches<T>(
+    groupIds: string[],
+    read: (batch: string[]) => Promise<T[]>,
+  ): Promise<T[]> {
+    const rows: T[] = [];
     for (let i = 0; i < groupIds.length; i += SUBTASK_READ_BATCH) {
-      const batch = groupIds.slice(i, i + SUBTASK_READ_BATCH);
-      // Every row of them: a chapter's group can outgrow one response.
-      copies.push(
-        ...(await fetchAllPages(
-          (from, to) =>
-            this.supabase
-              .from('tasks')
-              .select('*')
-              .eq('chapter_id', chapterId)
-              .in('group_id', batch)
-              .order('id', { ascending: true })
-              .range(from, to),
-          { pageSize: TASK_PAGE_SIZE },
-        )),
-      );
+      rows.push(...(await read(groupIds.slice(i, i + SUBTASK_READ_BATCH))));
     }
-    return copies;
+    return rows;
+  }
+
+  async findUnfinishedGroupsByCreator(
+    chapterId: string,
+    createdBy: string,
+    limit: number,
+  ): Promise<TaskGroup[]> {
+    // A group with at least one copy not yet confirmed: `!inner` with the
+    // filter on the embed keeps only the groups that have such a copy, and
+    // one is all it takes, so the embed carries at most one id per group.
+    const { data, error } = await this.supabase
+      .from('task_groups')
+      .select('*, tasks!inner(id)')
+      .eq('chapter_id', chapterId)
+      .eq('created_by', createdBy)
+      .eq('tasks.points_awarded', false)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1, { referencedTable: 'tasks' })
+      .limit(limit);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map(withoutCopyEmbed);
   }
 
   async deleteGroup(chapterId: string, groupId: string): Promise<void> {
@@ -639,4 +692,11 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length > 0;
   }
+}
+
+/** A group row without the copy its read embedded to filter on. */
+function withoutCopyEmbed(row: TaskGroup & { tasks?: unknown }): TaskGroup {
+  const rest = { ...row };
+  delete rest.tasks;
+  return rest;
 }

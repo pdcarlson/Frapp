@@ -16498,7 +16498,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned; a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned (`task_items` counts a task for everyone once; `tasks` is each copy, for older builds); a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [
           {
@@ -33320,6 +33320,157 @@
           "snoozed_until"
         ]
       },
+      "ActivityTaskItemTaskDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "task": {
+            "$ref": "#/components/schemas/ActivityTaskDto"
+          }
+        },
+        "required": [
+          "kind",
+          "task"
+        ]
+      },
+      "ActivityTaskGroupDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone",
+              "people",
+              "role",
+              "group"
+            ],
+            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The role or chapter group it went to, for `role` and `group`; null otherwise."
+          },
+          "target_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
+          },
+          "total": {
+            "type": "number",
+            "description": "How many copies the group has."
+          },
+          "done": {
+            "type": "number",
+            "description": "How many copies are marked done, waiting on an officer or confirmed."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "How many copies are confirmed, or needed no sign-off when marked done."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A copy to open the group by (`GET /v1/tasks/{id}`, which carries the group): the caller’s own when they hold one, else an overdue copy, else one still open, else any."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the copies share, read from one not yet confirmed: a group edit leaves a confirmed copy as it was."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-20"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The moment it is due, when it has a time of day."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ]
+          },
+          "overdue": {
+            "type": "boolean",
+            "description": "Whether any copy is overdue."
+          },
+          "preview_assignee_ids": {
+            "maxItems": 5,
+            "description": "Up to 5 of the members it went to, for faces: those overdue first, then those still open, then the rest. `total` says how many there are in all.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the group was made."
+          }
+        },
+        "required": [
+          "id",
+          "audience",
+          "target_id",
+          "target_name",
+          "total",
+          "done",
+          "confirmed",
+          "task_id",
+          "title",
+          "description",
+          "due_date",
+          "due_at",
+          "point_reward",
+          "proof_kind",
+          "overdue",
+          "preview_assignee_ids",
+          "created_at"
+        ]
+      },
+      "ActivityTaskItemGroupDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          },
+          "group": {
+            "$ref": "#/components/schemas/ActivityTaskGroupDto"
+          }
+        },
+        "required": [
+          "kind",
+          "group"
+        ]
+      },
       "ActivityHoursEntryDto": {
         "type": "object",
         "properties": {
@@ -33950,11 +34101,32 @@
             }
           },
           "tasks": {
-            "description": "Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.",
+            "description": "Tasks the caller assigned, newest first, at most 25, each copy of a task for everyone its own row. A current client reads `task_items` instead, where a task for everyone is one row; this list is served unchanged for builds from before it, which list those not yet confirmed and find a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityTaskDto"
             }
+          },
+          "task_items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ActivityTaskItemTaskDto"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivityTaskItemGroupDto"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "task": "#/components/schemas/ActivityTaskItemTaskDto",
+                  "group": "#/components/schemas/ActivityTaskItemGroupDto"
+                }
+              }
+            },
+            "description": "What the caller assigned that isn’t finished, newest first, at most 25, a task for everyone counted once (#5492): `kind: task`, a one-person task not yet confirmed; `kind: group`, a task for everyone with a copy not yet confirmed, as one row. A confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`."
           },
           "files": {
             "deprecated": true,
@@ -33975,6 +34147,7 @@
         "required": [
           "polls",
           "tasks",
+          "task_items",
           "files",
           "events"
         ]

@@ -4850,7 +4850,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned; a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned (`task_items` counts a task for everyone once; `tasks` is each copy, for older builds); a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -10640,6 +10640,74 @@ export interface components {
              */
             snoozed_until: string | null;
         };
+        ActivityTaskItemTaskDto: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "task";
+            task: components["schemas"]["ActivityTaskDto"];
+        };
+        ActivityTaskGroupDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy.
+             * @enum {string}
+             */
+            audience: "everyone" | "people" | "role" | "group";
+            /**
+             * Format: uuid
+             * @description The role or chapter group it went to, for `role` and `group`; null otherwise.
+             */
+            target_id: string | null;
+            /** @description That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
+            target_name: string | null;
+            /** @description How many copies the group has. */
+            total: number;
+            /** @description How many copies are marked done, waiting on an officer or confirmed. */
+            done: number;
+            /** @description How many copies are confirmed, or needed no sign-off when marked done. */
+            confirmed: number;
+            /**
+             * Format: uuid
+             * @description A copy to open the group by (`GET /v1/tasks/{id}`, which carries the group): the caller’s own when they hold one, else an overdue copy, else one still open, else any.
+             */
+            task_id: string;
+            /** @description What the copies share, read from one not yet confirmed: a group edit leaves a confirmed copy as it was. */
+            title: string;
+            description: string | null;
+            /**
+             * Format: date
+             * @example 2026-11-20
+             */
+            due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day.
+             */
+            due_at: string | null;
+            point_reward: number | null;
+            /** @enum {string} */
+            proof_kind: "none" | "photo" | "link";
+            /** @description Whether any copy is overdue. */
+            overdue: boolean;
+            /** @description Up to 5 of the members it went to, for faces: those overdue first, then those still open, then the rest. `total` says how many there are in all. */
+            preview_assignee_ids: string[];
+            /**
+             * Format: date-time
+             * @description When the group was made.
+             */
+            created_at: string;
+        };
+        ActivityTaskItemGroupDto: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "group";
+            group: components["schemas"]["ActivityTaskGroupDto"];
+        };
         ActivityHoursEntryDto: {
             /** Format: uuid */
             id: string;
@@ -10902,8 +10970,10 @@ export interface components {
         ActivityMadeByYouDto: {
             /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out of the read. A current client lists the open ones and finds the closed in `GET /v1/activity/archive` (#5127); the closed ones are served for phone builds from before it, which draw them as Archived polls (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
-            /** @description Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`. */
+            /** @description Tasks the caller assigned, newest first, at most 25, each copy of a task for everyone its own row. A current client reads `task_items` instead, where a task for everyone is one row; this list is served unchanged for builds from before it, which list those not yet confirmed and find a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description What the caller assigned that isn’t finished, newest first, at most 25, a task for everyone counted once (#5492): `kind: task`, a one-person task not yet confirmed; `kind: group`, a task for everyone with a copy not yet confirmed, as one row. A confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`. */
+            task_items: (components["schemas"]["ActivityTaskItemTaskDto"] | components["schemas"]["ActivityTaskItemGroupDto"])[];
             /**
              * @deprecated
              * @description Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.

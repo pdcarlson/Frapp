@@ -57,10 +57,14 @@ import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/data
  * It is deliberately not a Postgres emulator, and two limits follow that a spec
  * must not claim around:
  *
- * - **The `select()` projection is ignored.** Column lists and embed hints are
- *   parsed for nothing, so dropping `!inner` from
- *   `'*, chat_channels!inner(chapter_id)'` — which turns a filtering join into a
- *   non-filtering one against real PostgREST — is invisible here.
+ * - **The `select()` projection is ignored, except for which embeds are
+ *   `!inner`.** Column lists are parsed for nothing. A filter on an embedded
+ *   column (`.eq('tasks.points_awarded', false)`, the embed named in the
+ *   select) narrows that embed as PostgREST does: an array embed keeps the
+ *   matching rows, an object embed that fails becomes null. Under `!inner` a
+ *   parent whose embed is left empty (or null) is dropped; without it the
+ *   parent stays. So dropping `!inner` from `'*, tasks!inner(id)'`, which
+ *   turns a filtering join into a non-filtering one, shows here.
  * - **Joins are not resolved.** An embed is whatever the seed row carries.
  *
  * Both belong to the live-PostgREST integration suite (`test/integration/`),
@@ -229,6 +233,41 @@ const describeChapter = (value: unknown): string =>
  * so a seeded embed or JSON blob is readable by the same filter code as a plain
  * column.
  */
+/**
+ * The embeds a `select()` column list names, by the name a filter uses for
+ * them (the alias when there is one), each with whether it is `!inner`.
+ * `'*, tasks!inner(id), owner:users!fk_owner (name)'` gives tasks (inner) and
+ * owner. Only the top level: a nested embed's filters are not modelled.
+ */
+function parseEmbeds(columns: string | undefined): Map<string, boolean> {
+  const embeds = new Map<string, boolean>();
+  if (!columns) return embeds;
+  let depth = 0;
+  let item = '';
+  const items: string[] = [];
+  for (const char of columns) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (char === ',' && depth === 0) {
+      items.push(item);
+      item = '';
+    } else {
+      item += char;
+    }
+  }
+  items.push(item);
+  for (const raw of items) {
+    const match =
+      /^(?:([A-Za-z_]\w*)\s*:\s*)?([A-Za-z_]\w*)((?:\s*!\s*\w+)*)\s*\(/.exec(
+        raw.trim(),
+      );
+    if (!match) continue;
+    const hints = match[3].split('!').map((hint) => hint.trim());
+    embeds.set(match[1] ?? match[2], hints.includes('inner'));
+  }
+  return embeds;
+}
+
 function readColumn(row: Row, column: string): unknown {
   const path = column.includes('->>')
     ? column.split('->>').flatMap((part) => part.split('->'))
@@ -617,17 +656,73 @@ export function createTenantHarness(
     let head = false;
     let limit: number | null = null;
     let range: [number, number] | null = null;
+    /** Embeds the select names, each with whether it is `!inner`. */
+    let embeds = new Map<string, boolean>();
     let executed = false;
     let totalBeforePaging: number | null = null;
     const orderBy: { column: string; ascending: boolean }[] = [];
 
+    /** The embed a filter's column reaches into, when the select names one. */
+    const embedOf = (filter: Filter): string | null => {
+      if (filter.column.includes('->')) return null;
+      const [head, ...rest] = filter.column.split('.');
+      return rest.length > 0 && embeds.has(head) ? head : null;
+    };
+    /** The filter as the embedded row reads it: its column minus the embed. */
+    const within = (filter: Filter, embed: string): Filter => {
+      const strip = (f: Filter): Filter => ({
+        ...f,
+        column: f.column.slice(embed.length + 1),
+      });
+      return filter.op === '__not__'
+        ? { ...strip(filter), value: strip(filter.value as Filter) }
+        : strip(filter);
+    };
+    /**
+     * A parent row with its embeds narrowed by the filters on them, or null
+     * when an `!inner` embed is left with nothing (PostgREST drops the row).
+     */
+    const narrowEmbeds = (row: Row, embedFilters: Filter[]): Row | null => {
+      let out = row;
+      for (const embed of new Set(embedFilters.map((f) => embedOf(f)!))) {
+        const inner = embeds.get(embed) === true;
+        const own = embedFilters
+          .filter((f) => embedOf(f) === embed)
+          .map((f) => within(f, embed));
+        const passes = (value: unknown) =>
+          value !== null &&
+          typeof value === 'object' &&
+          own.every((f) => applyFilter(value as Row, f));
+        const value = out[embed];
+        let narrowed: unknown;
+        if (Array.isArray(value)) {
+          narrowed = value.filter(passes);
+          if (inner && (narrowed as unknown[]).length === 0) return null;
+        } else {
+          narrowed = passes(value) ? value : null;
+          if (inner && narrowed === null) return null;
+        }
+        // A write matches stored rows by identity; only a read is reshaped.
+        if (mode === 'select') out = { ...out, [embed]: narrowed };
+      }
+      return out;
+    };
+
     const matching = (): Row[] => {
       const stored = tables[table] ?? [];
-      let rows = stored.filter(
-        (row) =>
-          filters.every((f) => applyFilter(row, f)) &&
-          orGroups.every((group) => group.some((f) => applyFilter(row, f))),
-      );
+      const embedFilters = filters.filter((f) => embedOf(f) !== null);
+      const plainFilters = filters.filter((f) => embedOf(f) === null);
+      let rows = stored
+        .filter(
+          (row) =>
+            plainFilters.every((f) => applyFilter(row, f)) &&
+            orGroups.every((group) => group.some((f) => applyFilter(row, f))),
+        )
+        .flatMap((row) => {
+          if (embedFilters.length === 0) return [row];
+          const narrowed = narrowEmbeds(row, embedFilters);
+          return narrowed === null ? [] : [narrowed];
+        });
 
       // `.order()` has to be real: `.order('created_at', { ascending: false })
       // .limit(1)` is how "the latest row" is spelled, and a no-op `order` makes
@@ -729,8 +824,9 @@ export function createTenantHarness(
 
     const builder: Record<string, unknown> = {
       select: jest.fn(
-        (_columns?: string, opts?: { count?: string; head?: boolean }) => {
+        (columns?: string, opts?: { count?: string; head?: boolean }) => {
           if (opts?.head) head = true;
+          embeds = parseEmbeds(columns);
           return builder;
         },
       ),
@@ -799,8 +895,10 @@ export function createTenantHarness(
         orderBy.push({ column, ascending: opts?.ascending !== false });
         return builder;
       }),
-      limit: jest.fn((n: number) => {
-        limit = n;
+      // A limit on an embed (`{ referencedTable }`) caps the embedded rows,
+      // never the top-level ones, and an embed is whatever the seed carries.
+      limit: jest.fn((n: number, opts?: { referencedTable?: string }) => {
+        if (opts?.referencedTable === undefined) limit = n;
         return builder;
       }),
       range: jest.fn((from: number, to: number) => {
