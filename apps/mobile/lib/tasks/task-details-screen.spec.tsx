@@ -258,11 +258,28 @@ describe("A member's own plain task: a little", () => {
     act(() => tree.unmount());
   });
 
-  it("offers only Mark done, and Mark done marks it done and offers Undo", async () => {
+  it("offers Start in More, and it sends the assignee's To do → In progress (#5492)", () => {
+    const tree = render();
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
+    act(() => menus[0]!.rows[0]!.onPress());
+    expect(mutateStatus).toHaveBeenCalledTimes(1);
+    expect(mutateStatus).toHaveBeenCalledWith({
+      id: "t1",
+      body: { status: "IN_PROGRESS" },
+    });
+    act(() => tree.unmount());
+
+    // Started, it has nothing for More.
+    task = { ...PLAIN, status: "IN_PROGRESS", stored_status: "IN_PROGRESS" };
+    const started = render();
+    expect(control(started, "More")).toBeUndefined();
+    act(() => started.unmount());
+  });
+
+  it("offers Mark done, and Mark done marks it done and offers Undo", async () => {
     const tree = render();
     expect(control(tree, "Mark done")).toBeDefined();
-    // Nothing for More to hold on a member's open task.
-    expect(control(tree, "More")).toBeUndefined();
     expect(control(tree, "Edit task")).toBeUndefined();
     expect(control(tree, "Remove people")).toBeUndefined();
     await act(async () => {
@@ -475,7 +492,9 @@ describe("An officer on a task for everyone: a lot", () => {
     expect(control(tree, "Edit task")).toBeDefined();
     expect(control(tree, "Remove people")).toBeDefined();
     press(tree, "More");
+    // Their own copy, still To do: Start leads, and three is the most.
     expect(menus[0]!.rows.map((row) => row.label)).toEqual([
+      "Start",
       "Delete",
       "Delete for everyone",
     ]);
@@ -708,7 +727,9 @@ describe("A member on a task for everyone", () => {
     expect(screenText(tree)).not.toContain("WHO HAS IT");
     expect(control(tree, "Remove people")).toBeUndefined();
     expect(control(tree, "Edit task")).toBeUndefined();
-    expect(control(tree, "More")).toBeUndefined();
+    // Their own copy's Start, and nothing an officer has.
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
     act(() => tree.unmount());
   });
 
@@ -781,8 +802,9 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
 
   it("is not offered on an ordinary task", () => {
     const tree = render();
-    // More holds nothing at all on a member's ordinary open task.
-    expect(control(tree, "More")).toBeUndefined();
+    // More holds only Start on a member's ordinary open task.
+    press(tree, "More");
+    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
     act(() => tree.unmount());
   });
 });

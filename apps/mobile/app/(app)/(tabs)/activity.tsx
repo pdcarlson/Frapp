@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   ACTIVITY_ARCHIVE_EMPTY,
@@ -41,8 +41,13 @@ import {
   activityReview,
   activityWeekStrip,
   activityWeekSummary,
+  activityReviewRow,
+  activityRowAwaitsReview,
+  activityRowTaskId,
   findActivityTaskRow,
+  taskAwaitsReview,
   useActivity,
+  useFetchTask,
   useActivityArchive,
   useActivitySnoozeWake,
   useActivityRecap,
@@ -68,6 +73,7 @@ import {
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
+  type ActivityGroupsOptions,
   type ActivityStripDay,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
@@ -77,9 +83,10 @@ import {
   ActivityFaces,
   ActivityListRow,
   ActivityRowMenuContext,
-  type ActivityRowMenu,
   ActivityRowSkeleton,
 } from "@/components/activity/activity-row";
+import { useActivityRowMenu } from "@/components/activity/activity-row-menu";
+import type { ItemMenuHandle } from "@/components/item-actions-menu";
 import {
   ActivityRowItem,
   useActivityRowActions,
@@ -97,7 +104,6 @@ import {
   nudgeShowsRow,
   withoutWeekNext,
 } from "@/lib/activity/nudge";
-import { useActivitySnoozeMenu } from "@/components/activity/activity-snooze";
 import { RecapCard, recapDismissal } from "@/components/activity/recap-card";
 import { ReviewCard } from "@/components/activity/review-card";
 import {
@@ -117,6 +123,7 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
+import { reviewTaskOf } from "@/lib/activity/review-task";
 import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
@@ -130,6 +137,12 @@ import { NOTIFICATION_TILE_HUE } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { localIsoDate } from "@repo/formatting";
 import type { ActivityCardKey } from "@repo/validation";
+
+/**
+ * Tasks you assigned from `task_items` (#5492): a task for everyone is one
+ * row, which opens its group on the task's screen.
+ */
+const GROUP_OPTIONS: ActivityGroupsOptions = { taskItems: true };
 
 /**
  * Activity: the member's week, what they still have to do, and what waits on
@@ -160,11 +173,16 @@ import type { ActivityCardKey } from "@repo/validation";
  * president. Web's `/activity` is the same page from the same model
  * (`apps/web/components/activity/activity-page.tsx`).
  *
- * A row opens the record in a sheet drawn with chat's own card, where the
- * member acts on it (`components/activity/activity-sheet.tsx`). The read is
- * never served fresh from cache (`useActivity`). It is read again when the
- * sheet closes, because the cards write through their own hooks, which this
- * read does not hear about, and whenever the member comes back to this
+ * A task row pushes the task's own screen (#5492), a task for everyone the
+ * copy that carries its group; any other row opens the record in a sheet
+ * drawn with chat's own card, where the member acts on it
+ * (`components/activity/activity-sheet.tsx`), as does a completion waiting on
+ * the member's sign-off. A long press on a task or event row opens the
+ * board's and the Calendar's menu, with Snooze in it where it applies
+ * (`useActivityRowMenu`). The read is never served fresh from cache
+ * (`useActivity`). It is read again when the sheet closes, because the cards
+ * write through their own hooks, which this read does not hear about, after
+ * a write from a row's menu, and whenever the member comes back to this
  * screen (`useActivityReread`).
  */
 export default function ActivityScreen() {
@@ -296,7 +314,6 @@ export default function ActivityScreen() {
     () => (activity.data ? activitySnoozedRows(activity.data, now) : []),
     [activity.data, now],
   );
-  const snoozeMenu = useActivitySnoozeMenu();
   // A read when the soonest snooze ends, for its dot and the tab's badge.
   useActivitySnoozeWake(activity.data);
   const agenda = useMemo(
@@ -393,9 +410,9 @@ export default function ActivityScreen() {
   );
   // What the member made, and the links posted for them, as the shared
   // groups build them, in order. Narrowed to a kind, the page is the To do
-  // list alone.
+  // list alone. A task for everyone the member assigned is one row (#5492).
   const groups = useMemo(
-    () => (visible ? activityGroups(visible, now) : []),
+    () => (visible ? activityGroups(visible, now, GROUP_OPTIONS) : []),
     [visible, now],
   );
   const below =
@@ -421,11 +438,104 @@ export default function ActivityScreen() {
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
 
+  // The card at the top (#5464): the one most useful thing waiting on the
+  // member, and a tray of the next few, picked by the server from Activity's
+  // own reads. It shows with or without AI; AI only adds a sentence, so it is
+  // asked for on every Activity. Any failure is no card. It is asked again
+  // after acting on what it or the week card's Next opened: when their sheet
+  // closes, when the member comes back from the task screen they pushed, and
+  // after a write from a row's menu.
+  // A hidden card isn't asked for: the read can cost a model call.
+  // It waits for the arrangement, so a member who hid it never sends one.
+  const nudgeRead = useActivityNudge({
+    enabled: !layout.isPending && shows("nudge"),
+  });
+  // Never the week card's Next a second time: when the card's pick is the
+  // Next row, the tray's first takes its place.
+  const nudge = useMemo(
+    () => withoutWeekNext(nudgeRead.data, agenda?.next?.key ?? null),
+    [nudgeRead.data, agenda?.next?.key],
+  );
+  const nudgeActions = useActivityNudgeActions();
+  const recheckNudge = nudgeActions.recheck;
+  const recheckOnReturn = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (recheckOnReturn.current) {
+        recheckOnReturn.current = false;
+        void recheckNudge();
+      }
+      return undefined;
+    }, [recheckNudge]),
+  );
+  // A row's long press (#5492): its task's or event's menu, with Snooze
+  // where it applies (#4982). A write from it reads the page again, and asks
+  // the card again.
+  const afterMenuWrite = useCallback(() => {
+    reread();
+    void recheckNudge();
+  }, [reread, recheckNudge]);
+  const rowMenu = useActivityRowMenu({ onWrote: afterMenuWrite });
+  // One Undo bar at a time, the newest: a link's Done and a menu's Mark
+  // done each replace the other's bar rather than wait behind it, so no
+  // window runs out unseen. Adjusted while rendering, as React documents for
+  // state that follows a prop.
+  const linkUndoKey = undo?.key ?? null;
+  const taskUndoKey = rowMenu.undoKey;
+  const [undoOrder, setUndoOrder] = useState<{
+    link: number | null;
+    task: number | null;
+    newest: "link" | "task";
+  }>({ link: linkUndoKey, task: taskUndoKey, newest: "link" });
+  if (undoOrder.link !== linkUndoKey || undoOrder.task !== taskUndoKey) {
+    const newest =
+      taskUndoKey !== null && taskUndoKey !== undoOrder.task
+        ? "task"
+        : linkUndoKey !== null && linkUndoKey !== undoOrder.link
+          ? "link"
+          : undoOrder.newest;
+    setUndoOrder({ link: linkUndoKey, task: taskUndoKey, newest });
+  }
+  const undoShown: "link" | "task" | null =
+    taskUndoKey !== null &&
+    (linkUndoKey === null || undoOrder.newest === "task")
+      ? "task"
+      : linkUndoKey !== null
+        ? "link"
+        : null;
+
+  // Who may sign off a completion (#5492): a row whose task waits on this
+  // viewer's review opens as one, wherever it sits (`activityRowAwaitsReview`,
+  // the sheet's rule too).
+  const reviewer = useMemo(
+    () => ({
+      viewerId,
+      canManage: moduleOn("tasks") && can("tasks:manage", permissions ?? []),
+    }),
+    [viewerId, moduleOn, permissions],
+  );
+
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
   const open = (row: ActivityRow) => {
     if (row.unread && row.readRef) markRead([row.readRef]);
+    // A task is its own screen (#5492; Paul, 2026-11-18: the sheet was
+    // "lazy"), as on the board and the Calendar; a task for everyone opens
+    // the copy that carries its group. A completion waiting on the viewer's
+    // sign-off still opens the sheet, which holds Confirm and Send back.
+    const taskId = activityRowAwaitsReview(row, reviewer)
+      ? null
+      : activityRowTaskId(row);
+    if (taskId !== null) {
+      // What the card or the week card's Next opened is asked again on the
+      // way back, as a sheet's close asks it.
+      if (nudgeShowsRow(nudge, row.key) || row.key === agenda?.next?.key) {
+        recheckOnReturn.current = true;
+      }
+      router.push({ pathname: "/task-details", params: { id: taskId } });
+      return;
+    }
     // A sign-up or form (#3926) is answered on its card: the row goes to
     // the message in chat rather than a sheet, as a link row goes to its
     // link.
@@ -458,54 +568,60 @@ export default function ActivityScreen() {
 
   // `/activity?review=<taskId>`: a "submitted a task" push (targets.ts).
   // The read is taken again first, because the one in hand predates the
-  // submission whenever the app was warm, then that task's sheet opens,
-  // and the param is dropped so coming back to the tab doesn't open it
-  // again. A task the read doesn't hold (confirmed from another device, or
-  // past the read's cap) opens nothing: the officer lands on the page.
+  // submission whenever the app was warm, then that task opens as a press on
+  // its row opens it, and the param is dropped so coming back to the tab
+  // doesn't open it again. A task the read lists no row for (a copy of a
+  // task for everyone, whose row names only the copy it opens, #5492; or one
+  // past the read's cap) is read by its id (`GET /v1/tasks/:id`): still
+  // waiting on the viewer's sign-off, it opens its review sheet; otherwise
+  // its own screen. One the read refuses (deleted since) opens nothing, and
+  // the officer lands on the page.
   const { review: reviewParam } = useLocalSearchParams<{ review?: string }>();
   const reviewTaskId =
     typeof reviewParam === "string" && reviewParam !== "" ? reviewParam : null;
   const refetchActivity = activity.refetch;
+  const fetchTask = useFetchTask();
   useEffect(() => {
     if (reviewTaskId === null) return;
     let live = true;
-    void refetchActivity().then((result) => {
+    void (async () => {
+      const result = await refetchActivity();
       if (!live) return;
       const row = result.data
-        ? findActivityTaskRow(result.data, reviewTaskId, new Date())
+        ? findActivityTaskRow(
+            result.data,
+            reviewTaskId,
+            new Date(),
+            GROUP_OPTIONS,
+          )
         : null;
-      if (row) {
-        if (row.unread && row.readRef) markRead([row.readRef]);
-        setOpened(row);
-        setOpenedKey(row.key);
-      }
+      // Dropped first: opening may push a screen, whose params these
+      // would then be.
       router.setParams({ review: undefined });
-    });
+      if (row) {
+        open(row);
+        return;
+      }
+      const read = await fetchTask(reviewTaskId).catch(() => null);
+      const task = read ? reviewTaskOf(read, (id) => faceFor(id)?.name) : null;
+      if (!live || !task) return;
+      if (taskAwaitsReview(task, reviewer)) {
+        const review = activityReviewRow(task, new Date());
+        setOpened(review);
+        setOpenedKey(review.key);
+      } else {
+        router.push({ pathname: "/task-details", params: { id: task.id } });
+      }
+    })();
     return () => {
       live = false;
     };
-    // Once per review linked; `markRead` is read when the read lands.
+    // Once per review linked; `open`, the viewer and the names are read
+    // when the reads land.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewTaskId, refetchActivity, router]);
 
-  // The card at the top (#5464): the one most useful thing waiting on the
-  // member, and a tray of the next few, picked by the server from Activity's
-  // own reads. It shows with or without AI; AI only adds a sentence, so it is
-  // asked for on every Activity. Any failure is no card. It is asked again
-  // after a sheet closes, since acting is what the card was for.
   const ai = useAiSurfaces();
-  // A hidden card isn't asked for: the read can cost a model call.
-  // It waits for the arrangement, so a member who hid it never sends one.
-  const nudgeRead = useActivityNudge({
-    enabled: !layout.isPending && shows("nudge"),
-  });
-  // Never the week card's Next a second time: when the card's pick is the
-  // Next row, the tray's first takes its place.
-  const nudge = useMemo(
-    () => withoutWeekNext(nudgeRead.data, agenda?.next?.key ?? null),
-    [nudgeRead.data, agenda?.next?.key],
-  );
-  const nudgeActions = useActivityNudgeActions();
   const setNudgesEnabled = useSetActivityNudgesEnabled();
   const askRef = useRef<BottomSheetModal>(null);
   const [askDraft, setAskDraft] = useState<string | null>(null);
@@ -524,7 +640,7 @@ export default function ActivityScreen() {
       case "task": {
         const row =
           activity.data && id
-            ? findActivityTaskRow(activity.data, id, new Date())
+            ? findActivityTaskRow(activity.data, id, new Date(), GROUP_OPTIONS)
             : null;
         // Past the read's cap, or finished since: the board has every task.
         if (row) open(row);
@@ -553,7 +669,7 @@ export default function ActivityScreen() {
         const row =
           rows.find((r) => id !== null && r.key.endsWith(`:${id}`)) ??
           (activity.data && id
-            ? findActivityTaskRow(activity.data, id, new Date())
+            ? findActivityTaskRow(activity.data, id, new Date(), GROUP_OPTIONS)
             : null) ??
           rows[0];
         if (row) open(row);
@@ -598,6 +714,7 @@ export default function ActivityScreen() {
           now={now}
           onBack={() => setShowArchive(false)}
           onOpen={open}
+          menuFor={rowMenu.archiveMenuFor}
         />
       );
     }
@@ -727,7 +844,7 @@ export default function ActivityScreen() {
           <SnoozedPart
             rows={snoozedRows}
             onOpen={open}
-            menuFor={snoozeMenu.wakeMenuFor}
+            menuFor={rowMenu.wakeMenuFor}
           />
         ) : null}
         {/* What is finished left the page; it is one press away (#5127). */}
@@ -738,7 +855,7 @@ export default function ActivityScreen() {
 
   return (
     <ActivityFaces.Provider value={faceFor}>
-      <ActivityRowMenuContext.Provider value={snoozeMenu.menuFor}>
+      <ActivityRowMenuContext.Provider value={rowMenu.menuFor}>
         <ScreenShell
           title="Activity"
           refresh={refresh}
@@ -749,6 +866,7 @@ export default function ActivityScreen() {
           <ActivitySheet
             row={sheetRow}
             viewerId={viewerId}
+            canManage={reviewer.canManage}
             rowActionState={sheetRow ? rowActionStateOf(sheetRow.key) : "idle"}
             onActed={reread}
             onClosed={() => {
@@ -771,8 +889,13 @@ export default function ActivityScreen() {
               onClosed={() => setAskDraft(null)}
             />
           ) : null}
+          {rowMenu.host}
         </ScreenShell>
-        {undo ? (
+        {/* Outside the scroll, as the board's: a link's Undo or a Mark
+            done's from a row's menu, the newer one while both run. */}
+        {undoShown === "task" ? (
+          rowMenu.undoBar
+        ) : undo ? (
           <UndoBar key={undo.key} message={undo.message} onUndo={undo.run} />
         ) : null}
       </ActivityRowMenuContext.Provider>
@@ -1218,7 +1341,8 @@ function ArchiveLink({ onPress }: { onPress: () => void }) {
  * The Archive (#5127, `spec/behavior/activity.md` § Archive): what the
  * member has finished, in place of the page, which lists only what is still
  * live. Laid out as the page lays out its groups (Events, Tasks, Polls), each
- * row opening the same sheet it opens on the page, as web draws it. Google
+ * row opening what it opens on the page (a task its screen, the rest a
+ * sheet), with its item's long-press menu, as web draws it. Google
  * Classroom keeps finished work under its To-do's Done tab the same way.
  */
 function ArchiveView({
@@ -1227,12 +1351,15 @@ function ArchiveView({
   now,
   onBack,
   onOpen,
+  menuFor,
 }: {
   query: ReturnType<typeof useActivityArchive>;
   viewerId: string | null;
   now: Date;
   onBack: () => void;
   onOpen: (row: ActivityRow) => void;
+  /** A finished task's or event's menu (#5492); nothing there to snooze. */
+  menuFor: (row: ActivityRow) => ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -1271,7 +1398,12 @@ function ArchiveView({
     content = <Text style={styles.archiveEmpty}>{ACTIVITY_ARCHIVE_EMPTY}</Text>;
   } else {
     content = groups?.map((group) => (
-      <ArchiveSection key={group.id} group={group} onOpen={onOpen} />
+      <ArchiveSection
+        key={group.id}
+        group={group}
+        onOpen={onOpen}
+        menuFor={menuFor}
+      />
     ));
   }
   return (
@@ -1302,9 +1434,11 @@ function ArchiveView({
 function ArchiveSection({
   group,
   onOpen,
+  menuFor,
 }: {
   group: ActivityArchiveGroup;
   onOpen: (row: ActivityRow) => void;
+  menuFor: (row: ActivityRow) => ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -1324,6 +1458,7 @@ function ArchiveSection({
           row={row}
           isFirst={index === 0}
           onPress={() => onOpen(row)}
+          menu={menuFor(row)}
         />
       ))}
     </View>
@@ -1334,7 +1469,8 @@ function ArchiveSection({
  * Snoozed (#4982, `spec/behavior/activity.md` § Snooze): the rows the member
  * put off, soonest back first, each saying when, behind one control at the
  * foot of the screen, as Gmail keeps Snoozed in its own folder. A row still
- * opens its record; a long press brings it back now.
+ * opens its record; its long press holds Unsnooze, which brings it back now,
+ * beside a task's or an event's own actions (#5492).
  */
 function SnoozedPart({
   rows,
@@ -1343,7 +1479,7 @@ function SnoozedPart({
 }: {
   rows: ActivityRow[];
   onOpen: (row: ActivityRow) => void;
-  menuFor: (row: ActivityRow) => ActivityRowMenu;
+  menuFor: (row: ActivityRow) => ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();

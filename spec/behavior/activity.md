@@ -93,6 +93,12 @@ member's own answer, not the event's default:
   are read apart, newest first and filtered in SQL (one-person tasks not confirmed; the caller's
   groups with a copy not confirmed), merged and cut to 25, so a finished group or a confirmed task
   never takes a slot from a live one. A confirmed one is in the [Archive](#archive).
+  The phone lists these, a task for everyone as one row that opens `task_id` (the row:
+  [`screens.md` § Inventory](../ui/mobile/screens.md#inventory), Activity; its long press:
+  [`tasks.md` § Long press on the phone](tasks.md#long-press-on-the-phone)). Web still lists
+  `tasks`, a row per copy: its Activity panel draws one task as chat's card and its task panel
+  opens a group only on the board, so a group row there would open one member's copy as if it
+  were the group.
   `tasks` is still served unchanged: each copy its own row, the newest 25 the caller assigned,
   confirmed ones included, for phone builds from before `task_items`, which list those not yet
   confirmed and drop the confirmed (#5127). Both only while the caller still holds `tasks:manage`:

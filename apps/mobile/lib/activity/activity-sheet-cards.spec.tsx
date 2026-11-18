@@ -7,7 +7,7 @@ import {
   NavigationContext,
   NavigationRouteContext,
 } from "expo-router/react-navigation";
-import { activityToDos, type Activity } from "@repo/hooks";
+import { activityReviewRows, type Activity } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -19,22 +19,27 @@ import { screenText } from "@/test/screen-text";
  * navigation context, which a sheet on a device does not inherit.
  */
 
-const updateStatus = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
+const confirmTask = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  usePermissionList: () => [],
+  // An officer, reviewing a member's completion: the one task row the
+  // sheet still opens (#5492); every other pushes the task's screen.
+  usePermissionList: () => ["tasks:manage"],
   useTask: (id: string) => ({
     data: id
       ? {
           id,
-          status: "TODO",
-          stored_status: "TODO",
+          assignee_id: "sam",
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
           points_awarded: false,
+          point_reward: 10,
+          proof_kind: "none",
         }
       : undefined,
   }),
-  useUpdateTaskStatus: () => ({ mutateAsync: updateStatus, isPending: false }),
-  useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
   useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCurrentChapter: () => ({ data: { enabled_modules: {} } }),
   useReviewServiceEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -66,24 +71,25 @@ import { ActivitySheet } from "@/components/activity/activity-sheet";
 
 const READ = {
   needs_you: {
-    tasks: [
+    tasks: [],
+    task_confirmations: [
       {
         id: "task-1",
         title: "Book the venue",
         due_date: "2099-01-01",
-        status: "TODO",
-        stored_status: "TODO",
-        assignee_id: "me",
-        assignee_name: "Me",
-        created_by: "officer",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        assignee_id: "sam",
+        assignee_name: "Sam",
+        created_by: "me",
         created_by_name: "Olive",
         point_reward: 10,
-        completed_at: null,
+        proof_kind: "none",
+        completed_at: "2026-11-02T00:00:00.000Z",
         confirmed_at: null,
         created_at: "2026-11-01T00:00:00.000Z",
       },
     ],
-    task_confirmations: [],
     hours_approvals: [],
     polls: [],
   },
@@ -94,7 +100,7 @@ const READ = {
   unavailable: [],
 } as unknown as Activity;
 
-const taskRow = activityToDos(READ)[0]!.dated;
+const taskRow = activityReviewRows(READ)[0]!;
 const SCREEN_NAVIGATION = { name: "the Activity screen's navigation" };
 
 describe("Activity sheet with chat's real task card (#3897)", () => {
@@ -138,27 +144,25 @@ describe("Activity sheet with chat's real task card (#3897)", () => {
     act(() => tree.unmount());
   });
 
-  it("draws the task from the row, with the assignee's own control", () => {
+  it("draws the completion from the row, with the officer's Confirm and Send back", () => {
     const text = screenText(tree);
     expect(text).toContain("Book the venue");
-    expect(text).toContain("Olive → Me");
-    expect(text).toContain("Start");
+    expect(text).toContain("Olive → Sam");
+    expect(text).toContain("Confirm");
+    expect(text).toContain("Send back");
   });
 
-  it("acts on the task through the card's own write", async () => {
-    const start = tree.root.find(
+  it("confirms through the card's own write", async () => {
+    const confirm = tree.root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Start",
+        node.props.accessibilityLabel === "Confirm",
     );
-    expect(start.props.disabled).toBe(false);
+    expect(confirm.props.disabled).toBe(false);
     await act(async () => {
-      start.props.onPress();
+      confirm.props.onPress();
     });
-    expect(updateStatus).toHaveBeenCalledWith({
-      id: "task-1",
-      body: { status: "IN_PROGRESS" },
-    });
+    expect(confirmTask).toHaveBeenCalledWith("task-1");
   });
 
   it("hands the card the screen's navigation context", () => {
