@@ -799,8 +799,10 @@ export function createTenantHarness(
         orderBy.push({ column, ascending: opts?.ascending !== false });
         return builder;
       }),
-      limit: jest.fn((n: number) => {
-        limit = n;
+      // A limit on an embed (`{ referencedTable }`) caps the embedded rows,
+      // never the top-level ones, and an embed is whatever the seed carries.
+      limit: jest.fn((n: number, opts?: { referencedTable?: string }) => {
+        if (opts?.referencedTable === undefined) limit = n;
         return builder;
       }),
       range: jest.fn((from: number, to: number) => {

@@ -667,6 +667,32 @@ describe('tenant-scope harness', () => {
       expect((data as { id: string }[])[0].id).toBe('b2');
     });
 
+    it('caps only the top-level rows with a limit, never with an embed’s', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, created_at: '2026-01-01' }),
+            inB({ id: ROW_B, created_at: '2026-01-01' }),
+            inA({ id: 'a2', created_at: '2026-06-01' }),
+            inB({ id: 'b2', created_at: '2026-06-01' }),
+          ],
+        },
+      });
+
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*, parts(id)')
+        .eq('chapter_id', CHAPTER_B)
+        .order('created_at', { ascending: false })
+        .limit(1, { referencedTable: 'parts' })
+        .limit(5);
+
+      expect((data as { id: string }[]).map((row) => row.id)).toEqual([
+        'b2',
+        ROW_B,
+      ]);
+    });
+
     it('parses .or() literals and the not. prefix', async () => {
       const harness = createTenantHarness({
         tables: {

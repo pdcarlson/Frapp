@@ -82,6 +82,7 @@ import type { EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 import { ServiceEntryService } from './service-entry.service';
 import { TaskService } from './task.service';
+import type { AssignedTaskItem } from './task.service';
 
 /**
  * A channel as the polls section reads it: chat's own list rows, which carry
@@ -159,6 +160,40 @@ export interface ActivityTask {
    */
   snoozed_until: string | null;
 }
+
+/**
+ * A task for everyone as one row of what the caller assigned (#5492): its
+ * group's progress (`spec/behavior/tasks.md` § Tasks for everyone), what its
+ * copies share, and enough of the copies to draw and open the row.
+ */
+export interface ActivityTaskGroup extends TaskGroupSummary {
+  /**
+   * A copy to open the group by: the caller's own when they hold one, else
+   * an overdue copy, else one still open, else any.
+   */
+  task_id: string;
+  /** What the copies share, read from one not yet confirmed. */
+  title: string;
+  description: string | null;
+  due_date: string;
+  due_at: string | null;
+  point_reward: number | null;
+  proof_kind: TaskProofKind;
+  /** Whether any copy is overdue. */
+  overdue: boolean;
+  /**
+   * Up to {@link GROUP_FACES} of the members it went to, for faces: those
+   * overdue first, then those still open, then the rest.
+   */
+  preview_assignee_ids: string[];
+  /** When the group was made. */
+  created_at: string;
+}
+
+/** One thing the caller assigned: a one-person task, or a task for everyone once. */
+export type ActivityTaskItem =
+  | { kind: 'task'; task: ActivityTask }
+  | { kind: 'group'; group: ActivityTaskGroup };
 
 /** A pending service entry, for a member who can approve it. */
 export interface ActivityHoursEntry {
@@ -420,7 +455,18 @@ export interface ActivityView {
      * Archive, which draw them as Archived polls.
      */
     polls: ActivityPoll[];
+    /**
+     * Tasks the caller assigned, newest first, a copy per member of a task
+     * for everyone: served unchanged for builds from before `task_items`,
+     * where one group can fill the 25.
+     */
     tasks: ActivityTask[];
+    /**
+     * What the caller assigned that isn't finished, newest first, up to 25,
+     * a task for everyone counted once (#5492). Replaces `tasks` for a
+     * current client.
+     */
+    task_items: ActivityTaskItem[];
     /**
      * Always empty. Uploads left Activity (#4291); the field stays only so a
      * client built before that, an open web tab or a phone's over-the-air
@@ -479,6 +525,8 @@ export interface ActivityArchive {
 
 /** Rows each list carries. The count in `needs_you_count` is taken before it. */
 const LIST_LIMIT = 25;
+/** Members a task-for-everyone row names for its faces. */
+const GROUP_FACES = 5;
 /** How many of the chapter's newest poll cards are checked for "open and unvoted". */
 const POLL_SCAN_LIMIT = 100;
 /** The same, for each of sign-up and form cards. */
@@ -742,6 +790,42 @@ function activityTaskRow(
   };
 }
 
+/**
+ * A task for everyone as one row (#5492), from its copies: which one opens
+ * it, what they share, whether any is overdue, and who to show.
+ */
+function activityTaskGroup(
+  item: Extract<AssignedTaskItem, { kind: 'group' }>,
+  userId: string,
+): ActivityTaskGroup {
+  const overdue = (copy: TaskView) => copy.status === TaskStatus.OVERDUE;
+  const open = (copy: TaskView) => copy.stored_status !== TaskStatus.COMPLETED;
+  // Overdue, then still open, then done; within each, as read.
+  const rank = (copy: TaskView) => (overdue(copy) ? 0 : open(copy) ? 1 : 2);
+  const ranked = [...item.copies].sort((a, b) => rank(a) - rank(b));
+  const opened =
+    ranked.find((copy) => copy.assignee_id === userId) ?? ranked[0];
+  // A group edit leaves a confirmed copy as it was (`tasks.md`), so the
+  // shared fields come from one that isn't, the opened one when it can.
+  const source =
+    [opened, ...ranked].find((copy) => !copy.points_awarded) ?? opened;
+  return {
+    ...item.group,
+    task_id: opened.id,
+    title: source.title,
+    description: source.description,
+    due_date: source.due_date,
+    due_at: source.due_at,
+    point_reward: source.point_reward,
+    proof_kind: source.proof_kind,
+    overdue: ranked.some(overdue),
+    preview_assignee_ids: ranked
+      .slice(0, GROUP_FACES)
+      .map((copy) => copy.assignee_id),
+    created_at: item.created_at,
+  };
+}
+
 /** The later of two timestamps; one that is null or doesn't parse loses. */
 function latest(a: string, b: string | null): string {
   if (b === null || Number.isNaN(new Date(b).getTime())) return a;
@@ -915,12 +999,13 @@ export class ActivityService {
     ] = await Promise.all([
       this.settle('tasks', chapterId, () =>
         on('tasks')
-          ? this.readTasks(chapterId, userId, permissions, weekStart)
+          ? this.readTasks(chapterId, userId, permissions, weekStart, nowDate)
           : Promise.resolve({
               mine: [],
               confirmations: [],
               confirmationsWaiting: 0,
               assigned: [],
+              assignedItems: [],
               doneThisWeek: 0,
             }),
       ),
@@ -1004,6 +1089,7 @@ export class ActivityService {
       confirmations: [],
       confirmationsWaiting: 0,
       assigned: [],
+      assignedItems: [],
       doneThisWeek: 0,
     });
     const hoursApprovals = valueOf('hours_approvals', hours, []);
@@ -1095,6 +1181,7 @@ export class ActivityService {
         // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),
+        task_items: taskLists.assignedItems,
         files: [],
         events: myEvents.slice(0, LIST_LIMIT),
       },
@@ -1699,12 +1786,14 @@ export class ActivityService {
     userId: string,
     permissions: string[],
     weekStart: number,
+    now: Date,
   ): Promise<{
     mine: ActivityTask[];
     confirmations: ActivityTask[];
     /** All of them, not only the 25 read. */
     confirmationsWaiting: number;
     assigned: ActivityTask[];
+    assignedItems: ActivityTaskItem[];
     /** The caller's own tasks marked done since the week began. */
     doneThisWeek: number;
   }> {
@@ -1720,34 +1809,44 @@ export class ActivityService {
       confirmed: false,
       notAssigneeId: userId,
     };
-    const [own, waiting, waitingCount, made, doneThisWeek] = await Promise.all([
-      this.taskService.list(chapterId, userId, false, { confirmed: false }),
-      canManage
-        ? this.taskService.list(chapterId, userId, true, {
-            ...waitingFilter,
-            order: 'longest_waiting',
-            limit: LIST_LIMIT,
-          })
-        : Promise.resolve([]),
-      canManage
-        ? this.taskService.count(chapterId, userId, true, waitingFilter)
-        : Promise.resolve(0),
-      // Only while the caller can still read tasks they don't hold: a creator
-      // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
-      // row that opens to a refusal is worse than no row.
-      canManage
-        ? this.taskService.list(chapterId, userId, true, {
-            createdBy: userId,
-            limit: LIST_LIMIT,
-          })
-        : Promise.resolve([]),
-      // Done this week, confirmed or not: marking it done was the member's
-      // part. One sent back since is open again and is not counted here.
-      this.taskService.count(chapterId, userId, false, {
-        status: TaskStatus.COMPLETED,
-        completedSince: new Date(weekStart).toISOString(),
-      }),
-    ]);
+    const [own, waiting, waitingCount, made, madeItems, doneThisWeek] =
+      await Promise.all([
+        this.taskService.list(chapterId, userId, false, { confirmed: false }),
+        canManage
+          ? this.taskService.list(chapterId, userId, true, {
+              ...waitingFilter,
+              order: 'longest_waiting',
+              limit: LIST_LIMIT,
+            })
+          : Promise.resolve([]),
+        canManage
+          ? this.taskService.count(chapterId, userId, true, waitingFilter)
+          : Promise.resolve(0),
+        // Only while the caller can still read tasks they don't hold: a creator
+        // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
+        // row that opens to a refusal is worse than no row.
+        canManage
+          ? this.taskService.list(chapterId, userId, true, {
+              createdBy: userId,
+              limit: LIST_LIMIT,
+            })
+          : Promise.resolve([]),
+        // The same, a task for everyone once (#5492), under the same rule.
+        canManage
+          ? this.taskService.listAssignedItems(
+              chapterId,
+              userId,
+              LIST_LIMIT,
+              now,
+            )
+          : Promise.resolve([]),
+        // Done this week, confirmed or not: marking it done was the member's
+        // part. One sent back since is open again and is not counted here.
+        this.taskService.count(chapterId, userId, false, {
+          status: TaskStatus.COMPLETED,
+          completedSince: new Date(weekStart).toISOString(),
+        }),
+      ]);
 
     const mine = own
       .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
@@ -1758,8 +1857,11 @@ export class ActivityService {
     const confirmations = waiting;
     const assigned = made.sort(byNewest);
 
+    const singles = madeItems.flatMap((item) =>
+      item.kind === 'task' ? [item.task] : [],
+    );
     const names = await this.namesOf(
-      [...mine, ...confirmations, ...assigned].flatMap((task) => [
+      [...mine, ...confirmations, ...assigned, ...singles].flatMap((task) => [
         task.assignee_id,
         task.created_by,
       ]),
@@ -1770,6 +1872,14 @@ export class ActivityService {
       confirmations: confirmations.map(toRow),
       confirmationsWaiting: waitingCount,
       assigned: assigned.map(toRow),
+      assignedItems: madeItems.map((item): ActivityTaskItem =>
+        item.kind === 'task'
+          ? { kind: 'task', task: toRow(item.task) }
+          : {
+              kind: 'group',
+              group: activityTaskGroup(item, userId),
+            },
+      ),
       doneThisWeek,
     };
   }

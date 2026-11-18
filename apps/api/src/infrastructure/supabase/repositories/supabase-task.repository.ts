@@ -143,6 +143,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (query.assigneeId) q = q.eq('assignee_id', query.assigneeId);
     if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
     if (query.createdBy) q = q.eq('created_by', query.createdBy);
+    if (query.groupless) q = q.is('group_id', null);
     if (query.status) q = q.eq('status', query.status);
     if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
     if (query.confirmed === false) q = q.is('confirmed_at', null);
@@ -409,6 +410,28 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return copies;
   }
 
+  async findUnfinishedGroupsByCreator(
+    chapterId: string,
+    createdBy: string,
+    limit: number,
+  ): Promise<TaskGroup[]> {
+    // A group with at least one copy not yet confirmed: `!inner` with the
+    // filter on the embed keeps only the groups that have such a copy, and
+    // one is all it takes, so the embed carries at most one id per group.
+    const { data, error } = await this.supabase
+      .from('task_groups')
+      .select('*, tasks!inner(id)')
+      .eq('chapter_id', chapterId)
+      .eq('created_by', createdBy)
+      .eq('tasks.points_awarded', false)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1, { referencedTable: 'tasks' })
+      .limit(limit);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map(withoutCopyEmbed);
+  }
+
   async deleteGroup(chapterId: string, groupId: string): Promise<void> {
     const { error: copiesError } = await this.supabase
       .from('tasks')
@@ -639,4 +662,11 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length > 0;
   }
+}
+
+/** A group row without the copy its read embedded to filter on. */
+function withoutCopyEmbed(row: TaskGroup & { tasks?: unknown }): TaskGroup {
+  const rest = { ...row };
+  delete rest.tasks;
+  return rest;
 }
