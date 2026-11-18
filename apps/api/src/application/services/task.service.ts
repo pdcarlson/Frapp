@@ -461,6 +461,42 @@ export class TaskService {
   }
 
   /**
+   * Whether each of these tasks is done, by task id, in two reads whatever
+   * the count: a task for everyone is done once every copy is (#4295 step 3),
+   * and comes with its counts. Tasks that no longer exist are left out. For
+   * the checkboxes on posted minutes, which show nothing else of the task.
+   */
+  async doneMarks(
+    chapterId: string,
+    ids: string[],
+  ): Promise<
+    Map<
+      string,
+      { done: boolean; group: { done: number; total: number } | null }
+    >
+  > {
+    const tasks = await this.taskRepo.findByIds(chapterId, [...new Set(ids)]);
+    const groups = await this.groupSummaries(chapterId, tasks);
+    const marks = new Map<
+      string,
+      { done: boolean; group: { done: number; total: number } | null }
+    >();
+    for (const task of tasks) {
+      const summary = task.group_id ? groups.get(task.group_id) : undefined;
+      const group = summary
+        ? { done: summary.done, total: summary.total }
+        : null;
+      marks.set(task.id, {
+        done: group
+          ? group.total > 0 && group.done >= group.total
+          : task.status === TaskStatus.COMPLETED,
+        group,
+      });
+    }
+    return marks;
+  }
+
+  /**
    * The chapter's tasks due or made since the given days, whole and without
    * their subtasks: for a background read of the record (#3930), never a
    * member's list.

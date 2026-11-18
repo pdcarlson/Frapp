@@ -36,17 +36,22 @@ function build(switchOn = true) {
   const listeners: ((m: Meeting, c: never) => Promise<void>)[] = [];
   const meetings = {
     onPostedMinutesSaved: jest.fn((listener) => listeners.push(listener)),
+    get: jest.fn(async () => ({ meeting: meeting() })),
   };
   const suggestions = {
     reconcileSource: jest.fn(async () => ({ created: [], withdrawn: 0 })),
   };
   const consent = { chapterSwitchOn: jest.fn(async () => switchOn) };
+  const tasks = { doneMarks: jest.fn(async () => new Map()) };
+  const repo = { listKeyedForSource: jest.fn(async () => [] as unknown[]) };
   const service = new MeetingTaskSuggestionsService(
     meetings as never,
     suggestions as never,
     consent as never,
+    tasks as never,
+    repo as never,
   );
-  return { service, meetings, suggestions, consent, listeners };
+  return { service, meetings, suggestions, consent, listeners, tasks, repo };
 }
 
 describe('MeetingTaskSuggestionsService (#4313)', () => {
@@ -158,5 +163,93 @@ describe('MeetingTaskSuggestionsService (#4313)', () => {
       actorId: OFFICER,
     } as never);
     expect(suggestions.reconcileSource).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("actionItemTasks: the minutes' checkboxes", () => {
+  const accepted = (text: string, taskId: string) => ({
+    status: 'accepted',
+    result_id: taskId,
+    dedupe_key: actionItemKey(text),
+  });
+
+  it('marks each item an officer made a task with whether it is done, and tells nothing about the rest', async () => {
+    const { service, repo, tasks, meetings } = build();
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Book the bus', 't-bus'),
+      // A dismissed one has no task.
+      {
+        status: 'dismissed',
+        result_id: null,
+        dedupe_key: actionItemKey('Order shirts'),
+      },
+    ]);
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-bus', { done: true, group: null }]]),
+    );
+
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([{ index: 0, done: true, group: null }]);
+    expect(meetings.get).toHaveBeenCalledWith(CHAPTER, MEETING, OFFICER);
+    expect(tasks.doneMarks).toHaveBeenCalledWith(CHAPTER, ['t-bus']);
+  });
+
+  it('passes on a task for everyone with its counts', async () => {
+    const { service, repo, tasks } = build();
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Order shirts', 't-shirts'),
+    ]);
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-shirts', { done: false, group: { done: 14, total: 20 } }]]),
+    );
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([
+      { index: 1, done: false, group: { done: 14, total: 20 } },
+    ]);
+  });
+
+  it('gives a task to the first of two items that read the same', async () => {
+    const { service, repo, tasks, meetings } = build();
+    meetings.get.mockResolvedValue({
+      meeting: meeting({
+        content: {
+          ...meeting().content,
+          action_items: [
+            { text: 'Order shirts', owner_user_id: null, due_date: null },
+            { text: 'order shirts.', owner_user_id: null, due_date: null },
+          ],
+        },
+      }),
+    });
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Order shirts', 't-shirts'),
+    ]);
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-shirts', { done: true, group: null }]]),
+    );
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([{ index: 0, done: true, group: null }]);
+  });
+
+  it('leaves out an item whose task was deleted since', async () => {
+    const { service, repo } = build();
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Book the bus', 't-gone'),
+    ]);
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([]);
+  });
+
+  it('says nothing for a draft', async () => {
+    const { service, repo, meetings } = build();
+    meetings.get.mockResolvedValue({ meeting: meeting({ status: 'draft' }) });
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([]);
+    expect(repo.listKeyedForSource).not.toHaveBeenCalled();
   });
 });

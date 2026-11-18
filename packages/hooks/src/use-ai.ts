@@ -144,9 +144,10 @@ export function useAnswerAiConsent() {
     },
     onSuccess: (state) => {
       queryClient.setQueryData(aiConsentKey, state);
-      // A No deletes the member's nudge cards on the server; drop the
-      // cached one so Activity stops drawing it. A Yes may be due one.
-      void queryClient.resetQueries({ queryKey: ["member-nudge"] });
+      // A No deletes the AI's words from the member's cards on the server;
+      // drop the cached card so Activity redraws it plain. A Yes may add a
+      // sentence.
+      void queryClient.resetQueries({ queryKey: ["activity-nudge"] });
     },
     onError: (error) => {
       if (codeOf(error) === "ai.consent.stale_sheet") {

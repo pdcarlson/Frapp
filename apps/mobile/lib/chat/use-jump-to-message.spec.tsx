@@ -42,6 +42,29 @@ describe("useJumpToMessage", () => {
     });
   });
 
+  it("places the row where the caller asks, and keeps it for the retry", () => {
+    const { result, list } = setup();
+    act(() =>
+      result.current.jumpToMessage("c", { viewPosition: 0, viewOffset: -40 }),
+    );
+    expect(list.scrollToIndex).toHaveBeenLastCalledWith({
+      index: 2,
+      animated: true,
+      viewPosition: 0,
+      viewOffset: -40,
+    });
+    act(() =>
+      result.current.onScrollToIndexFailed({ index: 2, averageItemLength: 80 }),
+    );
+    act(() => vi.advanceTimersByTime(JUMP_RETRY_MS));
+    expect(list.scrollToIndex).toHaveBeenLastCalledWith({
+      index: 2,
+      animated: true,
+      viewPosition: 0,
+      viewOffset: -40,
+    });
+  });
+
   it("does nothing for a message that isn't a row", () => {
     const { result, list } = setup();
     act(() => result.current.jumpToMessage("zz"));

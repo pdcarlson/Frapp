@@ -31,10 +31,9 @@ export * from "./ask-effort";
 export * from "./ask-entities";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";
-// An Ask Frapp answer posted to a channel (#4713).
-export * from "./ask-find";
 // What Ask opens on: the day, a greeting, the first-open starter (#4904).
 export * from "./ask-greeting";
+// An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-post";
 export * from "./ask-source-chip";
 // Ask's working state as a list of steps (#5427).
@@ -230,6 +229,8 @@ export * from "./subscription";
 export * from "./task-audience";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
+// Who a suggested task names, guessed from its own words (Paul, 2026-11-18).
+export * from "./task-suggestion-guess";
 export * from "./thumbhash";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export * from "./time-zone";

@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v5";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v6";
 
 const DueDate = z
   .string()

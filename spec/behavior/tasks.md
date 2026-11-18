@@ -92,7 +92,7 @@ Photos and proof (#4565, Shawn, 2026-11-12; reshaped by #4635, Paul, 2026-11-12)
   - The group row keeps its `audience` (`everyone`, `role`, `group` or `people`), the role or group as `target_id`, and its name as it was then as `target_name`. Every task read's `group` carries `target_id` and `target_name`, the live name while the role or group exists and the kept one after it is deleted, so the tile reads "Everyone in Philanthropy" (`taskGroupLabel`). As with Everyone, it is who it reached when made: someone who joins the role later gets no copy.
   - No rank rule: tasks grant no permission, so any `tasks:manage` holder may give one to any role or group. Changed 2026-11-18 (Paul).
 - **Suggested tasks** take Everyone too: a suggestion's payload carries `audience` beside `assignee_id`, one or the other, and accepting it makes the group task ([`meetings.md` § Suggested tasks](meetings.md#suggested-tasks)). Picking a member clears Everyone and the other way round. Since 2026-11-18 they also carry `assignee_ids`, `audience_role_id` and `audience_group_id`, and `audience: "someone"` for a task up for grabs (§ Up for grabs); accepting one of those posts it, and the accept's result is the posting.
-- **On the phone**, the New task sheet (from the Tasks screen and the quick actions) and Change before accepting offer Everyone first in Assign to; a chat's + doesn't, since its card is for one member. Changed 2026-11-18 (Paul): Assign to opens the Who picker (below), the same model as web's; a chat's + still picks one member. Grouping the copies on the phone, and a "This member only or Everyone's copy" choice on a single copy's edit, are follow-ups.
+- **On the phone**, the New task sheet (from the Tasks screen and the quick actions) and Change before creating offer Everyone first in Assign to; a chat's + doesn't, since its card is for one member. Changed 2026-11-18 (Paul): Assign to opens the Who picker (below), the same model as web's; a chat's + still picks one member. Grouping the copies on the phone, and a "This member only or Everyone's copy" choice on a single copy's edit, are follow-ups.
 
 ### The Who picker
 
@@ -182,6 +182,7 @@ On mobile's task board only the row's checkbox changes a task; a tap elsewhere o
 - The assignee sees their own tasks.
 - All admins (users with `tasks:manage`) see all tasks.
 - Members without `tasks:manage` only see tasks assigned to themselves.
+- One exception: anyone who may read posted minutes sees whether each task made from its action items is done, and for a task for everyone how many copies are ("14 of 20 done"), as checkboxes on the minutes. Nothing else of the task reaches them (Paul, 2026-11-18: action items "as checkboxes that update"; [`meetings.md` § Suggested tasks](meetings.md#suggested-tasks)).
 
 ## Chat Integration
 

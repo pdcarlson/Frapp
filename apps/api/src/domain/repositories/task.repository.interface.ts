@@ -62,6 +62,8 @@ export interface TaskListQuery extends TaskListFilter {
 
 export interface ITaskRepository {
   findById(id: string, chapterId: string): Promise<Task | null>;
+  /** The chapter's tasks among `ids`, in no particular order; missing ids are left out. */
+  findByIds(chapterId: string, ids: string[]): Promise<Task[]>;
   /** The chapter's tasks that match `query`, in its order (newest first by default). */
   findByChapter(chapterId: string, query?: TaskListQuery): Promise<Task[]>;
   /** How many of the chapter's tasks match `query`, counted in SQL. */

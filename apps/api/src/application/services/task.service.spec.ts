@@ -111,6 +111,7 @@ describe('TaskService', () => {
   beforeEach(async () => {
     mockTaskRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn().mockResolvedValue([]),
       findByChapter: jest.fn(),
       findSince: jest.fn(),
       countByChapter: jest.fn(),
@@ -596,6 +597,43 @@ describe('TaskService', () => {
         null,
         'posting-1',
       ]);
+    });
+
+    it("marks the minutes' checkbox for a task for everyone only once every copy is done (doneMarks)", async () => {
+      const group = {
+        id: 'group-1',
+        chapter_id: 'ch-1',
+        created_by: 'admin-1',
+        audience: 'everyone' as const,
+        created_at: '2026-11-17T00:00:00.000Z',
+      };
+      mockTaskRepo.findByIds.mockResolvedValue([
+        copyOf('user-1', { status: TaskStatus.COMPLETED }),
+        { ...baseTask, id: 'solo', status: TaskStatus.COMPLETED },
+      ]);
+      mockTaskRepo.findGroups.mockResolvedValue([group]);
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1', { status: TaskStatus.COMPLETED }),
+        copyOf('user-2', { status: TaskStatus.COMPLETED }),
+      ]);
+
+      const marks = await service.doneMarks('ch-1', ['copy-user-1', 'solo']);
+
+      expect(marks.get('copy-user-1')).toEqual({
+        done: true,
+        group: { done: 2, total: 2 },
+      });
+      expect(marks.get('solo')).toEqual({ done: true, group: null });
+
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1', { status: TaskStatus.COMPLETED }),
+        copyOf('user-2'),
+      ]);
+      const partway = await service.doneMarks('ch-1', ['copy-user-1']);
+      expect(partway.get('copy-user-1')).toEqual({
+        done: false,
+        group: { done: 1, total: 2 },
+      });
     });
 
     describe("editing everyone's copy", () => {
