@@ -1,5 +1,6 @@
 export * from "./act";
 export * from "./activity-cards";
+export * from "./agenda-suggestions";
 export * from "./ai-copy";
 // Report this (#4315): the reasons, the request, and the words about what a
 // report keeps.
@@ -83,7 +84,6 @@ export * from "./error-copy";
 // An event's agenda and attachments (#4934): their limits and shapes, which
 // the API enforces and both editors read.
 export * from "./event-agenda";
-export * from "./agenda-suggestions";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export * from "./event-attendance";
