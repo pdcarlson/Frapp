@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
@@ -52,7 +46,6 @@ import {
   SummaryNote,
   type SummaryNoteHandle,
 } from "@/components/minutes/summary-note";
-import { TranscriptLines } from "@/components/minutes/transcript-lines";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -182,7 +175,13 @@ function LoadedMinutes({
   const post = usePostMeeting();
   const [problem, setProblem] = useState<string | null>(null);
   const [draftable, setDraftable] = useState(false);
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // A transcript runs to an hour of lines, so it opens on its own screen
+  // rather than under the minutes (Paul, 2026-11-18).
+  const openTranscript = () =>
+    router.push({
+      pathname: "/minutes-transcript",
+      params: { id: meeting.id },
+    });
 
   const isDraft = meeting.status === "draft";
   const finishing = isDraft && meeting.can_edit;
@@ -448,11 +447,10 @@ function LoadedMinutes({
                 label={MEETING_RECORDER_COPY.transcriptRow(
                   recordingState.duration_seconds ?? 0,
                 )}
-                value={transcriptOpen ? "Hide" : "Show"}
-                onPress={() => setTranscriptOpen((open) => !open)}
+                accessibilityHint={MEETING_COPY.transcriptHint}
+                onPress={openTranscript}
               />
             </ListSection>
-            {transcriptOpen ? <TranscriptLines transcript={transcript} /> : null}
           </View>
         ) : null}
 
@@ -462,13 +460,10 @@ function LoadedMinutes({
             <ListSection>
               <ListRow
                 label={MEETING_COPY.transcript}
-                value={transcriptOpen ? "Hide" : "Show"}
-                onPress={() => setTranscriptOpen((open) => !open)}
+                accessibilityHint={MEETING_COPY.transcriptHint}
+                onPress={openTranscript}
               />
             </ListSection>
-            {transcriptOpen ? (
-              <TranscriptLines transcript={meeting.transcript} />
-            ) : null}
           </View>
         ) : null}
 

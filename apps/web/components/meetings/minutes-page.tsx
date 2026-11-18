@@ -790,14 +790,19 @@ function Minutes({
         {!editing && meeting.transcript?.trim() ? (
           // The whole recording, kept with posted minutes (#5410): the
           // record of what was said, for reading through or asking Frapp AI.
-          <details className="group space-y-2 border-t border-border pt-4">
-            <summary className="cursor-pointer text-sm font-semibold">
-              Transcript
-            </summary>
-            <p className="mt-2 max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
-              {meeting.transcript}
-            </p>
-          </details>
+          <section className="space-y-1 border-t border-border pt-4">
+            <h3 className="text-sm font-semibold">{MEETING_COPY.transcript}</h3>
+            {/* Its own tab: an hour of lines under the minutes buries them
+                (Paul, 2026-11-18). */}
+            <Link
+              href={`/meetings/${meeting.id}/transcript`}
+              target="_blank"
+              rel="noopener"
+              className={inlineNoteActionClassName}
+            >
+              {MEETING_COPY.openTranscript}
+            </Link>
+          </section>
         ) : null}
 
         {editing ? (
