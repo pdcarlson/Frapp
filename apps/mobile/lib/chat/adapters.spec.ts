@@ -632,7 +632,9 @@ describe("createAsyncStorageOutboxStore tenant scoping (#2228)", () => {
     await storage.setItem(draftKey(MEMBER_A, "c1"), "A's half-typed message");
     await storage.setItem(draftKey(MEMBER_B, "c1"), "B's half-typed message");
 
-    await createAsyncStorageOutboxStore(MEMBER_B, storage, now).clearDraft("c1");
+    await createAsyncStorageOutboxStore(MEMBER_B, storage, now).clearDraft(
+      "c1",
+    );
 
     expect(storage.map.get(draftKey(MEMBER_A, "c1"))).toBe(
       "A's half-typed message",

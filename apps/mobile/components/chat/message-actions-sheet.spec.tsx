@@ -5,7 +5,7 @@ import { act } from "react";
 import { AccessibilityInfo, Alert, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { SheetHeader } from "@/components/sheet-scaffold";
+import { SheetHeader, SheetLightScrim } from "@/components/sheet-scaffold";
 import { ForwardGlyph } from "@/components/control-glyphs";
 
 // The report settles in a microtask after the press, so its state update lands
@@ -1420,5 +1420,77 @@ describe("MessageActionsSheet — report", () => {
     });
     expect(text(tree)).not.toContain(REPORT_SENT_BODY);
     expect(sendButton(tree).props.disabled).toBe(true);
+  });
+});
+
+describe("the menu takes the keyboard's place (#5479)", () => {
+  function renderMenu(onDismiss = vi.fn()) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={{
+              ...SOMEONE_ELSES,
+              messageId: "m1",
+              copyText: "hi",
+              flag: { current: null },
+              blockUserId: null,
+              senderName: "Blake",
+              senderInDirectory: true,
+              senderLabel: "Blake",
+              sentAt: SENT_AT,
+              reactedWith: [],
+            }}
+            height={312}
+            onDismiss={onDismiss}
+            onFlag={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableOverDrag === false,
+    );
+    return { tree, menu, onDismiss };
+  }
+
+  it("opens at the height it is given, with no taller detent", () => {
+    const { menu } = renderMenu();
+    expect(menu.props.snapPoints).toEqual([312]);
+    expect(menu.props.enableDynamicSizing).toBe(false);
+    expect(menu.props.enableOverDrag).toBe(false);
+  });
+
+  it("leaves the message readable behind a light scrim", () => {
+    const { menu } = renderMenu();
+    expect(menu.props.backdropComponent).toBe(SheetLightScrim);
+  });
+
+  it("tells the thread as the close starts, and once it has closed", () => {
+    const { menu, onDismiss } = renderMenu();
+    act(() => menu.props.onAnimate(-1, 0));
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => menu.props.onAnimate(0, -1));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    act(() => menu.props.onDismiss());
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+  });
+
+  it("puts the Flag chips after Copy text, so the common rows come first", () => {
+    const { menu } = renderMenu();
+    const order = menu
+      .findAll(
+        (n) =>
+          typeof n.type === "string" &&
+          (n.props.accessibilityLabel === "Copy text" ||
+            n.props.testID === "message-flag-important"),
+      )
+      .map((n) => n.props.testID ?? n.props.accessibilityLabel)
+      .filter((key, i, all) => all.indexOf(key) === i);
+    expect(order).toEqual(["Copy text", "message-flag-important"]);
   });
 });

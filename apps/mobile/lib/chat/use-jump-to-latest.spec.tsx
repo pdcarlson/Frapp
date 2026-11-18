@@ -20,9 +20,9 @@ const layout = (height: number) =>
 
 /** A scroll to `y` from the newest message (an inverted list's offset). */
 const scroll = (y: number) =>
-  ({ nativeEvent: { contentOffset: { x: 0, y } } }) as NativeSyntheticEvent<
-    NativeScrollEvent
-  >;
+  ({
+    nativeEvent: { contentOffset: { x: 0, y } },
+  }) as NativeSyntheticEvent<NativeScrollEvent>;
 
 /**
  * The thread's rows, newest first as the inverted list draws it. A key ending
@@ -42,7 +42,9 @@ const thread = (n: number) =>
   rows(...Array.from({ length: n }, (_, index) => `c-${n - index}`));
 
 function setup(initial: LatestRow[] = thread(3), channelKey = "chan-1") {
-  const list = { scrollToOffset: vi.fn<LatestScrollableList["scrollToOffset"]>() };
+  const list = {
+    scrollToOffset: vi.fn<LatestScrollableList["scrollToOffset"]>(),
+  };
   const listRef = { current: list };
   const hook = renderHook(
     (props: { rows: LatestRow[]; channelKey: string | null }) =>

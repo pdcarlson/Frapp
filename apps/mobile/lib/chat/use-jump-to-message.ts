@@ -6,9 +6,18 @@ export interface JumpableList {
     index: number;
     animated?: boolean;
     viewPosition?: number;
+    viewOffset?: number;
   }): void;
   scrollToOffset(params: { offset: number; animated?: boolean }): void;
 }
+
+/** Where in the list a jump puts its row (`scrollToIndex`'s terms). */
+export interface JumpPlacement {
+  viewPosition: number;
+  viewOffset?: number;
+}
+
+const MIDDLE: JumpPlacement = { viewPosition: 0.5 };
 
 /** How long the fallback waits for rows near the target to render. */
 export const JUMP_RETRY_MS = 100;
@@ -38,9 +47,10 @@ export function useJumpToMessage<L extends JumpableList>(
     rowsRef.current = rows;
   }, [rows]);
   const targetRef = useRef<string | null>(null);
-  // Where the jump puts the row: the middle, or (0) the bottom of an
-  // inverted list, which is where the message menu shows it (#5479).
-  const positionRef = useRef(0.5);
+  // Where the jump puts the row: the middle by default. The message menu
+  // (#5479) brings a row to the bottom (0) or top (1) of an inverted list,
+  // offset past what its cell draws under the message.
+  const placeRef = useRef<JumpPlacement>(MIDDLE);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelRetry = useCallback(() => {
@@ -53,16 +63,16 @@ export function useJumpToMessage<L extends JumpableList>(
     rowsRef.current.findIndex((row) => row.message.id === messageId);
 
   const jumpToMessage = useCallback(
-    (messageId: string, options?: { viewPosition?: number }) => {
+    (messageId: string, placement?: JumpPlacement) => {
       const index = indexOf(messageId);
       if (index === -1) return;
       cancelRetry();
       targetRef.current = messageId;
-      positionRef.current = options?.viewPosition ?? 0.5;
+      placeRef.current = placement ?? MIDDLE;
       listRef.current?.scrollToIndex({
         index,
         animated: true,
-        viewPosition: positionRef.current,
+        ...placeRef.current,
       });
     },
     [cancelRetry],
@@ -85,7 +95,7 @@ export function useJumpToMessage<L extends JumpableList>(
         listRef.current?.scrollToIndex({
           index,
           animated: true,
-          viewPosition: positionRef.current,
+          ...placeRef.current,
         });
       }, JUMP_RETRY_MS);
     },

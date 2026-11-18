@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
@@ -31,7 +32,7 @@ import {
   SheetHeader,
   SheetPrimaryButton,
   SheetScrim,
-  SheetClearScrim,
+  SheetLightScrim,
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
@@ -67,7 +68,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { MESSAGE_FLAG_OPTIONS } from "@repo/chat-core/flags";
 import type { ChatMessageFlag } from "@repo/validation";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
-import { useMessageMenuHeight } from "@/lib/chat/message-menu-room";
+import { messageMenuHeight } from "@/lib/chat/message-menu-room";
 
 /**
  * The actions on one message: react to it, reply to it, edit or delete it
@@ -82,8 +83,8 @@ import { useMessageMenuHeight } from "@/lib/chat/message-menu-room";
  * up doesn't grow it, its rows scroll inside it, and a drag down closes it.
  * The thread leaves that room under its composer and keeps the pressed
  * message in view above it, highlighted (`useMessageMenuRoom`), as iMessage,
- * WhatsApp and Telegram do. So the scrim is clear (`SheetClearScrim`): the
- * message must read at full strength, and a tap above still closes the menu.
+ * WhatsApp and Telegram do. So the scrim is a light veil (`SheetLightScrim`):
+ * the message must read, and a tap above still closes the menu.
  *
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
@@ -319,13 +320,15 @@ export interface MessageActionsSheetProps {
   /**
    * The menu's one detent, in points: the thread's `useMessageMenuRoom`
    * passes the height it leaves room for, so the two agree. Without it the
-   * sheet works it out the same way.
+   * sheet opens at the height it would before any keyboard has opened.
    */
   height?: number;
   /**
-   * The menu closed, however it closed (a row, a swipe, the scrim, back, or a
-   * picker that replaced it): the thread gives its room back and drops the
-   * highlight.
+   * The menu is closing, however it closes (a row, a swipe, the scrim, back,
+   * or a picker that replaced it): the thread gives its room back and drops
+   * the highlight. Called as the close starts, so the room shrinks with the
+   * sheet and with a keyboard that Reply or Edit raises, and again once it
+   * has closed.
    */
   onDismiss?: () => void;
   /**
@@ -403,8 +406,8 @@ export const MessageActionsSheet = forwardRef<
   const danger = tokens.color.semantic.destructive;
   const dangerText = tokens.color.semantic.destructiveText;
   const backgroundStyle = useSheetBackgroundStyle();
-  const ownHeight = useMessageMenuHeight();
-  const menuSnapPoints = [height ?? ownHeight];
+  const { height: windowHeight } = useWindowDimensions();
+  const menuSnapPoints = [height ?? messageMenuHeight(windowHeight, null)];
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
   const pickerRef = useRef<BottomSheetModal>(null);
@@ -717,8 +720,11 @@ export const MessageActionsSheet = forwardRef<
         enableOverDrag={false}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
-        backdropComponent={SheetClearScrim}
-        onAnimate={menuVisit.onAnimate}
+        backdropComponent={SheetLightScrim}
+        onAnimate={(from: number, to: number) => {
+          menuVisit.onAnimate(from, to);
+          if (to < 0) onDismiss?.();
+        }}
         onDismiss={() => {
           menuVisit.markClosed();
           resetCopy();

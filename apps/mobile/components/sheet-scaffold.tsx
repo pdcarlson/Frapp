@@ -120,38 +120,46 @@ export function SheetBackToClose({ onClose }: { onClose: () => void }) {
  * `rgba(0,0,0,.55)`, and now passes this one too.
  */
 export function SheetScrim(props: BottomSheetBackdropProps) {
+  return <Scrim {...props} opacity={SCRIM_OPACITY} />;
+}
+
+/**
+ * How dark the long-press message menu's scrim is: a light veil, not the
+ * drawn .55. The menu takes the keyboard's place under the message it acts on
+ * (#5479), so the message has to read through it. It isn't 0: iOS hit-tests
+ * past a view whose alpha is under 0.01 (`RCTViewComponentView`), and a tap
+ * above the menu has to land on the scrim and close it, as a tap away from
+ * the keyboard does, rather than on the thread underneath.
+ */
+const LIGHT_SCRIM_OPACITY = 0.15;
+
+/**
+ * The long-press message menu's scrim (`message-actions-sheet.tsx`), the
+ * one sheet that must leave the screen behind it readable. Every other sheet
+ * passes `SheetScrim`, and `lib/sheet-scrim.spec.ts` holds this one to that
+ * file.
+ */
+export function SheetLightScrim(props: BottomSheetBackdropProps) {
+  return <Scrim {...props} opacity={LIGHT_SCRIM_OPACITY} />;
+}
+
+/** The scrim both of the above draw, at the darkness each passes. */
+function Scrim({
+  opacity,
+  ...props
+}: BottomSheetBackdropProps & { opacity: number }) {
   return (
     <BottomSheetBackdrop
       {...props}
       appearsOnIndex={0}
       disappearsOnIndex={-1}
-      opacity={SCRIM_OPACITY}
+      opacity={opacity}
       // Named for what a tap on it does, rather than gorhom's default
       // "Bottom sheet backdrop". A screen reader's sure way out of a sheet
       // with no Cancel is Android back or VoiceOver's escape
       // (`SheetBackToClose`, `useSheetClose`): gorhom closes on a touch
       // gesture, and activating the scrim taps its centre, which a tall
       // sheet covers.
-      accessibilityLabel="Close"
-      accessibilityHint="Closes the sheet."
-    />
-  );
-}
-
-/**
- * A scrim that dims nothing, for the one sheet that must leave the screen
- * behind it readable: the long-press message menu, which takes the keyboard's
- * place under the message it acts on (#5479). A tap above the sheet still
- * closes it, as the keyboard's own tap-away does, and it carries the same
- * "Close" name for a screen reader.
- */
-export function SheetClearScrim(props: BottomSheetBackdropProps) {
-  return (
-    <BottomSheetBackdrop
-      {...props}
-      appearsOnIndex={0}
-      disappearsOnIndex={-1}
-      opacity={0}
       accessibilityLabel="Close"
       accessibilityHint="Closes the sheet."
     />

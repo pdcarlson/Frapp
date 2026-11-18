@@ -366,7 +366,12 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
       .fn()
       .mockRejectedValue({ statusCode: 404, message: "Member not found" });
     const onNotAMember = vi.fn();
-    confirmBlockMember({ name: "Blake", inDirectory: false, run, onNotAMember });
+    confirmBlockMember({
+      name: "Blake",
+      inDirectory: false,
+      run,
+      onNotAMember,
+    });
 
     buttons()
       .find((button) => button.style === "destructive")
@@ -383,7 +388,10 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
   it("gives any other 404 the ordinary failure copy — it is no evidence they left", async () => {
     const run = vi
       .fn()
-      .mockRejectedValue({ statusCode: 404, message: "Cannot POST /v1/chat/blocks" });
+      .mockRejectedValue({
+        statusCode: 404,
+        message: "Cannot POST /v1/chat/blocks",
+      });
     const onNotAMember = vi.fn();
     confirmBlockMember({ name: "Blake", inDirectory: true, run, onNotAMember });
 

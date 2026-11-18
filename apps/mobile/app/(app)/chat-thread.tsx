@@ -221,6 +221,7 @@ import {
   MessageMenuFocusProvider,
   MessageMenuRoom,
   useMessageMenuRoom,
+  type MessageMenuReveal,
 } from "@/lib/chat/message-menu-room";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -773,7 +774,13 @@ function ChannelThreadScreen() {
   // it room under the composer and keeps the pressed message in view above
   // it, at the bottom of what's left.
   const revealForMenu = useCallback(
-    (messageId: string) => jumpToMessage(messageId, { viewPosition: 0 }),
+    (messageId: string, how: MessageMenuReveal) =>
+      jumpToMessage(
+        messageId,
+        how.edge === "top"
+          ? { viewPosition: 1 }
+          : { viewPosition: 0, viewOffset: -how.below },
+      ),
     [jumpToMessage],
   );
   const {
@@ -1586,17 +1593,22 @@ function ChannelThreadScreen() {
       return (
         // One view, not a fragment: an inverted list's cell is laid out
         // bottom-up (`column-reverse`, in `VirtualizedListCellRenderer`), so
-        // a second child of the cell would be drawn above the message. It is
-        // the one the long-press menu highlights (#5479).
-        <MessageMenuCell messageId={item.message.id}>
+        // a second child of the cell would be drawn above the message. The
+        // long-press menu lights the message alone, not the Ask turns under
+        // it (#5479).
+        <MessageMenuCell
+          messageId={item.message.id}
+          below={
+            // A question this member asked Frapp under this message, for
+            // them alone (#4713). Not a row of its own: the list's rows and
+            // keys stay the messages'.
+            <AskTurnsUnder
+              placement={askPlacement}
+              rowKey={item.message.client_message_id}
+            />
+          }
+        >
           {row}
-          {/* A question this member asked Frapp under this message, for them
-              alone (#4713). Not a row of its own: the list's rows and keys
-              stay the messages'. */}
-          <AskTurnsUnder
-            placement={askPlacement}
-            rowKey={item.message.client_message_id}
-          />
         </MessageMenuCell>
       );
     },

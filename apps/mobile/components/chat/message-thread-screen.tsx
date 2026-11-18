@@ -134,6 +134,7 @@ import {
   MessageMenuFocusProvider,
   MessageMenuRoom,
   useMessageMenuRoom,
+  type MessageMenuReveal,
 } from "@/lib/chat/message-menu-room";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -637,12 +638,15 @@ export function MessageThreadScreen({
   // does. The parent heads the list rather than being a row, so it is
   // revealed by scrolling to the top.
   const revealForMenu = useCallback(
-    (messageId: string) => {
+    (messageId: string, how: MessageMenuReveal) => {
       if (messageId === rootId) {
         listRef.current?.scrollToEnd({ animated: true });
         return;
       }
-      jumpToMessage(messageId, { viewPosition: 0 });
+      jumpToMessage(
+        messageId,
+        how.edge === "top" ? { viewPosition: 1 } : { viewPosition: 0 },
+      );
     },
     [rootId, listRef, jumpToMessage],
   );

@@ -2,12 +2,15 @@
 import { act, renderHook } from "@testing-library/react";
 import { Keyboard } from "react-native";
 import { create } from "react-test-renderer";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MessageMenuCell,
   MessageMenuFocusProvider,
+  SETTLE_MS,
+  keyboardFromScreenBottom,
   messageMenuHeight,
   resetKeyboardHeightForTests,
+  revealFor,
   useMessageMenuHeight,
   useMessageMenuRoom,
 } from "./message-menu-room";
@@ -16,7 +19,9 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accentSubtle: "#123456" }),
 }));
 
+beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
+  vi.useRealTimers();
   resetKeyboardHeightForTests();
   vi.restoreAllMocks();
 });
@@ -34,8 +39,22 @@ describe("messageMenuHeight (#5479)", () => {
     expect(messageMenuHeight(800, 700)).toBe(400);
   });
 
-  it("never drops below 35%, so the reactions and first rows fit", () => {
-    expect(messageMenuHeight(800, 120)).toBe(280);
+  it("is never taller than a short software keyboard", () => {
+    expect(messageMenuHeight(900, 260)).toBe(260);
+  });
+
+  it("ignores a hardware keyboard's bar", () => {
+    expect(messageMenuHeight(800, 60)).toBe(320);
+  });
+});
+
+describe("keyboardFromScreenBottom", () => {
+  it("adds back the navigation bar Android's event leaves out", () => {
+    expect(keyboardFromScreenBottom(280, 48, "android")).toBe(328);
+  });
+
+  it("takes iOS's height as it is", () => {
+    expect(keyboardFromScreenBottom(336, 34, "ios")).toBe(336);
   });
 });
 
@@ -56,10 +75,51 @@ describe("useMessageMenuHeight", () => {
   });
 });
 
+describe("revealFor", () => {
+  const list = { top: 100, height: 400 };
+
+  it("leaves a message wholly in view alone", () => {
+    expect(
+      revealFor(list, { top: 200, height: 40 }, { top: 200, height: 40 }),
+    ).toBeNull();
+  });
+
+  it("brings back a message under the menu by its bottom", () => {
+    expect(
+      revealFor(list, { top: 480, height: 40 }, { top: 480, height: 40 }),
+    ).toEqual({ edge: "bottom", below: 0 });
+  });
+
+  it("brings back one cut off at the top by its top", () => {
+    expect(
+      revealFor(list, { top: 80, height: 40 }, { top: 80, height: 40 }),
+    ).toEqual({ edge: "top", below: 0 });
+  });
+
+  it("counts what the cell draws under the message, for the offset", () => {
+    expect(
+      revealFor(list, { top: 470, height: 40 }, { top: 470, height: 140 }),
+    ).toEqual({ edge: "bottom", below: 100 });
+  });
+
+  it("brings a message taller than the list to its bottom edge", () => {
+    expect(
+      revealFor(list, { top: 50, height: 500 }, { top: 50, height: 500 }),
+    ).toEqual({ edge: "bottom", below: 0 });
+  });
+});
+
+function measured(top: number, height: number) {
+  return {
+    measureInWindow: (
+      callback: (x: number, y: number, w: number, h: number) => void,
+    ) => callback(0, top, 390, height),
+  } as never;
+}
+
 describe("useMessageMenuRoom", () => {
   it("leaves the sheet's room and highlights its message while it's open", () => {
-    const reveal = vi.fn();
-    const { result } = renderHook(() => useMessageMenuRoom(reveal));
+    const { result } = renderHook(() => useMessageMenuRoom(vi.fn()));
     expect(result.current.room).toBe(result.current.sheetHeight);
     expect(result.current.focus.highlightedId).toBeNull();
     expect(result.current.shown.get()).toBe(0);
@@ -73,56 +133,55 @@ describe("useMessageMenuRoom", () => {
     expect(result.current.shown.get()).toBe(0);
   });
 
-  function measured(top: number, height: number) {
-    return {
-      measureInWindow: (
-        callback: (x: number, y: number, w: number, h: number) => void,
-      ) => callback(0, top, 390, height),
-    } as never;
-  }
-
-  it("scrolls a message the room would push off the top", () => {
+  it("measures once the menu has settled, not while it opens", async () => {
     const reveal = vi.fn();
     const { result } = renderHook(() => useMessageMenuRoom(reveal));
-    const room = result.current.room;
     (result.current.listRef as { current: unknown }).current = measured(
       100,
-      600,
+      400,
     );
     act(() => result.current.onMenuOpenChange("m1"));
-    // The mock's `withTiming` lands at once, so the room is already taken
-    // and the cell is measured where it is drawn.
-    result.current.focus.onHighlighted("m1", measured(90, 40));
-    expect(reveal).toHaveBeenCalledWith("m1");
-    reveal.mockClear();
-    result.current.focus.onHighlighted("m1", measured(100 + room, 40));
+    result.current.focus.register("m1", {
+      outer: measured(80, 40),
+      message: measured(80, 40),
+    });
+    await act(async () => vi.advanceTimersByTime(SETTLE_MS - 1));
     expect(reveal).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(reveal).toHaveBeenCalledWith("m1", { edge: "top", below: 0 });
   });
 
-  it("scrolls a message that sits under the sheet", () => {
+  it("doesn't scroll for a menu closed before it settled", async () => {
     const reveal = vi.fn();
     const { result } = renderHook(() => useMessageMenuRoom(reveal));
     (result.current.listRef as { current: unknown }).current = measured(
       100,
-      600,
+      400,
     );
     act(() => result.current.onMenuOpenChange("m1"));
-    result.current.focus.onHighlighted("m1", measured(680, 40));
-    expect(reveal).toHaveBeenCalledWith("m1");
+    result.current.focus.register("m1", {
+      outer: measured(80, 40),
+      message: measured(80, 40),
+    });
+    act(() => result.current.onMenuOpenChange(null));
+    await act(async () => vi.advanceTimersByTime(SETTLE_MS));
+    expect(reveal).not.toHaveBeenCalled();
   });
 });
 
 describe("MessageMenuCell", () => {
-  it("draws only the menu's message in the chapter's quiet fill", () => {
-    const onHighlighted = vi.fn();
+  it("lights only the menu's message, not what's drawn under it", () => {
+    const register = vi.fn();
     let tree!: ReturnType<typeof create>;
     act(() => {
       tree = create(
         <MessageMenuFocusProvider
-          value={{ highlightedId: "b", fill: "#123456", onHighlighted }}
+          value={{ highlightedId: "b", fill: "#123456", register }}
         >
           <MessageMenuCell messageId="a">{null}</MessageMenuCell>
-          <MessageMenuCell messageId="b">{null}</MessageMenuCell>
+          <MessageMenuCell messageId="b" below={<Below />}>
+            {null}
+          </MessageMenuCell>
         </MessageMenuFocusProvider>,
       );
     });
@@ -133,5 +192,10 @@ describe("MessageMenuCell", () => {
     );
     expect(lit).toHaveLength(1);
     expect(lit[0]?.props.style?.backgroundColor).toBe("#123456");
+    expect(lit[0]?.findAllByType(Below)).toHaveLength(0);
   });
 });
+
+function Below() {
+  return null;
+}
