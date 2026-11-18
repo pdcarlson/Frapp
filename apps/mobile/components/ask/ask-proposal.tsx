@@ -1141,7 +1141,9 @@ function ActCard({
   const seed: TaskSuggestionSeed | undefined = task
     ? {
         title: task.title,
-        assigneeId: task.assignee_id,
+        who: task.assignee_id
+          ? { kind: "person", userId: task.assignee_id }
+          : null,
         dueDay: task.due_date,
         dueAt: task.due_at,
         subtasks: task.subtasks,

@@ -23,14 +23,15 @@ export type ListLayout = "list" | "grid";
 export type ListLayoutScreen = "directory" | "documents" | "tasks";
 
 /**
- * The layout a screen opens in before this person picks one. List, except
- * Tasks: its board of status columns was its only view and is its Grid, so
- * nobody's Tasks page changes until they flip it (#4175).
+ * The layout a screen opens in before this person picks one: List
+ * everywhere. Tasks opened on its Grid of status columns until 2026-11-18,
+ * when Paul found its tall tiles showed six tasks a screen; its List is now
+ * the compact rows an exec's 20 to 40 tasks fit in.
  */
 const DEFAULT_LIST_LAYOUT: Record<ListLayoutScreen, ListLayout> = {
   directory: "list",
   documents: "list",
-  tasks: "grid",
+  tasks: "list",
 };
 
 export function listLayoutStorageKey(

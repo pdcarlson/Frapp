@@ -21,9 +21,10 @@ import {
   POINTS_REASON_MAX_LENGTH,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
-  TASK_AUDIENCES,
+  TASK_PEOPLE_MAX,
+  TASK_SUGGESTION_AUDIENCES,
   TASK_TITLE_MAX_LENGTH,
-  type TaskAudience,
+  type TaskSuggestionAudience,
 } from '@repo/validation';
 import {
   AI_SUGGESTION_KINDS,
@@ -98,22 +99,56 @@ export class TaskSuggestionEditsDto {
     nullable: true,
     format: 'uuid',
     description:
-      'Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`.',
+      'Who the task is for. Required to accept when none was suggested, unless `assignee_ids` or `audience` is set. "Who" is one answer: an edit that sends any of `assignee_id`, `assignee_ids`, `audience`, `audience_role_id` and `audience_group_id` replaces it with what those say, so setting this alone clears the rest.',
   })
   @IsOptional()
   @IsUUID()
   assignee_id?: string | null;
 
   @ApiPropertyOptional({
-    type: String,
-    enum: TASK_AUDIENCES,
+    type: [String],
     nullable: true,
+    maxItems: TASK_PEOPLE_MAX,
     description:
-      'A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`.',
+      'Several people (2026-11-18): with no `audience`, accepting gives each their own copy; with `audience: "someone"`, it posts one task up for grabs that one of them claims. A list of one is that person.',
   })
   @IsOptional()
-  @IsIn(TASK_AUDIENCES)
-  audience?: TaskAudience | null;
+  @IsArray()
+  @ArrayMaxSize(TASK_PEOPLE_MAX)
+  @IsUUID(undefined, { each: true })
+  assignee_ids?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    enum: TASK_SUGGESTION_AUDIENCES,
+    nullable: true,
+    description:
+      'A task for a group instead of one person: `everyone` gives each member of it their own copy (#4295 step 3); `someone` (2026-11-18) posts one task up for grabs that one of them claims, and the accept’s result id is then the posting’s. The group is the chapter, narrowed by `audience_role_id` or `audience_group_id`, or for `someone` by `assignee_ids`.',
+  })
+  @IsOptional()
+  @IsIn(TASK_SUGGESTION_AUDIENCES)
+  audience?: TaskSuggestionAudience | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    format: 'uuid',
+    description: 'With `audience`: only this role’s holders (2026-11-18).',
+  })
+  @IsOptional()
+  @IsUUID()
+  audience_role_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    format: 'uuid',
+    description:
+      'With `audience`: only this chapter group’s members (2026-11-18).',
+  })
+  @IsOptional()
+  @IsUUID()
+  audience_group_id?: string | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -314,18 +349,32 @@ export class TaskSuggestionDto {
     nullable: true,
     format: 'uuid',
     description:
-      'Null when no name or role was said for it, or when it is for everyone: the screen shows "Who?" or "Everyone".',
+      'Null when no name or role was said for it, or when it is for a group or several people: the screen shows "Who?" or who it is for.',
   })
   assignee_id: string | null;
 
   @ApiProperty({
-    type: String,
-    enum: TASK_AUDIENCES,
+    type: [String],
     nullable: true,
     description:
-      'Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy.',
+      'Several people (2026-11-18): a copy each, or with `audience: "someone"` one task that one of them claims.',
   })
-  audience: TaskAudience | null;
+  assignee_ids: string[] | null;
+
+  @ApiProperty({
+    type: String,
+    enum: TASK_SUGGESTION_AUDIENCES,
+    nullable: true,
+    description:
+      '`everyone`: accepting gives each member of the group their own copy (#4295 step 3). `someone`: accepting posts one task up for grabs (2026-11-18). The group is the chapter unless `audience_role_id`, `audience_group_id` or (for `someone`) `assignee_ids` narrows it.',
+  })
+  audience: TaskSuggestionAudience | null;
+
+  @ApiProperty({ type: String, nullable: true, format: 'uuid' })
+  audience_role_id: string | null;
+
+  @ApiProperty({ type: String, nullable: true, format: 'uuid' })
+  audience_group_id: string | null;
 
   @ApiProperty({ type: String, nullable: true, format: 'date' })
   due_date: string | null;

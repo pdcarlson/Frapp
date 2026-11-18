@@ -15,6 +15,7 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AccessibilityInfo,
+  Alert,
   AppState,
   StyleSheet,
   Text,
@@ -23,7 +24,12 @@ import {
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
+  useAssignOpenTask,
   useChapterRoster,
+  useClaimOpenTask,
+  useDeleteOpenTask,
+  useOpenTasks,
+  useReleaseTask,
   useCurrentChapter,
   useCurrentUser,
   useEvents,
@@ -35,11 +41,16 @@ import {
   useViewerUserId,
   MY_TASKS_GROUPS,
   MY_TASKS_GROUP_LABELS,
+  type OpenTask,
   type TaskStatus,
 } from "@repo/hooks";
 import { nextUpLine } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
-import { canAll, isModuleEnabled } from "@repo/validation";
+import {
+  TASK_AUDIENCE_COPY,
+  canAll,
+  isModuleEnabled,
+} from "@repo/validation";
 import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -65,6 +76,18 @@ import { GridLine, toGridChunks } from "@/components/grid-line";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { useListLayout } from "@/lib/list-layout";
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
+import { OpenTaskRow } from "@/components/tasks/open-task-row";
+import {
+  OpenTaskAssignPicker,
+  OpenTaskSheet,
+} from "@/components/tasks/open-task-sheet";
+import {
+  claimLost,
+  claimedLine,
+  claimedTaskId,
+  openTaskWho,
+  selectOpenTasks,
+} from "@/lib/tasks/open-tasks";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
@@ -152,6 +175,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 const TAKE_BACK_FAILED =
   "Couldn't mark that task not done. An officer may have confirmed it already.";
 const MARK_DONE_FAILED = "Couldn't mark that task done. Try again.";
+const CLAIM_FAILED = "Couldn't claim that task. Try again.";
+const RELEASE_FAILED = "Couldn't give that task back. Try again.";
+const POSTING_FAILED = "That didn't go through. Try again.";
+const RELEASED = `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`;
 
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
@@ -166,6 +193,9 @@ export default function TasksScreen() {
   // apart or a dead `/v1/users/me` pins it on a skeleton with no way out.
   const viewerQuery = useCurrentUser();
   const tasksQuery = useTasks();
+  // Up for grabs (spec/behavior/tasks.md § Up for grabs): what this member may claim, and
+  // for an officer who manages tasks, every open posting.
+  const openTasksQuery = useOpenTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
   // The board is drawn only with a chapter id (see `renderBoard`), so the pull
@@ -174,6 +204,7 @@ export default function TasksScreen() {
   const refresh = useRefetchAll([
     viewerQuery,
     chapterId ? tasksQuery : null,
+    chapterId ? openTasksQuery : null,
     pointsQuery,
     leaderboardQuery,
   ]);
@@ -286,6 +317,11 @@ export default function TasksScreen() {
     id: string;
     message: string;
     key: number;
+    /**
+     * What its action does: take a completion back (Undo), or give a task
+     * just claimed back to Up for grabs.
+     */
+    action: "undo" | "release";
   } | null>(null);
   useEffect(() => {
     if (!undo) return undefined;
@@ -370,6 +406,7 @@ export default function TasksScreen() {
       // A new key per completion, so a second one inside the window is
       // announced again even though the words are the same.
       key: (open?.key ?? 0) + 1,
+      action: "undo",
     }));
   }, []);
 
@@ -586,6 +623,188 @@ export default function TasksScreen() {
         }
       : undefined;
 
+  // Up for grabs (spec/behavior/tasks.md § Up for grabs). A claim is optimistic in the
+  // hook: the row leaves on the tap, the task lands in its day once the board
+  // reads again, and a toast offers Give it back. A claim another member won
+  // (a 409) says so, and the row stays gone while the list reads again.
+  const claimOpen = useClaimOpenTask();
+  const releaseTask = useReleaseTask();
+  const assignOpen = useAssignOpenTask();
+  const deleteOpen = useDeleteOpenTask();
+  // A lost claim hides its posting only until the list reads again: the
+  // fresh read leaves out a claimed posting itself, and shows it again if
+  // its taker gives it back. So each hide is keyed to the read it was made on.
+  const openTasksReadAt = openTasksQuery.dataUpdatedAt;
+  const [lostClaims, setLostClaims] = useState<{
+    readAt: number;
+    ids: ReadonlySet<string>;
+  }>(() => ({ readAt: 0, ids: new Set() }));
+  const openTasks = useMemo(
+    () =>
+      selectOpenTasks(
+        openTasksQuery.data,
+        lostClaims.readAt === openTasksReadAt ? lostClaims.ids : new Set(),
+      ),
+    [openTasksQuery.data, lostClaims, openTasksReadAt],
+  );
+  const nameOf = useCallback(
+    (userId: string) =>
+      memberLabel(
+        (rosterQuery.data ?? []).find((member) => member.user_id === userId)
+          ?.display_name,
+        userId,
+      ),
+    [rosterQuery.data],
+  );
+
+  const claim = useCallback(
+    (posting: OpenTask) => {
+      setNotice(null);
+      setCreated(null);
+      claimOpen.mutate(posting.id, {
+        onSuccess: (data) => {
+          successHaptic();
+          const taskId = claimedTaskId(data);
+          if (!taskId) return;
+          setUndo((open) => ({
+            id: taskId,
+            message: claimedLine(posting, now),
+            key: (open?.key ?? 0) + 1,
+            action: "release",
+          }));
+        },
+        onError: (error) => {
+          if (claimLost(error)) {
+            setLostClaims((lost) => ({
+              readAt: openTasksReadAt,
+              ids:
+                lost.readAt === openTasksReadAt
+                  ? new Set(lost.ids).add(posting.id)
+                  : new Set([posting.id]),
+            }));
+            setNotice(TASK_AUDIENCE_COPY.alreadyClaimed);
+            return;
+          }
+          setNotice(
+            errorCopy(error, CLAIM_FAILED, { serverWritesForMembers: true }),
+          );
+        },
+      });
+    },
+    [claimOpen, now, openTasksReadAt],
+  );
+
+  /** Give a claimed task back to Up for grabs, from the toast or its sheet. */
+  const giveBack = useCallback(
+    (taskId: string) => {
+      setUndo(null);
+      setNotice(null);
+      releaseTask.mutate(taskId, {
+        onSuccess: () => {
+          setCreated(RELEASED);
+          AccessibilityInfo.announceForAccessibility(RELEASED);
+        },
+        onError: (error) =>
+          setNotice(
+            errorCopy(error, RELEASE_FAILED, { serverWritesForMembers: true }),
+          ),
+      });
+    },
+    [releaseTask],
+  );
+
+  // A posting's sheet, by id, so it redraws as the list reads again and
+  // closes on nothing once the posting is gone.
+  const postingRef = useRef<BottomSheetModal>(null);
+  const [postingId, setPostingId] = useState<string | null>(null);
+  const [postingProblem, setPostingProblem] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<OpenTask | null>(null);
+  const openPosting = useMemo(
+    () => openTasks.find((posting) => posting.id === postingId) ?? null,
+    [openTasks, postingId],
+  );
+  const postingFailed = useCallback((error: unknown) => {
+    setPostingProblem(
+      claimLost(error)
+        ? TASK_AUDIENCE_COPY.alreadyClaimed
+        : errorCopy(error, POSTING_FAILED),
+    );
+  }, []);
+  const assignPosting = useCallback(
+    (posting: OpenTask, userId: string) => {
+      setPostingProblem(null);
+      assignOpen.mutate(
+        { id: posting.id, assigneeId: userId },
+        {
+          onSuccess: () => {
+            postingRef.current?.dismiss();
+            const text = taskCreatedLine(nameOf(userId), userId === viewerUserId);
+            setCreated(text);
+            AccessibilityInfo.announceForAccessibility(text);
+          },
+          onError: postingFailed,
+        },
+      );
+    },
+    [assignOpen, nameOf, viewerUserId, postingFailed],
+  );
+  const deletePosting = useCallback(
+    (posting: OpenTask) => {
+      Alert.alert(
+        `Delete “${posting.title}”?`,
+        `It comes off ${TASK_AUDIENCE_COPY.upForGrabs} for everyone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              setPostingProblem(null);
+              deleteOpen.mutate(posting.id, {
+                onSuccess: () => postingRef.current?.dismiss(),
+                onError: postingFailed,
+              });
+            },
+          },
+        ],
+      );
+    },
+    [deleteOpen, postingFailed],
+  );
+
+  function renderUpForGrabs() {
+    if (openTasks.length === 0) {
+      // A failed read says so in one line rather than leaving a member to
+      // think nothing is open; nothing open draws nothing at all.
+      return openTasksQuery.isError && openTasksQuery.data === undefined ? (
+        <InlineNote>{`Couldn't load ${TASK_AUDIENCE_COPY.upForGrabs}. Pull down to try again.`}</InlineNote>
+      ) : null;
+    }
+    return (
+      <>
+        <SectionHeader>{TASK_AUDIENCE_COPY.upForGrabs.toUpperCase()}</SectionHeader>
+        <View>
+          {openTasks.map((posting, index) => (
+            <OpenTaskRow
+              key={posting.id}
+              posting={posting}
+              now={now}
+              isFirst={index === 0}
+              onClaim={
+                posting.viewer_can_claim ? () => claim(posting) : undefined
+              }
+              onOpen={() => {
+                setPostingProblem(null);
+                setPostingId(posting.id);
+                postingRef.current?.present();
+              }}
+            />
+          ))}
+        </View>
+      </>
+    );
+  }
+
   const canToggle = useCallback(
     (row: TaskRowModel) =>
       pendingId !== row.id &&
@@ -689,20 +908,26 @@ export default function TasksScreen() {
 
     if (board.total === 0) {
       return (
-        // One line under the points card, not a card of its own (`writing.md`
-        // § 4, rule 7): the plate is clear, then what comes next, so the line
-        // says more than what isn't there. Web's Tasks board writes the same
-        // line (`nextUpLine`). An officer also hears where assigning lives,
-        // this screen's own + (New task, #4610).
-        <InlineNote>
-          {nextUpLine(eventsOn ? eventsQuery.data : undefined, now.getTime())}
-          {canManageTasks ? " Tap + to assign a task." : null}
-        </InlineNote>
+        <>
+          {renderUpForGrabs()}
+          {/* One line under the points card, not a card of its own
+              (`writing.md` § 4, rule 7): the plate is clear, then what comes
+              next, so the line says more than what isn't there. Web's Tasks
+              board writes the same line (`nextUpLine`). An officer also hears
+              where assigning lives, this screen's own + (New task, #4610). */}
+          <InlineNote>
+            {nextUpLine(eventsOn ? eventsQuery.data : undefined, now.getTime())}
+            {canManageTasks ? " Tap + to assign a task." : null}
+          </InlineNote>
+        </>
       );
     }
 
     return (
       <>
+        {/* Up for grabs leads, when anything is open: what a member could
+            pick up, before their own list. */}
+        {renderUpForGrabs()}
         {/* Today, This week, Later (#4295 step 5), each only when it has a
             task: on a phone an empty heading is a scroll for nothing. */}
         {MY_TASKS_GROUPS.map((group) =>
@@ -750,7 +975,14 @@ export default function TasksScreen() {
         <UndoBar
           key={undo.key}
           message={undo.message}
-          onUndo={() => void takeBack(undo.id)}
+          actionLabel={
+            undo.action === "release" ? TASK_AUDIENCE_COPY.release : undefined
+          }
+          onUndo={() =>
+            undo.action === "release"
+              ? giveBack(undo.id)
+              : void takeBack(undo.id)
+          }
           aboveCreate={canCreate}
         />
       ) : null}
@@ -769,8 +1001,57 @@ export default function TasksScreen() {
             : undefined
         }
         onEdit={startEdit}
+        onRelease={
+          openRow?.openTaskId &&
+          openRow.assigneeId === viewerUserId &&
+          !openRow.isDone
+            ? () => {
+                sheetRef.current?.dismiss();
+                giveBack(openRow.id);
+              }
+            : undefined
+        }
         onDismiss={() => setOpenId(null)}
       />
+
+      <OpenTaskSheet
+        ref={postingRef}
+        posting={openPosting}
+        who={openPosting ? openTaskWho(openPosting, nameOf) : null}
+        busy={assignOpen.isPending || deleteOpen.isPending}
+        problem={postingProblem}
+        onClaim={
+          openPosting?.viewer_can_claim
+            ? () => {
+                const posting = openPosting;
+                postingRef.current?.dismiss();
+                claim(posting);
+              }
+            : undefined
+        }
+        onAssign={
+          canManageTasks && openPosting
+            ? () => setAssigning(openPosting)
+            : undefined
+        }
+        onDelete={
+          canManageTasks && openPosting
+            ? () => deletePosting(openPosting)
+            : undefined
+        }
+        onDismiss={() => {
+          setPostingId(null);
+          setPostingProblem(null);
+        }}
+      />
+
+      {assigning ? (
+        <OpenTaskAssignPicker
+          key={assigning.id}
+          onPick={(userId) => assignPosting(assigning, userId)}
+          onClosed={() => setAssigning(null)}
+        />
+      ) : null}
 
       {createMounted ? (
         // A new sheet per chapter: a kept draft belongs to the chapter it was
@@ -783,13 +1064,13 @@ export default function TasksScreen() {
           <NewTaskSheet
             ref={createRef}
             now={now}
-            offerEveryone
+            offerGroups
             // Kept past this screen (#4593): going back and coming here again
             // opens New task on the draft left in it.
             keptDraft="tasks-create"
-            onCreated={(assigneeName, wasSelf) => {
+            onCreated={(assigneeName, wasSelf, upForGrabs) => {
               // Someone else's task is on no board here, so say where it went.
-              const text = taskCreatedLine(assigneeName, wasSelf);
+              const text = taskCreatedLine(assigneeName, wasSelf, upForGrabs);
               setCreated(text);
               AccessibilityInfo.announceForAccessibility(text);
             }}

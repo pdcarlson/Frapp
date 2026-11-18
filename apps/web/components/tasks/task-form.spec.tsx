@@ -23,6 +23,12 @@ vi.mock("@repo/hooks", () => ({
   putSignedUpload: photo.put,
   useCurrentChapter: () => mockCurrentChapter(),
   useMembers: () => MEMBERS_QUERY,
+  // The Who picker's other lists (2026-11-18): none needed here.
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({

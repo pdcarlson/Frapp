@@ -16,6 +16,12 @@ vi.mock("@repo/hooks", () => ({
   // Task photos (#4565): no photo reads or uploads in these cases.
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useTaskPhotoUrl: () => ({ data: undefined }),
+  // The task form's Who picker reads roles, tiers and groups.
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useCurrentChapter: () => mocks.currentChapter(),
   useAiSuggestions: () => ({ data: { items: mocks.items.current } }),

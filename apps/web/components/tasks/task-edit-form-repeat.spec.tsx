@@ -25,6 +25,12 @@ vi.mock("@repo/hooks", () => ({
     data: [{ user_id: "u1", display_name: "Aaron Whitfield" }],
   }),
   useUpdateTask: () => ({ mutateAsync: updateTask, isPending: false }),
+  // The Who picker's other lists (2026-11-18): none needed here.
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
 }));
 
 // The live checklist has its own spec; here it only has to render.

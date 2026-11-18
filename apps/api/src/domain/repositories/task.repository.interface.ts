@@ -6,7 +6,7 @@ import {
   TaskStatus,
   TaskSubtask,
 } from '../entities/task.entity';
-import type { TaskAudience, TaskProofKind } from '@repo/validation';
+import type { TaskGroupAudience, TaskProofKind } from '@repo/validation';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
@@ -273,7 +273,11 @@ export interface CreateTaskSeriesInput {
 export interface CreateTaskGroupInput {
   chapter_id: string;
   created_by: string;
-  audience: TaskAudience;
+  audience: TaskGroupAudience;
+  /** The role or chapter group it goes to; null for everyone and people. */
+  target_id: string | null;
+  /** That role's or group's name now, kept for once it's deleted. */
+  target_name: string | null;
   /** Who gets a copy: one per distinct user id. */
   assignee_ids: string[];
   title: string;

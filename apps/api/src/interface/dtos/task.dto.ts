@@ -23,6 +23,8 @@ import {
   TASK_COMPLETION_NOTE_MAX,
   TASK_PHOTOS_MAX,
   TASK_AUDIENCES,
+  TASK_GROUP_AUDIENCES,
+  TASK_PEOPLE_MAX,
   TASK_PROOF_KINDS,
   TASK_PROOF_LINK_MAX,
   TASK_SEND_BACK_REASON_MAX,
@@ -30,6 +32,7 @@ import {
   TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
   type TaskAudience,
+  type TaskGroupAudience,
   type TaskProofKind,
 } from '@repo/validation';
 import {
@@ -118,20 +121,54 @@ export class CreateTaskDto {
 
   @ApiPropertyOptional({
     description:
-      'User ID of the assignee. Send this or `audience`, exactly one of them.',
+      'User ID of the assignee. Send exactly one of this, `assignee_ids` and `audience`.',
   })
-  @ValidateIf((dto: CreateTaskDto) => dto.audience == null)
+  @ValidateIf(
+    (dto: CreateTaskDto) => dto.audience == null && dto.assignee_ids == null,
+  )
   @IsUUID()
   assignee_id?: string;
 
   @ApiPropertyOptional({
+    type: [String],
+    minItems: 1,
+    maxItems: TASK_PEOPLE_MAX,
+    description:
+      'Several people picked one by one (2026-11-18), in place of `assignee_id` and `audience`: each gets their own copy, as with `audience`, and reads carry `group` with `audience: "people"`. Each must be an active member of the chapter (alumni refused); duplicates count once, and a list of one makes that person’s task. The same limits as `audience` apply.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(TASK_PEOPLE_MAX)
+  @IsUUID(undefined, { each: true })
+  assignee_ids?: string[];
+
+  @ApiPropertyOptional({
     enum: TASK_AUDIENCES,
     description:
-      'A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.',
+      'A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Narrow it with `audience_role_id` or `audience_group_id`. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.',
   })
   @IsOptional()
   @IsIn(TASK_AUDIENCES)
   audience?: TaskAudience;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'With `audience: "everyone"` only (2026-11-18): just the active members holding this role get a copy. The chapter’s Everyone role means everyone; the Alumni role is refused, and a role nobody holds is a 400 ("Nobody holds that role yet"). Not with `audience_group_id`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  audience_role_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  audience_group_id?: string;
 
   @ApiProperty({ description: 'Due date (YYYY-MM-DD)' })
   @IsDateString()
@@ -220,8 +257,29 @@ export class TaskGroupSummaryDto implements TaskGroupSummary {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({ enum: TASK_AUDIENCES })
-  audience: TaskAudience;
+  @ApiProperty({
+    enum: TASK_GROUP_AUDIENCES,
+    description:
+      'Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy.',
+  })
+  audience: TaskGroupAudience;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The role or chapter group it went to, for `role` and `group`; null otherwise.',
+  })
+  target_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee".',
+  })
+  target_name: string | null;
 
   @ApiProperty({ description: 'How many copies the group has.' })
   total: number;
