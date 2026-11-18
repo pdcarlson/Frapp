@@ -1,6 +1,5 @@
 import {
   MEETING_SECTIONS,
-  meetingTypeLabel,
   type MeetingSectionKey,
   type MeetingType,
   type MeetingVote,
