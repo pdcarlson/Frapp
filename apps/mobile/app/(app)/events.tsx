@@ -209,53 +209,63 @@ export default function EventsScreen() {
   }
 
   return (
-    <ScreenShell
-      back={BACK_TO_ACTIVITY}
-      title="Calendar"
-      refresh={refresh}
-      headerAction={
-        chapterId ? (
-          <View style={styles.headerActions}>
-            <HeaderButton
-              label="Subscribe to events in your calendar"
-              onPress={() => {
-                setSubscribeOpen(true);
-                subscribeSheet.current?.present();
-              }}
-            >
-              <CalendarPlusGlyph color={tokens.color.text.foreground} />
-            </HeaderButton>
-            {/* Add, rightmost and in the accent, since it acts on this
-                screen (#5113). */}
-            {canCreateEvents ? (
+    // The task menu's Undo floats over the screen, so it sits beside the
+    // shell rather than in its scroll, as the board's does.
+    <View style={styles.frame}>
+      <ScreenShell
+        back={BACK_TO_ACTIVITY}
+        title="Calendar"
+        refresh={refresh}
+        headerAction={
+          chapterId ? (
+            <View style={styles.headerActions}>
               <HeaderButton
-                label="New event"
-                onPress={() => newEvent.open(pickedDayStart(selectedDay, now))}
+                label="Subscribe to events in your calendar"
+                onPress={() => {
+                  setSubscribeOpen(true);
+                  subscribeSheet.current?.present();
+                }}
               >
-                <PlusGlyph color={brand.accent} />
+                <CalendarPlusGlyph color={tokens.color.text.foreground} />
               </HeaderButton>
-            ) : null}
-          </View>
-        ) : null
-      }
-    >
-      {renderBody()}
+              {/* Add, rightmost and in the accent, since it acts on this
+                screen (#5113). */}
+              {canCreateEvents ? (
+                <HeaderButton
+                  label="New event"
+                  onPress={() =>
+                    newEvent.open(pickedDayStart(selectedDay, now))
+                  }
+                >
+                  <PlusGlyph color={brand.accent} />
+                </HeaderButton>
+              ) : null}
+            </View>
+          ) : null
+        }
+      >
+        {renderBody()}
 
-      {chapterId ? <SuggestedEventsEntry /> : null}
-      <CalendarSubscribeSheet
-        ref={subscribeSheet}
-        open={subscribeOpen}
-        onDismiss={() => setSubscribeOpen(false)}
-      />
-      {newEvent.sheet}
-      {eventMenu.host}
-      {taskMenu.host}
-    </ScreenShell>
+        {chapterId ? <SuggestedEventsEntry /> : null}
+        <CalendarSubscribeSheet
+          ref={subscribeSheet}
+          open={subscribeOpen}
+          onDismiss={() => setSubscribeOpen(false)}
+        />
+        {newEvent.sheet}
+        {eventMenu.host}
+        {taskMenu.host}
+      </ScreenShell>
+      {taskMenu.undoBar}
+    </View>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    frame: {
+      flex: 1,
+    },
     headerActions: {
       flexDirection: "row",
       alignItems: "center",

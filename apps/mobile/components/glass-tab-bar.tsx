@@ -51,6 +51,7 @@ import {
 } from "@/lib/floating-chrome";
 import { useScreenReaderOn } from "@/lib/screen-reader";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
+import { GLASS_PRESSED, GLASS_SCRIM } from "@/lib/glass-paint";
 import { selectionHaptic } from "@/lib/haptics";
 import type { QuickActionKey } from "@/lib/quick-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -641,7 +642,7 @@ function growFromPlus() {
 }
 
 const styles = StyleSheet.create({
-  scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
+  scrim: { backgroundColor: GLASS_SCRIM },
   askBar: { position: "absolute" },
   folded: { flex: 1, alignItems: "center", justifyContent: "center" },
   foldedDot: {
@@ -720,5 +721,5 @@ const styles = StyleSheet.create({
     borderRadius: FLOATING_TAB_BAR.actionButton / 2,
   },
   plusPress: { flex: 1, alignItems: "center", justifyContent: "center" },
-  plusPressed: { backgroundColor: "rgba(255,255,255,0.08)" },
+  plusPressed: { backgroundColor: GLASS_PRESSED },
 });

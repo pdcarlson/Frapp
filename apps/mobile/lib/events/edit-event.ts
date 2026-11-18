@@ -86,13 +86,16 @@ export function duplicateEventTemplate(
   if (!start || !end || Number.isNaN(start.getTime()) || start > now) {
     return draft;
   }
-  const weeks = Math.ceil(
+  const length = end.getTime() - start.getTime();
+  // Whole weeks by the calendar, so a clock change between keeps the hour,
+  // the jump first and then a week at a time until it is ahead: a jump
+  // counted in milliseconds can land an hour short across a spring-forward.
+  const weeks = Math.floor(
     (now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
   );
-  const length = end.getTime() - start.getTime();
   const moved = new Date(start);
-  // By the calendar, so a clock change between keeps the hour.
-  moved.setDate(moved.getDate() + 7 * Math.max(weeks, 1));
+  moved.setDate(moved.getDate() + 7 * weeks);
+  while (moved <= now) moved.setDate(moved.getDate() + 7);
   return {
     ...draft,
     start: moved,

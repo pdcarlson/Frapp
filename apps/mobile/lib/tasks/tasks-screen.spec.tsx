@@ -1048,3 +1048,71 @@ describe("Up for grabs", () => {
     permissions = [];
   });
 });
+
+// #5492: hold a task on the board for its actions.
+describe("Long-press menu on the board (#5492)", () => {
+  const menuItems = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+  const pressHost = (within: ReactTestRenderer["root"]) =>
+    within.find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.accessibilityRole === "button" &&
+        typeof node.props.onPress === "function",
+    );
+  const hold = (tree: ReactTestRenderer, within: ReactTestRenderer["root"]) => {
+    const host = pressHost(within);
+    expect(host.props.onLongPress, "a long press").toBeTypeOf("function");
+    act(() => host.props.onLongPress({ nativeEvent: { pageY: 300 } }));
+    return menuItems(tree).map((node) => node.props.accessibilityLabel);
+  };
+
+  beforeEach(() => {
+    permissions = ["members:view", "tasks:manage"];
+  });
+  afterEach(() => {
+    permissions = [];
+  });
+
+  it("opens a row's menu, and says where a Duplicate went in the board's line", () => {
+    const tree = render();
+    expect(hold(tree, row(tree))).toEqual([
+      "Mark done",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+    act(() =>
+      menuItems(tree)
+        .find((node) => node.props.accessibilityLabel === "Duplicate")!
+        .props.onPress(),
+    );
+    const duplicate = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "NewTaskSheet" &&
+        node.props.prefill !== undefined,
+    );
+    expect(duplicate.props.prefill.title).toBe("Sweep the porch");
+    act(() => duplicate.props.onCreated("Sam Lee", false, false));
+    expect(screenText(tree)).toContain("Assigned to Sam Lee.");
+    act(() => tree.unmount());
+  });
+
+  it("gives a Grid card the same long press and named actions", () => {
+    const tree = render();
+    act(() => setListLayout("tasks", "grid"));
+    const tile = tree.root.findAllByType(TaskTile)[0]!;
+    expect(
+      (pressHost(tile).props.accessibilityActions as { label: string }[]).map(
+        (action) => action.label,
+      ),
+    ).toEqual(["Mark done", "Edit", "Reassign", "Duplicate", "Delete"]);
+    expect(hold(tree, tile)).toContain("Duplicate");
+    act(() => tree.unmount());
+  });
+});

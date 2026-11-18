@@ -34,8 +34,8 @@ import {
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { alertFailure } from "@/lib/failure-alert";
-import { records } from "@/lib/more/narrow";
-import { toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
+import type { TaskRowModel } from "@/lib/tasks/board";
+import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import {
   editTargetOfRow,
   taskCreatedLine,
@@ -94,8 +94,7 @@ export function useTaskMenu({
   const router = useRouter();
   const viewerId = useViewerUserId();
   const canManage = can("tasks:manage", usePermissionList());
-  const tasksQuery = useTasks();
-  const tasksData = tasksQuery.data;
+  const { data: tasksData } = useTasks();
   const deleteTask = useDeleteTask();
   const menu = useItemMenu();
 
@@ -314,27 +313,20 @@ export function useTaskMenu({
   return { menuFor, menuForCalendarTask, host };
 }
 
-/** A task of the viewer's read (`GET /v1/tasks`) by id, as a row. */
-function useTaskRowById(): (id: string | null) => TaskRowModel | null {
-  const { data } = useTasks();
-  return useCallback(
-    (id: string | null) => {
-      if (id === null) return null;
-      const raw = records(data).find((task) => task.id === id);
-      return raw ? toTaskRow(raw) : null;
-    },
-    [data],
-  );
-}
-
 /**
  * The task menu for a screen with no checkbox (the Calendar and its Day
  * screen): its own Mark done, with Mark done's sheet and Undo, and a failed
  * one said in the platform alert, since the screen has no line for it.
+ *
+ * `host` holds the menu and the sheets, which draw over everything, so it
+ * can sit anywhere in the screen. `undoBar` floats over the screen's bottom
+ * edge, so it goes outside the screen's scroll (beside `ScreenShell`, as the
+ * board places its own), or it would sit against the scrolling content.
  */
 export function useCalendarTaskMenu(): {
   menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
   host: ReactNode;
+  undoBar: ReactNode;
 } {
   const viewerId = useViewerUserId();
   const toggles = useTaskToggle(useTaskRowById(), { viewerId });
@@ -349,14 +341,14 @@ export function useCalendarTaskMenu(): {
       <>
         {host}
         <MarkDoneHost toggle={toggles} />
-        {toggles.undo ? (
-          <UndoBar
-            key={toggles.undo.key}
-            message={toggles.undo.message}
-            onUndo={() => void toggles.takeBack(toggles.undo!.id)}
-          />
-        ) : null}
       </>
     ),
+    undoBar: toggles.undo ? (
+      <UndoBar
+        key={toggles.undo.key}
+        message={toggles.undo.message}
+        onUndo={() => void toggles.takeBack(toggles.undo!.id)}
+      />
+    ) : null,
   };
 }

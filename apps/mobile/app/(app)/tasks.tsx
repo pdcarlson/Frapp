@@ -77,14 +77,11 @@ import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
-import {
-  selectTaskRows,
-  toTaskRow,
-  type TaskRowModel,
-} from "@/lib/tasks/board";
+import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
 import { useTaskMenu } from "@/lib/tasks/use-task-menu";
+import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -215,24 +212,16 @@ export default function TasksScreen() {
   // The task a row opens and the one Mark done's sheet is open on, read off
   // the board, or off the same query for a task the board has let go of
   // (finished more than a week ago).
+  const rowById = useTaskRowById();
   const findRow = useCallback(
     (id: string | null): TaskRowModel | null => {
       if (id === null) return null;
       const onBoard = MY_TASKS_GROUPS.flatMap(
         (group) => board.groups[group],
       ).find((row) => row.id === id);
-      if (onBoard) return onBoard;
-      const raw = Array.isArray(tasksQuery.data)
-        ? (tasksQuery.data as unknown[]).find(
-            (row) =>
-              !!row &&
-              typeof row === "object" &&
-              (row as { id?: unknown }).id === id,
-          )
-        : undefined;
-      return raw ? toTaskRow(raw as Record<string, unknown>) : null;
+      return onBoard ?? rowById(id);
     },
-    [board, tasksQuery.data],
+    [board, rowById],
   );
   // The box's writes, shared with the task screen's Mark done. Coming back
   // to the app on this screen also re-reads the clock (see `now` above): a

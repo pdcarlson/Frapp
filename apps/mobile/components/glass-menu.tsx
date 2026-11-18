@@ -16,6 +16,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
 import { typeRole } from "@/lib/theme";
+import {
+  GLASS_GROUP_BREAK,
+  GLASS_MENU_RADIUS,
+  GLASS_PRESSED,
+  GLASS_SCRIM,
+} from "@/lib/glass-paint";
 
 /** The menu's width, and the gap it keeps from the press and the screen edge. */
 const GLASS_MENU_WIDTH = 260;
@@ -172,9 +178,9 @@ export function glassMenuRowStyles(tokens: SignetTokens) {
     },
     groupBreak: {
       borderTopWidth: 6,
-      borderTopColor: "rgba(0,0,0,0.18)",
+      borderTopColor: GLASS_GROUP_BREAK,
     },
-    pressed: { backgroundColor: "rgba(255,255,255,0.08)" },
+    pressed: { backgroundColor: GLASS_PRESSED },
     rowLabel: {
       ...typeRole(tokens.typography.role.body),
       flex: 1,
@@ -185,12 +191,12 @@ export function glassMenuRowStyles(tokens: SignetTokens) {
 }
 
 const styles = StyleSheet.create({
-  scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
+  scrim: { backgroundColor: GLASS_SCRIM },
   anchor: {
     position: "absolute",
     left: EDGE,
     width: GLASS_MENU_WIDTH,
   },
   // The quick-actions panel's glass, at a menu's radius.
-  menu: { borderRadius: 22 },
+  menu: { borderRadius: GLASS_MENU_RADIUS },
 });

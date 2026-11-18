@@ -283,6 +283,24 @@ describe("taskDuplicateOf (#5492)", () => {
     ).toEqual(DEFAULT_DUE_CHOICE);
   });
 
+  it("keeps today but drops a time already passed, so New task opens ready to create", () => {
+    // NOW is noon on Nov 18; due at 9 that morning, and at 6 that evening.
+    const at = (hour: number) => new Date(2026, 10, 18, hour, 0).toISOString();
+    const passed = taskDuplicateOf(
+      row({ due_date: "2026-11-18", due_at: at(9) }),
+      [],
+      NOW,
+    );
+    expect(passed.due).toEqual({ kind: "date", date: "2026-11-18" });
+    expect(passed.dueTime).toBeNull();
+    const ahead = taskDuplicateOf(
+      row({ due_date: "2026-11-18", due_at: at(18) }),
+      [],
+      NOW,
+    );
+    expect(ahead.dueTime).toBe("18:00");
+  });
+
   it("sends a group's copy to the group again", () => {
     const everyone = row({
       group_id: "g1",

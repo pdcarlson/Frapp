@@ -188,6 +188,11 @@ export interface NewEventSheetProps {
   /** Fired after the event is deleted from the sheet. */
   onDeleted?: () => void;
   /**
+   * Fired when the sheet has closed, however it closed: a host that mounts
+   * it for one edit (an event row's long-press Edit, #5492) unmounts it then.
+   */
+  onClosed?: () => void;
+  /**
    * Keeps an edit's draft past its host, under this name (`event-edit:<id>`,
    * #4872): event details goes when the member goes back, and Edit on the
    * same event opens on what was typed. Only what the officer changed is
@@ -325,7 +330,17 @@ const GATE_COPY = {
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
   function NewEventSheet(
-    { now, onCreated, chat, editing, template, onSaved, onDeleted, keptDraft },
+    {
+      now,
+      onCreated,
+      chat,
+      editing,
+      template,
+      onSaved,
+      onDeleted,
+      onClosed,
+      keptDraft,
+    },
     ref,
   ) {
     const { tokens } = useFrappTheme();
@@ -475,7 +490,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
-    }, [markClosed]);
+      onClosed?.();
+    }, [markClosed, onClosed]);
 
     const cancel = useCallback(() => {
       if (sending.current) return;

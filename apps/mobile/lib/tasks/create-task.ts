@@ -412,6 +412,12 @@ export function taskDuplicateOf(
     : { dueDate: "", dueTime: null };
   // A day that has gone would only be refused; New task's Today stands in.
   const ahead = dueDate !== "" && dueDate >= localIsoDate(now);
+  // So would a time that has gone (due today at 9, duplicated at noon): the
+  // day stays and the time goes, so the form opens ready to create.
+  const time =
+    ahead && dueTime && !dueTimePassed({ dueDate, dueTime }, now)
+      ? dueTime
+      : null;
   return {
     title: row.title,
     description: row.description,
@@ -420,7 +426,7 @@ export function taskDuplicateOf(
     proofKind: row.proofKind,
     subtasks: row.subtasks.map((subtask) => subtask.title),
     due: ahead ? { kind: "date", date: dueDate } : DEFAULT_DUE_CHOICE,
-    dueTime: ahead ? (dueTime ?? null) : null,
+    dueTime: time,
   };
 }
 

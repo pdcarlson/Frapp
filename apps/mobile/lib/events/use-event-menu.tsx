@@ -1,4 +1,5 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { dropKeptDraft, useKeptDraftKeys } from "@repo/hooks/kept-drafts";
 import { useDeleteEvent, useEvents, useNowDate } from "@repo/hooks";
 import {
   CopyGlyph,
@@ -83,14 +84,24 @@ export function useEventMenu(): {
     null,
   );
 
+  // The list's records by id, indexed once per read, for Duplicate.
+  const rawById = useMemo(
+    () => new Map(records(eventsData).map((raw) => [raw.id, raw])),
+    [eventsData],
+  );
   /** The event as the list read it, every field the form holds. */
   const detailOf = useCallback(
     (event: EventRow): EventDetail | null =>
-      selectEventDetail(
-        records(eventsData).find((raw) => raw.id === event.id) ?? null,
-      ),
-    [eventsData],
+      selectEventDetail(rawById.get(event.id) ?? null),
+    [rawById],
   );
+  const keptDraftKeys = useKeptDraftKeys();
+  const editAgain = useCallback(
+    (id: string) =>
+      setEditing((previous) => ({ id, key: (previous?.key ?? 0) + 1 })),
+    [],
+  );
+  const stopEditing = useCallback(() => setEditing(null), []);
 
   const runDelete = useCallback(
     async (event: EventRow) => {
@@ -99,7 +110,12 @@ export function useEventMenu(): {
       deleteEvent.mutate(
         { id: event.id, scope },
         {
-          onSuccess: () => successHaptic(),
+          onSuccess: () => {
+            successHaptic();
+            // The event is gone, and its kept edit with it, as the Edit
+            // sheet's Delete drops it.
+            dropKeptDraft(keptDraftKeys.draft(`event-edit:${event.id}`));
+          },
           onError: (error) =>
             alertFailure({
               title: "Couldn't delete the event",
@@ -109,33 +125,30 @@ export function useEventMenu(): {
         },
       );
     },
-    [deleteEvent],
+    [deleteEvent, keptDraftKeys],
   );
 
   const actionFor = useCallback(
-    (key: EventMenuKey, event: EventRow): ItemMenuAction | null => {
+    (key: EventMenuKey, event: EventRow): ItemMenuAction => {
       switch (key) {
         case "edit":
           return {
             key,
             label: "Edit",
             glyph: (color) => <PencilGlyph color={color} />,
-            run: () =>
-              setEditing((previous) => ({
-                id: event.id,
-                key: (previous?.key ?? 0) + 1,
-              })),
+            run: () => editAgain(event.id),
           };
-        case "duplicate": {
-          const detail = detailOf(event);
-          if (!detail) return null;
+        case "duplicate":
           return {
             key,
             label: "Duplicate",
             glyph: (color) => <CopyGlyph color={color} />,
-            run: () => openWith(duplicateEventTemplate(detail, new Date())),
+            // Read when picked, not for every row on every render.
+            run: () => {
+              const detail = detailOf(event);
+              if (detail) openWith(duplicateEventTemplate(detail, new Date()));
+            },
           };
-        }
         case "delete":
           return {
             key,
@@ -146,7 +159,7 @@ export function useEventMenu(): {
           };
       }
     },
-    [detailOf, openWith, runDelete],
+    [detailOf, openWith, runDelete, editAgain],
   );
 
   const menuFor = useCallback(
@@ -157,9 +170,7 @@ export function useEventMenu(): {
           edit: grants.edit,
           create: canCreate,
           delete: grants.delete,
-        })
-          .map((key) => actionFor(key, event))
-          .filter((action): action is ItemMenuAction => action !== null),
+        }).map((key) => actionFor(key, event)),
       }),
     [handleFor, grants.edit, grants.delete, canCreate, actionFor],
   );
@@ -170,7 +181,12 @@ export function useEventMenu(): {
       <>
         {menu.element}
         {editing ? (
-          <EventEditHost key={editing.key} eventId={editing.id} />
+          <EventEditHost
+            key={editing.key}
+            eventId={editing.id}
+            onClosed={stopEditing}
+            onRetry={() => editAgain(editing.id)}
+          />
         ) : null}
         {newEvent.sheet}
       </>

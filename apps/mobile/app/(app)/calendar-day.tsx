@@ -1,5 +1,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo } from "react";
+import { StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import { EVENTS_COPY } from "@repo/validation";
@@ -121,11 +122,18 @@ export default function CalendarDayScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_EVENTS} title={title} refresh={refresh}>
-      {renderBody()}
-      {newEvent.sheet}
-      {eventMenu.host}
-      {taskMenu.host}
-    </ScreenShell>
+    // The task menu's Undo floats over the screen, so it sits beside the
+    // shell rather than in its scroll, as the board's does.
+    <View style={styles.frame}>
+      <ScreenShell back={BACK_TO_EVENTS} title={title} refresh={refresh}>
+        {renderBody()}
+        {newEvent.sheet}
+        {eventMenu.host}
+        {taskMenu.host}
+      </ScreenShell>
+      {taskMenu.undoBar}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({ frame: { flex: 1 } });
