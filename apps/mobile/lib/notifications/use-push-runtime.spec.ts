@@ -335,6 +335,24 @@ describe("usePushRuntime marks a tapped notification read", () => {
     expect(mockState.markRead).toHaveBeenCalledTimes(1);
     expect(mockState.markRead).toHaveBeenCalledWith("notif-held");
   });
+
+  it("keeps the launch logo up until the held tap has opened its screen (#5449)", async () => {
+    const { launchGate } = await import("@/lib/launch/launch-gate");
+    const hold = vi.spyOn(launchGate, "hold");
+    const released = vi.fn();
+    hold.mockImplementation(() => released);
+    mockState.status = "hydrating";
+    mockState.launchResponse = tap("notif-held");
+    const { rerender } = renderHook(() => usePushRuntime());
+    expect(hold).toHaveBeenCalledTimes(1);
+    expect(released).not.toHaveBeenCalled();
+
+    signIn();
+    rerender();
+
+    expect(released).toHaveBeenCalledTimes(1);
+    hold.mockRestore();
+  });
 });
 
 describe("usePushRuntime opens a tapped thread reply (#4054)", () => {

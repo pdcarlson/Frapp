@@ -193,7 +193,27 @@ vi.mock("expo-router", () => {
       focusListeners.delete(listener);
     };
   };
+  // The navigation container the launch logo reads to learn a screen is in
+  // front (`components/launch-cover.tsx`). Not ready, with no state, until a
+  // spec hands it one through `__setNavState`.
+  let navState: object | undefined;
+  const navListeners = new Set<() => void>();
+  const navContainer = {
+    isReady: () => navState !== undefined,
+    getRootState: () => navState,
+    addListener: (_event: string, listener: () => void) => {
+      navListeners.add(listener);
+      return () => {
+        navListeners.delete(listener);
+      };
+    },
+  };
   return {
+    useNavigationContainerRef: () => navContainer,
+    __setNavState: (next: object | undefined) => {
+      navState = next;
+      for (const listener of [...navListeners]) listener();
+    },
     useRouter: () => router,
     // The imperative router (`lib/chat/open-link.ts`), the same object.
     router,
@@ -437,6 +457,7 @@ vi.mock("react-native-reanimated", () => {
       cubic: (t: number) => t,
       inOut: (easing: (t: number) => number) => easing,
       out: (easing: (t: number) => number) => easing,
+      bezier: () => (t: number) => t,
     },
     // Linear between the stops, held at the ends, as the tab bar's fold
     // (#4904) reads it: enough for a spec to read the drawn geometry.

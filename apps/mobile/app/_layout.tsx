@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Stack, ThemeProvider, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
@@ -12,6 +12,7 @@ import { useFonts } from "@expo-google-fonts/figtree";
 import * as SplashScreen from "expo-splash-screen";
 import { AppRuntime } from "@/components/app-runtime";
 import { ClientPolicyGate } from "@/components/client-policy-gate";
+import { LaunchCover } from "@/components/launch-cover";
 import { AppErrorScreen } from "@/components/route-error";
 import { RecordingBar } from "@/components/minutes/recording-bar";
 import { NetworkBanner } from "@/components/network-banner";
@@ -91,9 +92,10 @@ if (sentryDsn) {
   });
 }
 
-// Hold the splash until Figtree is registered, so no screen ever paints in the
-// system font and then re-renders. hideAsync runs on error too — a failed font
-// load falls back to the system face rather than stranding the splash.
+// Hold the native splash until the launch logo has drawn the same emblem over
+// it (`components/launch-cover.tsx`, #5449). The logo then stays until the
+// screen the member lands on has its content, or about four seconds, so no
+// screen paints in the system font or behind its skeleton first.
 void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
@@ -129,17 +131,20 @@ function RootLayoutContent() {
 
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(FIGTREE_FACES);
+  const appMounted = Boolean(fontsLoaded || fontError);
 
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
+  return (
+    <>
+      {/* The app mounts once Figtree is registered (a failed load falls back to
+          the system face), under the launch logo, which covers it until its
+          first screen is ready. */}
+      {appMounted ? <RootProviders /> : null}
+      <LaunchCover appMounted={appMounted} />
+    </>
+  );
+}
 
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
-
+function RootProviders() {
   return (
     // Gesture handling must wrap everything that hosts gestures, and gorhom
     // sheets read safe-area insets for their detents, so both providers sit

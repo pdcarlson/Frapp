@@ -23,6 +23,7 @@ vi.mock("@/lib/client-policy", () => ({
   useClientPolicy: () => policy.current,
 }));
 
+import { launchGate } from "@/lib/launch/launch-gate";
 import { ClientPolicyGate, UPDATE_REQUIRED_COPY } from "./client-policy-gate";
 import { OnboardingPrimaryButton } from "./onboarding/onboarding-primary-button";
 
@@ -171,5 +172,23 @@ describe("ClientPolicyGate", () => {
     const renderer = render();
     expect(renderer.root.findAllByType(Pressable)).toHaveLength(0);
     expect(texts(renderer)).toContain(UPDATE_REQUIRED_COPY.noLink);
+  });
+});
+
+describe("ClientPolicyGate and the launch logo (#5449)", () => {
+  it("lifts the logo at once when the update prompt shows, and not before", () => {
+    const lift = vi.spyOn(launchGate, "lift").mockImplementation(() => {});
+    onTestFinished(() => lift.mockRestore());
+
+    policy.current = { updateRequired: false, updateUrl: null };
+    render();
+    expect(lift).not.toHaveBeenCalled();
+
+    policy.current = { updateRequired: true, updateUrl: null };
+    onTestFinished(() => {
+      policy.current = { updateRequired: false, updateUrl: null };
+    });
+    render();
+    expect(lift).toHaveBeenCalledWith("now");
   });
 });
