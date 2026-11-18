@@ -3497,6 +3497,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks/{id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give back a task claimed from Up for grabs
+         * @description Its assignee only (403 otherwise), before it is finished: marked done, paid or carrying proof is a 409. The task is deleted and its posting is open again; answers the posting. 404 for a task not taken from Up for grabs.
+         */
+        post: operations["TaskController_release_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks/{id}/subtasks": {
         parameters: {
             query?: never;
@@ -3530,6 +3550,88 @@ export interface paths {
         head?: never;
         /** Check off or uncheck a subtask (assignee or admin, #4003) */
         patch: operations["TaskController_updateSubtask_v1"];
+        trace?: never;
+    };
+    "/v1/open-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tasks up for grabs
+         * @description The open postings the caller may claim now, oldest due first. A `tasks:manage` holder gets every open posting, with `viewer_can_claim` saying which they may claim themselves.
+         */
+        get: operations["OpenTaskController_list_v1"];
+        put?: never;
+        /**
+         * Post a task up for grabs
+         * @description One task that someone in the chapter, a role, a chapter group or a list of people claims. Everyone who may claim it, but the poster, gets a push ("Up for grabs: …") in the Tasks category.
+         */
+        post: operations["OpenTaskController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/open-tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a task up for grabs while it is open (409 once claimed) */
+        delete: operations["OpenTaskController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Edit a task up for grabs while it is open (409 once claimed) */
+        patch: operations["OpenTaskController_update_v1"];
+        trace?: never;
+    };
+    "/v1/open-tasks/{id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim a task up for grabs
+         * @description The caller takes it, when they may claim it now (403 otherwise). Answers the new task as `GET /v1/tasks/:id` reads it, with `open_task_id` set. 409 "Someone already claimed this" when another claim got there first. The poster is told, unless they claimed it.
+         */
+        post: operations["OpenTaskController_claim_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/open-tasks/{id}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand a task up for grabs to one member
+         * @description Any active member, whether or not they could claim it. They get the usual assignment push. Answers the new task as `GET /v1/tasks/:id` reads it; 409 once someone has claimed it.
+         */
+        post: operations["OpenTaskController_assign_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/ai/suggestions": {
@@ -8915,8 +9017,18 @@ export interface components {
         TaskGroupSummaryDto: {
             /** Format: uuid */
             id: string;
-            /** @enum {string} */
-            audience: "everyone";
+            /**
+             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy.
+             * @enum {string}
+             */
+            audience: "everyone" | "people" | "role" | "group";
+            /**
+             * Format: uuid
+             * @description The role or chapter group it went to, for `role` and `group`; null otherwise.
+             */
+            target_id: string | null;
+            /** @description That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
+            target_name: string | null;
             /** @description How many copies the group has. */
             total: number;
             /** @description How many copies are marked done, waiting on an officer or confirmed. */
@@ -8945,13 +9057,25 @@ export interface components {
         CreateTaskDto: {
             title: string;
             description?: string;
-            /** @description User ID of the assignee. Send this or `audience`, exactly one of them. */
+            /** @description User ID of the assignee. Send exactly one of this, `assignee_ids` and `audience`. */
             assignee_id?: string;
+            /** @description Several people picked one by one (2026-11-18), in place of `assignee_id` and `audience`: each gets their own copy, as with `audience`, and reads carry `group` with `audience: "people"`. Each must be an active member of the chapter (alumni refused); duplicates count once, and a list of one makes that person’s task. The same limits as `audience` apply. */
+            assignee_ids?: string[];
             /**
-             * @description A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.
+             * @description A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Narrow it with `audience_role_id` or `audience_group_id`. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.
              * @enum {string}
              */
             audience?: "everyone";
+            /**
+             * Format: uuid
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members holding this role get a copy. The chapter’s Everyone role means everyone; the Alumni role is refused, and a role nobody holds is a 400 ("Nobody holds that role yet"). Not with `audience_group_id`.
+             */
+            audience_role_id?: string;
+            /**
+             * Format: uuid
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.
+             */
+            audience_group_id?: string;
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
             /**
@@ -9102,6 +9226,58 @@ export interface components {
             /** @description "Ask for a photo next time": raises the task's `proof_kind` to `photo`, so the next Mark done needs one. */
             require_photo?: boolean;
         };
+        OpenTaskDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * Format: uuid
+             * @description The officer who posted it. The claimed task names them as its creator, so they review it.
+             */
+            created_by: string;
+            title: string;
+            description: string | null;
+            /** Format: date */
+            due_date: string;
+            /** Format: date-time */
+            due_at: string | null;
+            point_reward: number | null;
+            /** @enum {string} */
+            proof_kind: "none" | "photo" | "link";
+            /** @description The checklist the claimed task starts with, in order. */
+            subtask_titles: string[];
+            /**
+             * @description Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members) or `people` (`scope_user_ids`). Alumni never may.
+             * @enum {string}
+             */
+            scope: "chapter" | "role" | "group" | "people";
+            /**
+             * Format: uuid
+             * @description The role or group, for `role` and `group`.
+             */
+            scope_id: string | null;
+            /** @description That role’s or group’s name as it reads now, or as it was when posted once it’s deleted. "Someone in Philanthropy Chair". */
+            scope_name: string | null;
+            /** @description The people who may claim it, for `people`. */
+            scope_user_ids: string[] | null;
+            /** @enum {string} */
+            status: "open" | "claimed";
+            /** Format: uuid */
+            claimed_task_id: string | null;
+            /** Format: uuid */
+            claimed_by: string | null;
+            /** Format: date-time */
+            claimed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description How many active members may claim it now. */
+            eligible_count: number;
+            /** @description Whether the reader may claim it now. */
+            viewer_can_claim: boolean;
+        };
         CreateTaskSubtaskDto: {
             title: string;
         };
@@ -9127,6 +9303,61 @@ export interface components {
             /** @description True to check it off, false to uncheck it. */
             done: boolean;
         };
+        CreateOpenTaskDto: {
+            title: string;
+            description?: string;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day (ISO 8601 with an offset), on `due_date` as the creator sees it.
+             */
+            due_at?: string;
+            /** @description Points the claimed task awards when an officer confirms it. */
+            point_reward?: number;
+            /**
+             * @description What Mark done needs on the claimed task. Default `none`.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
+            /** @description The checklist the claimed task starts with, in order. Blank lines are dropped. */
+            subtasks?: string[];
+            /**
+             * Format: uuid
+             * @description Only this role’s active holders may claim it. The chapter’s Everyone role means anyone; the Alumni role is refused; a role nobody holds is a 400 ("Nobody holds that role yet").
+             */
+            role_id?: string;
+            /**
+             * Format: uuid
+             * @description Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.
+             */
+            group_id?: string;
+            /** @description Only these people may claim it. Each must be an active member of the chapter (alumni refused). */
+            user_ids?: string[];
+        };
+        UpdateOpenTaskDto: {
+            title?: string;
+            description?: string | null;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date?: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, or null to take its time off. Send it with `due_date`: the pair must agree.
+             */
+            due_at?: string | null;
+            point_reward?: number | null;
+            /** @enum {string} */
+            proof_kind?: "none" | "photo" | "link";
+            /** @description The whole checklist as it should stand, in order. */
+            subtasks?: string[];
+        };
+        AssignOpenTaskDto: {
+            /**
+             * Format: uuid
+             * @description Who gets it: any active member of the chapter, eligible to claim it or not.
+             */
+            assignee_id: string;
+        };
         AiSuggestionSourceDto: {
             /** @enum {string} */
             type: "meeting" | "event" | "channel" | "task" | "request";
@@ -9138,14 +9369,20 @@ export interface components {
             description: string | null;
             /**
              * Format: uuid
-             * @description Null when no name or role was said for it, or when it is for everyone: the screen shows "Who?" or "Everyone".
+             * @description Null when no name or role was said for it, or when it is for a group or several people: the screen shows "Who?" or who it is for.
              */
             assignee_id: string | null;
+            /** @description Several people (2026-11-18): a copy each, or with `audience: "someone"` one task that one of them claims. */
+            assignee_ids: string[] | null;
             /**
-             * @description Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy.
+             * @description `everyone`: accepting gives each member of the group their own copy (#4295 step 3). `someone`: accepting posts one task up for grabs (2026-11-18). The group is the chapter unless `audience_role_id`, `audience_group_id` or (for `someone`) `assignee_ids` narrows it.
              * @enum {string|null}
              */
-            audience: "everyone" | null;
+            audience: "everyone" | "someone" | null;
+            /** Format: uuid */
+            audience_role_id: string | null;
+            /** Format: uuid */
+            audience_group_id: string | null;
             /** Format: date */
             due_date: string | null;
             /** Format: date-time */
@@ -9260,14 +9497,26 @@ export interface components {
             description?: string | null;
             /**
              * Format: uuid
-             * @description Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`.
+             * @description Who the task is for. Required to accept when none was suggested, unless `assignee_ids` or `audience` is set. "Who" is one answer: an edit that sends any of `assignee_id`, `assignee_ids`, `audience`, `audience_role_id` and `audience_group_id` replaces it with what those say, so setting this alone clears the rest.
              */
             assignee_id?: string | null;
+            /** @description Several people (2026-11-18): with no `audience`, accepting gives each their own copy; with `audience: "someone"`, it posts one task up for grabs that one of them claims. A list of one is that person. */
+            assignee_ids?: string[] | null;
             /**
-             * @description A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`.
+             * @description A task for a group instead of one person: `everyone` gives each member of it their own copy (#4295 step 3); `someone` (2026-11-18) posts one task up for grabs that one of them claims, and the accept’s result id is then the posting’s. The group is the chapter, narrowed by `audience_role_id` or `audience_group_id`, or for `someone` by `assignee_ids`.
              * @enum {string|null}
              */
-            audience?: "everyone" | null;
+            audience?: "everyone" | "someone" | null;
+            /**
+             * Format: uuid
+             * @description With `audience`: only this role’s holders (2026-11-18).
+             */
+            audience_role_id?: string | null;
+            /**
+             * Format: uuid
+             * @description With `audience`: only this chapter group’s members (2026-11-18).
+             */
+            audience_group_id?: string | null;
             /** @description Due date (YYYY-MM-DD). Required to accept when none was suggested. */
             due_date?: string | null;
             /**
@@ -19752,6 +20001,36 @@ export interface operations {
             };
         };
     };
+    TaskController_release_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     TaskController_addSubtask_v1: {
         parameters: {
             query?: never;
@@ -19838,6 +20117,188 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TaskSubtaskDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOpenTaskDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOpenTaskDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_claim_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_assign_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignOpenTaskDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -11793,6 +11793,53 @@
         ]
       }
     },
+    "/v1/tasks/{id}/release": {
+      "post": {
+        "description": "Its assignee only (403 otherwise), before it is finished: marked done, paid or carrying proof is a 409. The task is deleted and its posting is open again; answers the posting. 404 for a task not taken from Up for grabs.",
+        "operationId": "TaskController_release_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenTaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Give back a task claimed from Up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/tasks/{id}/subtasks": {
       "post": {
         "operationId": "TaskController_addSubtask_v1",
@@ -11953,6 +12000,276 @@
           }
         ],
         "summary": "Remove a subtask (#4003)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks": {
+      "get": {
+        "description": "The open postings the caller may claim now, oldest due first. A `tasks:manage` holder gets every open posting, with `viewer_can_claim` saying which they may claim themselves.",
+        "operationId": "OpenTaskController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OpenTaskDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List tasks up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "post": {
+        "description": "One task that someone in the chapter, a role, a chapter group or a list of people claims. Everyone who may claim it, but the poster, gets a push (\"Up for grabs: …\") in the Tasks category.",
+        "operationId": "OpenTaskController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOpenTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenTaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post a task up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks/{id}": {
+      "patch": {
+        "operationId": "OpenTaskController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOpenTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenTaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a task up for grabs while it is open (409 once claimed)",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "delete": {
+        "operationId": "OpenTaskController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a task up for grabs while it is open (409 once claimed)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks/{id}/claim": {
+      "post": {
+        "description": "The caller takes it, when they may claim it now (403 otherwise). Answers the new task as `GET /v1/tasks/:id` reads it, with `open_task_id` set. 409 \"Someone already claimed this\" when another claim got there first. The poster is told, unless they claimed it.",
+        "operationId": "OpenTaskController_claim_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim a task up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks/{id}/assign": {
+      "post": {
+        "description": "Any active member, whether or not they could claim it. They get the usual assignment push. Answers the new task as `GET /v1/tasks/:id` reads it; 409 once someone has claimed it.",
+        "operationId": "OpenTaskController_assign_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignOpenTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Hand a task up for grabs to one member",
         "tags": [
           "Tasks"
         ]
@@ -28598,8 +28915,23 @@
           "audience": {
             "type": "string",
             "enum": [
-              "everyone"
-            ]
+              "everyone",
+              "people",
+              "role",
+              "group"
+            ],
+            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The role or chapter group it went to, for `role` and `group`; null otherwise."
+          },
+          "target_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
           },
           "total": {
             "type": "number",
@@ -28617,6 +28949,8 @@
         "required": [
           "id",
           "audience",
+          "target_id",
+          "target_name",
           "total",
           "done",
           "confirmed"
@@ -28683,14 +29017,33 @@
           },
           "assignee_id": {
             "type": "string",
-            "description": "User ID of the assignee. Send this or `audience`, exactly one of them."
+            "description": "User ID of the assignee. Send exactly one of this, `assignee_ids` and `audience`."
+          },
+          "assignee_ids": {
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "Several people picked one by one (2026-11-18), in place of `assignee_id` and `audience`: each gets their own copy, as with `audience`, and reads carry `group` with `audience: \"people\"`. Each must be an active member of the chapter (alumni refused); duplicates count once, and a list of one makes that person’s task. The same limits as `audience` apply.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "audience": {
             "type": "string",
             "enum": [
               "everyone"
             ],
-            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
+            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Narrow it with `audience_role_id` or `audience_group_id`. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
+          },
+          "audience_role_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members holding this role get a copy. The chapter’s Everyone role means everyone; the Alumni role is refused, and a role nobody holds is a 400 (\"Nobody holds that role yet\"). Not with `audience_group_id`."
+          },
+          "audience_group_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`."
           },
           "due_date": {
             "type": "string",
@@ -29071,6 +29424,150 @@
           }
         }
       },
+      "OpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The officer who posted it. The claimed task names them as its creator, so they review it."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ]
+          },
+          "subtask_titles": {
+            "description": "The checklist the claimed task starts with, in order.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "role",
+              "group",
+              "people"
+            ],
+            "description": "Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members) or `people` (`scope_user_ids`). Alumni never may."
+          },
+          "scope_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The role or group, for `role` and `group`."
+          },
+          "scope_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That role’s or group’s name as it reads now, or as it was when posted once it’s deleted. \"Someone in Philanthropy Chair\"."
+          },
+          "scope_user_ids": {
+            "nullable": true,
+            "description": "The people who may claim it, for `people`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "claimed"
+            ]
+          },
+          "claimed_task_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "eligible_count": {
+            "type": "number",
+            "description": "How many active members may claim it now."
+          },
+          "viewer_can_claim": {
+            "type": "boolean",
+            "description": "Whether the reader may claim it now."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "created_by",
+          "title",
+          "description",
+          "due_date",
+          "due_at",
+          "point_reward",
+          "proof_kind",
+          "subtask_titles",
+          "scope",
+          "scope_id",
+          "scope_name",
+          "scope_user_ids",
+          "status",
+          "claimed_task_id",
+          "claimed_by",
+          "claimed_at",
+          "created_at",
+          "updated_at",
+          "eligible_count",
+          "viewer_can_claim"
+        ]
+      },
       "CreateTaskSubtaskDto": {
         "type": "object",
         "properties": {
@@ -29138,6 +29635,131 @@
           "done"
         ]
       },
+      "CreateOpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "description": "The moment it is due, when it has a time of day (ISO 8601 with an offset), on `due_date` as the creator sees it.",
+            "format": "date-time"
+          },
+          "point_reward": {
+            "type": "number",
+            "description": "Points the claimed task awards when an officer confirms it.",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs on the claimed task. Default `none`."
+          },
+          "subtasks": {
+            "description": "The checklist the claimed task starts with, in order. Blank lines are dropped.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this role’s active holders may claim it. The chapter’s Everyone role means anyone; the Alumni role is refused; a role nobody holds is a 400 (\"Nobody holds that role yet\")."
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400."
+          },
+          "user_ids": {
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "Only these people may claim it. Each must be an active member of the chapter (alumni refused).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "due_date"
+        ]
+      },
+      "UpdateOpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment it is due, or null to take its time off. Send it with `due_date`: the pair must agree."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ]
+          },
+          "subtasks": {
+            "description": "The whole checklist as it should stand, in order.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AssignOpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "assignee_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who gets it: any active member of the chapter, eligible to claim it or not."
+          }
+        },
+        "required": [
+          "assignee_id"
+        ]
+      },
       "AiSuggestionSourceDto": {
         "type": "object",
         "properties": {
@@ -29175,15 +29797,34 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Null when no name or role was said for it, or when it is for everyone: the screen shows \"Who?\" or \"Everyone\"."
+            "description": "Null when no name or role was said for it, or when it is for a group or several people: the screen shows \"Who?\" or who it is for."
+          },
+          "assignee_ids": {
+            "nullable": true,
+            "description": "Several people (2026-11-18): a copy each, or with `audience: \"someone\"` one task that one of them claims.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "audience": {
             "type": "string",
             "enum": [
-              "everyone"
+              "everyone",
+              "someone"
             ],
             "nullable": true,
-            "description": "Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy."
+            "description": "`everyone`: accepting gives each member of the group their own copy (#4295 step 3). `someone`: accepting posts one task up for grabs (2026-11-18). The group is the chapter unless `audience_role_id`, `audience_group_id` or (for `someone`) `assignee_ids` narrows it."
+          },
+          "audience_role_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "audience_group_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
           },
           "due_date": {
             "type": "string",
@@ -29211,7 +29852,10 @@
           "title",
           "description",
           "assignee_id",
+          "assignee_ids",
           "audience",
+          "audience_role_id",
+          "audience_group_id",
           "due_date",
           "due_at",
           "subtasks"
@@ -29518,15 +30162,37 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`."
+            "description": "Who the task is for. Required to accept when none was suggested, unless `assignee_ids` or `audience` is set. \"Who\" is one answer: an edit that sends any of `assignee_id`, `assignee_ids`, `audience`, `audience_role_id` and `audience_group_id` replaces it with what those say, so setting this alone clears the rest."
+          },
+          "assignee_ids": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Several people (2026-11-18): with no `audience`, accepting gives each their own copy; with `audience: \"someone\"`, it posts one task up for grabs that one of them claims. A list of one is that person.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "audience": {
             "type": "string",
             "enum": [
-              "everyone"
+              "everyone",
+              "someone"
             ],
             "nullable": true,
-            "description": "A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`."
+            "description": "A task for a group instead of one person: `everyone` gives each member of it their own copy (#4295 step 3); `someone` (2026-11-18) posts one task up for grabs that one of them claims, and the accept’s result id is then the posting’s. The group is the chapter, narrowed by `audience_role_id` or `audience_group_id`, or for `someone` by `assignee_ids`."
+          },
+          "audience_role_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "With `audience`: only this role’s holders (2026-11-18)."
+          },
+          "audience_group_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "With `audience`: only this chapter group’s members (2026-11-18)."
           },
           "due_date": {
             "type": "string",
