@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityNudge } from "@repo/hooks";
-import { activityNudgeAskPrompt, withoutWeekNext } from "./nudge";
+import {
+  activityNudgeAskPrompt,
+  nudgeShowsRow,
+  withoutWeekNext,
+} from "./nudge";
 
 function item(overrides: Partial<ActivityNudge> = {}): ActivityNudge {
   return {
@@ -63,5 +67,25 @@ describe("activityNudgeAskPrompt", () => {
     expect(activityNudgeAskPrompt(item())).toBe(
       "What should I know about Chapter Meeting?",
     );
+  });
+});
+
+describe("nudgeShowsRow", () => {
+  const card = item({ id: "row-1" });
+  const queue = item({
+    kind: "officer_queue",
+    subject_key: "queue:h1",
+    target_type: "review",
+    target_id: "h1",
+  });
+
+  it("is true only for a sheet about something the card names", () => {
+    expect(nudgeShowsRow({ card, tray: [queue] }, "coming:event:event-1")).toBe(
+      true,
+    );
+    expect(nudgeShowsRow({ card, tray: [queue] }, "needs:hours:h1")).toBe(true);
+    expect(nudgeShowsRow({ card, tray: [queue] }, "needs:task:t9")).toBe(false);
+    expect(nudgeShowsRow({ card, tray: [] }, null)).toBe(false);
+    expect(nudgeShowsRow(null, "coming:event:event-1")).toBe(false);
   });
 });

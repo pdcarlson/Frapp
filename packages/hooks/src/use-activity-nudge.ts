@@ -65,12 +65,13 @@ export function useActivityNudgeActions() {
   const dismiss = useMutation({
     mutationKey: ["activity-nudge-dismiss"],
     mutationFn: async (item: Pick<ActivityNudge, "kind" | "subject_key">) => {
-      await client.POST("/v1/activity/card/dismiss", {
+      const { error } = await client.POST("/v1/activity/card/dismiss", {
         body: {
           kind: item.kind as components["schemas"]["ActivityNudgeDismissDto"]["kind"],
           subject_key: item.subject_key,
         },
       });
+      if (error !== undefined) throw error;
     },
     onMutate: (item) => {
       queryClient.setQueryData<ActivityNudgeCard>(key, (current) => {
@@ -90,7 +91,9 @@ export function useActivityNudgeActions() {
         };
       });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+    // Asked again only once the server has recorded it: after a failure the
+    // card stays off for now rather than coming straight back.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 
   const seen = useMutation({

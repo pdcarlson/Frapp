@@ -490,6 +490,27 @@ export default function PreferencesScreen() {
         />
       </ListSection>
 
+      {/* The card at the top of Activity (#5464), which shows with or
+          without AI, so its switch sits outside the AI section. */}
+      {nudgeSettings.data ? (
+        <>
+          <SectionHeader>Activity</SectionHeader>
+          <ListSection>
+            <ListRow
+              label="Nudges on Activity"
+              description="The card at the top of Activity, about what is waiting on you."
+              trailing={
+                <Toggle
+                  value={nudgeSettings.data.enabled}
+                  onValueChange={(value) => setNudgesEnabled.mutate(value)}
+                  accessibilityLabel="Nudges on Activity"
+                />
+              }
+            />
+          </ListSection>
+        </>
+      ) : null}
+
       <LinkedAppsSection />
 
       {/* Only where the server has AI (`AI_ENABLED`): with it off the
@@ -519,19 +540,7 @@ export default function PreferencesScreen() {
                 />
               }
             />
-            {nudgeSettings.data ? (
-              <ListRow
-                label="Nudges on Activity"
-                description="The card at the top of Activity, about what is waiting on you."
-                trailing={
-                  <Toggle
-                    value={nudgeSettings.data.enabled}
-                    onValueChange={(value) => setNudgesEnabled.mutate(value)}
-                    accessibilityLabel="Nudges on Activity"
-                  />
-                }
-              />
-            ) : null}
+
             {showChapterAi && chapterAi.data ? (
               <ListRow
                 label={AI_SETTINGS_COPY.chapterRow}
