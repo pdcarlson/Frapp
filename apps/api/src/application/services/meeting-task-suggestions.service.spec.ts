@@ -37,13 +37,21 @@ function build(switchOn = true) {
   const meetings = {
     onPostedMinutesSaved: jest.fn((listener) => listeners.push(listener)),
     get: jest.fn(async () => ({ meeting: meeting() })),
+    listWithFacts: jest.fn(async () => ({
+      rows: [] as Meeting[],
+      facts: new Map<string, { series_key: string | null }>(),
+    })),
   };
   const suggestions = {
     reconcileSource: jest.fn(async () => ({ created: [], withdrawn: 0 })),
   };
   const consent = { chapterSwitchOn: jest.fn(async () => switchOn) };
   const tasks = { doneMarks: jest.fn(async () => new Map()) };
-  const repo = { listKeyedForSource: jest.fn(async () => [] as unknown[]) };
+  const repo = {
+    listKeyedForSource: jest.fn(
+      async (_chapterId: string, _source: { id: string }) => [] as unknown[],
+    ),
+  };
   const service = new MeetingTaskSuggestionsService(
     meetings as never,
     suggestions as never,
@@ -251,5 +259,110 @@ describe("actionItemTasks: the minutes' checkboxes", () => {
       service.actionItemTasks(CHAPTER, MEETING, OFFICER),
     ).resolves.toEqual([]);
     expect(repo.listKeyedForSource).not.toHaveBeenCalled();
+  });
+});
+
+describe('seriesOpenActionItems: what a repeating meeting still owes (#5482)', () => {
+  const accepted = (text: string, taskId: string) => ({
+    status: 'accepted',
+    result_id: taskId,
+    dedupe_key: actionItemKey(text),
+  });
+  const item = (text: string) => ({
+    text,
+    owner_user_id: null,
+    due_date: null,
+  });
+
+  it("lists the open items of the series' posted minutes only, under the viewer's read", async () => {
+    const { service, repo, tasks, meetings } = build();
+    const newer = meeting({
+      id: 'm-newer',
+      event_start_time: '2026-11-16T00:00:00.000Z',
+      content: { action_items: [item('Book the bus'), item('Order shirts')] },
+    });
+    const older = meeting({
+      id: 'm-older',
+      content: { action_items: [item('Send the reminder')] },
+    });
+    const draft = meeting({ id: 'm-draft', status: 'draft' });
+    const other = meeting({ id: 'm-other' });
+    meetings.listWithFacts.mockResolvedValue({
+      rows: [newer, draft, older, other],
+      facts: new Map([
+        ['m-newer', { series_key: 'head' }],
+        ['m-draft', { series_key: 'head' }],
+        ['m-older', { series_key: 'head' }],
+        ['m-other', { series_key: 'elsewhere' }],
+      ]),
+    });
+    repo.listKeyedForSource.mockImplementation(
+      async (_c: string, source: { id: string }) =>
+        source.id === 'm-newer'
+          ? [
+              accepted('Book the bus', 't-bus'),
+              accepted('Order shirts', 't-shirts'),
+            ]
+          : [],
+    );
+    tasks.doneMarks.mockResolvedValue(
+      new Map([
+        ['t-bus', { done: true, group: null }],
+        ['t-shirts', { done: false, group: { done: 3, total: 20 } }],
+      ]),
+    );
+
+    await expect(
+      service.seriesOpenActionItems(CHAPTER, OFFICER, 'head'),
+    ).resolves.toEqual([
+      {
+        meeting_id: 'm-newer',
+        event_start_time: '2026-11-16T00:00:00.000Z',
+        items: [
+          {
+            index: 1,
+            text: 'Order shirts',
+            owner_user_id: null,
+            due_date: null,
+            group: { done: 3, total: 20 },
+          },
+        ],
+      },
+      {
+        meeting_id: 'm-older',
+        event_start_time: '2026-11-09T00:00:00.000Z',
+        // Nobody made a task of it: open.
+        items: [
+          {
+            index: 0,
+            text: 'Send the reminder',
+            owner_user_id: null,
+            due_date: null,
+            group: null,
+          },
+        ],
+      },
+    ]);
+    expect(meetings.listWithFacts).toHaveBeenCalledWith(CHAPTER, OFFICER);
+  });
+
+  it('closes a later copy of an item with the first copy’s task', async () => {
+    const { service, repo, tasks, meetings } = build();
+    const twice = meeting({
+      content: { action_items: [item('Order shirts'), item('order shirts.')] },
+    });
+    meetings.listWithFacts.mockResolvedValue({
+      rows: [twice],
+      facts: new Map([[MEETING, { series_key: 'head' }]]),
+    });
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Order shirts', 't-shirts'),
+    ]);
+    tasks.doneMarks.mockResolvedValue(
+      new Map([['t-shirts', { done: true, group: null }]]),
+    );
+    await expect(
+      service.seriesOpenActionItems(CHAPTER, OFFICER, 'head'),
+    ).resolves.toEqual([]);
   });
 });

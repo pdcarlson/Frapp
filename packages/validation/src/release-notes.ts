@@ -146,6 +146,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "After time away, the top of Chat shows the channels with something new since you left, with your mentions first.",
       "Long-pressing a message opens its menu where the keyboard would be, so the message stays in view above it, highlighted.",
       "Tapping a task now opens it as its own page with its steps, proof and history, and officers can take people out of a task sent to everyone.",
+      "A repeating meeting's series screen now lists only the action items still open across all its minutes, and an item drops off once the task it became is done.",
+      "Press and hold a task or an event to mark it done, edit it, hand it to someone else, duplicate it or delete it, with each choice shown only to people allowed to use it.",
     ],
   },
   {
