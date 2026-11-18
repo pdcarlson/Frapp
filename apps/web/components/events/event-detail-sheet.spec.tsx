@@ -41,6 +41,7 @@ const {
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
 vi.mock("@repo/hooks", () => ({
+  useNow: () => Date.now(),
   useEvent: () => ({
     data: eventQueryState.data,
     isLoading: eventQueryState.isLoading,

@@ -56,7 +56,7 @@ describe("useAgendaSuggestions (#5534)", () => {
     });
     await waitFor(() => expect(result.current.suggestions).toHaveLength(2));
     expect(POST).toHaveBeenCalledTimes(1);
-    expect(POST.mock.calls[0][0]).toBe(
+    expect(POST.mock.calls[0]?.[0]).toBe(
       "/v1/events/{id}/agenda-suggestions/refresh",
     );
   });

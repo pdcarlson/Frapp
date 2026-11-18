@@ -26,6 +26,7 @@ import {
   useRequiredOfViewer,
   useRoles,
   useViewerUserId,
+  useNow,
 } from "@repo/hooks";
 import { statusOf } from "@repo/api-sdk";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
@@ -207,6 +208,8 @@ export function EventDetailSheet({
     eventQuery.isError &&
     (statusOf(eventQuery.error) === 404 || eventQuery.data === undefined);
 
+  // The shared ticking clock: Suggested goes when the meeting ends (#5534).
+  const now = useNow();
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
     if (usingPreviewData) return event;
@@ -637,7 +640,7 @@ export function EventDetailSheet({
                 canEdit={canEditInPlace && !eventUnavailable}
                 upcoming={
                   typeof resolvedEvent?.end_time === "string" &&
-                  Date.parse(resolvedEvent.end_time) > Date.now()
+                  Date.parse(resolvedEvent.end_time) > now
                 }
                 documentsOn={documentsOn}
               />
