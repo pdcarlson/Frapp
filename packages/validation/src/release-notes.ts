@@ -153,6 +153,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A repeating meeting's series screen now lists only the action items still open across all its minutes, and an item drops off once the task it became is done.",
       "Press and hold a task or an event to mark it done, edit it, hand it to someone else, duplicate it or delete it, with each choice shown only to people allowed to use it.",
       "In Activity, a task you sent to everyone is one row with their faces and how many are done, a task opens its own page, and a long press on a task or event shows its actions.",
+      "Officers can confirm a finished task or send it back, with a reason, right from the task's page.",
     ],
   },
   {
