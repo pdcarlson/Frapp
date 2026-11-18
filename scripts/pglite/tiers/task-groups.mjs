@@ -27,7 +27,8 @@ console.log(
       await db.query(
         `select id, assignee_id, group_id, status, title, point_reward
            from create_task_group(
-             $1::uuid, $2::uuid, 'everyone', array[$2::uuid, $3::uuid, $3::uuid],
+             $1::uuid, $2::uuid, 'everyone', null, null,
+             array[$2::uuid, $3::uuid, $3::uuid],
              'Fill out the form', null, date '2026-11-20', null, 5, 'none',
              array['Open it', 'Send it'])`,
         [CHAPTER, A, B],
@@ -69,7 +70,7 @@ console.log(
     try {
       await db.query(
         `select * from create_task_group(
-           $1::uuid, $2::uuid, 'everyone', array[]::uuid[], 'Nobody', null,
+           $1::uuid, $2::uuid, 'everyone', null, null, array[]::uuid[], 'Nobody', null,
            date '2026-11-20', null, null, 'none', array[]::text[])`,
         [CHAPTER, A],
       );
@@ -88,6 +89,48 @@ console.log(
           )
         ).rows[0].n === 1,
       { empty },
+    );
+
+    // A group for a role keeps the role and its name as they were (Paul,
+    // 2026-11-18); one for a role or group without its id is refused.
+    const ROLE = "a4295000-0000-4000-8000-0000000000e1";
+    const roleCopies = (
+      await db.query(
+        `select group_id from create_task_group(
+           $1::uuid, $2::uuid, 'role', $3::uuid, 'Recruitment Committee',
+           array[$2::uuid], 'Table at the fair', null, date '2026-11-20',
+           null, null, 'none', array[]::text[])`,
+        [CHAPTER, A, ROLE],
+      )
+    ).rows;
+    const roleGroup = (
+      await db.query(
+        `select audience, target_id, target_name from task_groups where id = $1`,
+        [roleCopies[0]?.group_id],
+      )
+    ).rows[0];
+    await db.exec("savepoint p4295target;");
+    let untargeted = null;
+    try {
+      await db.query(
+        `select * from create_task_group(
+           $1::uuid, $2::uuid, 'group', null, null, array[$2::uuid], 'No group',
+           null, date '2026-11-20', null, null, 'none', array[]::text[])`,
+        [CHAPTER, A],
+      );
+    } catch (e) {
+      untargeted = String(e?.message ?? e);
+    } finally {
+      await db.exec("rollback to savepoint p4295target;");
+    }
+    check(
+      "a group for a role keeps its id and name, and one for a group needs its id",
+      roleCopies.length === 1 &&
+        roleGroup?.audience === "role" &&
+        roleGroup?.target_id === ROLE &&
+        roleGroup?.target_name === "Recruitment Committee" &&
+        /task_groups_target_check/.test(untargeted ?? ""),
+      { roleGroup, untargeted },
     );
 
     await db.exec(`delete from task_groups where id = '${groupId}';`);
