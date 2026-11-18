@@ -16498,7 +16498,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned; a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned (`task_items` counts a task for everyone once; `tasks` is each copy, for older builds); a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [
           {
@@ -17341,6 +17341,119 @@
           }
         ],
         "summary": "Turn the card on or off for the caller",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/layout": {
+      "get": {
+        "description": "Which cards the caller shows, in order, and which they hid, in this chapter. When they have never saved one, both lists are empty and `saved` is false: show the default for their role.",
+        "operationId": "ActivityLayoutController_get_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLayoutDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own order of their Activity cards",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "put": {
+        "description": "Replaces the whole arrangement: send both lists every time. A card may be named only once, in one list or the other. Any well-formed key is kept, including one this server does not know. Follows the caller to their other devices.",
+        "operationId": "ActivityLayoutController_save_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateActivityLayoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLayoutDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the order of the caller's Activity cards",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "description": "Forgets the caller's saved order, so Activity shows the default for their role again. Answers 204 whether or not anything was saved.",
+        "operationId": "ActivityLayoutController_reset_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put the caller's Activity cards back to the default",
         "tags": [
           "Activity"
         ]
@@ -23514,6 +23627,10 @@
             "description": "When the custom status line clears. Null: until the member clears it.",
             "nullable": true,
             "format": "date-time"
+          },
+          "read_receipts": {
+            "type": "boolean",
+            "description": "Read receipts on direct messages (#5519). `true` until the member turns them off."
           }
         },
         "required": [
@@ -23524,7 +23641,8 @@
           "status",
           "status_expires_at",
           "custom_status",
-          "custom_status_expires_at"
+          "custom_status_expires_at",
+          "read_receipts"
         ]
       },
       "UpdateUserSettingsDto": {
@@ -23583,6 +23701,10 @@
             "nullable": true,
             "format": "date-time",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "read_receipts": {
+            "type": "boolean",
+            "description": "Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is."
           }
         }
       },
@@ -23759,6 +23881,15 @@
           "has_gif": {
             "type": "boolean",
             "description": "The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”."
+          },
+          "read_status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "read"
+            ],
+            "nullable": true,
+            "description": "Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row."
           }
         },
         "required": [
@@ -23772,7 +23903,8 @@
           "attachment_count",
           "created_at",
           "forwarded_from",
-          "has_gif"
+          "has_gif",
+          "read_status"
         ]
       },
       "ChannelAccessOptionDto": {
@@ -33320,6 +33452,157 @@
           "snoozed_until"
         ]
       },
+      "ActivityTaskItemTaskDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task"
+            ]
+          },
+          "task": {
+            "$ref": "#/components/schemas/ActivityTaskDto"
+          }
+        },
+        "required": [
+          "kind",
+          "task"
+        ]
+      },
+      "ActivityTaskGroupDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone",
+              "people",
+              "role",
+              "group"
+            ],
+            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The role or chapter group it went to, for `role` and `group`; null otherwise."
+          },
+          "target_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
+          },
+          "total": {
+            "type": "number",
+            "description": "How many copies the group has."
+          },
+          "done": {
+            "type": "number",
+            "description": "How many copies are marked done, waiting on an officer or confirmed."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "How many copies are confirmed, or needed no sign-off when marked done."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A copy to open the group by (`GET /v1/tasks/{id}`, which carries the group): the caller’s own when they hold one, else an overdue copy, else one still open, else any."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the copies share, read from one not yet confirmed: a group edit leaves a confirmed copy as it was."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-20"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The moment it is due, when it has a time of day."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ]
+          },
+          "overdue": {
+            "type": "boolean",
+            "description": "Whether any copy is overdue."
+          },
+          "preview_assignee_ids": {
+            "maxItems": 5,
+            "description": "Up to 5 of the members it went to, for faces: those overdue first, then those still open, then the rest. `total` says how many there are in all.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the group was made."
+          }
+        },
+        "required": [
+          "id",
+          "audience",
+          "target_id",
+          "target_name",
+          "total",
+          "done",
+          "confirmed",
+          "task_id",
+          "title",
+          "description",
+          "due_date",
+          "due_at",
+          "point_reward",
+          "proof_kind",
+          "overdue",
+          "preview_assignee_ids",
+          "created_at"
+        ]
+      },
+      "ActivityTaskItemGroupDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "group"
+            ]
+          },
+          "group": {
+            "$ref": "#/components/schemas/ActivityTaskGroupDto"
+          }
+        },
+        "required": [
+          "kind",
+          "group"
+        ]
+      },
       "ActivityHoursEntryDto": {
         "type": "object",
         "properties": {
@@ -33950,11 +34233,32 @@
             }
           },
           "tasks": {
-            "description": "Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.",
+            "description": "Tasks the caller assigned, newest first, at most 25, each copy of a task for everyone its own row. A current client reads `task_items` instead, where a task for everyone is one row; this list is served unchanged for builds from before it, which list those not yet confirmed and find a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityTaskDto"
             }
+          },
+          "task_items": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ActivityTaskItemTaskDto"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivityTaskItemGroupDto"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "task": "#/components/schemas/ActivityTaskItemTaskDto",
+                  "group": "#/components/schemas/ActivityTaskItemGroupDto"
+                }
+              }
+            },
+            "description": "What the caller assigned that isn’t finished, newest first, at most 25, a task for everyone counted once (#5492): `kind: task`, a one-person task not yet confirmed; `kind: group`, a task for everyone with a copy not yet confirmed, as one row. A confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`."
           },
           "files": {
             "deprecated": true,
@@ -33975,6 +34279,7 @@
         "required": [
           "polls",
           "tasks",
+          "task_items",
           "files",
           "events"
         ]
@@ -34747,6 +35052,75 @@
         },
         "required": [
           "enabled"
+        ]
+      },
+      "ActivityLayoutDto": {
+        "type": "object",
+        "properties": {
+          "card_order": {
+            "description": "The cards the member shows, top to bottom. Empty when nothing is saved.",
+            "example": [
+              "todo",
+              "calendar",
+              "recap"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hidden_cards": {
+            "description": "The cards the member hid. Empty when nothing is saved.",
+            "example": [
+              "links"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "Whether the member has saved an arrangement. False means show the default for the member's role. A card the app knows that neither list names is placed as that default places it; a key the app doesn't know is skipped."
+          }
+        },
+        "required": [
+          "card_order",
+          "hidden_cards",
+          "saved"
+        ]
+      },
+      "UpdateActivityLayoutDto": {
+        "type": "object",
+        "properties": {
+          "card_order": {
+            "maxItems": 32,
+            "description": "The cards to show, top to bottom. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.",
+            "example": [
+              "todo",
+              "calendar",
+              "recap"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hidden_cards": {
+            "maxItems": 32,
+            "description": "The cards to hide. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.",
+            "example": [
+              "links"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "card_order",
+          "hidden_cards"
         ]
       },
       "RoleGoalDto": {

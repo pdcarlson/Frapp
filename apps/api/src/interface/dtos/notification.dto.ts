@@ -388,6 +388,15 @@ export class UpdateUserSettingsDto {
   @IsString()
   @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
   custom_status_expires_at?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is.",
+    type: Boolean,
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  read_receipts?: boolean;
 }
 
 /**
@@ -460,4 +469,11 @@ export class UserSettingsDto implements UserSettingsValues {
     format: 'date-time',
   })
   custom_status_expires_at: string | null;
+
+  @ApiProperty({
+    description:
+      'Read receipts on direct messages (#5519). `true` until the member turns them off.',
+    type: Boolean,
+  })
+  read_receipts: boolean;
 }

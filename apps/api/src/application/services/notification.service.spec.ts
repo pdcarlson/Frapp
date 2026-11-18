@@ -2065,6 +2065,8 @@ describe('NotificationService', () => {
       status_expires_at: null,
       custom_status: null,
       custom_status_expires_at: null,
+      // Read receipts are on until the member turns them off (#5519).
+      read_receipts: true,
     } as const;
 
     // `toStrictEqual`, not `toEqual`: the response is the editable
@@ -2424,6 +2426,39 @@ describe('NotificationService', () => {
             custom_status_expires_at: null,
           }),
         );
+      });
+
+      // #5519: the read-receipts switch is written only when it is sent, and
+      // read back from the row, so turning it off on one device sticks.
+      it('writes the read-receipts switch only when it is sent', async () => {
+        mockSettingsRepo.upsert.mockResolvedValue({
+          ...baseSettings,
+          read_receipts: false,
+        });
+
+        const result = await service.updateSettings('u-1', {
+          read_receipts: false,
+        });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+          read_receipts: false,
+        });
+        expect(result.read_receipts).toBe(false);
+
+        mockSettingsRepo.upsert.mockClear();
+        await service.updateSettings('u-1', { theme: 'dark' });
+        expect(mockSettingsRepo.upsert.mock.calls[0][0]).not.toHaveProperty(
+          'read_receipts',
+        );
+      });
+
+      it('treats read_receipts: null as not supplied, since the column is NOT NULL', async () => {
+        await service.updateSettings('u-1', { read_receipts: null as never });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+        });
       });
 
       it('treats theme: null as not supplied, since the column is NOT NULL', async () => {

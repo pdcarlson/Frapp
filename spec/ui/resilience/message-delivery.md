@@ -26,7 +26,7 @@ Chat messages are the most latency-sensitive and loss-sensitive data in the app.
 |-------|-----------|-------------|
 | SENDING | Subtle spinner or clock icon next to message | None needed |
 | SENT | Single checkmark (✓) | None needed |
-| DELIVERED | Double checkmark (✓✓) — future, requires read receipts | None needed |
+| DELIVERED | No mark of its own, and never ✓✓: on the Messages list a double check means **read** ([`chat/README.md` § Shown to the sender](../../behavior/chat/README.md#shown-to-the-sender), #5519) | None needed |
 | FAILED | Red warning icon (⚠) + "Failed to send" | [Retry] [Delete] buttons |
 | UNCONFIRMED | Neutral note + "outcome unknown" — **never red** | [Retry] only — **never Delete** |
 | RECORDED | Neutral note — write committed, chat card missing — **never red** | None — **never Retry, never Delete** |

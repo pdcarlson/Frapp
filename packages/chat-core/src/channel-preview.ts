@@ -33,6 +33,40 @@ export interface ChannelLatestMessage {
    * Optional: absent from an older server.
    */
   has_gif?: boolean;
+  /**
+   * Read receipts (#5519): on a DM or group DM whose latest message is the
+   * viewer's, `sent` or `read`, as the server decided it (each member's
+   * switch, blocks, and "everyone has read it" in a group). Null or absent
+   * otherwise, and from an older server.
+   */
+  read_status?: string | null;
+}
+
+/** What a Messages row says about the viewer's own last message (#5519). */
+export type ConversationReadStatus = "sent" | "read";
+
+/** The status's words, for a screen reader and a tooltip. */
+export const CONVERSATION_READ_STATUS_LABEL: Record<
+  ConversationReadStatus,
+  string
+> = { sent: "Sent", read: "Read" };
+
+/**
+ * The check a Messages row draws before its last line (#5519): one for sent,
+ * two for read, or none. Only the viewer's own message has one, and only
+ * where the server sent a status, so a channel, someone else's message, and
+ * an older server all draw none. Never re-derived from read times here: the
+ * server alone knows who turned read receipts off.
+ */
+export function conversationReadStatus(
+  latest: ChannelLatestMessage | null | undefined,
+  viewerId: string | null,
+): ConversationReadStatus | null {
+  if (!latest || viewerId === null || latest.sender_id !== viewerId) {
+    return null;
+  }
+  const status = latest.read_status;
+  return status === "sent" || status === "read" ? status : null;
 }
 
 /** The preview of a channel with no message yet, so every row is two lines. */
@@ -83,9 +117,12 @@ function shortLabel(author: PreviewAuthor, names: PreviewNames): string {
  *   the thread shows it as a sentence from Frapp.
  * - Anything else is the sender's first name and the message's one-line text
  *   (`replyPreviewText`, which also names a file-only message or a card with
- *   no text): "Jake: I've got the van". The viewer's own reads "You: ...". A
- *   1:1 DM drops the other person's name, since the row is already titled
- *   with it; a group DM keeps it, since the row names several people.
+ *   no text): "Jake: I've got the van". The viewer's own reads "You: ...",
+ *   except where the row draws a sent or read check before it
+ *   ({@link conversationReadStatus}, #5519), which already says it is theirs,
+ *   as WhatsApp's rows do. A 1:1 DM drops the other person's name, since the
+ *   row is already titled with it; a group DM keeps it, since the row names
+ *   several people.
  */
 export function channelPreviewLine(
   latest: ChannelLatestMessage,
@@ -116,7 +153,9 @@ export function channelPreviewLine(
     return text;
   }
   const own = viewerId !== null && latest.sender_id === viewerId;
-  if (own) return `You: ${text}`;
+  if (own) {
+    return conversationReadStatus(latest, viewerId) ? text : `You: ${text}`;
+  }
   if (isOneToOne) return text;
   return `${shortLabel(latest, options)}: ${text}`;
 }

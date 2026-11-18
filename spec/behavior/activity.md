@@ -6,7 +6,8 @@ chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../pro
 
 This file owns the reads behind the page, `GET /v1/activity`, its
 [standing](#standing), `GET /v1/activity/standing`, its [recap](#recap),
-`GET /v1/activity/recap`, and its [archive](#archive), `GET /v1/activity/archive`. The page itself (where it sits, how
+`GET /v1/activity/recap`, its [archive](#archive), `GET /v1/activity/archive`, and how each member
+arranged its [cards](#cards), `/v1/activity/layout`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
 the phone's screen, the Activity tab (#4610), is in
@@ -78,12 +79,25 @@ member's own answer, not the event's default:
   [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15; until
   then the page kept them behind "Archived polls", which phone builds from before the Archive
   still draw from this list, so it is still served).
-- **Tasks:** tasks the caller assigned, newest first, each copy of a task for everyone with its
-  `group` ([`tasks.md` § Tasks for everyone](tasks.md#tasks-for-everyone)). A client lists those not yet confirmed; a
-  confirmed one is finished and in the [Archive](#archive) (#5127), and is still served for phone
-  builds from before it. Only while the caller still holds
-  `tasks:manage`: without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row
-  that opens to a refusal is worse than no row.
+- **Tasks** (`task_items`): what the caller assigned that isn't finished, newest first, at most 25,
+  a task for everyone counted once however many copies it has
+  ([#5492](https://github.com/frapplive/Frapp/issues/5492), Paul, 2026-11-18: one task sent to
+  everyone filled all 25 rows and hid every other task he'd assigned). Each item is
+  `kind: "task"`, a one-person task not yet confirmed, in the same shape as the other task rows,
+  or `kind: "group"`, a task for everyone with a copy not yet confirmed: its `group` progress
+  ([`tasks.md` § Tasks for everyone](tasks.md#tasks-for-everyone)), what its copies share (title,
+  description, due, points and proof, read from a copy not yet confirmed, since a group edit
+  leaves a confirmed copy as it was), `task_id`, the copy a row opens (the caller's own when they
+  hold one, else an overdue copy, else an open one, else any), `overdue` when any copy is, and
+  `preview_assignee_ids`, up to 5 members for faces, overdue first, then open, then done. The two
+  are read apart, newest first and filtered in SQL (one-person tasks not confirmed; the caller's
+  groups with a copy not confirmed), merged and cut to 25, so a finished group or a confirmed task
+  never takes a slot from a live one. A confirmed one is in the [Archive](#archive).
+  `tasks` is still served unchanged: each copy its own row, the newest 25 the caller assigned,
+  confirmed ones included, for phone builds from before `task_items`, which list those not yet
+  confirmed and drop the confirmed (#5127). Both only while the caller still holds `tasks:manage`:
+  without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row that opens to a
+  refusal is worse than no row.
 - **Files:** none. The read listed the chapter documents and backwork the caller uploaded
   (#3897's ask, "documents and backwork you uploaded"). `made_by_you.files` is still served,
   always empty and marked deprecated, so a client built before the change (an open web tab, a
@@ -129,6 +143,48 @@ page on both clients. See [Week](#week).
   rather than show it as empty.
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
+
+## Cards
+
+The page is a stack of cards each member orders and hides (#5520; Paul's pick, 2026-11-18, after
+Bevel's Edit Home and Apple Fitness's Edit Summary). Before it, the page's sections sat in one fixed
+order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
+
+- **The cards** are named by key (`ACTIVITY_CARD_KEYS` in `@repo/validation`): the Frapp card
+  (`nudge`), Last week (`recap`), To review (`review`), To do (`todo`), Calendar (`calendar`),
+  Reminders (`reminders`), Waiting on others (`waiting`), Links (`links`) and This semester
+  (`semester`). The week card is not one: it is always first and can't be hidden, as Fitness keeps
+  its rings. To do can move but can't be hidden, because the week card's lines narrow it and the
+  week strip's days jump to it.
+- **A card with nothing in it draws nothing**, wherever it sits, as each section always has. So
+  every card is in every default, and a member never sees an empty To review.
+- **Each member's arrangement is theirs, per chapter**, on their account (`activity_layouts`), so
+  the phone and web draw the same page. `GET /v1/activity/layout` returns the cards shown, in
+  order, the cards hidden, and whether the member has saved one (`saved`). `PUT` replaces both
+  lists; `DELETE` forgets them, so the role's default applies again. Any member may read and
+  write their own; no one reads another's.
+- **The API stores any well-formed key**, lower-case words joined by hyphens (at most 32
+  characters, 32 keys a list, none twice), not only the keys it knows, so a newer client's card
+  survives an older API. A client skips a key it doesn't know.
+- **Until a member saves, their role's default applies** (`ACTIVITY_DEFAULT_CARD_ORDER` in
+  `@repo/hooks`). An officer is anyone holding `tasks:manage` or `service:approve`, the people To
+  review is for, and their default puts To review before their own To do, then Waiting on others.
+  Everyone else's puts To do first. The default also applies while the read is out or has failed,
+  so the page never waits on it.
+- **A card newer than a member's save** goes where the default puts it: after the nearest card
+  before it in the default that they show.
+- **Edit Activity**, at the foot of the page, lists the cards in place of the page until Done:
+  minus hides one, plus brings it back where the default puts it, and arrows move it one place.
+  Done saves only when something changed; Reset to the default is offered once they have saved.
+  A failed save puts the saved arrangement back and says so. Edit Activity is offered only once the member's
+  saved arrangement and role have loaded, since an editor opened on the default would save it over
+  theirs. Leaving the editor by Android's back button or web's `‹ Activity` is Done.
+- **A save keeps the keys a client doesn't know.** The PUT replaces the row, so a client carries
+  over the stored keys it skips: a hidden one stays hidden, and a shown one keeps its place after the
+  card it followed. An older phone saving can't bring back a card hidden on web.
+- **A hidden Frapp card isn't asked for**, so its read waits for the arrangement to load: it can cost a model call
+  ([`ai.md` § The card and its tray](ai.md#the-card-and-its-tray)). Hiding it hides only the card;
+  Preferences' "Nudges on Activity" still owns whether the server makes one at all.
 
 ## Week
 

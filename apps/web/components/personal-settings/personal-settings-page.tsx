@@ -12,6 +12,7 @@ import { AccountSection } from "@/components/personal-settings/account-section";
 import { AiSection } from "@/components/personal-settings/ai-section";
 import { ChapterAlertsSection } from "@/components/personal-settings/chapter-alerts-section";
 import { QuietHoursSection } from "@/components/personal-settings/quiet-hours-section";
+import { ReadReceiptsSection } from "@/components/personal-settings/read-receipts-section";
 import { MyInvoicesSection } from "@/components/personal-settings/my-invoices-section";
 import { PersonalSettingsBodySkeleton } from "@/components/personal-settings/personal-settings-skeleton";
 import {
@@ -114,13 +115,18 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
         There is no theme choice here: Frapp is dark-only (#3330).
       */
       return (
-        <ProfileSection
-          id="chat-density"
-          title="Chat density"
-          hint="Applies on this browser."
-        >
-          <ChatDensityControl />
-        </ProfileSection>
+        <div className="flex flex-col gap-8">
+          <ProfileSection
+            id="chat-density"
+            title="Chat density"
+            hint="Applies on this browser."
+          >
+            <ChatDensityControl />
+          </ProfileSection>
+          {/* Read receipts on direct messages (#5519): an account setting,
+              unlike density, so it follows the member everywhere. */}
+          <ReadReceiptsSection />
+        </div>
       );
     case "account":
       return <AccountSection />;

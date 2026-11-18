@@ -6347,6 +6347,7 @@ describe('ChatService', () => {
       created_at: '2026-11-06T18:00:00Z',
       forwarded_from: null,
       has_gif: false,
+      read_status: null,
     });
 
     it('drops channels the caller cannot read, and DMs they hid', async () => {

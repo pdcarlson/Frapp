@@ -59,6 +59,9 @@ const { chapterScopeState } = vi.hoisted(() => ({
   because what they actually need is "has the live window loaded", not "who is
   this". Tests that do not care set both through `setViewer`.
 */
+const { FIXED_NOW } = vi.hoisted(() => ({
+  FIXED_NOW: new Date("2026-11-12T18:00:00.000Z"),
+}));
 const { viewerState, liveViewerState } = vi.hoisted(() => ({
   viewerState: { userId: "viewer-1" as string | null },
   liveViewerState: { userId: "viewer-1" as string | null },
@@ -234,6 +237,7 @@ const latestReads = vi.hoisted(() => ({
     kind: string;
     attachment_count: number;
     created_at: string;
+    read_status?: string | null;
   }[],
   enabled: [] as boolean[],
   // A first read still in flight.
@@ -724,6 +728,8 @@ vi.mock("@repo/hooks", async () => ({
     ],
     isError: sidebarState.unreadError,
   }),
+  // The rows' clock (#5519): a fixed instant, so times read the same each run.
+  useNowDate: () => FIXED_NOW,
   // Direct messages' order and last lines (#3774).
   useChannelLatestMessages: (options?: { enabled?: boolean }) => {
     latestReads.enabled.push(options?.enabled ?? true);
@@ -969,6 +975,7 @@ vi.mock("./channel-list", () => ({
     kind,
     channels,
     previews,
+    rowMeta,
     latestAt,
     onPick,
     onHide,
@@ -1003,6 +1010,10 @@ vi.mock("./channel-list", () => ({
     channels?: { id: string }[];
     latestAt?: ReadonlyMap<string, string>;
     previews?: ReadonlyMap<string, string>;
+    rowMeta?: ReadonlyMap<
+      string,
+      { time: string | null; readStatus: string | null }
+    >;
   }) => (
     <div
       data-testid="channel-list"
@@ -1013,6 +1024,13 @@ vi.mock("./channel-list", () => ({
           : undefined
       }
       data-latest={latestAt ? [...latestAt.keys()].join(",") : undefined}
+      data-row-meta={
+        rowMeta
+          ? [...rowMeta]
+              .map(([id, m]) => `${id}=${m.time ?? "-"}/${m.readStatus ?? "-"}`)
+              .join("|")
+          : undefined
+      }
       data-ids={channels?.map((ch) => ch.id).join(",")}
       ref={() => {
         railRowActions.value = rowActions;
@@ -7030,6 +7048,46 @@ describe("ChatShell's two lists (#3774)", () => {
     // says so, as on the phone.
     expect(previews).toMatch(/chan-group=\S+: I do, sending it tonight/);
     expect(previews).toContain("chan-dm=No messages yet");
+    latestReads.rows = [];
+  });
+
+  // #5519: each Direct messages row's time and, on the viewer's own last
+  // line, the server's check, built from the same latest rows.
+  it("hands Direct messages each row's time and the viewer's own sent or read check (#5519)", () => {
+    const viewer = viewerState.userId ?? "viewer-1";
+    latestReads.rows = [
+      {
+        channel_id: "chan-group",
+        sender_id: viewer,
+        author_name: null,
+        content: "grabbing them after class",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-12T01:20:00.000Z",
+        read_status: "read",
+      },
+      {
+        channel_id: "chan-dm",
+        sender_id: "other-1",
+        author_name: null,
+        content: "see you there",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-12T01:10:00.000Z",
+        // The server never sends one on someone else's line; the row
+        // ignores it if it did.
+        read_status: "read",
+      },
+    ];
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    render(<ChatShell view="direct" />);
+    const meta = rail().getAttribute("data-row-meta") ?? "";
+    expect(meta).toMatch(/chan-group=[^/|]+\/read/);
+    expect(meta).toMatch(/chan-dm=[^/|]+\/-/);
+    // The check replaces "You:" on the viewer's own line.
+    expect(rail().getAttribute("data-previews")).toContain(
+      "chan-group=grabbing them after class",
+    );
     latestReads.rows = [];
   });
 

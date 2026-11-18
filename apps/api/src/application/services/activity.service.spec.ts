@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import type { ActivityLink } from './activity-link.service';
-import type { TaskListOptions } from './task.service';
+import type { AssignedTaskItem, TaskListOptions } from './task.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
@@ -94,6 +94,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const taskService = {
     list: jest.fn().mockResolvedValue([]),
     count: jest.fn().mockResolvedValue(0),
+    listAssignedItems: jest.fn().mockResolvedValue([]),
   };
   const serviceEntryService = {
     findByChapterFiltered: jest.fn().mockResolvedValue([]),
@@ -1091,11 +1092,229 @@ describe('ActivityService', () => {
     });
 
     it('reads no tasks while the Tasks module is off', async () => {
-      const { service, taskService } = build();
+      const { service, taskService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ]);
 
-      await service.getActivity(CHAPTER, ME, { tasks: false });
+      const view = await service.getActivity(CHAPTER, ME, { tasks: false });
 
       expect(taskService.list).not.toHaveBeenCalled();
+      expect(taskService.listAssignedItems).not.toHaveBeenCalled();
+      expect(view.made_by_you.task_items).toEqual([]);
+    });
+
+    describe('task_items: what the caller assigned, a task for everyone once (#5492)', () => {
+      const MANAGER = [
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ];
+      const summary = {
+        id: 'group-1',
+        audience: 'everyone' as const,
+        target_id: null,
+        target_name: null,
+        total: 0,
+        done: 0,
+        confirmed: 0,
+      };
+      const overdue = {
+        due_date: '2026-11-01',
+        status: TaskStatus.OVERDUE,
+        stored_status: TaskStatus.TODO,
+      };
+      const done = {
+        status: TaskStatus.COMPLETED,
+        stored_status: TaskStatus.COMPLETED,
+        completed_at: iso(-HOUR),
+      };
+      const copy = (id: string, overrides: Partial<TaskView> = {}) =>
+        task({
+          id,
+          assignee_id: `member-${id}`,
+          created_by: ME,
+          group_id: 'group-1',
+          ...overrides,
+        });
+      const groupItem = (
+        copies: [TaskView, ...TaskView[]],
+      ): AssignedTaskItem => ({
+        kind: 'group',
+        group: { ...summary, total: copies.length },
+        copies,
+        // As `TaskService.listAssignedItems` picks it: a copy not confirmed.
+        shared: copies.find((one) => !one.points_awarded) ?? copies[0],
+        created_at: iso(-HOUR),
+      });
+      const serveItems = (
+        taskService: { listAssignedItems: jest.Mock },
+        items: AssignedTaskItem[],
+      ) => taskService.listAssignedItems.mockResolvedValue(items);
+      const onlyGroup = async (copies: [TaskView, ...TaskView[]]) => {
+        const { service, taskService } = build(MANAGER);
+        serveItems(taskService, [groupItem(copies)]);
+        const view = await service.getActivity(CHAPTER, ME, null);
+        const [item] = view.made_by_you.task_items;
+        if (item?.kind !== 'group') throw new Error('expected a group row');
+        return item.group;
+      };
+
+      it('serves one-person tasks as task rows and a group as one row, in the read order, at `now`', async () => {
+        const { service, taskService } = build(MANAGER);
+        serveItems(taskService, [
+          {
+            kind: 'task',
+            task: task({ id: 'solo', assignee_id: OTHER, created_by: ME }),
+          },
+          groupItem([copy('a'), copy('b')]),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null, {
+          now: NOW,
+        });
+
+        expect(taskService.listAssignedItems).toHaveBeenCalledWith(
+          CHAPTER,
+          ME,
+          25,
+          NOW,
+        );
+        expect(view.made_by_you.task_items).toEqual([
+          {
+            kind: 'task',
+            task: expect.objectContaining({
+              id: 'solo',
+              assignee_name: 'Other Member',
+              created_by_name: 'Me Member',
+              group: null,
+              unread: false,
+              snoozed_until: null,
+            }),
+          },
+          {
+            kind: 'group',
+            group: {
+              ...summary,
+              total: 2,
+              task_id: 'a',
+              title: 'Book the venue',
+              description: null,
+              due_date: '2026-11-20',
+              due_at: null,
+              point_reward: 5,
+              proof_kind: 'none',
+              overdue: false,
+              preview_assignee_ids: ['member-a', 'member-b'],
+              created_at: iso(-HOUR),
+            },
+          },
+        ]);
+        // The copies never become rows of their own.
+        expect(view.needs_you.tasks).toEqual([]);
+      });
+
+      it('opens the caller’s own copy first, then an overdue one, then an open one, then any', async () => {
+        const mine = copy('mine', { assignee_id: ME, ...done });
+        const late = copy('late', overdue);
+        const open = copy('open');
+        const finished = copy('finished', done);
+
+        expect((await onlyGroup([finished, open, late, mine])).task_id).toBe(
+          'mine',
+        );
+        expect((await onlyGroup([finished, open, late])).task_id).toBe('late');
+        expect((await onlyGroup([finished, open])).task_id).toBe('open');
+        expect((await onlyGroup([finished])).task_id).toBe('finished');
+      });
+
+      it('says whether any copy is overdue', async () => {
+        expect((await onlyGroup([copy('a'), copy('b', done)])).overdue).toBe(
+          false,
+        );
+        expect(
+          (await onlyGroup([copy('a'), copy('b', overdue), copy('c', done)]))
+            .overdue,
+        ).toBe(true);
+      });
+
+      it('names at most 5 members for faces, overdue first, then open, then done', async () => {
+        const group = await onlyGroup([
+          copy('d1', done),
+          copy('o1'),
+          copy('d2', done),
+          copy('l1', overdue),
+          copy('o2'),
+          copy('o3'),
+          copy('l2', overdue),
+          copy('o4'),
+        ]);
+
+        expect(group.preview_assignee_ids).toEqual([
+          'member-l1',
+          'member-l2',
+          'member-o1',
+          'member-o2',
+          'member-o3',
+        ]);
+        expect(group.total).toBe(8);
+      });
+
+      it('draws what the copies share from the shared copy, not the one it opens', async () => {
+        // A group edit leaves a confirmed copy as it was.
+        const group = await onlyGroup([
+          copy('mine', {
+            assignee_id: ME,
+            ...done,
+            title: 'Old title',
+            confirmed_at: iso(-HOUR),
+            points_awarded: true,
+          }),
+          copy('open', { title: 'New title', due_date: '2026-11-25' }),
+        ]);
+
+        expect(group).toEqual(
+          expect.objectContaining({
+            task_id: 'mine',
+            title: 'New title',
+            due_date: '2026-11-25',
+          }),
+        );
+      });
+
+      it('reads none for a member without tasks:manage', async () => {
+        const { service, taskService } = build();
+        serveItems(taskService, [groupItem([copy('a')])]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(taskService.listAssignedItems).not.toHaveBeenCalled();
+        expect(view.made_by_you.task_items).toEqual([]);
+      });
+
+      it('leaves the per-copy `tasks` list as older builds read it', async () => {
+        const { service, taskService } = build(MANAGER);
+        const copies = [copy('a', { assignee_id: OTHER }), copy('b')];
+        serveTasks(taskService, [], copies);
+        serveItems(taskService, [groupItem([copies[0], copies[1]])]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.made_by_you.tasks.map((row) => row.id)).toEqual(['a', 'b']);
+        expect(view.made_by_you.task_items).toHaveLength(1);
+      });
+
+      it('serves the tasks section unavailable, not a partial list, when the read fails', async () => {
+        const { service, taskService } = build(MANAGER);
+        taskService.listAssignedItems.mockRejectedValue(new Error('db down'));
+        jest
+          .spyOn(caughtFailure, 'reportCaughtFailure')
+          .mockImplementation(() => undefined);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.unavailable).toContain('tasks');
+        expect(view.made_by_you.task_items).toEqual([]);
+      });
     });
   });
 

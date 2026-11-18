@@ -73,6 +73,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     ['assignee', { assigneeId: USER_SHARED }],
     ['not-assignee', { notAssigneeId: '0c000000-0000-4000-8000-000000000060' }],
     ['creator', { createdBy: USER_SHARED }],
+    ['one-person', { groupless: true }],
     ['status', { status: TaskStatus.TODO }],
     ['unconfirmed', { confirmed: false }],
     ['page', { limit: 10 }],
@@ -99,6 +100,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
 
   describe('findByChapter filters narrow in SQL (#4037)', () => {
     const OTHER = '0c000000-0000-4000-8000-000000000060';
+    const GROUP = '0c000000-0000-4000-8000-000000000061';
     /** Four tasks per chapter, each failing a different filter. */
     const rows = (scope: typeof inA, prefix: string) =>
       [
@@ -122,6 +124,8 @@ describe('SupabaseTaskRepository — tenant scope', () => {
             assignee_id: USER_SHARED,
             created_by: OTHER,
             completed_at: '2026-01-02T00:00:00Z',
+            // A copy of a task for everyone (#5492).
+            group_id: GROUP,
           },
         ],
         [
@@ -161,6 +165,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
       ['assignee', { assigneeId: USER_SHARED }, [3, 1]],
       ['not-assignee', { notAssigneeId: USER_SHARED }, [4, 2]],
       ['creator', { createdBy: USER_SHARED }, [2, 1]],
+      ['one-person', { groupless: true }, [4, 2, 1]],
       ['status', { status: TaskStatus.TODO }, [1]],
       ['unconfirmed', { confirmed: false }, [3, 2, 1]],
       ['confirmed', { confirmed: true }, [4]],
@@ -817,6 +822,161 @@ describe('SupabaseTaskRepository — task photos (#4635)', () => {
         ),
       ).resolves.toBe(true);
     });
+  });
+});
+
+describe('SupabaseTaskRepository — a creator’s unfinished groups (#5492)', () => {
+  const OTHER = '0c000000-0000-4000-8000-000000000070';
+  /**
+   * A group row per chapter, twins apart from `id` and `chapter_id`. The
+   * harness resolves no join, so `tasks` is the embed as the seed carries it:
+   * the group's copies, one confirmed and one open, or both confirmed. The
+   * harness applies the embedded filter and `!inner` to it, as PostgREST
+   * would; the live suite (`task-groups.integration-spec.ts`) checks PostgREST
+   * itself.
+   */
+  const group = (
+    n: number,
+    over: { created_by?: string; open?: boolean } = {},
+  ) => {
+    const fields = {
+      created_by: over.created_by ?? USER_SHARED,
+      audience: 'everyone',
+      target_id: null,
+      target_name: null,
+      created_at: `2026-11-0${n}T00:00:00.000Z`,
+      tasks: [
+        { id: `copy-${n}-1`, points_awarded: true },
+        { id: `copy-${n}-2`, points_awarded: !(over.open ?? true) },
+      ],
+    };
+    return [
+      inA({ id: `0a000000-0000-4000-8000-00000000007${n}`, ...fields }),
+      inB({ id: `0b000000-0000-4000-8000-00000000007${n}`, ...fields }),
+    ];
+  };
+  const idInB = (n: number) => `0b000000-0000-4000-8000-00000000007${n}`;
+  let harness: TenantHarness;
+  let repo: SupabaseTaskRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        task_groups: [
+          ...group(1),
+          ...group(2),
+          // Someone else's.
+          ...group(3, { created_by: OTHER }),
+          // Every copy confirmed: finished.
+          ...group(4, { open: false }),
+          ...group(5),
+        ],
+      },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+  });
+
+  it('reads the creator’s groups with an open copy, in the chapter, newest first, capped', async () => {
+    const groups = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findUnfinishedGroupsByCreator(CHAPTER_B, USER_SHARED, 2),
+    );
+
+    expect(groups.map((row) => row.id)).toEqual([idInB(5), idInB(2)]);
+    const read = harness.ops.at(-1)!;
+    expect(read.filters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          op: 'eq',
+          column: 'created_by',
+          value: USER_SHARED,
+        }),
+        expect.objectContaining({
+          op: 'eq',
+          column: 'tasks.points_awarded',
+          value: false,
+        }),
+      ]),
+    );
+  });
+
+  it('returns the group rows without the copy embedded to filter on', async () => {
+    const groups = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findUnfinishedGroupsByCreator(CHAPTER_B, USER_SHARED, 25),
+    );
+
+    expect(groups.map((row) => row.id)).toEqual([idInB(5), idInB(2), idInB(1)]);
+    for (const row of groups) expect(row).not.toHaveProperty('tasks');
+  });
+});
+
+describe('SupabaseTaskRepository — a group’s copy states (#5492)', () => {
+  const GROUP = '0c000000-0000-4000-8000-000000000080';
+  const copy = (id: string) => ({
+    id,
+    title: 'Hold committee meetings',
+    description: 'A long description the state read never carries',
+    assignee_id: USER_SHARED,
+    created_by: USER_SHARED,
+    due_date: '2026-09-01',
+    due_at: null,
+    status: 'TODO',
+    point_reward: 5,
+    points_awarded: false,
+    completed_at: null,
+    confirmed_at: null,
+    group_id: GROUP,
+    created_at: '2026-01-01T00:00:00.000Z',
+  });
+  let harness: TenantHarness;
+  let repo: SupabaseTaskRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        tasks: [
+          inA(copy('0a000000-0000-4000-8000-000000000081')),
+          inB(copy('0b000000-0000-4000-8000-000000000081')),
+          inB(copy('0b000000-0000-4000-8000-000000000082')),
+          inA(copy('0a000000-0000-4000-8000-000000000082')),
+        ],
+      },
+      collisionExempt: { tasks: ['group_id'] },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+  });
+
+  it('reads only the chapter’s copies of the groups, by id', async () => {
+    const states = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findGroupCopyStates(CHAPTER_B, [GROUP]),
+    );
+
+    expect(states.map((state) => state.id)).toEqual([
+      '0b000000-0000-4000-8000-000000000081',
+      '0b000000-0000-4000-8000-000000000082',
+    ]);
+  });
+
+  it('reads in batches of group ids, so a long list never overflows the URL', async () => {
+    const ids = Array.from(
+      { length: 150 },
+      (_, i) => `0c000000-0000-4000-8000-${String(1000 + i).padStart(12, '0')}`,
+    );
+
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findGroupCopyStates(CHAPTER_B, [GROUP, ...ids]),
+    );
+
+    // Each batch is paged until a short page, so a batch may be read twice.
+    const batches = harness.ops.map(
+      (op) => op.filters.find((f) => f.op === 'in')?.value as string[],
+    );
+    expect(Math.max(...batches.map((batch) => batch.length))).toBe(100);
+    expect(new Set(batches.flat())).toEqual(new Set([GROUP, ...ids]));
+  });
+
+  it('reads nothing for no groups', async () => {
+    await expect(repo.findGroupCopyStates(CHAPTER_B, [])).resolves.toEqual([]);
+    expect(harness.ops).toHaveLength(0);
   });
 });
 
