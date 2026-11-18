@@ -13,7 +13,6 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
 import { TaskRow, TaskTile } from "@/components/tasks/task-row";
-import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 
@@ -165,12 +164,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 // Suggested tasks' entry has its own spec
 // (`components/tasks/suggested-tasks-entry.spec.tsx`).
-// The detail sheet's checklist writes through its own client hooks, which
-// have their own spec (`task-detail-sheet.spec.tsx`).
-vi.mock("@/components/tasks/subtask-checklist", () => ({
-  SubtaskChecklist: () => null,
-}));
-
 vi.mock("@/components/tasks/suggested-tasks-entry", () => ({
   SuggestedTasksEntry: () => null,
 }));
@@ -270,18 +263,20 @@ describe("Tasks List / Grid", () => {
     const tiles = tree.root.findAllByType(TaskTile);
     expect(rows(tree)).toHaveLength(0);
     expect(tiles.length).toBeGreaterThan(0);
-    // The card's own targets, pressed as a member would: the body opens
-    // the task's detail sheet (where an officer's Edit sits)...
+    // The card's own targets, pressed as a member would: the body pushes
+    // the task's screen (#5492, where an officer's Edit sits)...
     const tile = tiles[0]!;
     const body = tile.find(
       (node) =>
         typeof node.type === "string" &&
         node.props.accessibilityRole === "button",
     );
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
     act(() => body.props.onPress());
-    expect(tree.root.findByType(TaskDetailSheet).props.row?.id).toBe(
-      tile.props.row.id,
-    );
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: tile.props.row.id },
+    });
 
     // ...and the box completes it.
     const box = tile.find(
@@ -614,22 +609,61 @@ describe("Tasks as a pushed screen (#4610)", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps an edit's draft past this screen, by task (#4872)", () => {
-    permissions = ["tasks:manage", "members:view"];
+  it("pushes the task's screen for a task link it can read (#5492)", () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.push).mockClear();
+    vi.mocked(router.setParams).mockClear();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      task: "task-2",
+    });
     const tree = render();
-    const row = rows(tree).find(
-      (node) =>
-        node.props.row.assigneeId &&
-        node.props.row.dueDay &&
-        !node.props.row.pointsAwarded,
-    )!;
-    act(() => row.props.onOpen());
-    act(() => tree.root.findByType(TaskDetailSheet).props.onEdit());
-    const edit = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "NewTaskSheet" && !!node.props.editing,
+    expect(router.setParams).toHaveBeenCalledWith({ task: undefined });
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: "task-2" },
+    });
+    act(() => tree.unmount());
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+  });
+
+  it("stays on the board for a task link its read doesn't hold", () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.push).mockClear();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      task: "someone-elses",
+    });
+    const tree = render();
+    expect(router.push).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+  });
+
+  it("says a task given back from its screen is up for grabs again, through the focus that lands here", async () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.setParams).mockClear();
+    // The board is under the task's screen; going back to it brings the
+    // param and a focus together.
+    const tree = render();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      released: "1",
+    });
+    act(() => refocus());
+    expect(screenText(tree)).toContain(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
     );
-    expect(edit.props.keptDraft).toBe(`task-edit:${row.props.row.id}`);
+    expect(router.setParams).toHaveBeenCalledWith({ released: undefined });
+    // The next focus takes it down, as any line under the points card.
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screenText(tree)).toContain(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
+    );
+    act(() => refocus());
+    expect(screenText(tree)).not.toContain(
+      `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
+    );
     act(() => tree.unmount());
   });
 
@@ -1009,27 +1043,5 @@ describe("Up for grabs", () => {
     expect(sheet.props.onDelete).toBeDefined();
     act(() => officer.unmount());
     permissions = [];
-  });
-});
-
-describe("Give it back from a claimed task's sheet", () => {
-  it("is offered on a task claimed from the board, until it's done", () => {
-    tasks = [{ ...TASKS[0], open_task_id: "open-1" }, TASKS[1]];
-    const tree = render();
-    act(() => row(tree).props.onOpen());
-    const sheet = tree.root.findByType(TaskDetailSheet);
-    expect(sheet.props.row?.id).toBe("task-1");
-    expect(sheet.props.onRelease).toBeDefined();
-    act(() => sheet.props.onRelease());
-    expect(releaseMutate).toHaveBeenCalledWith("task-1", expect.anything());
-    act(() => tree.unmount());
-    tasks = TASKS;
-  });
-
-  it("is not offered on an ordinary task", () => {
-    const tree = render();
-    act(() => row(tree).props.onOpen());
-    expect(tree.root.findByType(TaskDetailSheet).props.onRelease).toBeUndefined();
-    act(() => tree.unmount());
   });
 });

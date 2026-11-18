@@ -433,6 +433,8 @@ describe("Placeholder rows sit on their real row's frame", () => {
           sentBackReason: null,
           completionNote: null,
           photos: [],
+          createdAt: null,
+          groupId: null,
           group: null,
           openTaskId: null,
         }}

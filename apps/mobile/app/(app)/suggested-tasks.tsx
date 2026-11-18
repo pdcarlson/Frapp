@@ -33,7 +33,7 @@ import {
   useAiReport,
   type AiReportTarget,
 } from "@/components/ai/report-ai-sheet";
-import type { BackTarget } from "@/components/back-row";
+import { BACK_TO_TASKS } from "@/components/back-row";
 import {
   NewEventSheet,
   useCanCreateEvents,
@@ -99,7 +99,6 @@ import { pageSurfaces } from "@/lib/surfaces";
  * - **Already planned**, one tap.
  * - **Not this year**. Either of the last two and it does not come back.
  */
-const BACK_TO_TASKS: BackTarget = { label: "Tasks", href: "/tasks" };
 
 /** Which of a row's answers is being sent. */
 type Doing = "accept" | "dismiss" | "already";

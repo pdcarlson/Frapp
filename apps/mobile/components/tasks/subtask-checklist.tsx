@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import {
   useAddSubtask,
@@ -17,7 +16,7 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import type { TaskRowSubtask } from "@/lib/tasks/board";
 
 /**
- * A task's subtasks in its detail sheet (#4003): the steps of the chore,
+ * A task's subtasks on its screen (#4003, #5492): the steps of the chore,
  * each a row the assignee taps to check off, like a checklist in Apple
  * Reminders. The tap flips the box at once (`useSetSubtaskDone` writes the
  * cache first) and a refusal puts it back. `readOnly` once the task is
@@ -130,7 +129,7 @@ export function SubtaskChecklist({
       {editable && subtasks.length < TASK_SUBTASKS_MAX ? (
         <View style={styles.row}>
           <View style={[styles.box, styles.boxAdd]} />
-          <BottomSheetTextInput
+          <TextInput
             value={text}
             onChangeText={setText}
             placeholder={subtasks.length === 0 ? "Add a subtask" : "Next step"}

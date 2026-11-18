@@ -102,7 +102,7 @@ export default function CalendarDayScreen() {
           router.push({ pathname: "/event-details", params: { id: eventId } })
         }
         onOpenTask={(taskId) =>
-          router.push({ pathname: "/tasks", params: { task: taskId } })
+          router.push({ pathname: "/task-details", params: { id: taskId } })
         }
         canCreate={canCreateEvents}
         onCreateAt={(hourDay, hour) => {

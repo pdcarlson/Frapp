@@ -46,7 +46,7 @@ export interface OpenTaskSheetProps {
  * Mark done will need, and Claim. An officer who manages tasks also gets
  * Assign to someone (any active member, as assigning a task always could) and
  * Delete, the moves the design gives the officer's row. Sized to its content,
- * as the task sheet is (`task-detail-sheet.tsx`).
+ * as Mark done's sheet is (`mark-done-sheet.tsx`).
  */
 export const OpenTaskSheet = forwardRef<BottomSheetModal, OpenTaskSheetProps>(
   function OpenTaskSheet(

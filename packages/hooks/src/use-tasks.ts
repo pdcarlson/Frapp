@@ -879,6 +879,52 @@ export function useDeleteTask() {
   });
 }
 
+/** What `POST /v1/tasks/{id}/group/remove` answers (#5492). */
+export type RemoveFromTaskGroupResult =
+  components["schemas"]["RemoveFromTaskGroupResponseDto"];
+
+/**
+ * Take members out of a group task (#5492): their copies are deleted, everyone
+ * else's stay. `id` is any copy of the group. **Not optimistic**, as a delete
+ * isn't (`spec/ui/resilience/`): the server refuses a confirmed copy, and
+ * every copy, with a 400 the caller says. Every task read and Activity are
+ * read again, since each copy carries the group's counts.
+ */
+export function useRemoveFromTaskGroup() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["tasks", "remove-from-task-group"],
+    // A retry after a lost answer finds those copies gone and skips them,
+    // but a refusal is final, so the caller decides.
+    retry: false,
+    mutationFn: async ({
+      id,
+      assigneeIds,
+    }: {
+      id: string;
+      assigneeIds: string[];
+    }): Promise<RemoveFromTaskGroupResult> => {
+      const { data, error } = await client.POST("/v1/tasks/{id}/group/remove", {
+        params: { path: { id } },
+        body: { assignee_ids: assigneeIds },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: taskKeys.all }),
+        chapterId
+          ? queryClient.invalidateQueries({
+              queryKey: activityKeys.chapter(chapterId),
+            })
+          : undefined,
+      ]),
+  });
+}
+
 /**
  * Check off or uncheck one of a task's subtasks (#4003), optimistically: the
  * box flips on the tap, and a refusal puts it back. The assignee or an

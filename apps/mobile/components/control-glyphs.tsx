@@ -49,10 +49,7 @@ export function ListGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
     <Frame size={size}>
-      <Path
-        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
-        {...detail}
-      />
+      <Path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" {...detail} />
     </Frame>
   );
 }
@@ -143,11 +140,43 @@ export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
  * A file that downloads when tapped: a backwork file Frapp found (#5209).
  * Web draws Lucide's `Download` there.
  */
-export function DownloadGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+export function DownloadGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
     <Frame size={size}>
       <Path d="M12 3v12M7 10l5 5 5-5M4 21h16" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Take out: the task screen's Remove people (#5492). Web draws Lucide's
+ * `UserMinus` for a member taken out; on a 40pt round button the minus alone
+ * reads as the verb, as Reminders' and Mail's edit modes draw it.
+ */
+export function MinusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M5 12h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * More: a screen's other actions in the system menu (the task screen, #5492).
+ * Web draws Lucide's `Ellipsis` for the same intent; three dots, filled, as
+ * iOS's own More draws them.
+ */
+export function MoreGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Circle cx={5} cy={12} r={1.6} fill={color} />
+      <Circle cx={12} cy={12} r={1.6} fill={color} />
+      <Circle cx={19} cy={12} r={1.6} fill={color} />
     </Frame>
   );
 }

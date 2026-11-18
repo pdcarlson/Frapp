@@ -108,7 +108,14 @@ describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () 
   it("reads a group copy's summary and the posting it was claimed from", () => {
     const row = toTaskRow(
       task({
-        group: { audience: "role", target_name: "Recruitment", total: 6, done: 2 },
+        group: {
+          audience: "role",
+          target_name: "Recruitment",
+          total: 6,
+          done: 2,
+          confirmed: 1,
+        },
+        group_id: "g1",
         open_task_id: "open-1",
       }),
     )!;
@@ -117,7 +124,9 @@ describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () 
       targetName: "Recruitment",
       total: 6,
       done: 2,
+      confirmed: 1,
     });
+    expect(row.groupId).toBe("g1");
     expect(row.openTaskId).toBe("open-1");
   });
 
