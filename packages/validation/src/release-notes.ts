@@ -120,6 +120,15 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-18",
+    title: "New in this update",
+    changes: [
+    ],
+    phone: [
+      "Tapping a detail on your profile, like your bio or your birthday, now opens the editor right at that field with the keyboard ready.",
+    ],
+  },
+  {
     date: "2026-11-17",
     title: "New in this update",
     changes: [
