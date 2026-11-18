@@ -516,3 +516,46 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           overwrite: true
+
+  # Emails the owner when this run fails to release the app (Paul,
+  # 2026-11-18): a `workflow_run` run that fails notifies only its actor, the
+  # merge queue bot, so a broken build used to go unheard for hours. One
+  # `incident` alert, assigned to the owner, commented only when what fails
+  # changes, closed by the next `auto` run whose jobs all succeed
+  # (scripts/ci/mobile-release-alert.mjs). Not on a branch's dispatch, which
+  # proves nothing about `main`, and not on a run a person cancelled.
+  alert:
+    name: Email the owner if the app release failed
+    needs: [plan, update, ios, android, confirm]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The alert issue, and this attempt's jobs to name the failed steps.
+      issues: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      - name: Raise or close the alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ALERT_CONFIG: staging-app
+          NEEDS: ${{ toJSON(needs) }}
+          BUILD: ${{ inputs.build || 'auto' }}
+          RUNTIME: ${{ needs.plan.outputs.runtime }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: node scripts/ci/mobile-release-alert.mjs

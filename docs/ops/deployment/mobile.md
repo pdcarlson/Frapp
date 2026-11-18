@@ -830,7 +830,9 @@ spike in #4877), so they cost no Expo build. They are signed with the credential
 `live.frapp.mobile.staging`, and uploaded through EAS Submit (`submit.staging` in `eas.json`; its
 `ascAppId`, `6834835826`, is the Frapp Staging app in App Store Connect), whose free queue adds about 47
 minutes before a binary reaches the store. The run's summary says what each platform did, and its
-`confirm` job goes red when an upload didn't finish.
+`confirm` job goes red when an upload didn't finish. Any failed job on `main` emails the owner through the
+*Staging app updates are failing* alert ([`alert-routing.md`](../alert-routing.md#automated-github-issue-alerts)),
+once per change in what fails, and the next all-green automatic run closes it.
 
 Since 2026-11-17 the staging binary claims `app.staging.frapp.live`'s `/join` and `/check-in`
 (`withStagingVariant` in `apps/mobile/app.config.js`), so a staging QR opens Frapp Staging. The
