@@ -1,7 +1,8 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Camera,
   CheckCircle2,
@@ -89,6 +90,7 @@ import {
   canReopenOwnTask,
 } from "@repo/hooks";
 import { asArray, cn } from "@/lib/utils";
+import { TASKS_GROUP_PARAM, TASKS_TASK_PARAM } from "@/lib/tasks/task-links";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { TaskRepeatLine } from "./task-repeat";
@@ -247,6 +249,80 @@ function confirmedAt(task: Task): number {
   return Number.isNaN(at) ? 0 : at;
 }
 
+/**
+ * Reads `?group=<group id>` or `?task=<task id>` (`lib/tasks/task-links.ts`,
+ * #5538) and opens that group, or that task (its group when it is a copy of
+ * one), in the task panel once the board's read holds it. The param then
+ * leaves the address so a refresh doesn't reopen it, as the Events and
+ * Documents links do. The read in hand can be a cached one that predates
+ * the task, so a miss is read again once before the board says it's gone
+ * (the task was deleted, or the viewer can't read it). Its own component
+ * because `useSearchParams` needs a Suspense boundary of its own.
+ */
+function LinkedTaskParam({
+  tasks,
+  refetch,
+  onOpen,
+  onMissing,
+}: {
+  tasks: Task[];
+  refetch: () => Promise<unknown>;
+  onOpen: (target: { kind: "task" | "group"; id: string }) => void;
+  onMissing: () => void;
+}) {
+  const searchParams = useSearchParams();
+  const groupId = searchParams?.get(TASKS_GROUP_PARAM) ?? null;
+  const taskId = searchParams?.get(TASKS_TASK_PARAM) ?? null;
+  const key = groupId ? `group:${groupId}` : taskId ? `task:${taskId}` : null;
+  const handled = useRef<string | null>(null);
+  const rereading = useRef<string | null>(null);
+  const [reread, setReread] = useState<string | null>(null);
+  // The board hands new callbacks each render; the link is acted on once.
+  const latest = useRef({ refetch, onOpen, onMissing });
+  useEffect(() => {
+    latest.current = { refetch, onOpen, onMissing };
+  });
+  useEffect(() => {
+    if (!key) {
+      handled.current = null;
+      return;
+    }
+    if (handled.current === key) return;
+    let target: { kind: "task" | "group"; id: string } | null = null;
+    if (groupId) {
+      if (tasks.some((task) => task.group_id === groupId))
+        target = { kind: "group", id: groupId };
+    } else if (taskId) {
+      const task = tasks.find((candidate) => candidate.id === taskId);
+      if (task)
+        target = task.group_id
+          ? { kind: "group", id: task.group_id }
+          : { kind: "task", id: task.id };
+    }
+    if (!target && reread !== key) {
+      if (rereading.current !== key) {
+        rereading.current = key;
+        void latest.current
+          .refetch()
+          .catch(() => undefined)
+          .finally(() => setReread(key));
+      }
+      return;
+    }
+    handled.current = key;
+    if (target) latest.current.onOpen(target);
+    else latest.current.onMissing();
+    // Next keeps `useSearchParams` in step with the History API, so this
+    // clears the parameter without a navigation.
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname,
+    );
+  }, [key, groupId, taskId, tasks, reread]);
+  return null;
+}
+
 export function TasksBoard() {
   const { toast } = useToast();
   const { isOffline } = useNetwork();
@@ -337,10 +413,10 @@ export function TasksBoard() {
 
   const [showAllConfirmed, setShowAllConfirmed] = useState(false);
   // What the panel shows: a task, a group task, or a posting up for grabs.
-  const [opened, setOpened] = useState<
-    | { kind: "task" | "group" | "posting"; id: string }
-    | null
-  >(null);
+  const [opened, setOpened] = useState<{
+    kind: "task" | "group" | "posting";
+    id: string;
+  } | null>(null);
   // New task bumps it, which opens the add line's More (Paul, 2026-11-18).
   const [expandSignal, setExpandSignal] = useState(0);
   // List groups opened past their first rows.
@@ -568,7 +644,8 @@ export function TasksBoard() {
       // A list reads top to bottom, so what's late leads it, then what's
       // to do, as Linear's and Todoist's lists put overdue first.
       drawn.sort(
-        (a, b) => LIST_STATUS_ORDER.indexOf(a.id) - LIST_STATUS_ORDER.indexOf(b.id),
+        (a, b) =>
+          LIST_STATUS_ORDER.indexOf(a.id) - LIST_STATUS_ORDER.indexOf(b.id),
       );
     }
     for (const group of drawn) {
@@ -1043,7 +1120,10 @@ export function TasksBoard() {
                       variant="secondary"
                       className="gap-1.5"
                     >
-                      <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                      <SlidersHorizontal
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
                       View
                     </Button>
                   </DropdownMenuTrigger>
@@ -1156,7 +1236,10 @@ export function TasksBoard() {
             viewerUnreadable ? null : (
               <InlineNote>Loading your tasks…</InlineNote>
             )
-          ) : view === "mine" && canManage && shown === 0 && confirmed.length === 0 ? (
+          ) : view === "mine" &&
+            canManage &&
+            shown === 0 &&
+            confirmed.length === 0 ? (
             <InlineNote>
               Nothing on your plate. Tasks given to you show up here.
             </InlineNote>
@@ -1186,7 +1269,10 @@ export function TasksBoard() {
                   <section
                     key={group.id}
                     aria-labelledby={labelId}
-                    className={cn("min-w-0", isGrid ? "space-y-3" : "space-y-1")}
+                    className={cn(
+                      "min-w-0",
+                      isGrid ? "space-y-3" : "space-y-1",
+                    )}
                   >
                     <SectionLabel id={labelId} count={count}>
                       {group.label}
@@ -1210,7 +1296,8 @@ export function TasksBoard() {
                               key={tile.id}
                               tile={tile}
                               selected={
-                                opened?.kind === "group" && opened.id === tile.id
+                                opened?.kind === "group" &&
+                                opened.id === tile.id
                               }
                               onOpen={() =>
                                 setOpened({ kind: "group", id: tile.id })
@@ -1321,6 +1408,19 @@ export function TasksBoard() {
           sendingBack ? sendBack(sendingBack, body) : Promise.resolve()
         }
       />
+      <Suspense fallback={null}>
+        <LinkedTaskParam
+          tasks={tasks}
+          refetch={tasksQuery.refetch}
+          onOpen={setOpened}
+          onMissing={() =>
+            toast({
+              title: "Couldn't find that task",
+              description: "It may have been deleted.",
+            })
+          }
+        />
+      </Suspense>
       <TaskPanel
         target={panelTarget}
         onClose={() => setOpened(null)}
@@ -1439,9 +1539,7 @@ function TaskCard({
         </button>
       </p>
       {task.description ? (
-        <p
-          className="mt-1 line-clamp-2 text-caption text-muted-foreground"
-        >
+        <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">
           {task.description}
         </p>
       ) : null}

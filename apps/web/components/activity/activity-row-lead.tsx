@@ -9,12 +9,13 @@ import {
   activityDetailParts,
   type ActivityRow,
 } from "@repo/hooks/activity-rows";
-import type { ActivityFace } from "@repo/hooks";
+import { activityFaceStack, type ActivityFace } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import { FaceWithBadge } from "@/components/shared/face-with-badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { UnreadDot } from "@/components/shared/unread-dot";
-import { cn } from "@/lib/utils";
+import { cn, initials } from "@/lib/utils";
 
 /**
  * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The page
@@ -89,6 +90,52 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
         paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
         className="h-5 w-5"
       />
+    </span>
+  );
+}
+
+/**
+ * Whom a task for everyone went to (#5538, the phone's row since #5492), as
+ * `activityFaceStack` picks them: each face tucked under the one before with
+ * the face badge's hairline edge, then "+N". Decoration: the row says who it
+ * went to and how many are done.
+ */
+export function ActivityFaceStack({
+  ids,
+  total,
+}: {
+  ids: string[];
+  total: number;
+}) {
+  const { faces, more } = activityFaceStack(
+    ids,
+    total,
+    useContext(ActivityFaces),
+  );
+  if (faces.length === 0) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className="flex shrink-0 items-center"
+      data-testid="activity-face-stack"
+    >
+      {faces.map(({ id, face }, index) => (
+        <Avatar
+          key={id}
+          className={cn("h-6 w-6 border border-border", index > 0 && "-ml-2")}
+          data-testid="activity-face-stack-face"
+        >
+          {face.avatarUrl ? <AvatarImage src={face.avatarUrl} alt="" /> : null}
+          <AvatarFallback tint={face.tint}>
+            {initials(face.name)}
+          </AvatarFallback>
+        </Avatar>
+      ))}
+      {more > 0 ? (
+        <span className="ml-1 text-caption font-semibold tabular-nums text-muted-foreground">
+          {`+${more}`}
+        </span>
+      ) : null}
     </span>
   );
 }
