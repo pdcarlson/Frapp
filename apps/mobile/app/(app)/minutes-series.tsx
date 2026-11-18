@@ -46,8 +46,8 @@ export const SERIES_ACTION_SOURCES = 3;
  * do?"). Granola keeps a recurring meeting's earlier notes beside the new
  * one in the same spirit.
  *
- * Action items carry no done state yet, so these are the latest
- * {@link SERIES_ACTION_SOURCES} posted minutes' items, newest first, rather
+ * Action items carry no done state yet, so these are the items of the latest
+ * {@link SERIES_ACTION_SOURCES} posted minutes, newest first, rather
  * than "still open" ones (#5482 decides how one is marked done).
  */
 export default function MinutesSeriesScreen() {
@@ -104,9 +104,10 @@ function MinutesSeriesBody() {
     newest.event_start_time,
     rows.map((row) => row.event_start_time),
   );
-  const sources = rows
-    .filter((row) => row.status === "posted" && row.action_item_count > 0)
+  const latest = rows
+    .filter((row) => row.status === "posted")
     .slice(0, SERIES_ACTION_SOURCES);
+  const sources = latest.filter((row) => row.action_item_count > 0);
   const years = new Map<number, MinutesListRow[]>();
   for (const row of rows) {
     const year = new Date(row.event_start_time).getFullYear();
@@ -122,18 +123,20 @@ function MinutesSeriesBody() {
         .join(" · ")}
       refresh={refresh}
     >
-      {sources.length > 0 ? (
+      {latest.length > 0 ? (
         <>
           <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
-          <ListSection>
-            {sources.map((source) => (
+          {sources.length > 0 ? (
+            sources.map((source) => (
               <SourceActionItems
                 key={source.id}
                 id={source.id}
                 day={minutesRowTime(source.event_start_time, now)}
               />
-            ))}
-          </ListSection>
+            ))
+          ) : (
+            <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>
+          )}
         </>
       ) : null}
       {[...years.entries()].map(([year, members]) => (
@@ -166,16 +169,30 @@ function MinutesSeriesBody() {
   );
 }
 
-/** One posted minutes' action items: what, who, when it's due, and from when. */
+/**
+ * One posted minutes' action items, as their own card: what, who, when it's
+ * due, and from when. A row's shape while they load; a line if they can't.
+ */
 function SourceActionItems({ id, day }: { id: string; day: string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const names = useMemberDisplayNames();
-  const meeting = useMeeting(id).data;
-  if (!meeting) return null;
+  const query = useMeeting(id);
+  const meeting = query.data;
+  if (!meeting) {
+    return query.isPending ? (
+      <ListSection>
+        <ListRowSkeleton index={0} description />
+      </ListSection>
+    ) : (
+      <InlineNote tone="warning">
+        {MEETING_LIST_COPY.loadFailedTitle}
+      </InlineNote>
+    );
+  }
   const items = readMeetingContent(meeting.content).action_items;
   return (
-    <>
+    <ListSection>
       {items.map((item, index) => (
         <View key={`${id}-${index}`} style={styles.item}>
           <Text style={styles.text}>{item.text}</Text>
@@ -195,7 +212,7 @@ function SourceActionItems({ id, day }: { id: string; day: string }) {
           </Text>
         </View>
       ))}
-    </>
+    </ListSection>
   );
 }
 

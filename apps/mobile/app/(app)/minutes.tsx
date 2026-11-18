@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { AccessibilityInfo, StyleSheet, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import {
   seriesCadenceLabel,
@@ -31,12 +31,14 @@ import {
 } from "@/components/minutes/minutes-row";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { useMeetingQuickActions } from "@/components/quick-actions/meeting-actions";
+import { NOTICE_MS } from "@/components/quick-actions/quick-actions-host";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { useMeetingsOn } from "@/lib/minutes/meetings-on";
 import {
   minutesListView,
   minutesRowTime,
+  showsTypeTag,
   type MinutesListRow,
 } from "@/lib/minutes/minutes-list";
 import { useFrappTheme } from "@/lib/theme";
@@ -80,8 +82,20 @@ function MinutesScreenBody() {
   const refresh = useRefetchAll([meetingsQuery]);
   const on = useMeetingsOn();
   const canRecord = can("meetings:record", usePermissionList());
+  // What New minutes has to say (a read that failed, a recording already
+  // held): shown a few seconds and read out, as the tab bar's + does.
   const [notice, setNotice] = useState<string | null>(null);
-  const meetingActions = useMeetingQuickActions({ confirm: setNotice });
+  const meetingActions = useMeetingQuickActions({
+    confirm: (text) => {
+      setNotice(text);
+      AccessibilityInfo.announceForAccessibility(text);
+    },
+  });
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [type, setType] = useState<MeetingType | null>(null);
   const [query, setQuery] = useState("");
   // The clock as the screen opened: groups and times stay put while it is open.
@@ -114,6 +128,7 @@ function MinutesScreenBody() {
         decisions={meeting.decision_count}
         actionItems={meeting.action_item_count}
         byline={author ? MEETING_LIST_COPY.draftOf(author) : null}
+        showType={showsTypeTag(meeting, type)}
         onPress={() => open(meeting.id)}
       />
     );
@@ -200,7 +215,11 @@ function MinutesScreenBody() {
 
             {view.drafts.length > 0 ? (
               <>
-                <SectionHeader>{MEETING_LIST_COPY.drafts}</SectionHeader>
+                <SectionHeader>
+                  {view.drafts.every((draft) => draft.created_by === viewerId)
+                    ? MEETING_LIST_COPY.yourDrafts
+                    : MEETING_LIST_COPY.drafts}
+                </SectionHeader>
                 <ListSection>{view.drafts.map(row)}</ListSection>
               </>
             ) : null}

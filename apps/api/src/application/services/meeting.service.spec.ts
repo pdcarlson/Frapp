@@ -335,6 +335,55 @@ describe('MeetingService', () => {
       });
     });
 
+    it("keys minutes on a series' first event by its own id", async () => {
+      events.set(
+        'evt-first',
+        event({ id: 'evt-first', recurrence_rule: 'WEEKLY' }),
+      );
+      const first = meeting({
+        id: 'mtg-first',
+        event_id: 'evt-first',
+        status: 'posted',
+      });
+      const facts = await service.listFacts(CHAPTER, PRESIDENT, [first]);
+      expect(facts.get('mtg-first')).toMatchObject({
+        series_key: 'evt-first',
+        series_rule: 'WEEKLY',
+      });
+    });
+
+    it('reads each event once for the list, reusing what the read rule loaded', async () => {
+      events.set('evt-x', event({ id: 'evt-x' }));
+      rows.set(
+        'mtg-x',
+        meeting({ id: 'mtg-x', event_id: 'evt-x', status: 'posted' }),
+      );
+      eventService.findVisibleByIds.mockClear();
+      const { rows: listed, facts } = await service.listWithFacts(
+        CHAPTER,
+        JAKE,
+      );
+      expect(listed.map((row) => row.id)).toEqual(['mtg-x']);
+      expect(facts.get('mtg-x')).toBeDefined();
+      const asked = eventService.findVisibleByIds.mock.calls.flatMap(
+        ([ids]) => [...ids],
+      );
+      expect(asked.filter((id) => id === 'evt-x')).toHaveLength(1);
+    });
+
+    it('reads events a hundred ids at a time', async () => {
+      const many = Array.from({ length: 150 }, (_, i) =>
+        meeting({ id: `mtg-${i}`, event_id: `evt-${i}`, status: 'posted' }),
+      );
+      eventService.findVisibleByIds.mockClear();
+      await service.listFacts(CHAPTER, PRESIDENT, many);
+      const sizes = eventService.findVisibleByIds.mock.calls.map(
+        ([ids]) => ids.length,
+      );
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(100);
+      expect(sizes.filter((size) => size > 0)).toEqual([100, 50]);
+    });
+
     it('gives no series for an event the reader cannot see, and asks about recordings only for drafts', async () => {
       const posted = meeting({
         id: 'mtg-exec',

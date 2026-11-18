@@ -53,18 +53,6 @@ export function meetingDueLabel(
   return meetingDayLabel(new Date(year, month - 1, day, 12).toISOString(), now);
 }
 
-export function meetingTitleLine(meeting: {
-  meeting_type: string;
-  other_label?: string | null;
-  event_start_time: string;
-}): string {
-  const type = meetingTypeLabel(
-    meeting.meeting_type as MeetingType,
-    meeting.other_label,
-  );
-  return `${type} · ${meetingDayLabel(meeting.event_start_time)}`;
-}
-
 export function meetingSectionLabel(key: MeetingSectionKey): string {
   return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;
 }
@@ -120,6 +108,7 @@ export const MEETING_LIST_COPY = {
   /** A draft that isn't the reader's own names whose it is. */
   draftOf: (name: string) => `${name}'s draft`,
   /** The list's grouping and finding (#5290). */
+  yourDrafts: "Your drafts",
   search: "Search minutes",
   allTypes: "All",
   types: "Meeting types",

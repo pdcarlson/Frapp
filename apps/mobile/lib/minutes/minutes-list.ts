@@ -1,4 +1,4 @@
-import type { components } from "@repo/api-sdk";
+import type { MeetingSummary } from "@repo/hooks";
 import { meetingTypeLabel, type MeetingType } from "@repo/validation";
 
 /**
@@ -12,11 +12,13 @@ import { meetingTypeLabel, type MeetingType } from "@repo/validation";
  * {@link MINUTES_MANY} it gains a search, type chips with their counts, a
  * Series section (a repeating event with two or more minutes folds into one
  * row, as Fireflies files recurring meetings into one channel) and month
- * groups. Pure functions over the list read, so both shapes are tested
+ * groups (a series' minutes stay in their months too, as the design
+ * page's long list draws them; the Series row is a way to browse). Pure
+ * functions over the list read, so both shapes are tested
  * without a screen.
  */
 
-export type MinutesListRow = components["schemas"]["MeetingListItemDto"];
+export type MinutesListRow = MeetingSummary;
 
 /** Past this many minutes the list gains search, type chips and Series. */
 export const MINUTES_MANY = 8;
@@ -102,11 +104,23 @@ export function matchesQuery(row: MinutesListRow, query: string): boolean {
   return words.every((word) => haystack.includes(word));
 }
 
+/** Midnight starting this calendar week (Sunday), on this phone's clock. */
+export function weekStart(now: number): number {
+  const at = new Date(now);
+  at.setHours(0, 0, 0, 0);
+  at.setDate(at.getDate() - at.getDay());
+  return at.getTime();
+}
+
+/** This week and last week by the calendar, then the month. */
 function weekGroupOf(row: MinutesListRow, now: number): MinutesGroup {
-  const age = now - startOf(row);
-  if (age < 7 * DAY_MS) return { key: "week", label: "This week", rows: [] };
-  if (age < 14 * DAY_MS) return { key: "last", label: "Last week", rows: [] };
-  return { key: "earlier", label: "Earlier", rows: [] };
+  const start = startOf(row);
+  const week = weekStart(now);
+  if (start >= week) return { key: "week", label: "This week", rows: [] };
+  if (start >= week - 7 * DAY_MS) {
+    return { key: "last", label: "Last week", rows: [] };
+  }
+  return monthGroupOf(row, now);
 }
 
 function monthGroupOf(row: MinutesListRow, now: number): MinutesGroup {
@@ -181,14 +195,15 @@ export function minutesListView(
 }
 
 /**
- * The time on a row's right: the weekday and time for a meeting this week,
- * else the date, with the year only when it isn't this one.
+ * The time on a row's right: the weekday and time for a meeting this
+ * calendar week, else the date, with the year only when it isn't this one.
  */
 export function minutesRowTime(start: string, now: number): string {
   const at = new Date(start);
   if (Number.isNaN(at.getTime())) return "";
-  const age = now - at.getTime();
-  if (age >= -DAY_MS && age < 7 * DAY_MS) {
+  // A weekday names one day only inside this calendar week.
+  const week = weekStart(now);
+  if (at.getTime() >= week && at.getTime() < week + 7 * DAY_MS) {
     return at.toLocaleString("en-US", {
       weekday: "short",
       hour: "numeric",
@@ -202,4 +217,22 @@ export function minutesRowTime(start: string, now: number): string {
       ? { month: "short", day: "numeric" }
       : { month: "short", day: "numeric", year: "numeric" },
   );
+}
+
+/**
+ * Whether a row says its type in words: the tile's hue says it too, but not
+ * to everyone, and an Other meeting's own label only words can carry. Left
+ * out where the list shows only that type, and where the title already says
+ * it ("Exec Meeting" needn't add "Exec").
+ */
+export function showsTypeTag(
+  row: Pick<MinutesListRow, "event_name" | "meeting_type" | "other_label">,
+  narrowedTo: string | null,
+): boolean {
+  if (narrowedTo === row.meeting_type) return false;
+  const label = meetingTypeLabel(
+    row.meeting_type as MeetingType,
+    row.other_label,
+  ).toLowerCase();
+  return !row.event_name.toLowerCase().includes(label);
 }

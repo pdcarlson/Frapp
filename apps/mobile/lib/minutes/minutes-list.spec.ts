@@ -13,7 +13,8 @@ import {
  * groups; a long list gains type counts, a Series section and month groups,
  * and narrows by type and by what is typed.
  */
-const NOW = Date.parse("2026-11-18T12:00:00Z");
+// A Wednesday at noon, on this machine's clock: the week began Sunday.
+const NOW = new Date(2026, 10, 18, 12).getTime();
 const daysAgo = (days: number) =>
   new Date(NOW - days * 86_400_000).toISOString();
 
@@ -41,7 +42,7 @@ function row(over: Partial<MinutesListRow> = {}): MinutesListRow {
 }
 
 describe("minutesListView", () => {
-  it("shows a few minutes as drafts, then this week, last week and earlier, with no filters", () => {
+  it("shows a few minutes as drafts, then this calendar week, last week and months, with no filters", () => {
     const rows = [
       row({ id: "draft", status: "draft", event_start_time: daysAgo(0) }),
       row({ id: "sun", event_start_time: daysAgo(2) }),
@@ -57,7 +58,7 @@ describe("minutesListView", () => {
     expect(view.groups.map((g) => [g.label, g.rows.map((r) => r.id)])).toEqual([
       ["This week", ["sun"]],
       ["Last week", ["prev"]],
-      ["Earlier", ["old"]],
+      ["October", ["old"]],
     ]);
   });
 
@@ -158,7 +159,9 @@ describe("matchesQuery", () => {
 });
 
 describe("minutesRowTime", () => {
-  it("says the weekday and time this week, the date before, and the year only when it differs", () => {
+  it("says the weekday and time this calendar week, the date before, and the year only when it differs", () => {
+    // Last Wednesday is six days back but not this week: a date, never "Wed".
+    expect(minutesRowTime(daysAgo(6.9), NOW)).toMatch(/^Nov \d{1,2}$/);
     expect(minutesRowTime(daysAgo(2), NOW)).toMatch(
       /^[A-Z][a-z]{2} \d{1,2}:\d{2} [AP]M$/,
     );

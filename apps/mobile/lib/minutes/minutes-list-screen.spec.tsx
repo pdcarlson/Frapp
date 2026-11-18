@@ -68,7 +68,8 @@ function row(over: Record<string, unknown> = {}) {
     id: `m${next}`,
     event_id: `e${next}`,
     event_name: "Chapter Meeting",
-    event_start_time: daysAgo(1),
+    // Now, so it lands in this calendar week whatever day the test runs.
+    event_start_time: daysAgo(0),
     meeting_type: "chapter",
     other_label: null,
     status: "posted",
@@ -115,7 +116,7 @@ describe("Minutes list", () => {
     ];
     const tree = render();
     const text = screenText(tree);
-    expect(text).toContain(MEETING_LIST_COPY.drafts);
+    expect(text).toContain(MEETING_LIST_COPY.yourDrafts);
     expect(text).toContain("This week");
     expect(text).toContain(MEETING_LIST_COPY.recorded);
     expect(text).toContain(MEETING_LIST_COPY.decisions(2));
@@ -149,6 +150,24 @@ describe("Minutes list", () => {
     expect(text).not.toContain(MEETING_LIST_COPY.series);
     expect(text).not.toContain("Chapter Meeting");
     expect(text).toContain("Exec Meeting");
+
+    // A second tap on the lit chip shows them all again.
+    const lit = tabs(tree).find(
+      (tab) => tab.props.accessibilityState?.selected,
+    )!;
+    act(() => lit.props.onPress());
+    expect(screenText(tree)).toContain("Chapter Meeting");
+  });
+
+  it("says the type in words where the title doesn't", () => {
+    state.rows = [
+      row({ meeting_type: "committee", event_name: "Formal Planning" }),
+      row({ meeting_type: "exec", event_name: "Exec Meeting" }),
+    ];
+    const text = screenText(render());
+    expect(text).toContain("Committee");
+    // "Exec Meeting" already says Exec.
+    expect(text.match(/Exec/g)).toHaveLength(1);
   });
 
   it("opens a series' own list from its row", () => {

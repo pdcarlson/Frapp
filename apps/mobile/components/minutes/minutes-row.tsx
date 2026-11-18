@@ -70,6 +70,7 @@ export function MinutesRow({
   decisions,
   actionItems,
   byline,
+  showType = false,
   onPress,
 }: {
   title: string;
@@ -82,12 +83,15 @@ export function MinutesRow({
   actionItems: number;
   /** Someone else's draft says whose. */
   byline?: string | null;
+  /** Say the type in words too (`showsTypeTag`). */
+  showType?: boolean;
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const typeLabel = meetingTypeLabel(type as MeetingType, otherLabel);
   const tags = [
+    showType ? typeLabel : null,
     draft ? MEETING_COPY.draftBadge : null,
     recorded ? MEETING_LIST_COPY.recorded : null,
     decisions > 0 ? MEETING_LIST_COPY.decisions(decisions) : null,
@@ -97,9 +101,14 @@ export function MinutesRow({
   return (
     <PressableRow
       accessibilityRole="button"
-      accessibilityLabel={[title, `${typeLabel} meeting`, time, ...tags].join(
-        ", ",
-      )}
+      accessibilityLabel={[
+        title,
+        `${typeLabel} meeting`,
+        time,
+        ...tags.filter((tag) => tag !== typeLabel),
+      ]
+        .filter(Boolean)
+        .join(", ")}
       onPress={onPress}
       style={styles.row}
     >
@@ -110,6 +119,7 @@ export function MinutesRow({
         </Text>
         {tags.length > 0 ? (
           <View style={styles.tags}>
+            {showType ? <HairlineChip label={typeLabel} /> : null}
             {draft ? (
               <StatusChip
                 label={MEETING_COPY.draftBadge}
@@ -134,7 +144,7 @@ export function MinutesRow({
           </View>
         ) : null}
       </View>
-      <Text style={styles.time}>{time}</Text>
+      {time ? <Text style={styles.time}>{time}</Text> : null}
       <ForwardGlyph color={tokens.color.text.muted} size={16} />
     </PressableRow>
   );

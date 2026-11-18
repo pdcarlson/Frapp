@@ -116,8 +116,11 @@ export class MeetingController {
     @CurrentUser('id') userId: string,
     @Query() query: ListMeetingsQueryDto,
   ): Promise<MeetingListItemDto[]> {
-    const rows = await this.meetings.list(chapterId, userId, query.event_id);
-    const facts = await this.meetings.listFacts(chapterId, userId, rows);
+    const { rows, facts } = await this.meetings.listWithFacts(
+      chapterId,
+      userId,
+      query.event_id,
+    );
     return rows.map((row) => ({
       ...summaryOf(row),
       ...(facts.get(row.id) ?? NO_FACTS),
