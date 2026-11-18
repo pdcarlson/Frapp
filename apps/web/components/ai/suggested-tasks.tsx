@@ -5,11 +5,13 @@ import {
   TASK_AUDIENCE_COPY,
   TASK_AUDIENCE_EVERYONE,
   noTaskRepeatDraft,
+  suggestTaskDue,
+  suggestTaskOwner,
   taskWhoFields,
   taskWhoValue,
 } from "@repo/validation";
 import { useMemo, useState } from "react";
-import { Pencil, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 import {
   useAcceptAiSuggestion,
   useAiSuggestions,
@@ -60,26 +62,31 @@ import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
  * Suggested tasks (#4313, `spec/behavior/meetings.md` § Suggested tasks):
- * the action items of posted minutes, each waiting for an officer to accept
- * it into a task, change it first, or dismiss it. Nothing is a task until
- * they do.
+ * the action items of posted minutes, each waiting for an officer to create
+ * it as a task, change it first, or dismiss it. Nothing is a task until they
+ * do.
  *
- * Drawn in two places from the same rows: under posted minutes (one
- * meeting's), and at the top of the Tasks board (every meeting's, grouped,
- * each group linking back to its minutes). The server lists a suggestion
- * only for someone who could accept it, so nobody else sees the section, and
- * with nothing waiting it draws nothing at all: no heading over an empty box.
+ * Drawn in two places from the same rows: at the top of posted minutes (one
+ * meeting's), and at the top of the Tasks board (every meeting's, each
+ * linking back to its minutes). The server lists a suggestion only for
+ * someone who could create it, so nobody else sees the section, and with
+ * nothing waiting it draws nothing at all: no heading over an empty box.
  *
- * A row is the Linear triage row: what it is, who and when, Accept and
- * Dismiss. Who and when are changed in place, because those are the two
- * things a meeting leaves unsaid ("someone should call the caterer"), and a
- * task needs both; the pencil opens the board's own task form for anything
- * else. Accept with one of them missing points at it instead of failing.
+ * One suggestion at a time, in the minutes' order, the way the phone's list
+ * and Linear's triage take them (Paul, 2026-11-18: "one at a time ... instead
+ * of this big wall of them"). The card says what it is, who and when, and
+ * Create task makes it for whoever it names; the next one takes its place.
+ * Only the card being decided waits on the server, so nothing else greys out.
+ * Who and when are changed in place, because those are the two things a
+ * meeting leaves unsaid ("someone should call the caterer"), and a task
+ * needs both. Where the minutes left one out, Frapp fills in a suggestion
+ * (`task-suggestion-guess.ts`) and says so under the field; the pencil opens
+ * the board's own task form for anything else.
  *
  * A task drawn from last year's board (#3930, "this time last year") is the
- * same row under a line that says so, with one more answer: already planned.
- * It carries last year's checklist and nobody's name, because the officer
- * who did it has likely handed the job on.
+ * same card under a line that says so, with one more answer: already
+ * planned. It carries last year's checklist and nobody's name, because the
+ * officer who did it has likely handed the job on.
  */
 
 /** `AI_SUGGESTION_DECIDE_MAX` on the API: decisions one request may carry. */
@@ -105,12 +112,26 @@ function dueEntryOf(task: SuggestedTask): string {
     : "";
 }
 
-/** Who and when as the row stands: the officer's pick over the suggestion. */
-function rowValues(item: WaitingSuggestion, edits: RowEdits | undefined) {
+/** What Frapp filled in where the minutes left who or when out. */
+interface RowGuess {
+  assigneeId: string | null;
+  due: string | null;
+}
+
+/**
+ * Who and when as the row stands: the officer's pick, else what the minutes
+ * said, else Frapp's suggestion.
+ */
+function rowValues(
+  item: WaitingSuggestion,
+  edits: RowEdits | undefined,
+  guess?: RowGuess,
+) {
   return {
     // A member's id, or "everyone" for a task for everyone (#4295 step 3).
-    assigneeId: edits?.assigneeId ?? taskWhoValue(item.task),
-    due: edits?.due ?? dueEntryOf(item.task),
+    assigneeId:
+      edits?.assigneeId ?? (taskWhoValue(item.task) || guess?.assigneeId || ""),
+    due: edits?.due ?? (dueEntryOf(item.task) || guess?.due || ""),
   };
 }
 
@@ -141,11 +162,14 @@ export function suggestionRefusalLine(error: unknown): string {
 
 export function SuggestedTasks({
   source,
+  sourceStart,
   headingId,
   className,
 }: {
-  /** One meeting's suggestions; left out, every source's, grouped. */
+  /** One meeting's suggestions; left out, every source's. */
   source?: AiSuggestionSourceRef;
+  /** When that meeting started, for a suggested due day. */
+  sourceStart?: string | null;
   headingId: string;
   className?: string;
 }) {
@@ -154,11 +178,11 @@ export function SuggestedTasks({
     () => (suggestionsQuery.data?.items ?? []).filter(isWaitingTask),
     [suggestionsQuery.data],
   );
-  const grouped = !source;
-  // The names of the minutes each group came from. Only read when there is
-  // a group to name, so a chapter with nothing suggested never asks.
+  // The names and days of the minutes each suggestion came from, on the
+  // board. Only read when there is one to name, so a chapter with nothing
+  // suggested never asks.
   const meetingsQuery = useMeetings({
-    enabled: grouped && items.some((item) => item.source.type === "meeting"),
+    enabled: !source && items.some((item) => item.source.type === "meeting"),
   });
   const membersQuery = useMembers();
   const members = useMemo(
@@ -175,22 +199,46 @@ export function SuggestedTasks({
   const [formFor, setFormFor] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const groups = useMemo(() => {
-    const bySource = new Map<string, WaitingSuggestion[]>();
-    for (const item of items) {
-      const key = `${item.source.type}:${item.source.id}`;
-      bySource.set(key, [...(bySource.get(key) ?? []), item]);
-    }
-    return [...bySource.values()];
-  }, [items]);
+  const [index, setIndex] = useState(0);
+
+  // Frapp's suggestions for what the minutes left out, worked out once per
+  // list rather than on every keystroke.
+  const guesses = useMemo(() => {
+    const startOf = (item: WaitingSuggestion) =>
+      source
+        ? sourceStart
+        : item.source.type === "meeting"
+          ? (meetingsQuery.data ?? []).find((row) => row.id === item.source.id)
+              ?.event_start_time
+          : null;
+    return new Map<string, RowGuess>(
+      items.map((item) => [
+        item.id,
+        {
+          // Last year's tasks name nobody on purpose (#3930).
+          assigneeId:
+            taskWhoValue(item.task) || item.task.last_year_on
+              ? null
+              : suggestTaskOwner(item.quote ?? item.task.title, members),
+          due: item.task.due_date ? null : suggestTaskDue(startOf(item)),
+        },
+      ]),
+    );
+  }, [items, members, meetingsQuery.data, source, sourceStart]);
 
   if (items.length === 0) return null;
 
+  // The card on show: the same place in the list once the one before it is
+  // decided and drops out, so the next one slides in under the officer.
+  const at = Math.min(index, items.length - 1);
+  const current = items[at]!;
   const busy = busyId !== null || decide.isPending;
+  const valuesOf = (item: WaitingSuggestion) =>
+    rowValues(item, edits[item.id], guesses.get(item.id));
   // A row open in the form is decided there, with what was typed into it.
   const ready = items.filter((item) => {
     if (item.id === formFor) return false;
-    const values = rowValues(item, edits[item.id]);
+    const values = valuesOf(item);
     return values.assigneeId && values.due;
   });
 
@@ -202,7 +250,7 @@ export function SuggestedTasks({
   }
 
   async function acceptRow(item: WaitingSuggestion) {
-    const values = rowValues(item, edits[item.id]);
+    const values = valuesOf(item);
     if (
       !values.assigneeId ||
       !values.due ||
@@ -255,13 +303,15 @@ export function SuggestedTasks({
       const decisions = ready.map((item) => ({
         id: item.id,
         action: "accept" as const,
-        task: editsFor(item, rowValues(item, edits[item.id])),
+        task: editsFor(item, valuesOf(item)),
       }));
       // The route takes 50 at a time.
       const outcomes = [];
-      for (let at = 0; at < decisions.length; at += DECIDE_MAX) {
+      for (let from = 0; from < decisions.length; from += DECIDE_MAX) {
         outcomes.push(
-          ...(await decide.mutateAsync(decisions.slice(at, at + DECIDE_MAX))),
+          ...(await decide.mutateAsync(
+            decisions.slice(from, from + DECIDE_MAX),
+          )),
         );
       }
       const made = outcomes.filter((outcome) => outcome.ok).length;
@@ -288,82 +338,112 @@ export function SuggestedTasks({
       : AI_SUGGESTION_COPY.meetingFallback;
   };
 
-  const renderRow = (item: WaitingSuggestion) => (
-    <SuggestedTaskRow
-      key={item.id}
-      item={item}
-      values={rowValues(item, edits[item.id])}
-      members={members}
-      flagged={flagged.has(item.id)}
-      disabled={busy}
-      formOpen={formFor === item.id}
-      onEdit={(patch) => editRow(item.id, patch)}
-      onAccept={() => void acceptRow(item)}
-      onDismiss={() => void dismissRow(item)}
-      onAlreadyDoing={
-        item.task.last_year_on
-          ? () => void dismissRow(item, "already_doing")
-          : undefined
-      }
-      onOpenForm={() => setFormFor(item.id)}
-      onCloseForm={() => setFormFor(null)}
-      acceptWith={async (task) => {
-        await accept.mutateAsync({ id: item.id, task });
-      }}
-    />
-  );
+  const guess = guesses.get(current.id);
+  const values = valuesOf(current);
 
   return (
     <section aria-labelledby={headingId} className={cn("space-y-3", className)}>
-      <SectionLabel id={headingId} count={items.length}>
-        {AI_SUGGESTION_COPY.heading}
-      </SectionLabel>
-      {grouped ? (
-        groups.map((group) => {
-          const first = group[0]!;
-          return (
-            <div key={first.source.id} className="space-y-2">
-              {first.task.last_year_on ? (
-                <p className="text-caption text-muted-foreground">
-                  {lastYearTaskLine(lastYearBareDay(first.task.last_year_on))}
-                </p>
-              ) : (
-                <p className="text-caption text-muted-foreground">
-                  {AI_SUGGESTION_COPY.fromMinutesOf}{" "}
-                  {first.source.type === "meeting" ? (
-                    <Link
-                      href={meetingHref(first.source.id)}
-                      className="underline underline-offset-2 hover:text-foreground"
-                    >
-                      {meetingName(first.source.id)}
-                    </Link>
-                  ) : (
-                    AI_SUGGESTION_COPY.aMeeting
-                  )}
-                </p>
-              )}
-              <ul className="space-y-2">{group.map(renderRow)}</ul>
-            </div>
-          );
-        })
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionLabel id={headingId} count={items.length}>
+          {AI_SUGGESTION_COPY.heading}
+        </SectionLabel>
+        {items.length > 1 ? (
+          <div className="flex items-center gap-1">
+            <p
+              className="text-caption tabular-nums text-muted-foreground"
+              aria-live="polite"
+            >
+              {AI_SUGGESTION_COPY.position(at + 1, items.length)}
+            </p>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={AI_SUGGESTION_COPY.previous}
+              title={AI_SUGGESTION_COPY.previous}
+              disabled={at === 0}
+              onClick={() => setIndex(at - 1)}
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={AI_SUGGESTION_COPY.next}
+              title={AI_SUGGESTION_COPY.next}
+              disabled={at === items.length - 1}
+              onClick={() => setIndex(at + 1)}
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      {current.task.last_year_on ? (
+        <p className="text-caption text-muted-foreground">
+          {lastYearTaskLine(lastYearBareDay(current.task.last_year_on))}
+        </p>
+      ) : source ? (
+        <p className="text-caption text-muted-foreground">
+          {AI_SUGGESTION_COPY.fromActionItems}
+        </p>
       ) : (
-        <>
-          <p className="text-caption text-muted-foreground">
-            {AI_SUGGESTION_COPY.fromActionItems}
-          </p>
-          <ul className="space-y-2">{items.map(renderRow)}</ul>
-        </>
+        <p className="text-caption text-muted-foreground">
+          {AI_SUGGESTION_COPY.fromMinutesOf}{" "}
+          {current.source.type === "meeting" ? (
+            <Link
+              href={meetingHref(current.source.id)}
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              {meetingName(current.source.id)}
+            </Link>
+          ) : (
+            AI_SUGGESTION_COPY.aMeeting
+          )}
+        </p>
       )}
+      <SuggestedTaskRow
+        key={current.id}
+        item={current}
+        values={values}
+        suggestedWho={
+          !edits[current.id]?.assigneeId &&
+          !!guess?.assigneeId &&
+          values.assigneeId === guess.assigneeId
+        }
+        suggestedDue={
+          edits[current.id]?.due === undefined &&
+          !!guess?.due &&
+          values.due === guess.due
+        }
+        members={members}
+        flagged={flagged.has(current.id)}
+        disabled={busy}
+        pending={busyId === current.id && accept.isPending}
+        formOpen={formFor === current.id}
+        onEdit={(patch) => editRow(current.id, patch)}
+        onAccept={() => void acceptRow(current)}
+        onDismiss={() => void dismissRow(current)}
+        onAlreadyDoing={
+          current.task.last_year_on
+            ? () => void dismissRow(current, "already_doing")
+            : undefined
+        }
+        onOpenForm={() => setFormFor(current.id)}
+        onCloseForm={() => setFormFor(null)}
+        acceptWith={async (task) => {
+          await accept.mutateAsync({ id: current.id, task });
+        }}
+      />
       {/*
-        Under the rows, so an officer has been past every one before the
-        button that accepts them together (#4313). Only the rows that say who
-        and when go; the rest stay listed.
+        Under the card, for an officer who has read the list and wants the
+        rest made as they stand (#4313). Only the ones that say who and when
+        go; the rest stay listed.
       */}
       {ready.length > 1 ? (
         <div className="flex justify-end">
           <Button
             size="sm"
-            variant="secondary"
+            variant="ghost"
             disabled={busy}
             onClick={() => void acceptAllReady()}
           >
@@ -384,9 +464,12 @@ type Member = { user_id?: string | null; display_name?: string | null };
 function SuggestedTaskRow({
   item,
   values,
+  suggestedWho,
+  suggestedDue,
   members,
   flagged,
   disabled,
+  pending,
   formOpen,
   onEdit,
   onAccept,
@@ -398,9 +481,14 @@ function SuggestedTaskRow({
 }: {
   item: WaitingSuggestion;
   values: { assigneeId: string; due: string };
+  /** Who, or when, is Frapp's suggestion rather than the minutes' word. */
+  suggestedWho: boolean;
+  suggestedDue: boolean;
   members: Member[];
   flagged: boolean;
   disabled: boolean;
+  /** This card is the one being created or dismissed. */
+  pending: boolean;
   formOpen: boolean;
   onEdit: (patch: RowEdits) => void;
   onAccept: () => void;
@@ -433,7 +521,7 @@ function SuggestedTaskRow({
       showMore: false,
     };
     return (
-      <li className="rounded-[14px] border border-border p-3">
+      <div className="rounded-[14px] border border-border p-3">
         <TaskForm
           suggestion
           offerEveryone
@@ -458,14 +546,17 @@ function SuggestedTaskRow({
             }
           }}
         />
-      </li>
+      </div>
     );
   }
 
   return (
-    <li className="space-y-2 rounded-[14px] border border-border p-3">
+    <div
+      aria-busy={pending || undefined}
+      className="space-y-3 rounded-[14px] border border-border p-4"
+    >
       <div className="space-y-1">
-        <p className="break-words text-sm font-medium">{task.title}</p>
+        <p className="break-words text-base font-medium">{task.title}</p>
         {/* The line of the minutes, when the title had to be cut from it. */}
         {item.quote && item.quote !== task.title ? (
           <p className="break-words text-caption text-muted-foreground">
@@ -504,6 +595,10 @@ function SuggestedTaskRow({
             <p role="alert" className="mt-1 text-caption text-destructive-text">
               {AI_SUGGESTION_COPY.missingWho}
             </p>
+          ) : suggestedWho ? (
+            <p className="mt-1 text-caption text-muted-foreground">
+              {AI_SUGGESTION_COPY.suggestedWho}
+            </p>
           ) : null}
         </div>
         <div className="min-w-32 max-w-56 flex-1">
@@ -517,6 +612,11 @@ function SuggestedTaskRow({
             onChange={(value) => onEdit({ due: value })}
             disabled={disabled}
           />
+          {suggestedDue && !missingDue && !passedDue ? (
+            <p className="mt-1 text-caption text-muted-foreground">
+              {AI_SUGGESTION_COPY.suggestedDue}
+            </p>
+          ) : null}
         </div>
         <div className="ml-auto flex items-center gap-1">
           <ReportAiButton
@@ -547,18 +647,18 @@ function SuggestedTaskRow({
           <Button
             size="icon"
             variant="ghost"
-            aria-label={`Change ${task.title} before accepting`}
-            title="Change before accepting"
+            aria-label={`${AI_SUGGESTION_COPY.change}: ${task.title}`}
+            title={AI_SUGGESTION_COPY.change}
             disabled={disabled}
             onClick={onOpenForm}
           >
             <Pencil className="h-4 w-4" aria-hidden="true" />
           </Button>
           <Button size="sm" disabled={disabled} onClick={onAccept}>
-            {AI_SUGGESTION_COPY.accept}
+            {pending ? AI_SUGGESTION_COPY.accepting : AI_SUGGESTION_COPY.accept}
           </Button>
         </div>
       </div>
-    </li>
+    </div>
   );
 }

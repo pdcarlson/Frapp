@@ -364,7 +364,7 @@ describe("TaskForm's due time (#4512)", () => {
       initialAssigneeId: "u-1",
       suggestion: true,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
     await waitFor(() => expect(onPost).toHaveBeenCalledTimes(1));
   });
 

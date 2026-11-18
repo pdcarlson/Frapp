@@ -4,6 +4,7 @@ import type { MeetingMinutes } from "@repo/hooks";
 
 const mocks = vi.hoisted(() => ({
   meeting: { current: null as unknown },
+  actionItemTasks: { current: [] as unknown[] },
   permissions: { current: [] as string[] },
   markAttendance: vi.fn(),
   update: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
   }),
   useMeeting: () => mocks.meeting.current,
+  useMeetingActionItemTasks: () => ({ data: mocks.actionItemTasks.current }),
   useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
   usePostMeeting: () => ({ mutateAsync: mocks.post, isPending: false }),
   useDeleteMeeting: () => ({ mutateAsync: mocks.remove, isPending: false }),
@@ -306,6 +308,14 @@ function ownDraft(overrides: Partial<MeetingMinutes> = {}): MeetingMinutes {
   });
 }
 
+/** Opens the header's ⋯ menu and picks an item, as a keyboard user would. */
+function openMenuItem(name: string) {
+  fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+    key: "Enter",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
 describe("MinutesPage", () => {
   it("reads posted minutes as a document, with only the sections that hold something", () => {
     loaded(minutes());
@@ -321,9 +331,35 @@ describe("MinutesPage", () => {
     expect(screen.getByText("Jake Ross, Sam Lee")).toBeTruthy();
     // Announcements is in the template but empty, so it isn't drawn.
     expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
-    // A member who can't edit gets no Edit or Delete.
+    // A member who can't edit gets no Edit or Delete, so no menu at all.
+    expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+  });
+
+  it("keeps changing posted minutes out of the way: Copy link an icon, Edit and a red Delete behind the dots (Paul, 2026-11-18)", () => {
+    loaded(minutes({ can_edit: true, can_delete: true }));
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Edit minutes" })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: "Delete minutes" }).className,
+    ).toContain("text-destructive-text");
+  });
+
+  it("ticks an action item off once its task is done, and says so at a glance", () => {
+    mocks.actionItemTasks.current = [{ index: 0, done: true, group: null }];
+    try {
+      loaded(minutes());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Done:")).toBeTruthy();
+      expect(screen.getByText("1 action item, 1 done")).toBeTruthy();
+      expect(screen.getByText("1 decision")).toBeTruthy();
+    } finally {
+      mocks.actionItemTasks.current = [];
+    }
   });
 
   it("marks the reader's own action items, says when nobody was named, and leads each topic line with its topic", () => {
@@ -390,7 +426,9 @@ describe("MinutesPage", () => {
     // The transcript opens in its own tab, not under the minutes.
     expect(screen.getByText("Transcript")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Open transcript" }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: "Open transcript" })
+        .getAttribute("href"),
     ).toBe("/meetings/m-1/transcript");
     expect(
       screen.queryByText("Speaker 1: One join code for Discord."),
@@ -403,7 +441,7 @@ describe("MinutesPage", () => {
     expect(screen.getByTestId("suggested-tasks").textContent).toBe(
       "meeting:m-1",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    openMenuItem("Edit minutes");
     expect(screen.queryByTestId("suggested-tasks")).toBeNull();
     unmount();
 

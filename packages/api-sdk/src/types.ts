@@ -3600,6 +3600,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/{id}/action-item-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which action items of posted minutes became tasks, and whether each is done. Empty for a draft */
+        get: operations["MeetingActionItemTasksController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/consent": {
         parameters: {
             query?: never;
@@ -8297,7 +8314,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8360,7 +8377,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -9369,6 +9386,18 @@ export interface components {
         };
         AiSuggestionDecideResponseDto: {
             outcomes: components["schemas"]["AiSuggestionDecideOutcomeDto"][];
+        };
+        ActionItemTaskGroupDto: {
+            done: number;
+            total: number;
+        };
+        MeetingActionItemTaskDto: {
+            /** @description The action item’s place in the minutes’ list, from 0. */
+            index: number;
+            /** @description Marked done: by its member, or by every copy of a task for everyone. */
+            done: boolean;
+            /** @description A task for everyone: how many of its copies are done. */
+            group: components["schemas"]["ActionItemTaskGroupDto"] | null;
         };
         AiConsentSheetProviderDto: {
             /** @enum {string} */
@@ -19969,6 +19998,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiSuggestionDecideResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingActionItemTasksController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingActionItemTaskDto"][];
                 };
             };
             /** @description Error */

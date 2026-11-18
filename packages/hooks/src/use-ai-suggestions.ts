@@ -182,7 +182,13 @@ export function useAcceptAiSuggestion() {
       throwUnlessOk(result);
       return bodyOf(result.data);
     },
-    onSuccess: (_decision, { id }) => drop([id], true),
+    onSuccess: (_decision, { id }) => {
+      drop([id], true);
+      // A task made from an action item gives its minutes a checkbox.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey.at(-1) === "action-item-tasks",
+      });
+    },
     // Refused: someone else decided it, it expired, or its minutes changed.
     onError: () =>
       void queryClient.invalidateQueries({

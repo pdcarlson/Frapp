@@ -836,7 +836,7 @@ describe("Accepting a suggested task through the form (#4313)", () => {
   const acceptButton = (tree: ReactTestRenderer) =>
     tree.root.find(
       (node) =>
-        node.props.label === "Accept" && typeof node.type === "function",
+        node.props.label === "Create task" && typeof node.type === "function",
     );
 
   beforeEach(() => {
@@ -885,7 +885,7 @@ describe("Accepting a suggested task through the form (#4313)", () => {
 
   it("starts from what the minutes said, under its own title and button", () => {
     const tree = renderSuggestion("user-2");
-    expect(screenText(tree)).toContain("Change before accepting");
+    expect(screenText(tree)).toContain("Change before creating");
     expect(screenText(tree)).not.toContain("New task");
     const title = tree.root.find(
       (node) => node.props.accessibilityLabel === "Task title",

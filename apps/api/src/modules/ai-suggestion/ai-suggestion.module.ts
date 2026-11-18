@@ -16,6 +16,7 @@ import {
 } from '../../application/services/ai-suggestion-sources';
 import { AiSuggestionExpiryService } from '../../application/workers/ai-suggestion-expiry.service';
 import { AiSuggestionController } from '../../interface/controllers/ai-suggestion.controller';
+import { MeetingActionItemTasksController } from '../../interface/controllers/meeting-action-item-tasks.controller';
 import { AiEnabledGuard } from '../../interface/guards/ai-enabled.guard';
 import { SupabaseAiSuggestionRepository } from '../../infrastructure/supabase/repositories/supabase-ai-suggestion.repository';
 import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
@@ -61,7 +62,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
     // The weekly "this time last year" check is a run of the queue (#3930).
     AiRunsModule,
   ],
-  controllers: [AiSuggestionController],
+  controllers: [AiSuggestionController, MeetingActionItemTasksController],
   providers: [
     AiSuggestionService,
     AiSuggestionConsentListener,

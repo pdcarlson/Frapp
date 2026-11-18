@@ -82,7 +82,8 @@ function suggestion(id: string, task: Record<string, unknown> = {}) {
   };
 }
 
-const acceptButtons = () => screen.getAllByRole("button", { name: "Accept" });
+const acceptButtons = () =>
+  screen.getAllByRole("button", { name: "Create task" });
 
 describe("SuggestedTasks (#4313)", () => {
   beforeEach(() => {
@@ -216,7 +217,7 @@ describe("SuggestedTasks (#4313)", () => {
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Change Task 1 before accepting" }),
+      screen.getByRole("button", { name: "Change before creating: Task 1" }),
     );
 
     const title = screen.getByLabelText("Title");
@@ -226,7 +227,7 @@ describe("SuggestedTasks (#4313)", () => {
     expect(screen.getByLabelText("Description")).toBeTruthy();
 
     fireEvent.change(title, { target: { value: "Book the bus" } });
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
 
     await waitFor(() =>
       expect(mocks.accept).toHaveBeenCalledWith({
@@ -252,7 +253,7 @@ describe("SuggestedTasks (#4313)", () => {
     fireEvent.click(acceptButtons()[0]!);
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith({
-        title: "Couldn't accept the suggestion",
+        title: "Couldn't create the task",
         description: "Another officer already decided this one.",
         variant: "destructive",
       }),
@@ -273,12 +274,11 @@ describe("SuggestedTasks (#4313)", () => {
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
     const all = screen.getByRole("button", {
-      name: "Accept the 2 with an assignee and a due date",
+      name: "Create the 2 that say who and when",
     });
-    // After every row in the document: the officer has been past them.
-    const rows = screen.getAllByRole("listitem");
+    // Under the card, never in its place.
     expect(
-      rows[rows.length - 1]!.compareDocumentPosition(all) &
+      screen.getByText("Task 1").compareDocumentPosition(all) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
@@ -292,27 +292,27 @@ describe("SuggestedTasks (#4313)", () => {
     );
     expect(mocks.toast).toHaveBeenCalledWith({
       title: "1 task created",
-      description: "1 couldn't be accepted and is still listed.",
+      description: "1 couldn't be created and is still listed.",
       variant: undefined,
     });
   });
 
-  it("offers no Accept all for a single suggestion", () => {
+  it("offers no Create all for a single suggestion", () => {
     mocks.items.current = [suggestion("1")];
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    expect(screen.queryByRole("button", { name: /accept all/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /create all/i })).toBeNull();
   });
 
-  it("groups the board's list by the minutes each came from, linking back to them", () => {
+  it("names the minutes the board's suggestion came from, linking back to them", () => {
     mocks.items.current = [suggestion("1"), suggestion("2")];
     render(<SuggestedTasks headingId="s" />);
     const link = screen.getByRole("link", { name: /Chapter meeting, / });
     expect(link.getAttribute("href")).toBe("/meetings/m-1");
     // Written out, never "Mon" or "Nov 9".
     expect(link.textContent).toMatch(/November/);
-    expect(screen.getByRole("button", { name: "Accept all 2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create all 2" })).toBeTruthy();
   });
 
   it("shows the line of the minutes when the title had to be cut from it", () => {
@@ -362,5 +362,77 @@ describe("SuggestedTasks (#4313)", () => {
     expect(
       screen.queryByRole("button", { name: "Already planned" }),
     ).toBeNull();
+  });
+
+  it("shows one suggestion at a time, in order, and moves between them (Paul, 2026-11-18)", () => {
+    mocks.items.current = [suggestion("1"), suggestion("2"), suggestion("3")];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    expect(screen.getByText("Task 1")).toBeTruthy();
+    expect(screen.queryByText("Task 2")).toBeNull();
+    expect(screen.getByText("1 of 3")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Previous suggestion",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next suggestion" }));
+    expect(screen.getByText("Task 2")).toBeTruthy();
+    expect(screen.getByText("2 of 3")).toBeTruthy();
+  });
+
+  it("brings the next suggestion up in place once one is decided", () => {
+    mocks.items.current = [suggestion("1"), suggestion("2")];
+    const { rerender } = render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    mocks.items.current = [suggestion("2")];
+    rerender(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    expect(screen.getByText("Task 2")).toBeTruthy();
+    expect(screen.queryByText("1 of 1")).toBeNull();
+  });
+
+  it("fills in who the line names and a day a week after the meeting, says so, and sends them", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-10T12:00:00"));
+    try {
+      mocks.items.current = [
+        {
+          ...suggestion("1", {
+            title: "Sam to book the bus",
+            assignee_id: null,
+            due_date: null,
+          }),
+          quote: "Sam to book the bus",
+        },
+      ];
+      render(
+        <SuggestedTasks
+          source={{ type: "meeting", id: "m-1" }}
+          sourceStart="2026-11-09T19:00:00"
+          headingId="s"
+        />,
+      );
+      expect(screen.getByText("Suggested from the minutes")).toBeTruthy();
+      expect(
+        screen.getByText("Suggested: a week after the meeting"),
+      ).toBeTruthy();
+
+      fireEvent.click(acceptButtons()[0]!);
+      await waitFor(() =>
+        expect(mocks.accept).toHaveBeenCalledWith({
+          id: "1",
+          task: { assignee_id: "u-sam", due_date: "2026-11-16", due_at: null },
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

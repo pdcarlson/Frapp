@@ -36,17 +36,22 @@ function build(switchOn = true) {
   const listeners: ((m: Meeting, c: never) => Promise<void>)[] = [];
   const meetings = {
     onPostedMinutesSaved: jest.fn((listener) => listeners.push(listener)),
+    get: jest.fn(async () => ({ meeting: meeting() })),
   };
   const suggestions = {
     reconcileSource: jest.fn(async () => ({ created: [], withdrawn: 0 })),
   };
   const consent = { chapterSwitchOn: jest.fn(async () => switchOn) };
+  const tasks = { findById: jest.fn() };
+  const repo = { listKeyedForSource: jest.fn(async () => [] as unknown[]) };
   const service = new MeetingTaskSuggestionsService(
     meetings as never,
     suggestions as never,
     consent as never,
+    tasks as never,
+    repo as never,
   );
-  return { service, meetings, suggestions, consent, listeners };
+  return { service, meetings, suggestions, consent, listeners, tasks, repo };
 }
 
 describe('MeetingTaskSuggestionsService (#4313)', () => {
@@ -158,5 +163,73 @@ describe('MeetingTaskSuggestionsService (#4313)', () => {
       actorId: OFFICER,
     } as never);
     expect(suggestions.reconcileSource).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("actionItemTasks: the minutes' checkboxes", () => {
+  const accepted = (text: string, taskId: string) => ({
+    status: 'accepted',
+    result_id: taskId,
+    dedupe_key: actionItemKey(text),
+  });
+
+  it('marks each item an officer made a task with whether it is done, and tells nothing about the rest', async () => {
+    const { service, repo, tasks, meetings } = build();
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Book the bus', 't-bus'),
+      // A dismissed one has no task.
+      {
+        status: 'dismissed',
+        result_id: null,
+        dedupe_key: actionItemKey('Order shirts'),
+      },
+    ]);
+    tasks.findById.mockResolvedValue({
+      stored_status: 'COMPLETED',
+      group: null,
+    });
+
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([{ index: 0, done: true, group: null }]);
+    expect(meetings.get).toHaveBeenCalledWith(CHAPTER, MEETING, OFFICER);
+    expect(tasks.findById).toHaveBeenCalledWith('t-bus', CHAPTER);
+  });
+
+  it('follows a task for everyone by its copies', async () => {
+    const { service, repo, tasks } = build();
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Order shirts', 't-shirts'),
+    ]);
+    tasks.findById.mockResolvedValue({
+      stored_status: 'COMPLETED',
+      group: { done: 14, total: 20, confirmed: 3 },
+    });
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([
+      { index: 1, done: false, group: { done: 14, total: 20 } },
+    ]);
+  });
+
+  it('leaves out an item whose task was deleted since', async () => {
+    const { NotFoundException } = await import('@nestjs/common');
+    const { service, repo, tasks } = build();
+    repo.listKeyedForSource.mockResolvedValue([
+      accepted('Book the bus', 't-gone'),
+    ]);
+    tasks.findById.mockRejectedValue(new NotFoundException('Task not found'));
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([]);
+  });
+
+  it('says nothing for a draft', async () => {
+    const { service, repo, meetings } = build();
+    meetings.get.mockResolvedValue({ meeting: meeting({ status: 'draft' }) });
+    await expect(
+      service.actionItemTasks(CHAPTER, MEETING, OFFICER),
+    ).resolves.toEqual([]);
+    expect(repo.listKeyedForSource).not.toHaveBeenCalled();
   });
 });

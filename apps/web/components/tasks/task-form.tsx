@@ -7,6 +7,7 @@ import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import {
+  AI_SUGGESTION_COPY,
   TASK_AUDIENCE_COPY,
   TASK_AUDIENCE_EVERYONE,
   TASK_PHOTOS_MAX,
@@ -299,7 +300,7 @@ export function TaskForm({
       if (!result.ok) {
         toast({
           title: suggestion
-            ? "Couldn't accept the suggestion"
+            ? AI_SUGGESTION_COPY.acceptFailed
             : editing
               ? "Couldn't save the task"
               : "Couldn't create task",
@@ -561,8 +562,8 @@ export function TaskForm({
           <Button type="submit" size="sm" {...gate.controlProps(posting)}>
             {suggestion
               ? posting
-                ? "Accepting…"
-                : "Accept"
+                ? AI_SUGGESTION_COPY.accepting
+                : AI_SUGGESTION_COPY.accept
               : posting
                 ? "Saving…"
                 : "Save"}

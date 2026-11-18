@@ -11,6 +11,9 @@ export type MeetingSummary = components["schemas"]["MeetingSummaryDto"];
 export type MeetingMinutes = components["schemas"]["MeetingDto"];
 export type StartMeetingBody = components["schemas"]["StartMeetingDto"];
 export type UpdateMeetingBody = components["schemas"]["UpdateMeetingDto"];
+/** One action item that became a task, as the minutes' checkbox reads it. */
+export type MeetingActionItemTask =
+  components["schemas"]["MeetingActionItemTaskDto"];
 export type MeetingTemplateSections =
   components["schemas"]["MeetingTemplateDto"]["sections"];
 
@@ -62,6 +65,37 @@ export function useMeeting(id: string | null | undefined) {
       return data;
     },
     enabled: !!chapterId && !!id,
+  });
+}
+
+/**
+ * Which action items of posted minutes became tasks, and whether each is
+ * done: the minutes' checkboxes. It follows the tasks as they are checked
+ * off elsewhere, so it is read again every minute while the minutes are open
+ * and whenever the window comes back to them.
+ */
+export function useMeetingActionItemTasks(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      ...meetingKey(chapterId, id ?? ""),
+      "action-item-tasks",
+    ] as const,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/{id}/action-item-tasks",
+        { signal, params: { path: { id: id! } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
 

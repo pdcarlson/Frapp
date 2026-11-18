@@ -8,13 +8,13 @@ The order the three ways are built in, and why, is [ADR-28](../architecture/adr/
 
 When an officer starts minutes, by any of the three ways under [Workflow](#workflow), they select a **meeting type**. Standards is in the table because it is a kind of meeting a chapter holds, and it is the one type none of the three ways offers ([Standards meetings](#standards-meetings)).
 
-| Type        | Example                                          |
-| ----------- | ------------------------------------------------ |
-| Chapter     | Full chapter meeting (most common).              |
-| Exec        | Officer / exec board meeting.                    |
-| Committee   | Committee or working-group meeting.              |
-| Standards   | Standards board / member-conduct hearing.        |
-| Other       | Anything else (free-form label optional).        |
+| Type      | Example                                   |
+| --------- | ----------------------------------------- |
+| Chapter   | Full chapter meeting (most common).       |
+| Exec      | Officer / exec board meeting.             |
+| Committee | Committee or working-group meeting.       |
+| Standards | Standards board / member-conduct hearing. |
+| Other     | Anything else (free-form label optional). |
 
 The type is captured as metadata on the meeting and persists through transcription. It is **not** a separate template; rather, the AI summarizer uses it to vary tone and emphasis:
 
@@ -29,17 +29,19 @@ The type is captured as metadata on the meeting and persists through transcripti
 All meeting summaries use a **single global template** with toggleable sections per chapter. Available sections:
 
 - Summary / Overview (default ON)
+- Announcements (default ON)
 - Decisions (default ON)
 - Action items with owner + due date (default ON)
 - Notes (always on: no switch turns them off)
   - Changed 2026-11-17 by pdcarlson (#5410): this was "Discussion log (default OFF — verbose)". Paul, after a 7-minute meeting came out as one summary sentence: "I'd rather have just a blank wall of text ... than this high-level summary." The notes are the body of the minutes, so every chapter's minutes carry them.
 - Attendees (default ON)
-- Announcements (default ON)
 - Officer reports (default OFF)
 - Old business (default OFF)
 - New business (default OFF)
 
 > Changed 2026-11-17 by pdcarlson (#5381): what was settled and who owes what come right after the summary, then the discussion, then the record. The list began with Attendees and put Decisions after Announcements.
+
+> Changed 2026-11-18 by pdcarlson: Announcements moved up to sit under the summary, so the order reads summary, announcements, decisions, action items, then the notes. Paul, on the posted minutes: "Maybe it should be summary, announcements, decisions, and then action items."
 
 Chapters toggle sections from chapter settings ([`settings/README.md`](settings/README.md)), on the Meetings page's Rules. The template is the same across all meeting types — type only affects AI summarization behavior. The sections always show in the order above. A section switched off keeps what minutes already wrote in it, and those minutes still show it.
 
@@ -51,11 +53,11 @@ Per-meeting-type template variants are deferred to v2+ pending real usage signal
 
 There are three ways to start, and they end in the same review screen.
 
-| Way in | What the officer does | Needs |
-| --- | --- | --- |
-| Notes | Types, pastes or dictates rough notes after the meeting. | Nothing new, which is why it is built first. |
-| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. Built 2026-11-12: [Uploading a recording](#uploading-a-recording). | A transcription provider. |
-| In-app recorder | Records on the phone during the meeting. Built 2026-11-12: [Recording in the app](#recording-in-the-app). | A store build at native version 0.12.0 or later, the first with microphone access, and a transcription provider. |
+| Way in             | What the officer does                                                                                                              | Needs                                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Notes              | Types, pastes or dictates rough notes after the meeting.                                                                           | Nothing new, which is why it is built first.                                                                     |
+| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. Built 2026-11-12: [Uploading a recording](#uploading-a-recording). | A transcription provider.                                                                                        |
+| In-app recorder    | Records on the phone during the meeting. Built 2026-11-12: [Recording in the app](#recording-in-the-app).                          | A store build at native version 0.12.0 or later, the first with microphone access, and a transcription provider. |
 
 1. An officer with the meeting permission starts minutes, selects the meeting type, and links the meeting's event. The event's check-ins fill the Attendees section without any AI. A meeting with no event gets one when minutes are started, with the audience the officer picks, because the event is what says who the minutes are for ([Who can read minutes](#who-can-read-minutes)).
 2. For a recording, the audio is transcribed on the server by a transcription provider behind Frapp's own interface. The vendor is chosen by a bake-off on a real meeting ([#712](https://github.com/pdcarlson/Frapp/issues/712)). Transcription is its own step: a general model is not asked to listen.
@@ -102,7 +104,8 @@ The Notes way in, without the AI draft: an officer writes the minutes themselves
 ## Drafting from notes
 
 The officer who takes the minutes pastes or types what they wrote down during the meeting and asks for a draft ([ADR-28](../architecture/adr/adr-28.md) decision 6). The draft lands in the same sections as hand-written minutes, for them to fix and post. Web first (#4312); the recording path reuses the same draft, and so does the phone (#4415): an officer who may edit a draft types notes on the minutes page itself, uses the draft and posts, and changes a section by hand on the web, because the section editor has no phone twin yet. Where drafting isn't offered the phone still offers Write minutes, and what is typed is the Summary ([Writing on the phone](#writing-minutes-by-hand)).
-  - Changed 2026-11-17 (#5288): the phone offered Write minutes on an event only where drafting was offered, so a chapter without it could not start minutes on a phone at all.
+
+- Changed 2026-11-17 (#5288): the phone offered Write minutes on an event only where drafting was offered, so a chapter without it could not start minutes on a phone at all.
 
 - **Where it is.** A "Your notes" box sits above the sections of a draft the officer may edit. Since #4935 it saves as the officer types, and other members can take notes too ([Several note-takers](#several-note-takers)). It shows only to a holder of `meetings:record`, when the server has AI on and the president has turned meeting notes on ([`ai.md` § Consent](ai.md#consent)). An officer who has not turned Frapp AI on sees the box with one plain line saying so ("Turn on Frapp AI to draft from your notes."), and asking opens Meet Frapp AI first.
 - **Asking** needs the right to edit these minutes as well. Typing in the sections is saved first. If the sections already hold something, the page asks before the draft replaces them. Attendees are never touched.
@@ -115,6 +118,7 @@ The officer who takes the minutes pastes or types what they wrote down during th
 - **A decision is an outcome, never procedure** (Paul, 2026-11-17, on a draft that listed "voted to move on to new business" and "voted to discuss the afterparty": "Voting to discuss is not a decision. What matters is the body of the discussion."). Moving to an agenda item, opening or closing the floor or nominations, approving the agenda, a motion to discuss or consider something, calling the question, a recess and adjourning are left out of decisions; tabling, postponing and sending to a committee are outcomes and stay. An election is one decision per office. Every draft is told to list every substantive decision and action item, not only the main ones (Paul, 2026-11-16), and the discussion log gives each topic what was raised, the positions and where it landed.
 - **Honest gaps.** What the notes leave unsaid is listed under "To fill in" (who is doing something, a vote with no count), not guessed. "To fill in" sits above the minutes, the first thing to do after a draft, and each question takes an answer. "Update the draft" adds the answers to the end of the author's notes, one line per question with its answer, and drafts again without asking, so the answers are quoted like any other line and, as the author's own notes, outrank the other sources (Paul, 2026-11-16). Once a draft has filled the minutes, the notes box folds away under them behind Show. Each drafted decision and action item shows the line it came from until the officer rewrites it.
 - **Notes are text, not instructions.** A line in the notes addressed to the AI is not followed.
+- **The noise stays out** (Paul and Shawn, 2026-11-18, after a Cabinet Meeting draft quoted a member calling someone "the number one pain in the ass to deal with"). Minutes are the chapter's record, read by every member and kept, so the draft and the notes leave out side conversations (banter, tangents, talk that wasn't the meeting's business), insults, venting about a named person, gossip and anything about someone's private life. A real problem with someone's work that was meeting business is written plainly and neutrally as it affects the chapter, without the remark, and swearing becomes plain words. Trimming is for noise: no decision, assignment, number, date, amount or plan is dropped to make the minutes shorter. The transcript is kept whole, as recorded, for reading and for Ask. Filtering in the draft was Paul's pick over hiding lines by hand after posting. A name the transcript misheard ("Alex Bogus", "Olton") is written as the member it plainly is when only one member on the roster sounds like it (Paul, 2026-11-18); the transcription is also given the roster's names to listen for.
 - **Nothing is posted.** The draft is an unposted draft like any other. Posting is the officer's own step, and action items stay as written for the officer; turning them into suggested tasks is [Suggested tasks](#suggested-tasks).
 - **When it can't be done,** the box says why in plain words and keeps the notes: the chapter's AI limit was reached, drafting is unavailable, the provider declined, or the draft didn't come through and can be asked for again.
 - **Standards.** A Standards meeting has no minutes in Frapp, so there is nothing to draft into. Minutes whose type is changed to Standards are refused by the server before any text leaves ([Standards meetings](#standards-meetings)).
@@ -163,6 +167,7 @@ The officer who recorded the meeting on their phone uploads the file on web and 
 - **How long the transcript is kept.** While the minutes are a draft, by the notes' rule: removed when the minutes are deleted, when the officer removes the recording (Clear notes on the web removes it with the notes), when the uploader deletes their account (which also takes any draft asked for while their recording was the meeting's, since its notes may hold the transcript; #4504), and after 30 days at most. Posting copies it onto the minutes, where it stays until they are deleted ([Retention](#retention)). Neither the audio, its link, the file's name nor the transcript is ever written to a log, an error report or an analytics event.
 
 > **Added 2026-11-12 (#712, the build session's, Paul's to change).** Four things here were not decided before and took the conservative choice. (1) The audio is deleted when the transcript is written, not when the minutes are posted as [Retention](#retention) used to say: nothing built plays it back, so keeping it would hold a recording of a room for no use. Linking each drafted line to its moment in the audio (Workflow step 4) is therefore not built, and would need the audio kept. (2) The transcript is treated as the officer's notes, kept only while the minutes are a draft, and is not indexed for AI Q&A (Workflow step 7 is not built for transcripts). (3) The provider is AssemblyAI in the model catalog, because it is the only candidate that takes a whole meeting with speaker labels in one request; Google's transcription model is built as the challenger and caps a request at 30 minutes. The vendor is still Paul's pick after a bake-off on a real meeting, and no key exists yet. (4) Whether the tick and the notification are enough in a state that requires everyone's agreement is counsel's question ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)); the wording is working copy. The notes box's limit rose from 40,000 to 160,000 characters so a two-hour transcript fits.
+>
 > - Changed 2026-11-17 by pdcarlson: (1) and (2) no longer hold. The audio is kept for playback until posting (#5381), and the transcript is kept with the posted minutes and indexed for Ask (#5410).
 
 ## Recording in the app
