@@ -44,7 +44,15 @@ const {
   assignMutate,
   releaseMutate,
   toastSpy,
+  searchRef,
+  routerReplace,
+  tasksFetching,
 } = vi.hoisted(() => ({
+  // The address's query (`?group=<id>`, #5538) and the board's replace of it.
+  searchRef: { current: new URLSearchParams() },
+  routerReplace: vi.fn(),
+  // The tasks read re-reading over what it holds.
+  tasksFetching: { current: false },
   // Postings up for grabs, and the writes on them (2026-11-18).
   openTasksRef: { current: [] as unknown[] },
   createOpenTaskMutate: vi.fn(),
@@ -180,6 +188,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useTasks: () => ({
     data: tasksPending.current ? undefined : tasksRef.current,
     isPending: tasksPending.current,
+    isFetching: tasksFetching.current,
     isError: false,
     refetch: vi.fn(),
   }),
@@ -266,6 +275,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDeleteOpenTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchRef.current,
+  useRouter: () => ({ replace: routerReplace }),
+}));
+
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
   useChapterModuleGateState: () => ({
     status: "ready",
@@ -341,6 +355,9 @@ const deleteButtons = () =>
   screen.getAllByRole("button", { name: /^delete /i });
 
 beforeEach(() => {
+  searchRef.current = new URLSearchParams();
+  routerReplace.mockClear();
+  tasksFetching.current = false;
   window.localStorage.clear();
   resetListLayoutForTests();
   // Most cases below read a task's controls off its Grid tile; the List's
@@ -2159,6 +2176,56 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
         name: "Fill out the tabling form, for everyone",
       }),
     ).toBeNull();
+  });
+
+  describe("the group link, /tasks?group=<id> (#5538)", () => {
+    it("opens the group in the task panel and drops the param", async () => {
+      searchRef.current = new URLSearchParams("group=group-1");
+      render(<TasksBoard />);
+      const panel = await screen.findByRole("dialog", {
+        name: "Fill out the tabling form",
+      });
+      // The group's panel, not one member's copy.
+      expect(
+        within(panel).getByRole("region", { name: "Who's done" }),
+      ).toBeInTheDocument();
+      expect(routerReplace).toHaveBeenCalledWith("/tasks", { scroll: false });
+      expect(toastSpy).not.toHaveBeenCalled();
+    });
+
+    it("waits for a re-read before calling a group missing, then says so", async () => {
+      searchRef.current = new URLSearchParams("group=group-new");
+      tasksFetching.current = true;
+      const { rerender } = render(<TasksBoard />);
+      expect(routerReplace).not.toHaveBeenCalled();
+      expect(toastSpy).not.toHaveBeenCalled();
+
+      // The re-read lands with the group in it.
+      tasksRef.current = GROUP.map((task) => ({
+        ...task,
+        group_id: "group-new",
+      }));
+      tasksFetching.current = false;
+      rerender(<TasksBoard />);
+      expect(
+        await screen.findByRole("dialog", {
+          name: "Fill out the tabling form",
+        }),
+      ).toBeInTheDocument();
+      expect(toastSpy).not.toHaveBeenCalled();
+    });
+
+    it("leaves the board as it is for a group the read doesn't hold", async () => {
+      searchRef.current = new URLSearchParams("group=gone");
+      render(<TasksBoard />);
+      await waitFor(() =>
+        expect(routerReplace).toHaveBeenCalledWith("/tasks", { scroll: false }),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Couldn't find that task" }),
+      );
+    });
   });
 });
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Camera,
   CheckCircle2,
@@ -89,6 +90,7 @@ import {
   canReopenOwnTask,
 } from "@repo/hooks";
 import { asArray, cn } from "@/lib/utils";
+import { TASKS_GROUP_PARAM } from "@/lib/tasks/task-links";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { TaskRepeatLine } from "./task-repeat";
@@ -245,6 +247,53 @@ const CONFIRMED_PREVIEW = 4;
 function confirmedAt(task: Task): number {
   const at = Date.parse(task.confirmed_at ?? task.completed_at ?? "");
   return Number.isNaN(at) ? 0 : at;
+}
+
+/**
+ * Reads `?group=<group id>` (`tasksGroupLink`: Activity's row for a task for
+ * everyone, #5538) and opens that group in the task panel once the board's
+ * read holds a copy of it, then drops the param from the address so a
+ * refresh doesn't reopen it, as Activity's `?review=` does. A read that
+ * settles without one (the group was deleted, or the viewer can't read its
+ * copies) says so and leaves the board as it is. Its own component because
+ * `useSearchParams` needs a Suspense boundary of its own.
+ */
+function GroupParam({
+  tasks,
+  settled,
+  onOpen,
+  onMissing,
+}: {
+  tasks: Task[];
+  /** The read is not re-reading: a copy missing now is missing. */
+  settled: boolean;
+  onOpen: (groupId: string) => void;
+  onMissing: () => void;
+}) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const groupId = searchParams?.get(TASKS_GROUP_PARAM) ?? null;
+  const handled = useRef<string | null>(null);
+  // The board hands new callbacks each render; the link is acted on once.
+  const latest = useRef({ onOpen, onMissing });
+  useEffect(() => {
+    latest.current = { onOpen, onMissing };
+  });
+  useEffect(() => {
+    if (!groupId) {
+      handled.current = null;
+      return;
+    }
+    if (handled.current === groupId) return;
+    const held = tasks.some((task) => task.group_id === groupId);
+    // A cached read can predate the group: wait for the re-read to say.
+    if (!held && !settled) return;
+    handled.current = groupId;
+    if (held) latest.current.onOpen(groupId);
+    else latest.current.onMissing();
+    router.replace("/tasks", { scroll: false });
+  }, [groupId, tasks, settled, router]);
+  return null;
 }
 
 export function TasksBoard() {
@@ -1321,6 +1370,19 @@ export function TasksBoard() {
           sendingBack ? sendBack(sendingBack, body) : Promise.resolve()
         }
       />
+      <Suspense fallback={null}>
+        <GroupParam
+          tasks={tasks}
+          settled={!tasksQuery.isFetching}
+          onOpen={(id) => setOpened({ kind: "group", id })}
+          onMissing={() =>
+            toast({
+              title: "Couldn't find that task",
+              description: "It may have been deleted.",
+            })
+          }
+        />
+      </Suspense>
       <TaskPanel
         target={panelTarget}
         onClose={() => setOpened(null)}

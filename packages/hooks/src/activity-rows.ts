@@ -863,11 +863,11 @@ export function activityGroups(
 export interface ActivityGroupsOptions {
   /**
    * Tasks you assigned from `made_by_you.task_items` (#5492), where a task for
-   * everyone is one row that opens its group: the phone's, whose task screen
-   * shows the group. Without it, or from an API before the field, each copy
-   * is its own row (`made_by_you.tasks`), as web still lists them: its panel
-   * draws one task as chat's card, and a group row there would open one
-   * member's copy as if it were the group.
+   * everyone is one row that opens its group: the phone's task screen, and
+   * since #5538 web's Tasks board (`/tasks?group=<id>`), never web's Activity
+   * panel, which draws one task as chat's card. Both clients pass it. Without
+   * it, or from an API before the field, each copy is its own row
+   * (`made_by_you.tasks`).
    */
   taskItems?: boolean;
 }

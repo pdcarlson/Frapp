@@ -95,10 +95,14 @@ member's own answer, not the event's default:
   never takes a slot from a live one. A confirmed one is in the [Archive](#archive).
   The phone lists these, a task for everyone as one row that opens `task_id` (the row:
   [`screens.md` § Inventory](../ui/mobile/screens.md#inventory), Activity; its long press:
-  [`tasks.md` § Long press on the phone](tasks.md#long-press-on-the-phone)). Web still lists
-  `tasks`, a row per copy: its Activity panel draws one task as chat's card and its task panel
-  opens a group only on the board, so a group row there would open one member's copy as if it
-  were the group.
+  [`tasks.md` § Long press on the phone](tasks.md#long-press-on-the-phone)). Web lists them too
+  ([#5538](https://github.com/frapplive/Frapp/issues/5538), 2026-11-18): a task for everyone is one
+  row that goes to the Tasks board with the group open in its task panel
+  (`/tasks?group=<id>`, [`tasks.md` § Tasks for everyone](tasks.md#tasks-for-everyone)), not to
+  Activity's panel, which draws one task as chat's card and would show one member's copy as if it
+  were the group; a one-person task still opens Activity's panel. Until then web listed `tasks`,
+  a row per copy. A review link (`/activity?review=<id>`) for the copy a group's row opens, when
+  nothing waits on the viewer's review for it, goes to the group on the board the same way.
   `tasks` is still served unchanged: each copy its own row, the newest 25 the caller assigned,
   confirmed ones included, for phone builds from before `task_items`, which list those not yet
   confirmed and drop the confirmed (#5127). Both only while the caller still holds `tasks:manage`:

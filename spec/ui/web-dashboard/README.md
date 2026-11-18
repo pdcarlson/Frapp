@@ -514,6 +514,9 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   **Polls you posted lists open polls only** ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11): a poll closed by hand or past its closing time leaves the list, the moment its time runs out if the page is open, for an **Archived polls (N)** text button at the foot of the group, which opens the closed ones newest closed first, each opening its card with the final result.
   (Changed in [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15: Archived polls is gone; a closed poll is in the Archive below with everything else that is over.)
   Tasks you assigned likewise leaves out a confirmed task.
+  **A task for everyone is one row** ([#5538](https://github.com/frapplive/Frapp/issues/5538), 2026-11-18, as the phone has drawn it since #5492): its title, who it went to and when it is due ("Everyone · Due Fri", `taskGroupLabel`), a stack of up to three faces of whom it went to with "+N" for the rest, then the progress bar and "12 of 30" (read "12 of 30 done"), and **Overdue** when any copy is.
+  It is a link to the Tasks board with the group open in its task panel (`/tasks?group=<id>`, [`tasks.md` § Tasks for everyone](../../behavior/tasks.md#tasks-for-everyone)), never Activity's panel, which draws one task; a one-person task still opens Activity's panel.
+  Until then web listed a row per copy, so one task sent to 30 members was 30 rows.
   To do likewise drops a poll whose time ran out since the read.
   A group with nothing in it is left out rather than drawn as an empty line.
   **A poll you posted, while open, and an event you made, once its check-in opens, say how far along they are** ([#4792](https://github.com/pdcarlson/Frapp/issues/4792)): a thin bar and "41 of 60" under the detail, as on the phone, the bar `aria-hidden` and the count read whole ("41 of 60 voted");

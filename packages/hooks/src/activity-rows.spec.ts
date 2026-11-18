@@ -1427,14 +1427,14 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
     expect(onTime!.badge).toBeNull();
   });
 
-  it("falls back to each copy from an API before task_items, and web stays on it", () => {
+  it("falls back to each copy from an API before task_items, or when not asked for them", () => {
     const old = madeTasks(read(undefined));
     expect(old).toHaveLength(31);
     expect(old.every((row) => row.kind === "task")).toBe(true);
-    // Web asks for no task_items: one row per copy, as before.
-    const web = madeTasks(read([{ kind: "group", group: group() }]), false);
-    expect(web).toHaveLength(31);
-    expect(web.every((row) => row.kind === "task")).toBe(true);
+    // Not asked for: one row per copy, as before.
+    const perCopy = madeTasks(read([{ kind: "group", group: group() }]), false);
+    expect(perCopy).toHaveLength(31);
+    expect(perCopy.every((row) => row.kind === "task")).toBe(true);
   });
 
   it("finds the group's row by the copy it opens", () => {
