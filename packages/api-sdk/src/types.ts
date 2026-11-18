@@ -8275,7 +8275,7 @@ export interface components {
             point_value?: number;
             is_mandatory?: boolean;
         };
-        MeetingSummaryDto: {
+        MeetingListItemDto: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -8294,6 +8294,17 @@ export interface components {
             posted_at: string | null;
             /** Format: date-time */
             updated_at: string;
+            /**
+             * Format: uuid
+             * @description The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see.
+             */
+            series_key: string | null;
+            /** @description The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series. */
+            series_rule: string | null;
+            decision_count: number;
+            action_item_count: number;
+            /** @description A recording was used for these minutes. */
+            recorded: boolean;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -17250,7 +17261,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MeetingSummaryDto"][];
+                    "application/json": components["schemas"]["MeetingListItemDto"][];
                 };
             };
             /** @description Error */

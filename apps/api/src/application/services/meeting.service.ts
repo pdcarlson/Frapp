@@ -39,6 +39,15 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
+/** A Minutes list row's facts beyond the row (`MeetingService.listFacts`). */
+export interface MeetingListFacts {
+  series_key: string | null;
+  series_rule: string | null;
+  decision_count: number;
+  action_item_count: number;
+  recorded: boolean;
+}
+
 /**
  * What a feature does each time posted minutes are saved: when they are
  * posted, and on every edit after. See `MeetingService.onPostedMinutesSaved`.
@@ -182,6 +191,64 @@ export class MeetingService {
           .then((row) => (row ? [row] : []))
       : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT);
     return this.readableRows(chapterId, viewerId, rows);
+  }
+
+  /**
+   * What the Minutes list shows on each row beyond the row itself (#5290):
+   * the series its event belongs to (the head's id, as
+   * `packages/hooks/src/event-series.ts` keys it) with the head's repeat
+   * rule, how many decisions and action items it holds, and whether a
+   * recording was used. Read in three reads however many rows: the events
+   * the viewer may see, their series' heads, and the drafts' recordings. An
+   * event the viewer can't see (an editor reading every row) gives no series.
+   */
+  async listFacts(
+    chapterId: string,
+    viewerId: string,
+    rows: readonly Meeting[],
+  ): Promise<Map<string, MeetingListFacts>> {
+    const eventIds = rows.flatMap((row) => (row.event_id ? [row.event_id] : []));
+    const events = new Map(
+      (
+        await this.events.findVisibleByIds(eventIds, chapterId, viewerId)
+      ).map((event) => [event.id, event]),
+    );
+    const headIds = [...events.values()].flatMap((event) =>
+      event.parent_event_id && !events.has(event.parent_event_id)
+        ? [event.parent_event_id]
+        : [],
+    );
+    for (const head of await this.events.findVisibleByIds(
+      headIds,
+      chapterId,
+      viewerId,
+    )) {
+      events.set(head.id, head);
+    }
+    const drafts = rows.flatMap((row) =>
+      row.status === 'draft' ? [row.id] : [],
+    );
+    const recorded = await this.meetingRepo.findRecordedIds(chapterId, drafts);
+
+    const facts = new Map<string, MeetingListFacts>();
+    for (const row of rows) {
+      const event = row.event_id ? events.get(row.event_id) : undefined;
+      const seriesKey = event
+        ? (event.parent_event_id ??
+          (event.recurrence_rule ? event.id : null))
+        : null;
+      const content = readMeetingContent(row.content);
+      facts.set(row.id, {
+        series_key: seriesKey,
+        series_rule: seriesKey
+          ? (events.get(seriesKey)?.recurrence_rule ?? null)
+          : null,
+        decision_count: content.decisions.length,
+        action_item_count: content.action_items.length,
+        recorded: row.transcript !== null || recorded.has(row.id),
+      });
+    }
+    return facts;
   }
 
   /**

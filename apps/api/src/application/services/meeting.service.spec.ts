@@ -134,6 +134,8 @@ describe('MeetingService', () => {
   >;
   let notifyMembers: jest.Mock;
   let service: MeetingService;
+  // Drafts with a recording row (`meeting_recordings`) that hasn't failed.
+  let recordedDrafts: Set<string>;
 
   const has = (userId: string, permission: string) => {
     const held = PERMISSIONS[userId] ?? [];
@@ -150,6 +152,7 @@ describe('MeetingService', () => {
       [EXEC_EVENT.id, EXEC_EVENT],
     ]);
     rows = new Map();
+    recordedDrafts = new Set();
     repo = {
       findById: jest.fn(async (_chapterId, id) => rows.get(id) ?? null),
       findByEvent: jest.fn(
@@ -182,6 +185,10 @@ describe('MeetingService', () => {
       delete: jest.fn(async (_chapterId, id) => {
         rows.delete(id);
       }),
+      findRecordedIds: jest.fn(
+        async (_chapterId: string, ids: readonly string[]) =>
+          new Set(ids.filter((id) => recordedDrafts.has(id))),
+      ),
       findTemplate: jest.fn().mockResolvedValue(null),
       upsertTemplate: jest.fn(async (chapterId, sections, updatedBy) => ({
         chapter_id: chapterId,
@@ -275,6 +282,73 @@ describe('MeetingService', () => {
       rbac as unknown as RbacService,
       { notifyMembers } as unknown as NotificationService,
     );
+  });
+
+  describe('listFacts (#5290)', () => {
+    it('keys a repeating event by its first event, with the rule, and counts what the minutes hold', async () => {
+      // A generated occurrence points at its series' head.
+      events.set(
+        'evt-head',
+        event({ id: 'evt-head', recurrence_rule: 'WEEKLY' }),
+      );
+      events.set(
+        'evt-occ',
+        event({
+          id: 'evt-occ',
+          parent_event_id: 'evt-head',
+          recurrence_rule: null,
+        }),
+      );
+      const occurrence = meeting({
+        id: 'mtg-occ',
+        event_id: 'evt-occ',
+        status: 'posted',
+        transcript: 'Words.',
+        content: {
+          ...EMPTY_MEETING_CONTENT,
+          decisions: [{ text: 'Dues due Friday', vote: null }],
+          action_items: [
+            { text: 'Book the venue', owner_user_id: null, due_date: null },
+            { text: 'Send reminder', owner_user_id: null, due_date: null },
+          ],
+        },
+      });
+      const oneOff = meeting({ id: 'mtg-one' });
+      recordedDrafts.add('mtg-one');
+      const facts = await service.listFacts(CHAPTER, PRESIDENT, [
+        occurrence,
+        oneOff,
+      ]);
+      expect(facts.get('mtg-occ')).toEqual({
+        series_key: 'evt-head',
+        series_rule: 'WEEKLY',
+        decision_count: 1,
+        action_item_count: 2,
+        recorded: true,
+      });
+      expect(facts.get('mtg-one')).toEqual({
+        series_key: null,
+        series_rule: null,
+        decision_count: 0,
+        action_item_count: 0,
+        recorded: true,
+      });
+    });
+
+    it('gives no series for an event the reader cannot see, and asks about recordings only for drafts', async () => {
+      const posted = meeting({
+        id: 'mtg-exec',
+        event_id: EXEC_EVENT.id,
+        status: 'posted',
+      });
+      events.set(EXEC_EVENT.id, { ...EXEC_EVENT, recurrence_rule: 'WEEKLY' });
+      const facts = await service.listFacts(CHAPTER, JAKE, [posted]);
+      expect(facts.get('mtg-exec')).toMatchObject({
+        series_key: null,
+        recorded: false,
+      });
+      expect(repo.findRecordedIds).toHaveBeenCalledWith(CHAPTER, []);
+    });
   });
 
   describe('Standards meetings', () => {
