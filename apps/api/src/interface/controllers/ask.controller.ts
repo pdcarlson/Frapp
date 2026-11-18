@@ -35,6 +35,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
 import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
+import { AskDictationService } from '../../application/services/ask/ask-dictation.service';
 import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { AnalyticsService } from '../../application/services/analytics.service';
@@ -50,6 +51,8 @@ import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { ActResponseDto } from '../dtos/act.dto';
 import {
   AskDiagnosticsDto,
+  AskDictationRequestDto,
+  AskDictationResponseDto,
   AskRequestDto,
   AskStatusDto,
   AskSuggestionsDto,
@@ -103,6 +106,7 @@ export class AskController {
     private readonly diagnostics: AskDiagnosticsService,
     private readonly suggestions: AskSuggestionsService,
     private readonly analytics: AnalyticsService,
+    private readonly dictation: AskDictationService,
   ) {}
 
   @Get()
@@ -291,6 +295,41 @@ export class AskController {
       clearInterval(keepalive);
       response.end();
     }
+  }
+
+  @Post('dictation')
+  @HttpCode(200)
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary: 'Tidy up words dictated into Ask',
+    description:
+      'The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.',
+  })
+  @ApiOkResponse({ type: AskDictationResponseDto })
+  @ApiForbiddenResponse({
+    description:
+      'The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words.',
+  })
+  @ApiNotFoundResponse(AI_OFF)
+  async cleanDictation(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: AskDictationRequestDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AskDictationResponseDto> {
+    // The member left Ask: stop the model call and its spend. `close` also
+    // fires after a normal end, when aborting does nothing.
+    const abort = new AbortController();
+    response.on('close', () => abort.abort());
+    if (response.destroyed) abort.abort();
+    return {
+      text: await this.dictation.clean({
+        chapterId,
+        userId,
+        text: dto.text,
+        signal: abort.signal,
+      }),
+    };
   }
 
   @Post('diagnostics')

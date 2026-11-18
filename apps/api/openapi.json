@@ -18634,6 +18634,60 @@
         ]
       }
     },
+    "/v1/ai/ask/dictation": {
+      "post": {
+        "description": "The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.",
+        "operationId": "AskController_cleanDictation_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskDictationRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskDictationResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Tidy up words dictated into Ask",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
     "/v1/ai/ask/diagnostics": {
       "post": {
         "description": "The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.",
@@ -35087,6 +35141,33 @@
         },
         "required": [
           "question"
+        ]
+      },
+      "AskDictationRequestDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.",
+            "example": "um so when is the uh chapter meeting thursday no friday",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "AskDictationResponseDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.",
+            "example": "When is the chapter meeting Friday?"
+          }
+        },
+        "required": [
+          "text"
         ]
       },
       "ActStatusDto": {

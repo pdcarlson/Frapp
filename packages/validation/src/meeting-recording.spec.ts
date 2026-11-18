@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  transcriptTurns,
   MAX_MEETING_RECORDING_BYTES,
   MAX_MEETING_RECORDING_SECONDS,
   MEETING_RECORDER_COPY,
@@ -213,5 +214,19 @@ describe("the phone's recorder", () => {
       "A recording of 1 hour 12 minutes is on this phone, not yet uploaded.",
     );
     expect(MEETING_RECORDER_COPY.lowStorage(122 * 1_048_576)).toContain("122 MB");
+  });
+});
+
+describe("transcriptTurns", () => {
+  it("leads each turn with its speaker, and keeps a line that names none", () => {
+    expect(
+      transcriptTurns(
+        "Speaker 1: Call to order.\n\n  Applause\nSpeaker 2: Dues: $40.",
+      ),
+    ).toEqual([
+      { speaker: "Speaker 1", text: "Call to order." },
+      { speaker: null, text: "Applause" },
+      { speaker: "Speaker 2", text: "Dues: $40." },
+    ]);
   });
 });

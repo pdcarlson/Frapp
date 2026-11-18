@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASK_COPY,
+  ASK_DICTATION_MAX_LENGTH,
   ASK_STEPS,
   ASK_STREAM_KEEPALIVE,
   ASK_STREAM_VERSION,
@@ -534,5 +535,11 @@ describe("a thread reply that names @Frapp (#4713)", () => {
     expect(
       replyAskRefusal("@Jordan Frapp you in?", ["Jordan Frapp"], "yes"),
     ).toBeNull();
+  });
+});
+
+describe("ASK_DICTATION_MAX_LENGTH", () => {
+  it("takes as many words as a question, since they become one", () => {
+    expect(ASK_DICTATION_MAX_LENGTH).toBe(ASK_QUESTION_MAX_LENGTH);
   });
 });

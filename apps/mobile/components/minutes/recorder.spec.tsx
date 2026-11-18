@@ -342,7 +342,7 @@ describe("the recorder on the minutes screen", () => {
       tree.root.findAll(
         (node) =>
           node.props.accessibilityLabel ===
-          `${MEETING_RECORDER_COPY.steps.transcribed}, in progress`,
+          `${MEETING_RECORDER_COPY.stepsRunning.transcribed}, in progress`,
       ).length,
     ).toBeGreaterThan(0);
     await press(tree, MEETING_RECORDER_COPY.stopTranscribing);

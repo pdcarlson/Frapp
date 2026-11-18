@@ -17,6 +17,7 @@ import {
 import {
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
+  MEETING_COPY,
   MEETING_NOTE_TAKERS_COPY,
   meetingWhenLabel,
 } from "@repo/validation";
@@ -296,7 +297,19 @@ export function NoteTakersList({
                       : row.detail}
                   </p>
                 </div>
-                {row.text ? (
+                {row.key === "recording" ? (
+                  // An hour of transcript opens in its own tab, beside the
+                  // draft, not under it (Paul, 2026-11-18).
+                  <Button size="sm" variant="ghost" asChild>
+                    <Link
+                      href={`/meetings/${meetingId}/transcript`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      {MEETING_COPY.openTranscript}
+                    </Link>
+                  </Button>
+                ) : row.text ? (
                   <Button
                     size="sm"
                     variant="ghost"

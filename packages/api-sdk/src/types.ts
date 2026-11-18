@@ -5608,6 +5608,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask/dictation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tidy up words dictated into Ask
+         * @description The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.
+         */
+        post: operations["AskController_cleanDictation_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/ask/diagnostics": {
         parameters: {
             query?: never;
@@ -11318,6 +11338,20 @@ export interface components {
              * @enum {string}
              */
             effort?: "default" | "more";
+        };
+        AskDictationRequestDto: {
+            /**
+             * @description What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.
+             * @example um so when is the uh chapter meeting thursday no friday
+             */
+            text: string;
+        };
+        AskDictationResponseDto: {
+            /**
+             * @description The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.
+             * @example When is the chapter meeting Friday?
+             */
+            text: string;
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -24527,6 +24561,52 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AskSuggestionsDto"];
                 };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_cleanDictation_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskDictationRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDictationResponseDto"];
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description AI is off on this server (`ai.not_available`). */
             404: {

@@ -57,6 +57,8 @@ export const SCREEN_TITLES = {
   minutes: "Minutes",
   // One meeting's minutes: the capsule over it says where back goes.
   "minutes-details": "Minutes",
+  // A meeting's transcript, pushed from its minutes (Paul, 2026-11-18).
+  "minutes-transcript": "Transcript",
   // Tasks and, since #3930, events: `AI_SUGGESTION_COPY.listHeading`.
   "suggested-tasks": "Suggested",
   "arrange-channels": "Arrange channels",
