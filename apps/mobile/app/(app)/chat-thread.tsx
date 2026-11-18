@@ -216,6 +216,12 @@ function alertJumpMiss(reason: JumpMissReason) {
   Alert.alert("Couldn't open that message", JUMP_MISS_COPY[reason]);
 }
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import {
+  MessageMenuCell,
+  MessageMenuFocusProvider,
+  MessageMenuRoom,
+  useMessageMenuRoom,
+} from "@/lib/chat/message-menu-room";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { selectionHaptic } from "@/lib/haptics";
@@ -763,6 +769,21 @@ function ChannelThreadScreen() {
     jumpToMessage,
     onScrollToIndexFailed: handleScrollToIndexFailed,
   } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The long-press menu takes the keyboard's place (#5479): the thread leaves
+  // it room under the composer and keeps the pressed message in view above
+  // it, at the bottom of what's left.
+  const revealForMenu = useCallback(
+    (messageId: string) => jumpToMessage(messageId, { viewPosition: 0 }),
+    [jumpToMessage],
+  );
+  const {
+    sheetHeight: menuHeight,
+    room: menuRoomHeight,
+    shown: menuShown,
+    listRef: menuListRef,
+    focus: menuFocus,
+    onMenuOpenChange,
+  } = useMessageMenuRoom(revealForMenu);
   // The "1 important message" strip (#4186): the server decides what counts
   // and what was seen. Show jumps to the oldest unseen one, paging older
   // history for it when it isn't loaded; rows scrolled onto the screen count
@@ -1465,9 +1486,11 @@ function ChannelThreadScreen() {
           ? { pinned: !!message.is_pinned }
           : undefined,
       });
+      onMenuOpenChange(message.id);
       actionsSheetRef.current?.present();
     },
     [
+      onMenuOpenChange,
       blockState,
       canManageChannel,
       channelId,
@@ -1563,8 +1586,9 @@ function ChannelThreadScreen() {
       return (
         // One view, not a fragment: an inverted list's cell is laid out
         // bottom-up (`column-reverse`, in `VirtualizedListCellRenderer`), so
-        // a second child of the cell would be drawn above the message.
-        <View>
+        // a second child of the cell would be drawn above the message. It is
+        // the one the long-press menu highlights (#5479).
+        <MessageMenuCell messageId={item.message.id}>
           {row}
           {/* A question this member asked Frapp under this message, for them
               alone (#4713). Not a row of its own: the list's rows and keys
@@ -1573,7 +1597,7 @@ function ChannelThreadScreen() {
             placement={askPlacement}
             rowKey={item.message.client_message_id}
           />
-        </View>
+        </MessageMenuCell>
       );
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
@@ -2009,71 +2033,79 @@ function ChannelThreadScreen() {
               <FormFillContext.Provider value={formFill.open}>
                 {/* Which `@`-tokens in the rows really pinged someone. */}
                 <MentionChipTargetsContext.Provider value={mentionChipTargets}>
-                  {/* The list and the jump control over its corner. */}
-                  <View style={styles.flex}>
-                    {/* Behind the messages only (#3973, #3779). */}
-                    <ChatBackground channelId={channelId ?? null} />
-                    <FlatList
-                      // One list per channel. The screen stays mounted across a
-                      // switch, so a shared list kept the last channel's scroll
-                      // offset and opened a cached channel mid-history, with no
-                      // jump control to say so. A fresh list opens at offset 0,
-                      // the newest message.
-                      key={channelId ?? undefined}
-                      ref={listRef}
-                      onScrollToIndexFailed={handleScrollToIndexFailed}
-                      viewabilityConfig={viewability.viewabilityConfig}
-                      onViewableItemsChanged={
-                        viewability.onViewableItemsChanged
-                      }
-                      data={inverted}
-                      renderItem={renderItem}
-                      // `client_message_id` is always present and is stable across
-                      // the optimistic → confirmed transition, which the server id
-                      // is not.
-                      keyExtractor={(item) => item.message.client_message_id}
-                      inverted
-                      // A new message is inserted at index 0, the scroll origin of
-                      // an inverted list, so without this every arrival moved what
-                      // a member reading back through history was reading by a
-                      // row. The native scroll view keeps the first visible row
-                      // where it was (iOS, and Android's Fabric scroll view in RN
-                      // 0.86, which this app runs) and, within
-                      // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
-                      // to show the arrival instead. Older pages append at the far
-                      // end, which this never touches.
-                      maintainVisibleContentPosition={MAINTAIN_POSITION}
-                      onScroll={latest.onScroll}
-                      onLayout={latest.onLayout}
-                      // A tap on a reaction, link, photo, quote or Retry acts at
-                      // once with the keyboard up; React Native's default spent
-                      // that tap on dismissing the keyboard. Dragging the thread
-                      // puts the keyboard away, as every messenger does, and so
-                      // does a tap on a plain message (`MessageRowFrame`). A tap
-                      // on a card's body doesn't (#3461): the card's own
-                      // long-press Pressable takes it first.
-                      // `on-drag` rather than iOS's `interactive`, on both: the
-                      // avoiding view under the composer follows keyboard frame
-                      // events, which an interactive drag only sends at its end,
-                      // so the composer would hang in mid-air while the keyboard
-                      // followed the finger down.
-                      keyboardShouldPersistTaps="handled"
-                      keyboardDismissMode="on-drag"
-                      onEndReached={handleEndReached}
-                      onEndReachedThreshold={0.5}
-                      // An inverted list draws its footer at the top, above the
-                      // oldest loaded row.
-                      ListFooterComponent={historyEdge}
-                      contentContainerStyle={styles.listContent}
+                  {/* The list and the jump control over its corner. Measured
+                      by the long-press menu, to tell whether the message it
+                      acts on is still in view above it (#5479). */}
+                  <MessageMenuFocusProvider value={menuFocus}>
+                    <View
+                      ref={menuListRef}
+                      collapsable={false}
                       style={styles.flex}
-                    />
-                    {latest.showsJump ? (
-                      <JumpToLatestButton
-                        hasNew={latest.hasNewBelow}
-                        onPress={() => jumpToLatest()}
+                    >
+                      {/* Behind the messages only (#3973, #3779). */}
+                      <ChatBackground channelId={channelId ?? null} />
+                      <FlatList
+                        // One list per channel. The screen stays mounted across a
+                        // switch, so a shared list kept the last channel's scroll
+                        // offset and opened a cached channel mid-history, with no
+                        // jump control to say so. A fresh list opens at offset 0,
+                        // the newest message.
+                        key={channelId ?? undefined}
+                        ref={listRef}
+                        onScrollToIndexFailed={handleScrollToIndexFailed}
+                        viewabilityConfig={viewability.viewabilityConfig}
+                        onViewableItemsChanged={
+                          viewability.onViewableItemsChanged
+                        }
+                        data={inverted}
+                        renderItem={renderItem}
+                        // `client_message_id` is always present and is stable across
+                        // the optimistic → confirmed transition, which the server id
+                        // is not.
+                        keyExtractor={(item) => item.message.client_message_id}
+                        inverted
+                        // A new message is inserted at index 0, the scroll origin of
+                        // an inverted list, so without this every arrival moved what
+                        // a member reading back through history was reading by a
+                        // row. The native scroll view keeps the first visible row
+                        // where it was (iOS, and Android's Fabric scroll view in RN
+                        // 0.86, which this app runs) and, within
+                        // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
+                        // to show the arrival instead. Older pages append at the far
+                        // end, which this never touches.
+                        maintainVisibleContentPosition={MAINTAIN_POSITION}
+                        onScroll={latest.onScroll}
+                        onLayout={latest.onLayout}
+                        // A tap on a reaction, link, photo, quote or Retry acts at
+                        // once with the keyboard up; React Native's default spent
+                        // that tap on dismissing the keyboard. Dragging the thread
+                        // puts the keyboard away, as every messenger does, and so
+                        // does a tap on a plain message (`MessageRowFrame`). A tap
+                        // on a card's body doesn't (#3461): the card's own
+                        // long-press Pressable takes it first.
+                        // `on-drag` rather than iOS's `interactive`, on both: the
+                        // avoiding view under the composer follows keyboard frame
+                        // events, which an interactive drag only sends at its end,
+                        // so the composer would hang in mid-air while the keyboard
+                        // followed the finger down.
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="on-drag"
+                        onEndReached={handleEndReached}
+                        onEndReachedThreshold={0.5}
+                        // An inverted list draws its footer at the top, above the
+                        // oldest loaded row.
+                        ListFooterComponent={historyEdge}
+                        contentContainerStyle={styles.listContent}
+                        style={styles.flex}
                       />
-                    ) : null}
-                  </View>
+                      {latest.showsJump ? (
+                        <JumpToLatestButton
+                          hasNew={latest.hasNewBelow}
+                          onPress={() => jumpToLatest()}
+                        />
+                      ) : null}
+                    </View>
+                  </MessageMenuFocusProvider>
                 </MentionChipTargetsContext.Provider>
               </FormFillContext.Provider>
             </ImageViewerContext.Provider>
@@ -2211,6 +2243,8 @@ function ChannelThreadScreen() {
             />
           )}
         </View>
+        {/* Where the keyboard would be, while the long-press menu is (#5479). */}
+        <MessageMenuRoom room={menuRoomHeight} shown={menuShown} />
         {/*
           Last, so it is above the header, the inverted list and the composer
           in paint order and in hit-testing (#2033). The menu used to hang off
@@ -2250,6 +2284,8 @@ function ChannelThreadScreen() {
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        height={menuHeight}
+        onDismiss={() => onMenuOpenChange(null)}
         nameFor={nameFor}
         viewerId={viewerId}
         onSenderDeparted={markDeparted}

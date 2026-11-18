@@ -38,6 +38,9 @@ export function useJumpToMessage<L extends JumpableList>(
     rowsRef.current = rows;
   }, [rows]);
   const targetRef = useRef<string | null>(null);
+  // Where the jump puts the row: the middle, or (0) the bottom of an
+  // inverted list, which is where the message menu shows it (#5479).
+  const positionRef = useRef(0.5);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelRetry = useCallback(() => {
@@ -50,15 +53,16 @@ export function useJumpToMessage<L extends JumpableList>(
     rowsRef.current.findIndex((row) => row.message.id === messageId);
 
   const jumpToMessage = useCallback(
-    (messageId: string) => {
+    (messageId: string, options?: { viewPosition?: number }) => {
       const index = indexOf(messageId);
       if (index === -1) return;
       cancelRetry();
       targetRef.current = messageId;
+      positionRef.current = options?.viewPosition ?? 0.5;
       listRef.current?.scrollToIndex({
         index,
         animated: true,
-        viewPosition: 0.5,
+        viewPosition: positionRef.current,
       });
     },
     [cancelRetry],
@@ -81,7 +85,7 @@ export function useJumpToMessage<L extends JumpableList>(
         listRef.current?.scrollToIndex({
           index,
           animated: true,
-          viewPosition: 0.5,
+          viewPosition: positionRef.current,
         });
       }, JUMP_RETRY_MS);
     },

@@ -129,6 +129,12 @@ import { useRemindMessage } from "@/lib/chat/message-reminder";
 import { useConnection } from "@/lib/connection/use-connection";
 import { goBackTo } from "@/lib/href";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import {
+  MessageMenuCell,
+  MessageMenuFocusProvider,
+  MessageMenuRoom,
+  useMessageMenuRoom,
+} from "@/lib/chat/message-menu-room";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The typing line's line height, as s05's (`chat-thread.tsx`) says why. */
@@ -627,6 +633,28 @@ export function MessageThreadScreen({
     [rootId, listRef, jumpToMessage],
   );
 
+  // The long-press menu takes the keyboard's place (#5479), as the channel's
+  // does. The parent heads the list rather than being a row, so it is
+  // revealed by scrolling to the top.
+  const revealForMenu = useCallback(
+    (messageId: string) => {
+      if (messageId === rootId) {
+        listRef.current?.scrollToEnd({ animated: true });
+        return;
+      }
+      jumpToMessage(messageId, { viewPosition: 0 });
+    },
+    [rootId, listRef, jumpToMessage],
+  );
+  const {
+    sheetHeight: menuHeight,
+    room: menuRoomHeight,
+    shown: menuShown,
+    listRef: menuListRef,
+    focus: menuFocus,
+    onMenuOpenChange,
+  } = useMessageMenuRoom(revealForMenu);
+
   // Members a block attempt proved are not in this chapter, as the channel
   // keeps them (`DepartedMembers`): only "known departed" withholds Block.
   const chapterId = useActiveChapterId();
@@ -703,9 +731,11 @@ export function MessageThreadScreen({
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
       });
+      onMenuOpenChange(message.id);
       actionsSheetRef.current?.present();
     },
     [
+      onMenuOpenChange,
       viewerId,
       blockState,
       isMember,
@@ -756,31 +786,33 @@ export function MessageThreadScreen({
           (rootQuoted?.id === quotedId ? rootQuoted : null))
         : undefined;
       return (
-        <ThreadMessageRow
-          row={row}
-          startsRun={placement.startsRun}
-          endsRun={placement.endsRun}
-          startsDay={placement.startsDay}
-          viewerId={viewerId}
-          nameFor={nameFor}
-          roleColorFor={roleColorFor}
-          avatarFor={avatarFor}
-          replyParent={replyParent}
-          blockState={blockState}
-          onVote={onVote}
-          onClosePoll={onClosePoll}
-          onCloseCard={onCloseCard}
-          onRetry={onRetry}
-          onDiscard={thread.discard}
-          onReact={onReact}
-          onUnreact={onUnreact}
-          onOpenActions={openActions}
-          onJumpToMessage={onJumpToMessage}
-          onUnblock={onUnblock}
-          maskedRefresh={maskedRefresh}
-          onReload={onReload}
-          memberAvatarFor={memberAvatarFor}
-        />
+        <MessageMenuCell messageId={row.message.id}>
+          <ThreadMessageRow
+            row={row}
+            startsRun={placement.startsRun}
+            endsRun={placement.endsRun}
+            startsDay={placement.startsDay}
+            viewerId={viewerId}
+            nameFor={nameFor}
+            roleColorFor={roleColorFor}
+            avatarFor={avatarFor}
+            replyParent={replyParent}
+            blockState={blockState}
+            onVote={onVote}
+            onClosePoll={onClosePoll}
+            onCloseCard={onCloseCard}
+            onRetry={onRetry}
+            onDiscard={thread.discard}
+            onReact={onReact}
+            onUnreact={onUnreact}
+            onOpenActions={openActions}
+            onJumpToMessage={onJumpToMessage}
+            onUnblock={onUnblock}
+            maskedRefresh={maskedRefresh}
+            onReload={onReload}
+            memberAvatarFor={memberAvatarFor}
+          />
+        </MessageMenuCell>
       );
     },
     [
@@ -983,11 +1015,14 @@ export function MessageThreadScreen({
             />
           ) : null}
 
-          <View style={styles.flex}>
-            {/* The channel's chat background (#3973), as behind its list. */}
-            <ChatBackground channelId={channelId} />
-            {body}
-          </View>
+          {/* Measured by the long-press menu (#5479), as the channel's. */}
+          <MessageMenuFocusProvider value={menuFocus}>
+            <View ref={menuListRef} collapsable={false} style={styles.flex}>
+              {/* The channel's chat background (#3973), as behind its list. */}
+              <ChatBackground channelId={channelId} />
+              {body}
+            </View>
+          </MessageMenuFocusProvider>
 
           {/* Not a live region, and the blank hidden, as s05's line is: one
             that changes with every pause would talk over the thread. */}
@@ -1073,6 +1108,8 @@ export function MessageThreadScreen({
                 : "muted"
             }
           />
+          {/* Where the keyboard would be, while the long-press menu is. */}
+          <MessageMenuRoom room={menuRoomHeight} shown={menuShown} />
         </KeyboardAvoidingArea>
       </FormFillContext.Provider>
       {catchUp.sheets}
@@ -1088,6 +1125,8 @@ export function MessageThreadScreen({
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        height={menuHeight}
+        onDismiss={() => onMenuOpenChange(null)}
         nameFor={nameFor}
         viewerId={viewerId}
         onSenderDeparted={markDeparted}

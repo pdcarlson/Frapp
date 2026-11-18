@@ -334,7 +334,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const labels = menu
       .findAll(
@@ -372,7 +372,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const labels = menu
       .findAll(
@@ -412,7 +412,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     const modal = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     act(() => modal.props.onDismiss());
     expect(hasRow(tree, "Copy text")).toBe(true);
@@ -706,7 +706,7 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
   };
 
   type ModalProps = Record<string, unknown>;
-  const isMenu = (props: ModalProps) => props.enableDynamicSizing === true;
+  const isMenu = (props: ModalProps) => props.enableOverDrag === false;
   // The report form is the other `replace` sheet; the picker is the tall one.
   const isPicker = (props: ModalProps) =>
     props.stackBehavior === "replace" &&
@@ -976,7 +976,7 @@ describe("MessageActionsSheet — menu", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const report = tree.root.find(
       (node) => node.props.snapPoints?.[0] === "85%",
@@ -1030,7 +1030,7 @@ describe("MessageActionsSheet — menu", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const order = menu
       .findAll(
@@ -1073,7 +1073,7 @@ describe("MessageActionsSheet — menu", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const labels = menu
       .findAll(

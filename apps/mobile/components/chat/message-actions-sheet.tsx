@@ -15,11 +15,7 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetTextInput,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   CHAT_REPORT_DETAILS_MAX_LENGTH,
   useReportMessage,
@@ -35,6 +31,7 @@ import {
   SheetHeader,
   SheetPrimaryButton,
   SheetScrim,
+  SheetClearScrim,
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
@@ -70,6 +67,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { MESSAGE_FLAG_OPTIONS } from "@repo/chat-core/flags";
 import type { ChatMessageFlag } from "@repo/validation";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
+import { useMessageMenuHeight } from "@/lib/chat/message-menu-room";
 
 /**
  * The actions on one message: react to it, reply to it, edit or delete it
@@ -78,10 +76,21 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * message or card in s05, by the `+` chip after its reactions, or by the
  * "Message actions" accessibility action.
  *
+ * **It takes the keyboard's place, not the screen** (#5479; Paul,
+ * 2026-11-18: "It should just replace the keyboard"). It opens at the
+ * keyboard's height (`useMessageMenuHeight`) and has no taller detent: a drag
+ * up doesn't grow it, its rows scroll inside it, and a drag down closes it.
+ * The thread leaves that room under its composer and keeps the pressed
+ * message in view above it, highlighted (`useMessageMenuRoom`), as iMessage,
+ * WhatsApp and Telegram do. So the scrim is clear (`SheetClearScrim`): the
+ * message must read at full strength, and a tap above still closes the menu.
+ *
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
  * conversation actions (Reply, Start thread, Forward, Edit), then the copy-and-reference ones (Copy
- * text, Mark unread, Copy message link, Pin message, Save message, Mention), then Report and Delete last. Rows are bare labels: a menu
+ * text, Mark unread, Copy message link, Pin message, Save message, Mention), then the Flag
+ * chips, then Report and Delete last. Flag sat above the copy rows until
+ * #5479; its six chips pushed Copy text out of a keyboard-high sheet. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
  *
@@ -133,14 +142,12 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * reminder then waits under Reminders on Activity.
  *
  * **Separate sheets, not one with panes.** The menu is the quick reactions and
- * a handful of rows (Reply, Edit, Copy text, Save and Delete on your own
- * message; Reply, Copy text, Save, Mention, Report and Delete on someone
- * else's, and Pin for an officer) and sizes to its content; the emoji picker and the report form each scroll. The report
+ * the rows above, at one keyboard-high detent with its rows scrolling; the
+ * emoji picker and the report form each need more height than that. The report
  * form is seven reasons, a text field and a button, which
- * on a small phone with the keyboard up is taller than the screen. A bounded
- * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
- * fixed detent with the sheet-aware scroll view as its direct child
- * (`spec/ui/mobile/patterns.md` § Bottom sheets) — one sheet cannot be both, so
+ * on a small phone with the keyboard up is taller than the screen. A sheet
+ * with a scrollable body takes a fixed detent with the sheet-aware scroll
+ * view as its direct child (`spec/ui/mobile/patterns.md` § Bottom sheets), so
  * the report form, the emoji picker and the Forward picker are their own sheets that replace the
  * menu (gorhom's `stackBehavior="replace"`), where s19 stacks its assignee
  * picker on top.
@@ -310,6 +317,18 @@ export interface MessageActionsSheetHandle {
 export interface MessageActionsSheetProps {
   target: MessageActionsTarget | null;
   /**
+   * The menu's one detent, in points: the thread's `useMessageMenuRoom`
+   * passes the height it leaves room for, so the two agree. Without it the
+   * sheet works it out the same way.
+   */
+  height?: number;
+  /**
+   * The menu closed, however it closed (a row, a swipe, the scrim, back, or a
+   * picker that replaced it): the thread gives its room back and drops the
+   * highlight.
+   */
+  onDismiss?: () => void;
+  /**
    * Resolves a member's name and says who "You" is, for the Forward picker's
    * preview of the message. Without them the Forward row is not drawn.
    */
@@ -358,6 +377,8 @@ export const MessageActionsSheet = forwardRef<
 >(function MessageActionsSheet(
   {
     target,
+    height,
+    onDismiss,
     nameFor,
     viewerId = null,
     onSenderDeparted,
@@ -382,6 +403,8 @@ export const MessageActionsSheet = forwardRef<
   const danger = tokens.color.semantic.destructive;
   const dangerText = tokens.color.semantic.destructiveText;
   const backgroundStyle = useSheetBackgroundStyle();
+  const ownHeight = useMessageMenuHeight();
+  const menuSnapPoints = [height ?? ownHeight];
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
   const pickerRef = useRef<BottomSheetModal>(null);
@@ -686,18 +709,27 @@ export const MessageActionsSheet = forwardRef<
       <BottomSheetModal
         ref={menuRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
-        enableDynamicSizing
+        // The keyboard's height and no taller (#5479): one detent, no
+        // over-drag, and the rows scroll in the sheet-aware scroll view, its
+        // direct child (`spec/ui/mobile/patterns.md` § Bottom sheets).
+        enableDynamicSizing={false}
+        snapPoints={menuSnapPoints}
+        enableOverDrag={false}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
+        backdropComponent={SheetClearScrim}
         onAnimate={menuVisit.onAnimate}
         onDismiss={() => {
           menuVisit.markClosed();
           resetCopy();
+          onDismiss?.();
         }}
       >
         <SheetBackToClose onClose={closeMenu} />
-        <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
+        <BottomSheetScrollView
+          onAccessibilityEscape={closeMenu}
+          contentContainerStyle={styles.body}
+        >
           {/* No title and no Cancel: this is a menu of actions, not a form.
               The line naming the message is its heading, and the grabber,
               the scrim, Android back and VoiceOver's escape close it
@@ -781,59 +813,6 @@ export const MessageActionsSheet = forwardRef<
               ) : null}
             </ListSection>
           ) : null}
-          {target?.flag && onFlag ? (
-            // Flag (#3921): Important first, then the lighter flags. The
-            // current one reads selected, and tapping it again takes it off.
-            <View style={styles.flagSection}>
-              <Text style={styles.caption}>Flag</Text>
-              <View style={styles.flags} accessibilityRole="radiogroup">
-                {(target.flag.removeOnly
-                  ? MESSAGE_FLAG_OPTIONS.filter(
-                      ({ flag }) => flag === target.flag?.current,
-                    )
-                  : MESSAGE_FLAG_OPTIONS
-                ).map(({ flag, label }) => {
-                  const selected = target.flag?.current === flag;
-                  const important = flag === "important";
-                  return (
-                    <Pressable
-                      key={flag}
-                      testID={`message-flag-${flag}`}
-                      accessibilityRole="radio"
-                      accessibilityState={{ checked: selected }}
-                      accessibilityLabel={label}
-                      accessibilityHint={
-                        selected ? "Removes this flag" : undefined
-                      }
-                      onPress={() => pickFlag(flag)}
-                      style={[
-                        styles.flagChip,
-                        important ? { borderColor: dangerText } : null,
-                        selected
-                          ? important
-                            ? { backgroundColor: tint(danger) }
-                            : {
-                                backgroundColor: accentSubtle,
-                                borderColor: accentBorder,
-                              }
-                          : null,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.flagChipText,
-                          important ? { color: dangerText } : null,
-                          selected && !important ? { color: accent } : null,
-                        ]}
-                      >
-                        {label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          ) : null}
           {target?.copyText ||
           (target?.canMarkUnread && onMarkUnread) ||
           target?.link ||
@@ -899,6 +878,59 @@ export const MessageActionsSheet = forwardRef<
               ) : null}
             </ListSection>
           ) : null}
+          {target?.flag && onFlag ? (
+            // Flag (#3921): Important first, then the lighter flags. The
+            // current one reads selected, and tapping it again takes it off.
+            <View style={styles.flagSection}>
+              <Text style={styles.caption}>Flag</Text>
+              <View style={styles.flags} accessibilityRole="radiogroup">
+                {(target.flag.removeOnly
+                  ? MESSAGE_FLAG_OPTIONS.filter(
+                      ({ flag }) => flag === target.flag?.current,
+                    )
+                  : MESSAGE_FLAG_OPTIONS
+                ).map(({ flag, label }) => {
+                  const selected = target.flag?.current === flag;
+                  const important = flag === "important";
+                  return (
+                    <Pressable
+                      key={flag}
+                      testID={`message-flag-${flag}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={label}
+                      accessibilityHint={
+                        selected ? "Removes this flag" : undefined
+                      }
+                      onPress={() => pickFlag(flag)}
+                      style={[
+                        styles.flagChip,
+                        important ? { borderColor: dangerText } : null,
+                        selected
+                          ? important
+                            ? { backgroundColor: tint(danger) }
+                            : {
+                                backgroundColor: accentSubtle,
+                                borderColor: accentBorder,
+                              }
+                          : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.flagChipText,
+                          important ? { color: dangerText } : null,
+                          selected && !important ? { color: accent } : null,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           {target?.canReport || target?.canDelete ? (
             <ListSection>
               {target.canReport ? (
@@ -919,7 +951,7 @@ export const MessageActionsSheet = forwardRef<
               ) : null}
             </ListSection>
           ) : null}
-        </BottomSheetView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       <BottomSheetModal

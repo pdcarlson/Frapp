@@ -138,6 +138,26 @@ export function SheetScrim(props: BottomSheetBackdropProps) {
   );
 }
 
+/**
+ * A scrim that dims nothing, for the one sheet that must leave the screen
+ * behind it readable: the long-press message menu, which takes the keyboard's
+ * place under the message it acts on (#5479). A tap above the sheet still
+ * closes it, as the keyboard's own tap-away does, and it carries the same
+ * "Close" name for a screen reader.
+ */
+export function SheetClearScrim(props: BottomSheetBackdropProps) {
+  return (
+    <BottomSheetBackdrop
+      {...props}
+      appearsOnIndex={0}
+      disappearsOnIndex={-1}
+      opacity={0}
+      accessibilityLabel="Close"
+      accessibilityHint="Closes the sheet."
+    />
+  );
+}
+
 /** The drawn grabber, for `BottomSheetModal`'s `handleComponent`. */
 export function SheetGrabber() {
   const { tokens } = useFrappTheme();
