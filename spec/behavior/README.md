@@ -98,6 +98,8 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/invites/batch` | 5/min | Mints `count` invite tokens in one call. |
 | `POST /v1/invites/email` | 5/min | Mints a token and sends an email per address in one call. The daily ceilings below bound the total. |
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
+| `POST /v1/events/:id/agenda-suggestions/refresh` | 5/min | One model call per request ([`events.md` § Suggested agenda items](events.md#suggested-agenda-items)). |
+| `POST /v1/events/:id/agenda-suggestions/:suggestionId/add`, `/dismiss` | 10/min | Add writes the event's agenda, as `PATCH /v1/events/:id` does. |
 | `POST /v1/invites/preview` | 10/min | Token-guessing surface, the same as redeem. |
 | `POST /v1/integrations/dev-log` | 10/min | Token-guessing surface, and each call writes a message into a channel. Counted per caller IP: its bearer token is not a member's ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)). |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |

@@ -153,8 +153,8 @@ function PanelCard({
         />
       );
     case "task-group":
-      // Web lists each copy of a task for everyone (`activityGroups` without
-      // `taskItems`): this panel has no group to open (#5492).
+      // A task for everyone's row opens the group on the Tasks board
+      // (`tasksGroupLink`, #5538), never this panel, which draws one task.
       return null;
     case "event":
       return <EventPanel row={row} />;

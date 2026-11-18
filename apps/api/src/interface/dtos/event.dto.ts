@@ -38,6 +38,7 @@ import {
   EVENT_NOTES_MAX_LENGTH,
   tooLongRefusal,
   type EventAgendaItem,
+  type EventAgendaTabledFrom,
   type EventAttachment,
 } from '@repo/validation';
 import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
@@ -70,6 +71,35 @@ const RECURRENCE_RULE_DESCRIPTION =
   `exactly one of COUNT (2-${MAX_SERIES_MEETINGS} meetings, the first included) or UNTIL (YYYYMMDD, inclusive), ` +
   'and TZID (the zone whose wall clock the series keeps).';
 
+/**
+ * Where a tabled agenda item came from (#5534). Set only by the API, when a
+ * suggested tabled item is added; a save keeps the stored value by the
+ * item's id and ignores what is sent, so a client may send the item back
+ * as it read it.
+ */
+export class EventAgendaTabledFromDto implements EventAgendaTabledFrom {
+  @ApiProperty({
+    description: 'The posted minutes that first tabled this matter.',
+  })
+  @IsString()
+  @MaxLength(64)
+  meeting_id: string;
+
+  @ApiProperty({ description: 'That meeting’s start (ISO 8601).' })
+  @IsString()
+  @MaxLength(64)
+  start_time: string;
+
+  @ApiProperty({
+    minimum: 1,
+    description: 'How many meetings have tabled it so far.',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  times: number;
+}
+
 /** One agenda item (#4934, `spec/behavior/events.md` § Agenda and attachments). */
 export class EventAgendaItemDto implements EventAgendaItem {
   @ApiProperty({
@@ -89,6 +119,17 @@ export class EventAgendaItemDto implements EventAgendaItem {
   @ApiProperty({ description: 'Checked off during the meeting.' })
   @IsStrictBoolean()
   done: boolean;
+
+  @ApiPropertyOptional({
+    type: EventAgendaTabledFromDto,
+    nullable: true,
+    description:
+      'Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows "Tabled from {day}". Read-only: a save keeps the stored value for the same item id and ignores this field.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventAgendaTabledFromDto)
+  tabled_from?: EventAgendaTabledFromDto | null;
 }
 
 /**

@@ -69,7 +69,6 @@ import {
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
-  type ActivityGroupsOptions,
   type ActivityStripDay,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
@@ -132,12 +131,6 @@ import { NOTIFICATION_TILE_HUE } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { localIsoDate } from "@repo/formatting";
 import type { ActivityCardKey } from "@repo/validation";
-
-/**
- * Tasks you assigned from `task_items` (#5492): a task for everyone is one
- * row, which opens its group on the task's screen.
- */
-const GROUP_OPTIONS: ActivityGroupsOptions = { taskItems: true };
 
 /**
  * Activity: the member's week, what they still have to do, and what waits on
@@ -407,7 +400,7 @@ export default function ActivityScreen() {
   // groups build them, in order. Narrowed to a kind, the page is the To do
   // list alone. A task for everyone the member assigned is one row (#5492).
   const groups = useMemo(
-    () => (visible ? activityGroups(visible, now, GROUP_OPTIONS) : []),
+    () => (visible ? activityGroups(visible, now) : []),
     [visible, now],
   );
   const below =
@@ -567,12 +560,7 @@ export default function ActivityScreen() {
       const result = await refetchActivity();
       if (!live) return;
       const row = result.data
-        ? findActivityTaskRow(
-            result.data,
-            reviewTaskId,
-            new Date(),
-            GROUP_OPTIONS,
-          )
+        ? findActivityTaskRow(result.data, reviewTaskId, new Date())
         : null;
       // Dropped first: opening may push a screen, whose params these
       // would then be.
@@ -611,7 +599,7 @@ export default function ActivityScreen() {
       case "task": {
         const row =
           activity.data && id
-            ? findActivityTaskRow(activity.data, id, new Date(), GROUP_OPTIONS)
+            ? findActivityTaskRow(activity.data, id, new Date())
             : null;
         // Past the read's cap, or finished since: the board has every task.
         if (row) open(row);
@@ -640,7 +628,7 @@ export default function ActivityScreen() {
         const row =
           rows.find((r) => id !== null && r.key.endsWith(`:${id}`)) ??
           (activity.data && id
-            ? findActivityTaskRow(activity.data, id, new Date(), GROUP_OPTIONS)
+            ? findActivityTaskRow(activity.data, id, new Date())
             : null) ??
           rows[0];
         if (row) open(row);

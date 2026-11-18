@@ -6,7 +6,9 @@ import {
   EVENT_ATTACHMENTS_MAX,
   normalizeAgendaText,
   normalizeAttachmentUrl,
+  readAgendaTabledFrom,
   type EventAgendaItem,
+  type EventAgendaTabledFrom,
   type EventAttachment,
 } from '@repo/validation';
 
@@ -173,6 +175,26 @@ export function normalizeAgenda(
   if (problem) throw new BadRequestException(problem);
   assertUniqueIds(cleaned, 'agenda');
   return cleaned;
+}
+
+/**
+ * `next` with each item's `tabled_from` (#5534) taken from the stored item
+ * of the same id, and from nowhere else: a client never sets or changes it.
+ */
+export function keepAgendaTabledFrom(
+  next: readonly EventAgendaItem[],
+  stored: readonly EventAgendaItem[] | null | undefined,
+): EventAgendaItem[] {
+  const origins = new Map<string, EventAgendaTabledFrom>();
+  for (const item of stored ?? []) {
+    const from = readAgendaTabledFrom(item.tabled_from);
+    if (from) origins.set(item.id, from);
+  }
+  return next.map((item) => {
+    const base = { id: item.id, text: item.text, done: item.done };
+    const from = origins.get(item.id);
+    return from ? { ...base, tabled_from: from } : base;
+  });
 }
 
 /**

@@ -58,6 +58,7 @@ export * from "./use-activity-links";
 export * from "./use-activity-nudge";
 export * from "./use-activity-snooze";
 export * from "./use-activity-unread";
+export * from "./use-agenda-suggestions";
 export * from "./use-ai";
 export * from "./use-ai-report";
 export * from "./use-ai-suggestions";

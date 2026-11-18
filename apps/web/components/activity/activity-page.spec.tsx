@@ -91,6 +91,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     }),
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
+    activityFaceStack: actual.activityFaceStack,
     activityReview: actual.activityReview,
     activityReviewQueue: actual.activityReviewQueue,
     activityRowAction: actual.activityRowAction,
@@ -1751,7 +1752,7 @@ describe("ActivityPage", () => {
     expect(refetch).toHaveBeenCalledTimes(2);
   });
 
-  it("sends a review the fresh read doesn't hold to the task board", async () => {
+  it("sends a review the fresh read doesn't hold to that task on the board", async () => {
     mockActivity.mockReturnValue({
       ...loaded(),
       refetch: vi.fn(() => Promise.resolve({ data: data() })),
@@ -1761,7 +1762,7 @@ describe("ActivityPage", () => {
     await act(async () => {});
 
     expect(screen.queryByText(/^panel:/)).not.toBeInTheDocument();
-    expect(mockReplace).toHaveBeenCalledWith("/tasks");
+    expect(mockReplace).toHaveBeenCalledWith("/tasks?task=gone");
   });
 
   it("dots an unread row and records the open when it is opened (#4405)", () => {
@@ -2350,5 +2351,127 @@ describe("Waiting on others: how far along each thing is (#4792)", () => {
     ).toBe("true");
     const alone = screen.getByText("Exec only?").closest("li") as HTMLElement;
     expect(within(alone).queryByText(/ of /)).toBeNull();
+  });
+});
+
+describe("Tasks you assigned: one row per task for everyone (#5538)", () => {
+  const group = (overrides: Record<string, unknown> = {}) => ({
+    id: "group-1",
+    audience: "everyone",
+    target_id: null,
+    target_name: null,
+    total: 30,
+    done: 12,
+    confirmed: 4,
+    task_id: "copy-7",
+    title: "Clean the house",
+    description: null,
+    due_date: "2099-01-01",
+    due_at: null,
+    point_reward: 5,
+    proof_kind: "none",
+    overdue: false,
+    // Only the officer is on the roster: the rest have left, and count in +N.
+    preview_assignee_ids: ["officer", "left-1", "left-2"],
+    created_at: "2026-11-17T00:00:00.000Z",
+    ...overrides,
+  });
+  /** Thirty copies in `tasks`, as an API serves them beside `task_items`. */
+  const copies = Array.from({ length: 30 }, (_, index) => ({
+    ...task,
+    id: `copy-${index}`,
+    title: "Clean the house",
+    assignee_id: `u${index}`,
+    created_by: "me",
+  }));
+  const solo = {
+    ...task,
+    id: "solo",
+    title: "Book the band",
+    created_by: "me",
+  };
+  const assigned = (items: unknown[]) =>
+    loaded({
+      needs_you: nothingWaiting,
+      made_by_you: {
+        polls: [],
+        events: [],
+        tasks: [...copies, solo],
+        task_items: items,
+      },
+    });
+  const part = () =>
+    within(screen.getByRole("region", { name: "Waiting on others" })).getByRole(
+      "group",
+      { name: "Tasks you assigned" },
+    );
+
+  it("draws one row with who it went to, a done bar and faces, linking to the group on the board", () => {
+    mockActivity.mockReturnValue(
+      assigned([
+        { kind: "group", group: group() },
+        { kind: "task", task: solo },
+      ]),
+    );
+    render(<ActivityPage />);
+
+    // One row for the thirty copies, beside the one-person task.
+    expect(within(part()).getAllByRole("listitem")).toHaveLength(2);
+    const row = within(part()).getByRole("link", { name: /Clean the house/ });
+    expect(row).toHaveAttribute("href", "/tasks?group=group-1");
+    expect(row).toHaveTextContent(/Everyone · /);
+    expect(row).toHaveAccessibleName(/12 of 30 done/);
+    expect(within(row).getByText("12 of 30")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    // The roster's one face, then the others counted.
+    const stack = within(row).getByTestId("activity-face-stack");
+    expect(
+      within(stack).getAllByTestId("activity-face-stack-face"),
+    ).toHaveLength(1);
+    expect(stack).toHaveTextContent("OO+29");
+    expect(within(row).queryByText("Overdue")).toBeNull();
+
+    // A click goes to the board, never Activity's panel.
+    fireEvent.click(row);
+    expect(screen.queryByTestId("panel")).toBeNull();
+  });
+
+  it("badges the row Overdue when any copy is", () => {
+    mockActivity.mockReturnValue(
+      assigned([{ kind: "group", group: group({ overdue: true }) }]),
+    );
+    render(<ActivityPage />);
+    const row = within(part()).getByRole("link", { name: /Clean the house/ });
+    expect(within(row).getByText("Overdue")).toBeInTheDocument();
+  });
+
+  it("keeps a one-person task a row that opens its panel", () => {
+    mockActivity.mockReturnValue(
+      assigned([
+        { kind: "group", group: group() },
+        { kind: "task", task: solo },
+      ]),
+    );
+    render(<ActivityPage />);
+    fireEvent.click(
+      within(part()).getByRole("button", { name: /Book the band/ }),
+    );
+    expect(screen.getByText("panel:Book the band")).toBeInTheDocument();
+  });
+
+  it("sends a review link for the copy the row opens to the group on the board", async () => {
+    const read = assigned([{ kind: "group", group: group() }]);
+    mockActivity.mockReturnValue({
+      ...read,
+      refetch: vi.fn(() => Promise.resolve({ data: read.data })),
+    });
+    mockSearch = new URLSearchParams("review=copy-7");
+    render(<ActivityPage />);
+    await act(async () => {});
+
+    expect(screen.queryByTestId("panel")).toBeNull();
+    expect(mockReplace).toHaveBeenCalledWith("/tasks?group=group-1");
   });
 });

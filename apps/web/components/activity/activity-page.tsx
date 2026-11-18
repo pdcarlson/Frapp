@@ -38,6 +38,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { tasksGroupLink, tasksTaskLink } from "@/lib/tasks/task-links";
 import { cn } from "@/lib/utils";
 import { can, type ActivityCardKey } from "@repo/validation";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
@@ -56,6 +57,7 @@ import { ActivityRowActionButton } from "./activity-row-action";
 import { activityRowActionGate } from "./activity-row-action-gate";
 import {
   ActivityAsk,
+  ActivityFaceStack,
   ActivityFaces,
   ActivityRowDetail,
   ActivityRowLead,
@@ -144,7 +146,16 @@ function RowContent({
           {row.title}
         </span>
         <ActivityRowDetail row={row} />
-        {row.progress ? <RowProgress progress={row.progress} /> : null}
+        {row.progress ? (
+          <RowProgress
+            progress={row.progress}
+            faces={
+              row.kind === "task-group"
+                ? { ids: row.faceIds, total: row.group.total }
+                : null
+            }
+          />
+        ) : null}
       </span>
       {row.badge ? (
         askOnRow ? (
@@ -175,12 +186,21 @@ function RowContent({
  * Google Forms' response count and GitHub's "2 of 3 approvals" are the
  * comparables. The groove is the meter's on-page track
  * (`meterTrackOnPageClassName`), since the row sits on the page. The bar is
- * decoration; the text says the count, whole for a screen reader.
+ * decoration; the text says the count, whole for a screen reader. A task
+ * for everyone leads it with the faces of whom it went to (#5538), as the
+ * phone's row does.
  */
-function RowProgress({ progress }: { progress: ActivityRowProgress }) {
+function RowProgress({
+  progress,
+  faces = null,
+}: {
+  progress: ActivityRowProgress;
+  faces?: { ids: string[]; total: number } | null;
+}) {
   const share = Math.min(1, progress.done / progress.total);
   return (
     <span className="mt-1 flex items-center gap-2">
+      {faces ? <ActivityFaceStack ids={faces.ids} total={faces.total} /> : null}
       <span
         aria-hidden="true"
         className={cn(meterTrackOnPageClassName, "w-40 min-w-0 shrink")}
@@ -357,6 +377,29 @@ function CardRow({
 
 type RowMenuEntries = Parameters<typeof RowMenu>[0]["entries"];
 
+/**
+ * A task for everyone the member assigned, as one row (#5538): it goes to the
+ * Tasks board with the group open in its task panel (`tasksGroupLink`), the
+ * one place on web that shows a group, rather than to Activity's panel,
+ * which draws one task as chat's card and would show one member's copy as
+ * if it were the group. What the member made has no dot and no menu.
+ */
+function TaskGroupRow({
+  row,
+  className,
+}: {
+  row: Extract<ActivityRow, { kind: "task-group" }>;
+  className: string;
+}) {
+  return (
+    <li>
+      <Link href={tasksGroupLink(row.group.id)} className={className}>
+        <RowContent row={row} />
+      </Link>
+    </li>
+  );
+}
+
 /** What every list on the page needs to draw one of its rows. */
 interface RowKit {
   canRemoveLinks: boolean;
@@ -404,6 +447,8 @@ function Row({
       rowClassName={className}
       actions={kit.reminderActions}
     />
+  ) : row.kind === "task-group" ? (
+    <TaskGroupRow row={row} className={className} />
   ) : (
     <PanelRow
       row={row}
@@ -814,6 +859,11 @@ function SnoozedSection({ rows, kit }: { rows: ActivityRow[]; kit: RowKit }) {
 }
 
 /**
+ * Tasks you assigned as one row per task for everyone (#5538), as on the
+ * phone: the row opens the group on the Tasks board (`TaskGroupRow`).
+ */
+
+/**
  * Reads `?review=<taskId>` (a "submitted a task" notification, `deepLinkFor`
  * in the bell) and hands it to the page once per link, then drops it from the
  * address so a refresh doesn't reopen the panel. Clicking the same link again
@@ -943,9 +993,14 @@ export function ActivityPage() {
     // A reminder row has no read to record (`readRef` is null) and is never
     // unread.
     if (row.unread && row.readRef) markRead([row.readRef]);
-    // A link opens in a new tab, and a sign-up, form or reminder in chat: no
-    // panel.
-    if (row.kind !== "link" && row.kind !== "card" && row.kind !== "reminder")
+    // A link opens in a new tab, a sign-up, form or reminder in chat, and a
+    // task for everyone on the Tasks board: no panel.
+    if (
+      row.kind !== "link" &&
+      row.kind !== "card" &&
+      row.kind !== "reminder" &&
+      row.kind !== "task-group"
+    )
       setOpened(row);
   };
   // `/activity?review=<taskId>`: a "submitted a task" notification
@@ -953,8 +1008,10 @@ export function ActivityPage() {
   // it, however the list is narrowed; a task no longer in the feed opens
   // nothing. The read is taken again first: the one in hand can predate the
   // submission (the page was open, or its read cached). A task the fresh
-  // read doesn't hold (confirmed elsewhere, or past the read's cap) goes to
-  // the board, whose waiting column lists every completion.
+  // read doesn't hold (confirmed elsewhere, reopened, past the read's cap,
+  // or a copy of a task for everyone other than the one its row names) opens
+  // on the board, which opens it, or its group, in the task panel (#5538).
+  // The copy a task for everyone's row names opens the group, as the row does.
   const router = useRouter();
   const pathname = usePathname();
   const openReview = async (taskId: string) => {
@@ -962,11 +1019,13 @@ export function ActivityPage() {
     const row = result.data
       ? findActivityTaskRow(result.data, taskId, new Date())
       : null;
-    if (row) {
+    if (row?.kind === "task-group") {
+      router.replace(tasksGroupLink(row.group.id));
+    } else if (row) {
       openFromList(row);
       router.replace(pathname, { scroll: false });
     } else {
-      router.replace("/tasks");
+      router.replace(tasksTaskLink(taskId));
     }
   };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.

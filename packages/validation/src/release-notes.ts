@@ -134,9 +134,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity's cards are now yours to arrange: Edit Activity at the foot of the page hides a card, brings it back or moves it, and your phone and the web keep the same order.",
       "Messages now show when each conversation's last message was sent, and your own direct messages show one check once sent and two once read, with a Read receipts switch in Settings to turn that off.",
       "Minutes now keep a list of what was tabled, and a draft picks it up from your notes or the recording.",
+      "An upcoming meeting's agenda now suggests items, starting with what earlier meetings tabled, so you can add them in one tap.",
     ],
     web: [
       "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",
+      "In Activity, a task you sent to everyone is now one row with their faces and how many are done, and clicking it opens the task on the Tasks board.",
     ],
     phone: [
       "Tapping a detail on your profile, like your bio or your birthday, now opens the editor right at that field with the keyboard ready.",
@@ -153,6 +155,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A repeating meeting's series screen now lists only the action items still open across all its minutes, and an item drops off once the task it became is done.",
       "Press and hold a task or an event to mark it done, edit it, hand it to someone else, duplicate it or delete it, with each choice shown only to people allowed to use it.",
       "In Activity, a task you sent to everyone is one row with their faces and how many are done, a task opens its own page, and a long press on a task or event shows its actions.",
+      "Officers can confirm a finished task or send it back, with a reason, right from the task's page.",
     ],
   },
   {

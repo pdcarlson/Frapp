@@ -1,4 +1,4 @@
-import type { MeetingType } from '@repo/validation';
+import { MEETING_TYPES, type MeetingType } from '@repo/validation';
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
@@ -94,15 +94,21 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
   async findPostedBefore(
     chapterId: string,
     before: string,
-    meetingType: MeetingType,
+    meetingType: MeetingType | null,
     limit: number,
   ): Promise<Meeting[]> {
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from('meetings')
       .select('*')
       .eq('chapter_id', chapterId)
-      .eq('status', 'posted')
-      .eq('meeting_type', meetingType)
+      .eq('status', 'posted');
+    // Null reads every type but Standards, which isn't one of
+    // `MEETING_TYPES`: its minutes never reach AI or another meeting (#5534).
+    query =
+      meetingType === null
+        ? query.in('meeting_type', [...MEETING_TYPES])
+        : query.eq('meeting_type', meetingType);
+    const { data, error } = await query
       .lt('event_start_time', before)
       .order('event_start_time', { ascending: false })
       .order('created_at', { ascending: false })

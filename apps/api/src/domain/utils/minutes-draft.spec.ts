@@ -84,7 +84,7 @@ describe('buildMinutesDraftPrompt', () => {
   it('carries the notes whole, between markers, and reads them back', () => {
     const prompt = buildMinutesDraftPrompt(request());
     expect(notesInPrompt(prompt.messages[0].content)).toBe(NOTES);
-    expect(prompt.promptVersion).toBe('minutes-draft@v8');
+    expect(prompt.promptVersion).toBe('minutes-draft@v9');
   });
 
   it('says the day of the week, so "by Wednesday" resolves', () => {
@@ -258,6 +258,77 @@ describe('verifyMinutesDraft', () => {
       request(),
     );
     expect(content.tabled?.map((item) => item.text)).toEqual(['Formal budget']);
+  });
+
+  it('keeps a matter tabled again at its first date and counts it once more (#5534)', () => {
+    const line = NOTES.split('\n').find((l) => l.trim().length > 0)!;
+    const from = {
+      meeting_id: '0a000000-0000-4000-8000-0000000005a1',
+      start_time: '2026-11-11T23:00:00+00:00',
+      times: 2,
+    };
+    const { content } = verifyMinutesDraft(
+      output({
+        tabled: [
+          // Named by its number on tonight's agenda.
+          { text: 'The formal', quote: line, agenda_item: 2 },
+          // Not named, but the same words as a carried item.
+          { text: 'rush shirts.', quote: line },
+          // New tonight.
+          { text: 'Composite', quote: line },
+        ],
+      }),
+      request({
+        agenda: [
+          'Treasurer report',
+          { text: 'Formal budget', tabledFrom: from },
+          { text: 'Rush shirts', tabledFrom: { ...from, times: 1 } },
+        ],
+      }),
+    );
+    expect(content.tabled).toEqual([
+      {
+        text: 'The formal',
+        first_meeting_id: from.meeting_id,
+        first_start_time: from.start_time,
+        times: 3,
+      },
+      {
+        text: 'rush shirts.',
+        first_meeting_id: from.meeting_id,
+        first_start_time: from.start_time,
+        times: 2,
+      },
+      {
+        text: 'Composite',
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      },
+    ]);
+  });
+
+  it('marks an agenda item carried from an earlier Tabled list in the prompt', () => {
+    const { content } = buildMinutesDraftPrompt(
+      request({
+        agenda: [
+          'Treasurer report',
+          {
+            text: 'Formal budget',
+            tabledFrom: {
+              meeting_id: '0a000000-0000-4000-8000-0000000005a1',
+              start_time: '2026-11-11T23:00:00+00:00',
+              times: 1,
+            },
+          },
+        ],
+      }),
+    ).messages[0];
+    expect(content).toContain('1. Treasurer report\n');
+    expect(content).toContain(
+      '2. Formal budget [tabled at an earlier meeting]',
+    );
+    expect(content).toContain('agenda_item is that item');
   });
 
   it('asks for what was tabled, never a matter that was settled', () => {

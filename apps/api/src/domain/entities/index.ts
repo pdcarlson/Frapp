@@ -34,6 +34,7 @@ export * from './chat.entity';
 export * from './corpus.entity';
 export * from './discord-connection.entity';
 export * from './discord-import.entity';
+export * from './event-agenda-suggestion.entity';
 export * from './event-attendance.entity';
 export * from './event-check-in-screen.entity';
 export * from './event-excuse.entity';

@@ -593,7 +593,10 @@ describe('MeetingDraftService', () => {
             };
           },
           context: {
-            agenda: ['Treasurer report', 'Formal'],
+            agenda: [
+              { text: 'Treasurer report', tabledFrom: null },
+              { text: 'Formal', tabledFrom: null },
+            ],
             background: {
               meetings: [
                 {
