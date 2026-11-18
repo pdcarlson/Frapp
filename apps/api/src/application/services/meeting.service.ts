@@ -207,11 +207,13 @@ export class MeetingService {
     viewerId: string,
     rows: readonly Meeting[],
   ): Promise<Map<string, MeetingListFacts>> {
-    const eventIds = rows.flatMap((row) => (row.event_id ? [row.event_id] : []));
+    const eventIds = rows.flatMap((row) =>
+      row.event_id ? [row.event_id] : [],
+    );
     const events = new Map(
-      (
-        await this.events.findVisibleByIds(eventIds, chapterId, viewerId)
-      ).map((event) => [event.id, event]),
+      (await this.events.findVisibleByIds(eventIds, chapterId, viewerId)).map(
+        (event) => [event.id, event],
+      ),
     );
     const headIds = [...events.values()].flatMap((event) =>
       event.parent_event_id && !events.has(event.parent_event_id)
@@ -234,8 +236,7 @@ export class MeetingService {
     for (const row of rows) {
       const event = row.event_id ? events.get(row.event_id) : undefined;
       const seriesKey = event
-        ? (event.parent_event_id ??
-          (event.recurrence_rule ? event.id : null))
+        ? (event.parent_event_id ?? (event.recurrence_rule ? event.id : null))
         : null;
       const content = readMeetingContent(row.content);
       facts.set(row.id, {

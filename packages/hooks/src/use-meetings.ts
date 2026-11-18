@@ -6,7 +6,8 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { aiSuggestionKeys } from "./use-ai-suggestions";
 
 /** One row of `GET /v1/meetings`. */
-export type MeetingSummary = components["schemas"]["MeetingSummaryDto"];
+/** One row of the Minutes list (`GET /v1/meetings`), with what the list shows on it (#5290). */
+export type MeetingSummary = components["schemas"]["MeetingListItemDto"];
 /** One meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */
 export type MeetingMinutes = components["schemas"]["MeetingDto"];
 export type StartMeetingBody = components["schemas"]["StartMeetingDto"];
