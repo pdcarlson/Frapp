@@ -631,18 +631,21 @@ export default function TasksScreen() {
   const releaseTask = useReleaseTask();
   const assignOpen = useAssignOpenTask();
   const deleteOpen = useDeleteOpenTask();
-  const [lostClaims, setLostClaims] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  // Hidden only until the list reads again: the fresh read leaves out a
-  // claimed posting itself, and shows it again if its taker gives it back.
+  // A lost claim hides its posting only until the list reads again: the
+  // fresh read leaves out a claimed posting itself, and shows it again if
+  // its taker gives it back. So each hide is keyed to the read it was made on.
   const openTasksReadAt = openTasksQuery.dataUpdatedAt;
-  useEffect(() => {
-    setLostClaims((lost) => (lost.size === 0 ? lost : new Set()));
-  }, [openTasksReadAt]);
+  const [lostClaims, setLostClaims] = useState<{
+    readAt: number;
+    ids: ReadonlySet<string>;
+  }>(() => ({ readAt: 0, ids: new Set() }));
   const openTasks = useMemo(
-    () => selectOpenTasks(openTasksQuery.data, lostClaims),
-    [openTasksQuery.data, lostClaims],
+    () =>
+      selectOpenTasks(
+        openTasksQuery.data,
+        lostClaims.readAt === openTasksReadAt ? lostClaims.ids : new Set(),
+      ),
+    [openTasksQuery.data, lostClaims, openTasksReadAt],
   );
   const nameOf = useCallback(
     (userId: string) =>
@@ -672,7 +675,13 @@ export default function TasksScreen() {
         },
         onError: (error) => {
           if (claimLost(error)) {
-            setLostClaims((lost) => new Set(lost).add(posting.id));
+            setLostClaims((lost) => ({
+              readAt: openTasksReadAt,
+              ids:
+                lost.readAt === openTasksReadAt
+                  ? new Set(lost.ids).add(posting.id)
+                  : new Set([posting.id]),
+            }));
             setNotice(TASK_AUDIENCE_COPY.alreadyClaimed);
             return;
           }
@@ -682,7 +691,7 @@ export default function TasksScreen() {
         },
       });
     },
-    [claimOpen, now],
+    [claimOpen, now, openTasksReadAt],
   );
 
   /** Give a claimed task back to Up for grabs, from the toast or its sheet. */
