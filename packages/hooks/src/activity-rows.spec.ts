@@ -21,12 +21,11 @@ import {
   activityReviewRows,
   activityToDos,
   findActivityTaskRow,
-  taskAwaitsReview,
   type Activity,
   type ActivityArchive,
-  type ActivityReviewer,
   type ActivityRow,
 } from "./activity-rows";
+import { taskAwaitsReview, type TaskReviewer } from "./task-review";
 
 /**
  * The shared deadline cases (#5242): `CLOSES_AT_CASES` from `@repo/formatting`
@@ -1454,7 +1453,7 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
 });
 
 describe("taskAwaitsReview (#5492, #5513)", () => {
-  const officer: ActivityReviewer = { viewerId: "me", canManage: true };
+  const officer: TaskReviewer = { viewerId: "me", canManage: true };
   /** A member's completion of a task the viewer assigned. */
   const done = (overrides: Record<string, unknown> = {}) =>
     task({
@@ -1499,8 +1498,9 @@ describe("taskAwaitsReview (#5492, #5513)", () => {
     expect(awaits({}, { viewerId: null, canManage: true })).toBe(false);
     // Their own: the API refuses a self-confirm.
     expect(awaits({ assignee_id: "me" })).toBe(false);
-    // Confirmed, not done, or needing no sign-off.
+    // Confirmed, paid, not done, or needing no sign-off.
     expect(awaits({ confirmed_at: "2026-11-03T00:00:00.000Z" })).toBe(false);
+    expect(awaits({ points_awarded: true })).toBe(false);
     expect(awaits({ status: "TODO", stored_status: "TODO" })).toBe(false);
     expect(awaits({ point_reward: null, proof_kind: "none" })).toBe(false);
   });

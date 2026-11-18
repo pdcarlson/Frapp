@@ -1,11 +1,14 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { AccessibilityInfo } from "react-native";
 import { useConfirmTask, useRejectTask } from "@repo/hooks";
 import {
   useCardWrite,
   type CardRefusal,
 } from "@/components/chat/use-card-write";
-import { SendBackSheet } from "@/components/tasks/send-back-sheet";
+import {
+  SendBackSheet,
+  sendBackDraftKey,
+} from "@/components/tasks/send-back-sheet";
 import { successHaptic } from "@/lib/haptics";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import {
@@ -24,6 +27,11 @@ export interface TaskReview {
   sendBack: (row: TaskRowModel) => void;
   /** A refused Confirm or Send back; a gate's withdraws both (`gate`). */
   refusal: CardRefusal | null;
+  /**
+   * `refusal` when Confirm's: Send back's sheet says its own, so a host
+   * with no line of its own (a row's menu) alerts only this one.
+   */
+  confirmRefusal: CardRefusal | null;
   /** Offline, mid-write, or after a gate refusal. */
   disabled: boolean;
   /** Why they are held, for their spoken hint. */
@@ -59,15 +67,24 @@ export function useTaskReview(): TaskReview {
     pending: confirmTask.isPending || rejectTask.isPending,
   });
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  // Set before the first await, so a second tap in the same frame neither
+  // sends again nor, when it returns, clears the first one's busy state.
+  const confirming = useRef(false);
   const [sendingBack, setSendingBack] = useState<TaskRowModel | null>(null);
+  // Whether the refusal held is Send back's, which its sheet already says.
+  const [refusedBySheet, setRefusedBySheet] = useState(false);
 
   const confirm = (row: TaskRowModel) => {
+    if (confirming.current) return;
+    confirming.current = true;
     let landed = false;
     setConfirmingId(row.id);
+    setRefusedBySheet(false);
     void act(async () => {
       await confirmTask.mutateAsync(row.id);
       landed = true;
     }, TASK_CONFIRM_FAILURE).finally(() => {
+      confirming.current = false;
       setConfirmingId(null);
       if (!landed) return;
       // The confirming action (`spec/ui/mobile/README.md` § Native-feel
@@ -81,7 +98,7 @@ export function useTaskReview(): TaskReview {
     <SendBackSheet
       key={sendingBack.id}
       // Shared with chat's task card's Send back on this task (#5041).
-      keptDraft={`send-back:${sendingBack.id}`}
+      keptDraft={sendBackDraftKey(sendingBack.id)}
       submittedAt={sendingBack.completedAt}
       title={sendingBack.title}
       proofKind={sendingBack.proofKind}
@@ -91,6 +108,7 @@ export function useTaskReview(): TaskReview {
         } catch (error) {
           // The sheet says why; a gate's also withdraws Confirm and Send
           // back, as one through `act` does.
+          setRefusedBySheet(true);
           latchGate(error);
           throw error;
         }
@@ -104,6 +122,7 @@ export function useTaskReview(): TaskReview {
     confirm,
     sendBack: setSendingBack,
     refusal,
+    confirmRefusal: refusedBySheet ? null : refusal,
     disabled,
     hint,
     confirmingId,

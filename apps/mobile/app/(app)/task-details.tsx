@@ -73,8 +73,8 @@ import {
   rowGroupLabel,
   removeLabel,
   rowStatus,
-  sendBackInBar,
   sortCopies,
+  taskBarLayout,
   taskHistory,
   taskScreenControls,
 } from "@/lib/tasks/task-screen";
@@ -121,14 +121,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Confirm and Send back
  *
  * On a member's completion waiting on the viewer's sign-off (#5513), Confirm
- * is the accent pill, the payout on it ("Confirm · +10 pts") while the bar
- * has room, and Send back a round beside it, or More's first row when the
- * bar already holds three (`sendBackInBar`). Both are chat's task card's
- * (`useTaskReview`): Send back opens the card's sheet for the reason and
- * "Ask for a photo next time". The officer stays on the screen, which redraws
- * Confirmed or Needs changes in place, as Activity's review sheet stayed on
- * the card; Activity re-reads when they go back to it. The proof is on the
- * screen above, so it is seen before either.
+ * is the accent pill with its payout ("Confirm · +10 pts"), Send back a round
+ * beside it and Edit moves into More, as web's review keeps Edit under its ⋯
+ * (`taskBarLayout`). Send back also shows wherever chat's card offers it (a
+ * completion that needed no sign-off), with no pill. Both are chat's task
+ * card's (`useTaskReview`): Send back opens the card's sheet for the reason
+ * and "Ask for a photo next time". The officer stays on the screen, which
+ * redraws Confirmed or Needs changes in place, as Activity's review sheet
+ * stayed on the card; Activity re-reads when they go back to it. The proof is
+ * on the screen above, so it is seen before either.
  *
  * ## Remove people
  *
@@ -439,15 +440,31 @@ function TaskScreen({
       : []),
   ];
   const showRemovePeople = controls.removePeople && showPeople;
-  // Send back is a round while the bar has room, else More's first row.
-  const sendBackRound =
-    controls.sendBack &&
-    sendBackInBar(
-      [controls.edit, showRemovePeople, restOfMore.length > 0].filter(Boolean)
-        .length,
-    );
+  // Send back a round while the bar has room, else More's first row; Edit in
+  // More while Confirm shows, so the pill keeps its payout (#5513).
+  const {
+    sendBackRound,
+    sendBackInMore,
+    editRound,
+    editInMore,
+    moreShown: showMore,
+    rounds,
+  } = taskBarLayout({
+    // Copied out as plain booleans: handing `controls` itself on makes the
+    // React Compiler treat it, and `canManage` behind it, as mutable, and
+    // skip this component (`react-hooks/preserve-manual-memoization`).
+    controls: {
+      confirm: controls.confirm === true,
+      sendBack: controls.sendBack === true,
+      edit: controls.edit === true,
+    },
+    removePeople: showRemovePeople,
+    otherMoreRows: restOfMore.length,
+  });
   const moreRows = [
-    ...(controls.sendBack && !sendBackRound
+    // Held as the round is (offline, mid-write, refused): the system menu
+    // has no disabled row, so it is left out until it can send.
+    ...(sendBackInMore && !review.disabled
       ? [
           {
             label: TASK_ACTION_LABELS.reject,
@@ -455,6 +472,7 @@ function TaskScreen({
           },
         ]
       : []),
+    ...(editInMore ? [{ label: "Edit", onPress: startEdit }] : []),
     ...restOfMore,
   ];
   // At most three, which Android's dialog can draw: Mark not done needs the
@@ -462,8 +480,8 @@ function TaskScreen({
   // beside Delete and Delete for everyone. Start needs it To do, so it never
   // shows beside Mark not done, and with Give it back (a task taken from Up
   // for grabs, never a group's copy) there is no Delete for everyone. Send
-  // back needs someone else's completion, so none of those three is beside
-  // it, only the two deletes.
+  // back and Edit are an officer's on someone else's task, so none of those
+  // three is beside them, only the two deletes (`taskBarLayout`).
   const openMore = () =>
     showActionMenu({
       title: row.title,
@@ -490,13 +508,8 @@ function TaskScreen({
   const notice =
     toggles.refusal ?? review.refusal?.text ?? toggles.notice ?? deleteFailed;
   const pending = toggles.pendingId === row.id;
-  const showMore = moreRows.length > 0;
-  const rounds = [
-    sendBackRound,
-    controls.edit,
-    showRemovePeople,
-    showMore,
-  ].filter(Boolean).length;
+  // More and the pill's words as the layout counts them, so neither changes
+  // while Send back is held out of More.
   const markDoneText = markDoneBarLabel(row.proofKind, rounds);
   const confirmText = confirmBarLabel(row.pointReward, rounds);
   // A member's task with nothing to do and nothing in More draws no bar.
@@ -504,7 +517,7 @@ function TaskScreen({
     controls.markDone ||
     controls.confirm ||
     sendBackRound ||
-    controls.edit ||
+    editRound ||
     showRemovePeople ||
     showMore;
 
@@ -691,7 +704,7 @@ function TaskScreen({
               <UndoGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}
-          {controls.edit ? (
+          {editRound ? (
             <TaskBarIcon
               label="Edit task"
               hint="Opens a sheet to change this task."

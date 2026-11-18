@@ -54,6 +54,14 @@ export interface SendBackInput {
 }
 
 /**
+ * The name Send back's kept reason goes by (#5041), one per task, so chat's
+ * task card, the task screen and a row's menu (#5513) share it.
+ */
+export function sendBackDraftKey(taskId: string): string {
+  return `send-back:${taskId}`;
+}
+
+/**
  * The reason Send back is refused before it sends, or `null` when it can
  * go: the server requires one line (#4635).
  */

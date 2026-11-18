@@ -157,13 +157,14 @@ export function useTaskMenu({
   );
 
   const startTask = useStartTask();
-  // Confirm and Send back (#5513). The menu has no line to carry a refusal,
-  // so it is the platform's alert.
+  // Confirm and Send back (#5513). The menu has no line to carry a refused
+  // Confirm, so it is the platform's alert; Send back's sheet says its own.
   const review = useTaskReview();
   const reviewRefusal = review.refusal;
+  const confirmRefusal = review.confirmRefusal;
   useEffect(() => {
-    if (reviewRefusal) Alert.alert(reviewRefusal.text);
-  }, [reviewRefusal]);
+    if (confirmRefusal) Alert.alert(confirmRefusal.text);
+  }, [confirmRefusal]);
   const { confirm: confirmTask, sendBack } = review;
 
   const actionFor = useCallback(

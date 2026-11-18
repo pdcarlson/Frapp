@@ -110,7 +110,10 @@ vi.mock("@/components/tasks/mark-done-sheet", () => ({
     return null;
   },
 }));
-vi.mock("@/components/tasks/send-back-sheet", () => ({
+vi.mock("@/components/tasks/send-back-sheet", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/tasks/send-back-sheet")
+  >()),
   SendBackSheet: (props: NonNullable<typeof sheets.sendBack>) => {
     sheets.sendBack = props;
     return null;

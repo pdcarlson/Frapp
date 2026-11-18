@@ -9,7 +9,7 @@ import {
   livePicks,
   markDoneBarLabel,
   removedLine,
-  sendBackInBar,
+  taskBarLayout,
   taskMenuKeys,
   taskScreenControls,
 } from "./task-screen";
@@ -240,13 +240,31 @@ describe("Confirm and Send back (#5513)", () => {
     expect(proof.confirmInMenu).toBe(false);
   });
 
-  it("gives neither on the viewer's own completion: the API refuses a self-confirm", () => {
+  it("gives no Confirm on the viewer's own completion (the API refuses a self-confirm), and Mark not done in Send back's place", () => {
     const own = controlsFor({ assignee_id: "officer" });
     expect(own.confirm).toBe(false);
     expect(own.sendBack).toBe(false);
+    expect(own.reopen).toBe(true);
   });
 
-  it("gives neither without tasks:manage, once confirmed, before it's done, without a sign-off to give, or while refused", () => {
+  it("gives Send back alone, as chat's card does, on a completion that needed no sign-off", () => {
+    // Signed off as it was marked: nothing was paid, so it can go back.
+    const auto = controlsFor({
+      point_reward: null,
+      points_awarded: true,
+      confirmed_at: WAITING.completed_at,
+    });
+    expect(auto.sendBack).toBe(true);
+    expect(auto.confirm).toBe(false);
+    expect(auto.confirmInMenu).toBe(false);
+    // Not paid yet and needing no sign-off: nothing to confirm either.
+    const unpaid = controlsFor({ point_reward: null });
+    expect(unpaid.sendBack).toBe(true);
+    expect(unpaid.confirm).toBe(false);
+    expect(taskMenuKeys(auto)).toEqual(["sendBack", "duplicate", "delete"]);
+  });
+
+  it("gives neither without tasks:manage, once an officer confirmed it, before it's done, or while refused", () => {
     const none = (controls: ReturnType<typeof controlsFor>) =>
       [controls.confirm, controls.sendBack, controls.confirmInMenu].some(
         Boolean,
@@ -266,7 +284,8 @@ describe("Confirm and Send back (#5513)", () => {
         controlsFor({ status: "IN_PROGRESS", stored_status: "IN_PROGRESS" }),
       ),
     ).toBe(false);
-    expect(none(controlsFor({ point_reward: null }))).toBe(false);
+    // Paid without a `confirmed_at`: the ledger's flag alone shuts Confirm.
+    expect(controlsFor({ points_awarded: true }).confirm).toBe(false);
     expect(none(controlsFor({}, "officer", true, true))).toBe(false);
   });
 
@@ -305,9 +324,45 @@ describe("Confirm and Send back (#5513)", () => {
     });
   });
 
-  it("keeps Send back a round until the bar holds three", () => {
-    expect(sendBackInBar(2)).toBe(true);
-    expect(sendBackInBar(3)).toBe(false);
+  it("lays an officer's usual review out as Confirm with its payout, Send back, and Edit in More", () => {
+    const layout = taskBarLayout({
+      controls: controlsFor({}),
+      removePeople: false,
+      otherMoreRows: 1, // Delete
+    });
+    expect(layout).toEqual({
+      sendBackRound: true,
+      sendBackInMore: false,
+      editRound: false,
+      editInMore: true,
+      moreShown: true,
+      rounds: 2,
+    });
+    expect(confirmBarLabel(10, layout.rounds).label).toBe("Confirm · +10 pts");
+  });
+
+  it("keeps Send back a round until the bar holds three others, then leads More with it", () => {
+    // A group's copy: Remove people and More beside Send back; three rounds.
+    const group = taskBarLayout({
+      controls: controlsFor({ group_id: "g1" }),
+      removePeople: true,
+      otherMoreRows: 2,
+    });
+    expect(group.sendBackRound).toBe(true);
+    expect(group.rounds).toBe(3);
+    // No Confirm (no sign-off needed, not paid yet), so Edit stays a round:
+    // Edit, Remove people and More leave Send back no room.
+    const crowded = taskBarLayout({
+      controls: controlsFor({ group_id: "g1", point_reward: null }),
+      removePeople: true,
+      otherMoreRows: 2,
+    });
+    expect(crowded).toMatchObject({
+      sendBackRound: false,
+      sendBackInMore: true,
+      editRound: true,
+      rounds: 3,
+    });
   });
 });
 

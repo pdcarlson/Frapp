@@ -62,10 +62,11 @@ export interface ActivityRowActions {
 
 /**
  * The rows' one-press asks (#4437): Confirm a completed task, Approve
- * service hours or Check in to an event from the row, through what the sheet
- * calls, in the sheet's words: `useConfirmTask` with the task card's failure
- * line, `useReviewServiceEntry` with the hours sheet's, and `useCheckIn` with
- * the chat event card's (`rowActionFailure`). Web's twin is
+ * service hours or Check in to an event from the row, through what the
+ * record calls, in its words: `useConfirmTask` with the task card's failure
+ * line (the task screen's Confirm too, #5513), `useReviewServiceEntry` with
+ * the hours sheet's, and `useCheckIn` with the chat event card's
+ * (`rowActionFailure`). Web's twin is
  * `apps/web/components/activity/activity-row-action.tsx`.
  *
  * Check in is on the row of any event the member can check in to now, a
@@ -81,20 +82,20 @@ export interface ActivityRowActions {
  *
  * Held by the screen, not by each row, so where an item's write stands
  * outlives the row drawing it. A row drawn again (Show all, a chip) still
- * knows its write is sending or has landed, and the sheet opened from the
- * same row (`stateOf`) doesn't offer Approve a second time. Once a write
+ * knows its write is sending or has landed, and the hours sheet opened from
+ * the same row (`stateOf`) doesn't offer Approve a second time. Once a write
  * lands its button stays disabled, reading "Confirmed" or "Approved", until
  * the re-read takes the row away: a second press would be refused as a
  * repeat. A ref, set before the first await, stops two taps in one frame
  * from both sending.
  *
  * `null` while the chapter's plan refuses those writes (`allowed`), so every
- * row opens its sheet, and also after a refusal from the plan or the module
+ * row opens its record (a task its screen, the rest a sheet), and also after a refusal from the plan or the module
  * gate (`useCardWrite`'s rule): pressing again would only fetch the same
  * refusal. That lasts until the member comes back to this screen or to the
  * app, since an officer may have sorted it out by then. The buttons are
  * disabled while a write would be lost (`writeBlockedReason`, their hint,
- * as the sheet's buttons are) and while the chapter record loads. Any other
+ * as the record's own buttons are) and while the chapter record loads. Any other
  * refusal is the platform's alert, naming the item, since the row has no
  * line to carry it, and leaves the button for a retry.
  */
@@ -109,9 +110,9 @@ export function useActivityRowActions({
   /** Records the read and re-reads, so the row leaves its list. */
   onActed: (row: ActivityRow) => void;
 }): {
-  /** `null` while the writes are refused: every row opens its sheet. */
+  /** `null` while the writes are refused: every row opens its record. */
   actions: ActivityRowActions | null;
-  /** Where each row's write stands, refused or not, for the sheet. */
+  /** Where each row's write stands, refused or not, for the hours sheet. */
   stateOf: (key: string) => ActivityRowActionState;
 } {
   const confirmTask = useConfirmTask();

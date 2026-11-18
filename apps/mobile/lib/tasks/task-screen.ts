@@ -10,8 +10,12 @@
  * Delete and Remove people are `tasks:manage`, and Edit is refused once a
  * task is confirmed. There is no creator rule. Confirm and Send back
  * (`POST /v1/tasks/:id/confirm` and `/reject`, #5513) are a `tasks:manage`
- * holder's on a completion waiting on their sign-off, never their own
- * (`taskAwaitsReview`: the API refuses a self-confirm).
+ * holder's. Confirm is on a completion waiting on their sign-off, never
+ * their own (`taskAwaitsReview`: the API refuses a self-confirm). Send back
+ * is wherever chat's task card offers it (`taskSendBackOpen`, the API's
+ * `isReopenable`): any completion not yet paid, or signed off as it was
+ * marked; on their own the screen offers Mark not done instead, which does
+ * the same for the assignee.
  *
  * A row's long-press menu (#5492) reads the same controls
  * (`taskMenuKeys`), so the menu and the screen can't disagree about who may
@@ -26,6 +30,7 @@ import {
   TASK_ACTION_LABELS,
   taskAwaitsReview,
   taskConfirmLabel,
+  taskSendBackOpen,
   type TaskStatus,
 } from "@repo/hooks";
 import { formatPointsChip, formatRelativeDayTime } from "@repo/formatting";
@@ -89,7 +94,7 @@ export interface TaskScreenControls {
    * link is seen on the screen before it is confirmed.
    */
   confirmInMenu: boolean;
-  /** Send back, with a reason, beside Confirm (`sendBackInBar` says where). */
+  /** Send back, with a reason (`taskBarLayout` says where it sits). */
   sendBack: boolean;
   edit: boolean;
   /** The minus, on a group task's copy. */
@@ -135,21 +140,17 @@ export function taskScreenControls({
 }): TaskScreenControls {
   const isAssignee = viewerId !== null && row.assigneeId === viewerId;
   const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
-  // The ledger's own flag too: a read that has it awarded without a
-  // `confirmed_at` is not waiting on anyone.
+  const reviewed = {
+    assignee_id: row.assigneeId,
+    stored_status: stored ?? null,
+    points_awarded: row.pointsAwarded,
+    completed_at: row.completedAt,
+    confirmed_at: row.confirmedAt,
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  };
   const awaitsReview =
-    !toggleRefused &&
-    !row.pointsAwarded &&
-    taskAwaitsReview(
-      {
-        assignee_id: row.assigneeId,
-        stored_status: stored ?? null,
-        confirmed_at: row.confirmedAt,
-        point_reward: row.pointReward,
-        proof_kind: row.proofKind,
-      },
-      { viewerId, canManage },
-    );
+    !toggleRefused && taskAwaitsReview(reviewed, { viewerId, canManage });
   // The board's rule for its sheet's Edit (#4296): the edit form needs an
   // assignee and a day, and a confirmed task can't change.
   const edit =
@@ -167,7 +168,13 @@ export function taskScreenControls({
       checkboxSequence(row).length > 0,
     confirm: awaitsReview,
     confirmInMenu: awaitsReview && row.proofKind === "none",
-    sendBack: awaitsReview,
+    // Not before the viewer is known: it may be their own.
+    sendBack:
+      !toggleRefused &&
+      canManage &&
+      viewerId !== null &&
+      !isAssignee &&
+      taskSendBackOpen(reviewed),
     edit,
     removePeople: canManage && row.groupId !== null,
     reopen:
@@ -468,12 +475,57 @@ export function confirmBarLabel(
   };
 }
 
+/** Where the bar's controls sit, for `taskBarLayout`. */
+export interface TaskBarLayout {
+  /** Send back as a round beside the pill, or as More's first row. */
+  sendBackRound: boolean;
+  sendBackInMore: boolean;
+  /** Edit as a round, or in More, after Send back. */
+  editRound: boolean;
+  editInMore: boolean;
+  /** Whether More is drawn at all. */
+  moreShown: boolean;
+  /** The rounds beside the pill, More included: the pill's words read it. */
+  rounds: number;
+}
+
 /**
- * Whether Send back is a round in the bar (#5513) or leads More: a round
- * while the bar has room beside the other rounds (Edit, Remove people,
- * More), else More's first row. More then holds at most Send back, Delete
- * and Delete for everyone, three, which Android's dialog can draw.
+ * Where the bar puts Send back and Edit (#5513), so the pill keeps room for
+ * its words at 320pt.
+ *
+ * - While Confirm shows, Edit moves into More, as web's review puts Edit
+ *   under its ⋯ so nothing competes with the decision (#4693). That leaves
+ *   an officer's usual review two rounds, Send back and More, beside
+ *   "Confirm · +10 pts".
+ * - Send back is a round while the bar holds fewer than three others, else
+ *   More's first row. More then holds at most three rows, which Android's
+ *   dialog can draw: Send back or Edit with Delete and Delete for everyone.
  */
-export function sendBackInBar(otherRounds: number): boolean {
-  return otherRounds < BAR_ROUNDS_MAX;
+export function taskBarLayout({
+  controls,
+  removePeople,
+  otherMoreRows,
+}: {
+  controls: Pick<TaskScreenControls, "confirm" | "sendBack" | "edit">;
+  /** Remove people's round is drawn (a group's copy, its copies read). */
+  removePeople: boolean;
+  /** More's other rows: Start, Mark not done, Give it back, the deletes. */
+  otherMoreRows: number;
+}): TaskBarLayout {
+  const editInMore = controls.edit && controls.confirm;
+  const editRound = controls.edit && !controls.confirm;
+  const moreRows = otherMoreRows + (editInMore ? 1 : 0);
+  const others = [editRound, removePeople, moreRows > 0].filter(Boolean).length;
+  const sendBackRound = controls.sendBack && others < BAR_ROUNDS_MAX;
+  const sendBackInMore = controls.sendBack && !sendBackRound;
+  const moreShown = moreRows > 0 || sendBackInMore;
+  return {
+    sendBackRound,
+    sendBackInMore,
+    editRound,
+    editInMore,
+    moreShown,
+    rounds: [sendBackRound, editRound, removePeople, moreShown].filter(Boolean)
+      .length,
+  };
 }

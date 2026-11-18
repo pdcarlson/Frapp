@@ -1,10 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import {
-  signUpLinkKind,
-  taskGroupLabel,
-  taskNeedsSignOff,
-} from "@repo/validation";
+import { signUpLinkKind, taskGroupLabel } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
@@ -227,40 +223,6 @@ export function activityRowAction(
     return needsCode && !options.canScan ? null : "check-in";
   }
   return null;
-}
-
-/** Who is looking, for `taskAwaitsReview`. */
-export interface ActivityReviewer {
-  viewerId: string | null;
-  /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
-  canManage: boolean;
-}
-
-/**
- * Whether a task waits on this viewer's sign-off (#5492): marked done, not
- * yet confirmed, needing one (`taskNeedsSignOff`: points or proof), held by
- * someone else (the API refuses a self-confirm), and the viewer holds
- * `tasks:manage`. The fields a list task or an Activity task both carry.
- * The phone's task screen offers Confirm and Send back by it (#5513).
- */
-export function taskAwaitsReview(
-  task: {
-    assignee_id: string | null;
-    stored_status?: string | null;
-    confirmed_at: string | null;
-    point_reward: number | null;
-    proof_kind?: string | null;
-  },
-  reviewer: ActivityReviewer,
-): boolean {
-  return (
-    reviewer.canManage &&
-    reviewer.viewerId !== null &&
-    task.assignee_id !== reviewer.viewerId &&
-    task.stored_status === "COMPLETED" &&
-    !task.confirmed_at &&
-    taskNeedsSignOff(task)
-  );
 }
 
 /** One row of the page: what it shows, and the record it opens. */

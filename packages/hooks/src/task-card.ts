@@ -373,11 +373,32 @@ export function taskCardControls(input: {
   if (isAssignee && stored === "TODO") return ["start"];
   if (isAssignee && stored === "IN_PROGRESS") return ["complete"];
   if (stored !== "COMPLETED" || !canManage) return [];
-  if (live.points_awarded) {
-    return taskSignedOffAutomatically(live) ? ["reject"] : ["confirmed"];
+  if (!taskSendBackOpen({ ...live, stored_status: stored })) {
+    return ["confirmed"];
   }
-  if (!taskNeedsSignOff(live)) return ["reject"];
+  if (live.points_awarded || !taskNeedsSignOff(live)) return ["reject"];
   return isAssignee ? ["reject"] : ["confirm", "reject"];
+}
+
+/**
+ * Whether a completion can still be sent back (#4635), for a `tasks:manage`
+ * holder: marked done, and not yet paid, or signed off as it was marked
+ * because it needed no sign-off (`taskSignedOffAutomatically`), where nothing
+ * was paid. The API's own test (`isReopenable`). The chat task card and the
+ * phone's task screen and long-press menu (#5513) offer Send back by it.
+ */
+export function taskSendBackOpen(task: {
+  stored_status?: string | null;
+  points_awarded?: boolean | null;
+  completed_at?: string | null;
+  confirmed_at?: string | null;
+  point_reward?: number | null;
+  proof_kind?: string | null;
+}): boolean {
+  return (
+    task.stored_status === "COMPLETED" &&
+    (!task.points_awarded || taskSignedOffAutomatically(task))
+  );
 }
 
 /**
