@@ -1,6 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { signUpLinkKind } from "@repo/validation";
+import { signUpLinkKind, taskGroupLabel } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
@@ -14,6 +14,11 @@ import {
 
 export type Activity = components["schemas"]["ActivityDto"];
 type ActivityTask = components["schemas"]["ActivityTaskDto"];
+/**
+ * A task for everyone the member assigned, as one row of `task_items`
+ * (#5492): the group's progress and what its copies share.
+ */
+export type ActivityTaskGroup = components["schemas"]["ActivityTaskGroupDto"];
 export type ActivityPoll = components["schemas"]["ActivityPollDto"];
 type ActivityEvent = components["schemas"]["ActivityEventDto"];
 type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
@@ -224,6 +229,21 @@ export function activityRowAction(
 export type ActivityRow = RowBase &
   (
     | { kind: "task"; task: ActivityTask }
+    | {
+        /**
+         * A task for everyone the member assigned, once however many copies
+         * it has (#5492, Paul, 2026-11-18): "Everyone · 12", how many are
+         * done, and the faces of whom it went to. It opens the group's
+         * `task_id`, a copy that carries the group.
+         */
+        kind: "task-group";
+        group: ActivityTaskGroup;
+        /**
+         * Up to 5 of the members it went to, overdue first, for a stack of
+         * faces; `group.total` says how many in all.
+         */
+        faceIds: string[];
+      }
     | { kind: "poll"; poll: ActivityPoll }
     | { kind: "event"; event: ActivityEvent }
     | { kind: "hours"; entry: ActivityHours }
@@ -455,17 +475,9 @@ function taskRow(
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
   const finished = task.stored_status === "COMPLETED";
-  const left = finished ? null : timeLeftWithinDay(task.due_at, now);
-  const soon = left ? `Due in ${left}` : null;
-  const due = finished
-    ? null
-    : (soon ??
-      (when === "timed"
-        ? // Under its day's heading a task says only its time, if it has one.
-          task.due_at
-          ? `Due ${formatTimeOfDay(task.due_at)}`
-          : null
-        : formatDueLabel(task.due_at ?? task.due_date, now)));
+  const { soon, due } = finished
+    ? { soon: null, due: null }
+    : taskDue(task, now, when);
   const who =
     role === "mine"
       ? task.created_by_name
@@ -511,6 +523,66 @@ function taskRow(
     unread: role !== "assigned" && task.unread,
     readRef: { kind: "task", item_id: task.id },
     progress: null,
+  };
+}
+
+/**
+ * When an unfinished task is due, as a row says it: `soon` is "Due in 40
+ * minutes" within a day, and `due` the clause the detail ends with (that, or
+ * "Due Friday"; under a day's heading only its time, if it has one).
+ */
+function taskDue(
+  task: { due_at: string | null; due_date: string },
+  now: Date,
+  when: RowWhen,
+): { soon: string | null; due: string | null } {
+  const left = timeLeftWithinDay(task.due_at, now);
+  const soon = left ? `Due in ${left}` : null;
+  const due =
+    soon ??
+    (when === "timed"
+      ? // Under its day's heading a task says only its time, if it has one.
+        task.due_at
+        ? `Due ${formatTimeOfDay(task.due_at)}`
+        : null
+      : formatDueLabel(task.due_at ?? task.due_date, now));
+  return { soon, due };
+}
+
+/**
+ * A task for everyone the member assigned, as one row of Tasks you assigned
+ * (#5492): who it went to and how many, in the shared words
+ * (`taskGroupLabel`: "Everyone · 12", "Everyone in Philanthropy · 6", or
+ * "6 people", which already counts them), then when it is due; a bar of how
+ * many copies are done ("3 of 12"); Overdue when any copy is. One task sent
+ * to the whole chapter is one row, not one per member, so it can't bury the
+ * other tasks the officer assigned, as Paul's 25 identical rows did.
+ */
+function taskGroupRow(group: ActivityTaskGroup, now: Date): ActivityRow {
+  const { soon, due } = taskDue(group, now, "dated");
+  return {
+    kind: "task-group",
+    key: `made:task-group:${group.id}`,
+    group,
+    faceIds: group.preview_assignee_ids,
+    title: group.title,
+    detail: [
+      taskGroupLabel(group),
+      group.audience === "people" ? null : String(group.total),
+      due,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    soon,
+    // The row leads with a stack of the members' faces instead.
+    faceId: null,
+    badge: group.overdue ? { label: "Overdue", variant: "destructive" } : null,
+    glyph: "task",
+    dateBlock: null,
+    // What the member made has no dot, and no Snooze.
+    unread: false,
+    readRef: null,
+    progress: rowProgress({ done: group.done, total: group.total }, "done"),
   };
 }
 
@@ -721,6 +793,7 @@ function part(
 export function activityGroups(
   activity: Activity,
   now: Date = new Date(),
+  options: ActivityGroupsOptions = {},
 ): ActivityGroup[] {
   const down = new Set(activity.unavailable);
   const downFor = (sections: ActivitySection[]) =>
@@ -741,11 +814,7 @@ export function activityGroups(
   const madeEvents = activity.made_by_you.events.map((event) =>
     eventRow(event, "made", now),
   );
-  // A confirmed task is finished: it is in the Archive (#5127). The read
-  // still serves it, for phone builds from before the Archive.
-  const madeTasks = activity.made_by_you.tasks
-    .filter((task) => !task.confirmed_at)
-    .map((task) => taskRow(task, "made", "assigned", now));
+  const madeTasks = madeTaskRows(activity, now, options);
 
   return [
     {
@@ -794,6 +863,48 @@ export function activityGroups(
       unavailable: downFor(["links"]),
     },
   ];
+}
+
+/** How `activityGroups` builds Waiting on others. */
+export interface ActivityGroupsOptions {
+  /**
+   * Tasks you assigned from `made_by_you.task_items` (#5492), where a task for
+   * everyone is one row that opens its group: the phone's, whose task screen
+   * shows the group. Without it, or from an API before the field, each copy
+   * is its own row (`made_by_you.tasks`), as web still lists them: its panel
+   * draws one task as chat's card, and a group row there would open one
+   * member's copy as if it were the group.
+   */
+  taskItems?: boolean;
+}
+
+/**
+ * Tasks you assigned. From `task_items` when asked for and served (#5492):
+ * the read has already left out what is finished and counted a task for
+ * everyone once. Otherwise from `tasks`, each copy its own row, less the
+ * confirmed ones, which are finished and in the Archive (#5127); the read
+ * still serves those for phone builds from before the Archive.
+ */
+function madeTaskRows(
+  activity: Activity,
+  now: Date,
+  options: ActivityGroupsOptions,
+): ActivityRow[] {
+  // `?? null`: a read from an API before the field (a persisted cache, a
+  // server behind the build) has none.
+  const items = options.taskItems
+    ? (activity.made_by_you.task_items ?? null)
+    : null;
+  if (items) {
+    return items.map((item) =>
+      item.kind === "group"
+        ? taskGroupRow(item.group, now)
+        : taskRow(item.task, "made", "assigned", now),
+    );
+  }
+  return activity.made_by_you.tasks
+    .filter((task) => !task.confirmed_at)
+    .map((task) => taskRow(task, "made", "assigned", now));
 }
 
 /** One of the member's own to-dos, with when it falls. */
@@ -908,20 +1019,34 @@ export function activityReviewRows(
  * so a completion opens as the thing to act on, then their own to-dos, then
  * what they assigned. Null when the feed no longer has it, such as a
  * completion confirmed from another device.
+ *
+ * With `taskItems` (`activityGroups`), a copy of a task for everyone the
+ * viewer assigned finds the group's row when it is the copy that row opens
+ * (`task_id`); the read names no other copy, so another finds nothing there.
+ * A completed copy is found first anyway, among what waits on review.
  */
 export function findActivityTaskRow(
   activity: Activity,
   taskId: string,
   now: Date = new Date(),
+  options: ActivityGroupsOptions = {},
 ): ActivityRow | null {
   const rows = [
     ...activityReviewRows(activity, now),
     ...activityToDos(activity, now).map((todo) => todo.dated),
-    ...activityGroups(activity, now).flatMap((group) => group.rows),
+    ...activityGroups(activity, now, options).flatMap((group) => group.rows),
   ];
-  return (
-    rows.find((row) => row.kind === "task" && row.task.id === taskId) ?? null
-  );
+  return rows.find((row) => activityRowTaskId(row) === taskId) ?? null;
+}
+
+/**
+ * The task a row opens: its own, or for a task for everyone the copy that
+ * carries the group (`task_id`). `null` on a row that is not a task.
+ */
+export function activityRowTaskId(row: ActivityRow): string | null {
+  if (row.kind === "task") return row.task.id;
+  if (row.kind === "task-group") return row.group.task_id;
+  return null;
 }
 
 /**

@@ -23,6 +23,7 @@ import { duplicateEventTemplate } from "@/lib/events/edit-event";
 import { EventEditHost } from "@/lib/events/use-event-edit";
 import { useNewEventAt } from "@/lib/events/use-new-event-at";
 import {
+  selectAllEventRows,
   selectEventDetail,
   type EventDetail,
   type EventRow,
@@ -68,6 +69,8 @@ export function eventMenuKeys(grants: {
  */
 export function useEventMenu(): {
   menuFor: (event: EventRow) => ItemMenuHandle | null;
+  /** An event by id, read off the events list; `null` when it doesn't hold it. */
+  menuForId: (id: string) => ItemMenuHandle | null;
   host: ReactNode;
 } {
   const grants = useEventEditGrants();
@@ -175,8 +178,23 @@ export function useEventMenu(): {
     [handleFor, grants.edit, grants.delete, canCreate, actionFor],
   );
 
+  // The list's events as rows by id, for a screen that holds only an id
+  // (Activity's rows, which carry their own read of the event).
+  const rowById = useMemo(
+    () => new Map(selectAllEventRows(eventsData).map((row) => [row.id, row])),
+    [eventsData],
+  );
+  const menuForId = useCallback(
+    (id: string) => {
+      const row = rowById.get(id);
+      return row ? menuFor(row) : null;
+    },
+    [rowById, menuFor],
+  );
+
   return {
     menuFor,
+    menuForId,
     host: (
       <>
         {menu.element}

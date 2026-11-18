@@ -24,6 +24,12 @@ import {
   leadRowStyles,
 } from "@/components/lead-tile";
 import { FaceWithBadge } from "@/components/face-with-badge";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
+import { MemberAvatar } from "@/components/member-avatar";
 import { meterStyles } from "@/components/meter";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonText } from "@/components/state-block";
@@ -32,7 +38,8 @@ import { tintedControlStyles } from "@/components/tinted-control";
 import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { initialsFor } from "@/lib/chat/display-name";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The screen
@@ -43,19 +50,15 @@ export const ActivityFaces = createContext<
   (userId: string) => ActivityFace | null
 >(() => null);
 
-/** What a row's long press opens: its label, and how to open it. */
-export interface ActivityRowMenu {
-  label: string;
-  open: () => void;
-}
-
 /**
- * The screen's long press for a row (#4982): Snooze, or nothing. Provided by
- * the Activity screen, so the week card, the To review card and every list
- * get it without threading it through each.
+ * The screen's long press for a row: a task's or an event's menu (#5492)
+ * with Snooze where it applies (#4982), Snooze alone, or nothing
+ * (`useActivityRowMenu`). Provided by the Activity screen, so the week card,
+ * the To review card and every list get it without threading it through
+ * each.
  */
 export const ActivityRowMenuContext = createContext<
-  (row: ActivityRow) => ActivityRowMenu | null
+  (row: ActivityRow) => ItemMenuHandle | null
 >(() => null);
 
 /**
@@ -102,11 +105,12 @@ export function ActivityListRow({
   solo?: boolean;
   onPress: () => void;
   /**
-   * What a long press does (#4982): Snooze on a row that waits, Unsnooze on
-   * a snoozed one. Also offered as a named action to VoiceOver and TalkBack,
-   * where a long press is out of reach.
+   * What a long press opens (`useActivityRowMenu`): a task's or an event's
+   * menu (#5492), with Snooze on a row that waits and Unsnooze on a snoozed
+   * one (#4982). Each action is also offered by name to VoiceOver and
+   * TalkBack, where a long press is out of reach.
    */
-  menu?: ActivityRowMenu | null;
+  menu?: ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
@@ -144,7 +148,15 @@ export function ActivityListRow({
         </Text>
         <ActivityRowDetail row={row} lines={solo ? 2 : 1} />
         {row.progress ? (
-          <ActivityRowProgressLine progress={row.progress} onCard={onCard} />
+          <ActivityRowProgressLine
+            progress={row.progress}
+            onCard={onCard}
+            faces={
+              row.kind === "task-group"
+                ? { ids: row.faceIds, total: row.group.total }
+                : null
+            }
+          />
         ) : null}
       </View>
       {row.badge ? (
@@ -165,12 +177,16 @@ export function ActivityListRow({
     </>
   );
 
-  const accessibilityActions = [
-    ...(action && !action.disabled
-      ? [{ name: "rowAction", label: action.label }]
-      : []),
-    ...(menu ? [{ name: "rowMenu", label: menu.label }] : []),
-  ];
+  // The button's press as a named action, one swipe up on VoiceOver and in
+  // TalkBack's actions menu, as the Tasks row offers its checkbox, then each
+  // of the menu's; the row's own tap still opens it. The button is left off
+  // while disabled, so it can't offer what it would refuse.
+  const named = itemMenuAccessibility(
+    menu,
+    action && !action.disabled
+      ? [{ name: "rowAction", label: action.label, run: action.run }]
+      : [],
+  );
   return (
     <PressableRow
       accessibilityRole="button"
@@ -180,21 +196,9 @@ export function ActivityListRow({
       // Offline, why its button is held, after the detail: the button is no
       // focus stop of its own, so the row says it.
       accessibilityHint={listRowHint(row.detail || null, action?.hint)}
-      // The button's press as a named action, one swipe up on VoiceOver and
-      // in TalkBack's actions menu, as the Tasks row offers its checkbox;
-      // the row's own tap still opens the sheet. Left off while the button
-      // is disabled, so it can't offer what it would refuse.
-      accessibilityActions={
-        accessibilityActions.length > 0 ? accessibilityActions : undefined
-      }
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "rowAction" && action) {
-          if (!action.disabled) action.run();
-        }
-        if (event.nativeEvent.actionName === "rowMenu") menu?.open();
-      }}
+      {...named}
       onPress={onPress}
-      onLongPress={menu?.open}
+      onLongPress={longPressOf(menu)}
       onCard={onCard}
       style={rowStyle}
     >
@@ -313,9 +317,12 @@ function ActivityRowDetail({
 function ActivityRowProgressLine({
   progress,
   onCard,
+  faces = null,
 }: {
   progress: ActivityRowProgress;
   onCard: boolean;
+  /** A task for everyone (#5492): whom it went to, led by their faces. */
+  faces?: { ids: string[]; total: number } | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accentPrimary } = useChapterBranding();
@@ -328,6 +335,7 @@ function ActivityRowProgressLine({
       importantForAccessibility="no-hide-descendants"
       testID="activity-row-progress"
     >
+      {faces ? <FaceStack ids={faces.ids} total={faces.total} /> : null}
       <View
         style={[
           styles.progressTrack,
@@ -346,6 +354,56 @@ function ActivityRowProgressLine({
         />
       </View>
       <Text style={styles.progressCount}>{progress.label}</Text>
+    </View>
+  );
+}
+
+/** How many faces a task for everyone shows before "+N" (#5492). */
+const FACE_STACK_MAX = 3;
+/** Each face's side: the smallest avatar the phone draws (the mention picker's). */
+const FACE_STACK_SIZE = 24;
+/** How far each face tucks under the one before, as Slack's and GitHub's stacks. */
+const FACE_STACK_OVERLAP = 8;
+
+/**
+ * Whom a task for everyone went to (#5492; Paul, 2026-11-18: "a stack of
+ * faces and how many are done"): up to three of the members the read
+ * previews (overdue first), each overlapping the one before, then "+N" for
+ * the rest, as Slack's and GitHub's avatar stacks count the others. A member
+ * the roster no longer holds is left out and counted in "+N". Decoration: the
+ * row's label says who it went to and how many are done.
+ */
+function FaceStack({ ids, total }: { ids: string[]; total: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createActivityRowStyles(tokens);
+  const faceFor = useContext(ActivityFaces);
+  const faces = ids
+    .map((id) => ({ id, face: faceFor(id) }))
+    .filter(
+      (entry): entry is { id: string; face: ActivityFace } =>
+        entry.face !== null,
+    )
+    .slice(0, FACE_STACK_MAX);
+  if (faces.length === 0) return null;
+  const more = total - faces.length;
+  return (
+    <View style={styles.faceStack} testID="activity-face-stack">
+      {faces.map(({ id, face }, index) => (
+        <MemberAvatar
+          key={id}
+          uri={face.avatarUrl}
+          initials={face.name ? initialsFor(face.name) : ""}
+          size={FACE_STACK_SIZE}
+          tint={face.tint}
+          style={[
+            styles.stackFace,
+            index > 0 ? { marginLeft: -FACE_STACK_OVERLAP } : null,
+          ]}
+          textStyle={styles.stackInitials}
+          testID="activity-face-stack-face"
+        />
+      ))}
+      {more > 0 ? <Text style={styles.stackMore}>{`+${more}`}</Text> : null}
     </View>
   );
 }
@@ -552,6 +610,40 @@ function createActivityRowStyles(tokens: SignetTokens) {
       flexShrink: 1,
     },
     progressTrackOnCard: { backgroundColor: meter.track.backgroundColor },
+    faceStack: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexShrink: 0,
+    },
+    stackFace: {
+      width: FACE_STACK_SIZE,
+      height: FACE_STACK_SIZE,
+      borderRadius: avatarRadius(FACE_STACK_SIZE),
+      // The face badge's edge (`face-with-badge.tsx`): a hairline, not a
+      // ring in the ground's colour, so each face reads over the one under
+      // it on the screen, a card or a pressed row alike.
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.color.surface.popover,
+    },
+    stackInitials: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.mutedForeground,
+    },
+    stackMore: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      fontVariant: ["tabular-nums"],
+      color: tokens.color.text.mutedForeground,
+      marginLeft: tokens.spacing.xs,
+    },
     progressFill: meter.fill,
     progressCount: {
       ...typeRole({

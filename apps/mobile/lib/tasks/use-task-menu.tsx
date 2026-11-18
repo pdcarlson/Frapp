@@ -89,6 +89,12 @@ export function useTaskMenu({
   menuFor: (row: TaskRowModel) => ItemMenuHandle | null;
   /** A Calendar row: one task, or every copy of a group task the viewer gave. */
   menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
+  /**
+   * A task by id, read off the viewer's tasks: one copy, or (`group`) every
+   * copy of the group it belongs to, as Activity's one row for a task for
+   * everyone. `null` when the read doesn't hold it.
+   */
+  menuForTask: TaskMenuForTask;
   host: ReactNode;
 } {
   const router = useRouter();
@@ -253,6 +259,16 @@ export function useTaskMenu({
     [build],
   );
 
+  const menuForTask = useCallback<TaskMenuForTask>(
+    (id, title, scope = "copy") => {
+      const row = rowById(id);
+      if (!row) return null;
+      // A copy with no group can't stand for one.
+      return build(row, title, row.groupId === null ? "copy" : scope);
+    },
+    [rowById, build],
+  );
+
   const menuForCalendarTask = useCallback(
     (item: CalendarTask): ItemMenuHandle | null => {
       if (item.kind === "mine") {
@@ -310,12 +326,19 @@ export function useTaskMenu({
     </>
   );
 
-  return { menuFor, menuForCalendarTask, host };
+  return { menuFor, menuForCalendarTask, menuForTask, host };
 }
 
+/** `useTaskMenu`'s menu for a task by id (`menuForTask`). */
+export type TaskMenuForTask = (
+  id: string,
+  title: string,
+  scope?: "copy" | "group",
+) => ItemMenuHandle | null;
+
 /**
- * The task menu for a screen with no checkbox (the Calendar and its Day
- * screen): its own Mark done, with Mark done's sheet and Undo, and a failed
+ * The task menu for a screen with no checkbox (the Calendar, its Day screen
+ * and Activity): its own Mark done, with Mark done's sheet and Undo, and a failed
  * one said in the platform alert, since the screen has no line for it.
  *
  * `host` holds the menu and the sheets, which draw over everything, so it
@@ -325,18 +348,20 @@ export function useTaskMenu({
  */
 export function useCalendarTaskMenu(): {
   menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
+  menuForTask: TaskMenuForTask;
   host: ReactNode;
   undoBar: ReactNode;
 } {
   const viewerId = useViewerUserId();
   const toggles = useTaskToggle(useTaskRowById(), { viewerId });
-  const { menuForCalendarTask, host } = useTaskMenu({ toggles });
+  const { menuForCalendarTask, menuForTask, host } = useTaskMenu({ toggles });
   const line = toggles.refusal ?? toggles.notice;
   useEffect(() => {
     if (line) Alert.alert(line);
   }, [line]);
   return {
     menuForCalendarTask,
+    menuForTask,
     host: (
       <>
         {host}

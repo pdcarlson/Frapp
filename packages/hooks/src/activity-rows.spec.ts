@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CLOSES_AT_CASES, closesAtHasPassed } from "@repo/formatting";
+import {
+  CLOSES_AT_CASES,
+  closesAtHasPassed,
+  formatDueLabel,
+} from "@repo/formatting";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   ACTIVITY_GLYPH_NAV,
@@ -1299,5 +1303,152 @@ describe("activityArchiveGroups (#5127)", () => {
     expect(
       activityArchiveGroups(archive({ unavailable: ["tasks"] }), "me", NOW),
     ).toEqual([{ id: "tasks", label: "Tasks", rows: [], unavailable: true }]);
+  });
+});
+
+describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
+  // Noon local, 2026-11-18 (a Wednesday): due dates read the same in every zone.
+  const now = new Date(2026, 10, 18, 12);
+  const group = (overrides: Record<string, unknown> = {}) => ({
+    id: "group-1",
+    audience: "everyone",
+    target_id: null,
+    target_name: null,
+    total: 30,
+    done: 12,
+    confirmed: 4,
+    task_id: "copy-7",
+    title: "Clean the house",
+    description: null,
+    due_date: "2026-11-20",
+    due_at: null,
+    point_reward: 5,
+    proof_kind: "none",
+    overdue: false,
+    preview_assignee_ids: ["u1", "u2", "u3", "u4", "u5"],
+    created_at: "2026-11-17T00:00:00.000Z",
+    ...overrides,
+  });
+  /** Thirty copies of one task in `tasks`, as Paul's screenshot had them. */
+  const copies = Array.from({ length: 30 }, (_, index) =>
+    task({
+      id: `copy-${index}`,
+      title: "Clean the house",
+      assignee_id: `u${index}`,
+      assignee_name: `Member ${index}`,
+    }),
+  );
+  const read = (items: unknown[] | undefined) =>
+    activity({
+      made_by_you: {
+        polls: [],
+        tasks: [...copies, task({ id: "solo", title: "Book the venue" })],
+        events: [],
+        ...(items === undefined ? {} : { task_items: items }),
+      },
+    });
+  const madeTasks = (data: Activity, taskItems = true) =>
+    activityGroups(data, now, { taskItems })
+      .find((g) => g.id === "made-by-you")!
+      .parts.find((part) => part.id === "tasks")!.rows;
+
+  it("draws a task sent to 30 members as one row: Everyone · 30, faces, a done bar", () => {
+    const rows = madeTasks(
+      read([
+        { kind: "group", group: group() },
+        { kind: "task", task: task({ id: "solo", title: "Book the venue" }) },
+      ]),
+    );
+    expect(rows.map((row) => row.key)).toEqual([
+      "made:task-group:group-1",
+      "made:task:solo",
+    ]);
+    const row = rows[0]!;
+    expect(row.kind).toBe("task-group");
+    expect(row.title).toBe("Clean the house");
+    expect(row.detail).toBe(
+      `Everyone · 30 · ${formatDueLabel("2026-11-20", now)}`,
+    );
+    expect(row.kind === "task-group" && row.faceIds).toEqual([
+      "u1",
+      "u2",
+      "u3",
+      "u4",
+      "u5",
+    ]);
+    expect(row.progress).toEqual({
+      done: 12,
+      total: 30,
+      label: "12 of 30",
+      spoken: "12 of 30 done",
+    });
+    expect(row.badge).toBeNull();
+    // What the member made has no dot and is never snoozed.
+    expect(row.unread).toBe(false);
+    expect(row.readRef).toBeNull();
+  });
+
+  it("names a role's or a group's target, and counts picked people once", () => {
+    const due = formatDueLabel("2026-11-20", now);
+    const [role, people] = madeTasks(
+      read([
+        {
+          kind: "group",
+          group: group({
+            id: "g-role",
+            audience: "role",
+            target_name: "Philanthropy",
+            total: 6,
+          }),
+        },
+        {
+          kind: "group",
+          group: group({ id: "g-people", audience: "people", total: 4 }),
+        },
+      ]),
+    );
+    expect(role!.detail).toBe(`Everyone in Philanthropy · 6 · ${due}`);
+    expect(people!.detail).toBe(`4 people · ${due}`);
+  });
+
+  it("badges a group Overdue when any copy is, and only then", () => {
+    const [overdue, onTime] = madeTasks(
+      read([
+        {
+          kind: "group",
+          group: group({ id: "late", overdue: true, due_date: "2026-11-16" }),
+        },
+        { kind: "group", group: group({ id: "fine" }) },
+      ]),
+    );
+    expect(overdue!.badge).toEqual({
+      label: "Overdue",
+      variant: "destructive",
+    });
+    expect(onTime!.badge).toBeNull();
+  });
+
+  it("falls back to each copy from an API before task_items, and web stays on it", () => {
+    const old = madeTasks(read(undefined));
+    expect(old).toHaveLength(31);
+    expect(old.every((row) => row.kind === "task")).toBe(true);
+    // Web asks for no task_items: one row per copy, as before.
+    const web = madeTasks(read([{ kind: "group", group: group() }]), false);
+    expect(web).toHaveLength(31);
+    expect(web.every((row) => row.kind === "task")).toBe(true);
+  });
+
+  it("finds the group's row by the copy it opens", () => {
+    const data = read([{ kind: "group", group: group() }]);
+    expect(
+      findActivityTaskRow(data, "copy-7", now, { taskItems: true })?.key,
+    ).toBe("made:task-group:group-1");
+    expect(
+      findActivityTaskRow(data, "copy-7", now)?.key,
+      "without task_items, the copy's own row",
+    ).toBe("made:task:copy-7");
+    expect(
+      findActivityTaskRow(data, "copy-8", now, { taskItems: true }),
+    ).toBeNull();
   });
 });

@@ -109,7 +109,23 @@ const READ = {
         created_at: "2026-11-01T00:00:00.000Z",
       },
     ],
-    task_confirmations: [],
+    task_confirmations: [
+      {
+        id: "task-2",
+        title: "Sweep the porch",
+        due_date: "2099-01-01",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        assignee_id: "sam",
+        assignee_name: "Sam",
+        created_by: "me",
+        created_by_name: "Me",
+        point_reward: 10,
+        completed_at: "2026-11-02T00:00:00.000Z",
+        confirmed_at: null,
+        created_at: "2026-11-01T00:00:00.000Z",
+      },
+    ],
     hours_approvals: [
       {
         id: "entry-1",
@@ -297,19 +313,30 @@ describe("Activity sheet (#3897)", () => {
     });
   });
 
-  it("draws chat's task card from the row, as a confirmed message of the viewer's", () => {
-    render(rowOf("task"));
+  it("draws chat's task card for a completion to review, as a confirmed message of the viewer's", () => {
+    const row = rowOf("task");
+    expect(row.key).toBe("needs-confirm:task:task-2");
+    render(row);
     const props = cards.task.at(-1)!;
     expect(props.viewerId).toBe("me");
     expect(props.isConfirmed).toBe(true);
     expect(props.payload).toMatchObject({
-      task_id: "task-1",
-      title: "Book the venue",
-      assignee_user_id: "me",
+      task_id: "task-2",
+      title: "Sweep the porch",
+      assignee_user_id: "sam",
       point_reward: 10,
     });
     // Not a message in a channel: no message actions to open.
     expect(props.onOpenActions).toBeUndefined();
+  });
+
+  it("draws no card for any other task: it is the task's own screen (#5492)", () => {
+    const own = activityToDos(READ)
+      .map((todo) => todo.dated)
+      .find((row) => row.kind === "task")!;
+    expect(own.key).toBe("needs:task:task-1");
+    render(own);
+    expect(cards.task).toHaveLength(0);
   });
 
   it("draws chat's event card with the member's own attendance answer", () => {

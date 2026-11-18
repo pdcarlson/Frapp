@@ -6,9 +6,11 @@ import {
   type ActivityRow,
   type ActivitySnoozeOption,
 } from "@repo/hooks";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import type { ItemMenuAction } from "@/components/item-actions-menu";
+import { NavGlyph } from "@/components/nav-glyph";
 import { showActionMenu } from "@/lib/action-menu";
 import { alertFailure } from "@/lib/failure-alert";
-import type { ActivityRowMenu } from "./activity-row";
 
 /**
  * Android's dialog draws at most three buttons and drops the rest, so the
@@ -17,17 +19,26 @@ import type { ActivityRowMenu } from "./activity-row";
  */
 const ANDROID_BUTTONS = 3;
 
+/** The glyph Snooze and Unsnooze draw in a row's menu: the clock reminders use. */
+const snoozeGlyph = (color: string) => (
+  <NavGlyph paths={NAV_GLYPHS.schedule} color={color} size={20} />
+);
+
 /**
  * Snooze on the phone's Activity (#4982, `spec/behavior/activity.md` §
- * Snooze): a long press on a row that waits on the member (or VoiceOver's
- * and TalkBack's "Snooze" action) offers Gmail's fixed times in the
- * platform's own sheet, as a long press on a message in Gmail's app offers
- * Snooze. The row leaves the list at once; a snoozed row's long press, under
- * Snoozed, brings it back. A write that fails puts the row back and says so.
+ * Snooze): on a row that waits on the member, Snooze offers Gmail's fixed
+ * times in the platform's own sheet, as a long press on a message in Gmail's
+ * app offers Snooze. The row leaves the list at once; a snoozed row's
+ * Unsnooze, under Snoozed, brings it back. A write that fails puts the row
+ * back and says so.
+ *
+ * Each is a row of the row's long-press menu (`useActivityRowMenu`), beside a
+ * task's or an event's own actions (#5492), and a screen reader's named
+ * action; a row with nothing else to offer runs it on the long press itself.
  */
 export function useActivitySnoozeMenu(): {
-  menuFor: (row: ActivityRow) => ActivityRowMenu | null;
-  wakeMenuFor: (row: ActivityRow) => ActivityRowMenu;
+  snoozeActionFor: (row: ActivityRow) => ItemMenuAction | null;
+  wakeActionFor: (row: ActivityRow) => ItemMenuAction;
 } {
   const { snooze, unsnooze } = useActivitySnooze();
 
@@ -72,15 +83,22 @@ export function useActivitySnoozeMenu(): {
   };
 
   return {
-    menuFor: (row) =>
+    snoozeActionFor: (row) =>
       activityRowSnoozable(row)
-        ? { label: "Snooze", open: () => openSnooze(row) }
+        ? {
+            key: "snooze",
+            label: "Snooze",
+            glyph: snoozeGlyph,
+            run: () => openSnooze(row),
+          }
         : null,
-    wakeMenuFor: (row) => ({
+    wakeActionFor: (row) => ({
+      key: "unsnooze",
       label: "Unsnooze",
+      glyph: snoozeGlyph,
       // Asked, not done on the press: a long press that acted at once
       // would be easy to make by accident while scrolling.
-      open: () =>
+      run: () =>
         Alert.alert(row.title, "Bring it back to your list now?", [
           { text: "Cancel", style: "cancel" },
           { text: "Unsnooze", onPress: () => wake(row) },
