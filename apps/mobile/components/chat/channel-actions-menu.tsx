@@ -24,7 +24,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { GlassMenu, glassMenuRowStyles } from "@/components/glass-menu";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
-import { useFocusOnOpen } from "@/lib/overlay";
+import { type FocusReturn, useFocusOnOpen } from "@/lib/overlay";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-control";
@@ -54,6 +54,8 @@ export interface ChannelActionsMenuTarget {
   name: string;
   /** Where the press landed, in window coordinates; the menu opens beside it. */
   pageY: number;
+  /** The row pressed, which gets a screen reader's focus back on close. */
+  trigger?: FocusReturn | null;
   pinned: boolean;
   /** The effective level, or `undefined` while the levels are unknown. */
   level: ChatNotificationLevel | undefined;
@@ -132,6 +134,7 @@ export function ChannelActionsMenu({
       visible={target !== null}
       pageY={target?.pageY ?? 0}
       onClose={onClose}
+      returnFocusTo={target?.trigger}
       backdropTestID="channel-actions-backdrop"
     >
       {target ? (

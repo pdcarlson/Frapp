@@ -5,8 +5,9 @@ import {
   create,
   type ReactTestInstance,
   type ReactTestRenderer,
+  type TestRendererOptions,
 } from "react-test-renderer";
-import { Alert, StyleSheet } from "react-native";
+import { AccessibilityInfo, Alert, StyleSheet } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -425,13 +426,14 @@ const group = {
   member_ids: [VIEWER, ALICE, BOB],
 };
 
-function render(): ReactTestRenderer {
+function render(options?: TestRendererOptions): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
         <ChatHomeScreen />
       </FrappThemeProvider>,
+      options,
     );
   });
   return tree;
@@ -942,6 +944,53 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     act(() =>
       rowNamed(tree, name).props.onLongPress({ nativeEvent: { pageY: 300 } }),
     );
+
+  it.each([
+    ["a long press", "press"],
+    ["the Channel actions accessibility action", "action"],
+  ])(
+    "moves a screen reader's focus onto the menu on open, and back to the row on close (%s)",
+    (_label, via) => {
+      vi.useFakeTimers();
+      const focusEvents = vi.mocked(AccessibilityInfo.sendAccessibilityEvent);
+      focusEvents.mockClear();
+      try {
+        channelsData.value = [general];
+        // Host refs resolve to a stand-in naming their element.
+        const tree = render({ createNodeMock: (node) => ({ element: node }) });
+        const row = { row: "general" };
+        act(() => {
+          if (via === "press") {
+            rowNamed(tree, "general").props.onLongPress({
+              nativeEvent: { pageY: 300 },
+              currentTarget: row,
+            });
+          } else {
+            rowNamed(tree, "general").props.onLongPress(undefined, row);
+          }
+        });
+        act(() => vi.advanceTimersByTime(1));
+        const [target, kind] = focusEvents.mock.calls.at(-1) as unknown as [
+          { element: { props: { children?: unknown } } },
+          string,
+        ];
+        expect(kind).toBe("focus");
+        expect(target.element.props.children).toBe("general");
+
+        focusEvents.mockClear();
+        act(() =>
+          menu(tree)
+            .find((node) => node.props.testID === "channel-actions-backdrop")
+            .props.onPress(),
+        );
+        act(() => vi.advanceTimersByTime(1));
+        expect(focusEvents).toHaveBeenCalledWith(row, "focus");
+        act(() => tree.unmount());
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("opens our own menu on a long press, not the system alert, with a tap", async () => {
     const haptics = await import("expo-haptics");

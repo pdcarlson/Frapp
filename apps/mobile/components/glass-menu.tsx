@@ -10,7 +10,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
 import { InOverlayLayer } from "@/components/overlay-layer";
-import { useBackToClose } from "@/lib/overlay";
+import {
+  type FocusReturn,
+  useBackToClose,
+  useReturnFocusOnClose,
+} from "@/lib/overlay";
 import { typeRole } from "@/lib/theme";
 import {
   GLASS_GROUP_BREAK,
@@ -38,8 +42,12 @@ const GAP = 12;
  * - below the press when it fits, above it when it doesn't, never past the
  *   safe area either way (it measures itself first, drawn clear until then);
  * - a small lift out of the pressed row, a plain fade with Reduce Motion on;
- * - closed by a tap outside, Android's back (`useBackToClose`) and
- *   VoiceOver's escape gesture.
+ * - closed by a tap outside, Android's back (`useBackToClose`, ahead of any
+ *   sheet under it) and VoiceOver's escape gesture;
+ * - a screen reader's focus goes back to the row that opened it on close
+ *   (`returnFocusTo`), as a dismissed `Modal` sent it back;
+ * - a body that throws is reported and dropped, and the menu closes, while
+ *   the app under it stays.
  *
  * Moving a screen reader's focus onto the menu is the body's, since only the
  * body knows its first element (`useFocusOnOpen`). The body renders under the
@@ -49,6 +57,7 @@ export function GlassMenu({
   visible,
   pageY,
   onClose,
+  returnFocusTo,
   backdropTestID,
   children,
 }: {
@@ -56,13 +65,16 @@ export function GlassMenu({
   /** Where the press landed, in window coordinates. */
   pageY: number;
   onClose: () => void;
+  /** The row that opened it (`focusReturnOf` its press), if the press named one. */
+  returnFocusTo?: FocusReturn | null;
   backdropTestID?: string;
   children: ReactNode;
 }) {
-  useBackToClose(visible, onClose);
+  useBackToClose(visible, onClose, "layer");
+  useReturnFocusOnClose(returnFocusTo, visible);
   if (!visible) return null;
   return (
-    <InOverlayLayer>
+    <InOverlayLayer onError={onClose}>
       <Placed pageY={pageY} onClose={onClose} backdropTestID={backdropTestID}>
         {children}
       </Placed>

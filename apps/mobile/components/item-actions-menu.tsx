@@ -11,7 +11,7 @@ import {
 import type { SignetTokens } from "@repo/theme/signet";
 import { GlassMenu, glassMenuRowStyles } from "@/components/glass-menu";
 import { pressHaptic } from "@/lib/haptics";
-import { useFocusOnOpen } from "@/lib/overlay";
+import { type FocusReturn, focusReturnOf, useFocusOnOpen } from "@/lib/overlay";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
@@ -50,8 +50,11 @@ export interface ItemMenu {
 
 /** What a row takes: its menu, and how to open it at the press. */
 export interface ItemMenuHandle extends ItemMenu {
-  /** Opens beside `pageY`, or a third of the way down without one. */
-  open: (pageY?: number) => void;
+  /**
+   * Opens beside `pageY`, or a third of the way down without one. `trigger`
+   * is the row, which gets a screen reader's focus back on close.
+   */
+  open: (pageY?: number, trigger?: FocusReturn | null) => void;
 }
 
 /** A row's long press, reading where it landed. */
@@ -59,7 +62,7 @@ export function longPressOf(
   menu: ItemMenuHandle | null | undefined,
 ): ((event?: GestureResponderEvent) => void) | undefined {
   if (!menu) return undefined;
-  return (event) => menu.open(event?.nativeEvent?.pageY);
+  return (event) => menu.open(event?.nativeEvent?.pageY, focusReturnOf(event));
 }
 
 /** The prefix a menu action's accessibility name carries. */
@@ -117,7 +120,8 @@ export function useItemMenu(): {
 } {
   const { height } = useWindowDimensions();
   const [target, setTarget] = useState<
-    (ItemMenu & { pageY: number; key: number }) | null
+    | (ItemMenu & { pageY: number; key: number; trigger: FocusReturn | null })
+    | null
   >(null);
   const opened = useRef(0);
   const close = useCallback(() => setTarget(null), []);
@@ -126,7 +130,7 @@ export function useItemMenu(): {
       if (!menu || menu.actions.length === 0) return null;
       return {
         ...menu,
-        open: (pageY) => {
+        open: (pageY, trigger) => {
           pressHaptic();
           opened.current += 1;
           setTarget({
@@ -134,6 +138,7 @@ export function useItemMenu(): {
             // A screen reader's open has no press point.
             pageY: pageY ?? height / 3,
             key: opened.current,
+            trigger: trigger ?? null,
           });
         },
       };
@@ -150,7 +155,13 @@ export function ItemActionsMenu({
   target,
   onClose,
 }: {
-  target: (ItemMenu & { pageY: number; key?: number }) | null;
+  target:
+    | (ItemMenu & {
+        pageY: number;
+        key?: number;
+        trigger?: FocusReturn | null;
+      })
+    | null;
   onClose: () => void;
 }) {
   return (
@@ -158,6 +169,7 @@ export function ItemActionsMenu({
       visible={target !== null}
       pageY={target?.pageY ?? 0}
       onClose={onClose}
+      returnFocusTo={target?.trigger}
       backdropTestID="item-actions-backdrop"
     >
       {target ? (

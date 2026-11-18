@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { BackHandler, StyleSheet } from "react-native";
+import { AccessibilityInfo, BackHandler, StyleSheet } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import * as Haptics from "expo-haptics";
@@ -151,6 +151,56 @@ describe("useItemMenu", () => {
       pageY: 410,
     });
     act(() => tree.unmount());
+  });
+
+  it("moves a screen reader's focus to the caption on open, and back to the pressed row on close", () => {
+    vi.useFakeTimers();
+    const focusEvents = vi.mocked(AccessibilityInfo.sendAccessibilityEvent);
+    focusEvents.mockClear();
+    try {
+      let handle: ItemMenuHandle | null = null;
+      function Host() {
+        const menu = useItemMenu();
+        handle = menu.handleFor(MENU);
+        return <>{menu.element}</>;
+      }
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <Host />
+          </FrappThemeProvider>,
+          // Host refs resolve to a stand-in naming their element.
+          { createNodeMock: (node) => ({ element: node }) },
+        );
+      });
+      const row = { row: "Sweep the porch" };
+      act(() =>
+        longPressOf(handle)!({
+          nativeEvent: { pageY: 410 },
+          currentTarget: row,
+        } as never),
+      );
+      act(() => vi.runAllTimers());
+      const [target, kind] = focusEvents.mock.calls.at(-1) as unknown as [
+        { element: { props: { children?: unknown } } },
+        string,
+      ];
+      expect(kind).toBe("focus");
+      expect(target.element.props.children).toBe("Sweep the porch");
+
+      focusEvents.mockClear();
+      act(() =>
+        tree.root
+          .find((node) => node.props.testID === "item-actions-backdrop")
+          .props.onPress(),
+      );
+      act(() => vi.runAllTimers());
+      expect(focusEvents).toHaveBeenCalledWith(row, "focus");
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
