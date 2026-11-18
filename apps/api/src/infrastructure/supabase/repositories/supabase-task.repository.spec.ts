@@ -819,3 +819,75 @@ describe('SupabaseTaskRepository — task photos (#4635)', () => {
     });
   });
 });
+
+describe('SupabaseTaskRepository — taking members out of a group (#5492)', () => {
+  const GROUP = '0c000000-0000-4000-8000-000000000060';
+  const OPEN_A = '0a000000-0000-4000-8000-000000000061';
+  const PAID_A = '0a000000-0000-4000-8000-000000000062';
+  const OPEN_B = '0b000000-0000-4000-8000-000000000061';
+  const PAID_B = '0b000000-0000-4000-8000-000000000062';
+  const copy = (id: string, pointsAwarded: boolean) => ({
+    id,
+    title: 'Hold committee meetings',
+    description: null,
+    assignee_id: USER_SHARED,
+    created_by: USER_SHARED,
+    due_date: '2026-09-01',
+    status: 'TODO',
+    point_reward: 5,
+    points_awarded: pointsAwarded,
+    completed_at: null,
+    confirmed_at: null,
+    group_id: GROUP,
+    created_at: '2026-01-01T00:00:00.000Z',
+  });
+  let harness: TenantHarness;
+  let repo: SupabaseTaskRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        tasks: [
+          inA(copy(OPEN_A, false)),
+          inA(copy(PAID_A, true)),
+          inB(copy(OPEN_B, false)),
+          inB(copy(PAID_B, true)),
+        ],
+      },
+      collisionExempt: { tasks: ['group_id'] },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+  });
+
+  it('deletes only the named open copies of the group, in the chapter', async () => {
+    const removed = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.deleteGroupCopies(CHAPTER_A, GROUP, [OPEN_A, PAID_A, OPEN_B]),
+    );
+    // The confirmed copy stays; another chapter's copy is never reached.
+    expect(removed).toEqual([OPEN_A]);
+    expect(harness.rows('tasks').map((row) => row.id)).toEqual([
+      PAID_A,
+      OPEN_B,
+      PAID_B,
+    ]);
+    const write = harness.ops.at(-1)!;
+    expect(write.mode).toBe('delete');
+    expect(write.filters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ op: 'eq', column: 'group_id', value: GROUP }),
+        expect.objectContaining({
+          op: 'eq',
+          column: 'points_awarded',
+          value: false,
+        }),
+      ]),
+    );
+  });
+
+  it('writes nothing for no ids', async () => {
+    await expect(repo.deleteGroupCopies(CHAPTER_A, GROUP, [])).resolves.toEqual(
+      [],
+    );
+    expect(harness.ops).toHaveLength(0);
+  });
+});

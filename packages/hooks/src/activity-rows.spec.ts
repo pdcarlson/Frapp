@@ -264,6 +264,65 @@ describe("sign-up and form cards (#3926 step 4)", () => {
 });
 
 describe("activityGroups", () => {
+  it("folds a task for everyone into one row of Tasks you assigned (#5492)", () => {
+    const group = {
+      id: "g-1",
+      audience: "everyone",
+      total: 12,
+      done: 3,
+      confirmed: 0,
+    };
+    const copy = (n: number, extra: Record<string, unknown> = {}) =>
+      task({
+        id: `copy-${n}`,
+        title: "Hold committee meetings",
+        assignee_id: `member-${n}`,
+        assignee_name: `Member ${n}`,
+        group,
+        ...extra,
+      });
+    const data = activity({
+      made_by_you: {
+        polls: [],
+        events: [],
+        tasks: [
+          copy(1),
+          copy(2, { status: "OVERDUE" }),
+          task({ id: "solo", title: "Update the budget" }),
+          copy(3),
+        ],
+      },
+    });
+    const made = activityGroups(data).find((g) => g.id === "made-by-you")!.rows;
+    expect(made.map((row) => row.title)).toEqual([
+      "Hold committee meetings",
+      "Update the budget",
+    ]);
+    const [groupRow, solo] = made;
+    expect(groupRow).toMatchObject({
+      key: "made:task-group:g-1",
+      detail: expect.stringMatching(/^Everyone · 12 · /),
+      faceId: null,
+      // Overdue while any copy is.
+      badge: { label: "Overdue", variant: "destructive" },
+      progress: {
+        done: 3,
+        total: 12,
+        label: "3 of 12",
+        spoken: "3 of 12 done",
+      },
+    });
+    expect(
+      groupRow!.kind === "task" && groupRow!.copies?.map((c) => c.id),
+    ).toEqual(["copy-1", "copy-2", "copy-3"]);
+    // A one-person task keeps its own row, and its assignee.
+    expect(solo!.detail).toMatch(/^Me · /);
+    // Any copy finds the group's row.
+    expect(findActivityTaskRow(data, "copy-3")?.key).toBe(
+      "made:task-group:g-1",
+    );
+  });
+
   it("carries how far along a poll or event the member made is, and nothing else does (#4792)", () => {
     const data = activity({
       needs_you: {

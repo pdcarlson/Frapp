@@ -410,6 +410,24 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async deleteGroupCopies(
+    chapterId: string,
+    groupId: string,
+    ids: string[],
+  ): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('tasks')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('group_id', groupId)
+      .eq('points_awarded', false)
+      .in('id', ids)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.id);
+  }
+
   async findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]> {
     if (ids.length === 0) return [];
     const series: TaskSeries[] = [];

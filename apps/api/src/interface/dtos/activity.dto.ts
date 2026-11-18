@@ -24,6 +24,7 @@ import type {
 } from '../../application/services/chat-reminder.service';
 import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
+import { TaskGroupSummaryDto } from './task.dto';
 import type { ChannelType } from '#domain/entities/chat.entity';
 import {
   ACTIVITY_SECTIONS,
@@ -158,6 +159,14 @@ export class ActivityTaskDto implements ActivityTask {
       'What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.',
   })
   proof_kind: TaskProofKind;
+
+  @ApiProperty({
+    type: () => TaskGroupSummaryDto,
+    nullable: true,
+    description:
+      'On a task for everyone, its group (#5492): each member’s copy carries the same `id`, so a client shows an officer’s copies as one row; the counts say how far the group is. Null for a one-person task.',
+  })
+  group: TaskGroupSummaryDto | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -783,7 +792,7 @@ export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityTaskDto],
     description:
-      'Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.',
+      'Tasks the caller assigned, newest first: the 25 newest, a task for everyone counting once, with every copy of it read (#5492), so a client folds the copies sharing a `group.id` into one row. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
 

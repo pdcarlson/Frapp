@@ -52,7 +52,7 @@ import type { Event } from '#domain/entities/event.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
-import type { TaskView } from '#domain/entities/task.entity';
+import type { TaskGroupSummary, TaskView } from '#domain/entities/task.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CARD_VOTE_ACTION_TYPE,
@@ -140,6 +140,12 @@ export interface ActivityTask {
    * that needed no sign-off (Done) from one an officer confirmed.
    */
   proof_kind: TaskProofKind;
+  /**
+   * On a task for everyone, its group (#5492): one copy per member shares
+   * the id, so the client folds an officer's copies into one row, and the
+   * counts say how far the group is. `null` for a one-person task.
+   */
+  group: TaskGroupSummary | null;
   created_at: string;
   /**
    * Whether the caller hasn't opened it since it appeared
@@ -473,6 +479,12 @@ export interface ActivityArchive {
 
 /** Rows each list carries. The count in `needs_you_count` is taken before it. */
 const LIST_LIMIT = 25;
+/**
+ * How many pages of `LIST_LIMIT` copies the "Tasks you assigned" read goes
+ * through to find `LIST_LIMIT` tasks, a task for everyone counting once
+ * (#5492): enough for four groups of a 25-member chapter's copies.
+ */
+const MADE_TASK_PAGES = 4;
 /** How many of the chapter's newest poll cards are checked for "open and unvoted". */
 const POLL_SCAN_LIMIT = 100;
 /** The same, for each of sign-up and form cards. */
@@ -729,6 +741,7 @@ function activityTaskRow(
     confirmed_at: task.confirmed_at,
     sent_back_at: task.sent_back_at ?? null,
     proof_kind: task.proof_kind ?? 'none',
+    group: task.group ?? null,
     created_at: task.created_at,
     unread: false,
     snoozed_until: null,
@@ -1087,7 +1100,9 @@ export class ActivityService {
       made_by_you: {
         // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,
-        tasks: taskLists.assigned.slice(0, LIST_LIMIT),
+        // Capped in `readMadeTasks`: 25 tasks, a task for everyone counting
+        // once however many copies it has (#5492).
+        tasks: taskLists.assigned,
         files: [],
         events: myEvents.slice(0, LIST_LIMIT),
       },
@@ -1728,12 +1743,7 @@ export class ActivityService {
       // Only while the caller can still read tasks they don't hold: a creator
       // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
       // row that opens to a refusal is worse than no row.
-      canManage
-        ? this.taskService.list(chapterId, userId, true, {
-            createdBy: userId,
-            limit: LIST_LIMIT,
-          })
-        : Promise.resolve([]),
+      canManage ? this.readMadeTasks(chapterId, userId) : Promise.resolve([]),
       // Done this week, confirmed or not: marking it done was the member's
       // part. One sent back since is open again and is not counted here.
       this.taskService.count(chapterId, userId, false, {
@@ -1765,6 +1775,41 @@ export class ActivityService {
       assigned: assigned.map(toRow),
       doneThisWeek,
     };
+  }
+
+  /**
+   * The tasks the caller assigned, newest first: the `LIST_LIMIT` newest, a
+   * task for everyone counting once however many copies it has (#5492). One
+   * task sent to 25 members used to fill the list with its copies and hide
+   * every other task the officer had assigned. Every copy read is returned,
+   * so the client folds a group into one row with its members' faces.
+   */
+  private async readMadeTasks(
+    chapterId: string,
+    userId: string,
+  ): Promise<TaskView[]> {
+    const tasks = new Set<string>();
+    const read: TaskView[] = [];
+    let after: { created_at: string; id: string } | undefined;
+    for (let page = 0; page < MADE_TASK_PAGES; page += 1) {
+      const rows = await this.taskService.list(chapterId, userId, true, {
+        createdBy: userId,
+        limit: LIST_LIMIT,
+        ...(after ? { after } : {}),
+      });
+      for (const row of rows) {
+        const task = row.group_id ?? row.id;
+        if (!tasks.has(task)) {
+          if (tasks.size === LIST_LIMIT) return read;
+          tasks.add(task);
+        }
+        read.push(row);
+      }
+      const last = rows.at(-1);
+      if (rows.length < LIST_LIMIT || !last) return read;
+      after = { created_at: last.created_at, id: last.id };
+    }
+    return read;
   }
 
   private async readHoursApprovals(

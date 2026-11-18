@@ -312,7 +312,11 @@ function serveTasks(
           row.assignee_id !== options.notAssigneeId) &&
         (options.completedSince === undefined ||
           (row.completed_at !== null &&
-            row.completed_at >= options.completedSince)),
+            row.completed_at >= options.completedSince)) &&
+        // The next page: rows served newest first, by `created_at` then `id`.
+        (options.after === undefined ||
+          `${row.created_at} ${row.id}` <
+            `${options.after.created_at} ${options.after.id}`),
     );
   taskService.list.mockImplementation(
     (
@@ -1051,6 +1055,50 @@ describe('ActivityService', () => {
       // chapter-wide one, and the count holds both kinds.
       expect(view.needs_you.tasks.map((row) => row.id)).toEqual(['own-open']);
       expect(view.needs_you_count).toBe(2);
+    });
+
+    it('counts a task for everyone once toward the 25 assigned, and carries its group (#5492)', async () => {
+      const { service, taskService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ]);
+      const group = {
+        id: 'group-1',
+        audience: 'everyone' as const,
+        total: 30,
+        done: 2,
+        confirmed: 0,
+      };
+      // Newest first: 30 copies of one group, then 26 one-person tasks.
+      const copies = Array.from({ length: 30 }, (_, i) =>
+        task({
+          id: `copy-${String(i).padStart(2, '0')}`,
+          assignee_id: `member-${i}`,
+          created_by: ME,
+          group_id: 'group-1',
+          group,
+          created_at: iso(-HOUR),
+        }),
+      ).reverse();
+      const singles = Array.from({ length: 26 }, (_, i) =>
+        task({
+          id: `single-${String(i).padStart(2, '0')}`,
+          assignee_id: OTHER,
+          created_by: ME,
+          created_at: iso(-2 * HOUR - i * 1000),
+        }),
+      );
+      serveTasks(taskService, [], [...copies, ...singles]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      const assigned = view.made_by_you.tasks;
+      // The group's 30 copies, then 24 tasks: 25 in all, the 26th left out.
+      expect(
+        assigned.filter((row) => row.group?.id === 'group-1'),
+      ).toHaveLength(30);
+      expect(assigned.filter((row) => row.group === null)).toHaveLength(24);
+      expect(assigned[0].group).toEqual(group);
     });
 
     it('reads no tasks while the Tasks module is off', async () => {

@@ -1022,6 +1022,71 @@ export class TaskService {
   }
 
   /**
+   * Take members out of a group task (#5492): their copies go, everyone
+   * else's stay. An officer who sent a task to everyone by mistake trims it
+   * to the members it is for, so the rest aren't handed work that drowns
+   * out what matters to them (Paul, 2026-11-18).
+   *
+   * A confirmed copy stays, its points paid on it as it stood, the rule
+   * {@link updateGroup} keeps: asking for one is a 400, and one confirmed
+   * between the read and the delete is left by the delete's own filter. A
+   * member with no copy is no error, so a retry after a partial failure
+   * finishes the job. Taking out every copy is a 400: that is deleting the
+   * task, which says so. Returns the group as it now stands.
+   */
+  async removeFromGroup(
+    id: string,
+    chapterId: string,
+    assigneeIds: string[],
+  ): Promise<{ removed: string[]; group: TaskGroupSummary }> {
+    const task = await this.taskRepo.findById(id, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (!task.group_id) {
+      throw new BadRequestException("This task isn't for a group");
+    }
+    const groupId = task.group_id;
+    const copies = await this.taskRepo.findGroupCopies(chapterId, [groupId]);
+    const asked = new Set(assigneeIds);
+    const picked = copies.filter((copy) => asked.has(copy.assignee_id));
+    if (picked.some((copy) => copy.points_awarded)) {
+      throw new BadRequestException(
+        'A confirmed copy stays: its points were paid on it',
+      );
+    }
+    if (picked.length > 0 && picked.length === copies.length) {
+      throw new BadRequestException(
+        'That is everyone: delete the task for everyone instead',
+      );
+    }
+    const photos = await this.taskRepo.findPhotos(
+      chapterId,
+      picked.map((copy) => copy.id),
+    );
+    const removedIds = await this.taskRepo.deleteGroupCopies(
+      chapterId,
+      groupId,
+      picked.map((copy) => copy.id),
+    );
+    const removedSet = new Set(removedIds);
+    await this.releasePhotos(
+      chapterId,
+      photos
+        .filter((photo) => removedSet.has(photo.task_id))
+        .map((photo) => photo.storage_path),
+    );
+    // Read again, not counted from `copies`: a confirm or a done that
+    // landed meanwhile shows in the counts the client redraws from.
+    const summary = (await this.groupSummaries(chapterId, [task])).get(groupId);
+    if (!summary) throw new NotFoundException('Task not found');
+    return {
+      removed: picked
+        .filter((copy) => removedSet.has(copy.id))
+        .map((copy) => copy.assignee_id),
+      group: summary,
+    };
+  }
+
+  /**
    * A new task's repeat (#5119): its rule, checked, and the schedule its
    * series starts with. Null for a task that doesn't repeat.
    */

@@ -11958,6 +11958,62 @@
         ]
       }
     },
+    "/v1/tasks/{id}/group/remove": {
+      "post": {
+        "operationId": "TaskController_removeFromGroup_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveFromTaskGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveFromTaskGroupResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take members out of a group task: their copies go, the rest stay (#5492)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/ai/suggestions": {
       "get": {
         "operationId": "AiSuggestionController_list_v1",
@@ -29192,6 +29248,44 @@
           "done"
         ]
       },
+      "RemoveFromTaskGroupDto": {
+        "type": "object",
+        "properties": {
+          "assignee_ids": {
+            "description": "The members whose copy goes, 1 to 1000. A member with no copy is skipped; a confirmed copy, or every copy, is a 400.",
+            "minItems": 1,
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "assignee_ids"
+        ]
+      },
+      "RemoveFromTaskGroupResponseDto": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "description": "The members whose copy was deleted.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "group": {
+            "$ref": "#/components/schemas/TaskGroupSummaryDto"
+          }
+        },
+        "required": [
+          "removed",
+          "group"
+        ]
+      },
       "AiSuggestionSourceDto": {
         "type": "object",
         "properties": {
@@ -32063,6 +32157,16 @@
             ],
             "description": "What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done."
           },
+          "group": {
+            "nullable": true,
+            "description": "On a task for everyone, its group (#5492): each member’s copy carries the same `id`, so a client shows an officer’s copies as one row; the counts say how far the group is. Null for a one-person task.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskGroupSummaryDto"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -32094,6 +32198,7 @@
           "confirmed_at",
           "sent_back_at",
           "proof_kind",
+          "group",
           "created_at",
           "unread",
           "snoozed_until"
@@ -32729,7 +32834,7 @@
             }
           },
           "tasks": {
-            "description": "Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.",
+            "description": "Tasks the caller assigned, newest first: the 25 newest, a task for everyone counting once, with every copy of it read (#5492), so a client folds the copies sharing a `group.id` into one row. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityTaskDto"
