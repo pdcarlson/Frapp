@@ -183,6 +183,8 @@ def threshold(display, flt, aligner, reducer, value, duration, period="300s", gr
         "trigger": {"count": 1},
     }
     if sparse:
+        # Google refuses a missing-data rule on a condition with no duration.
+        assert duration != "0s", f"{display}: a sparse condition needs a non-zero duration"
         # A count that writes nothing while all is well (no 5xx, no error
         # lines): no data means the burst is over, so the incident closes and
         # the next burst opens a new one instead of landing on an open one.
@@ -229,7 +231,7 @@ policy(
     threshold(
         f"More than {five_xx} 5xx in 5 minutes",
         f'metric.type="run.googleapis.com/request_count" AND {revision} AND metric.label.response_code_class="5xx"',
-        "ALIGN_SUM", "REDUCE_SUM", five_xx, "0s", sparse=True,
+        "ALIGN_SUM", "REDUCE_SUM", five_xx, "60s", sparse=True,
     ),
 )
 
@@ -276,7 +278,7 @@ policy(
     threshold(
         f"More than {errors} error lines in 5 minutes",
         f'metric.type="logging.googleapis.com/user/{e["ERROR_METRIC"]}" AND resource.type="cloud_run_revision"',
-        "ALIGN_SUM", "REDUCE_SUM", errors, "0s", sparse=True,
+        "ALIGN_SUM", "REDUCE_SUM", errors, "60s", sparse=True,
     ),
 )
 PY

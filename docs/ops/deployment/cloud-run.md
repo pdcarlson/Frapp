@@ -97,10 +97,10 @@ Paul asked on 2026-11-16 for full observability from the first day. Sentry (erro
 | What | Fires when |
 |---|---|
 | Uptime check *Frapp API (&lt;env&gt;) /health/ready* | Runs every minute from Google's checker regions, certificate validated. Its policy, *not answering*, fires when more than one region fails. |
-| *5xx burst* | More than 10 responses with a 5xx status in five minutes (Cloud Run's request count). |
+| *5xx burst* | More than 10 responses with a 5xx status in five minutes, held for a minute (Cloud Run's request count). |
 | *container crashed* | Cloud Run's system log shows a non-zero exit, a kill by signal (an abort, a crash, SIGKILL; not the SIGTERM of a scale-down), a memory kill or a failed probe. At most one email per five minutes. |
 | *memory near the limit* | A container above 85% of its 1 GiB for five minutes. |
-| *error log burst* | More than 20 of the API's own log lines at ERROR or above in five minutes (the log-based metric `frapp_api_error_logs`). It leaves out both the request log and the API's own report of each 5xx (`jsonPayload.data.statusCode>=500`), which *5xx burst* already counts, so it sees the errors a response doesn't show, such as a failed push. |
+| *error log burst* | More than 20 of the API's own log lines at ERROR or above in five minutes, held for a minute (the log-based metric `frapp_api_error_logs`). It leaves out both the request log and the API's own report of each 5xx (`jsonPayload.data.statusCode>=500`), which *5xx burst* already counts, so it sees the errors a response doesn't show, such as a failed push. |
 | Secret Manager data-access audit log | Not an alert: every secret read, by the deploy or the service, lands in `cloudaudit.googleapis.com/data_access`. |
 
 An incident closes once its condition stops being met, and the two bursts count a quiet stretch with no data as over, so the next burst emails again. A log match, or a metric that stopped reporting, closes itself after a day. Sentry's own uptime and error-spike rules ([`alert-routing.md`](../alert-routing.md)) still run; Google's add what Sentry can't see: a host that doesn't answer at all, crash loops and memory. The thresholds and the crash-log patterns are a first guess, made before any production traffic; tune them in the script if they're noisy or quiet.
