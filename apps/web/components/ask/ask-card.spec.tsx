@@ -511,7 +511,38 @@ describe("AskCard", () => {
       ).toBeInTheDocument();
     });
 
-    it("gives focus to the field on screen when what opened it is gone", async () => {
+    it("skips an Ask bar the layout hides, opener or not, for one on screen (#5476)", async () => {
+      // Below `lg` with a channel open, the Channels column's bar is in the
+      // page but `display: none`; `checkVisibility` is how the card tells.
+      const tree = (isOpen: boolean, opener: { current: HTMLElement | null }) => (
+        <>
+          <button data-ask-entry="" data-hidden="">
+            Hidden bar
+          </button>
+          <button data-ask-entry="">Shown bar</button>
+          <Card open={isOpen} returnFocus={opener} />
+        </>
+      );
+      const hidden = { current: null as HTMLElement | null };
+      const view = render(tree(true, hidden));
+      // The dialog hides the page from assistive tech while it is open.
+      hidden.current = screen.getByRole("button", {
+        name: "Hidden bar",
+        hidden: true,
+      });
+      for (const button of screen.getAllByRole("button", {
+        name: /bar$/,
+        hidden: true,
+      })) {
+        button.checkVisibility = () => !button.hasAttribute("data-hidden");
+      }
+      view.rerender(tree(false, hidden));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Shown bar" })).toHaveFocus(),
+      );
+    });
+
+    it("gives focus to the Ask bar on screen when what opened it is gone", async () => {
       const gone = { current: document.createElement("button") };
       const tree = (isOpen: boolean) => (
         <>

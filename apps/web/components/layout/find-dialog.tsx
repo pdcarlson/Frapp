@@ -54,7 +54,7 @@ import {
  * chips narrow it without retyping. The top-bar field stays as the visible way
  * in, so the shortcut is still a convenience rather than the only door.
  *
- **It only finds** (#5476, Paul, 2026-11-18). From #4904 (2026-11-13) its
+ * **It only finds** (#5476, Paul, 2026-11-18). From #4904 (2026-11-13) its
  * first row asked Frapp what was typed, for a member with Ask; Shawn and Paul
  * didn't want Ask in the search bar, so Ask has its own floating bar now
  * (`ask/ask-bar.tsx`) and this dialog lists places to go, from everything the

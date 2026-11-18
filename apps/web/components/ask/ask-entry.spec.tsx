@@ -69,7 +69,8 @@ function Page() {
   );
 }
 
-const entry = () => screen.getByRole("button", { name: ASK_COPY.name });
+const entry = () =>
+  screen.getByRole("button", { name: ASK_COPY.placeholder });
 const card = () => screen.queryByRole("dialog", { name: ASK_COPY.name });
 const field = () => screen.getByRole("textbox", { name: ASK_COPY.placeholder });
 
@@ -115,7 +116,9 @@ describe("the entry and the conversation together", () => {
     who.previewing = true;
     view.rerender(<Page />);
     expect(card()).toBeNull();
-    expect(screen.queryByRole("button", { name: ASK_COPY.name })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: ASK_COPY.placeholder }),
+    ).toBeNull();
     who.previewing = false;
     view.rerender(<Page />);
     expect(entry()).toBeInTheDocument();

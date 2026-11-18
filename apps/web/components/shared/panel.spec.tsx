@@ -106,6 +106,18 @@ describe("Panel docked", () => {
     expect(page.inert).toBe(true);
   });
 
+  it("covers a child that joins the column while it is open, and releases it on close (#5476)", async () => {
+    // Ask Frapp's floating bar mounts once Ask access resolves, which can be
+    // after a deep link opened the panel.
+    render(<DockedHarness />);
+    const column = document.querySelector("[data-tool-column]")!;
+    const late = document.createElement("div");
+    column.appendChild(late);
+    await waitFor(() => expect(late.inert).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Back to events" }));
+    expect(late.inert).toBe(false);
+  });
+
   it("goes back with the back arrow and with Escape, and un-inerts the page", () => {
     const onClosed = vi.fn();
     const { unmount } = render(<DockedHarness onClosed={onClosed} />);

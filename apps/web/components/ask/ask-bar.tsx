@@ -1,8 +1,7 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { ASK_COPY } from "@repo/validation";
-import { signetGlass } from "@repo/theme/glass";
+import { ASK_SEND_GLYPH } from "@repo/theme/crest";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { useAskEntry } from "./ask-host";
@@ -18,29 +17,39 @@ import { FrappCrest } from "./frapp-crest";
  * (`ask-card.tsx`) and focus comes back here when it closes.
  *
  * It floats at the bottom of the tool page (`dashboard-shell.tsx`), and with
- * chat alone at the bottom of the Channels column (`chat-shell.tsx`), never
+ * chat alone at the foot of the Channels column (`chat-shell.tsx`), never
  * over a message box: the composer owns the bottom of a channel, and asks
- * there through `@Frapp` (#4713). From #4904 (2026-11-13) until this the
- * top bar's search field asked too; Shawn and Paul didn't want Ask in the
- * search bar.
+ * there through `@Frapp` (#4713), as the phone's channel screen does. From
+ * #4904 (2026-11-13) until this the top bar's search field asked too; Shawn
+ * and Paul didn't want Ask in the search bar.
+ *
+ * Its name is its words ("Ask Frapp anything", or "Ask Frapp" compact), so
+ * what a voice-control user reads on it is what it answers to (WCAG 2.5.3).
  *
  * Only for a member with Ask (`useAskEntry`); anyone else gets nothing.
  */
 
-/** What the bar opens, for a screen reader. */
-export const ASK_BAR_DESCRIPTION = "Ask a question about your chapter";
-
 /**
- * The glass recipe (`signetGlass`, foundations.md § Glass) over the nav
- * step, with the edge in the chapter's colour as the phone's bar draws it.
+ * The glass recipe (`signetGlass` in `@repo/theme/glass`; foundations.md
+ * § Glass), spelled as classes so it can carry the Reduce Transparency
+ * fallback, as the dialog and sheet scrims spell their blur: `surface-1` at
+ * 56% over a 26px blur, the sheen white at 7% gone by 46%. Its edge is the
+ * chapter's colour at 30%, as the phone's bar draws it. With Reduce
+ * Transparency on it is plain `surface-1` with the hairline, nothing
+ * see-through. A change to `signetGlass` moves these with it. Arbitrary
+ * properties rather than `bg-[…]`, so `cn` doesn't merge the fill and the
+ * sheen into one.
  */
-const GLASS: CSSProperties = {
-  backgroundColor: `color-mix(in srgb, var(--surface-1) ${signetGlass.fillAlpha * 100}%, transparent)`,
-  backgroundImage: `linear-gradient(to bottom, rgba(255,255,255,${signetGlass.specular}), transparent ${signetGlass.specularStop * 100}%)`,
-  backdropFilter: `blur(${signetGlass.blur}px)`,
-  WebkitBackdropFilter: `blur(${signetGlass.blur}px)`,
-  borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
-};
+const GLASS = [
+  "[border-color:color-mix(in_srgb,var(--primary)_30%,transparent)]",
+  "[background-color:color-mix(in_srgb,var(--surface-1)_56%,transparent)]",
+  "[background-image:linear-gradient(to_bottom,rgba(255,255,255,0.07),transparent_46%)]",
+  "backdrop-blur-[26px]",
+  "[@media(prefers-reduced-transparency:reduce)]:[border-color:var(--border)]",
+  "[@media(prefers-reduced-transparency:reduce)]:[background-color:var(--surface-1)]",
+  "[@media(prefers-reduced-transparency:reduce)]:[background-image:none]",
+  "[@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none",
+].join(" ");
 
 export function AskBar({
   className,
@@ -48,7 +57,7 @@ export function AskBar({
 }: {
   className?: string;
   /**
-   * For a narrow column (the Channels list's 330px), where the field's words
+   * For the Channels column (240px from `lg` up), where the field's words
    * would be cut: the bar reads "Ask Frapp" instead.
    */
   compact?: boolean;
@@ -60,15 +69,13 @@ export function AskBar({
       type="button"
       // Where the conversation returns focus when it closes (`ask-card.tsx`).
       data-ask-entry=""
-      aria-label={ASK_COPY.name}
-      aria-description={ASK_BAR_DESCRIPTION}
       aria-haspopup="dialog"
       aria-expanded={ask.open}
       onClick={(event) => ask.openWith(event.currentTarget)}
-      style={GLASS}
       className={cn(
         // The Default control step (48), fully round, as the phone's bar.
         "flex h-12 w-full items-center gap-3 rounded-full border pl-[18px] pr-2 text-left transition hover:brightness-125",
+        GLASS,
         FOCUS_RING_SHELL,
         className,
       )}
@@ -81,33 +88,22 @@ export function AskBar({
         aria-hidden="true"
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent-subtle"
       >
-        <AskSendGlyph />
+        <svg
+          viewBox={ASK_SEND_GLYPH.viewBox}
+          className="h-4 w-4 text-primary"
+          fill="none"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d={ASK_SEND_GLYPH.path}
+            stroke="currentColor"
+            strokeWidth={ASK_SEND_GLYPH.strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </span>
     </button>
-  );
-}
-
-/**
- * The phone's send arrow (`AskSendGlyph` in the mobile `ask-bar.tsx`,
- * transcribed from `canvas-screens.dc.html` s17), so the two bars carry one
- * mark.
- */
-function AskSendGlyph() {
-  return (
-    <svg
-      viewBox="0 0 17 17"
-      className="h-4 w-4 text-primary"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M2.5 8.5h9M8 3.5l6 5-6 5"
-        stroke="currentColor"
-        strokeWidth={1.9}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

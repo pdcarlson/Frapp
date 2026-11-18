@@ -304,16 +304,21 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   the Ask row takes over only when there is nothing to search for or a search settled empty.
   The other row is one arrow key away.
   A plain click on any link in the thread (a source, a channel an answer names, the page a confirmed card leaves for) closes the dialog, since what it opens is under it; the conversation is kept and the field reopens it.
-  Changed in #5476 by pdcarlson, 2026-11-18: the field no longer asks (next bullet). The dialog, the conversation in it and the link rule above stand.
+  The composer has no Ask control, and `@Frapp` typed in a channel still asks from there.
+  A member without Ask gets the field and the dialog as they were.
+  Slack's search field and Linear's and Notion's command menus take a question the same way.
+  Changed in #5476 by pdcarlson, 2026-11-18: the field no longer asks (next bullet). The dialog, the conversation in it and the link rule above stand, except that the Ask bar, not the field, reopens the conversation.
 - **Ask is a floating bar; the field only finds** (changed in #5476 by pdcarlson, 2026-11-18; Shawn: "I don't like that asking frapp is in the search bar", Paul: "I don't like it either", then his pick of a floating bar from three options drawn on the real screens; the others were a button beside the field and a row at the top of the nav).
   The top bar's field reads "Find channels, members, messages and more" for everyone, as it always did for a member without Ask, and the Find dialog has no Ask row: Enter opens the highlighted result (`find-ask.ts` and the Ask row are gone).
   For a member with Ask, the phone's Ask bar is on web too (`components/ask/ask-bar.tsx`): a 48px glass capsule (§ Glass in `foundations.md`, its edge in the chapter accent at 30%) with the crest in the chapter accent, "Ask Frapp anything" and the send arrow on the accent's tint.
   It floats 24px above the bottom of the tool page, centred, at most 520px wide, and the page leaves 96px under its last row so nothing stays under it (`dashboard-shell.tsx`); the home view with chat closed takes it the same way.
   With chat alone it sits at the foot of the Channels column instead and reads "Ask Frapp", never over a channel: the message box owns the bottom of a channel, and asks there through `@Frapp` ([`../../behavior/ai.md` § Asking from a channel](../../behavior/ai.md#asking-from-a-channel)).
-  A click opens the conversation in the same dialog as before, and focus comes back to the bar when it closes.
-  The composer has no Ask control, and `@Frapp` typed in a channel still asks from there.
-  A member without Ask gets the field and the dialog as they were.
-  Slack's search field and Linear's and Notion's command menus take a question the same way.
+  A click opens the conversation in the same dialog as before, and focus comes back to the bar when it closes, or to another Ask bar on screen when that one is gone or hidden.
+  Below `lg` with a channel open, the channel fills the screen and there is no bar: the member asks there with `@Frapp`, as on the phone's channel screen, or goes back to the channel list for the bar.
+  A control a page pins to its own bottom sits above the bar (`--ask-bar-room`, as the Discord import's selection bar does).
+  The bar's glass falls back to plain `surface-1` with the hairline under Reduce Transparency, and its accessible name is its own words.
+  A member without Ask gets no bar.
+  The phone's own bar (s17) is the model; ChatGPT's and Perplexity's home screens open their assistant from a bar shaped like its field the same way.
 - **Ask, as it was until #4702** (`ask-pill.tsx`, deleted) opened the Ask panel (`components/ask/ask-panel.tsx`, #450) when the server has AI, the chapter's president has Ask on and the member holds `ai:use`.
   With AI on and Ask off for this chapter or this member, there is no pill.
   Until the server has said which of these it is, the pill's place is held empty, so nothing beside it moves and nobody reads "not ready" a moment before Ask opens.

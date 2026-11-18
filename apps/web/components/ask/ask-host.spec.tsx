@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Ask Frapp's front door on web (#4904, Paul's pick of 2026-11-13): no
- * control of its own. The host hands the top bar's field a way in
- * (`useAskEntry`) and draws the conversation over whatever page is up.
+ * Ask Frapp's front door on web: the floating Ask bar (#5476, Paul's pick of
+ * 2026-11-18). The host hands the bar a way in (`useAskEntry`) and draws the
+ * conversation over whatever page is up.
  */
 
 const who = vi.hoisted(() => ({

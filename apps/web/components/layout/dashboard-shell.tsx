@@ -733,8 +733,10 @@ export function DashboardShell({
                 className={cn(
                   "flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
                   // The bar's 48, its 24 off the bottom, and 24 more, so the
-                  // last row scrolls clear of it.
-                  askBar && "pb-24",
+                  // last row scrolls clear of it. A control the page pins to
+                  // its own bottom (`sticky bottom-*`) adds `--ask-bar-room`,
+                  // the bar's 72, so it sits above the bar rather than under.
+                  askBar && "pb-24 [--ask-bar-room:4.5rem]",
                 )}
               >
                 {children}

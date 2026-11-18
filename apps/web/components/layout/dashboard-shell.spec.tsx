@@ -575,20 +575,23 @@ describe("DashboardShell", () => {
   it("floats Ask Frapp's bar at the bottom of a tool page, for a member with Ask only (#5476)", () => {
     mockPathname.value = "/events";
     const view = render(<DashboardShell>content</DashboardShell>);
-    expect(screen.queryByRole("button", { name: "Ask Frapp" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Ask Frapp/ })).toBeNull();
     let page = view.container.querySelector("[data-tool-page]") as HTMLElement;
     expect(page.className).not.toContain("pb-24");
     view.unmount();
 
     askEntry.current = { open: false, openWith: vi.fn() };
     const { container } = render(<DashboardShell>content</DashboardShell>);
-    const bar = screen.getByRole("button", { name: "Ask Frapp" });
+    // Named by its own words (WCAG 2.5.3).
+    const bar = screen.getByRole("button", { name: "Ask Frapp anything" });
     expect(screen.getByRole("banner")).not.toContainElement(bar);
     const column = container.querySelector("[data-tool-column]") as HTMLElement;
     expect(column).toContainElement(bar);
     // The page reserves room, so its last row scrolls clear of the bar.
     page = container.querySelector("[data-tool-page]") as HTMLElement;
     expect(page.className).toContain("pb-24");
+    // And tells a control it pins to its own bottom how far to rise.
+    expect(page.className).toContain("[--ask-bar-room:4.5rem]");
     expect(page).not.toContainElement(bar);
   });
 
@@ -1246,6 +1249,18 @@ describe("DashboardShell", () => {
       render(<DashboardShell>events</DashboardShell>);
       fireEvent.keyDown(screen.getByRole("separator"), { key: "Enter" });
       expect(document.cookie).toContain("frapp_chat_split=0.500");
+    });
+
+    it("floats Ask Frapp's bar on the home view too, for a member with Ask (#5476)", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/chat";
+      askEntry.current = { open: false, openWith: vi.fn() };
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      const home = container.querySelector("[data-chapter-home]")!;
+      const bar = screen.getByRole("button", { name: "Ask Frapp anything" });
+      expect(home.parentElement).toContainElement(bar);
     });
 
     it("draws the chapter mark on the home view", () => {

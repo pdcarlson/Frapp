@@ -630,10 +630,12 @@ function SelectionBar({
   onClear: () => void;
 }) {
   return (
+    // Above the floating Ask bar when the page has one (#5476): the page
+    // says how much room it takes in `--ask-bar-room`.
     <div
       role="region"
       aria-label="Selected roles"
-      className="sticky bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-popover p-2 pl-3 shadow-lg"
+      className="sticky bottom-[calc(1rem+var(--ask-bar-room,0px))] z-10 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-popover p-2 pl-3 shadow-lg"
     >
       <span className="text-sm font-semibold">{count} selected</span>
       <span className="flex-1" />
