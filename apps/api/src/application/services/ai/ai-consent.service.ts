@@ -214,10 +214,14 @@ export class AiConsentService implements IAiConsentCheck {
   /**
    * Every chapter whose president has one feature family switched on, for a
    * scheduled feature that visits each of them (#3930). A chapter with no
-   * stored row counts as on, the same as {@link chapterSwitchOn} (#5511).
+   * stored row reads as {@link chapterSwitchOn} reads it: on when the switch
+   * starts on (#5511).
    */
   chaptersWithSwitchOn(key: AiChapterSwitch): Promise<string[]> {
-    return this.consents.listChapterIdsWithSwitchOn(SWITCH_COLUMN[key]);
+    return this.consents.listChapterIdsWithSwitchOn(
+      SWITCH_COLUMN[key],
+      AI_SWITCHES_ON_BY_DEFAULT.has(key),
+    );
   }
 
   /**

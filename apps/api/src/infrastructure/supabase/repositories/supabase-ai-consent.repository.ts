@@ -45,11 +45,16 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
 
   async listChapterIdsWithSwitchOn(
     column: keyof ChapterAiSettingsPatch,
+    onWithoutRow: boolean,
   ): Promise<string[]> {
-    // Every chapter, minus those whose stored row turns the switch off. A
-    // chapter with no row reads as on: every switch starts on (#5294), and a
-    // trigger seeds the row, so a missing one is a gap, not a choice (#5511).
     // Paged: one read stops at the project's max rows.
+    if (!onWithoutRow) {
+      return this.pagedSettingsIds(column, true);
+    }
+    // Every chapter, minus those whose stored row turns the switch off. A
+    // trigger seeds every chapter's row (#5294), so this matters only for a
+    // chapter that somehow has none: it reads as on, as one switch read does
+    // (#5511).
     const [chapters, off] = await Promise.all([
       fetchAllPages<{ id: string }>(
         (from, to) =>
@@ -60,21 +65,29 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
             .range(from, to),
         { pageSize: 500 },
       ),
-      fetchAllPages<{ chapter_id: string }>(
-        (from, to) =>
-          this.supabase
-            .from('chapter_ai_settings')
-            .select('chapter_id')
-            .eq(column, false)
-            .order('chapter_id')
-            .range(from, to),
-        { pageSize: 500 },
-      ),
+      this.pagedSettingsIds(column, false),
     ]);
-    const switchedOff = new Set(off.map((row) => row.chapter_id));
+    const switchedOff = new Set(off);
     return chapters
       .map((row) => row.id)
       .filter((chapterId) => !switchedOff.has(chapterId));
+  }
+
+  private async pagedSettingsIds(
+    column: keyof ChapterAiSettingsPatch,
+    value: boolean,
+  ): Promise<string[]> {
+    const rows = await fetchAllPages<{ chapter_id: string }>(
+      (from, to) =>
+        this.supabase
+          .from('chapter_ai_settings')
+          .select('chapter_id')
+          .eq(column, value)
+          .order('chapter_id')
+          .range(from, to),
+      { pageSize: 500 },
+    );
+    return rows.map((row) => row.chapter_id);
   }
 
   async saveChapterSettings(

@@ -176,16 +176,22 @@ describe('SupabaseAiConsentRepository — tenant scope', () => {
       repo = new SupabaseAiConsentRepository(harness.client);
     });
 
-    it('lists every chapter but the one whose row turns the switch off', async () => {
+    it('for a switch that starts on, lists every chapter but the one whose row turns it off', async () => {
       await expect(
-        repo.listChapterIdsWithSwitchOn('ask_enabled'),
+        repo.listChapterIdsWithSwitchOn('ask_enabled', true),
       ).resolves.toEqual([NO_ROW, ON]);
     });
 
     it('reads the column it is asked for', async () => {
       await expect(
-        repo.listChapterIdsWithSwitchOn('nudges_enabled'),
+        repo.listChapterIdsWithSwitchOn('nudges_enabled', true),
       ).resolves.toEqual([NO_ROW, ON, OFF]);
+    });
+
+    it('reads only stored rows for a switch that starts off', async () => {
+      await expect(
+        repo.listChapterIdsWithSwitchOn('ask_enabled', false),
+      ).resolves.toEqual([ON]);
     });
   });
 });

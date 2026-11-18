@@ -53,11 +53,19 @@ class FakeAiConsentRepository implements IAiConsentRepository {
     return Promise.resolve(row);
   }
 
-  listChapterIdsWithSwitchOn(column: keyof ChapterAiSettingsPatch) {
+  /** Every chapter, with or without a settings row. */
+  chapters = new Set<string>();
+
+  listChapterIdsWithSwitchOn(
+    column: keyof ChapterAiSettingsPatch,
+    onWithoutRow: boolean,
+  ) {
     return Promise.resolve(
-      [...this.settings.values()]
-        .filter((row) => row[column] === true)
-        .map((row) => row.chapter_id)
+      [...this.chapters]
+        .filter((chapterId) => {
+          const row = this.settings.get(chapterId);
+          return row ? row[column] === true : onWithoutRow;
+        })
         .sort(),
     );
   }
@@ -385,6 +393,28 @@ describe('AiConsentService', () => {
   });
 
   describe('the chapter switches', () => {
+    it('chaptersWithSwitchOn lists a chapter with no row for a switch that starts on (#5511)', async () => {
+      const [noRow, on, off] = ['chapter-1', 'chapter-2', 'chapter-3'];
+      [noRow, on, off].forEach((id) => repo.chapters.add(id));
+      await repo.saveChapterSettings(
+        on,
+        { ask_enabled: true },
+        PRESIDENT,
+        null,
+      );
+      await repo.saveChapterSettings(
+        off,
+        { ask_enabled: false },
+        PRESIDENT,
+        null,
+      );
+
+      await expect(service.chaptersWithSwitchOn('ask')).resolves.toEqual([
+        noRow,
+        on,
+      ]);
+    });
+
     it('chapterSwitchOn is on until the president turns it off (#4313, #5294)', async () => {
       await expect(
         service.chapterSwitchOn(CHAPTER, 'meeting_notes'),
