@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import {
-  TASK_AUDIENCE_EVERYONE,
   noTaskRepeatDraft,
   suggestTaskOwner,
+  sameTaskWho,
   taskWhoOf,
   taskWhoSuggestionFields,
   type TaskWho,
@@ -43,11 +43,7 @@ import {
   DueDateField,
   dueEntryPassed,
 } from "@/components/tasks/due-date-field";
-import {
-  TaskForm,
-  assigneeOfWho,
-  type TaskDraft,
-} from "@/components/tasks/task-form";
+import { TaskForm, type TaskDraft } from "@/components/tasks/task-form";
 import { WhoPicker } from "@/components/tasks/who-picker";
 import {
   meetingDayLabel,
@@ -141,21 +137,13 @@ interface RowValues {
   due: string;
 }
 
-/** Two picks that would make the same task. */
-function sameWho(a: TaskWho | null, b: TaskWho | null): boolean {
-  return (
-    JSON.stringify(taskWhoSuggestionFields(a)) ===
-    JSON.stringify(taskWhoSuggestionFields(b))
-  );
-}
-
 /** Only what differs from the suggestion, as the accept route takes it. */
 function editsFor(
   item: WaitingSuggestion,
   values: RowValues,
 ): TaskSuggestionEdits | undefined {
   const edits: TaskSuggestionEdits = {};
-  if (!sameWho(values.who, taskWhoOf(item.task))) {
+  if (!sameTaskWho(values.who, taskWhoOf(item.task))) {
     Object.assign(edits, taskWhoSuggestionFields(values.who));
   }
   if (values.due !== dueEntryOf(item.task)) {
@@ -434,7 +422,7 @@ export function SuggestedTasks({
         suggestedWho={
           edits[current.id]?.who === undefined &&
           !!guess?.who &&
-          sameWho(values.who, guess.who)
+          sameTaskWho(values.who, guess.who)
         }
         suggestedDue={
           edits[current.id]?.due === undefined &&
@@ -521,6 +509,11 @@ function SuggestedTaskRow({
   acceptWith: (task: TaskSuggestionEdits) => Promise<void>;
 }) {
   const { task } = item;
+  // The form's Who, opened on the card's and sent as the suggestion's own
+  // who-fields, so a role, a group or up for grabs survives the form.
+  // Absent until changed in the form, so it opens on the card's latest pick.
+  const [formWhoEdit, setFormWhoEdit] = useState<TaskWho | null>();
+  const formWho = formWhoEdit !== undefined ? formWhoEdit : values.who;
   const missingWho = flagged && !values.who;
   const missingDue = flagged && !values.due;
   const passedDue =
@@ -529,8 +522,9 @@ function SuggestedTaskRow({
   if (formOpen) {
     const initialDraft: TaskDraft = {
       title: task.title,
-      // The form takes one member or everyone; another pick is made again.
-      assigneeId: assigneeOfWho(values.who),
+      // Shown by the Who picker from `formWho`; the form reads it only for a
+      // single member.
+      assigneeId: values.who?.kind === "person" ? values.who.userId : "",
       dueDate: values.due,
       points: "",
       description: task.description ?? "",
@@ -546,7 +540,7 @@ function SuggestedTaskRow({
       <div className="rounded-[14px] border border-border p-3">
         <TaskForm
           suggestion
-          offerEveryone
+          who={{ value: formWho, onChange: setFormWhoEdit }}
           initialDraft={initialDraft}
           onDiscard={onCloseForm}
           onDone={onCloseForm}
@@ -557,11 +551,7 @@ function SuggestedTaskRow({
               await acceptWith({
                 title: input.title,
                 description: input.description ?? null,
-                ...taskWhoSuggestionFields(
-                  input.assignee_id === TASK_AUDIENCE_EVERYONE
-                    ? { kind: "each", target: { kind: "chapter" } }
-                    : { kind: "person", userId: input.assignee_id },
-                ),
+                ...taskWhoSuggestionFields(formWho),
                 due_date: input.due_date,
                 due_at: input.due_at ?? null,
                 subtasks: input.subtasks ?? [],

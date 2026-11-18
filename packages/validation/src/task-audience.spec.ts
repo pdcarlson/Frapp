@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  sameTaskWho,
   TASK_AUDIENCE_COPY,
   everyoneCount,
   isTaskAudience,
   normalizeTaskWho,
   openTaskScopeLabel,
   taskGroupLabel,
-  taskWhoFields,
   taskWhoOf,
   taskWhoRequest,
   taskWhoSuggestionFields,
-  taskWhoValue,
   type TaskWho,
 } from "./task-audience";
 
@@ -21,17 +20,20 @@ describe("task audience (#4295 step 3)", () => {
     expect(isTaskAudience(null)).toBe(false);
   });
 
-  it("reads a picker's value from a person or a group, the group first", () => {
-    expect(taskWhoValue({ assignee_id: "u-1" })).toBe("u-1");
-    expect(taskWhoValue({ assignee_id: null, audience: "everyone" })).toBe(
-      "everyone",
-    );
-    expect(taskWhoValue({ assignee_id: null, audience: null })).toBe("");
-  });
-
-  it("writes a picker's value back as the field it is", () => {
-    expect(taskWhoFields("u-1")).toEqual({ assignee_id: "u-1" });
-    expect(taskWhoFields("everyone")).toEqual({ audience: "everyone" });
+  it("reads the same people in any order as the same answer", () => {
+    expect(
+      sameTaskWho(
+        { kind: "each", target: { kind: "people", userIds: ["a", "b"] } },
+        { kind: "each", target: { kind: "people", userIds: ["b", "a"] } },
+      ),
+    ).toBe(true);
+    expect(
+      sameTaskWho(
+        { kind: "each", target: { kind: "people", userIds: ["a", "b"] } },
+        { kind: "someone", target: { kind: "people", userIds: ["a", "b"] } },
+      ),
+    ).toBe(false);
+    expect(sameTaskWho(null, null)).toBe(true);
   });
 
   it("words the progress and the hint", () => {

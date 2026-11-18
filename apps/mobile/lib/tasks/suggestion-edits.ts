@@ -1,29 +1,12 @@
 import type { AiSuggestion, TaskSuggestionEdits } from "@repo/hooks";
 import {
+  sameTaskWho,
   taskWhoOf,
   taskWhoSuggestionFields,
-  type TaskWho,
 } from "@repo/validation";
 import type { ValidatedNewTask } from "@/lib/tasks/create-task";
 
 type SuggestedTask = NonNullable<AiSuggestion["task"]>;
-
-/** Two answers to Who? as the same people, in any order. */
-function sameWho(a: TaskWho | null, b: TaskWho | null): boolean {
-  const key = (who: TaskWho | null) => {
-    if (!who) return "";
-    if (who.kind === "person") return `person:${who.userId}`;
-    const { target } = who;
-    const on =
-      target.kind === "people"
-        ? [...target.userIds].sort().join(",")
-        : target.kind === "chapter"
-          ? ""
-          : target.id;
-    return `${who.kind}:${target.kind}:${on}`;
-  };
-  return key(a) === key(b);
-}
 
 /** Only what the officer changed in the form, as the accept route takes it. */
 export function suggestionEdits(
@@ -35,7 +18,7 @@ export function suggestionEdits(
   // One answer to Who? (2026-11-18): a member, several, a role, a group or
   // everyone, each doing it or one claiming it. Changed, every who-field
   // goes, so the edit replaces the whole answer.
-  if (!sameWho(form.who, taskWhoOf(task))) {
+  if (!sameTaskWho(form.who, taskWhoOf(task))) {
     Object.assign(edits, taskWhoSuggestionFields(form.who));
   }
   const dueAt = form.due_at ?? null;

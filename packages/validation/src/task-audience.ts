@@ -142,27 +142,6 @@ export interface TaskGroupProgress {
 }
 
 /**
- * A Who or Assignee picker holds one string: a member's user id, or
- * {@link TASK_AUDIENCE_EVERYONE} for everyone. A user id is a uuid, so the
- * two never meet. This reads a task or a suggestion into that value.
- */
-export function taskWhoValue(task: {
-  assignee_id?: string | null;
-  audience?: string | null;
-}): string {
-  return isTaskAudience(task.audience)
-    ? task.audience
-    : (task.assignee_id ?? "");
-}
-
-/** A picker's value as the write sends it: `assignee_id` or `audience`. */
-export function taskWhoFields(
-  value: string,
-): { assignee_id: string } | { audience: TaskAudience } {
-  return isTaskAudience(value) ? { audience: value } : { assignee_id: value };
-}
-
-/**
  * How many copies a task for everyone would make from a member list: the
  * members with an account, alumni left out, as the API counts them.
  */
@@ -335,6 +314,28 @@ export function taskWhoSuggestionFields(
     audience_group_id: target.kind === "group" ? target.id : null,
     assignee_ids: target.kind === "people" ? target.userIds : null,
   };
+}
+
+/**
+ * Two answers to Who? that make the same task: the same people in any order,
+ * once normalized (a people set of one is that person). Shared by the web
+ * card and the phone's form, so a pick sent back unchanged sends no edit.
+ */
+export function sameTaskWho(a: TaskWho | null, b: TaskWho | null): boolean {
+  const key = (who: TaskWho | null) => {
+    const picked = who ? normalizeTaskWho(who) : null;
+    if (!picked) return "";
+    if (picked.kind === "person") return `person:${picked.userId}`;
+    const { target } = picked;
+    const on =
+      target.kind === "people"
+        ? [...target.userIds].sort().join(",")
+        : target.kind === "chapter"
+          ? ""
+          : target.id;
+    return `${picked.kind}:${target.kind}:${on}`;
+  };
+  return key(a) === key(b);
 }
 
 /** A task up for grabs, as `GET /v1/open-tasks` reads it. */
