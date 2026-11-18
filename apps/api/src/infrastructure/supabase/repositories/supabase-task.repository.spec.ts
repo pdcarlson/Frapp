@@ -829,9 +829,11 @@ describe('SupabaseTaskRepository — a creator’s unfinished groups (#5492)', (
   const OTHER = '0c000000-0000-4000-8000-000000000070';
   /**
    * A group row per chapter, twins apart from `id` and `chapter_id`. The
-   * harness resolves no join: `tasks` is the embed as the seed carries it,
-   * whether the group still has a copy not confirmed. What `!inner` does with
-   * the real embed is the live suite's (`task-groups.integration-spec.ts`).
+   * harness resolves no join, so `tasks` is the embed as the seed carries it:
+   * the group's copies, one confirmed and one open, or both confirmed. The
+   * harness applies the embedded filter and `!inner` to it, as PostgREST
+   * would; the live suite (`task-groups.integration-spec.ts`) checks PostgREST
+   * itself.
    */
   const group = (
     n: number,
@@ -843,7 +845,10 @@ describe('SupabaseTaskRepository — a creator’s unfinished groups (#5492)', (
       target_id: null,
       target_name: null,
       created_at: `2026-11-0${n}T00:00:00.000Z`,
-      tasks: { points_awarded: !(over.open ?? true) },
+      tasks: [
+        { id: `copy-${n}-1`, points_awarded: true },
+        { id: `copy-${n}-2`, points_awarded: !(over.open ?? true) },
+      ],
     };
     return [
       inA({ id: `0a000000-0000-4000-8000-00000000007${n}`, ...fields }),
@@ -901,6 +906,77 @@ describe('SupabaseTaskRepository — a creator’s unfinished groups (#5492)', (
 
     expect(groups.map((row) => row.id)).toEqual([idInB(5), idInB(2), idInB(1)]);
     for (const row of groups) expect(row).not.toHaveProperty('tasks');
+  });
+});
+
+describe('SupabaseTaskRepository — a group’s copy states (#5492)', () => {
+  const GROUP = '0c000000-0000-4000-8000-000000000080';
+  const copy = (id: string) => ({
+    id,
+    title: 'Hold committee meetings',
+    description: 'A long description the state read never carries',
+    assignee_id: USER_SHARED,
+    created_by: USER_SHARED,
+    due_date: '2026-09-01',
+    due_at: null,
+    status: 'TODO',
+    point_reward: 5,
+    points_awarded: false,
+    completed_at: null,
+    confirmed_at: null,
+    group_id: GROUP,
+    created_at: '2026-01-01T00:00:00.000Z',
+  });
+  let harness: TenantHarness;
+  let repo: SupabaseTaskRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        tasks: [
+          inA(copy('0a000000-0000-4000-8000-000000000081')),
+          inB(copy('0b000000-0000-4000-8000-000000000081')),
+          inB(copy('0b000000-0000-4000-8000-000000000082')),
+          inA(copy('0a000000-0000-4000-8000-000000000082')),
+        ],
+      },
+      collisionExempt: { tasks: ['group_id'] },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+  });
+
+  it('reads only the chapter’s copies of the groups, by id', async () => {
+    const states = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findGroupCopyStates(CHAPTER_B, [GROUP]),
+    );
+
+    expect(states.map((state) => state.id)).toEqual([
+      '0b000000-0000-4000-8000-000000000081',
+      '0b000000-0000-4000-8000-000000000082',
+    ]);
+  });
+
+  it('reads in batches of group ids, so a long list never overflows the URL', async () => {
+    const ids = Array.from(
+      { length: 150 },
+      (_, i) => `0c000000-0000-4000-8000-${String(1000 + i).padStart(12, '0')}`,
+    );
+
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findGroupCopyStates(CHAPTER_B, [GROUP, ...ids]),
+    );
+
+    // Each batch is paged until a short page, so a batch may be read twice.
+    const batches = harness.ops.map(
+      (op) => op.filters.find((f) => f.op === 'in')?.value as string[],
+    );
+    expect(Math.max(...batches.map((batch) => batch.length))).toBe(100);
+    expect(new Set(batches.flat())).toEqual(new Set([GROUP, ...ids]));
+  });
+
+  it('reads nothing for no groups', async () => {
+    await expect(repo.findGroupCopyStates(CHAPTER_B, [])).resolves.toEqual([]);
+    expect(harness.ops).toHaveLength(0);
   });
 });
 

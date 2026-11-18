@@ -82,7 +82,7 @@ import type { EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 import { ServiceEntryService } from './service-entry.service';
 import { TaskService } from './task.service';
-import type { AssignedTaskItem } from './task.service';
+import type { AssignedTaskItem, TaskGroupCopyView } from './task.service';
 
 /**
  * A channel as the polls section reads it: chat's own list rows, which carry
@@ -798,17 +798,18 @@ function activityTaskGroup(
   item: Extract<AssignedTaskItem, { kind: 'group' }>,
   userId: string,
 ): ActivityTaskGroup {
-  const overdue = (copy: TaskView) => copy.status === TaskStatus.OVERDUE;
-  const open = (copy: TaskView) => copy.stored_status !== TaskStatus.COMPLETED;
+  const overdue = (copy: TaskGroupCopyView) =>
+    copy.status === TaskStatus.OVERDUE;
+  const open = (copy: TaskGroupCopyView) =>
+    copy.stored_status !== TaskStatus.COMPLETED;
   // Overdue, then still open, then done; within each, as read.
-  const rank = (copy: TaskView) => (overdue(copy) ? 0 : open(copy) ? 1 : 2);
+  const rank = (copy: TaskGroupCopyView) =>
+    overdue(copy) ? 0 : open(copy) ? 1 : 2;
   const ranked = [...item.copies].sort((a, b) => rank(a) - rank(b));
   const opened =
     ranked.find((copy) => copy.assignee_id === userId) ?? ranked[0];
-  // A group edit leaves a confirmed copy as it was (`tasks.md`), so the
-  // shared fields come from one that isn't, the opened one when it can.
-  const source =
-    [opened, ...ranked].find((copy) => !copy.points_awarded) ?? opened;
+  // A copy not yet confirmed, read whole (`TaskService.listAssignedItems`).
+  const source = item.shared;
   return {
     ...item.group,
     task_id: opened.id,

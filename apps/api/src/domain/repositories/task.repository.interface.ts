@@ -2,6 +2,7 @@ import {
   Task,
   TaskPhoto,
   TaskGroup,
+  TaskGroupCopyState,
   TaskSeries,
   TaskStatus,
   TaskSubtask,
@@ -152,6 +153,14 @@ export interface ITaskRepository {
   findGroups(chapterId: string, ids: string[]): Promise<TaskGroup[]>;
   /** Every copy of these groups, any order. */
   findGroupCopies(chapterId: string, groupIds: string[]): Promise<Task[]>;
+  /**
+   * Every copy of these groups as {@link TaskGroupCopyState}, a few columns
+   * each, by id: for counting a group and drawing its row (#5492).
+   */
+  findGroupCopyStates(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<TaskGroupCopyState[]>;
   /**
    * The groups this member made that still have a copy not confirmed, newest
    * first, at most `limit` (#5492). A group whose every copy is confirmed is

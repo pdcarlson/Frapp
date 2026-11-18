@@ -1142,6 +1142,8 @@ describe('ActivityService', () => {
         kind: 'group',
         group: { ...summary, total: copies.length },
         copies,
+        // As `TaskService.listAssignedItems` picks it: a copy not confirmed.
+        shared: copies.find((one) => !one.points_awarded) ?? copies[0],
         created_at: iso(-HOUR),
       });
       const serveItems = (
@@ -1257,7 +1259,7 @@ describe('ActivityService', () => {
         expect(group.total).toBe(8);
       });
 
-      it('takes what the copies share from one not yet confirmed', async () => {
+      it('draws what the copies share from the shared copy, not the one it opens', async () => {
         // A group edit leaves a confirmed copy as it was.
         const group = await onlyGroup([
           copy('mine', {

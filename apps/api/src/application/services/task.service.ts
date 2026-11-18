@@ -18,6 +18,7 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import type {
   Task,
   TaskGroup,
+  TaskGroupCopyState,
   TaskGroupSummary,
   TaskPhoto,
   TaskPhotoKind,
@@ -109,13 +110,23 @@ const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
  * legal — and therefore cannot offer the assignee any action at all (#1051).
  */
 function toDisplayStatus(task: Task, now: Date = new Date()): TaskView {
-  const displayStatus =
-    (task.status === TaskStatus.TODO ||
-      task.status === TaskStatus.IN_PROGRESS) &&
+  return {
+    ...task,
+    status: displayStatusOf(task, now),
+    stored_status: task.status,
+  };
+}
+
+/** The status a client renders: `OVERDUE` for an open task past its due. */
+function displayStatusOf(
+  task: Pick<Task, 'status' | 'due_date' | 'due_at'>,
+  now: Date,
+): TaskStatus {
+  return (task.status === TaskStatus.TODO ||
+    task.status === TaskStatus.IN_PROGRESS) &&
     isPastDue(task, now)
-      ? TaskStatus.OVERDUE
-      : task.status;
-  return { ...task, status: displayStatus, stored_status: task.status };
+    ? TaskStatus.OVERDUE
+    : task.status;
 }
 
 /**
@@ -157,18 +168,29 @@ export interface TaskListOptions {
   limit?: number;
 }
 
+/** A copy's state with its display status, as a group row reads it (#5492). */
+export type TaskGroupCopyView = TaskGroupCopyState & {
+  stored_status: TaskStatus;
+};
+
 /**
  * One thing a member assigned, as {@link TaskService.listAssignedItems} reads
  * it (#5492): a one-person task, or a task for everyone once, with its
- * group's progress and every copy.
+ * group's progress, every copy's state and one copy whole.
  */
 export type AssignedTaskItem =
   | { kind: 'task'; task: TaskView }
   | {
       kind: 'group';
       group: TaskGroupSummary;
-      /** Every copy, with its display status, by id; never none. */
-      copies: [TaskView, ...TaskView[]];
+      /** Every copy's state, with its display status, by id; never none. */
+      copies: [TaskGroupCopyView, ...TaskGroupCopyView[]];
+      /**
+       * A copy not yet confirmed, whole: what the copies share (title,
+       * description, due, points, proof) is read from it, since a group edit
+       * leaves a confirmed copy as it was.
+       */
+      shared: Task;
       /** When the group was made. */
       created_at: string;
     };
@@ -572,16 +594,19 @@ export class TaskService {
     if (ids.length === 0) return new Map();
     const [groups, copies] = await Promise.all([
       this.taskRepo.findGroups(chapterId, ids),
-      this.taskRepo.findGroupCopies(chapterId, ids),
+      this.taskRepo.findGroupCopyStates(chapterId, ids),
     ]);
     return this.summarize(chapterId, groups, copies);
   }
 
-  /** {@link groupSummaries} from groups and their copies already read. */
+  /**
+   * {@link groupSummaries} from groups and their copies already read, plus a
+   * read of the live names when any group went to a role or chapter group.
+   */
   private async summarize(
     chapterId: string,
     groups: TaskGroup[],
-    copies: Task[],
+    copies: Pick<Task, 'group_id' | 'status' | 'points_awarded'>[],
   ): Promise<Map<string, TaskGroupSummary>> {
     const summaries = new Map<string, TaskGroupSummary>();
     if (groups.length === 0) return summaries;
@@ -803,11 +828,14 @@ export class TaskService {
   /**
    * What `createdBy` assigned that isn't finished, newest first, at most
    * `limit`, a task for everyone counted once however many copies it has
-   * (#5492): their one-person tasks not yet confirmed, and their groups with
-   * a copy not yet confirmed, each read newest first in SQL and merged. Three
-   * reads whatever the counts: the two lists, then the copies of the groups
-   * that made the cut. Only for a `tasks:manage` holder: it reads tasks the
-   * caller doesn't hold.
+   * (#5492): their one-person tasks not yet confirmed and their groups with a
+   * copy not yet confirmed, each read newest first and capped in SQL, then
+   * merged and cut. For the groups that made the cut it reads every copy's
+   * state (a few columns each, batched by group and paged, so a group of any
+   * size is read whole), then one unconfirmed copy of each, whole, for what
+   * the copies share; `summarize` adds a read of role and chapter-group names
+   * when a group went to one. No read is made per group. Only for a
+   * `tasks:manage` holder: it reads tasks the caller doesn't hold.
    */
   async listAssignedItems(
     chapterId: string,
@@ -840,21 +868,38 @@ export class TaskService {
     const keptGroups = kept.flatMap((entry) =>
       entry.kind === 'group' ? [entry.row] : [],
     );
-    const copies =
+    const states =
       keptGroups.length > 0
-        ? await this.taskRepo.findGroupCopies(
+        ? await this.taskRepo.findGroupCopyStates(
             chapterId,
             keptGroups.map((group) => group.id),
           )
         : [];
-    const summaries = await this.summarize(chapterId, keptGroups, copies);
-    const copiesOf = new Map<string, TaskView[]>();
-    for (const copy of copies) {
-      if (!copy.group_id) continue;
-      const list = copiesOf.get(copy.group_id) ?? [];
-      list.push(toDisplayStatus(copy, now));
-      copiesOf.set(copy.group_id, list);
+    const copiesOf = new Map<string, TaskGroupCopyView[]>();
+    for (const state of states) {
+      if (!state.group_id) continue;
+      const list = copiesOf.get(state.group_id) ?? [];
+      list.push({
+        ...state,
+        status: displayStatusOf(state, now),
+        stored_status: state.status,
+      });
+      copiesOf.set(state.group_id, list);
     }
+    // One copy not yet confirmed per group, read whole for what they share.
+    const sharedIds = [...copiesOf.values()].flatMap((copies) => {
+      const open = copies.find((copy) => !copy.points_awarded);
+      return open ? [open.id] : [];
+    });
+    const [summaries, sharedRows] = await Promise.all([
+      this.summarize(chapterId, keptGroups, states),
+      sharedIds.length > 0
+        ? this.taskRepo.findByIds(chapterId, sharedIds)
+        : Promise.resolve([]),
+    ]);
+    const sharedOf = new Map(
+      sharedRows.flatMap((row) => (row.group_id ? [[row.group_id, row]] : [])),
+    );
 
     return kept.flatMap((entry): AssignedTaskItem[] => {
       if (entry.kind === 'task') {
@@ -867,14 +912,18 @@ export class TaskService {
       }
       const summary = summaries.get(entry.row.id);
       const [first, ...rest] = copiesOf.get(entry.row.id) ?? [];
-      // Its last open copy confirmed between the reads: it is finished now,
-      // as the SQL filter would have found.
-      if (!summary || !first || summary.confirmed >= summary.total) return [];
+      const shared = sharedOf.get(entry.row.id);
+      // Its last open copy confirmed (or deleted) between the reads: it is
+      // finished now, as the SQL filter would have found.
+      if (!summary || !first || !shared || summary.confirmed >= summary.total) {
+        return [];
+      }
       return [
         {
           kind: 'group',
           group: summary,
           copies: [first, ...rest],
+          shared,
           created_at: entry.row.created_at,
         },
       ];

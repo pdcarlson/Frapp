@@ -18,6 +18,7 @@ import {
   Task,
   TaskStatus,
   type TaskGroup,
+  type TaskGroupCopyState,
   type TaskPhoto,
   type TaskSeries,
   type TaskSubtask,
@@ -388,26 +389,55 @@ export class SupabaseTaskRepository implements ITaskRepository {
     chapterId: string,
     groupIds: string[],
   ): Promise<Task[]> {
-    if (groupIds.length === 0) return [];
-    const copies: Task[] = [];
+    return this.inGroupBatches(groupIds, (batch) =>
+      fetchAllPages(
+        (from, to) =>
+          this.supabase
+            .from('tasks')
+            .select('*')
+            .eq('chapter_id', chapterId)
+            .in('group_id', batch)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: TASK_PAGE_SIZE },
+      ),
+    );
+  }
+
+  async findGroupCopyStates(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<TaskGroupCopyState[]> {
+    return this.inGroupBatches(groupIds, (batch) =>
+      fetchAllPages(
+        (from, to) =>
+          this.supabase
+            .from('tasks')
+            .select(
+              'id, group_id, assignee_id, status, points_awarded, due_date, due_at',
+            )
+            .eq('chapter_id', chapterId)
+            .in('group_id', batch)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: TASK_PAGE_SIZE },
+      ),
+    );
+  }
+
+  /**
+   * `read` over `groupIds` in batches that keep the URL short, every row of
+   * each: a chapter's group can outgrow one response, so `read` pages.
+   */
+  private async inGroupBatches<T>(
+    groupIds: string[],
+    read: (batch: string[]) => Promise<T[]>,
+  ): Promise<T[]> {
+    const rows: T[] = [];
     for (let i = 0; i < groupIds.length; i += SUBTASK_READ_BATCH) {
-      const batch = groupIds.slice(i, i + SUBTASK_READ_BATCH);
-      // Every row of them: a chapter's group can outgrow one response.
-      copies.push(
-        ...(await fetchAllPages(
-          (from, to) =>
-            this.supabase
-              .from('tasks')
-              .select('*')
-              .eq('chapter_id', chapterId)
-              .in('group_id', batch)
-              .order('id', { ascending: true })
-              .range(from, to),
-          { pageSize: TASK_PAGE_SIZE },
-        )),
-      );
+      rows.push(...(await read(groupIds.slice(i, i + SUBTASK_READ_BATCH))));
     }
-    return copies;
+    return rows;
   }
 
   async findUnfinishedGroupsByCreator(

@@ -140,6 +140,10 @@ describe('TaskService', () => {
       findGroups: jest.fn().mockResolvedValue([]),
       findGroupCopies: jest.fn().mockResolvedValue([]),
       findUnfinishedGroupsByCreator: jest.fn().mockResolvedValue([]),
+      // A projection of the copies: whatever `findGroupCopies` is serving.
+      findGroupCopyStates: jest.fn((chapterId: string, ids: string[]) =>
+        mockTaskRepo.findGroupCopies(chapterId, ids),
+      ),
       deleteGroup: jest.fn().mockResolvedValue(undefined),
       deleteGroupCopies: jest.fn().mockResolvedValue([]),
     };
@@ -363,7 +367,8 @@ describe('TaskService', () => {
         done: 2,
         confirmed: 1,
       });
-      expect(mockTaskRepo.findGroupCopies).toHaveBeenCalledWith('ch-1', [
+      // Counted from the copies' states, not their whole rows (#5492).
+      expect(mockTaskRepo.findGroupCopyStates).toHaveBeenCalledWith('ch-1', [
         'group-1',
       ]);
     });
@@ -827,6 +832,41 @@ describe('TaskService', () => {
       mockTaskRepo.findByChapter.mockImplementation((_chapterId, query) =>
         Promise.resolve(rows.slice(0, query?.limit ?? rows.length)),
       );
+    /**
+     * The copies as the two reads give them: their states (the narrow read)
+     * and, by id, whole rows.
+     */
+    const serveCopies = (copies: Task[]) => {
+      mockTaskRepo.findGroupCopyStates.mockImplementation(
+        (_chapterId, groupIds) =>
+          Promise.resolve(
+            copies
+              .filter((copy) => groupIds.includes(copy.group_id!))
+              .map(
+                ({
+                  id,
+                  group_id,
+                  assignee_id,
+                  status,
+                  points_awarded,
+                  due_date,
+                  due_at,
+                }) => ({
+                  id,
+                  group_id,
+                  assignee_id,
+                  status,
+                  points_awarded,
+                  due_date,
+                  due_at,
+                }),
+              ),
+          ),
+      );
+      mockTaskRepo.findByIds.mockImplementation((_chapterId, ids) =>
+        Promise.resolve(copies.filter((copy) => ids.includes(copy.id))),
+      );
+    };
 
     it('counts a task for everyone once: 30 copies and 26 one-person tasks are 25 items', async () => {
       // 26 one-person tasks, made 1 to 26 minutes ago, and one group of 30
@@ -835,8 +875,7 @@ describe('TaskService', () => {
       mockTaskRepo.findUnfinishedGroupsByCreator.mockResolvedValue([
         groupRow('group-1', 9.5),
       ]);
-      mockTaskRepo.findGroups.mockResolvedValue([groupRow('group-1', 9.5)]);
-      mockTaskRepo.findGroupCopies.mockResolvedValue(
+      serveCopies(
         copiesOf('group-1', 30, (i) =>
           i < 4 ? { status: TaskStatus.COMPLETED, completed_at: ago(5) } : {},
         ),
@@ -868,7 +907,7 @@ describe('TaskService', () => {
         }),
       );
       expect(group.kind === 'group' && group.copies).toHaveLength(30);
-      // Three reads, each narrowed and capped in SQL.
+      // Both lists are narrowed and capped in SQL.
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
         createdBy: 'admin-1',
         groupless: true,
@@ -880,9 +919,16 @@ describe('TaskService', () => {
         'admin-1',
         25,
       );
-      expect(mockTaskRepo.findGroupCopies).toHaveBeenCalledTimes(1);
-      expect(mockTaskRepo.findGroupCopies).toHaveBeenCalledWith('ch-1', [
+      // The copies are read once for every group, a few columns each; one
+      // whole copy per group is read for what they share.
+      expect(mockTaskRepo.findGroupCopyStates).toHaveBeenCalledTimes(1);
+      expect(mockTaskRepo.findGroupCopyStates).toHaveBeenCalledWith('ch-1', [
         'group-1',
+      ]);
+      expect(mockTaskRepo.findGroupCopies).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findByIds).toHaveBeenCalledTimes(1);
+      expect(mockTaskRepo.findByIds).toHaveBeenCalledWith('ch-1', [
+        'group-1-copy-00',
       ]);
       // The group summary is worked out from the copies already read.
       expect(mockTaskRepo.findGroups).not.toHaveBeenCalled();
@@ -894,10 +940,7 @@ describe('TaskService', () => {
         groupRow('group-new', 1.5),
         groupRow('group-old', 50),
       ]);
-      mockTaskRepo.findGroupCopies.mockResolvedValue([
-        ...copiesOf('group-new', 3),
-        ...copiesOf('group-old', 3),
-      ]);
+      serveCopies([...copiesOf('group-new', 3), ...copiesOf('group-old', 3)]);
 
       const cut = await service.listAssignedItems('ch-1', 'admin-1', 2, NOW);
 
@@ -906,16 +949,49 @@ describe('TaskService', () => {
           item.kind === 'task' ? item.task.id : item.group.id,
         ),
       ).toEqual(['single-01', 'group-new']);
-      expect(mockTaskRepo.findGroupCopies).toHaveBeenCalledWith('ch-1', [
+      expect(mockTaskRepo.findGroupCopyStates).toHaveBeenCalledWith('ch-1', [
         'group-new',
       ]);
 
-      mockTaskRepo.findGroupCopies.mockClear();
+      mockTaskRepo.findGroupCopyStates.mockClear();
+      mockTaskRepo.findByIds.mockClear();
       mockTaskRepo.findUnfinishedGroupsByCreator.mockResolvedValue([
         groupRow('group-old', 50),
       ]);
       await service.listAssignedItems('ch-1', 'admin-1', 2, NOW);
-      expect(mockTaskRepo.findGroupCopies).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findGroupCopyStates).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('reads what the copies share from one not yet confirmed', async () => {
+      // A group edit leaves a confirmed copy as it was.
+      serveSingles([]);
+      mockTaskRepo.findUnfinishedGroupsByCreator.mockResolvedValue([
+        groupRow('group-1', 5),
+      ]);
+      serveCopies(
+        copiesOf('group-1', 3, (i) =>
+          i === 0
+            ? {
+                title: 'Old title',
+                status: TaskStatus.COMPLETED,
+                confirmed_at: ago(4),
+                points_awarded: true,
+              }
+            : { title: 'New title' },
+        ),
+      );
+
+      const [item] = await service.listAssignedItems(
+        'ch-1',
+        'admin-1',
+        25,
+        NOW,
+      );
+
+      expect(item.kind === 'group' && item.shared).toEqual(
+        expect.objectContaining({ id: 'group-1-copy-01', title: 'New title' }),
+      );
     });
 
     it('leaves out a group whose last open copy was confirmed between the reads', async () => {
@@ -923,7 +999,7 @@ describe('TaskService', () => {
       mockTaskRepo.findUnfinishedGroupsByCreator.mockResolvedValue([
         groupRow('group-1', 5),
       ]);
-      mockTaskRepo.findGroupCopies.mockResolvedValue(
+      serveCopies(
         copiesOf('group-1', 3, () => ({
           status: TaskStatus.COMPLETED,
           completed_at: ago(6),
@@ -942,7 +1018,7 @@ describe('TaskService', () => {
       mockTaskRepo.findUnfinishedGroupsByCreator.mockResolvedValue([
         groupRow('group-1', 5),
       ]);
-      mockTaskRepo.findGroupCopies.mockResolvedValue(
+      serveCopies(
         copiesOf('group-1', 2, (i) => ({
           due_date: i === 0 ? '2026-11-01' : '2026-12-01',
         })),
@@ -964,8 +1040,12 @@ describe('TaskService', () => {
         }),
       });
       expect(
-        group.kind === 'group' && group.copies.map((copy) => copy.status),
-      ).toEqual([TaskStatus.OVERDUE, TaskStatus.TODO]);
+        group.kind === 'group' &&
+          group.copies.map((copy) => [copy.status, copy.stored_status]),
+      ).toEqual([
+        [TaskStatus.OVERDUE, TaskStatus.TODO],
+        [TaskStatus.TODO, TaskStatus.TODO],
+      ]);
     });
   });
 
