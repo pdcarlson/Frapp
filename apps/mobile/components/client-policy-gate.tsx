@@ -12,6 +12,7 @@ import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useClientPolicy } from "@/lib/client-policy";
+import { launchGate } from "@/lib/launch/launch-gate";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -67,6 +68,9 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
   const [linkFailed, setLinkFailed] = useState(false);
 
   useEffect(() => {
+    // The prompt is what the member must see, so a launch logo still up
+    // waiting on the screen behind it gives way at once (#5449).
+    launchGate.lift("now");
     // A keyboard open underneath would otherwise stay up over the prompt.
     Keyboard.dismiss();
     AccessibilityInfo.announceForAccessibility(UPDATE_REQUIRED_COPY.title);
