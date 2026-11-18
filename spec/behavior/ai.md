@@ -960,6 +960,10 @@ Some features propose instead of answer: a task drafted from minutes, an event t
   Accepting deletes it once the change is made, so an accept that fails leaves the suggestion waiting as it was.
   So a suggestion stores AI text only while it waits for a person, which is why it isn't one of the exceptions under [Stored AI text](#stored-ai-text).
 
+> **Changed 2026-11-18 by pdcarlson (#5534).**
+> Suggested agenda items are proposals too, but not this list's: they show under an upcoming meeting's agenda ([`events.md` § Suggested agenda items](events.md#suggested-agenda-items)), send no push, don't expire, and a decided one keeps its words, because Paul asked that what is added and dismissed teach the next suggestions (#5522: "we should be continually learning from what is added and what is not").
+> They are kept in their own table, not as these suggestions, so the rules above stand for everything else.
+
 > **Added 2026-11-12 (#4309, the drafting session's, Paul's to change).**
 > The 14-day wait, the push going only to the member the run acted for, and deleting a decided suggestion's text were not stated before.
 > Fourteen days covers two weekly meetings, so an officer who misses one review still sees its suggestions at the next.
@@ -1133,12 +1137,13 @@ Activity draws one card under the week card, from `POST /v1/activity/card`, and 
 
 ## Stored AI text
 
-Frapp does not keep the text of prompts or answers, with two exceptions.
+Frapp does not keep the text of prompts or answers, with three exceptions.
 
 | Exception | What is kept | Who reads it | How long |
 | --- | --- | --- | --- |
 | A member reports an answer, a draft, a suggested task or a summary | That one exchange, shown to the member before they confirm | The Frapp team | 30 days, encrypted |
 | Beta diagnostics | Questions and answers in Ask, for one chapter | The Frapp team | 14 days, encrypted, with a fixed end date |
+| Suggested agenda items | Each item the model suggested (a few words, and why), whether it was added or dismissed | The event's editors while it waits; after that only the prompt, as an example for meetings with the same audience | Until the event, or the minutes it was drawn from, is deleted |
 
 - The diagnostics window exists for the beta only, and only on Ask.
   While it is on, Ask shows a line saying answers are being saved.
@@ -1165,6 +1170,8 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
   a suggestion: while it is pending in their Suggested list).
   Nobody in the chapter sees reports; how the Frapp team reads them: [`docs/ops/ai-stored-text.md`](../../docs/ops/ai-stored-text.md).
   Added 2026-11-12 (#4315, the drafting session's, Paul's to change): the reasons, the 7 days to report an answer, and that the reporter's own No on the AI sheet does not delete their report (a quoted member's does).
+- Suggested agenda items are kept after they are decided because Paul asked that what is added and dismissed teach the next suggestions (#5522, 2026-11-18). Never the prompt or the minutes it read: only the short item and its reason ([`events.md` § Suggested agenda items](events.md#suggested-agenda-items)).
+  Added in #5534 by pdcarlson, 2026-11-18.
 - A nudge card's words are kept only while the card is showing on the member's Activity, like a waiting suggestion's, which is why it isn't one of the exceptions above ([Nudges](#nudges)).
 - An answer its asker posts to a channel is a chat message from then on, kept and deleted as chat messages are, and is not one of the exceptions above: the asker chose to publish it ([Posting an answer to the channel](#posting-an-answer-to-the-channel)).
   Added in #4713 by pdcarlson, 2026-11-13.
