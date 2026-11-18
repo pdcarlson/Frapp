@@ -206,6 +206,7 @@ function sheetElement(
   row: ActivityRow | null,
   viewerId: string | null,
   rowActionState: ActivityRowActionState = "idle",
+  canManage = false,
 ) {
   return (
     <FrappThemeProvider>
@@ -213,6 +214,7 @@ function sheetElement(
         row={row}
         viewerId={viewerId}
         rowActionState={rowActionState}
+        canManage={canManage}
         onActed={onActed}
         onClosed={onClosed}
         linkActions={linkActions}
@@ -226,10 +228,11 @@ function render(
   row: ActivityRow | null,
   viewerId: string | null = "me",
   rowActionState: ActivityRowActionState = "idle",
+  canManage = false,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(sheetElement(row, viewerId, rowActionState), {
+    tree = create(sheetElement(row, viewerId, rowActionState, canManage), {
       // `vitest.setup.ts` mocks `BottomSheetModal` as a host string, so the
       // sheet's ref lands on whatever this returns for it.
       createNodeMock: (element) =>
@@ -328,6 +331,38 @@ describe("Activity sheet (#3897)", () => {
     });
     // Not a message in a channel: no message actions to open.
     expect(props.onOpenActions).toBeUndefined();
+  });
+
+  it("draws the review for a completion waiting on an officer wherever its row sits, by the screen's rule (#5492)", () => {
+    const made = activityGroups(
+      {
+        ...READ,
+        made_by_you: {
+          polls: [],
+          events: [],
+          tasks: [],
+          task_items: [
+            {
+              kind: "task",
+              task: READ.needs_you.task_confirmations[0]!,
+            },
+          ],
+        },
+      } as unknown as Activity,
+      new Date(),
+      { taskItems: true },
+    )
+      .flatMap((group) => group.rows)
+      .find((row) => row.kind === "task")!;
+    expect(made.key).toBe("made:task:task-2");
+    // The officer the screen read: the review.
+    render(made, "me", "idle", true);
+    expect(cards.task.at(-1)!.payload).toMatchObject({ task_id: "task-2" });
+    // Without tasks:manage, the screen pushes the task's screen; the sheet
+    // agrees and draws nothing.
+    for (const list of Object.values(cards)) list.length = 0;
+    render(made, "me", "idle", false);
+    expect(cards.task).toHaveLength(0);
   });
 
   it("draws no card for any other task: it is the task's own screen (#5492)", () => {

@@ -16,6 +16,7 @@ import {
   activityCardIsOpen,
   activityPollIsOpen,
   activityRowAction,
+  activityRowAwaitsReview,
   activityDetailParts,
   activityReviewQueue,
   activityReviewRows,
@@ -1352,7 +1353,7 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
       .find((g) => g.id === "made-by-you")!
       .parts.find((part) => part.id === "tasks")!.rows;
 
-  it("draws a task sent to 30 members as one row: Everyone · 30, faces, a done bar", () => {
+  it("draws a task sent to 30 members as one row: Everyone and its due, faces, a done bar that says the 30", () => {
     const rows = madeTasks(
       read([
         { kind: "group", group: group() },
@@ -1366,9 +1367,7 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
     const row = rows[0]!;
     expect(row.kind).toBe("task-group");
     expect(row.title).toBe("Clean the house");
-    expect(row.detail).toBe(
-      `Everyone · 30 · ${formatDueLabel("2026-11-20", now)}`,
-    );
+    expect(row.detail).toBe(`Everyone · ${formatDueLabel("2026-11-20", now)}`);
     expect(row.kind === "task-group" && row.faceIds).toEqual([
       "u1",
       "u2",
@@ -1388,7 +1387,7 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
     expect(row.readRef).toBeNull();
   });
 
-  it("names a role's or a group's target, and counts picked people once", () => {
+  it("names a role's or a group's target, naming the total only in the bar", () => {
     const due = formatDueLabel("2026-11-20", now);
     const [role, people] = madeTasks(
       read([
@@ -1407,7 +1406,7 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
         },
       ]),
     );
-    expect(role!.detail).toBe(`Everyone in Philanthropy · 6 · ${due}`);
+    expect(role!.detail).toBe(`Everyone in Philanthropy · ${due}`);
     expect(people!.detail).toBe(`4 people · ${due}`);
   });
 
@@ -1450,5 +1449,98 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
     expect(
       findActivityTaskRow(data, "copy-8", now, { taskItems: true }),
     ).toBeNull();
+  });
+});
+
+describe("activityRowAwaitsReview (#5492)", () => {
+  const officer = { viewerId: "me", canManage: true };
+  /** A member's completion of a task the viewer assigned. */
+  const done = (overrides: Record<string, unknown> = {}) =>
+    task({
+      id: "done-1",
+      title: "Sweep the porch",
+      assignee_id: "sam",
+      created_by: "me",
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: 10,
+      proof_kind: "none",
+      ...overrides,
+    });
+  /** The row Waiting on others draws for it. */
+  const madeRow = (overrides: Record<string, unknown> = {}) =>
+    activityGroups(
+      activity({
+        made_by_you: {
+          polls: [],
+          events: [],
+          tasks: [],
+          task_items: [{ kind: "task", task: done(overrides) }],
+        },
+      }),
+      new Date(),
+      { taskItems: true },
+    )
+      .find((group) => group.id === "made-by-you")!
+      .rows.find((row) => row.kind === "task")!;
+
+  it("is a To review row, whoever asks", () => {
+    const review = activityReviewRows(
+      activity({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [done()],
+          hours_approvals: [],
+          polls: [],
+        },
+      }),
+    )[0]!;
+    expect(activityRowAwaitsReview(review)).toBe(true);
+    expect(activityRowAction(review)).toBe("confirm");
+  });
+
+  it("is a completion waiting on an officer's sign-off wherever it sits", () => {
+    expect(activityRowAwaitsReview(madeRow(), officer)).toBe(true);
+    // A proof task too, which needs a sign-off with no points.
+    expect(
+      activityRowAwaitsReview(
+        madeRow({ point_reward: null, proof_kind: "photo" }),
+        officer,
+      ),
+    ).toBe(true);
+  });
+
+  it("is not one the viewer can't or needn't sign off", () => {
+    // Without asking who looks: only the To review card's own rows.
+    expect(activityRowAwaitsReview(madeRow())).toBe(false);
+    // No tasks:manage.
+    expect(
+      activityRowAwaitsReview(madeRow(), { viewerId: "me", canManage: false }),
+    ).toBe(false);
+    // Their own: the API refuses a self-confirm.
+    expect(
+      activityRowAwaitsReview(madeRow({ assignee_id: "me" }), officer),
+    ).toBe(false);
+    // Confirmed, not done, or needing no sign-off.
+    expect(
+      activityRowAwaitsReview(
+        madeRow({ confirmed_at: "2026-11-03T00:00:00.000Z" }),
+        officer,
+      ),
+    ).toBe(false);
+    expect(
+      activityRowAwaitsReview(
+        madeRow({ status: "TODO", stored_status: "TODO" }),
+        officer,
+      ),
+    ).toBe(false);
+    expect(
+      activityRowAwaitsReview(
+        madeRow({ point_reward: null, proof_kind: "none" }),
+        officer,
+      ),
+    ).toBe(false);
+    // Nor is the made row's own badge an ask: no one-press Confirm there.
+    expect(activityRowAction(madeRow())).toBeNull();
   });
 });

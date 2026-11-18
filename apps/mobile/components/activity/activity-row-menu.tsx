@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useFocusEffect } from "expo-router";
 import { useIsMutating } from "@tanstack/react-query";
 import type { ActivityRow } from "@repo/hooks";
 import {
@@ -21,7 +22,7 @@ import { useActivitySnoozeMenu } from "./activity-snooze";
  *
  * - A task row offers that task's menu; a task for everyone the member
  *   assigned (one row, `task-group`) offers the group's, as the Calendar's
- *   group row does: Remove people, Duplicate, Delete for everyone.
+ *   group row does (`spec/behavior/tasks.md` § Long press on the phone).
  * - An event row offers Edit, Duplicate and Delete to whoever may use them.
  * - A row the hooks can't find (a task or event the viewer's lists don't
  *   hold) offers Snooze alone, or nothing.
@@ -33,8 +34,10 @@ import { useActivitySnoozeMenu } from "./activity-snooze";
  * (`itemMenuAccessibility`, through `ActivityListRow`).
  *
  * The task and event writes don't touch Activity's own read, so once a write
- * started from here (or anywhere while the screen is mounted) settles,
- * `onWrote` reads it again, and the row leaves or changes.
+ * started from one of these menus settles (a Mark done, a Delete, or a save
+ * from the sheet it opened), `onWrote` reads it again, and the row leaves or
+ * changes. Writes made anywhere else are left to the screen's reread when it
+ * comes back into focus (`useActivityReread`).
  *
  * Render `host` once in the screen, and `undoBar` outside its scroll, as the
  * Calendar does.
@@ -48,6 +51,8 @@ export function useActivityRowMenu({ onWrote }: { onWrote: () => void }): {
   archiveMenuFor: (row: ActivityRow) => ItemMenuHandle | null;
   host: ReactNode;
   undoBar: ReactNode;
+  /** Which offer `undoBar` holds, new with each completion; `null` with none. */
+  undoKey: number | null;
 } {
   const taskMenu = useCalendarTaskMenu();
   const eventMenu = useEventMenu();
@@ -58,7 +63,7 @@ export function useActivityRowMenu({ onWrote }: { onWrote: () => void }): {
   const { snoozeActionFor, wakeActionFor } = snoozeMenu;
   const { handleFor } = menu;
 
-  useRereadAfterWrites(onWrote);
+  const arm = useRereadAfterMenuWrites(onWrote);
 
   /** The row's own item's actions: its task's, its group's or its event's. */
   const itemActions = useCallback(
@@ -71,9 +76,16 @@ export function useActivityRowMenu({ onWrote }: { onWrote: () => void }): {
             : row.kind === "event"
               ? menuForEvent(row.event.id)
               : null;
-      return handle?.actions ?? [];
+      // Each pick arms the reread: what it writes is Activity's to show.
+      return (handle?.actions ?? []).map((action) => ({
+        ...action,
+        run: () => {
+          arm();
+          action.run();
+        },
+      }));
     },
-    [menuForTask, menuForEvent],
+    [menuForTask, menuForEvent, arm],
   );
 
   const compose = useCallback(
@@ -118,25 +130,43 @@ export function useActivityRowMenu({ onWrote }: { onWrote: () => void }): {
       </>
     ),
     undoBar: taskMenu.undoBar,
+    undoKey: taskMenu.undoKey,
   };
 }
 
-/** Whether a mutation is one of the task or event writes the menu starts. */
+/** Whether a mutation is one of the task or event writes the menus start. */
 const isMenuWrite = (key: readonly unknown[] | undefined) =>
   key?.[0] === "tasks" || key?.[0] === "events";
 
 /**
- * Calls `onWrote` each time the task and event writes in flight have all
- * settled: a menu's Mark done, Delete or Duplicate, or a save from the sheet
- * it opened.
+ * Calls `onWrote` once the task and event writes in flight have all settled,
+ * when a pick from Activity's own menus started them: `arm` marks the pick.
+ * Leaving the screen disarms it (a pick that pushed a screen, such as Remove
+ * people, is read again by the focus reread on the way back), so a write
+ * made elsewhere while Activity sits behind a pushed screen reads nothing.
  */
-function useRereadAfterWrites(onWrote: () => void) {
+function useRereadAfterMenuWrites(onWrote: () => void): () => void {
   const writing = useIsMutating({
     predicate: (mutation) => isMenuWrite(mutation.options.mutationKey),
   });
+  const armed = useRef(false);
   const was = useRef(writing);
   useEffect(() => {
-    if (was.current > 0 && writing === 0) onWrote();
+    if (was.current > 0 && writing === 0 && armed.current) {
+      armed.current = false;
+      onWrote();
+    }
     was.current = writing;
   }, [writing, onWrote]);
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        armed.current = false;
+      },
+      [],
+    ),
+  );
+  return useCallback(() => {
+    armed.current = true;
+  }, []);
 }

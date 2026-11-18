@@ -189,9 +189,9 @@ afterEach(() => {
 });
 
 describe("a member on their own task", () => {
-  it("offers only Mark done, and Mark done walks the checkbox's writes", async () => {
+  it("offers only Mark done and Start, and Mark done walks the checkbox's writes", async () => {
     const tree = render();
-    expect(longPress(tree)).toEqual(["Mark done"]);
+    expect(longPress(tree)).toEqual(["Mark done", "Start"]);
     await act(async () => {
       pick(tree, "Mark done");
     });
@@ -207,10 +207,26 @@ describe("a member on their own task", () => {
     expect(tree.root.findByType(ItemActionsMenu).props.target).toBeNull();
   });
 
+  it("starts a To do with the status write alone, and offers no Start once started (#5492)", async () => {
+    let tree = render();
+    longPress(tree);
+    await act(async () => {
+      pick(tree, "Start");
+    });
+    expect(updateStatus).toHaveBeenCalledTimes(1);
+    expect(updateStatus).toHaveBeenCalledWith({
+      id: "t1",
+      body: { status: "IN_PROGRESS" },
+    });
+    tasks = [{ ...BASE, status: "IN_PROGRESS", stored_status: "IN_PROGRESS" }];
+    tree = render();
+    expect(longPress(tree)).toEqual(["Mark done"]);
+  });
+
   it("opens Mark done's proof sheet on a task that asks for a photo", async () => {
     tasks = [{ ...BASE, proof_kind: "photo" }];
     const tree = render();
-    expect(longPress(tree)).toEqual(["Mark done with a photo"]);
+    expect(longPress(tree)).toEqual(["Mark done with a photo", "Start"]);
     await act(async () => {
       pick(tree, "Mark done with a photo");
     });

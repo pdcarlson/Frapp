@@ -75,6 +75,7 @@ import {
   taskHistory,
   taskScreenControls,
 } from "@/lib/tasks/task-screen";
+import { useStartTask } from "@/lib/tasks/use-start-task";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
 import {
   RELEASE_FAILED,
@@ -219,6 +220,8 @@ function TaskScreen({
     [row],
   );
   const toggles = useTaskToggle(findRow, { viewerId });
+  // More's Start (#5492): what chat's task card offered on a To do.
+  const startTask = useStartTask();
   const controls = taskScreenControls({
     row,
     viewerId,
@@ -374,6 +377,14 @@ function TaskScreen({
   // has no page for one task to link to yet, and a `frapp://` link reads as
   // dead text in chat.
   const moreRows = [
+    ...(controls.start && toggles.canToggle(row)
+      ? [
+          {
+            label: TASK_ACTION_LABELS.start,
+            onPress: () => startTask(row.id),
+          },
+        ]
+      : []),
     ...(controls.reopen
       ? [
           {
@@ -411,7 +422,9 @@ function TaskScreen({
   ];
   // At most three, which Android's dialog can draw: Mark not done needs the
   // task done and Give it back needs it not done, so only one of them shows
-  // beside Delete and Delete for everyone.
+  // beside Delete and Delete for everyone. Start needs it To do, so it never
+  // shows beside Mark not done, and with Give it back (a task taken from Up
+  // for grabs, never a group's copy) there is no Delete for everyone.
   const openMore = () =>
     showActionMenu({
       title: row.title,

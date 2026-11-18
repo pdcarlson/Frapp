@@ -23,6 +23,7 @@ import {
   MinusGlyph,
   PencilGlyph,
   PersonGlyph,
+  PlayGlyph,
   TrashGlyph,
   UndoGlyph,
 } from "@/components/control-glyphs";
@@ -35,6 +36,7 @@ import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { alertFailure } from "@/lib/failure-alert";
 import type { TaskRowModel } from "@/lib/tasks/board";
+import { useStartTask } from "@/lib/tasks/use-start-task";
 import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import {
   editTargetOfRow,
@@ -68,6 +70,8 @@ import {
  *   checkbox, so a task that asks for proof opens Mark done's sheet and a
  *   completion offers the same Undo. A screen with no checkbox of its own
  *   (the Calendar) takes `useCalendarTaskMenu`, which brings its own.
+ * - Start is the assignee's To do → In progress (`useStartTask`), as chat's
+ *   task card and the task screen's More offer it.
  * - Edit and Reassign open the board's edit sheet (New task in edit mode),
  *   Reassign with Assign to's picker over it.
  * - Remove people opens the task's screen in its select mode (`select=1`).
@@ -146,6 +150,8 @@ export function useTaskMenu({
     [deleteTask],
   );
 
+  const startTask = useStartTask();
+
   const actionFor = useCallback(
     (key: TaskMenuKey, row: TaskRowModel): ItemMenuAction => {
       switch (key) {
@@ -155,6 +161,13 @@ export function useTaskMenu({
             label: markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind),
             glyph: (color) => <CheckGlyph color={color} />,
             run: () => void toggle.toggle(row),
+          };
+        case "start":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.start,
+            glyph: (color) => <PlayGlyph color={color} />,
+            run: () => startTask(row.id),
           };
         case "reopen":
           return {
@@ -226,7 +239,7 @@ export function useTaskMenu({
         }
       }
     },
-    [toggle, router, tasksData, runDelete],
+    [toggle, router, tasksData, runDelete, startTask],
   );
 
   const build = useCallback(
@@ -242,9 +255,10 @@ export function useTaskMenu({
         toggleRefused: toggle.refusal !== null,
       });
       const keys = taskMenuKeys(controls, scope).filter(
-        // Mid-write, the box is held; so is the menu's Mark done.
+        // Mid-write, the box is held; so are the menu's status moves.
         (key) =>
-          (key !== "markDone" && key !== "reopen") || toggle.canToggle(row),
+          (key !== "markDone" && key !== "start" && key !== "reopen") ||
+          toggle.canToggle(row),
       );
       return menu.handleFor({
         title,
@@ -351,6 +365,8 @@ export function useCalendarTaskMenu(): {
   menuForTask: TaskMenuForTask;
   host: ReactNode;
   undoBar: ReactNode;
+  /** Which offer the bar holds, new with each completion; `null` with none. */
+  undoKey: number | null;
 } {
   const viewerId = useViewerUserId();
   const toggles = useTaskToggle(useTaskRowById(), { viewerId });
@@ -375,5 +391,6 @@ export function useCalendarTaskMenu(): {
         onUndo={() => void toggles.takeBack(toggles.undo!.id)}
       />
     ) : null,
+    undoKey: toggles.undo?.key ?? null,
   };
 }

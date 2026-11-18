@@ -1,6 +1,10 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { signUpLinkKind, taskGroupLabel } from "@repo/validation";
+import {
+  signUpLinkKind,
+  taskGroupLabel,
+  taskNeedsSignOff,
+} from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
@@ -13,7 +17,7 @@ import {
 } from "@repo/formatting";
 
 export type Activity = components["schemas"]["ActivityDto"];
-type ActivityTask = components["schemas"]["ActivityTaskDto"];
+export type ActivityTask = components["schemas"]["ActivityTaskDto"];
 /**
  * A task for everyone the member assigned, as one row of `task_items`
  * (#5492): the group's progress and what its copies share.
@@ -211,7 +215,7 @@ export function activityRowAction(
   if (!activityBadgeIsAsk(row)) return null;
   // A task that asks for proof opens instead: the officer sees the photos or
   // link before confirming it (#4635), which a one-press row can't show.
-  if (row.kind === "task" && row.glyph === "confirm") {
+  if (row.kind === "task" && activityRowAwaitsReview(row)) {
     return (row.task.proof_kind ?? "none") === "none" ? "confirm" : null;
   }
   if (row.kind === "hours") return "approve";
@@ -223,6 +227,57 @@ export function activityRowAction(
     return needsCode && !options.canScan ? null : "check-in";
   }
   return null;
+}
+
+/** Who is looking, for `activityRowAwaitsReview`. */
+export interface ActivityReviewer {
+  viewerId: string | null;
+  /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
+  canManage: boolean;
+}
+
+/**
+ * Whether a task waits on this viewer's sign-off (#5492): marked done, not
+ * yet confirmed, needing one (`taskNeedsSignOff`: points or proof), held by
+ * someone else (the API refuses a self-confirm), and the viewer holds
+ * `tasks:manage`. The fields a list task or an Activity task both carry.
+ */
+export function taskAwaitsReview(
+  task: {
+    assignee_id: string | null;
+    stored_status?: string | null;
+    confirmed_at: string | null;
+    point_reward: number | null;
+    proof_kind?: string | null;
+  },
+  reviewer: ActivityReviewer,
+): boolean {
+  return (
+    reviewer.canManage &&
+    reviewer.viewerId !== null &&
+    task.assignee_id !== reviewer.viewerId &&
+    task.stored_status === "COMPLETED" &&
+    !task.confirmed_at &&
+    taskNeedsSignOff(task)
+  );
+}
+
+/**
+ * Whether a row opens as a review, Confirm and Send back over the proof,
+ * rather than the task's own screen, which has neither (#5492): one the To
+ * review card lists (the server has already checked it waits on this
+ * viewer), and, with `reviewer`, any task row whose task waits on their
+ * sign-off wherever it sits (Waiting on others, a snoozed or archived row).
+ * One rule for the phone's router, its sheet and the row's Confirm, so they
+ * can't drift.
+ */
+export function activityRowAwaitsReview(
+  row: ActivityRow,
+  reviewer?: ActivityReviewer,
+): boolean {
+  if (row.kind !== "task") return false;
+  if (row.glyph === "confirm") return true;
+  return reviewer ? taskAwaitsReview(row.task, reviewer) : false;
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -551,12 +606,12 @@ function taskDue(
 
 /**
  * A task for everyone the member assigned, as one row of Tasks you assigned
- * (#5492): who it went to and how many, in the shared words
- * (`taskGroupLabel`: "Everyone · 12", "Everyone in Philanthropy · 6", or
- * "6 people", which already counts them), then when it is due; a bar of how
- * many copies are done ("3 of 12"); Overdue when any copy is. One task sent
- * to the whole chapter is one row, not one per member, so it can't bury the
- * other tasks the officer assigned, as Paul's 25 identical rows did.
+ * (#5492): who it went to, in the shared words (`taskGroupLabel`:
+ * "Everyone", "Everyone in Philanthropy", "6 people"), then when it is due;
+ * how many it went to is said once, in the bar of how many copies are done
+ * ("3 of 12"), not again in the detail; Overdue when any copy is. One task
+ * sent to the whole chapter is one row, not one per member, so it can't bury
+ * the other tasks the officer assigned, as Paul's 25 identical rows did.
  */
 function taskGroupRow(group: ActivityTaskGroup, now: Date): ActivityRow {
   const { soon, due } = taskDue(group, now, "dated");
@@ -566,13 +621,7 @@ function taskGroupRow(group: ActivityTaskGroup, now: Date): ActivityRow {
     group,
     faceIds: group.preview_assignee_ids,
     title: group.title,
-    detail: [
-      taskGroupLabel(group),
-      group.audience === "people" ? null : String(group.total),
-      due,
-    ]
-      .filter(Boolean)
-      .join(" · "),
+    detail: [taskGroupLabel(group), due].filter(Boolean).join(" · "),
     soon,
     // The row leads with a stack of the members' faces instead.
     faceId: null,
@@ -1011,6 +1060,18 @@ export function activityReviewRows(
     ),
     ...activity.needs_you.hours_approvals.map(hoursRow),
   ];
+}
+
+/**
+ * A task as the To review card draws it, for one the read doesn't list: a
+ * review push for a copy of a task for everyone, which `task_items` names
+ * only by the copy its row opens (#5492). Its key is the To review card's.
+ */
+export function activityReviewRow(
+  task: ActivityTask,
+  now: Date = new Date(),
+): ActivityRow {
+  return taskRow(task, "needs-confirm", "confirm", now);
 }
 
 /**

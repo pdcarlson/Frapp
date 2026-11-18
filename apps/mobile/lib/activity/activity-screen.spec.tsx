@@ -5,7 +5,11 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+} from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activityKeys, activityStandingKeys } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -229,7 +233,13 @@ const roster = vi.hoisted(() => ({ members: [] as string[] }));
 const menuReads = vi.hoisted(() => ({
   tasks: [] as Record<string, unknown>[],
   events: [] as Record<string, unknown>[],
-  updateStatus: vi.fn(() => Promise.resolve({})),
+  updateStatus: vi.fn<(input: unknown) => Promise<object>>(() =>
+    Promise.resolve({}),
+  ),
+  /** `GET /v1/tasks/:id`, for a review push the read lists no row for. */
+  fetchTask: vi.fn<(id: string) => Promise<unknown>>(() =>
+    Promise.reject(new Error("Not found")),
+  ),
   deleteTask: vi.fn(() => Promise.resolve({})),
   deleteEvent: vi.fn(),
 }));
@@ -282,7 +292,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useTasks: () => ({ data: menuReads.tasks, isSuccess: true }),
   useEvents: () => ({ data: menuReads.events, isSuccess: true }),
   usePermissionList: () => links.permissions,
-  useUpdateTaskStatus: () => ({ mutateAsync: menuReads.updateStatus }),
+  // A real mutation under the hook's own key, so the screen sees it settle.
+  useUpdateTaskStatus: () =>
+    useMutation({
+      mutationKey: ["tasks", "update-task-status"],
+      mutationFn: menuReads.updateStatus,
+    }),
+  useFetchTask: () => menuReads.fetchTask,
   useDeleteTask: () => ({ mutateAsync: menuReads.deleteTask }),
   useDeleteEvent: () => ({ mutate: menuReads.deleteEvent }),
   useConfirmTask: () => ({ mutateAsync: writes.confirm }),
@@ -320,6 +336,7 @@ const sheet = vi.hoisted(() => ({
   props: null as null | {
     row: { key: string } | null;
     viewerId: string | null;
+    canManage?: boolean;
     rowActionState?: string;
     onClosed: () => void;
     onActed: () => void;
@@ -374,6 +391,8 @@ const screen = () => (
 
 /** Every mounted focus effect, run again: the member came back. */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
+/** The member pushed a screen over this one. Refocus before the test ends. */
+const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 
 /**
  * Each re-read invalidates the list and the standing together, so a count of
@@ -477,6 +496,9 @@ describe("Activity screen (#3897)", () => {
     menuReads.tasks = [];
     menuReads.events = [];
     menuReads.updateStatus.mockClear();
+    menuReads.fetchTask
+      .mockReset()
+      .mockImplementation(() => Promise.reject(new Error("Not found")));
     menuReads.deleteTask.mockClear();
     menuReads.deleteEvent.mockClear();
     chapter.data = undefined;
@@ -2926,7 +2948,7 @@ describe("Activity screen (#3897)", () => {
       roster.members = ["m1", "m2", "m3", "m4"];
     });
 
-    it("draws 30 copies as one row: Everyone · 30, three faces and +27, a done bar", () => {
+    it("draws 30 copies as one row: Everyone, three faces and +27, a bar of 30", () => {
       activity.value = {
         ...activity.value,
         data: madeRead([{ kind: "group", group: group() }]),
@@ -2944,7 +2966,8 @@ describe("Activity screen (#3897)", () => {
       expect(press.props.accessibilityLabel).toBe(
         "Clean the house, 12 of 30 done",
       );
-      expect(press.props.accessibilityHint).toMatch(/^Everyone · 30 · /);
+      // The 30 is said once, in the bar: not in the detail.
+      expect(press.props.accessibilityHint).toMatch(/^Everyone · Due /);
       // Three faces of those the roster holds ("gone" has left), then the
       // rest counted.
       const stack = drawn.find(
@@ -3064,20 +3087,130 @@ describe("Activity screen (#3897)", () => {
           .props.onPress(),
       );
 
-    it("offers a member their task's Mark done, and Snooze", async () => {
+    /**
+     * A task write through the query client's own cache, as any screen's
+     * hook sends one: in flight across a render, then landed.
+     */
+    const writeElsewhere = async (name: string) => {
+      let land!: () => void;
+      const landed = new Promise<void>((resolve) => {
+        land = resolve;
+      });
+      let done!: Promise<unknown>;
+      await act(async () => {
+        done = queryClient
+          .getMutationCache()
+          .build(queryClient, {
+            mutationKey: ["tasks", name],
+            mutationFn: () => landed,
+          })
+          .execute(undefined);
+        // The cache tells its observers on the next tick.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => {
+        land();
+        await done;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+
+    /** What each status write sent, in order. */
+    const statusWrites = () =>
+      menuReads.updateStatus.mock.calls.map(([input]) => input);
+
+    it("offers a member their task's Mark done, Start and Snooze", async () => {
       links.permissions = ["members:view"];
       menuReads.tasks = [listed()];
       const tree = render();
       expect(longPress(tree, "Book the venue")).toEqual([
         "Mark done",
+        "Start",
         "Snooze",
       ]);
       await act(async () => pick(tree, "Mark done"));
       // The board's checkbox writes: To do, then done.
-      expect(menuReads.updateStatus).toHaveBeenCalledWith({
-        id: "task-1",
-        body: { status: "IN_PROGRESS" },
-      });
+      expect(statusWrites()).toEqual([
+        { id: "task-1", body: { status: "IN_PROGRESS" } },
+        { id: "task-1", body: { status: "COMPLETED" } },
+      ]);
+    });
+
+    it("starts a To do from the menu, as chat's card did", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const tree = render();
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Start"));
+      expect(statusWrites()).toEqual([
+        { id: "task-1", body: { status: "IN_PROGRESS" } },
+      ]);
+    });
+
+    it("reads Activity again once a write from its menu settles, and not for one made elsewhere", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      invalidate.mockClear();
+      // A write made elsewhere (the board, a card) while Activity is mounted.
+      await writeElsewhere("update-task-status");
+      expect(listRereads(invalidate)).toBe(0);
+      expect(nudge.recheck).not.toHaveBeenCalled();
+      // The menu's own: read again, and the card asked again.
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Start"));
+      expect(listRereads(invalidate)).toBe(1);
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+      invalidate.mockRestore();
+    });
+
+    it("leaves a write made after Activity loses focus to the focus reread", async () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [listed({ id: "out", assignee_id: "sam" })];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "out",
+                  title: "Assigned",
+                  assignee_id: "sam",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      // What Edit's sheet sends on save, in flight across a render.
+      const otherWrite = () => writeElsewhere("update-task");
+      try {
+        // Edit opens its sheet: picked, so a save from it rereads.
+        longPress(tree, "Assigned");
+        pick(tree, "Edit");
+        invalidate.mockClear();
+        await otherWrite();
+        expect(listRereads(invalidate), "a save from the menu's sheet").toBe(1);
+        // Picked again, then the member leaves before any write: whatever
+        // is written while Activity is behind another screen isn't its.
+        longPress(tree, "Assigned");
+        pick(tree, "Edit");
+        act(() => blur());
+        invalidate.mockClear();
+        await otherWrite();
+        expect(listRereads(invalidate)).toBe(0);
+      } finally {
+        act(() => refocus());
+        invalidate.mockRestore();
+      }
     });
 
     it("offers an officer the task's actions on one they assigned, with no Snooze", () => {
@@ -3212,6 +3345,252 @@ describe("Activity screen (#3897)", () => {
         { name: "menu:delete", label: "Delete" },
         { name: "menu:snooze", label: "Snooze" },
       ]);
+    });
+
+    /** An event the chapter's list holds, for its menu. */
+    const listedEvent = (id = "ev-1") => ({
+      id,
+      name: "Chapter",
+      location: null,
+      start_time: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+      end_time: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+      point_value: null,
+      is_mandatory: false,
+    });
+
+    it("offers Unsnooze on a snoozed row beside its event's actions", async () => {
+      links.permissions = ["*"];
+      menuReads.events = [listedEvent()];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            eventIn(3, {
+              snoozed_until: new Date(Date.now() + 86_400_000).toISOString(),
+            }),
+          ],
+        }),
+      };
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      try {
+        const tree = render();
+        act(() =>
+          tree.root
+            .findAll(
+              (node) =>
+                (node.type as unknown) === "Pressable" &&
+                drawnText(node) === "Snoozed (1)",
+            )[0]!
+            .props.onPress(),
+        );
+        expect(longPress(tree, "Chapter")).toEqual([
+          "Edit",
+          "Duplicate",
+          "Unsnooze",
+          "Delete",
+        ]);
+        alert.mockClear();
+        pick(tree, "Unsnooze");
+        // Asked first, as before the menu.
+        const [title, , buttons] = alert.mock.calls.at(-1)!;
+        expect(title).toBe("Chapter");
+        await act(async () => {
+          buttons!.find((button) => button.text === "Unsnooze")!.onPress!();
+        });
+        expect(snoozeWrites.unsnooze).toHaveBeenCalledWith({
+          kind: "event",
+          item_id: "ev-1",
+        });
+      } finally {
+        alert.mockRestore();
+      }
+    });
+
+    it("offers an Archive row its item's actions, never Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.events = [listedEvent("ev-old")];
+      archive.value = {
+        ...archive.value,
+        data: {
+          events: [
+            eventIn(-48, {
+              id: "ev-old",
+              name: "Old meeting",
+              checked_in: true,
+            }),
+          ],
+          tasks: [],
+          polls: [],
+          unavailable: [],
+        },
+      };
+      const tree = render();
+      act(() => {
+        tree.root
+          .findAll(
+            (node) =>
+              (node.type as unknown) === "Pressable" &&
+              drawnText(node) === "Archive",
+          )[0]!
+          .props.onPress();
+      });
+      expect(longPress(tree, "Old meeting")).toEqual([
+        "Edit",
+        "Duplicate",
+        "Delete",
+      ]);
+    });
+
+    it("opens a completion waiting on the officer as its review, wherever it sits", () => {
+      links.permissions = ["*"];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "done-1",
+                  title: "Swept the porch",
+                  assignee_id: "sam",
+                  created_by: "me",
+                  status: "COMPLETED",
+                  stored_status: "COMPLETED",
+                  point_reward: null,
+                  proof_kind: "photo",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => row(tree, "Swept the porch").props.onPress());
+      // Not the task screen, which has no Confirm or Send back.
+      expect(push).not.toHaveBeenCalled();
+      expect(sheet.props?.row?.key).toBe("made:task:done-1");
+      // The sheet decides by the same rule, on the same viewer.
+      expect(sheet.props?.canManage).toBe(true);
+    });
+
+    describe("a review push for a task the read lists no row for", () => {
+      /** A copy of a task for everyone, as `GET /v1/tasks/:id` reads it. */
+      const copy = (overrides: Record<string, unknown> = {}) => ({
+        id: "copy-3",
+        title: "Clean the house",
+        assignee_id: "m3",
+        created_by: "me",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        due_date: "2099-01-01",
+        due_at: null,
+        point_reward: 5,
+        points_awarded: false,
+        proof_kind: "none",
+        confirmed_at: null,
+        ...overrides,
+      });
+      const pushFor = async (read: unknown) => {
+        const router = vi.mocked(useRouter)() as unknown as {
+          setParams?: (params: unknown) => void;
+        };
+        router.setParams = vi.fn();
+        links.permissions = ["*"];
+        menuReads.fetchTask.mockResolvedValue(read);
+        activity.value = {
+          ...activity.value,
+          refetch: vi.fn(() => Promise.resolve({ data: activity.value.data })),
+        };
+        vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+          review: "copy-3",
+        });
+        const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+        push.mockClear();
+        try {
+          render();
+          await act(async () => {});
+        } finally {
+          vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+          delete router.setParams;
+        }
+        expect(menuReads.fetchTask).toHaveBeenCalledWith("copy-3");
+        return push;
+      };
+
+      it("reads it by id and opens its review when it waits on the viewer", async () => {
+        const push = await pushFor(copy());
+        expect(push).not.toHaveBeenCalled();
+        expect(sheet.props?.row?.key).toBe("needs-confirm:task:copy-3");
+      });
+
+      it("pushes its screen once it no longer waits on them", async () => {
+        const push = await pushFor(
+          copy({
+            confirmed_at: "2026-11-18T00:00:00.000Z",
+            points_awarded: true,
+          }),
+        );
+        expect(push).toHaveBeenCalledWith({
+          pathname: "/task-details",
+          params: { id: "copy-3" },
+        });
+        expect(sheet.props?.row ?? null).toBeNull();
+      });
+    });
+
+    it("asks the card again on the way back from a task the week card's Next pushed", () => {
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      try {
+        act(() => row(tree, "Book the venue").props.onPress());
+        expect(push).toHaveBeenCalledWith({
+          pathname: "/task-details",
+          params: { id: "task-1" },
+        });
+        act(() => blur());
+        expect(nudge.recheck).not.toHaveBeenCalled();
+      } finally {
+        act(() => refocus());
+      }
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+      // Once: a later return asks nothing more.
+      act(() => {
+        blur();
+        refocus();
+      });
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the newest Undo, a link's or a Mark done's, never hiding one behind the other", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      links.hidden.mockResolvedValue(undefined);
+      const linkRow = {
+        link: { id: "l1" },
+        title: "Google Form",
+      } as unknown as Parameters<
+        NonNullable<typeof sheet.props>["linkActions"]["hide"]
+      >[0];
+      const tree = render();
+      const bars = () =>
+        tree.root
+          .findAllByType(UndoBar)
+          .map((bar) => bar.props.message as string);
+      await act(async () => sheet.props!.linkActions.hide(linkRow));
+      expect(bars()).toEqual(["Hidden"]);
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Mark done"));
+      // The Mark done's replaces the link's, rather than wait behind it.
+      expect(bars()).toEqual(["Marked done"]);
+      await act(async () => sheet.props!.linkActions.hide(linkRow));
+      expect(bars()).toEqual(["Hidden"]);
     });
 
     it("gives a member's event row only Snooze, on the press itself", () => {
