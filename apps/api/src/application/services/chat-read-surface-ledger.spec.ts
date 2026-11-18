@@ -733,6 +733,14 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [MEMBER_TEXT],
   },
+  // Tasks up for grabs (2026-11-18): "Up for grabs" to everyone it is open
+  // to, "<name> claimed" to whoever posted it, and an officer's hand-off
+  // through TaskService's assignment push. Each names the task as an officer
+  // titled it, and the claimer's name.
+  'application/services/open-task.service.ts': {
+    calls: 5,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/points.service.ts': {
     calls: 1,
     entries: [MEMBER_TEXT],
