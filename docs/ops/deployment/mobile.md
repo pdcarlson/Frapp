@@ -738,7 +738,9 @@ mounted in `AppRuntime`):
 - **Coming back to the app checks again**, at most every 15 minutes, and downloads what it finds,
   a rollback included.
 - **A downloaded update runs when the member comes back after 10 minutes or more away.** The app
-  reloads into it a second later, behind the splash screen's near-black with no spinner. A
+  reloads into it a second later, behind the splash screen's near-black with no spinner, showing
+  the Frapp emblem where the phone can load it natively, then the launch logo until the first
+  screen is ready ([`navigation.md` § The launch logo](../../../spec/ui/mobile/navigation.md#the-launch-logo)). A
   shorter trip out never reloads, and neither does a return through a link or a notification tap,
   which the running bundle is already handling (the update waits for the next return). Chat drafts
   and the outbox are on disk and survive the reload; a sheet left half filled for ten minutes (a

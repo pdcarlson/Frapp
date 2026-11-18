@@ -23,6 +23,7 @@ import {
   LAUNCH_EMBLEM_SIZE,
   launchEmblem,
 } from "@/lib/launch/launch-look";
+import { cubicBezierPoints } from "@/lib/motion-easing";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
 
 /** One breath, in then out: 4% larger and a fifth dimmer at its peak. */
@@ -33,6 +34,9 @@ export const BREATH_DIM = 0.2;
 export const EXIT_SCALE = 0.08;
 /** The fade into the screen: the motion scale's context step, on its exit curve. */
 export const EXIT_MS = signetDarkTokens.motion.duration.context;
+const EXIT_EASING = Easing.bezier(
+  ...cubicBezierPoints(signetDarkTokens.motion.easing.exit),
+);
 
 /**
  * The launch logo (#5449, `spec/ui/mobile/navigation.md` § Launch).
@@ -51,9 +55,20 @@ export const EXIT_MS = signetDarkTokens.motion.duration.context;
  * Phones only. The web build has no native splash for it to continue, and
  * lifts the gate at once so nothing there waits on it.
  */
-export function LaunchCover({ gate = launchGate }: { gate?: LaunchGate }) {
+export function LaunchCover({
+  appMounted,
+  gate = launchGate,
+}: {
+  /**
+   * Whether the app under it has mounted (Figtree registered or failed).
+   * Until then it stays whatever the gate says, as the native splash it
+   * replaces did, so even the cap never lifts it onto nothing.
+   */
+  appMounted: boolean;
+  gate?: LaunchGate;
+}) {
   if (Platform.OS === "web") return <WebNoCover gate={gate} />;
-  return <PhoneCover gate={gate} />;
+  return <PhoneCover gate={gate} appMounted={appMounted} />;
 }
 
 function WebNoCover({ gate }: { gate: LaunchGate }) {
@@ -64,8 +79,15 @@ function WebNoCover({ gate }: { gate: LaunchGate }) {
   return null;
 }
 
-function PhoneCover({ gate }: { gate: LaunchGate }) {
-  const lifted = useLaunchLifted(gate);
+function PhoneCover({
+  gate,
+  appMounted,
+}: {
+  gate: LaunchGate;
+  appMounted: boolean;
+}) {
+  const liftedFor = useLaunchLifted(gate);
+  const lifted = appMounted ? liftedFor : null;
   const reduceMotion = useReduceMotion();
   const [gone, setGone] = useState(false);
   const breath = useSharedValue(0);
@@ -98,9 +120,7 @@ function PhoneCover({ gate }: { gate: LaunchGate }) {
     // A cover that lifts before its emblem reported drawn (the cap on a very
     // slow start) must not leave the native splash on top.
     void SplashScreen.hideAsync();
-    exit.set(
-      withTiming(1, { duration: EXIT_MS, easing: Easing.bezier(0.4, 0, 1, 1) }),
-    );
+    exit.set(withTiming(1, { duration: EXIT_MS, easing: EXIT_EASING }));
     const timer = setTimeout(() => setGone(true), EXIT_MS);
     return () => clearTimeout(timer);
   }, [lifted, exit]);

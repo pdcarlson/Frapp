@@ -131,14 +131,15 @@ function RootLayoutContent() {
 
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(FIGTREE_FACES);
+  const appMounted = Boolean(fontsLoaded || fontError);
 
   return (
     <>
       {/* The app mounts once Figtree is registered (a failed load falls back to
           the system face), under the launch logo, which covers it until its
           first screen is ready. */}
-      {fontsLoaded || fontError ? <RootProviders /> : null}
-      <LaunchCover />
+      {appMounted ? <RootProviders /> : null}
+      <LaunchCover appMounted={appMounted} />
     </>
   );
 }

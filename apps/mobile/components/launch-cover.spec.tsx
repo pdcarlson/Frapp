@@ -6,7 +6,7 @@ import { Platform } from "react-native";
 import { useReducedMotion, withRepeat } from "react-native-reanimated";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLaunchGate, type LaunchGate } from "@/lib/launch/launch-gate";
-import { EXIT_MS, LaunchCover } from "./launch-cover";
+import { EXIT_MS, EXIT_SCALE, LaunchCover } from "./launch-cover";
 
 // The splash PNG is a Metro asset id on a phone; vitest can't load the file.
 vi.mock("@/lib/launch/launch-look", async (importOriginal) => ({
@@ -23,12 +23,23 @@ function gateWithManualClock(): LaunchGate {
   return createLaunchGate({ schedule: () => () => {} });
 }
 
-function render(gate: LaunchGate): ReactTestRenderer {
+function render(gate: LaunchGate, appMounted = true): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(<LaunchCover gate={gate} />);
+    tree = create(<LaunchCover gate={gate} appMounted={appMounted} />);
   });
   return tree;
+}
+
+/** The emblem's drawn scale, as its animated style reads now. */
+function emblemScale(tree: ReactTestRenderer): number {
+  const emblem = tree.root.findByType("Animated.Image" as never);
+  const styles = (emblem.props.style as object[]).flat() as Array<{
+    transform?: Array<{ scale?: number }>;
+  }>;
+  // The animated style is a proxy that answers reads only, so look it up by one.
+  const animated = styles.find((style) => style?.transform !== undefined);
+  return animated?.transform?.[0]?.scale ?? 1;
 }
 
 const cover = (tree: ReactTestRenderer) =>
@@ -85,6 +96,35 @@ describe("LaunchCover (#5449)", () => {
     expect(cover(tree)[0]?.props.pointerEvents).toBe("none");
     expect(SplashScreen.hideAsync).toHaveBeenCalled();
 
+    act(() => vi.advanceTimersByTime(EXIT_MS));
+    expect(cover(tree)).toHaveLength(0);
+  });
+
+  it("eases the emblem larger as it fades, but not with Reduce Motion", () => {
+    const gate = gateWithManualClock();
+    const tree = render(gate);
+    // Wherever the breath was, the exit scales up from there (the suite's
+    // timings land at once, so this is the end of each).
+    const breathing = emblemScale(tree);
+    act(() => gate.lift("ready"));
+    expect(emblemScale(tree)).toBeCloseTo(breathing * (1 + EXIT_SCALE));
+
+    vi.mocked(useReducedMotion).mockReturnValue(true);
+    const stillGate = gateWithManualClock();
+    const still = render(stillGate);
+    act(() => stillGate.lift("ready"));
+    expect(emblemScale(still)).toBe(1);
+  });
+
+  it("stays up until the app under it has mounted, even once the gate lifts", () => {
+    const gate = gateWithManualClock();
+    const tree = render(gate, false);
+    act(() => gate.lift("cap"));
+    act(() => vi.advanceTimersByTime(EXIT_MS * 2));
+    expect(cover(tree)).not.toHaveLength(0);
+    expect(cover(tree)[0]?.props.pointerEvents).toBe("auto");
+
+    act(() => tree.update(<LaunchCover gate={gate} appMounted />));
     act(() => vi.advanceTimersByTime(EXIT_MS));
     expect(cover(tree)).toHaveLength(0);
   });

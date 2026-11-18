@@ -28,9 +28,18 @@ export function launchEmblem(): ImageSourcePropType {
   return require("../../assets/images/splash-icon.png") as ImageSourcePropType;
 }
 
+const LOADABLE_URL = /^(file|https?|data):/i;
+
 /**
  * The emblem as expo-updates' reload screen takes it: a URL and a size in
  * points, so it draws at the splash's size rather than the file's 1024px.
+ *
+ * Only a URL the native screen can load. Android's reload screen decodes
+ * `file`, `http(s)` and `data` URLs; an asset still embedded in the APK
+ * resolves to a bare resource name, which it can't, and a failed image there
+ * turns its spinner on whatever the options say (expo-updates 57,
+ * `ReloadScreenView.kt`). That reload keeps the plain background instead, and
+ * the launch logo draws the emblem as the new code starts.
  */
 export function reloadScreenEmblem(): {
   url: string;
@@ -39,7 +48,7 @@ export function reloadScreenEmblem(): {
   scale: number;
 } | null {
   const resolved = Image.resolveAssetSource(launchEmblem());
-  if (!resolved?.uri) return null;
+  if (!resolved?.uri || !LOADABLE_URL.test(resolved.uri)) return null;
   return {
     url: resolved.uri,
     width: LAUNCH_EMBLEM_SIZE,
