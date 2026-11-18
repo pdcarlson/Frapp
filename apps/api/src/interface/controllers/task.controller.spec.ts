@@ -7,6 +7,7 @@ import { TaskService } from '../../application/services/task.service';
 import { TaskSeriesService } from '../../application/services/task-series.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { ForbiddenException } from '@nestjs/common';
 import {
   CreateTaskDto,
@@ -293,6 +294,41 @@ describe('TaskController', () => {
       await controller.delete('chapter-1', 't', { scope: 'group' });
 
       expect(taskService.deleteGroup).toHaveBeenCalledWith('t', 'chapter-1');
+    });
+  });
+
+  describe('removeFromGroup (#5492)', () => {
+    it('passes the members to the service and returns the group', async () => {
+      const result = {
+        removed: ['user-2'],
+        group: {
+          id: 'group-1',
+          audience: 'everyone' as const,
+          total: 11,
+          done: 3,
+          confirmed: 1,
+        },
+      };
+      taskService.removeFromGroup = jest.fn().mockResolvedValue(result);
+
+      await expect(
+        controller.removeFromGroup('chapter-1', 't', {
+          assignee_ids: ['user-2'],
+        }),
+      ).resolves.toEqual(result);
+      expect(taskService.removeFromGroup).toHaveBeenCalledWith(
+        't',
+        'chapter-1',
+        ['user-2'],
+      );
+    });
+
+    it('needs tasks:manage', () => {
+      const required = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        TaskController.prototype.removeFromGroup,
+      ) as string[];
+      expect(required).toEqual([SystemPermissions.TASKS_MANAGE]);
     });
   });
 

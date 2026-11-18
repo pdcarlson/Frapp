@@ -78,7 +78,8 @@ member's own answer, not the event's default:
   [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15; until
   then the page kept them behind "Archived polls", which phone builds from before the Archive
   still draw from this list, so it is still served).
-- **Tasks:** tasks the caller assigned, newest first. A client lists those not yet confirmed; a
+- **Tasks:** tasks the caller assigned, newest first, each copy of a task for everyone with its
+  `group` ([`tasks.md` § Tasks for everyone](tasks.md#tasks-for-everyone)). A client lists those not yet confirmed; a
   confirmed one is finished and in the [Archive](#archive) (#5127), and is still served for phone
   builds from before it. Only while the caller still holds
   `tasks:manage`: without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row

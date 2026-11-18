@@ -52,7 +52,7 @@ import type { Event } from '#domain/entities/event.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
-import type { TaskView } from '#domain/entities/task.entity';
+import type { TaskGroupSummary, TaskView } from '#domain/entities/task.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CARD_VOTE_ACTION_TYPE,
@@ -140,6 +140,12 @@ export interface ActivityTask {
    * that needed no sign-off (Done) from one an officer confirmed.
    */
   proof_kind: TaskProofKind;
+  /**
+   * On a task for everyone, its group (#5492), as every task read carries
+   * it: each member's copy has the same id, and the counts say how far the
+   * group is. `null` for a one-person task.
+   */
+  group: TaskGroupSummary | null;
   created_at: string;
   /**
    * Whether the caller hasn't opened it since it appeared
@@ -729,6 +735,7 @@ function activityTaskRow(
     confirmed_at: task.confirmed_at,
     sent_back_at: task.sent_back_at ?? null,
     proof_kind: task.proof_kind ?? 'none',
+    group: task.group ?? null,
     created_at: task.created_at,
     unread: false,
     snoozed_until: null,

@@ -24,6 +24,7 @@ import type {
 } from '../../application/services/chat-reminder.service';
 import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
+import { TaskGroupSummaryDto } from './task.dto';
 import type { ChannelType } from '#domain/entities/chat.entity';
 import {
   ACTIVITY_SECTIONS,
@@ -158,6 +159,14 @@ export class ActivityTaskDto implements ActivityTask {
       'What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.',
   })
   proof_kind: TaskProofKind;
+
+  @ApiProperty({
+    type: () => TaskGroupSummaryDto,
+    nullable: true,
+    description:
+      'On a task for everyone, its group (#5492), as every task read carries it: each member’s copy has the same `id`, and the counts say how far the group is. Null for a one-person task.',
+  })
+  group: TaskGroupSummaryDto | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
