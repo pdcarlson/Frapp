@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import {
-  TASK_AUDIENCE_COPY,
-  TASK_AUDIENCE_EVERYONE,
   noTaskRepeatDraft,
   suggestTaskOwner,
-  taskWhoFields,
-  taskWhoValue,
+  sameTaskWho,
+  taskWhoOf,
+  taskWhoSuggestionFields,
+  type TaskWho,
 } from "@repo/validation";
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
@@ -23,7 +23,6 @@ import {
   type AiSuggestionSourceRef,
   type TaskSuggestionEdits,
 } from "@repo/hooks";
-import { memberLabel } from "@repo/hooks/display-names";
 import {
   dueEntryFields,
   dueEntryFromTask,
@@ -39,19 +38,13 @@ import {
 } from "@repo/validation";
 
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
   DueDateField,
   dueEntryPassed,
 } from "@/components/tasks/due-date-field";
 import { TaskForm, type TaskDraft } from "@/components/tasks/task-form";
+import { WhoPicker } from "@/components/tasks/who-picker";
 import {
   meetingDayLabel,
   meetingHref,
@@ -97,7 +90,8 @@ type WaitingSuggestion = AiSuggestion & { task: SuggestedTask };
 
 /** What the officer changed on a row before deciding: who, and when. */
 interface RowEdits {
-  assigneeId?: string;
+  /** The Who picker's pick; null when cleared, absent when untouched. */
+  who?: TaskWho | null;
   /** A due entry, as `DueDateField` holds it; `""` when cleared. */
   due?: string;
 }
@@ -114,7 +108,7 @@ function dueEntryOf(task: SuggestedTask): string {
 
 /** What Frapp filled in where the minutes left who or when out. */
 interface RowGuess {
-  assigneeId: string | null;
+  who: TaskWho | null;
   due: string | null;
 }
 
@@ -128,21 +122,29 @@ function rowValues(
   guess?: RowGuess,
 ) {
   return {
-    // A member's id, or "everyone" for a task for everyone (#4295 step 3).
-    assigneeId:
-      edits?.assigneeId ?? (taskWhoValue(item.task) || guess?.assigneeId || ""),
+    // A member, several, a role or group, or one of them (Paul, 2026-11-18).
+    who:
+      edits?.who !== undefined
+        ? edits.who
+        : (taskWhoOf(item.task) ?? guess?.who ?? null),
     due: edits?.due ?? (dueEntryOf(item.task) || guess?.due || ""),
   };
+}
+
+interface RowValues {
+  who: TaskWho | null;
+  /** A due entry, as `DueDateField` holds it; `""` when none. */
+  due: string;
 }
 
 /** Only what differs from the suggestion, as the accept route takes it. */
 function editsFor(
   item: WaitingSuggestion,
-  values: { assigneeId: string; due: string },
+  values: RowValues,
 ): TaskSuggestionEdits | undefined {
   const edits: TaskSuggestionEdits = {};
-  if (values.assigneeId !== taskWhoValue(item.task)) {
-    Object.assign(edits, taskWhoFields(values.assigneeId));
+  if (!sameTaskWho(values.who, taskWhoOf(item.task))) {
+    Object.assign(edits, taskWhoSuggestionFields(values.who));
   }
   if (values.due !== dueEntryOf(item.task)) {
     const fields = dueEntryFields(values.due);
@@ -218,10 +220,14 @@ export function SuggestedTasks({
         item.id,
         {
           // Last year's tasks name nobody on purpose (#3930).
-          assigneeId:
-            taskWhoValue(item.task) || item.task.last_year_on
-              ? null
-              : suggestTaskOwner(item.quote ?? item.task.title, members),
+          who: (() => {
+            if (taskWhoOf(item.task) || item.task.last_year_on) return null;
+            const userId = suggestTaskOwner(
+              item.quote ?? item.task.title,
+              members,
+            );
+            return userId ? { kind: "person" as const, userId } : null;
+          })(),
           due: item.task.due_date ? null : suggestTaskDue(startOf(item)),
         },
       ]),
@@ -245,7 +251,7 @@ export function SuggestedTasks({
   const ready = items.filter((item) => {
     if (item.id === formFor) return false;
     const values = saidOf(item);
-    return values.assigneeId && values.due;
+    return values.who && values.due;
   });
 
   function editRow(id: string, patch: RowEdits) {
@@ -258,7 +264,7 @@ export function SuggestedTasks({
   async function acceptRow(item: WaitingSuggestion) {
     const values = valuesOf(item);
     if (
-      !values.assigneeId ||
+      !values.who ||
       !values.due ||
       // A newly picked time already gone by; the suggestion's own is kept.
       dueEntryPassed(values.due, new Date(), dueEntryOf(item.task))
@@ -414,16 +420,15 @@ export function SuggestedTasks({
         item={current}
         values={values}
         suggestedWho={
-          !edits[current.id]?.assigneeId &&
-          !!guess?.assigneeId &&
-          values.assigneeId === guess.assigneeId
+          edits[current.id]?.who === undefined &&
+          !!guess?.who &&
+          sameTaskWho(values.who, guess.who)
         }
         suggestedDue={
           edits[current.id]?.due === undefined &&
           !!guess?.due &&
           values.due === guess.due
         }
-        members={members}
         flagged={flagged.has(current.id)}
         disabled={busy}
         pending={creatingId === current.id}
@@ -467,14 +472,11 @@ export function SuggestedTasks({
   );
 }
 
-type Member = { user_id?: string | null; display_name?: string | null };
-
 function SuggestedTaskRow({
   item,
   values,
   suggestedWho,
   suggestedDue,
-  members,
   flagged,
   disabled,
   pending,
@@ -488,11 +490,10 @@ function SuggestedTaskRow({
   acceptWith,
 }: {
   item: WaitingSuggestion;
-  values: { assigneeId: string; due: string };
+  values: RowValues;
   /** Who, or when, is Frapp's suggestion rather than the minutes' word. */
   suggestedWho: boolean;
   suggestedDue: boolean;
-  members: Member[];
   flagged: boolean;
   disabled: boolean;
   /** This card is the one being created or dismissed. */
@@ -508,7 +509,12 @@ function SuggestedTaskRow({
   acceptWith: (task: TaskSuggestionEdits) => Promise<void>;
 }) {
   const { task } = item;
-  const missingWho = flagged && !values.assigneeId;
+  // The form's Who, opened on the card's and sent as the suggestion's own
+  // who-fields, so a role, a group or up for grabs survives the form.
+  // Absent until changed in the form, so it opens on the card's latest pick.
+  const [formWhoEdit, setFormWhoEdit] = useState<TaskWho | null>();
+  const formWho = formWhoEdit !== undefined ? formWhoEdit : values.who;
+  const missingWho = flagged && !values.who;
   const missingDue = flagged && !values.due;
   const passedDue =
     flagged && dueEntryPassed(values.due, new Date(), dueEntryOf(item.task));
@@ -516,7 +522,9 @@ function SuggestedTaskRow({
   if (formOpen) {
     const initialDraft: TaskDraft = {
       title: task.title,
-      assigneeId: values.assigneeId,
+      // Shown by the Who picker from `formWho`; the form reads it only for a
+      // single member.
+      assigneeId: values.who?.kind === "person" ? values.who.userId : "",
       dueDate: values.due,
       points: "",
       description: task.description ?? "",
@@ -532,7 +540,7 @@ function SuggestedTaskRow({
       <div className="rounded-[14px] border border-border p-3">
         <TaskForm
           suggestion
-          offerEveryone
+          who={{ value: formWho, onChange: setFormWhoEdit }}
           initialDraft={initialDraft}
           onDiscard={onCloseForm}
           onDone={onCloseForm}
@@ -543,7 +551,7 @@ function SuggestedTaskRow({
               await acceptWith({
                 title: input.title,
                 description: input.description ?? null,
-                ...taskWhoFields(input.assignee_id),
+                ...taskWhoSuggestionFields(formWho),
                 due_date: input.due_date,
                 due_at: input.due_at ?? null,
                 subtasks: input.subtasks ?? [],
@@ -574,31 +582,16 @@ function SuggestedTaskRow({
       </div>
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-32 max-w-56 flex-1">
-          <Select
-            value={values.assigneeId}
-            onValueChange={(value) => onEdit({ assigneeId: value })}
+          <WhoPicker
+            allow="any"
+            label={`Assignee for ${task.title}`}
+            placeholder={AI_SUGGESTION_COPY.who}
+            className="w-full"
+            value={values.who}
+            onChange={(next) => onEdit({ who: next })}
             disabled={disabled}
-          >
-            <SelectTrigger
-              aria-label={`Assignee for ${task.title}`}
-              aria-invalid={missingWho || undefined}
-            >
-              <SelectValue placeholder={AI_SUGGESTION_COPY.who} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TASK_AUDIENCE_EVERYONE}>
-                {TASK_AUDIENCE_COPY.everyone}
-              </SelectItem>
-              {members.map((member) => (
-                <SelectItem
-                  key={String(member.user_id)}
-                  value={String(member.user_id)}
-                >
-                  {memberLabel(member.display_name, member.user_id)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            invalid={missingWho}
+          />
           {missingWho ? (
             <p role="alert" className="mt-1 text-caption text-destructive-text">
               {AI_SUGGESTION_COPY.missingWho}

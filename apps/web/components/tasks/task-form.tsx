@@ -134,10 +134,18 @@ export interface TaskFormProps {
   /**
    * Offer Everyone at the top of Assignee (#4295 step 3): the field then
    * holds `everyone` in place of a user id, and the caller sends it as
-   * `audience` (`taskWhoFields`). Only where a task for everyone can be
-   * made: never the chat + card (no card is posted for one) or an edit.
+   * `audience`. Only where a task for everyone can be made: never the chat +
+   * card (no card is posted for one) or an edit.
    */
   offerEveryone?: boolean;
+  /**
+   * Who, held by the caller and offered as the whole Who picker (a member,
+   * several, a role or group, a copy each or up for grabs): a suggested
+   * task's form, whose answer goes out as the suggestion's who-fields rather
+   * than `assignee_id`. The input's `assignee_id` then carries only what the
+   * single-member field would.
+   */
+  who?: { value: TaskWho | null; onChange: (next: TaskWho | null) => void };
 }
 
 /**
@@ -157,6 +165,7 @@ export function TaskForm({
   editing,
   suggestion = false,
   offerEveryone = false,
+  who,
 }: TaskFormProps) {
   const layout = "card";
   const field = fieldClass(layout);
@@ -194,7 +203,7 @@ export function TaskForm({
     const nextMissing: Missing = {
       title: !trimmed,
       titleTooLong: trimmed.length > TASK_TITLE_MAX_LENGTH,
-      assignee: !draft.assigneeId,
+      assignee: who ? !who.value : !draft.assigneeId,
       due: !draft.dueDate,
       // An edit keeps the task's own time even once it has passed (#4296),
       // and an accepted suggestion keeps the one the minutes gave it.
@@ -394,10 +403,11 @@ export function TaskForm({
             id={`${ids}-assignee`}
             label="Assignee"
             placeholder="Pick a member"
-            allow={offerEveryone ? "personOrEveryone" : "person"}
+            allow={who ? "any" : offerEveryone ? "personOrEveryone" : "person"}
             className={cn(field, "w-full")}
-            value={whoOfAssignee(draft.assigneeId)}
+            value={who ? who.value : whoOfAssignee(draft.assigneeId)}
             onChange={(next) => {
+              who?.onChange(next);
               edit({ assigneeId: assigneeOfWho(next) });
               setMissing((prev) => ({ ...prev, assignee: false }));
             }}
