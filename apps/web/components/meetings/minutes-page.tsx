@@ -11,13 +11,14 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, X } from "lucide-react";
+import { Check, Link2, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
 import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   useChapterRoster,
   useCurrentUser,
   useDeleteMeeting,
   useMeeting,
+  useMeetingActionItemTasks,
   useMeetingDraft,
   useMeetingNotes,
   useMeetingRecording,
@@ -28,6 +29,7 @@ import {
   type MeetingDraftState,
   type MeetingNotesState,
   type MeetingRecordingState,
+  type MeetingActionItemTask,
   type MeetingMinutes,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
@@ -66,6 +68,7 @@ import {
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
 import { Badge } from "@/components/ui/badge";
+import { EYEBROW } from "@/components/ui/typography";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -83,6 +86,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DueDateField } from "@/components/tasks/due-date-field";
@@ -250,6 +254,16 @@ function Minutes({
   const myName = viewer?.id ? names.nameFor(viewer.id) : null;
 
   const isDraft = meeting.status === "draft";
+  const actionItemTasksQuery = useMeetingActionItemTasks(meeting.id, {
+    enabled: !isDraft && meeting.content.action_items.length > 0,
+  });
+  const actionItemTasks = useMemo(
+    () =>
+      new Map(
+        (actionItemTasksQuery.data ?? []).map((entry) => [entry.index, entry]),
+      ),
+    [actionItemTasksQuery.data],
+  );
   const [editing, setEditing] = useState(meeting.can_edit && isDraft);
   const [base, setBase] = useState(() => draftOf(meeting));
   const [draft, setDraft] = useState(base);
@@ -636,21 +650,17 @@ function Minutes({
                   </Button>
                 ) : null}
               </>
-            ) : (
-              <>
-                {!isDraft && !posting ? (
-                  <Button variant="secondary" onClick={() => void copyLink()}>
-                    Copy link
-                  </Button>
-                ) : null}
-                {meeting.can_edit && !posting ? (
-                  <Button variant="secondary" onClick={() => setEditing(true)}>
-                    Edit
-                  </Button>
-                ) : null}
-              </>
-            )}
-            {meeting.can_delete ? (
+            ) : !isDraft && !posting ? (
+              // Reading posted minutes is the job here, so nothing about
+              // changing them is a big button (Paul, 2026-11-18: "Why would I
+              // want to go edit the minutes all the time"): Copy link is a
+              // small icon, Edit and Delete sit behind the dots.
+              <IconButton label="Copy link" onClick={() => void copyLink()}>
+                <Link2 className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+            ) : null}
+            {(meeting.can_edit && !editing && !posting) ||
+            meeting.can_delete ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <IconButton label="More" disabled={busy}>
@@ -658,12 +668,27 @@ function Minutes({
                   </IconButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    disabled={remove.isPending}
-                    onSelect={() => void handleDelete()}
-                  >
-                    Delete minutes
-                  </DropdownMenuItem>
+                  {meeting.can_edit && !editing && !posting ? (
+                    <DropdownMenuItem onSelect={() => setEditing(true)}>
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
+                      Edit minutes
+                    </DropdownMenuItem>
+                  ) : null}
+                  {meeting.can_delete ? (
+                    <>
+                      {meeting.can_edit && !editing && !posting ? (
+                        <DropdownMenuSeparator />
+                      ) : null}
+                      <DropdownMenuItem
+                        disabled={remove.isPending}
+                        onSelect={() => void handleDelete()}
+                        className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        Delete minutes
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
@@ -695,6 +720,20 @@ function Minutes({
         />
       ) : null}
 
+      {/*
+        At the top of posted minutes, one suggestion at a time (Paul,
+        2026-11-18: "Maybe they could appear at the top"): a single card
+        doesn't push the minutes far down. Never beside the editor: a
+        suggestion follows the saved action items, not ones being typed.
+      */}
+      {!isDraft && !editing ? (
+        <SuggestedTasks
+          source={{ type: "meeting", id: meeting.id }}
+          sourceStart={meeting.event_start_time}
+          headingId={`${ids}-suggested`}
+        />
+      ) : null}
+
       {notesPanel ? (
         <div className={notesFirst ? undefined : "order-1"}>{notesPanel}</div>
       ) : null}
@@ -710,13 +749,41 @@ function Minutes({
           <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
         ) : null}
 
-        {shown.map((key) => (
+        {!editing && !isDraft ? (
+          <AtAGlance
+            content={view.content}
+            attended={
+              hasAttendees(meeting)
+                ? (meeting.attendees?.present.length ?? 0) +
+                  (meeting.attendees?.late.length ?? 0)
+                : null
+            }
+            doneCount={
+              [...actionItemTasks.values()].filter((entry) => entry.done).length
+            }
+          />
+        ) : null}
+
+        {shown.map((key, at) => (
           <section
             key={key}
             aria-labelledby={`${ids}-${key}`}
-            className="space-y-2"
+            className={cn(
+              "space-y-3",
+              // Read as a document: each section opens under a rule, its
+              // name a quiet label over what it holds, so the eye lands on
+              // the content and the sections still part clearly.
+              !editing && at > 0 && "border-t border-border pt-6",
+            )}
           >
-            <h3 id={`${ids}-${key}`} className="text-base font-semibold">
+            <h3
+              id={`${ids}-${key}`}
+              className={
+                editing
+                  ? "text-base font-semibold"
+                  : `${EYEBROW} text-muted-foreground`
+              }
+            >
               {sectionLabel(key)}
             </h3>
             {key === "attendees" ? (
@@ -758,6 +825,7 @@ function Minutes({
                   items={view.content.action_items}
                   nameFor={names.nameFor}
                   viewerId={viewer?.id ?? null}
+                  tasks={actionItemTasks}
                 />
               )
             ) : editing ? (
@@ -775,7 +843,8 @@ function Minutes({
                 }
               />
             ) : key === "summary" ? (
-              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+              // The lead: what a member reads if they read nothing else.
+              <p className="whitespace-pre-wrap break-words text-base leading-relaxed">
                 {view.content.summary}
               </p>
             ) : (
@@ -845,19 +914,6 @@ function Minutes({
           </section>
         ) : null}
       </fieldset>
-
-      {/*
-        Under the minutes, so the list arriving never moves what is being
-        read. Posted minutes only, and never beside the editor: a suggestion
-        follows the saved action items, not ones still being typed.
-      */}
-      {!isDraft && !editing ? (
-        <SuggestedTasks
-          source={{ type: "meeting", id: meeting.id }}
-          headingId={`${ids}-suggested`}
-          className="mt-8"
-        />
-      ) : null}
 
       {confirmDialog}
     </div>
@@ -934,9 +990,11 @@ function Attendees({
 
 function DecisionsView({ decisions }: { decisions: MeetingDecision[] }) {
   return (
-    <ul role="list" className="list-disc space-y-2 pl-5 text-sm">
+    // Each outcome on its own, marked by an accent rule, so the decisions
+    // read apart from the discussion around them.
+    <ul role="list" className="space-y-2 text-sm">
       {decisions.map((decision, index) => (
-        <li key={index}>
+        <li key={index} className="border-l-2 border-primary py-0.5 pl-3">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <p className="min-w-0 whitespace-pre-wrap break-words">
               {decision.text}
@@ -958,6 +1016,48 @@ function DecisionsView({ decisions }: { decisions: MeetingDecision[] }) {
   );
 }
 
+/**
+ * The minutes at a glance, under the title: how many decisions, how many
+ * action items and how many of those are done, and who came. A member sees
+ * what the meeting produced before reading a word of it.
+ */
+function AtAGlance({
+  content,
+  attended,
+  doneCount,
+}: {
+  content: MeetingContent;
+  attended: number | null;
+  doneCount: number;
+}) {
+  const decisions = content.decisions.length;
+  const actions = content.action_items.length;
+  const facts = [
+    decisions > 0
+      ? `${decisions} ${decisions === 1 ? "decision" : "decisions"}`
+      : null,
+    actions > 0
+      ? `${actions} ${actions === 1 ? "action item" : "action items"}${
+          doneCount > 0 ? `, ${doneCount} done` : ""
+        }`
+      : null,
+    attended !== null && attended > 0 ? `${attended} attended` : null,
+  ].filter((fact): fact is string => fact !== null);
+  if (facts.length === 0) return null;
+  return (
+    <ul role="list" className="-mt-2 flex flex-wrap gap-2">
+      {facts.map((fact) => (
+        <li
+          key={fact}
+          className="rounded-full border border-border px-3 py-1 text-caption tabular-nums text-muted-foreground"
+        >
+          {fact}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** "22–5", with abstentions only when there were some: "22–5–1". */
 function voteTally(vote: NonNullable<MeetingDecision["vote"]>): string {
   const counts = [vote.for, vote.against];
@@ -969,33 +1069,66 @@ function ActionItemsView({
   items,
   nameFor,
   viewerId,
+  tasks,
 }: {
   items: MeetingActionItem[];
   nameFor: (userId: string) => string | null;
   /** The reader, whose own items say so (a chair finds theirs at a glance). */
   viewerId: string | null;
+  /** The tasks the items became, by their place in the list. */
+  tasks: ReadonlyMap<number, MeetingActionItemTask>;
 }) {
+  // A checklist, ticked as each item's task is marked done (Paul,
+  // 2026-11-18: "action items should be like checkboxes that show updates
+  // as the tasks are actually checked off"). The boxes only show: an item is
+  // checked off by doing its task, where its points and sign-off live.
   return (
-    <ul role="list" className="list-disc space-y-2 pl-5 text-sm">
+    <ul role="list" className="space-y-3 text-sm">
       {items.map((item, index) => {
+        const task = tasks.get(index);
+        const done = task?.done ?? false;
         const meta = [
           item.owner_user_id
             ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
             : "Nobody named yet",
           item.due_date ? `Due ${meetingDueLabel(item.due_date)}` : null,
+          task?.group && !done
+            ? `${task.group.done} of ${task.group.total} done`
+            : null,
         ].filter(Boolean);
         const yours = !!viewerId && item.owner_user_id === viewerId;
         return (
-          <li key={index}>
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <p className="min-w-0 whitespace-pre-wrap break-words">
-                {item.text}
+          <li key={index} className="flex gap-3">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border",
+                done
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border",
+              )}
+            >
+              {done ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <p
+                  className={cn(
+                    "min-w-0 whitespace-pre-wrap break-words",
+                    done && "text-muted-foreground",
+                  )}
+                >
+                  <span className="sr-only">
+                    {done ? "Done: " : task ? "Not done yet: " : ""}
+                  </span>
+                  {item.text}
+                </p>
+                {yours ? <Badge>Yours</Badge> : null}
+              </div>
+              <p className="text-caption text-muted-foreground">
+                {meta.join(" · ")}
               </p>
-              {yours ? <Badge>Yours</Badge> : null}
             </div>
-            <p className="text-caption text-muted-foreground">
-              {meta.join(" · ")}
-            </p>
           </li>
         );
       })}
@@ -1017,9 +1150,11 @@ function LinesView({ text, outline }: { text: string; outline: boolean }) {
       {lines.map((line, index) => {
         if (line.kind === "topic") {
           return (
+            // A topic reads as a heading over its points, as in Paul's
+            // Granola notes (2026-11-17), not as one more bold line.
             <li
               key={index}
-              className="break-words pt-3 font-semibold first:pt-0"
+              className="break-words pt-4 text-base font-semibold first:pt-0"
             >
               {line.text}
             </li>

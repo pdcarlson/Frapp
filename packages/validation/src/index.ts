@@ -230,6 +230,8 @@ export * from "./subscription";
 export * from "./task-audience";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
+// Who a suggested task names, guessed from its own words (Paul, 2026-11-18).
+export * from "./task-suggestion-guess";
 export * from "./thumbhash";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export * from "./time-zone";

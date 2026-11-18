@@ -556,14 +556,14 @@ An event's row reads Record minutes where the phone can record, else Write minut
 Route: `(app)/suggested-tasks.tsx`.
 
 Live (2026-11-12, #4415; no such screen on the board) — tasks suggested from posted minutes ([#4313](https://github.com/pdcarlson/Frapp/issues/4313)), listed only for someone who could accept them.
-Each shows who, the due day written out, and the line of the minutes it came from, with **Dismiss** and **Accept**.
+Each shows who, the due day written out, and the line of the minutes it came from, with **Dismiss** and **Create task** (it read Accept until 2026-11-18, when Paul found it read as "this is mine").
 **Report this** (`components/ai/report-ai-sheet.tsx`, [#4315](https://github.com/pdcarlson/Frapp/issues/4315)) sits quietly to their left, as it does under an Ask answer and at the foot of the Draft minutes sheet, for a member who holds `ai:use`.
-Accept makes the task at once when the minutes named who and when; otherwise, or on a tap of the row, it opens the New task sheet (s19) filled in, titled "Change before accepting".
-Nothing becomes a task until a person accepts it.
+Create task makes the task at once when the minutes named who and when; otherwise, or on a tap of the row, it opens the New task sheet (s19) filled in, titled "Change before creating".
+Nothing becomes a task until a person creates it.
 Reached from the `ai_suggestions` push, a row under posted minutes, and a row at the foot of Tasks (s08) shown only while some are waiting.
-No Accept all on the phone.
+No Create all on the phone.
 Titled **Suggested** since 2026-11-12 (it was "Suggested tasks"), because it now also holds **This time last year** ([#3930](https://github.com/pdcarlson/Frapp/issues/3930), [`../../behavior/ai.md` § This time last year](../../behavior/ai.md#this-time-last-year)): under that heading and its one-line introduction, each event the chapter held around now last year (name, and "Held on April 13, 2025.
-I don't see it on this year's calendar.") with **Already planned** and **Add to calendar** as its two buttons and a quiet line under them holding Report this and **Not this year**; then last year's finished tasks, with Already planned and Accept, and Dismiss on the quiet line.
+I don't see it on this year's calendar.") with **Already planned** and **Add to calendar** as its two buttons and a quiet line under them holding Report this and **Not this year**; then last year's finished tasks, with Already planned and Create task, and Dismiss on the quiet line.
 Add to calendar reads last year's event and opens the New event sheet filled in from it on the same weekday this year, as a one-time event; nothing is added until Create, and the suggestion then records the event.
 An officer who can't create events sees no Add to calendar.
 The route keeps its name, `suggested-tasks`, so the pushes already sent still land.

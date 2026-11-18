@@ -63,3 +63,24 @@ export function splitDueEntry(entry: string): DueDayAndTime {
   const [dueDate = "", time] = entry.split("T");
   return { dueDate, dueTime: time && TIME_OF_DAY.test(time) ? time : null };
 }
+
+/**
+ * A due day for an action item its minutes gave none: a week after the
+ * meeting, which is when a chapter that meets weekly asks how it went (Paul,
+ * 2026-11-18). None for minutes old enough that the day has gone by, since a
+ * due date already passed is no help to anyone. Frapp shows it as a
+ * suggestion beside the field; nothing is saved until an officer creates the
+ * task.
+ */
+export function suggestTaskDue(
+  meetingStart: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!meetingStart) return null;
+  const start = new Date(meetingStart);
+  if (Number.isNaN(start.getTime())) return null;
+  const due = new Date(start);
+  due.setDate(due.getDate() + 7);
+  const day = localIsoDate(due);
+  return day < localIsoDate(now) ? null : day;
+}
