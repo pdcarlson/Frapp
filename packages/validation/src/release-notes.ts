@@ -129,6 +129,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Drafted minutes leave out side conversations and remarks about people, and spell misheard names the way your roster does.",
       "Officers can now give a task to everyone in a committee or group, or to a few people at once, and put a task up for grabs so the first person to claim it gets it.",
       "Drafted minutes now list last meeting's open action items, each marked reported done, carried over, or not mentioned for you to confirm, and ask about usual reports missing from tonight's notes.",
+      "A task suggested from the minutes can now go to a committee, a few people, or up for grabs, with the same picker as the Tasks page.",
     ],
     web: [
       "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",
