@@ -60,6 +60,7 @@ const output = (
   overrides: Partial<MeetingDraftOutput> = {},
 ): MeetingDraftOutput => ({
   tldr: '',
+  tabled: [],
   summary: 'The chapter met.',
   announcements: '',
   decisions: [],
@@ -83,7 +84,7 @@ describe('buildMinutesDraftPrompt', () => {
   it('carries the notes whole, between markers, and reads them back', () => {
     const prompt = buildMinutesDraftPrompt(request());
     expect(notesInPrompt(prompt.messages[0].content)).toBe(NOTES);
-    expect(prompt.promptVersion).toBe('minutes-draft@v7');
+    expect(prompt.promptVersion).toBe('minutes-draft@v8');
   });
 
   it('says the day of the week, so "by Wednesday" resolves', () => {
@@ -221,6 +222,35 @@ describe('verifyMinutesDraft', () => {
       request(),
     );
     expect(review.gaps.join(' ')).not.toContain('TL;DR');
+  });
+
+  it('keeps a tabled matter only with its line in the notes, each once (#5522)', () => {
+    const line = NOTES.split('\n').find((l) => l.trim().length > 0)!;
+    const { content, review } = verifyMinutesDraft(
+      output({
+        tabled: [
+          { text: 'Formal budget', quote: line },
+          { text: 'formal budget', quote: line },
+          { text: 'Rush shirts', quote: 'not a line of the notes' },
+        ],
+      }),
+      request(),
+    );
+    expect(content.tabled).toEqual([
+      {
+        text: 'Formal budget',
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      },
+    ]);
+    expect(review.left_out).toBe(1);
+  });
+
+  it('asks for what was tabled, never a matter that was settled', () => {
+    const { content } = buildMinutesDraftPrompt(request()).messages[0];
+    expect(content).toContain('- tabled:');
+    expect(content).toContain('A matter the meeting settled is not tabled');
   });
 
   it('reads a reply with no TL;DR as an empty one', () => {

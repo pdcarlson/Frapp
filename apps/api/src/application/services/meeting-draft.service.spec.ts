@@ -76,6 +76,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
 
 const DRAFTED: MeetingDraftOutput = {
   tldr: '- Approved up to $1,200 for a DJ at formal.',
+  tabled: [],
   summary: 'The chapter approved a DJ for formal.',
   announcements: '',
   decisions: [
@@ -525,6 +526,7 @@ describe('MeetingDraftService', () => {
       expect(save.expected_updated_at).toBe(V1);
       expect(save.content).toEqual({
         tldr: '- Approved up to $1,200 for a DJ at formal.',
+        tabled: [],
         summary: 'The chapter approved a DJ for formal.',
         announcements: '',
         decisions: [

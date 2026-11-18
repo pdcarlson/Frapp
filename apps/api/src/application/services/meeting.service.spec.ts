@@ -1107,6 +1107,7 @@ describe('MeetingService', () => {
         'announcements',
         'decisions',
         'action_items',
+        'tabled',
         'discussion_log',
         'attendees',
       ]);
@@ -1118,10 +1119,11 @@ describe('MeetingService', () => {
         'summary',
         'summary',
       ]);
-      // The TL;DR is always on (#5523), so a list without it still has it.
+      // The TL;DR (#5523) and Tabled (#5522) are always on, so a list without
+      // them still has them.
       expect(repo.upsertTemplate).toHaveBeenCalledWith(
         CHAPTER,
-        ['tldr', 'summary', 'discussion_log'],
+        ['tldr', 'summary', 'tabled', 'discussion_log'],
         PRESIDENT,
       );
     });

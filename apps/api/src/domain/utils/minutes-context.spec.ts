@@ -124,6 +124,7 @@ const output = (
   overrides: Partial<MeetingDraftOutput> = {},
 ): MeetingDraftOutput => ({
   tldr: '',
+  tabled: [],
   summary: 'The chapter met.',
   announcements: '',
   decisions: [],

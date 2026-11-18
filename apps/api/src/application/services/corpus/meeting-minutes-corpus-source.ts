@@ -85,6 +85,7 @@ export function minutesSections(content: MeetingContent): CorpusSection[] {
       })
       .join('\n\n'),
   );
+  add('tabled', content.tabled.map((item) => item.text).join('\n\n'));
   add('officer_reports', content.officer_reports);
   add('old_business', content.old_business);
   add('new_business', content.new_business);

@@ -52,6 +52,28 @@ export function meetingDueLabel(
   return meetingDayLabel(new Date(year, month - 1, day, 12).toISOString(), now);
 }
 
+/**
+ * Where a tabled matter came from (#5522): "Tabled from Tuesday, November 11
+ * · 2nd time", or nothing when these minutes tabled it first.
+ */
+export function meetingTabledFromLabel(
+  item: { first_start_time: string | null; times: number },
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(item.first_start_time, now);
+  const parts = [
+    day ? `Tabled from ${day}` : "",
+    item.times > 1 ? `${ordinal(item.times)} time` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
+}
+
 export function meetingSectionLabel(key: MeetingSectionKey): string {
   return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;
 }

@@ -34,6 +34,7 @@ All meeting summaries use a **single global template** with toggleable sections 
 - Announcements (default ON)
 - Decisions (default ON)
 - Action items with owner + due date (default ON)
+- Tabled (always on; shows only when something was tabled): what the meeting put off to a later one ([Tabled items](#tabled-items)).
 - Notes (always on: no switch turns them off)
   - Changed 2026-11-17 by pdcarlson (#5410): this was "Discussion log (default OFF — verbose)". Paul, after a 7-minute meeting came out as one summary sentence: "I'd rather have just a blank wall of text ... than this high-level summary." The notes are the body of the minutes, so every chapter's minutes carry them.
 - Attendees (default ON)
@@ -214,6 +215,16 @@ It is used once a week by one person, in a chapter room with weak wifi, with the
 - **Expo Go and the web build of the app have no recorder.** The row then shows only what was uploaded elsewhere.
 
 > **Added 2026-11-12 (the build session's, Paul's to change).** Choices made here that nobody had decided. (1) The file is one channel of AAC at 64 kbps in an ADTS container (`.aac`), about 58 MB for two hours. ADTS rather than the usual `.m4a` because an `.m4a` cut off by a crash can't be read at all. (2) A recording left on a phone is deleted after 7 days. (3) An existing audio file can't be picked on the phone: that needs a second native module (`expo-document-picker`, [#3401](https://github.com/pdcarlson/Frapp/issues/3401)), so uploading a file stays on the web. (4) A killed app's upload starts again from the beginning, because the upload's signature is not written to the phone's storage. (5) Android's recording notification reads "Recording audio", the audio library's fixed wording. (6) The microphone permission text in `app.json` is a draft for Paul to approve before a store build. (7) On Android the two-hour stop is checked by the app's clock, which Android may hold while the screen is off; a meeting that ran past two hours is still uploaded and transcribed, declared to the server as two hours. For the same reason a recording stopped from Android's notification is measured by its file's size, not by the clock. None of this has run on a device: the list of what to check on one is in the PR that added this section.
+
+## Tabled items
+
+Asked by Paul, 2026-11-18 (#5522): "Say at cabinet we discuss something and somebody says 'let's table this to next cabinet.' Then on the next iteration of this meeting … it should pop up automatically in the agenda. It should say 'tabled from' the date, and whatever the discussion item was."
+
+- **The minutes keep what was tabled.** A Tabled section lists each matter the meeting put off, in a few words as it would go on the next agenda ("Formal budget"). Tabling still counts as an outcome under Decisions ([Drafting from notes](#drafting-from-notes)); the Tabled list is what the next meeting picks up.
+- **The draft finds it.** A draft lists each matter the sources put off ("let's table this", "push it to next week", "come back to it next cabinet"), each kept only when the line it was put off in is in a source, word for word, as a decision is; one that isn't is left out and counted. A matter the meeting settled after putting it off is not tabled. The minute-taker removes any the draft got wrong before posting.
+- **Tabling by hand.** On the web's section editor, Table an item adds one; the phone reads the list, and adds by hand once it has a section editor (#4412).
+- **It keeps its first date.** An item carries the minutes that first tabled it, that meeting's start, and how many meetings have tabled it, so one tabled again reads "Tabled from Tuesday, November 11 · 2nd time" however often it comes back.
+- **Where it goes next** (Paul, 2026-11-18, replacing the name and series matching the issue first described): no rule picks "the next instance". The next meeting's agenda offers what earlier meetings with the same audience tabled as suggestions, written with that meeting's context (who it invites and their roles), and the officer adds them; adding one carries its first date and count onto the agenda and into that meeting's minutes when it is tabled again. That part is being built next (#5522).
 
 ## Suggested tasks
 

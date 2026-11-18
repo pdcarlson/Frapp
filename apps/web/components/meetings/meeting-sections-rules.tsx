@@ -24,6 +24,8 @@ const SECTION_HINTS: Readonly<Record<MeetingSectionKey, string>> = {
   decisions:
     "Motions and what was decided, with the vote count when one was taken.",
   action_items: "What needs doing, who it's on, and when it's due.",
+  tabled:
+    "What the meeting put off. A later meeting's agenda offers it back. Always on.",
   officer_reports: "Each officer's report.",
   old_business: "Items carried over from earlier meetings.",
   new_business: "Items raised for the first time.",

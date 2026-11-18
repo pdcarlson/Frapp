@@ -27397,6 +27397,7 @@
                 "announcements",
                 "decisions",
                 "action_items",
+                "tabled",
                 "discussion_log",
                 "attendees",
                 "officer_reports",
@@ -27484,6 +27485,39 @@
           "due_date"
         ]
       },
+      "MeetingTabledItemDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "first_meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The minutes that first tabled it; null when these minutes did."
+          },
+          "first_start_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "That meeting's start; null with first_meeting_id."
+          },
+          "times": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 99,
+            "description": "How many meetings have tabled it, this one included."
+          }
+        },
+        "required": [
+          "text",
+          "first_meeting_id",
+          "first_start_time",
+          "times"
+        ]
+      },
       "MeetingContentDto": {
         "type": "object",
         "properties": {
@@ -27509,6 +27543,13 @@
               "$ref": "#/components/schemas/MeetingActionItemDto"
             }
           },
+          "tabled": {
+            "description": "What the meeting tabled. Empty on minutes from before it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingTabledItemDto"
+            }
+          },
           "officer_reports": {
             "type": "string"
           },
@@ -27528,6 +27569,7 @@
           "announcements",
           "decisions",
           "action_items",
+          "tabled",
           "officer_reports",
           "old_business",
           "new_business",
@@ -27634,6 +27676,7 @@
                 "announcements",
                 "decisions",
                 "action_items",
+                "tabled",
                 "discussion_log",
                 "attendees",
                 "officer_reports",
@@ -27796,6 +27839,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MeetingActionItemDto"
+            }
+          },
+          "tabled": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingTabledItemDto"
             }
           },
           "officer_reports": {

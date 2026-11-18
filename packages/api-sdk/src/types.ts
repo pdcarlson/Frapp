@@ -8545,7 +8545,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "tabled" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8570,6 +8570,21 @@ export interface components {
              */
             due_date: string | null;
         };
+        MeetingTabledItemDto: {
+            text: string;
+            /**
+             * Format: uuid
+             * @description The minutes that first tabled it; null when these minutes did.
+             */
+            first_meeting_id: string | null;
+            /**
+             * Format: date-time
+             * @description That meeting's start; null with first_meeting_id.
+             */
+            first_start_time: string | null;
+            /** @description How many meetings have tabled it, this one included. */
+            times: number;
+        };
         MeetingContentDto: {
             /** @description The TL;DR: a few "- " bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it. */
             tldr: string;
@@ -8577,6 +8592,8 @@ export interface components {
             announcements: string;
             decisions: components["schemas"]["MeetingDecisionDto"][];
             action_items: components["schemas"]["MeetingActionItemDto"][];
+            /** @description What the meeting tabled. Empty on minutes from before it. */
+            tabled: components["schemas"]["MeetingTabledItemDto"][];
             officer_reports: string;
             old_business: string;
             new_business: string;
@@ -8610,7 +8627,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "tabled" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -8655,6 +8672,7 @@ export interface components {
             announcements?: string;
             decisions?: components["schemas"]["MeetingDecisionDto"][];
             action_items?: components["schemas"]["MeetingActionItemDto"][];
+            tabled?: components["schemas"]["MeetingTabledItemDto"][];
             officer_reports?: string;
             old_business?: string;
             new_business?: string;

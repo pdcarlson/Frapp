@@ -150,6 +150,7 @@ const { MinutesPage } = await import("./minutes-page");
 
 const EMPTY = {
   tldr: "",
+  tabled: [],
   summary: "",
   announcements: "",
   decisions: [],
@@ -354,6 +355,37 @@ describe("MinutesPage", () => {
     expect(headings.slice(0, 2)).toEqual(["TL;DR", "Summary"]);
     expect(screen.getByText("Formal budget approved")).toBeTruthy();
     expect(screen.getByText("Book the venue by Friday")).toBeTruthy();
+  });
+
+  it("lists what was tabled, with where a carried item was first tabled (#5522)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          summary: "Budget approved.",
+          tabled: [
+            {
+              text: "Formal budget",
+              first_meeting_id: null,
+              first_start_time: null,
+              times: 1,
+            },
+            {
+              text: "Rush shirts",
+              first_meeting_id: "33333333-3333-4333-8333-333333333333",
+              first_start_time: "2026-11-03T23:00:00.000Z",
+              times: 2,
+            },
+          ],
+        },
+        sections: ["summary", "tabled", "discussion_log"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByRole("heading", { name: "Tabled" })).toBeTruthy();
+    expect(screen.getByText("Formal budget")).toBeTruthy();
+    expect(screen.getByText("Rush shirts")).toBeTruthy();
+    expect(screen.getByText(/^Tabled from .* · 2nd time$/)).toBeTruthy();
   });
 
   it("keeps changing posted minutes out of the way: Copy link an icon, Edit and a red Delete behind the dots (Paul, 2026-11-18)", () => {

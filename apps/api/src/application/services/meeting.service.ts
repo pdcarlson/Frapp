@@ -1164,6 +1164,7 @@ function pickContent(patch: MeetingContentPatch): MeetingContentPatch {
     out.announcements = patch.announcements;
   if (patch.decisions !== undefined) out.decisions = patch.decisions;
   if (patch.action_items !== undefined) out.action_items = patch.action_items;
+  if (patch.tabled !== undefined) out.tabled = patch.tabled;
   if (patch.officer_reports !== undefined) {
     out.officer_reports = patch.officer_reports;
   }

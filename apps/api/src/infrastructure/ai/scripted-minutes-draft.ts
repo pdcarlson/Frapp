@@ -30,6 +30,9 @@ export const scriptedMinutesDraft: ScriptedHandler = (request) => {
 };
 
 const DECISION = /\b(voted?|passed|failed|approved|motion|decided|agreed)\b/i;
+/** "let's table the formal budget", "push rush shirts to next week" (#5522). */
+const TABLED =
+  /\b(?:table[ds]?|tabling|postpone[ds]?|push(?:ed)?\b.*\bnext (?:week|meeting|time))\b/i;
 const ACTION =
   /\b(will|to (?:book|send|email|call|post|order|buy|pick|write|collect|drop|talk|set|reserve|draft|follow|check|ask|bring|make|get|schedule|contact|update|submit|plan)|needs? to|someone needs)\b/i;
 const ANNOUNCEMENT =
@@ -73,6 +76,7 @@ function draftFrom(
     announcements: '',
     decisions: [],
     action_items: [],
+    tabled: [],
     officer_reports: '',
     old_business: '',
     new_business: '',
@@ -91,6 +95,10 @@ function draftFrom(
     if (ADDRESSED_TO_AI.test(line)) continue;
     if (POINTS.test(line)) continue;
     const text = sentence(line);
+    if (TABLED.test(line)) {
+      draft.tabled.push({ text, quote: line, source: at.source });
+      continue;
+    }
     if (DECISION.test(line)) {
       const count = /(\d+)\s*(?:-|–|to)\s*(\d+)/.exec(line);
       items.push({
