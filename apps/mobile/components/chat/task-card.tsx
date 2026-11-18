@@ -26,7 +26,10 @@ import { taskStatusHue } from "@/lib/tasks/status-hue";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { MarkDoneSheet } from "@/components/tasks/mark-done-sheet";
-import { SendBackSheet } from "@/components/tasks/send-back-sheet";
+import {
+  SendBackSheet,
+  sendBackDraftKey,
+} from "@/components/tasks/send-back-sheet";
 import { TaskProof } from "@/components/tasks/task-photos";
 import {
   editTargetOfCardTask,
@@ -347,7 +350,7 @@ export function TaskCard({
       {sendingBack ? (
         <SendBackSheet
           key={payload.task_id}
-          keptDraft={`send-back:${payload.task_id}`}
+          keptDraft={sendBackDraftKey(payload.task_id)}
           submittedAt={live?.completed_at ?? null}
           title={payload.title}
           proofKind={proofKind}

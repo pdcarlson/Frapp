@@ -3,12 +3,14 @@ import {
   formatPointsChip,
   isDueOverdue,
 } from "@repo/formatting";
-import type { TaskProofKind } from "@repo/validation";
+import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
 import type { LiveTask, LiveTaskPhoto } from "./task-card";
 
 /**
- * An officer's review of a submitted task (#4693): what the review sheet on
- * both apps shows, in the order it shows it. Who handed it in and when, the
+ * An officer's review of a submitted task (#4693): what web's review in
+ * Activity's panel shows, in the order it shows it (the phone reviews on the
+ * task's own screen, #5513, and shares only `taskConfirmLabel` and
+ * `taskAwaitsReview`). Who handed it in and when, the
  * proof (the thing being judged), the send-back it answers on a resubmission,
  * the assignee's reply, and a Confirm that says what it pays. Chore apps with
  * photo proof (S'moresUp, Chores Tracker) and Classroom's grader put the work
@@ -36,9 +38,60 @@ export interface TaskReview {
  * not yet confirmed. The persisted status decides, since the display status
  * can read OVERDUE.
  */
-export function isAwaitingReview(task: LiveTask): boolean {
+export function isAwaitingReview(
+  task: Pick<LiveTask, "confirmed_at"> & {
+    status?: string | null;
+    stored_status?: string | null;
+    points_awarded?: boolean | null;
+  },
+): boolean {
   const stored = task.stored_status ?? task.status;
   return stored === "COMPLETED" && !task.confirmed_at && !task.points_awarded;
+}
+
+/** Who is looking, for `taskAwaitsReview`. */
+export interface TaskReviewer {
+  viewerId: string | null;
+  /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
+  canManage: boolean;
+}
+
+/**
+ * Whether a task waits on this viewer's sign-off (#5492, #5513): awaiting
+ * review (`isAwaitingReview`: marked done, not confirmed or paid), needing a
+ * sign-off (`taskNeedsSignOff`: points or proof), held by someone else (the
+ * API refuses a self-confirm), and the viewer holds `tasks:manage`. The
+ * phone's task screen and long-press menu offer Confirm by it.
+ */
+export function taskAwaitsReview(
+  task: {
+    assignee_id: string | null;
+    stored_status?: string | null;
+    confirmed_at: string | null;
+    points_awarded?: boolean | null;
+    point_reward: number | null;
+    proof_kind?: string | null;
+  },
+  reviewer: TaskReviewer,
+): boolean {
+  return (
+    reviewer.canManage &&
+    reviewer.viewerId !== null &&
+    task.assignee_id !== reviewer.viewerId &&
+    isAwaitingReview(task) &&
+    taskNeedsSignOff(task)
+  );
+}
+
+/**
+ * Confirm's words where it pays: `"Confirm · +10 pts"`, the payout named on
+ * the button, or `"Confirm"` for a task with no points. Web's review and the
+ * phone's task screen (#5513) both say it.
+ */
+export function taskConfirmLabel(
+  pointReward: number | null | undefined,
+): string {
+  return pointReward ? `Confirm · ${formatPointsChip(pointReward)}` : "Confirm";
 }
 
 export function taskReview(task: LiveTask, now: Date = new Date()): TaskReview {
@@ -63,9 +116,7 @@ export function taskReview(task: LiveTask, now: Date = new Date()): TaskReview {
       : null,
     resubmitted,
     timing,
-    confirmLabel: task.point_reward
-      ? `Confirm · ${formatPointsChip(task.point_reward)}`
-      : "Confirm",
+    confirmLabel: taskConfirmLabel(task.point_reward),
     sentBackReason: resubmitted ? task.sent_back_reason : null,
     note: task.completion_note?.trim() || null,
     proofPhotos: photos.filter((photo) => photo.kind === "proof"),

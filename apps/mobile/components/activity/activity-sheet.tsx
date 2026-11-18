@@ -1,27 +1,14 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  NavigationContext,
-  NavigationRouteContext,
-} from "expo-router/react-navigation";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   activityEventMessage,
   activityHoursMessage,
-  activityTaskMessage,
 } from "@repo/chat-core/activity-cards";
-import {
-  readEventPayload,
-  readHoursPayload,
-  readTaskPayload,
-} from "@repo/chat-core/cards";
+import { readEventPayload, readHoursPayload } from "@repo/chat-core/cards";
 import type { ChatMessage } from "@repo/chat-core/types";
-import {
-  activityRowAwaitsReview,
-  useReviewServiceEntry,
-  type ActivityRow,
-} from "@repo/hooks";
+import { useReviewServiceEntry, type ActivityRow } from "@repo/hooks";
 import {
   MESSAGE_REMINDER_PRESETS,
   messageReminderPresetTime,
@@ -38,7 +25,6 @@ import { EventCard } from "@/components/chat/event-card";
 import { ListRow, ListSection } from "@/components/list-section";
 import { HoursCard } from "@/components/chat/hours-card";
 import { PollCard } from "@/components/chat/poll-card";
-import { TaskCard } from "@/components/chat/task-card";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -111,12 +97,12 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 
 /**
  * The sheet an Activity row opens: the record, drawn with the card chat draws
- * for it, so a member votes, confirms a completion or checks in here with the
- * controls they already know from chat (#3897). Web's twin is
- * `apps/web/components/activity/activity-panel.tsx`. A task row pushes the
- * task's own screen instead (#5492; Paul, 2026-11-18: the sheet is "lazy"),
- * apart from a completion waiting on the viewer's sign-off
- * (`ReviewTaskSheet`).
+ * for it, so a member votes or checks in here with the controls they already
+ * know from chat (#3897). Web's twin is
+ * `apps/web/components/activity/activity-panel.tsx`. Every task row pushes
+ * the task's own screen instead (#5492; Paul, 2026-11-18: the sheet is
+ * "lazy"), a completion waiting on the viewer's sign-off too, since the
+ * screen has Confirm and Send back (#5513).
  *
  * The cards are chat's own components, unchanged. Each reads its record's
  * live state by id and its buttons call the same routes they call in chat.
@@ -129,10 +115,7 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
  * and the screen's own actions for it (`LinkSheetActions`).
  *
  * A tall sheet, as `spec/ui/mobile/patterns.md` § Bottom sheets gives a sheet
- * that holds a whole record. A sheet is drawn outside the screen's
- * navigator, so the screen's navigation context is handed down to the cards:
- * their refusals clear when the member comes back to this screen
- * (`useCardWrite`), as they do in a thread.
+ * that holds a whole record.
  *
  * `onActed` runs after an action this sheet makes itself (a vote, a review),
  * so the row can leave its list; `onClosed` runs when the sheet has gone,
@@ -143,7 +126,6 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 export function ActivitySheet({
   row,
   viewerId,
-  canManage = false,
   rowActionState = "idle",
   onClosed,
   onActed,
@@ -152,11 +134,6 @@ export function ActivitySheet({
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
-  /**
-   * `tasks:manage` (and Tasks on), as the screen read it for
-   * `activityRowAwaitsReview`: which task rows open here as a review.
-   */
-  canManage?: boolean;
   /**
    * Where the row's own Confirm, Approve or Check in stands (#4437, #4427), so the sheet
    * opened from that row doesn't offer the same approval a second time.
@@ -173,8 +150,6 @@ export function ActivitySheet({
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const tallSheet = useTallSheetProps();
-  const navigation = useContext(NavigationContext);
-  const route = useContext(NavigationRouteContext);
 
   // Presented once per row opened, not on every re-read that hands the same
   // row down as a new object.
@@ -203,28 +178,23 @@ export function ActivitySheet({
         <View style={styles.stickyHeader}>
           <TallSheetHeader onClose={closeSheet} />
         </View>
-        <NavigationContext.Provider value={navigation}>
-          <NavigationRouteContext.Provider value={route}>
-            {row && viewerId ? (
-              <SheetCard
-                // A different row is a different card: no state carries over.
-                key={row.key}
-                row={row}
-                viewerId={viewerId}
-                canManage={canManage}
-                rowActionState={rowActionState}
-                onActed={onActed}
-                onNavigate={closeSheet}
-                linkActions={linkActions}
-                reminderActions={reminderActions}
-              />
-            ) : row ? (
-              // The cards decide whose controls to show from the viewer's id;
-              // without it they would show none, or the wrong ones.
-              <CardNote text="Loading your account…" />
-            ) : null}
-          </NavigationRouteContext.Provider>
-        </NavigationContext.Provider>
+        {row && viewerId ? (
+          <SheetCard
+            // A different row is a different card: no state carries over.
+            key={row.key}
+            row={row}
+            viewerId={viewerId}
+            rowActionState={rowActionState}
+            onActed={onActed}
+            onNavigate={closeSheet}
+            linkActions={linkActions}
+            reminderActions={reminderActions}
+          />
+        ) : row ? (
+          // The cards decide whose controls to show from the viewer's id;
+          // without it they would show none, or the wrong ones.
+          <CardNote text="Loading your account…" />
+        ) : null}
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
@@ -233,7 +203,6 @@ export function ActivitySheet({
 function SheetCard({
   row,
   viewerId,
-  canManage,
   rowActionState,
   onActed,
   onNavigate,
@@ -242,7 +211,6 @@ function SheetCard({
 }: {
   row: ActivityRow;
   viewerId: string;
-  canManage: boolean;
   rowActionState: ActivityRowActionState;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
@@ -252,15 +220,9 @@ function SheetCard({
 }) {
   switch (row.kind) {
     case "task":
-      // Only what waits on the viewer's sign-off: every other task row
-      // pushes the task's own screen (#5492).
-      // The screen's own rule (`activityRowAwaitsReview`), on the same
-      // viewer, so it never routes a row here that draws nothing.
-      return activityRowAwaitsReview(row, { viewerId, canManage }) ? (
-        <ReviewTaskSheet row={row} viewerId={viewerId} />
-      ) : null;
     case "task-group":
-      // A task for everyone pushes the task's screen, never this sheet.
+      // Every task pushes the task's own screen, a review too (#5492,
+      // #5513), never this sheet.
       return null;
     case "event":
       return (
@@ -477,27 +439,6 @@ function createLinkStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
   });
-}
-
-/**
- * A completion waiting on the viewer's sign-off (`activityRowAwaitsReview`:
- * the To review card's rows, and any task row whose task waits on them):
- * chat's task card, with its proof above Confirm and Send back (#4635). The
- * one task that still opens a sheet: the task's screen (#5492) has no
- * Confirm or Send back yet, and those are what this row is for.
- */
-function ReviewTaskSheet({
-  row,
-  viewerId,
-}: {
-  row: RowOf<"task">;
-  viewerId: string;
-}) {
-  const message = useMemo(() => activityTaskMessage(row.task), [row.task]);
-  const payload = readTaskPayload(message);
-  return payload ? (
-    <TaskCard {...frameFor(message, viewerId)} payload={payload} />
-  ) : null;
 }
 
 function EventSheet({

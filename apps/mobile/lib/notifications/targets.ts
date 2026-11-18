@@ -88,7 +88,8 @@ const MINUTES: NotificationTarget = { pathname: "/minutes-details" };
 
 /**
  * Where a task push opens. "Submitted a task" (`view: "review"`) opens the
- * review: Activity, with that task's sheet up (`/activity?review=`), since
+ * review: Activity (`/activity?review=`), which pushes the task's screen
+ * with Confirm and Send back over it (#5513), since
  * the board under Tasks lists only the viewer's own tasks and an officer's
  * review was never on it. Every other task push opens the board
  * (`/tasks?task=`), which pushes the task's screen over it (#5492): the

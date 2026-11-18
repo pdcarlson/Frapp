@@ -152,6 +152,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useUpdateTaskStatus: () => ({ mutateAsync }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useChapterRoster: () => ({ data: [] }),
   useOpenTasks: () => ({
     data: openTasks,

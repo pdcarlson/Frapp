@@ -8,7 +8,14 @@
  * Mark not done only the assignee's, before an officer confirms (an officer
  * moving someone's completion back is Send back, its own endpoint). Edit,
  * Delete and Remove people are `tasks:manage`, and Edit is refused once a
- * task is confirmed. There is no creator rule.
+ * task is confirmed. There is no creator rule. Confirm and Send back
+ * (`POST /v1/tasks/:id/confirm` and `/reject`, #5513) are a `tasks:manage`
+ * holder's. Confirm is on a completion waiting on their sign-off, never
+ * their own (`taskAwaitsReview`: the API refuses a self-confirm). Send back
+ * is wherever chat's task card offers it (`taskSendBackOpen`, the API's
+ * `isReopenable`): any completion not yet paid, or signed off as it was
+ * marked; on their own the screen offers Mark not done instead, which does
+ * the same for the assignee.
  *
  * A row's long-press menu (#5492) reads the same controls
  * (`taskMenuKeys`), so the menu and the screen can't disagree about who may
@@ -21,9 +28,12 @@ import {
   canReopenOwnTask,
   isTaskStatus,
   TASK_ACTION_LABELS,
+  taskAwaitsReview,
+  taskConfirmLabel,
+  taskSendBackOpen,
   type TaskStatus,
 } from "@repo/hooks";
-import { formatRelativeDayTime } from "@repo/formatting";
+import { formatPointsChip, formatRelativeDayTime } from "@repo/formatting";
 import { taskGroupLabel } from "@repo/validation";
 import { records, str } from "@/lib/more/narrow";
 import {
@@ -73,6 +83,19 @@ export function rowStatus(row: TaskRowModel): {
 export interface TaskScreenControls {
   /** The one thing to do: the accent pill. */
   markDone: boolean;
+  /**
+   * An officer's sign-off on someone's completion (#5513): the accent pill,
+   * where Mark done would be (a done task has no Mark done).
+   */
+  confirm: boolean;
+  /**
+   * Confirm in a row's long-press menu, which shows no proof: only on a task
+   * that asked for none, the To review row's own rule (#4635), so a photo or
+   * link is seen on the screen before it is confirmed.
+   */
+  confirmInMenu: boolean;
+  /** Send back, with a reason (`taskBarLayout` says where it sits). */
+  sendBack: boolean;
   edit: boolean;
   /** The minus, on a group task's copy. */
   removePeople: boolean;
@@ -108,11 +131,26 @@ export function taskScreenControls({
   viewerId: string | null;
   /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
   canManage: boolean;
-  /** A gate refusal latched on the status write (#2710): no Mark done. */
+  /**
+   * A gate refusal latched on a status or review write (#2710): no Mark
+   * done, Confirm or Send back. The routes share the subscription and module
+   * gates, so a refusal on one is a refusal on all.
+   */
   toggleRefused: boolean;
 }): TaskScreenControls {
   const isAssignee = viewerId !== null && row.assigneeId === viewerId;
   const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  const reviewed = {
+    assignee_id: row.assigneeId,
+    stored_status: stored ?? null,
+    points_awarded: row.pointsAwarded,
+    completed_at: row.completedAt,
+    confirmed_at: row.confirmedAt,
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  };
+  const awaitsReview =
+    !toggleRefused && taskAwaitsReview(reviewed, { viewerId, canManage });
   // The board's rule for its sheet's Edit (#4296): the edit form needs an
   // assignee and a day, and a confirmed task can't change.
   const edit =
@@ -128,6 +166,15 @@ export function taskScreenControls({
       (isAssignee || canManage) &&
       !toggleRefused &&
       checkboxSequence(row).length > 0,
+    confirm: awaitsReview,
+    confirmInMenu: awaitsReview && row.proofKind === "none",
+    // Not before the viewer is known: it may be their own.
+    sendBack:
+      !toggleRefused &&
+      canManage &&
+      viewerId !== null &&
+      !isAssignee &&
+      taskSendBackOpen(reviewed),
     edit,
     removePeople: canManage && row.groupId !== null,
     reopen:
@@ -155,6 +202,8 @@ export function taskScreenControls({
 /** A task's long-press menu rows (#5492), in the order they are drawn. */
 export type TaskMenuKey =
   | "markDone"
+  | "confirm"
+  | "sendBack"
   | "start"
   | "reopen"
   | "edit"
@@ -167,7 +216,9 @@ export type TaskMenuKey =
 /**
  * Which rows a task's long-press menu draws: what the task screen offers the
  * same viewer, less Give it back (the screen's, by its More). Mark done is
- * the task screen's pill, so it leads; the two deletes are last, and red.
+ * the task screen's pill, so it leads, or on a completion waiting on the
+ * viewer, Confirm (where no proof needs seeing first) then Send back
+ * (#5513); the two deletes are last, and red.
  *
  * `group`: a Calendar row that stands for every copy of a group task
  * (an officer's "4 of 12 done"), which can only be acted on as a group:
@@ -180,6 +231,8 @@ export function taskMenuKeys(
   const keys: TaskMenuKey[] = [];
   if (scope === "copy") {
     if (controls.markDone) keys.push("markDone");
+    if (controls.confirmInMenu) keys.push("confirm");
+    if (controls.sendBack) keys.push("sendBack");
     if (controls.start) keys.push("start");
     if (controls.reopen) keys.push("reopen");
     if (controls.edit) keys.push("edit");
@@ -393,4 +446,86 @@ export function markDoneBarLabel(
     return { label: full, hint: undefined };
   }
   return { label: TASK_ACTION_LABELS.complete, hint: `${full}.` };
+}
+
+/**
+ * The most round controls the bar holds beside its pill: at 320pt, a fourth
+ * leaves the pill no room for its verb.
+ */
+const BAR_ROUNDS_MAX = 3;
+
+/**
+ * Confirm's words in the bar (#5513): the payout named on it, as web's review
+ * says it (`taskConfirmLabel`, "Confirm · +10 pts"), beside up to two round
+ * controls: shorter than Mark done's longest, it still fits a 320pt phone
+ * there. Beside three, `markDoneBarLabel`'s crowded-bar rule: the pill says
+ * "Confirm" and the payout is its spoken hint.
+ */
+export function confirmBarLabel(
+  pointReward: number | null,
+  rounds: number,
+): { label: string; hint: string | undefined } {
+  const full = taskConfirmLabel(pointReward);
+  if (rounds < BAR_ROUNDS_MAX || full === TASK_ACTION_LABELS.confirm) {
+    return { label: full, hint: undefined };
+  }
+  return {
+    label: TASK_ACTION_LABELS.confirm,
+    hint: `Awards ${formatPointsChip(pointReward ?? 0)}.`,
+  };
+}
+
+/** Where the bar's controls sit, for `taskBarLayout`. */
+export interface TaskBarLayout {
+  /** Send back as a round beside the pill, or as More's first row. */
+  sendBackRound: boolean;
+  sendBackInMore: boolean;
+  /** Edit as a round, or in More, after Send back. */
+  editRound: boolean;
+  editInMore: boolean;
+  /** Whether More is drawn at all. */
+  moreShown: boolean;
+  /** The rounds beside the pill, More included: the pill's words read it. */
+  rounds: number;
+}
+
+/**
+ * Where the bar puts Send back and Edit (#5513), so the pill keeps room for
+ * its words at 320pt.
+ *
+ * - While Confirm shows, Edit moves into More, as web's review puts Edit
+ *   under its ⋯ so nothing competes with the decision (#4693). That leaves
+ *   an officer's usual review two rounds, Send back and More, beside
+ *   "Confirm · +10 pts".
+ * - Send back is a round while the bar holds fewer than three others, else
+ *   More's first row. More then holds at most three rows, which Android's
+ *   dialog can draw: Send back or Edit with Delete and Delete for everyone.
+ */
+export function taskBarLayout({
+  controls,
+  removePeople,
+  otherMoreRows,
+}: {
+  controls: Pick<TaskScreenControls, "confirm" | "sendBack" | "edit">;
+  /** Remove people's round is drawn (a group's copy, its copies read). */
+  removePeople: boolean;
+  /** More's other rows: Start, Mark not done, Give it back, the deletes. */
+  otherMoreRows: number;
+}): TaskBarLayout {
+  const editInMore = controls.edit && controls.confirm;
+  const editRound = controls.edit && !controls.confirm;
+  const moreRows = otherMoreRows + (editInMore ? 1 : 0);
+  const others = [editRound, removePeople, moreRows > 0].filter(Boolean).length;
+  const sendBackRound = controls.sendBack && others < BAR_ROUNDS_MAX;
+  const sendBackInMore = controls.sendBack && !sendBackRound;
+  const moreShown = moreRows > 0 || sendBackInMore;
+  return {
+    sendBackRound,
+    sendBackInMore,
+    editRound,
+    editInMore,
+    moreShown,
+    rounds: [sendBackRound, editRound, removePeople, moreShown].filter(Boolean)
+      .length,
+  };
 }

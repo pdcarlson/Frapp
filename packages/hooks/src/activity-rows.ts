@@ -1,10 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import {
-  signUpLinkKind,
-  taskGroupLabel,
-  taskNeedsSignOff,
-} from "@repo/validation";
+import { signUpLinkKind, taskGroupLabel } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
@@ -215,7 +211,7 @@ export function activityRowAction(
   if (!activityBadgeIsAsk(row)) return null;
   // A task that asks for proof opens instead: the officer sees the photos or
   // link before confirming it (#4635), which a one-press row can't show.
-  if (row.kind === "task" && activityRowAwaitsReview(row)) {
+  if (row.kind === "task" && row.glyph === "confirm") {
     return (row.task.proof_kind ?? "none") === "none" ? "confirm" : null;
   }
   if (row.kind === "hours") return "approve";
@@ -227,57 +223,6 @@ export function activityRowAction(
     return needsCode && !options.canScan ? null : "check-in";
   }
   return null;
-}
-
-/** Who is looking, for `activityRowAwaitsReview`. */
-export interface ActivityReviewer {
-  viewerId: string | null;
-  /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
-  canManage: boolean;
-}
-
-/**
- * Whether a task waits on this viewer's sign-off (#5492): marked done, not
- * yet confirmed, needing one (`taskNeedsSignOff`: points or proof), held by
- * someone else (the API refuses a self-confirm), and the viewer holds
- * `tasks:manage`. The fields a list task or an Activity task both carry.
- */
-export function taskAwaitsReview(
-  task: {
-    assignee_id: string | null;
-    stored_status?: string | null;
-    confirmed_at: string | null;
-    point_reward: number | null;
-    proof_kind?: string | null;
-  },
-  reviewer: ActivityReviewer,
-): boolean {
-  return (
-    reviewer.canManage &&
-    reviewer.viewerId !== null &&
-    task.assignee_id !== reviewer.viewerId &&
-    task.stored_status === "COMPLETED" &&
-    !task.confirmed_at &&
-    taskNeedsSignOff(task)
-  );
-}
-
-/**
- * Whether a row opens as a review, Confirm and Send back over the proof,
- * rather than the task's own screen, which has neither (#5492): one the To
- * review card lists (the server has already checked it waits on this
- * viewer), and, with `reviewer`, any task row whose task waits on their
- * sign-off wherever it sits (Waiting on others, a snoozed or archived row).
- * One rule for the phone's router, its sheet and the row's Confirm, so they
- * can't drift.
- */
-export function activityRowAwaitsReview(
-  row: ActivityRow,
-  reviewer?: ActivityReviewer,
-): boolean {
-  if (row.kind !== "task") return false;
-  if (row.glyph === "confirm") return true;
-  return reviewer ? taskAwaitsReview(row.task, reviewer) : false;
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -1060,18 +1005,6 @@ export function activityReviewRows(
     ),
     ...activity.needs_you.hours_approvals.map(hoursRow),
   ];
-}
-
-/**
- * A task as the To review card draws it, for one the read doesn't list: a
- * review push for a copy of a task for everyone, which `task_items` names
- * only by the copy its row opens (#5492). Its key is the To review card's.
- */
-export function activityReviewRow(
-  task: ActivityTask,
-  now: Date = new Date(),
-): ActivityRow {
-  return taskRow(task, "needs-confirm", "confirm", now);
 }
 
 /**

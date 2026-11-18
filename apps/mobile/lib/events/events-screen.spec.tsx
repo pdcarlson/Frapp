@@ -146,6 +146,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           },
   useDeleteEvent: () => ({ mutate: deleteEvent, isPending: false }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: updateStatus }),
 }));
 

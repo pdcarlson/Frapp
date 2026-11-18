@@ -37,6 +37,7 @@ import {
   MinusGlyph,
   MoreGlyph,
   PencilGlyph,
+  UndoGlyph,
 } from "@/components/control-glyphs";
 import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
 import { TaskProof } from "@/components/tasks/task-photos";
@@ -59,6 +60,7 @@ import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
 import { editTargetOfRow, type TaskEditTarget } from "@/lib/tasks/create-task";
 import {
+  confirmBarLabel,
   confirmTaskDelete,
   groupCopies,
   livePicks,
@@ -72,11 +74,13 @@ import {
   removeLabel,
   rowStatus,
   sortCopies,
+  taskBarLayout,
   taskHistory,
   taskScreenControls,
 } from "@/lib/tasks/task-screen";
 import { useStartTask } from "@/lib/tasks/use-start-task";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
+import { useTaskReview } from "@/lib/tasks/use-task-review";
 import {
   RELEASE_FAILED,
   RELEASED_LINE,
@@ -113,6 +117,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * 44pt rounds. More opens the system menu: Mark not done, Give it back, Delete
  * and, on a group task, Delete for everyone. Each shows only to a viewer the
  * API lets use it (`taskScreenControls`).
+ *
+ * ## Confirm and Send back
+ *
+ * On a member's completion waiting on the viewer's sign-off (#5513), Confirm
+ * is the accent pill with its payout ("Confirm · +10 pts"), Send back a round
+ * beside it and Edit moves into More, as web's review keeps Edit under its ⋯
+ * (`taskBarLayout`). Send back also shows wherever chat's card offers it (a
+ * completion that needed no sign-off), with no pill. Both are chat's task
+ * card's (`useTaskReview`): Send back opens the card's sheet for the reason
+ * and "Ask for a photo next time". The officer stays on the screen, which
+ * redraws Confirmed or Needs changes in place, as Activity's review sheet
+ * stayed on the card; Activity re-reads when they go back to it. The proof is
+ * on the screen above, so it is seen before either.
  *
  * ## Remove people
  *
@@ -222,11 +239,13 @@ function TaskScreen({
   const toggles = useTaskToggle(findRow, { viewerId });
   // More's Start (#5492): what chat's task card offered on a To do.
   const startTask = useStartTask();
+  // An officer's Confirm and Send back (#5513), chat's task card's.
+  const review = useTaskReview();
   const controls = taskScreenControls({
     row,
     viewerId,
     canManage,
-    toggleRefused: toggles.refusal !== null,
+    toggleRefused: toggles.refusal !== null || review.refusal?.gate === true,
   });
 
   // Who has it reads the group's copies off the board's query, which holds
@@ -376,7 +395,7 @@ function TaskScreen({
   // More's rows, in order, the destructive ones last. No Copy link: the web
   // has no page for one task to link to yet, and a `frapp://` link reads as
   // dead text in chat.
-  const moreRows = [
+  const restOfMore = [
     ...(controls.start && toggles.canToggle(row)
       ? [
           {
@@ -420,11 +439,49 @@ function TaskScreen({
         ]
       : []),
   ];
+  const showRemovePeople = controls.removePeople && showPeople;
+  // Send back a round while the bar has room, else More's first row; Edit in
+  // More while Confirm shows, so the pill keeps its payout (#5513).
+  const {
+    sendBackRound,
+    sendBackInMore,
+    editRound,
+    editInMore,
+    moreShown: showMore,
+    rounds,
+  } = taskBarLayout({
+    // Copied out as plain booleans: handing `controls` itself on makes the
+    // React Compiler treat it, and `canManage` behind it, as mutable, and
+    // skip this component (`react-hooks/preserve-manual-memoization`).
+    controls: {
+      confirm: controls.confirm === true,
+      sendBack: controls.sendBack === true,
+      edit: controls.edit === true,
+    },
+    removePeople: showRemovePeople,
+    otherMoreRows: restOfMore.length,
+  });
+  const moreRows = [
+    // Held as the round is (offline, mid-write, refused): the system menu
+    // has no disabled row, so it is left out until it can send.
+    ...(sendBackInMore && !review.disabled
+      ? [
+          {
+            label: TASK_ACTION_LABELS.reject,
+            onPress: () => review.sendBack(row),
+          },
+        ]
+      : []),
+    ...(editInMore ? [{ label: "Edit", onPress: startEdit }] : []),
+    ...restOfMore,
+  ];
   // At most three, which Android's dialog can draw: Mark not done needs the
   // task done and Give it back needs it not done, so only one of them shows
   // beside Delete and Delete for everyone. Start needs it To do, so it never
   // shows beside Mark not done, and with Give it back (a task taken from Up
-  // for grabs, never a group's copy) there is no Delete for everyone.
+  // for grabs, never a group's copy) there is no Delete for everyone. Send
+  // back and Edit are an officer's on someone else's task, so none of those
+  // three is beside them, only the two deletes (`taskBarLayout`).
   const openMore = () =>
     showActionMenu({
       title: row.title,
@@ -448,17 +505,21 @@ function TaskScreen({
     () => taskHistory(row, nameInLine, new Date()),
     [row, nameInLine],
   );
-  const notice = toggles.refusal ?? toggles.notice ?? deleteFailed;
+  const notice =
+    toggles.refusal ?? review.refusal?.text ?? toggles.notice ?? deleteFailed;
   const pending = toggles.pendingId === row.id;
-  const showRemovePeople = controls.removePeople && showPeople;
-  const showMore = moreRows.length > 0;
-  const markDoneText = markDoneBarLabel(
-    row.proofKind,
-    [controls.edit, showRemovePeople, showMore].filter(Boolean).length,
-  );
+  // More and the pill's words as the layout counts them, so neither changes
+  // while Send back is held out of More.
+  const markDoneText = markDoneBarLabel(row.proofKind, rounds);
+  const confirmText = confirmBarLabel(row.pointReward, rounds);
   // A member's task with nothing to do and nothing in More draws no bar.
   const barShown =
-    controls.markDone || controls.edit || showRemovePeople || showMore;
+    controls.markDone ||
+    controls.confirm ||
+    sendBackRound ||
+    editRound ||
+    showRemovePeople ||
+    showMore;
 
   return (
     <View style={styles.frame}>
@@ -617,7 +678,33 @@ function TaskScreen({
               onPress={() => void toggles.toggle(row)}
             />
           ) : null}
-          {controls.edit ? (
+          {controls.confirm ? (
+            <TaskBarPill
+              label={confirmText.label}
+              hint={review.hint ?? confirmText.hint}
+              glyph={(ink) => <CheckGlyph color={ink} />}
+              fill={accent}
+              ink={tokens.color.gold.onHouse}
+              // Its own send reads busy, not dimmed.
+              disabled={review.disabled && review.confirmingId !== row.id}
+              busy={review.confirmingId === row.id}
+              onPress={() => review.confirm(row)}
+            />
+          ) : null}
+          {sendBackRound ? (
+            <TaskBarIcon
+              label={TASK_ACTION_LABELS.reject}
+              hint={
+                review.hint ??
+                "Opens a sheet for the reason it goes back to its assignee."
+              }
+              disabled={review.disabled}
+              onPress={() => review.sendBack(row)}
+            >
+              <UndoGlyph color={tokens.color.text.foreground} />
+            </TaskBarIcon>
+          ) : null}
+          {editRound ? (
             <TaskBarIcon
               label="Edit task"
               hint="Opens a sheet to change this task."
@@ -654,6 +741,7 @@ function TaskScreen({
       ) : null}
 
       <MarkDoneHost toggle={toggles} />
+      {review.host}
 
       {editing ? (
         <NewTaskSheet

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toTaskRow, type TaskRowModel } from "./board";
 import {
+  confirmBarLabel,
   groupCopies,
   removalAllowed,
   sortCopies,
@@ -8,6 +9,7 @@ import {
   livePicks,
   markDoneBarLabel,
   removedLine,
+  taskBarLayout,
   taskMenuKeys,
   taskScreenControls,
 } from "./task-screen";
@@ -100,6 +102,9 @@ describe("taskScreenControls", () => {
       }),
     ).toEqual({
       markDone: true,
+      confirm: false,
+      confirmInMenu: false,
+      sendBack: false,
       // Their own To do: chat's card offered Start, and so do these (#5492).
       start: true,
       edit: false,
@@ -200,6 +205,164 @@ describe("taskScreenControls", () => {
     });
     expect(controls.removePeople).toBe(true);
     expect(controls.deleteForEveryone).toBe(true);
+  });
+});
+
+describe("Confirm and Send back (#5513)", () => {
+  /** A member's completion, waiting on an officer: points, no proof. */
+  const WAITING = {
+    status: "COMPLETED",
+    stored_status: "COMPLETED",
+    completed_at: "2026-11-18T09:00:00.000Z",
+  };
+  const controlsFor = (
+    overrides: Record<string, unknown>,
+    viewerId: string | null = "officer",
+    canManage = true,
+    toggleRefused = false,
+  ) =>
+    taskScreenControls({
+      row: row({ ...WAITING, ...overrides }),
+      viewerId,
+      canManage,
+      toggleRefused,
+    });
+
+  it("gives an officer both on someone else's completion, and no Mark done", () => {
+    const controls = controlsFor({});
+    expect(controls.confirm).toBe(true);
+    expect(controls.sendBack).toBe(true);
+    expect(controls.confirmInMenu).toBe(true);
+    expect(controls.markDone).toBe(false);
+    // A proof task: the screen shows the proof, a row's menu can't.
+    const proof = controlsFor({ proof_kind: "photo", point_reward: null });
+    expect(proof.confirm).toBe(true);
+    expect(proof.confirmInMenu).toBe(false);
+  });
+
+  it("gives no Confirm on the viewer's own completion (the API refuses a self-confirm), and Mark not done in Send back's place", () => {
+    const own = controlsFor({ assignee_id: "officer" });
+    expect(own.confirm).toBe(false);
+    expect(own.sendBack).toBe(false);
+    expect(own.reopen).toBe(true);
+  });
+
+  it("gives Send back alone, as chat's card does, on a completion that needed no sign-off", () => {
+    // Signed off as it was marked: nothing was paid, so it can go back.
+    const auto = controlsFor({
+      point_reward: null,
+      points_awarded: true,
+      confirmed_at: WAITING.completed_at,
+    });
+    expect(auto.sendBack).toBe(true);
+    expect(auto.confirm).toBe(false);
+    expect(auto.confirmInMenu).toBe(false);
+    // Not paid yet and needing no sign-off: nothing to confirm either.
+    const unpaid = controlsFor({ point_reward: null });
+    expect(unpaid.sendBack).toBe(true);
+    expect(unpaid.confirm).toBe(false);
+    expect(taskMenuKeys(auto)).toEqual(["sendBack", "duplicate", "delete"]);
+  });
+
+  it("gives neither without tasks:manage, once an officer confirmed it, before it's done, or while refused", () => {
+    const none = (controls: ReturnType<typeof controlsFor>) =>
+      [controls.confirm, controls.sendBack, controls.confirmInMenu].some(
+        Boolean,
+      );
+    expect(none(controlsFor({}, "officer", false))).toBe(false);
+    expect(none(controlsFor({}, null))).toBe(false);
+    expect(
+      none(
+        controlsFor({
+          points_awarded: true,
+          confirmed_at: "2026-11-18T10:00:00.000Z",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      none(
+        controlsFor({ status: "IN_PROGRESS", stored_status: "IN_PROGRESS" }),
+      ),
+    ).toBe(false);
+    // Paid without a `confirmed_at`: the ledger's flag alone shuts Confirm.
+    expect(controlsFor({ points_awarded: true }).confirm).toBe(false);
+    expect(none(controlsFor({}, "officer", true, true))).toBe(false);
+  });
+
+  it("puts Confirm then Send back first in a row's menu, Confirm only with no proof to see", () => {
+    expect(taskMenuKeys(controlsFor({}))).toEqual([
+      "confirm",
+      "sendBack",
+      "edit",
+      "reassign",
+      "duplicate",
+      "delete",
+    ]);
+    expect(
+      taskMenuKeys(controlsFor({ proof_kind: "link", point_reward: null })),
+    ).toEqual(["sendBack", "edit", "reassign", "duplicate", "delete"]);
+    // The group's row acts only as a group: no review there.
+    expect(taskMenuKeys(controlsFor({ group_id: "g1" }), "group")).toEqual([
+      "removePeople",
+      "duplicate",
+      "deleteForEveryone",
+    ]);
+  });
+
+  it("names the payout on Confirm beside two rounds, else in its hint", () => {
+    expect(confirmBarLabel(10, 2)).toEqual({
+      label: "Confirm · +10 pts",
+      hint: undefined,
+    });
+    expect(confirmBarLabel(10, 3)).toEqual({
+      label: "Confirm",
+      hint: "Awards +10 pts.",
+    });
+    expect(confirmBarLabel(null, 3)).toEqual({
+      label: "Confirm",
+      hint: undefined,
+    });
+  });
+
+  it("lays an officer's usual review out as Confirm with its payout, Send back, and Edit in More", () => {
+    const layout = taskBarLayout({
+      controls: controlsFor({}),
+      removePeople: false,
+      otherMoreRows: 1, // Delete
+    });
+    expect(layout).toEqual({
+      sendBackRound: true,
+      sendBackInMore: false,
+      editRound: false,
+      editInMore: true,
+      moreShown: true,
+      rounds: 2,
+    });
+    expect(confirmBarLabel(10, layout.rounds).label).toBe("Confirm · +10 pts");
+  });
+
+  it("keeps Send back a round until the bar holds three others, then leads More with it", () => {
+    // A group's copy: Remove people and More beside Send back; three rounds.
+    const group = taskBarLayout({
+      controls: controlsFor({ group_id: "g1" }),
+      removePeople: true,
+      otherMoreRows: 2,
+    });
+    expect(group.sendBackRound).toBe(true);
+    expect(group.rounds).toBe(3);
+    // No Confirm (no sign-off needed, not paid yet), so Edit stays a round:
+    // Edit, Remove people and More leave Send back no room.
+    const crowded = taskBarLayout({
+      controls: controlsFor({ group_id: "g1", point_reward: null }),
+      removePeople: true,
+      otherMoreRows: 2,
+    });
+    expect(crowded).toMatchObject({
+      sendBackRound: false,
+      sendBackInMore: true,
+      editRound: true,
+      rounds: 3,
+    });
   });
 });
 

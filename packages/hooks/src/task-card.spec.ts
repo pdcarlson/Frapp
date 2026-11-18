@@ -8,6 +8,7 @@ import {
   readLiveTask,
   taskDueLine,
   taskCardControls,
+  taskSendBackOpen,
   taskStatusLabel,
   canReopenOwnTask,
   viewerIsCardAssignee,
@@ -338,6 +339,41 @@ describe("taskCardControls", () => {
 
   it("gives an admin who isn't the assignee nothing before completion", () => {
     expect(taskCardControls({ live: live(), ...admin })).toEqual([]);
+  });
+});
+
+describe("taskSendBackOpen (#4635, #5513)", () => {
+  const done = {
+    stored_status: "COMPLETED",
+    completed_at: "2026-11-13T10:00:00.000Z",
+  };
+  it("is open on a completion not yet paid, whether or not it needs a sign-off", () => {
+    expect(taskSendBackOpen({ ...done, point_reward: 5 })).toBe(true);
+    expect(taskSendBackOpen({ ...done, point_reward: null })).toBe(true);
+  });
+
+  it("is open on one signed off as it was marked, where nothing was paid", () => {
+    expect(
+      taskSendBackOpen({
+        ...done,
+        points_awarded: true,
+        confirmed_at: done.completed_at,
+        point_reward: null,
+        proof_kind: "none",
+      }),
+    ).toBe(true);
+  });
+
+  it("is shut once an officer confirmed it, or before it is done", () => {
+    expect(
+      taskSendBackOpen({
+        ...done,
+        points_awarded: true,
+        confirmed_at: "2026-11-13T11:00:00.000Z",
+        point_reward: 5,
+      }),
+    ).toBe(false);
+    expect(taskSendBackOpen({ stored_status: "IN_PROGRESS" })).toBe(false);
   });
 });
 

@@ -53,6 +53,8 @@ const updateStatus = vi.fn<(input: unknown) => Promise<object>>(
 const deleteTask = vi.fn<(target: unknown) => Promise<object>>(
   async () => ({}),
 );
+const confirmTask = vi.fn<(id: string) => Promise<object>>(async () => ({}));
+const rejectTask = vi.fn<(input: unknown) => Promise<object>>(async () => ({}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -61,7 +63,25 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useTasks: () => ({ data: tasks, isSuccess: true, isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: updateStatus }),
   useDeleteTask: () => ({ mutateAsync: deleteTask, isPending: false }),
+  useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
+  useRejectTask: () => ({ mutateAsync: rejectTask, isPending: false }),
 }));
+/** `null` online; a reason while a write would be lost. */
+const connection = vi.hoisted(() => ({
+  writeBlockedReason: null as string | null,
+}));
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: connection.writeBlockedReason }),
+}));
+vi.mock("@/components/tasks/send-back-sheet", async (importOriginal) => {
+  const { createElement } = await import("react");
+  return {
+    ...(await importOriginal<
+      typeof import("@/components/tasks/send-back-sheet")
+    >()),
+    SendBackSheet: (props: object) => createElement("SendBackSheet", props),
+  };
+});
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
@@ -176,6 +196,7 @@ const sheets = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => (node.type as unknown) === "NewTaskSheet");
 
 beforeEach(() => {
+  connection.writeBlockedReason = null;
   viewer = ME;
   permissions = ["members:view"];
   tasks = [BASE];
@@ -422,5 +443,129 @@ describe("a confirmed task", () => {
     tasks = [confirmed];
     const tree = render();
     expect(rowOf(tree, "Sweep the porch").props.onLongPress).toBeUndefined();
+  });
+});
+
+describe("a completion waiting on the officer (#5513)", () => {
+  const waiting = {
+    ...BASE,
+    status: "COMPLETED",
+    stored_status: "COMPLETED",
+    completed_at: "2026-11-17T12:00:00.000Z",
+  };
+  beforeEach(() => {
+    viewer = OFFICER;
+    permissions = ["members:view", "tasks:manage"];
+    tasks = [waiting];
+  });
+
+  it("leads with Confirm and Send back, and Confirm confirms", async () => {
+    const tree = render();
+    expect(longPress(tree)).toEqual([
+      "Confirm",
+      "Send back",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+    await act(async () => {
+      pick(tree, "Confirm");
+    });
+    expect(confirmTask).toHaveBeenCalledWith("t1");
+  });
+
+  it("opens Send back's sheet, which sends through the reject route", async () => {
+    const tree = render();
+    longPress(tree);
+    pick(tree, "Send back");
+    const sheet = tree.root.find(
+      (node) => (node.type as unknown) === "SendBackSheet",
+    );
+    expect(sheet.props.keptDraft).toBe("send-back:t1");
+    await act(async () => {
+      await sheet.props.onSubmit({ comment: "Not finished" });
+    });
+    expect(rejectTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { comment: "Not finished" },
+    });
+  });
+
+  it("offers no Confirm on a task whose proof the menu can't show", () => {
+    tasks = [{ ...waiting, proof_kind: "photo", point_reward: null }];
+    expect(longPress(render())).toEqual([
+      "Send back",
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+  });
+
+  it("says a refused Confirm in the platform alert", async () => {
+    confirmTask.mockRejectedValueOnce({ statusCode: 400, message: "No" });
+    const tree = render();
+    longPress(tree);
+    await act(async () => {
+      pick(tree, "Confirm");
+    });
+    expect(Alert.alert).toHaveBeenCalledWith("Couldn't confirm the task.");
+  });
+
+  const GATE = {
+    statusCode: 403,
+    error: "Forbidden",
+    message:
+      "Chapter subscription is not active; complete checkout to use this feature.",
+  };
+
+  it("says a gate refusal on Send back once, on its sheet, and then offers no status move or review", async () => {
+    // A second task, the officer's own To do, to see Mark done withdrawn.
+    tasks = [
+      waiting,
+      { ...BASE, id: "t2", title: "Order the cups", assignee_id: OFFICER },
+    ];
+    rejectTask.mockRejectedValueOnce(GATE);
+    const tree = render();
+    longPress(tree);
+    pick(tree, "Send back");
+    const sheet = tree.root.find(
+      (node) => (node.type as unknown) === "SendBackSheet",
+    );
+    await act(async () => {
+      await expect(
+        sheet.props.onSubmit({ comment: "Not finished" }),
+      ).rejects.toBe(GATE);
+    });
+    // The sheet says it; no alert over it.
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(longPress(tree)).toEqual([
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+    expect(longPress(tree, "Order the cups")).toEqual([
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+  });
+
+  it("leaves Confirm and Send back out while a write would be lost", () => {
+    connection.writeBlockedReason = "You're offline.";
+    expect(longPress(render())).toEqual([
+      "Edit",
+      "Reassign",
+      "Duplicate",
+      "Delete",
+    ]);
+  });
+
+  it("offers neither on the officer's own completion", () => {
+    tasks = [{ ...waiting, assignee_id: OFFICER }];
+    expect(longPress(render())).not.toContain("Confirm");
   });
 });
