@@ -21,8 +21,11 @@ type Env = Record<string, unknown>;
  * replaces this default for that chapter.
  */
 const AI_SPEND_CAP_DEFAULTS_USD = {
-  AI_CHAPTER_MONTHLY_CAP_USD: 25,
-  AI_MEMBER_DAILY_CAP_USD: 2,
+  // Raised from $25 and $2 when the minutes moved to Opus (Paul,
+  // 2026-11-18): one long meeting holds about $2.70 across its parallel
+  // calls, which a $2 day refused.
+  AI_CHAPTER_MONTHLY_CAP_USD: 50,
+  AI_MEMBER_DAILY_CAP_USD: 10,
   AI_ANTHROPIC_MONTHLY_CAP_USD: 150,
   AI_GOOGLE_MONTHLY_CAP_USD: 50,
   // Transcription only (#712): about 100 hours of meetings a month at the
@@ -64,7 +67,7 @@ function capMicroUsd(env: Env, variable: CapVariable): number {
  * Staging's chapter and member defaults. Staging is where unfinished AI
  * features are tried (Paul, 2026-11-15), and its chapters are the team's:
  * on 2026-11-18 Paul's was refused its minutes after one long meeting, since
- * Opus holds about $0.67 a call up front against a $2 day. These are wide
+ * Opus holds about $0.67 a call up front against what was then a $2 day. These are wide
  * enough for a day of testing long meetings and still bound one member, so
  * a loop can't spend the provider month every staging chapter shares.
  */

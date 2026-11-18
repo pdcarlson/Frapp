@@ -3,8 +3,8 @@ import { aiSpendCaps, validateAiSpendEnv } from './ai-spend-config';
 describe('ai-spend-config', () => {
   it('uses the defaults when nothing is set', () => {
     expect(aiSpendCaps('anthropic', {})).toEqual({
-      chapterMonthlyMicroUsd: 25_000_000,
-      memberDailyMicroUsd: 2_000_000,
+      chapterMonthlyMicroUsd: 50_000_000,
+      memberDailyMicroUsd: 10_000_000,
       platformMonthlyMicroUsd: 150_000_000,
     });
     expect(aiSpendCaps('google', {}).platformMonthlyMicroUsd).toBe(50_000_000);
@@ -66,8 +66,8 @@ describe('ai-spend-config', () => {
       ['a laptop', { SUPABASE_URL: 'http://127.0.0.1:54321' }],
     ])('keeps the sold defaults on %s', (_where, env) => {
       expect(aiSpendCaps('anthropic', env)).toMatchObject({
-        chapterMonthlyMicroUsd: 25_000_000,
-        memberDailyMicroUsd: 2_000_000,
+        chapterMonthlyMicroUsd: 50_000_000,
+        memberDailyMicroUsd: 10_000_000,
       });
     });
   });
