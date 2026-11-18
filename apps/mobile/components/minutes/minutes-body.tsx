@@ -6,7 +6,9 @@ import {
   MEETING_COPY,
   MEETING_LIST_COPY,
   meetingDueLabel,
+  meetingSectionHasContent,
   meetingSectionLabel,
+  meetingTabledFromLabel,
   meetingVoteLine,
   parseMinutesNotes,
   shownMeetingSections,
@@ -85,9 +87,7 @@ function hasSomething(
   content: MeetingContent,
 ): boolean {
   if (key === "attendees") return attendeeGroups(meeting).length > 0;
-  if (key === "decisions") return content.decisions.length > 0;
-  if (key === "action_items") return content.action_items.length > 0;
-  return content[key].trim().length > 0;
+  return meetingSectionHasContent(content, key);
 }
 
 type Styles = ReturnType<typeof createStyles>;
@@ -161,6 +161,26 @@ function Section({
               <View style={styles.itemText}>
                 <Text style={styles.text}>{item.text}</Text>
                 {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+              </View>
+            </View>
+          );
+        })}
+      </>
+    );
+  }
+  // What was put off (#5522), each with where it was first tabled when an
+  // earlier meeting did, as web's TabledView draws it.
+  if (sectionKey === "tabled") {
+    return (
+      <>
+        {content.tabled.map((item, index) => {
+          const from = meetingTabledFromLabel(item);
+          return (
+            <View key={index} style={styles.item}>
+              <Text style={styles.bullet}>{"•"}</Text>
+              <View style={styles.itemText}>
+                <Text style={styles.text}>{item.text}</Text>
+                {from ? <Text style={styles.meta}>{from}</Text> : null}
               </View>
             </View>
           );

@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsISO8601,
   IsNumber,
   IsObject,
   IsOptional,
@@ -34,6 +35,8 @@ import {
   MEETING_RECORDING_STATUSES,
   MEETING_SECTION_KEYS,
   MEETING_STATUSES,
+  MEETING_TABLED_MAX_ITEMS,
+  MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_TYPES,
   MEETING_VOTE_MAX,
@@ -115,6 +118,46 @@ export class MeetingActionItemDto {
   due_date: string | null;
 }
 
+/** A matter the meeting tabled (#5522). */
+export class MeetingTabledItemDto {
+  @ApiProperty({ maxLength: MEETING_ITEM_TEXT_MAX_LENGTH })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(MEETING_ITEM_TEXT_MAX_LENGTH)
+  text: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The minutes that first tabled it; null when these minutes did.',
+  })
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID()
+  first_meeting_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: "That meeting's start; null with first_meeting_id.",
+  })
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601({ strict: true })
+  first_start_time: string | null;
+
+  @ApiProperty({
+    minimum: 1,
+    maximum: MEETING_TABLED_MAX_TIMES,
+    description: 'How many meetings have tabled it, this one included.',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(MEETING_TABLED_MAX_TIMES)
+  times: number;
+}
+
 /** Every section of the minutes, as a read returns them. */
 export class MeetingContentDto {
   @ApiProperty({
@@ -127,6 +170,11 @@ export class MeetingContentDto {
   @ApiProperty({ type: [MeetingDecisionDto] }) decisions: MeetingDecisionDto[];
   @ApiProperty({ type: [MeetingActionItemDto] })
   action_items: MeetingActionItemDto[];
+  @ApiProperty({
+    type: [MeetingTabledItemDto],
+    description: 'What the meeting tabled. Empty on minutes from before it.',
+  })
+  tabled: MeetingTabledItemDto[];
   @ApiProperty() officer_reports: string;
   @ApiProperty() old_business: string;
   @ApiProperty() new_business: string;
@@ -174,6 +222,17 @@ export class MeetingContentPatchDto {
   @ValidateNested({ each: true })
   @Type(() => MeetingActionItemDto)
   action_items?: MeetingActionItemDto[];
+
+  @ApiPropertyOptional({
+    type: [MeetingTabledItemDto],
+    maxItems: MEETING_TABLED_MAX_ITEMS,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MEETING_TABLED_MAX_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => MeetingTabledItemDto)
+  tabled?: MeetingTabledItemDto[];
 
   @ApiPropertyOptional({ maxLength: MEETING_TEXT_MAX_LENGTH })
   @IsOptional()

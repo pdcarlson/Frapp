@@ -239,6 +239,10 @@ export class ReadMinutesTool implements AgentReadTool<Args> {
             return `Action item ${facts.join(', ')}: ${flat(item.text, ITEM_TEXT_MAX)}`;
           })
           .join('\n');
+      case 'tabled':
+        return content.tabled
+          .map((item) => `Tabled: ${flat(item.text, ITEM_TEXT_MAX)}`)
+          .join('\n');
       default:
         return content[key].trim();
     }

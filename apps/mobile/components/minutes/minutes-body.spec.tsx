@@ -106,3 +106,39 @@ describe("MinutesBody TL;DR", () => {
     expect(text).toContain("The chapter met.");
   });
 });
+
+describe("MinutesBody tabled (#5522)", () => {
+  it("lists what was tabled, with a carried item's first date and count", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MinutesBody
+            meeting={
+              {
+                sections: [...DEFAULT_MEETING_SECTIONS],
+                attendees: null,
+              } as unknown as MeetingMinutes
+            }
+            content={{
+              ...EMPTY_MEETING_CONTENT,
+              tabled: [
+                {
+                  text: "Rush shirts",
+                  first_meeting_id: "33333333-3333-4333-8333-333333333333",
+                  first_start_time: new Date(2026, 10, 3, 19).toISOString(),
+                  times: 3,
+                },
+              ],
+            }}
+            nameFor={() => null}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const text = screenText(tree);
+    expect(text).toContain("Tabled");
+    expect(text).toContain("Rush shirts");
+    expect(text).toContain("3rd time");
+  });
+});

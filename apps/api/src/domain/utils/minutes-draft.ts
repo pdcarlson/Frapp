@@ -5,6 +5,7 @@ import {
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_SECTIONS,
+  MEETING_TABLED_MAX_ITEMS,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_TEXT_SECTIONS,
   MEETING_VOTE_MAX,
@@ -13,6 +14,7 @@ import {
   meetingTypeLabel,
   type MeetingActionItem,
   type MeetingContent,
+  type MeetingTabledItem,
   type MeetingDecision,
   type MeetingDraftConflict,
   type MeetingDraftOutput,
@@ -189,6 +191,8 @@ const SECTION_GUIDE: Readonly<Record<string, string>> = {
     'decisions: one entry per outcome the meeting settled: what was approved, rejected, chosen, elected, set or agreed, with the substance (the amount, the conditions, the person, the date). Never a procedural step (see the rules).',
   action_items:
     'action_items: one entry per thing someone agreed to do, every one of them, small ones included.',
+  tabled:
+    'tabled: one entry per matter the meeting tabled, postponed or pushed to a later meeting ("let\u2019s table this", "push it to next week", "come back to it next cabinet"): text names the matter in a few words, as it would be written on the next agenda ("Formal budget"), and quote is the line where it was put off, copied as a decision\u2019s quote is. A matter the meeting settled is not tabled, even if it was put off earlier in the meeting.',
   officer_reports:
     'officer_reports: what each officer reported, one officer per line, led by their office.',
   old_business: 'old_business: items carried over from an earlier meeting.',
@@ -566,6 +570,29 @@ export function verifyMinutesDraft(
   }
   if (wants('decisions')) content.decisions = decisions;
   if (wants('action_items')) content.action_items = actionItems;
+  if (wants('tabled')) {
+    // What was put off, each kept only with its line in a source (#5522),
+    // each matter once.
+    const seen = new Set<string>();
+    const tabled: MeetingTabledItem[] = [];
+    for (const item of output.tabled ?? []) {
+      const text = clamp(item.text, MEETING_ITEM_TEXT_MAX_LENGTH);
+      const key = text.toLowerCase();
+      if (!text || seen.has(key)) continue;
+      if (!locate(item.quote, item.source, sources)) {
+        leftOut += 1;
+        continue;
+      }
+      seen.add(key);
+      tabled.push({
+        text,
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      });
+    }
+    content.tabled = tabled.slice(0, MEETING_TABLED_MAX_ITEMS);
+  }
 
   // Last meeting's action items and the standing reports, where each stands
   // tonight: the model's reading only with a line of a source, and in
@@ -853,6 +880,7 @@ function withRecoveredQuotes(
     ...output,
     decisions: output.decisions.map(fix),
     action_items: output.action_items.map(fix),
+    tabled: (output.tabled ?? []).map(fix),
     conflicts: output.conflicts?.map((conflict) => ({
       ...conflict,
       versions: conflict.versions.map(fix),

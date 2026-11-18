@@ -4,6 +4,7 @@ import {
   type MeetingType,
   type MeetingVote,
 } from "./meetings";
+import { ordinal } from "./recurrence";
 
 /**
  * Words the minutes screens share, on web and on the phone, so the two never
@@ -51,6 +52,23 @@ export function meetingDueLabel(
   if (!year || !month || !day) return "";
   return meetingDayLabel(new Date(year, month - 1, day, 12).toISOString(), now);
 }
+
+/**
+ * Where a tabled matter came from (#5522): "Tabled from Tuesday, November 11
+ * · 2nd time", or nothing when these minutes tabled it first.
+ */
+export function meetingTabledFromLabel(
+  item: { first_start_time: string | null; times: number },
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(item.first_start_time, now);
+  const parts = [
+    day ? `Tabled from ${day}` : "",
+    item.times > 1 ? `${ordinal(item.times)} time` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
 
 export function meetingSectionLabel(key: MeetingSectionKey): string {
   return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;

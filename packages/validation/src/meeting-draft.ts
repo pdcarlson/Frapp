@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v7";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v8";
 
 const DueDate = z
   .string()
@@ -69,6 +69,17 @@ export const MeetingDraftOutputSchema = z.object({
       /** The owner's full name as the roster writes it, or null. */
       owner: z.string().nullable(),
       due_date: DueDate,
+      quote: z.string(),
+      source: z.string().optional(),
+    }),
+  ),
+  /**
+   * Matters the meeting tabled (#5522), each with the line where it was
+   * tabled, kept only when that line is in a source, as a decision is.
+   */
+  tabled: z.array(
+    z.object({
+      text: z.string(),
       quote: z.string(),
       source: z.string().optional(),
     }),

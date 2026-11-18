@@ -256,6 +256,9 @@ export function applyReview(
     tldr: reviewed.tldr,
     decisions: dropProcedure(decisions),
     action_items: actionItems,
+    // What was tabled is read by the first pass, from the sources, and
+    // passes through, as its conflicts do.
+    tabled: parts.flatMap((part) => part.tabled ?? []),
     open_questions: reviewed.open_questions.slice(0, MEETING_DRAFT_GAPS_MAX),
     conflicts: parts.flatMap((part) => part.conflicts ?? []),
   };

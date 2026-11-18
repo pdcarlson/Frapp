@@ -68,6 +68,11 @@ export const MEETING_SECTIONS = [
   { key: "announcements", label: "Announcements", defaultOn: true },
   { key: "decisions", label: "Decisions", defaultOn: true },
   { key: "action_items", label: "Action items", defaultOn: true },
+  // What the meeting put off to a later one (#5522; Paul, 2026-11-18: "it
+  // should keep track of what items are tabled"), for a later meeting's
+  // agenda to pick up (#5534). Empty unless something was tabled, so it
+  // reads only where it has something.
+  { key: "tabled", label: "Tabled", defaultOn: true },
   // The notes themselves: every topic with its detail. Always on, because
   // minutes without them lose what was said (Paul, 2026-11-17: "a 7-minute
   // meeting gets distilled into one sentence ... there's zero detail").
@@ -92,11 +97,13 @@ export const DEFAULT_MEETING_SECTIONS: readonly MeetingSectionKey[] =
 /**
  * Sections every chapter's minutes carry, whatever its template says: the
  * TL;DR is what most members read (Paul, 2026-11-18, #5523: always on, so a
- * template saved before it still gets one), and the notes by topic are what
- * minutes are for, so no switch turns either off.
+ * template saved before it still gets one), what was tabled has to be found
+ * by the next meeting (#5522), and the notes by topic are what minutes are
+ * for, so no switch turns any of them off.
  */
 export const ALWAYS_MEETING_SECTIONS: readonly MeetingSectionKey[] = [
   "tldr",
+  "tabled",
   "discussion_log",
 ];
 
@@ -171,6 +178,27 @@ export const MeetingActionItemSchema = z.object({
     .nullable(),
 });
 
+/** The most matters one meeting tables. */
+export const MEETING_TABLED_MAX_ITEMS = 30;
+/** How many meetings in a row can table the same matter, as counted. */
+export const MEETING_TABLED_MAX_TIMES = 99;
+
+/**
+ * A matter the meeting tabled (#5522): what it is, in a few words a member
+ * would put on an agenda, and, when an earlier meeting tabled it first,
+ * which one and when, so it keeps its original date however often it is
+ * tabled again.
+ */
+export const MeetingTabledItemSchema = z.object({
+  text: z.string().trim().min(1).max(MEETING_ITEM_TEXT_MAX_LENGTH),
+  /** The minutes that first tabled it; null when these minutes did. */
+  first_meeting_id: z.string().uuid().nullable(),
+  /** That meeting's start; null with `first_meeting_id`. */
+  first_start_time: z.string().datetime({ offset: true }).nullable(),
+  /** How many meetings have tabled it, this one included. */
+  times: z.number().int().min(1).max(MEETING_TABLED_MAX_TIMES),
+});
+
 const sectionText = z.string().max(MEETING_TEXT_MAX_LENGTH);
 
 /**
@@ -183,6 +211,7 @@ export const MeetingContentSchema = z.object({
   announcements: sectionText,
   decisions: z.array(MeetingDecisionSchema).max(MEETING_LIST_MAX_ITEMS),
   action_items: z.array(MeetingActionItemSchema).max(MEETING_LIST_MAX_ITEMS),
+  tabled: z.array(MeetingTabledItemSchema).max(MEETING_TABLED_MAX_ITEMS),
   officer_reports: sectionText,
   old_business: sectionText,
   new_business: sectionText,
@@ -192,6 +221,7 @@ export const MeetingContentSchema = z.object({
 export type MeetingVote = z.infer<typeof MeetingVoteSchema>;
 export type MeetingDecision = z.infer<typeof MeetingDecisionSchema>;
 export type MeetingActionItem = z.infer<typeof MeetingActionItemSchema>;
+export type MeetingTabledItem = z.infer<typeof MeetingTabledItemSchema>;
 export type MeetingContent = z.infer<typeof MeetingContentSchema>;
 
 export const EMPTY_MEETING_CONTENT: MeetingContent = Object.freeze({
@@ -200,6 +230,7 @@ export const EMPTY_MEETING_CONTENT: MeetingContent = Object.freeze({
   announcements: "",
   decisions: [],
   action_items: [],
+  tabled: [],
   officer_reports: "",
   old_business: "",
   new_business: "",
@@ -232,6 +263,10 @@ export function readMeetingContent(value: unknown): MeetingContent {
     announcements: text("announcements"),
     decisions: list("decisions", MeetingDecisionSchema),
     action_items: list("action_items", MeetingActionItemSchema),
+    tabled: list("tabled", MeetingTabledItemSchema).slice(
+      0,
+      MEETING_TABLED_MAX_ITEMS,
+    ),
     officer_reports: text("officer_reports"),
     old_business: text("old_business"),
     new_business: text("new_business"),
@@ -247,6 +282,7 @@ export function meetingSectionHasContent(
   if (key === "attendees") return false;
   if (key === "decisions") return content.decisions.length > 0;
   if (key === "action_items") return content.action_items.length > 0;
+  if (key === "tabled") return content.tabled.length > 0;
   return content[key].trim().length > 0;
 }
 
