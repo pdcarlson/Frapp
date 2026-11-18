@@ -131,6 +131,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Opening the app now shows the Frapp logo until your chats are ready, then goes straight to them instead of grey placeholder rows.",
       "Adding agenda items to an event keeps the box you type in, and the item you just added, above the keyboard.",
       "While a recording turns into minutes, the step under way now says what it is doing, such as Drafting, with a spinner.",
+      "Tap the mic in Ask Frapp to talk instead of type: your words land in the box tidied up, without the ums and with punctuation, ready to edit and send.",
     ],
   },
   {
