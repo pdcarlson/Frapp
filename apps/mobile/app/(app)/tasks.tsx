@@ -1,9 +1,4 @@
-import {
-  describeLoadFailure,
-  errorCopy,
-  MemberFacingError,
-} from "@repo/hooks/error-copy";
-import { statusOf } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   Fragment,
   useCallback,
@@ -13,17 +8,10 @@ import {
   useState,
 } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import {
-  AccessibilityInfo,
-  AppState,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
-  useChapterRoster,
   useCurrentChapter,
   useCurrentUser,
   useEvents,
@@ -31,14 +19,11 @@ import {
   useMyPoints,
   usePermissionList,
   useTasks,
-  useUpdateTaskStatus,
   useViewerUserId,
   MY_TASKS_GROUPS,
   MY_TASKS_GROUP_LABELS,
-  type TaskStatus,
 } from "@repo/hooks";
 import { nextUpLine } from "@repo/formatting";
-import { memberLabel } from "@repo/hooks/display-names";
 import { canAll, isModuleEnabled } from "@repo/validation";
 import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
@@ -64,32 +49,18 @@ import {
 import { GridLine, toGridChunks } from "@/components/grid-line";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { useListLayout } from "@/lib/list-layout";
-import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
-import type { TaskEditTarget } from "@/lib/tasks/create-task";
-import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
+import { UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import {
-  rowIsSentBack,
   selectTaskRows,
   toTaskRow,
   type TaskRowModel,
 } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
-import { checkboxSequence } from "@/lib/tasks/transitions";
-import {
-  taskProofRefusal,
-  taskStatusGateRefusal,
-} from "@/lib/tasks/status-refusal";
-import { markDoneAsks } from "@/lib/tasks/task-photos";
-import {
-  MARK_DONE_ALREADY_DONE,
-  MarkDoneSheet,
-  type CompletionProof,
-} from "@/components/tasks/mark-done-sheet";
-import { successHaptic } from "@/lib/haptics";
+import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -113,34 +84,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Only the checkbox changes a task, and it can be taken back
  *
- * A tap on a row opens the task's detail sheet; only the checkbox completes it
+ * A tap on a row pushes the task's own screen (`task-details.tsx`, #5492,
+ * where the detail sheet used to rise); only the checkbox completes it here
  * (owner audit 2026-11-06, P6.1). Completing floats "Marked done · Undo" over
- * the tab bar for a few seconds, and the box itself unchecks until an officer
+ * the board for a few seconds, and the box itself unchecks until an officer
  * confirms: the API lets the assignee move their own unconfirmed completion
- * back to `IN_PROGRESS` (`spec/behavior/tasks.md` § Assignee Actions).
- *
- * ## Proof first, where the task asks for it
- *
- * On a task that asks for a photo or a link, or one an officer sent back,
- * the box and the sheet's Mark done open Mark done's sheet instead
- * (`components/tasks/mark-done-sheet.tsx`, #4635), which takes the proof or
- * a reply and sends it with the `COMPLETED` write. A direct Mark done the
- * server refuses for want of proof (the task changed since it was read)
- * opens the same sheet with the reason in it.
- *
- * ## The checkbox is two writes, not one
- *
- * The server's assignee transition table has no `TODO → COMPLETED` edge, so
- * completing a fresh task walks `IN_PROGRESS` first. `nextTapSequence` owns that
- * ladder; this screen only awaits it in order, because both writes are
- * compare-and-set against the stored status and firing them in parallel loses
- * the race by construction.
- *
- * Each write is individually optimistic and individually rolls back inside
- * `useUpdateTaskStatus`. The honest consequence: a `TODO` row's box fills after
- * about one round trip rather than instantly, and if the second write fails
- * after the first succeeds the task genuinely sits at `IN_PROGRESS` — which the
- * row then draws as started. That is a true rendering of server state.
+ * back to `IN_PROGRESS` (`spec/behavior/tasks.md` § Assignee Actions). The
+ * box's writes, proof sheet and refusals are `useTaskToggle`
+ * (`lib/tasks/use-task-toggle.tsx`), which the task screen's Mark done shares.
  *
  * ## Why the board filters by assignee
  *
@@ -149,9 +100,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * rows — see its header. An officer's review queue is a different surface with a
  * different shape, and is not this slice.
  */
-const TAKE_BACK_FAILED =
-  "Couldn't mark that task not done. An officer may have confirmed it already.";
-const MARK_DONE_FAILED = "Couldn't mark that task done. Try again.";
 
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
@@ -177,7 +125,6 @@ export default function TasksScreen() {
     pointsQuery,
     leaderboardQuery,
   ]);
-  const updateStatus = useUpdateTaskStatus();
 
   // `canAll` from @repo/validation, not a bare `includes` — an owner's grant is the
   // wildcard `*`, so a membership test would hide the control from exactly the
@@ -190,10 +137,10 @@ export default function TasksScreen() {
   // One clock for the whole render, so the two sections cannot straddle a tick
   // and disagree about what "today" means — but re-read whenever the member
   // comes back: to the screen (a navigation focus, here) or to the app on this
-  // tab (the AppState listener below, which `useFocusEffect` never sees). A tab
-  // is never unmounted and the JS context survives days of backgrounding, so a
-  // mount-only clock would keep bucketing by the day the app was opened, and
-  // a task due today would sit under the wrong day.
+  // screen (`onActive` on `useTaskToggle`'s AppState listener below, which
+  // `useFocusEffect` never sees). The JS context survives days of
+  // backgrounding, so a mount-only clock would keep bucketing by the day the
+  // app was opened, and a task due today would sit under the wrong day.
   const [now, setNow] = useState(() => new Date());
   useFocusEffect(
     useCallback(() => {
@@ -230,230 +177,9 @@ export default function TasksScreen() {
     [leaderboardQuery.data, viewerUserId],
   );
 
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  /**
-   * The member copy for a gate refusal on a status toggle, or `null` (#2710).
-   *
-   * `PATCH /v1/tasks/:id/status` is refused permanently, until an officer
-   * acts, by two gates: the subscription gate (the controller has no
-   * `@FreeTier`, so every brand-new `incomplete` chapter hits it) and the
-   * module gate (`@RequireModule('tasks')` on the whole controller). The
-   * hook's optimistic write reverts either way, so without this the box
-   * filled and emptied with no word of why, and every retap did it again.
-   * While it is set the board says why and offers no toggle. The copy is the
-   * latch, so the sentence and the withdrawn toggles can't disagree.
-   */
-  const [refusal, setRefusal] = useState<string | null>(null);
-  // Cleared when the member comes back, because a tab is never unmounted: an
-  // officer may have sorted the gate out since, and returning is a deliberate
-  // second look rather than a retry in place. Back to the screen is a
-  // navigation focus; back to the app on this same tab is an AppState change,
-  // which `useFocusEffect` never sees. Without the second, a member who
-  // reopens the app after the officer's fix finds the board still refused,
-  // and nothing on it says to leave the tab and return.
-  useFocusEffect(
-    useCallback(() => {
-      setRefusal(null);
-      return undefined;
-    }, []),
-  );
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next !== "active") return;
-      setRefusal(null);
-      // The clock too (see `now` above): a member who leaves the app on this
-      // tab overnight comes back to today's board and today's chips.
-      setNow(new Date());
-    });
-    return () => subscription.remove();
-  }, []);
-  /**
-   * Ids with a sequence in flight.
-   *
-   * A ref rather than the `pendingId` state because two taps in one frame both
-   * observe the pre-render state value: the second would start its own sequence
-   * against an already-advanced row, collect a guaranteed 400 from the server's
-   * compare-and-set, and — worse — clear the busy flag while the first sequence
-   * was still mid-write.
-   */
-  const inFlight = useRef<Set<string>>(new Set());
-
-  /**
-   * The task the undo bar offers to take back, while its window runs. Cleared
-   * by its own timer, by Undo, or by the box unchecking the same task.
-   */
-  const [undo, setUndo] = useState<{
-    id: string;
-    message: string;
-    key: number;
-  } | null>(null);
-  useEffect(() => {
-    if (!undo) return undefined;
-    const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS);
-    return () => clearTimeout(timer);
-  }, [undo]);
-
-  /**
-   * A one-off line for a take-back that didn't land: the bar has gone by
-   * then, and without it the row just stays done with no word of why. Not a
-   * latch like `refusal`: the next tap, or coming back, clears it.
-   */
-  const [notice, setNotice] = useState<string | null>(null);
-  useFocusEffect(
-    useCallback(() => {
-      setNotice(null);
-      return undefined;
-    }, []),
-  );
-
-  /**
-   * Sends one sequence for one task, in order, guarded against a double tap.
-   * Resolves to what happened: a gate refusal has already said why.
-   */
-  const run = useCallback(
-    async (
-      id: string,
-      sequence: readonly TaskStatus[],
-      /** Proof and a reply, sent with the `COMPLETED` write (#4635). */
-      proof?: CompletionProof,
-    ): Promise<{
-      outcome: "ok" | "gate" | "failed" | "skipped";
-      error?: unknown;
-    }> => {
-      if (sequence.length === 0) return { outcome: "skipped" };
-      if (inFlight.current.has(id)) return { outcome: "skipped" };
-
-      inFlight.current.add(id);
-      setPendingId(id);
-      try {
-        for (const status of sequence) {
-          await updateStatus.mutateAsync({
-            id,
-            body: status === "COMPLETED" ? { status, ...proof } : { status },
-          });
-        }
-        return { outcome: "ok" };
-      } catch (error) {
-        // The hook has already reverted its own write and invalidated, so the
-        // row redraws at whatever the server actually holds. A gate refusal
-        // also says why and withdraws the toggles; anything else, a permission
-        // 403 or an officer's confirm landing first included, stays the quiet
-        // revert it always was.
-        const gate = taskStatusGateRefusal(error);
-        if (gate) setRefusal(gate);
-        return { outcome: gate ? "gate" : "failed", error };
-      } finally {
-        inFlight.current.delete(id);
-        setPendingId(null);
-      }
-    },
-    [updateStatus],
-  );
-
-  /**
-   * Mark done's sheet (#4635), for the task it is open on: a task that asks
-   * for a photo or a link, or was sent back, takes it there before it is
-   * marked done. `problem` is the line it opens with when a direct Mark done
-   * was refused for want of proof (the task changed since it was read).
-   */
-  const [marking, setMarking] = useState<{
-    id: string;
-    problem: string | null;
-  } | null>(null);
-
-  /** Felt and offered once a completion lands: the haptic and the undo. */
-  const completed = useCallback((id: string) => {
-    successHaptic();
-    setUndo((open) => ({
-      id,
-      message: "Marked done",
-      // A new key per completion, so a second one inside the window is
-      // announced again even though the words are the same.
-      key: (open?.key ?? 0) + 1,
-    }));
-  }, []);
-
-  const toggle = useCallback(
-    async (row: TaskRowModel) => {
-      const sequence = checkboxSequence(row);
-      const completes = sequence[sequence.length - 1] === "COMPLETED";
-      setNotice(null);
-      // Unchecking is its own undo: the bar for this task has nothing left to
-      // offer. Cleared before the write so it never sits over the change.
-      if (!completes) setUndo((open) => (open?.id === row.id ? null : open));
-      // A task that asks for proof, or was sent back, takes it in Mark
-      // done's sheet first (#4635); any other is marked done at once.
-      if (
-        completes &&
-        markDoneAsks({ proofKind: row.proofKind, sentBack: rowIsSentBack(row) })
-      ) {
-        setMarking({ id: row.id, problem: null });
-        return;
-      }
-      const { outcome, error } = await run(row.id, sequence);
-      // The confirming action (`spec/ui/mobile/README.md` § Native-feel
-      // rules), felt once the server holds the task done. Only a sequence
-      // that completes the task earns it, and offers the undo.
-      if (outcome === "ok" && completes) completed(row.id);
-      // The task asks for proof the board didn't know of (an officer changed
-      // it since it was read): its sheet asks for it rather than the box
-      // reverting with no word.
-      const proofProblem = taskProofRefusal(error);
-      if (proofProblem) setMarking({ id: row.id, problem: proofProblem });
-      if (outcome === "failed" && !completes) setNotice(TAKE_BACK_FAILED);
-      // A 400 is the server refusing this Mark done for a reason it states,
-      // such as the task changing under the member (#4635's compare-and-set:
-      // "This task changed…"), so it is said rather than the box reverting
-      // in silence. Any other failure keeps the quiet revert and the retap.
-      else if (
-        outcome === "failed" &&
-        !proofProblem &&
-        statusOf(error) === 400
-      ) {
-        setNotice(
-          errorCopy(error, MARK_DONE_FAILED, { serverWritesForMembers: true }),
-        );
-      }
-    },
-    [run, completed],
-  );
-
-  /** Mark done from its sheet, proof attached. Rejects for the sheet to say why. */
-  const completeWithProof = useCallback(
-    async (row: TaskRowModel, proof: CompletionProof) => {
-      const sequence = checkboxSequence(row);
-      // Already done (on another device, say): nothing left to send, and the
-      // sheet says so rather than closing as if it had sent the proof.
-      if (sequence[sequence.length - 1] !== "COMPLETED") {
-        throw new MemberFacingError(MARK_DONE_ALREADY_DONE);
-      }
-      const { outcome, error } = await run(row.id, sequence, proof);
-      if (outcome === "ok") {
-        completed(row.id);
-        return;
-      }
-      if (outcome !== "skipped") throw error;
-    },
-    [run, completed],
-  );
-
-  const takeBack = useCallback(
-    async (id: string) => {
-      setUndo(null);
-      setNotice(null);
-      // Most often refused because an officer confirmed it inside the
-      // window: the bar has gone, so say so rather than leave it done.
-      if ((await run(id, ["IN_PROGRESS"])).outcome === "failed") {
-        setNotice(TAKE_BACK_FAILED);
-      }
-    },
-    [run],
-  );
-
-  // The detail sheet. It holds the id, not the row, so it redraws with the
-  // board as a write lands.
-  const sheetRef = useRef<BottomSheetModal>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The task a row opens and the one Mark done's sheet is open on, read off
+  // the board, or off the same query for a task the board has let go of
+  // (finished more than a week ago).
   const findRow = useCallback(
     (id: string | null): TaskRowModel | null => {
       if (id === null) return null;
@@ -461,9 +187,6 @@ export default function TasksScreen() {
         (group) => board.groups[group],
       ).find((row) => row.id === id);
       if (onBoard) return onBoard;
-      // Opened from the Events calendar (#4144), which also shows a task the
-      // board has let go of (finished more than a week ago): read it off the
-      // same query rather than open an empty sheet.
       const raw = Array.isArray(tasksQuery.data)
         ? (tasksQuery.data as unknown[]).find(
             (row) =>
@@ -476,60 +199,57 @@ export default function TasksScreen() {
     },
     [board, tasksQuery.data],
   );
-  const openRow = useMemo(() => findRow(openId), [findRow, openId]);
-  // Mark done's sheet reads its task off the board too, so a refetch that
-  // finds the task now asks for a photo redraws the sheet asking for one.
-  const markingRow = useMemo(
-    () => findRow(marking?.id ?? null),
-    [findRow, marking],
+  // The box's writes, shared with the task screen's Mark done. Coming back
+  // to the app on this screen also re-reads the clock (see `now` above): a
+  // member who leaves the app here overnight comes back to today's board.
+  const toggles = useTaskToggle(findRow, {
+    onActive: () => setNow(new Date()),
+  });
+  const { pendingId, refusal, notice, undo, canToggle, toggle, takeBack } =
+    toggles;
+
+  // A tap on a row pushes the task's own screen (#5492).
+  const router = useRouter();
+  const openTask = useCallback(
+    (id: string) => router.push({ pathname: "/task-details", params: { id } }),
+    [router],
   );
 
-  // `/tasks?task=<id>`: the Events calendar's way in. Opens that task's
-  // sheet once its row is readable, then clears the param so coming back to
-  // the tab doesn't open it again.
+  // `/tasks?task=<id>`: a task push's way in (`lib/notifications/targets.ts`).
+  // Pushes that task's screen once the board's read holds it, then clears the
+  // param so coming back to the board doesn't open it again. Only a task the
+  // viewer can read opens: a push (Overdue also reaches the assigner) can
+  // name one their read doesn't hold, such as an assigner who has since lost
+  // tasks:manage, or a task deleted since. They land on the board instead.
   const { task: linkedTaskId } = useLocalSearchParams<{ task?: string }>();
-  const router = useRouter();
   const linked =
     typeof linkedTaskId === "string" && linkedTaskId !== ""
       ? linkedTaskId
       : null;
-  const [openedLink, setOpenedLink] = useState<string | null>(null);
-  // Only a task the viewer can read opens: a push (Overdue also reaches the
-  // assigner) can name one their read doesn't hold, such as an assigner who
-  // has since lost tasks:manage, and the sheet would open empty. They land on
-  // the board instead, as before.
-  if (linked !== null && tasksQuery.isSuccess && openedLink !== linked) {
-    setOpenedLink(linked);
-    const readable =
-      Array.isArray(tasksQuery.data) &&
-      (tasksQuery.data as unknown[]).some(
-        (row) =>
-          !!row &&
-          typeof row === "object" &&
-          (row as { id?: unknown }).id === linked,
-      );
-    if (readable) setOpenId(linked);
+  const [openedLink, setOpenedLink] = useState<{
+    id: string;
+    readable: boolean;
+  } | null>(null);
+  if (linked !== null && tasksQuery.isSuccess && openedLink?.id !== linked) {
+    setOpenedLink({
+      id: linked,
+      readable:
+        Array.isArray(tasksQuery.data) &&
+        (tasksQuery.data as unknown[]).some(
+          (row) =>
+            !!row &&
+            typeof row === "object" &&
+            (row as { id?: unknown }).id === linked,
+        ),
+    });
   } else if (linked === null && openedLink !== null) {
     setOpenedLink(null);
   }
   useEffect(() => {
     if (openedLink === null) return;
-    if (openId === openedLink) sheetRef.current?.present();
     router.setParams({ task: undefined });
-    // Once per link: `openId` is read as the link set it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openedLink, router]);
-  const rosterQuery = useChapterRoster();
-  const createdBy = openRow?.createdBy ?? null;
-  const assignedBy = useMemo(() => {
-    if (!createdBy) return null;
-    if (createdBy === viewerUserId) return "You";
-    const match = (rosterQuery.data ?? []).find(
-      (member) => member.user_id === createdBy,
-    );
-    // The shared fallback, so a creator with no name reads as on web.
-    return memberLabel(match?.display_name, createdBy);
-  }, [createdBy, rosterQuery.data, viewerUserId]);
+    if (openedLink.readable) openTask(openedLink.id);
+  }, [openedLink, router, openTask]);
 
   // New task (#4610): the board is pushed, so the tab bar's + isn't under it
   // and the board draws its own, as Service hours draws Log hours. Mounted on
@@ -554,61 +274,19 @@ export default function TasksScreen() {
       return undefined;
     }, []),
   );
-  // An officer's edit (#4296): the New task sheet, opened on the task. One
-  // sheet per task edited, mounted for the edit and gone once it closes, so
-  // its fields always start from the task as it stands.
-  const editRef = useRef<BottomSheetModal>(null);
-  const [editing, setEditing] = useState<TaskEditTarget | null>(null);
-  useEffect(() => {
-    if (editing) editRef.current?.present();
-  }, [editing]);
-  const startEdit =
-    canManageTasks &&
-    openRow &&
-    !openRow.pointsAwarded &&
-    openRow.assigneeId &&
-    openRow.dueDay
-      ? () => {
-          sheetRef.current?.dismiss();
-          setEditing({
-            id: openRow.id,
-            title: openRow.title,
-            assigneeId: openRow.assigneeId!,
-            dueDay: openRow.dueDay!,
-            dueAt: openRow.dueAt,
-            pointReward: openRow.pointReward,
-            storedStatus: openRow.storedStatus,
-            referencePhotos: openRow.photos.filter(
-              (photo) => photo.kind === "reference",
-            ),
-            proofKind: openRow.proofKind,
-          });
-        }
-      : undefined;
-
-  const canToggle = useCallback(
-    (row: TaskRowModel) =>
-      pendingId !== row.id &&
-      refusal === null &&
-      checkboxSequence(row).length > 0,
-    [pendingId, refusal],
-  );
 
   const renderRows = useCallback(
     (rows: TaskRowModel[]) => {
       // Both layouts take the same two targets: the box (dropped, not
       // disabled-in-place, while the sequence runs, since the task is
       // mid-ladder and a second tap would race the compare-and-set) and the
-      // rest, which opens the detail sheet, where an officer's Edit sits.
+      // rest, which pushes the task's screen, where an officer's Edit sits.
       const props = (row: TaskRowModel) => ({
         row,
         now,
         isPending: pendingId === row.id,
         onToggle: canToggle(row) ? () => void toggle(row) : undefined,
-        onOpen: () => {
-          setOpenId(row.id);
-          sheetRef.current?.present();
-        },
+        onOpen: () => openTask(row.id),
       });
       if (layout === "grid") {
         return (
@@ -631,7 +309,7 @@ export default function TasksScreen() {
         </View>
       );
     },
-    [now, pendingId, canToggle, toggle, layout, styles.grid],
+    [now, pendingId, canToggle, toggle, openTask, layout, styles.grid],
   );
 
   function renderBoard() {
@@ -755,23 +433,6 @@ export default function TasksScreen() {
         />
       ) : null}
 
-      <TaskDetailSheet
-        ref={sheetRef}
-        row={openRow}
-        assignedBy={assignedBy}
-        refusal={refusal}
-        onToggle={
-          openRow && canToggle(openRow)
-            ? () => {
-                sheetRef.current?.dismiss();
-                void toggle(openRow);
-              }
-            : undefined
-        }
-        onEdit={startEdit}
-        onDismiss={() => setOpenId(null)}
-      />
-
       {createMounted ? (
         // A new sheet per chapter: a kept draft belongs to the chapter it was
         // started in, as the quick actions' sheets are keyed. A sheet that
@@ -797,39 +458,7 @@ export default function TasksScreen() {
         </SheetBoundary>
       ) : null}
 
-      {marking && markingRow ? (
-        <MarkDoneSheet
-          key={marking.id}
-          // Kept past a close and this screen (#5041), shared with the task's
-          // chat card: Mark done on it again opens on what was added.
-          keptDraft={`mark-done:${marking.id}`}
-          task={{
-            id: markingRow.id,
-            title: markingRow.title,
-            proofKind: markingRow.proofKind,
-            sentBack: rowIsSentBack(markingRow),
-            sentBackReason: markingRow.sentBackReason,
-            done: markingRow.isDone,
-            sentBackAt: markingRow.sentBackAt,
-          }}
-          initialProblem={marking.problem}
-          onComplete={(proof) => completeWithProof(markingRow, proof)}
-          onClosed={() => setMarking(null)}
-        />
-      ) : null}
-
-      {editing ? (
-        <NewTaskSheet
-          key={editing.id}
-          ref={editRef}
-          now={now}
-          editing={editing}
-          // Kept past a close and this screen (#4872): Edit on the same task
-          // again opens on what was typed, over the task as it is now.
-          keptDraft={`task-edit:${editing.id}`}
-          onClosed={() => setEditing(null)}
-        />
-      ) : null}
+      <MarkDoneHost toggle={toggles} />
     </View>
   );
 }

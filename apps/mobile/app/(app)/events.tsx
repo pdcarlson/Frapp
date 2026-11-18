@@ -163,7 +163,7 @@ export default function EventsScreen() {
         tasksByDay={tasksByDay}
         nameOf={nameOf}
         onOpenTask={(taskId) =>
-          router.push({ pathname: "/tasks", params: { task: taskId } })
+          router.push({ pathname: "/task-details", params: { id: taskId } })
         }
         now={now}
         monthAnchor={monthAnchor}

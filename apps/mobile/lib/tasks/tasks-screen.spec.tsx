@@ -13,7 +13,6 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
 import { TaskRow, TaskTile } from "@/components/tasks/task-row";
-import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 
@@ -148,12 +147,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 // Suggested tasks' entry has its own spec
 // (`components/tasks/suggested-tasks-entry.spec.tsx`).
-// The detail sheet's checklist writes through its own client hooks, which
-// have their own spec (`task-detail-sheet.spec.tsx`).
-vi.mock("@/components/tasks/subtask-checklist", () => ({
-  SubtaskChecklist: () => null,
-}));
-
 vi.mock("@/components/tasks/suggested-tasks-entry", () => ({
   SuggestedTasksEntry: () => null,
 }));
@@ -244,18 +237,20 @@ describe("Tasks List / Grid", () => {
     const tiles = tree.root.findAllByType(TaskTile);
     expect(rows(tree)).toHaveLength(0);
     expect(tiles.length).toBeGreaterThan(0);
-    // The card's own targets, pressed as a member would: the body opens
-    // the task's detail sheet (where an officer's Edit sits)...
+    // The card's own targets, pressed as a member would: the body pushes
+    // the task's screen (#5492, where an officer's Edit sits)...
     const tile = tiles[0]!;
     const body = tile.find(
       (node) =>
         typeof node.type === "string" &&
         node.props.accessibilityRole === "button",
     );
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
     act(() => body.props.onPress());
-    expect(tree.root.findByType(TaskDetailSheet).props.row?.id).toBe(
-      tile.props.row.id,
-    );
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: tile.props.row.id },
+    });
 
     // ...and the box completes it.
     const box = tile.find(
@@ -588,23 +583,33 @@ describe("Tasks as a pushed screen (#4610)", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps an edit's draft past this screen, by task (#4872)", () => {
-    permissions = ["tasks:manage", "members:view"];
+  it("pushes the task's screen for a task link it can read (#5492)", () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.push).mockClear();
+    vi.mocked(router.setParams).mockClear();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      task: "task-2",
+    });
     const tree = render();
-    const row = rows(tree).find(
-      (node) =>
-        node.props.row.assigneeId &&
-        node.props.row.dueDay &&
-        !node.props.row.pointsAwarded,
-    )!;
-    act(() => row.props.onOpen());
-    act(() => tree.root.findByType(TaskDetailSheet).props.onEdit());
-    const edit = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "NewTaskSheet" && !!node.props.editing,
-    );
-    expect(edit.props.keptDraft).toBe(`task-edit:${row.props.row.id}`);
+    expect(router.setParams).toHaveBeenCalledWith({ task: undefined });
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: "task-2" },
+    });
     act(() => tree.unmount());
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+  });
+
+  it("stays on the board for a task link its read doesn't hold", () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.push).mockClear();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      task: "someone-elses",
+    });
+    const tree = render();
+    expect(router.push).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
   });
 
   it("draws no + while the chapter has Tasks off", () => {

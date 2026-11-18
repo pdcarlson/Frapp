@@ -433,6 +433,9 @@ describe("Placeholder rows sit on their real row's frame", () => {
           sentBackReason: null,
           completionNote: null,
           photos: [],
+          createdAt: null,
+          groupId: null,
+          group: null,
         }}
         now={new Date("2026-11-05T12:00:00Z")}
       />,

@@ -11,6 +11,7 @@ import {
   subtaskProgress,
   useDeleteSubtask,
   useRejectTask,
+  useRemoveFromTaskGroup,
   useSetSubtaskDone,
   useTasks,
   useUpdateTask,
@@ -817,5 +818,65 @@ describe("useUpdateTask", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: activityKeys.chapter(CHAPTER),
     });
+  });
+});
+
+describe("useRemoveFromTaskGroup (#5492)", () => {
+  it("posts the members to take out and reads every task and Activity again", async () => {
+    const queryClient = createTestQueryClient();
+    const answer = {
+      removed: ["user-2", "user-3"],
+      group: {
+        id: "g1",
+        audience: "everyone",
+        total: 10,
+        done: 2,
+        confirmed: 1,
+      },
+    };
+    const POST = vi.fn().mockResolvedValue({ data: answer, error: undefined });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useRemoveFromTaskGroup(), {
+      wrapper: createWrapper({ POST }, queryClient),
+    });
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.mutateAsync({
+        id: TASK,
+        assigneeIds: ["user-2", "user-3"],
+      });
+    });
+
+    expect(POST).toHaveBeenCalledWith("/v1/tasks/{id}/group/remove", {
+      params: { path: { id: TASK } },
+      body: { assignee_ids: ["user-2", "user-3"] },
+    });
+    expect(returned).toEqual(answer);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activityKeys.chapter(CHAPTER),
+    });
+  });
+
+  it("hands a refusal to the caller once, and still reads the tasks again", async () => {
+    const queryClient = createTestQueryClient();
+    const refusal = {
+      statusCode: 400,
+      message: "That is everyone: delete the task for everyone instead",
+    };
+    const POST = vi.fn().mockResolvedValue({ data: undefined, error: refusal });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useRemoveFromTaskGroup(), {
+      wrapper: createWrapper({ POST }, queryClient),
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ id: TASK, assigneeIds: ["user-2"] }),
+      ).rejects.toBe(refusal);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
   });
 });

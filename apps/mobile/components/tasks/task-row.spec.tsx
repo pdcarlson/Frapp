@@ -58,6 +58,9 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     sentBackReason: null,
     completionNote: null,
     photos: [],
+    createdAt: null,
+    groupId: null,
+    group: null,
     ...overrides,
   };
 }

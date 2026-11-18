@@ -41,7 +41,7 @@ const COMPLETED_RETENTION_DAYS = 7;
 export interface TaskRowModel {
   id: string;
   title: string;
-  /** Free text the officer wrote when assigning it. Read in the detail sheet. */
+  /** Free text the officer wrote when assigning it. Read on the task screen. */
   description: string | null;
   /** Who assigned it: the member an unconfirmed completion is waiting on. */
   createdBy: string | null;
@@ -76,6 +76,29 @@ export interface TaskRowModel {
   completionNote: string | null;
   /** Reference photos, then proof photos, each in order (#4635). */
   photos: LiveTaskPhoto[];
+  /** When it was assigned: the task screen's first History line (#5492). */
+  createdAt: string | null;
+  /** The group task this is one member's copy of (#4295 step 3), or `null`. */
+  groupId: string | null;
+  /** That group's counts as the read carries them, or `null`. */
+  group: TaskRowGroup | null;
+}
+
+/** A group task's counts (`TaskGroupSummaryDto`), as a copy's read carries them. */
+export interface TaskRowGroup {
+  total: number;
+  /** Copies marked done, confirmed or still waiting on an officer. */
+  done: number;
+  confirmed: number;
+}
+
+function toGroup(value: unknown): TaskRowGroup | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const total = num(record, "total");
+  const done = num(record, "done");
+  if (total === null || done === null) return null;
+  return { total, done, confirmed: num(record, "confirmed") ?? 0 };
 }
 
 /**
@@ -194,6 +217,9 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     sentBackReason: str(row, "sent_back_reason"),
     completionNote: str(row, "completion_note"),
     photos: readLiveTaskPhotos(row.photos),
+    createdAt: str(row, "created_at"),
+    groupId: str(row, "group_id"),
+    group: toGroup(row.group),
   };
 }
 

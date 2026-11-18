@@ -20,10 +20,9 @@ import {
   useTask,
   useUpdateTaskStatus,
   viewerIsCardAssignee,
-  type LiveTask,
 } from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
-import { SignetTokens } from "@repo/theme/signet";
+import { taskStatusHue } from "@/lib/tasks/status-hue";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { MarkDoneSheet } from "@/components/tasks/mark-done-sheet";
@@ -194,7 +193,7 @@ export function TaskCard({
               live ? (
                 <StatusChip
                   label={taskStatusLabel(live)}
-                  hue={statusHue(live, tokens)}
+                  hue={taskStatusHue(live, tokens)}
                 />
               ) : null
             }
@@ -380,25 +379,4 @@ export function TaskCard({
       ) : null}
     </ChatCardShell>
   );
-}
-
-/**
- * The badge's hue: a status color, never the chapter accent (§5). Overdue is
- * the warning a member has to act on, so it is the one in red.
- */
-function statusHue(live: LiveTask, tokens: SignetTokens): string {
-  // Needs changes (#4635): back with its assignee, with something to fix.
-  if (isSentBack(live)) return tokens.color.semantic.warning;
-  switch (live.status) {
-    case "OVERDUE":
-      return tokens.color.semantic.destructive;
-    case "COMPLETED":
-      return live.points_awarded
-        ? tokens.color.semantic.success
-        : tokens.color.semantic.warning;
-    case "IN_PROGRESS":
-      return tokens.color.semantic.info;
-    case "TODO":
-      return tokens.color.text.mutedForeground;
-  }
 }

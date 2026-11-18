@@ -1,0 +1,246 @@
+/**
+ * The task screen's rules (#5492): what it shows and which controls a viewer
+ * gets, kept here where they are unit-tested, so `app/(app)/task-details.tsx`
+ * is composition only.
+ *
+ * Every control follows `task.controller.ts` exactly. Mark done is the
+ * assignee's or a `tasks:manage` holder's (`PATCH /v1/tasks/:id/status`);
+ * Mark not done only the assignee's, before an officer confirms (an officer
+ * moving someone's completion back is Send back, its own endpoint). Edit,
+ * Delete and Remove people are `tasks:manage`, and Edit is refused once a
+ * task is confirmed. There is no creator rule.
+ */
+
+import { canReopenOwnTask, isTaskStatus, type TaskStatus } from "@repo/hooks";
+import { formatRelativeDayTime } from "@repo/formatting";
+import { records, str } from "@/lib/more/narrow";
+import {
+  rowSignedOffAutomatically,
+  toTaskRow,
+  type TaskRowModel,
+} from "@/lib/tasks/board";
+
+/** The app link to a task: Copy link's text, which opens this screen. */
+export function taskLink(id: string): string {
+  return `frapp://task-details?id=${encodeURIComponent(id)}`;
+}
+
+/** A row's status as `taskStatusLabel` and the status hue read it. */
+export function rowStatus(row: TaskRowModel): {
+  status: TaskStatus;
+  stored_status?: TaskStatus;
+  points_awarded: boolean;
+  sent_back_at: string | null;
+  point_reward: number | null;
+  proof_kind: TaskRowModel["proofKind"];
+} {
+  const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  return {
+    status: isTaskStatus(row.displayStatus)
+      ? row.displayStatus
+      : (stored ?? "TODO"),
+    stored_status: stored,
+    points_awarded: row.pointsAwarded,
+    sent_back_at: row.sentBackAt,
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  };
+}
+
+export interface TaskScreenControls {
+  /** The one thing to do: the accent pill. */
+  markDone: boolean;
+  edit: boolean;
+  /** The minus, on a group task's copy. */
+  removePeople: boolean;
+  /** In More: Mark not done. */
+  reopen: boolean;
+  /** In More, destructive. */
+  delete: boolean;
+  /** In More, destructive and last: every copy of a group task. */
+  deleteForEveryone: boolean;
+}
+
+export function taskScreenControls({
+  row,
+  viewerId,
+  canManage,
+  toggleRefused,
+}: {
+  row: TaskRowModel;
+  viewerId: string | null;
+  /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
+  canManage: boolean;
+  /** A gate refusal latched on the status write (#2710): no Mark done. */
+  toggleRefused: boolean;
+}): TaskScreenControls {
+  const isAssignee = viewerId !== null && row.assigneeId === viewerId;
+  const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  return {
+    markDone: !row.isDone && (isAssignee || canManage) && !toggleRefused,
+    // The board's rule for its sheet's Edit (#4296): the edit form needs an
+    // assignee and a day, and a confirmed task can't change.
+    edit:
+      canManage &&
+      !row.pointsAwarded &&
+      row.assigneeId !== null &&
+      row.dueDay !== null,
+    removePeople: canManage && row.groupId !== null,
+    reopen:
+      !toggleRefused &&
+      canReopenOwnTask({
+        stored,
+        pointsAwarded: row.pointsAwarded,
+        isAssignee,
+        signedOffAutomatically: rowSignedOffAutomatically(row),
+      }),
+    delete: canManage,
+    deleteForEveryone: canManage && row.groupId !== null,
+  };
+}
+
+/** One History line: what happened, then when (and why, for a send-back). */
+export interface TaskHistoryLine {
+  key: "assigned" | "done" | "sent-back" | "confirmed";
+  title: string;
+  meta: string;
+  at: number;
+}
+
+/**
+ * What happened to the task, oldest first, from its own timestamps: no
+ * history endpoint exists, so a step a later one overwrote (a completion an
+ * officer sent back, then the next) shows only as it now stands, as
+ * Todoist's task page lists the activity it holds.
+ */
+export function taskHistory(
+  row: TaskRowModel,
+  nameOf: (userId: string) => string,
+  now: Date,
+): TaskHistoryLine[] {
+  const lines: TaskHistoryLine[] = [];
+  const add = (
+    key: TaskHistoryLine["key"],
+    title: string,
+    when: string | null,
+    extra?: string | null,
+  ) => {
+    if (!when) return;
+    const at = Date.parse(when);
+    const label = formatRelativeDayTime(when, now);
+    if (Number.isNaN(at) || !label) return;
+    lines.push({
+      key,
+      title,
+      meta: extra ? `${label} · ${extra}` : label,
+      at,
+    });
+  };
+  add(
+    "assigned",
+    row.createdBy ? `Assigned by ${nameOf(row.createdBy)}` : "Assigned",
+    row.createdAt,
+  );
+  if (row.isDone) {
+    add(
+      "done",
+      row.assigneeId
+        ? `Marked done by ${nameOf(row.assigneeId)}`
+        : "Marked done",
+      row.completedAt,
+    );
+  }
+  add("sent-back", "Sent back", row.sentBackAt, row.sentBackReason);
+  // A completion that needed no sign-off is confirmed as it is marked done:
+  // its one line is Marked done.
+  if (row.pointsAwarded && !rowSignedOffAutomatically(row)) {
+    add("confirmed", "Confirmed", row.confirmedAt);
+  }
+  return lines.sort((a, b) => a.at - b.at);
+}
+
+/**
+ * A group task's copies, one a member, read off the board's query: an
+ * officer's `GET /v1/tasks` holds the whole chapter's tasks, so no endpoint
+ * of its own is needed. Empty for anyone else, whose read holds only theirs.
+ */
+export function groupCopies(
+  data: unknown,
+  groupId: string | null,
+): TaskRowModel[] {
+  if (!groupId) return [];
+  const copies: TaskRowModel[] = [];
+  for (const raw of records(data)) {
+    if (str(raw, "group_id") !== groupId) continue;
+    const row = toTaskRow(raw);
+    if (row?.assigneeId) copies.push(row);
+  }
+  return copies;
+}
+
+/** Where a copy stands, for ordering Who has it: what's left leads. */
+function copyRank(row: TaskRowModel): number {
+  if (row.isOverdue) return 0;
+  if (!row.isDone) return 1;
+  if (!row.pointsAwarded) return 2;
+  return 3;
+}
+
+/**
+ * Who has it, in order: overdue, still to do, waiting on an officer, then
+ * confirmed, by name within each, so the members still to finish lead, as
+ * web's Who's left lists them.
+ */
+export function sortCopies(
+  copies: readonly TaskRowModel[],
+  nameOf: (userId: string) => string,
+): TaskRowModel[] {
+  return [...copies].sort(
+    (a, b) =>
+      copyRank(a) - copyRank(b) ||
+      nameOf(a.assigneeId ?? "").localeCompare(nameOf(b.assigneeId ?? "")),
+  );
+}
+
+/**
+ * A copy Remove people may take out: one not yet confirmed. A confirmed copy
+ * stays, its points paid on it, and the API refuses it.
+ */
+export function copyRemovable(copy: TaskRowModel): boolean {
+  return !copy.pointsAwarded;
+}
+
+/**
+ * Whether Remove may go ahead with these picks: at least one, and not every
+ * copy, since taking out everyone is Delete for everyone (the API's 400).
+ */
+export function removalAllowed(
+  picked: ReadonlySet<string>,
+  copies: readonly TaskRowModel[],
+): { ok: boolean; everyone: boolean } {
+  const everyone = copies.length > 0 && picked.size >= copies.length;
+  return { ok: picked.size > 0 && !everyone, everyone };
+}
+
+/** "Remove 3", the select mode's one pill. */
+export function removeLabel(count: number): string {
+  return `Remove ${count}`;
+}
+
+/** What the confirm asks, and what is said once it lands. */
+export function removeConfirmTitle(count: number): string {
+  return count === 1 ? "Take 1 person out?" : `Take ${count} people out?`;
+}
+
+export const REMOVE_CONFIRM_BODY =
+  "Their copies of this task are deleted. Everyone else keeps theirs.";
+
+export function removedLine(count: number): string {
+  return count === 1
+    ? "Took 1 person out of this task."
+    : `Took ${count} people out of this task.`;
+}
+
+/** Said in select mode once every copy is picked. */
+export const REMOVE_EVERYONE_NOTE =
+  "That's everyone. Use Delete for everyone in More instead.";
