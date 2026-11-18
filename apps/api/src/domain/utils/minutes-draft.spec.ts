@@ -176,6 +176,53 @@ describe('verifyMinutesDraft', () => {
     );
   });
 
+  it('keeps what a bullet says, and drops only a marker left on its own', () => {
+    const { content } = verifyMinutesDraft(
+      output({
+        tldr: [
+          '-$25 refund for anyone who paid twice',
+          'Before formal, members need to:',
+          '2.',
+          '- Formal is December 5',
+        ].join('\n'),
+      }),
+      request(),
+    );
+    expect(content.tldr).toBe(
+      [
+        '- -$25 refund for anyone who paid twice',
+        '- Before formal, members need to:',
+        '- Formal is December 5',
+      ].join('\n'),
+    );
+  });
+
+  it('asks the officer to check the TL;DR when an item was left out', () => {
+    const { review } = verifyMinutesDraft(
+      output({
+        tldr: '- Dues raised to $200',
+        decisions: [
+          {
+            text: 'Raised dues to $200.',
+            vote: null,
+            quote: 'not in the notes',
+          },
+        ],
+      }),
+      request(),
+    );
+    expect(review.left_out).toBe(1);
+    expect(review.gaps[0]).toContain('Check the TL;DR');
+  });
+
+  it('says nothing about the TL;DR when every item stood', () => {
+    const { review } = verifyMinutesDraft(
+      output({ tldr: '- Formal is December 5' }),
+      request(),
+    );
+    expect(review.gaps.join(' ')).not.toContain('TL;DR');
+  });
+
   it('reads a reply with no TL;DR as an empty one', () => {
     const drafted = output();
     delete (drafted as Partial<MeetingDraftOutput>).tldr;

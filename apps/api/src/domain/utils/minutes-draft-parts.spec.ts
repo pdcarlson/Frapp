@@ -133,6 +133,26 @@ describe('drafting a long meeting in parts', () => {
     ]);
     expect(merged.open_questions).toEqual(['Who books it?']);
   });
+
+  it('takes a TL;DR bullet from each part in turn, each once (#5523)', () => {
+    const merged = mergeParts([
+      {
+        ...empty,
+        tldr: '- DJ approved\n- Rush starts Monday\n- Shirts on sale',
+      },
+      { ...empty, tldr: '- Rush starts Monday\n- Pay dues by Friday' },
+      { ...empty, tldr: '- Formal is December 5' },
+    ]);
+    expect(merged.tldr).toBe(
+      [
+        '- DJ approved',
+        '- Rush starts Monday',
+        '- Formal is December 5',
+        '- Pay dues by Friday',
+        '- Shirts on sale',
+      ].join('\n'),
+    );
+  });
 });
 
 describe('recovering a quote that misses its line only in how it is written', () => {

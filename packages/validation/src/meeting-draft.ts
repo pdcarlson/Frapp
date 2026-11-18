@@ -80,7 +80,9 @@ export const MeetingDraftOutputSchema = z.object({
   /**
    * The TL;DR (#5523): a few plain "- " bullets for a member who reads
    * nothing else. Last of the sections, so a model writing in order writes
-   * it from the decisions and action items it has already listed.
+   * it after the decisions and action items it has listed. Not checked
+   * against the sources: the API asks the officer to compare it when the
+   * checks took an item out or settled a conflict.
    */
   tldr: z.string(),
   /** What the notes leave unsaid, one plain sentence each. */

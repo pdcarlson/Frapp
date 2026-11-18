@@ -589,8 +589,19 @@ export function verifyMinutesDraft(
     carriedCut = placed.cut;
   }
 
+  // The TL;DR restates outcomes but needs no quotes (#5523), so when the
+  // checks took an item out or settled a disagreement, it may still say the
+  // version that didn't stand: the officer is told to compare it.
+  const tldrToCheck =
+    (content.tldr ?? '').length > 0 && (leftOut > 0 || conflicts.length > 0);
+
   // Frapp's own gaps first, so the list's limit never cuts them.
   const ownGaps = [
+    ...(tldrToCheck
+      ? [
+          'Some drafted items were left out or settled between two versions. Check the TL;DR says what the decisions and action items below say.',
+        ]
+      : []),
     ...unsettled.map(
       (about) =>
         `The notes disagree about "${about}", and one version couldn't be matched to its notes. Check it and fill it in.`,

@@ -891,7 +891,9 @@ describe('MeetingDraftService', () => {
       expect(state.status).toBe('applied');
       expect(state.content).toBeNull();
       expect(state.review.left_out).toBe(1);
+      // A decision was left out, so the TL;DR is to be checked (#5523).
       expect(state.review.gaps).toEqual([
+        'Some drafted items were left out or settled between two versions. Check the TL;DR says what the decisions and action items below say.',
         'The notes don’t say who sends the thank-you email.',
       ]);
       expect(state.review.sources).toContainEqual({
