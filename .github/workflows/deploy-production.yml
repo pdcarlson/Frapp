@@ -535,6 +535,43 @@ jobs:
       sha: ${{ needs.validate.outputs.sha }}
       platform: ${{ needs.mobile-plan.outputs.update }}
 
+  # Emails the owner when the app release after a ship fails (Paul,
+  # 2026-11-18). `deploy-outcome` reads only `deploy` and `release`, so a
+  # failed store build or OTA update after a good ship raised nothing. One
+  # `incident` alert, commented only when what fails changes, closed by the
+  # next `mobile_build: auto` run whose app release jobs all succeed
+  # (scripts/ci/mobile-release-alert.mjs). Skipped when `mobile-plan` was:
+  # nothing shipped, or `mobile_build` was `none`.
+  mobile-outcome:
+    name: Email the owner if the app release failed
+    needs: [validate, mobile-plan, mobile, ota]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.mobile-plan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The alert issue, and this attempt's jobs to name the failed steps.
+      issues: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Raise or close the alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ALERT_CONFIG: production-mobile
+          NEEDS: ${{ toJSON(needs) }}
+          BUILD: ${{ inputs.mobile_build }}
+          SHA: ${{ needs.validate.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: node scripts/ci/mobile-release-alert.mjs
+
   # Terminal reporting. A `workflow_dispatch` failure reds one row in the
   # Actions list and emails the actor, which is thin for the only path to
   # production, and it cannot express "deployed fine, then failed to tag". So
