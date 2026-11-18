@@ -605,6 +605,8 @@ describe('TaskService', () => {
         chapter_id: 'ch-1',
         created_by: 'admin-1',
         audience: 'everyone' as const,
+        target_id: null,
+        target_name: null,
         created_at: '2026-11-17T00:00:00.000Z',
       };
       mockTaskRepo.findByIds.mockResolvedValue([
