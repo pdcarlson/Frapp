@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { statusOf } from "@repo/api-sdk";
 import { useMeeting, useMeetingRecording } from "@repo/hooks";
 import {
   MEETING_COPY,
@@ -40,17 +41,34 @@ export function TranscriptPage({ id }: { id: string }) {
     );
   }
   const meeting = meetingQuery.data;
-  if (!meeting || !transcript) {
+  // A 404 is minutes deleted or not shared with this member. Any other
+  // failure, of the minutes or of a draft's recording, may pass on a retry,
+  // so it never reads as "no transcript".
+  const failed = !meeting
+    ? meetingQuery
+    : !transcript && recordingQuery.isError
+      ? recordingQuery
+      : null;
+  if (failed || !meeting || !transcript) {
+    const missing = failed ? statusOf(failed.error) === 404 : false;
     return (
       <div className="mx-auto max-w-3xl space-y-4">
         <ErrorState
-          title={MEETING_COPY.transcript}
+          title={
+            !failed
+              ? MEETING_COPY.transcript
+              : missing
+                ? MEETING_COPY.missingTitle
+                : MEETING_COPY.loadFailedTitle
+          }
           description={
-            meeting ? MEETING_COPY.transcriptMissing : MEETING_COPY.missingBody
+            !failed
+              ? MEETING_COPY.transcriptMissing
+              : missing
+                ? MEETING_COPY.missingBody
+                : MEETING_COPY.loadFailedBody
           }
-          onRetry={
-            meetingQuery.error ? () => void meetingQuery.refetch() : undefined
-          }
+          onRetry={failed && !missing ? () => void failed.refetch() : undefined}
         />
         <p className="text-center text-sm">
           <Link href={`/meetings/${id}`} className={inlineNoteActionClassName}>

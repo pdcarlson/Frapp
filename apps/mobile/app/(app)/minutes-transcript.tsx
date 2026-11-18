@@ -1,4 +1,5 @@
 import { Redirect, useLocalSearchParams } from "expo-router";
+import { statusOf } from "@repo/api-sdk";
 import { useMeeting, useMeetingRecording } from "@repo/hooks";
 import {
   MEETING_COPY,
@@ -7,7 +8,11 @@ import {
 } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { ScreenShell } from "@/components/screen-shell";
-import { SkeletonRegion, SkeletonText } from "@/components/state-block";
+import {
+  ErrorState,
+  SkeletonRegion,
+  SkeletonText,
+} from "@/components/state-block";
 import { TranscriptLines } from "@/components/minutes/transcript-lines";
 import { useFrappTheme } from "@/lib/theme";
 
@@ -48,18 +53,52 @@ function MinutesTranscriptBody() {
       ? MEETING_RECORDER_COPY.transcriptRow(seconds)
       : MEETING_COPY.transcript;
 
+  if (!id) {
+    return (
+      <ScreenShell back={back} title={MEETING_COPY.transcript}>
+        <InlineNote>{MEETING_COPY.missingBody}</InlineNote>
+      </ScreenShell>
+    );
+  }
   if (meetingQuery.isPending || (recordingQuery.isPending && !transcript)) {
     return (
       <ScreenShell back={back} title={title}>
         <SkeletonRegion label={MEETING_COPY.transcript}>
-          {(["92%", "84%", "88%", "70%", "90%", "60%"] as const).map((width) => (
-            <SkeletonText
-              key={width}
-              role={tokens.typography.role.body}
-              width={width}
-            />
-          ))}
+          {(["92%", "84%", "88%", "70%", "90%", "60%"] as const).map(
+            (width) => (
+              <SkeletonText
+                key={width}
+                role={tokens.typography.role.body}
+                width={width}
+              />
+            ),
+          )}
         </SkeletonRegion>
+      </ScreenShell>
+    );
+  }
+  // A 404 is minutes deleted or not shared with this member. Any other
+  // failure, of the minutes or of a draft's recording, may pass on a retry,
+  // so it never reads as "no transcript".
+  const failed = !meetingQuery.data
+    ? meetingQuery
+    : !transcript && recordingQuery.isError
+      ? recordingQuery
+      : null;
+  if (failed) {
+    const missing = statusOf(failed.error) === 404;
+    return (
+      <ScreenShell back={back} title={MEETING_COPY.transcript}>
+        <ErrorState
+          title={
+            missing ? MEETING_COPY.missingTitle : MEETING_COPY.loadFailedTitle
+          }
+          body={
+            missing ? MEETING_COPY.missingBody : MEETING_COPY.loadFailedBody
+          }
+          onRetry={missing ? undefined : () => void failed.refetch()}
+          isRetrying={failed.isFetching}
+        />
       </ScreenShell>
     );
   }
