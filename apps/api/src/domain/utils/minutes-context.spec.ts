@@ -123,6 +123,7 @@ const request = (
 const output = (
   overrides: Partial<MeetingDraftOutput> = {},
 ): MeetingDraftOutput => ({
+  tldr: '',
   summary: 'The chapter met.',
   announcements: '',
   decisions: [],

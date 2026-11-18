@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v6";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v7";
 
 const DueDate = z
   .string()
@@ -77,6 +77,12 @@ export const MeetingDraftOutputSchema = z.object({
   old_business: z.string(),
   new_business: z.string(),
   discussion_log: z.string(),
+  /**
+   * The TL;DR (#5523): a few plain "- " bullets for a member who reads
+   * nothing else. Last of the sections, so a model writing in order writes
+   * it from the decisions and action items it has already listed.
+   */
+  tldr: z.string(),
   /** What the notes leave unsaid, one plain sentence each. */
   open_questions: z.array(z.string()),
   /**

@@ -60,6 +60,7 @@ export function minutesSections(content: MeetingContent): CorpusSection[] {
     }
   };
 
+  add('tldr', content.tldr);
   add('summary', content.summary);
   add('announcements', content.announcements);
   add(

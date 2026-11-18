@@ -16,6 +16,7 @@ import { getErrorMessage } from "@/lib/utils";
 
 /** What each section holds, under its switch. */
 const SECTION_HINTS: Readonly<Record<MeetingSectionKey, string>> = {
+  tldr: "A few short lines for every member: what was decided, what to do and by when, what's coming up. Always on.",
   attendees:
     "Who checked in to the meeting's event: present, late and excused.",
   summary: "A few paragraphs on what the meeting covered.",

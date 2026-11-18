@@ -9,6 +9,7 @@ import {
 import type { MinutesDraftRequest } from './minutes-draft';
 
 const empty: MeetingDraftOutput = {
+  tldr: '',
   summary: '',
   announcements: '',
   decisions: [],

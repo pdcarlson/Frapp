@@ -161,6 +161,9 @@ export function mergeParts(
       .map((part) => part.discussion_log.trim())
       .filter((text) => text.length > 0)
       .join('\n\n'),
+    // Each part's bullets, in meeting order; the verifier keeps the first
+    // few. The review pass, when it runs, writes one for the whole meeting.
+    tldr: lines(parts.map((part) => part.tldr ?? '')),
     open_questions: [...questions],
     conflicts: parts.flatMap((part) => part.conflicts ?? []),
   };

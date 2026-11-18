@@ -166,7 +166,13 @@ export const MEETING_COPY = {
    * until the phone has a section editor (#4412).
    */
   summaryPlaceholder: "Type what was said and decided.",
-  restOnWeb: "Decisions and action items are added on the web.",
+  restOnWeb: "The TL;DR, decisions and action items are added on the web.",
+  /**
+   * The TL;DR's box (#5523): a draft fills it; without drafting the
+   * minute-taker writes it, as they write the Summary.
+   */
+  tldrPlaceholder:
+    "A few short lines for every member: what was decided, what they need to do and by when, what's coming up.",
   saveFailed: "Not saved yet. It tries again as you type.",
   /** The note's chips (#5288). */
   checkedIn: (count: number) => `${count} checked in`,

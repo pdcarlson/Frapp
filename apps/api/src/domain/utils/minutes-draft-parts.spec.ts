@@ -22,6 +22,7 @@ const request = (notes: string): MinutesDraftRequest => ({
 });
 
 const empty: MeetingDraftOutput = {
+  tldr: '',
   summary: '',
   announcements: '',
   decisions: [],

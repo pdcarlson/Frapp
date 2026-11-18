@@ -20,3 +20,25 @@ export function unfenced(text: string): string {
 export function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
+
+/** The most bullets a drafted TL;DR keeps (#5523): it is read at a glance. */
+export const TLDR_MAX_BULLETS = 6;
+
+/** A list marker a model may put on a line: "- ", "• ", "* ", "1. ", "2) ". */
+const LIST_MARKER = /^(?:[-•*–]\s*|\d{1,2}[.)]\s+)/;
+
+/**
+ * A drafted TL;DR as the minutes keep it (#5523): one "- " bullet per line,
+ * blank lines and any heading-like line ending in a colon dropped, at most
+ * {@link TLDR_MAX_BULLETS}. A model that numbers its points or writes a
+ * paragraph still lands as bullets the minutes screens draw the same way.
+ */
+export function tldrBullets(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => oneLine(line.trim().replace(LIST_MARKER, '')))
+    .filter((line) => line.length > 0 && !/:$/.test(line))
+    .slice(0, TLDR_MAX_BULLETS)
+    .map((line) => `- ${line}`)
+    .join('\n');
+}

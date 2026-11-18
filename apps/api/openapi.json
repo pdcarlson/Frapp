@@ -27392,6 +27392,7 @@
             "items": {
               "type": "string",
               "enum": [
+                "tldr",
                 "summary",
                 "announcements",
                 "decisions",
@@ -27486,6 +27487,10 @@
       "MeetingContentDto": {
         "type": "object",
         "properties": {
+          "tldr": {
+            "type": "string",
+            "description": "The TL;DR: a few \"- \" bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it."
+          },
           "summary": {
             "type": "string"
           },
@@ -27518,6 +27523,7 @@
           }
         },
         "required": [
+          "tldr",
           "summary",
           "announcements",
           "decisions",
@@ -27623,6 +27629,7 @@
             "items": {
               "type": "string",
               "enum": [
+                "tldr",
                 "summary",
                 "announcements",
                 "decisions",
@@ -27765,6 +27772,10 @@
       "MeetingContentPatchDto": {
         "type": "object",
         "properties": {
+          "tldr": {
+            "type": "string",
+            "maxLength": 20000
+          },
           "summary": {
             "type": "string",
             "maxLength": 20000

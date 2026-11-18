@@ -414,6 +414,7 @@ function lineFor(notesCase: MeetingNotesCase, item: ExpectedItem): string {
  */
 function compliantMinutes(notesCase: MeetingNotesCase): MeetingDraftOutput {
   return {
+    tldr: '',
     summary: `${notesCase.meetingTitle} on ${notesCase.date}.`,
     announcements: '',
     decisions: notesCase.decisions.map((item) => {

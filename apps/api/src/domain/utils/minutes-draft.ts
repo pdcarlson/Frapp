@@ -25,7 +25,12 @@ import {
 } from '@repo/validation';
 import type { LanguageModelMessage } from '../adapters/language-model.interface';
 import { isQuoteGrounded } from './quote-grounding';
-import { oneLine, unfenced } from './minutes-text';
+import {
+  TLDR_MAX_BULLETS,
+  oneLine,
+  tldrBullets,
+  unfenced,
+} from './minutes-text';
 import {
   BACKGROUND_RULES,
   backgroundBlock,
@@ -167,7 +172,15 @@ export const MINUTES_NOTES_FORMAT = [
   'Points are short plain statements, not paragraphs. Keep people\u2019s own terms and numbers as they said them.',
 ].join(' ');
 
+/**
+ * The TL;DR's brief (#5523; Paul, 2026-11-18: "easily parsable, and that's
+ * its only goal"). Shared with the review pass, which writes it for the
+ * whole meeting.
+ */
+export const TLDR_GUIDE = `tldr: the TL;DR, for a member who reads nothing else; write it last, from the decisions, action items and announcements. At most ${TLDR_MAX_BULLETS} short bullets, fewer for a short meeting, one per line, each starting with "- ", in plain everyday words: what was decided, what members need to do and by when (with the day), and what is coming up (with the date). Only what applies to the members reading it: leave out procedure, who moved or seconded what, and detail only officers need. A day or date only as the sources give it.`;
+
 const SECTION_GUIDE: Readonly<Record<string, string>> = {
+  tldr: TLDR_GUIDE,
   summary:
     'summary: the opening paragraph of the notes, two to four sentences: who met, what the meeting was about, and what it settled. The detail goes in discussion_log, not here.',
   announcements:
@@ -214,7 +227,7 @@ const SYSTEM_RULES = [
   '- quote, on every decision and action item: copy the words of its source where it was settled, character for character, typos and filler included: one line, or for a transcript one or two sentences of it. Never join two lines, never mix two sources, never stitch words from different places, and never quote the roster.',
   `- A source can end with a block headed "${MEETING_NOTES_COPY.answersHeading}". Those lines are the officer’s own answers to questions an earlier draft asked: they are true, they win over anything else the sources say, and a question they answer is not asked again.`,
   '- open_questions: what the officer has to fill in, one short plain sentence each: an action item nobody was named for, a vote with no count, a name that could be two members. Empty when nothing is missing.',
-  '- Write plainly, in the past tense. No markdown (no #, no bold, no tables) and no emojis; the only layout is discussion_log\u2019s topic lines and "- " bullets. Keep amounts and dates as the notes write them.',
+  '- Write plainly, in the past tense. No markdown (no #, no bold, no tables) and no emojis; the only layout is discussion_log\u2019s topic lines and "- " bullets, and tldr\u2019s "- " bullets. Keep amounts and dates as the notes write them.',
   '- Fill only the sections you are asked for. Return an empty string or an empty list for every other section.',
 ].join('\n');
 
@@ -543,9 +556,13 @@ export function verifyMinutesDraft(
   const content: Partial<MeetingContent> = {};
   for (const key of MEETING_TEXT_SECTIONS) {
     if (!wants(key)) continue;
-    const { text, dropped } = dropEchoes(output[key]);
+    // A reply from before the TL;DR (#5523) has none to read.
+    const { text, dropped } = dropEchoes(output[key] ?? '');
     echoes += dropped;
-    content[key] = clamp(text, MEETING_TEXT_MAX_LENGTH);
+    content[key] = clamp(
+      key === 'tldr' ? tldrBullets(text) : text,
+      MEETING_TEXT_MAX_LENGTH,
+    );
   }
   if (wants('decisions')) content.decisions = decisions;
   if (wants('action_items')) content.action_items = actionItems;

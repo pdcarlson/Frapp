@@ -75,6 +75,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
 });
 
 const DRAFTED: MeetingDraftOutput = {
+  tldr: '- Approved up to $1,200 for a DJ at formal.',
   summary: 'The chapter approved a DJ for formal.',
   announcements: '',
   decisions: [
@@ -523,6 +524,7 @@ describe('MeetingDraftService', () => {
       expect(actor).toBe(SECRETARY);
       expect(save.expected_updated_at).toBe(V1);
       expect(save.content).toEqual({
+        tldr: '- Approved up to $1,200 for a DJ at formal.',
         summary: 'The chapter approved a DJ for formal.',
         announcements: '',
         decisions: [
@@ -719,6 +721,7 @@ describe('MeetingDraftService', () => {
         old_business: '',
         new_business: '',
         discussion_log: 'Formal DJ: approved up to $1,200 after a vote.',
+        tldr: '1. DJ for formal approved, up to $1,200\n2. Pay dues by Wednesday',
         open_questions: [],
       };
       const { ask, work, meetings, seen } = setup({
@@ -745,6 +748,12 @@ describe('MeetingDraftService', () => {
       expect(save.content.summary).toBe(
         'The chapter approved a DJ for formal and planned dues.',
       );
+      // The editor's TL;DR for the whole meeting, kept as "- " bullets.
+      expect(save.content.tldr).toBe(
+        '- DJ for formal approved, up to $1,200\n- Pay dues by Wednesday',
+      );
+      // The review pass is told how to write it.
+      expect(String(seen[parts].system)).toContain('tldr: the TL;DR');
       expect(save.content.decisions).toEqual([
         {
           text: 'Approved up to $1,200 for a DJ at formal.',

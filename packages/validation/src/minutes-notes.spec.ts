@@ -66,12 +66,14 @@ describe("the notes outline (#5410)", () => {
   });
 });
 
-describe("the notes are always on", () => {
-  it("adds them to a saved template that left them out", () => {
+describe("the notes and the TL;DR are always on", () => {
+  it("adds them to a saved template that left them out, in catalog order", () => {
+    expect(ALWAYS_MEETING_SECTIONS).toEqual(["tldr", "discussion_log"]);
     expect(normalizeMeetingSections(["summary", "decisions"])).toEqual([
+      "tldr",
       "summary",
       "decisions",
-      ...ALWAYS_MEETING_SECTIONS,
+      "discussion_log",
     ]);
   });
 });

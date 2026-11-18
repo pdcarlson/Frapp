@@ -41,6 +41,7 @@ const line = (word: string): string => {
 };
 
 const blank: MeetingDraftOutput = {
+  tldr: '',
   summary: 'The chapter met on October 19.',
   announcements: '',
   decisions: [],
