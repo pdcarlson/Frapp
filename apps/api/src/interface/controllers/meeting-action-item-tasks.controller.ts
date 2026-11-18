@@ -22,7 +22,10 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { MeetingActionItemTaskDto } from '../dtos/meeting-action-item-task.dto';
+import {
+  MeetingActionItemTaskDto,
+  SeriesOpenActionItemsDto,
+} from '../dtos/meeting-action-item-task.dto';
 
 /**
  * The tasks posted minutes' action items became, for the minutes' checkboxes
@@ -52,5 +55,19 @@ export class MeetingActionItemTasksController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<MeetingActionItemTaskDto[]> {
     return this.suggestions.actionItemTasks(chapterId, id, userId);
+  }
+
+  @Get('series/:key/open-action-items')
+  @ApiOperation({
+    summary:
+      'The action items still open across one repeating meeting’s posted minutes, newest first: open until the task each became is done (#5482)',
+  })
+  @ApiOkResponse({ type: SeriesOpenActionItemsDto, isArray: true })
+  async seriesOpen(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('key', ParseUUIDPipe) key: string,
+  ): Promise<SeriesOpenActionItemsDto[]> {
+    return this.suggestions.seriesOpenActionItems(chapterId, userId, key);
   }
 }

@@ -33,6 +33,20 @@ export interface ActionItemTask {
   group: { done: number; total: number } | null;
 }
 
+/** One posted minutes' open action items (`seriesOpenActionItems`). */
+export interface SeriesOpenActionItems {
+  meeting_id: string;
+  event_start_time: string;
+  items: {
+    /** The item's place in its minutes' list, from 0. */
+    index: number;
+    text: string;
+    owner_user_id: string | null;
+    due_date: string | null;
+    group: ActionItemTask['group'];
+  }[];
+}
+
 /**
  * Suggested tasks from minutes (#4313, `spec/behavior/meetings.md`
  * § Suggested tasks). When minutes are posted, each action item becomes a
@@ -83,6 +97,75 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
   ): Promise<ActionItemTask[]> {
     // Throws for minutes the viewer may not read, as the minutes' own read.
     const { meeting } = await this.meetings.get(chapterId, meetingId, viewerId);
+    return this.marksFor(chapterId, meeting);
+  }
+
+  /**
+   * The action items still open across one repeating meeting's posted
+   * minutes, newest meeting first (#5482; Paul's pick, 2026-11-18: done comes
+   * from Tasks). An item is open until the task it became is done; one
+   * nobody made a task of stays open. Two items that read the same share one
+   * task, so a later copy closes with the first. Only minutes the viewer may
+   * read are looked at (the Minutes list's own read), and each minutes'
+   * content and marks are read together, so they always agree.
+   */
+  async seriesOpenActionItems(
+    chapterId: string,
+    viewerId: string,
+    seriesKey: string,
+  ): Promise<SeriesOpenActionItems[]> {
+    const { rows, facts } = await this.meetings.listWithFacts(
+      chapterId,
+      viewerId,
+    );
+    const series = rows.filter(
+      (row) =>
+        row.status === 'posted' && facts.get(row.id)?.series_key === seriesKey,
+    );
+    const result: SeriesOpenActionItems[] = [];
+    for (const meeting of series) {
+      const items = readMeetingContent(meeting.content).action_items;
+      if (items.length === 0) continue;
+      const marks = new Map(
+        (await this.marksFor(chapterId, meeting)).map((mark) => [
+          mark.index,
+          mark,
+        ]),
+      );
+      // A later copy of an item follows the first copy's task.
+      const firstOf = new Map<string, number>();
+      const open = items.flatMap((item, index) => {
+        const key = actionItemKey(item.text.trim());
+        const first = firstOf.get(key) ?? index;
+        if (!firstOf.has(key)) firstOf.set(key, index);
+        const mark = marks.get(first);
+        if (mark?.done) return [];
+        return [
+          {
+            index,
+            text: item.text,
+            owner_user_id: item.owner_user_id,
+            due_date: item.due_date,
+            group: mark?.group ?? null,
+          },
+        ];
+      });
+      if (open.length > 0) {
+        result.push({
+          meeting_id: meeting.id,
+          event_start_time: meeting.event_start_time,
+          items: open,
+        });
+      }
+    }
+    return result;
+  }
+
+  /** `actionItemTasks` for minutes already read under the viewer's rule. */
+  private async marksFor(
+    chapterId: string,
+    meeting: Meeting,
+  ): Promise<ActionItemTask[]> {
     if (meeting.status !== 'posted') return [];
     const items = readMeetingContent(meeting.content).action_items;
     if (items.length === 0) return [];

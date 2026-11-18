@@ -3736,6 +3736,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/series/{key}/open-action-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The action items still open across one repeating meeting’s posted minutes, newest first: open until the task each became is done (#5482) */
+        get: operations["MeetingActionItemTasksController_seriesOpen_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/consent": {
         parameters: {
             query?: never;
@@ -9785,6 +9802,24 @@ export interface components {
             done: boolean;
             /** @description A task for everyone: how many of its copies are done. */
             group: components["schemas"]["ActionItemTaskGroupDto"] | null;
+        };
+        OpenActionItemDto: {
+            /** @description The action item’s place in its minutes’ list, from 0. */
+            index: number;
+            text: string;
+            /** Format: uuid */
+            owner_user_id: string | null;
+            /** @description A calendar day, `YYYY-MM-DD`. */
+            due_date: string | null;
+            /** @description A task for everyone: how many of its copies are done. */
+            group: components["schemas"]["ActionItemTaskGroupDto"] | null;
+        };
+        SeriesOpenActionItemsDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: date-time */
+            event_start_time: string;
+            items: components["schemas"]["OpenActionItemDto"][];
         };
         AiConsentSheetProviderDto: {
             /** @enum {string} */
@@ -20776,6 +20811,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingActionItemTaskDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingActionItemTasksController_seriesOpen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesOpenActionItemsDto"][];
                 };
             };
             /** @description Error */

@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   seriesCadenceLabel,
-  useMeeting,
-  useMeetingActionItemTasks,
   useMeetings,
   useMemberDisplayNames,
+  useSeriesOpenActionItems,
+  type SeriesOpenActionItems,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { SignetTokens } from "@repo/theme/signet";
@@ -14,8 +14,8 @@ import {
   MEETING_COPY,
   MEETING_LIST_COPY,
   isBetaOffModule,
+  TASK_AUDIENCE_COPY,
   meetingDueLabel,
-  readMeetingContent,
 } from "@repo/validation";
 import type { BackTarget } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
@@ -30,7 +30,6 @@ import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
   minutesRowTime,
-  openActionItems,
   seriesRows,
   type MinutesListRow,
 } from "@/lib/minutes/minutes-list";
@@ -47,8 +46,9 @@ const BACK_TO_MINUTES: BackTarget = { label: "Minutes", href: "/minutes" };
  *
  * Open is Tasks' answer (#5482; Paul's pick, 2026-11-18): an item is open
  * until the suggested task it became is done, and an item nobody made a task
- * of stays open (`openActionItems`). Only minutes the list says hold action
- * items are read.
+ * of stays open. The server answers that for the whole series in one read
+ * (`GET /v1/meetings/series/:key/open-action-items`), from each minutes'
+ * content and its tasks together.
  */
 export default function MinutesSeriesScreen() {
   if (isBetaOffModule("meetings")) return <Redirect href="/you" />;
@@ -60,7 +60,8 @@ function MinutesSeriesBody() {
   const params = useLocalSearchParams<{ key?: string | string[] }>();
   const key = Array.isArray(params.key) ? params.key[0] : (params.key ?? "");
   const meetingsQuery = useMeetings();
-  const refresh = useRefetchAll([meetingsQuery]);
+  const openQuery = useSeriesOpenActionItems(key || null);
+  const refresh = useRefetchAll([meetingsQuery, openQuery]);
   // The clock as the screen opened: groups and times stay put while it is open.
   const [now] = useState(Date.now);
   const rows: MinutesListRow[] = seriesRows(meetingsQuery.data ?? [], key);
@@ -104,7 +105,7 @@ function MinutesSeriesBody() {
     newest.event_start_time,
     rows.map((row) => row.event_start_time),
   );
-  const sources = rows.filter(
+  const hasItems = rows.some(
     (row) => row.status === "posted" && row.action_item_count > 0,
   );
   const years = new Map<number, MinutesListRow[]>();
@@ -122,8 +123,12 @@ function MinutesSeriesBody() {
         .join(" · ")}
       refresh={refresh}
     >
-      {sources.length > 0 ? (
-        <OpenActionItems sources={sources} now={now} />
+      {hasItems ? (
+        <OpenActionItems
+          open={openQuery.data}
+          pending={openQuery.isPending}
+          now={now}
+        />
       ) : null}
       {[...years.entries()].map(([year, members]) => (
         <View key={year}>
@@ -156,75 +161,26 @@ function MinutesSeriesBody() {
 }
 
 /**
- * The series' open action items: each source minutes' own card, and a line
- * once every one of them has answered with nothing open.
+ * The series' open action items: one card per minutes that still has some,
+ * newest first, each item with who, when it's due, how a task for everyone
+ * is going, and from when. A row's shape while they load; a line if they
+ * can't; a line once none is open.
  */
 function OpenActionItems({
-  sources,
+  open,
+  pending,
   now,
 }: {
-  sources: MinutesListRow[];
+  open: SeriesOpenActionItems[] | undefined;
+  pending: boolean;
   now: number;
-}) {
-  // How many each source has open, once it has answered.
-  const [open, setOpen] = useState<Record<string, number>>({});
-  const report = useCallback((id: string, count: number) => {
-    setOpen((before) =>
-      before[id] === count ? before : { ...before, [id]: count },
-    );
-  }, []);
-  const answered = sources.every((source) => open[source.id] !== undefined);
-  const none = answered && sources.every((source) => open[source.id] === 0);
-  return (
-    <>
-      <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
-      {sources.map((source) => (
-        <SourceOpenItems
-          key={source.id}
-          id={source.id}
-          day={minutesRowTime(source.event_start_time, now)}
-          onCount={report}
-        />
-      ))}
-      {none ? (
-        <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>
-      ) : null}
-    </>
-  );
-}
-
-/**
- * One posted minutes' open action items, as their own card: what, who, when
- * it's due, how a task for everyone is going, and from when. A row's shape
- * while they load; a line if they can't; nothing once none is open.
- */
-function SourceOpenItems({
-  id,
-  day,
-  onCount,
-}: {
-  id: string;
-  day: string;
-  onCount: (id: string, count: number) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const names = useMemberDisplayNames();
-  const meetingQuery = useMeeting(id);
-  const tasksQuery = useMeetingActionItemTasks(id);
-  const meeting = meetingQuery.data;
-  const tasks = tasksQuery.data;
-  const open =
-    meeting && tasks
-      ? openActionItems(readMeetingContent(meeting.content).action_items, tasks)
-      : null;
-  const count = open?.length ?? null;
-  useEffect(() => {
-    if (count !== null) onCount(id, count);
-  }, [count, id, onCount]);
-
+  let body: ReactNode;
   if (!open) {
-    return meetingQuery.isPending || tasksQuery.isPending ? (
+    body = pending ? (
       <ListSection>
         <ListRowSkeleton index={0} description />
       </ListSection>
@@ -233,33 +189,50 @@ function SourceOpenItems({
         {MEETING_LIST_COPY.loadFailedTitle}
       </InlineNote>
     );
+  } else if (open.length === 0) {
+    body = <InlineNote>{MEETING_LIST_COPY.seriesActionsNone}</InlineNote>;
+  } else {
+    body = open.map((source) => {
+      const day = minutesRowTime(source.event_start_time, now);
+      return (
+        <ListSection key={source.meeting_id}>
+          {source.items.map((item) => (
+            <View
+              key={`${source.meeting_id}-${item.index}`}
+              style={styles.item}
+            >
+              <Text style={styles.text}>{item.text}</Text>
+              <Text style={styles.meta}>
+                {[
+                  item.owner_user_id
+                    ? memberLabel(
+                        names.nameFor(item.owner_user_id),
+                        item.owner_user_id,
+                      )
+                    : MEETING_LIST_COPY.noOwner,
+                  item.due_date ? meetingDueLabel(item.due_date) : null,
+                  item.group
+                    ? TASK_AUDIENCE_COPY.progress(
+                        item.group.done,
+                        item.group.total,
+                      )
+                    : null,
+                  MEETING_LIST_COPY.seriesActionsFrom(day),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </View>
+          ))}
+        </ListSection>
+      );
+    });
   }
-  if (open.length === 0) return null;
   return (
-    <ListSection>
-      {open.map(({ item, index, group }) => (
-        <View key={`${id}-${index}`} style={styles.item}>
-          <Text style={styles.text}>{item.text}</Text>
-          <Text style={styles.meta}>
-            {[
-              item.owner_user_id
-                ? memberLabel(
-                    names.nameFor(item.owner_user_id),
-                    item.owner_user_id,
-                  )
-                : MEETING_LIST_COPY.noOwner,
-              item.due_date ? meetingDueLabel(item.due_date) : null,
-              group
-                ? MEETING_LIST_COPY.seriesActionsGroup(group.done, group.total)
-                : null,
-              MEETING_LIST_COPY.seriesActionsFrom(day),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </Text>
-        </View>
-      ))}
-    </ListSection>
+    <>
+      <SectionHeader>{MEETING_LIST_COPY.seriesActions}</SectionHeader>
+      {body}
+    </>
   );
 }
 

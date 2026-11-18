@@ -127,8 +127,6 @@ export const MEETING_LIST_COPY = {
   seriesActions: "Open action items",
   seriesActionsFrom: (day: string) => `from ${day}`,
   seriesActionsNone: "Nothing open from these meetings.",
-  /** A task for everyone's progress on an open item. */
-  seriesActionsGroup: (done: number, total: number) => `${done} of ${total} done`,
   noOwner: "Nobody named",
   /** Present, Late and Excused: who checked in to the meeting's event. */
   present: "Present",
