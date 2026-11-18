@@ -10220,7 +10220,7 @@ export interface components {
              * @enum {string}
              */
             proof_kind: "none" | "photo" | "link";
-            /** @description On a task for everyone, its group (#5492): each member’s copy carries the same `id`, so a client shows an officer’s copies as one row; the counts say how far the group is. Null for a one-person task. */
+            /** @description On a task for everyone, its group (#5492), as every task read carries it: each member’s copy has the same `id`, and the counts say how far the group is. Null for a one-person task. */
             group: components["schemas"]["TaskGroupSummaryDto"] | null;
             /** Format: date-time */
             created_at: string;
@@ -10494,7 +10494,7 @@ export interface components {
         ActivityMadeByYouDto: {
             /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out of the read. A current client lists the open ones and finds the closed in `GET /v1/activity/archive` (#5127); the closed ones are served for phone builds from before it, which draw them as Archived polls (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
-            /** @description Tasks the caller assigned, newest first: the 25 newest, a task for everyone counting once, with every copy of it read (#5492), so a client folds the copies sharing a `group.id` into one row. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`. */
+            /** @description Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
             /**
              * @deprecated

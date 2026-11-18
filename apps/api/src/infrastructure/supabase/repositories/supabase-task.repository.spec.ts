@@ -884,6 +884,27 @@ describe('SupabaseTaskRepository — taking members out of a group (#5492)', () 
     );
   });
 
+  it('deletes in batches, so a whole chapter never overflows the URL', async () => {
+    const ids = [
+      OPEN_A,
+      ...Array.from(
+        { length: 149 },
+        (_, i) =>
+          `0a000000-0000-4000-8000-${String(1000 + i).padStart(12, '0')}`,
+      ),
+    ];
+    await expect(
+      repo.deleteGroupCopies(CHAPTER_A, GROUP, ids),
+    ).resolves.toEqual([OPEN_A]);
+    const deletes = harness.ops.filter((op) => op.mode === 'delete');
+    expect(
+      deletes.map(
+        (op) =>
+          (op.filters.find((f) => f.op === 'in')?.value as string[]).length,
+      ),
+    ).toEqual([100, 50]);
+  });
+
   it('writes nothing for no ids', async () => {
     await expect(repo.deleteGroupCopies(CHAPTER_A, GROUP, [])).resolves.toEqual(
       [],

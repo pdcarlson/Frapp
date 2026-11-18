@@ -78,11 +78,8 @@ member's own answer, not the event's default:
   [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15; until
   then the page kept them behind "Archived polls", which phone builds from before the Archive
   still draw from this list, so it is still served).
-- **Tasks:** tasks the caller assigned, newest first. A task for everyone counts once toward the
-  25, and every copy of it read is served, each carrying its `group` (`id`, `total`, `done`,
-  `confirmed`), so a client folds a group's copies into one row (#5492; until then one group of
-  25 copies filled the list and hid every other task the officer assigned). The read pages
-  through at most 100 copies to find them. A client lists those not yet confirmed; a
+- **Tasks:** tasks the caller assigned, newest first, each copy of a task for everyone with its
+  `group` ([`tasks.md` § Tasks for everyone](tasks.md#tasks-for-everyone)). A client lists those not yet confirmed; a
   confirmed one is finished and in the [Archive](#archive) (#5127), and is still served for phone
   builds from before it. Only while the caller still holds
   `tasks:manage`: without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row
@@ -125,9 +122,8 @@ page on both clients. See [Week](#week).
   (`tasks`, `hours`, `polls`, `events`) and does not read it while the
   chapter has it off ([`../product/modules.md`](../product/modules.md)). Links, sign-ups and forms
   come from chat, which has no switch, so they are always read.
-- **Each list carries at most 25 rows**, except Made by you's polls (25 open and 25 closed),
-  Made by you's tasks (25 tasks, a task for everyone counting once, above) and Reminders (50 due
-  and 50 waiting).
+- **Each list carries at most 25 rows**, except Made by you's polls (25 open and 25 closed) and
+  Reminders (50 due and 50 waiting).
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
   rather than show it as empty.

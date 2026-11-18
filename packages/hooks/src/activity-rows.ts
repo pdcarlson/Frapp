@@ -1,6 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { signUpLinkKind, TASK_AUDIENCE_COPY } from "@repo/validation";
+import { signUpLinkKind } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
@@ -223,17 +223,7 @@ export function activityRowAction(
 /** One row of the page: what it shows, and the record it opens. */
 export type ActivityRow = RowBase &
   (
-    | {
-        kind: "task";
-        /** On a group row, its newest copy: what the row opens. */
-        task: ActivityTask;
-        /**
-         * On an officer's row for a task for everyone (#5492), every copy
-         * the read served, the group folded into one row; absent on any
-         * other task row.
-         */
-        copies?: readonly ActivityTask[];
-      }
+    | { kind: "task"; task: ActivityTask }
     | { kind: "poll"; poll: ActivityPoll }
     | { kind: "event"; event: ActivityEvent }
     | { kind: "hours"; entry: ActivityHours }
@@ -455,12 +445,13 @@ function cardRow(
   };
 }
 
-/** A task row's due phrase, and the same when it falls within the day. */
-function taskDue(
+function taskRow(
   task: ActivityTask,
+  group: string,
+  role: "mine" | "confirm" | "assigned",
   now: Date,
   when: RowWhen = "dated",
-): { soon: string | null; due: string | null } {
+): ActivityRow {
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
   const finished = task.stored_status === "COMPLETED";
@@ -475,17 +466,6 @@ function taskDue(
           ? `Due ${formatTimeOfDay(task.due_at)}`
           : null
         : formatDueLabel(task.due_at ?? task.due_date, now)));
-  return { soon, due };
-}
-
-function taskRow(
-  task: ActivityTask,
-  group: string,
-  role: "mine" | "confirm" | "assigned",
-  now: Date,
-  when: RowWhen = "dated",
-): ActivityRow {
-  const { soon, due } = taskDue(task, now, when);
   const who =
     role === "mine"
       ? task.created_by_name
@@ -531,62 +511,6 @@ function taskRow(
     unread: role !== "assigned" && task.unread,
     readRef: { kind: "task", item_id: task.id },
     progress: null,
-  };
-}
-
-/**
- * The tasks an officer assigned, a task for everyone folded to one entry
- * (#5492): the read serves each member's copy, newest first, and one task
- * sent to 25 members used to be 25 rows. Each entry keeps the order its
- * newest copy came in. A copy whose read carries no `group` (an API from
- * before the field) stays a row of its own.
- */
-function foldTaskGroups(
-  tasks: ActivityTask[],
-): { newest: ActivityTask; copies: ActivityTask[] }[] {
-  const entries: { newest: ActivityTask; copies: ActivityTask[] }[] = [];
-  const byGroup = new Map<string, ActivityTask[]>();
-  for (const task of tasks) {
-    const groupId = task.group ? task.group.id : null;
-    const copies = groupId ? byGroup.get(groupId) : undefined;
-    if (copies) {
-      copies.push(task);
-      continue;
-    }
-    const fresh = [task];
-    if (groupId) byGroup.set(groupId, fresh);
-    entries.push({ newest: task, copies: fresh });
-  }
-  return entries;
-}
-
-/**
- * A task for everyone as one row of Tasks you assigned (#5492): "Everyone ·
- * 12" and when it is due, and how many have done it as the row's bar, the
- * poll's "41 of 60 voted" bar. Overdue while any copy is, as web's board
- * tile files it (`spec/behavior/tasks.md` § Tasks for everyone).
- */
-function groupTaskRow(
-  newest: ActivityTask,
-  copies: ActivityTask[],
-  now: Date,
-): ActivityRow {
-  const group = newest.group;
-  const row = taskRow(newest, "made", "assigned", now);
-  if (!group || row.kind !== "task") return row;
-  // The group is due when its copies are: one form edits them together.
-  const { due } = taskDue(newest, now);
-  const overdue = copies.some((copy) => copy.status === "OVERDUE");
-  return {
-    ...row,
-    key: `made:task-group:${group.id}`,
-    copies,
-    detail: [`${TASK_AUDIENCE_COPY.everyone} · ${group.total}`, due]
-      .filter(Boolean)
-      .join(" · "),
-    faceId: null,
-    badge: overdue ? { label: "Overdue", variant: "destructive" } : null,
-    progress: rowProgress({ done: group.done, total: group.total }, "done"),
   };
 }
 
@@ -819,14 +743,9 @@ export function activityGroups(
   );
   // A confirmed task is finished: it is in the Archive (#5127). The read
   // still serves it, for phone builds from before the Archive.
-  // A task for everyone is one row, however many copies it has (#5492).
-  const madeTasks = foldTaskGroups(
-    activity.made_by_you.tasks.filter((task) => !task.confirmed_at),
-  ).map(({ newest, copies }) =>
-    newest.group
-      ? groupTaskRow(newest, copies, now)
-      : taskRow(newest, "made", "assigned", now),
-  );
+  const madeTasks = activity.made_by_you.tasks
+    .filter((task) => !task.confirmed_at)
+    .map((task) => taskRow(task, "made", "assigned", now));
 
   return [
     {
@@ -1001,12 +920,7 @@ export function findActivityTaskRow(
     ...activityGroups(activity, now).flatMap((group) => group.rows),
   ];
   return (
-    rows.find(
-      (row) =>
-        row.kind === "task" &&
-        (row.task.id === taskId ||
-          (row.copies?.some((copy) => copy.id === taskId) ?? false)),
-    ) ?? null
+    rows.find((row) => row.kind === "task" && row.task.id === taskId) ?? null
   );
 }
 

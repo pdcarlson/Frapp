@@ -935,6 +935,19 @@ export class TaskService {
     ];
   }
 
+  /** A copy of a group task, and its group; a 404 or a 400 otherwise. */
+  private async groupCopyOrThrow(
+    id: string,
+    chapterId: string,
+  ): Promise<{ task: Task; groupId: string }> {
+    const task = await this.taskRepo.findById(id, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (!task.group_id) {
+      throw new BadRequestException("This task isn't for a group");
+    }
+    return { task, groupId: task.group_id };
+  }
+
   /**
    * An officer's edit of everyone's copy of a group task (#4295 step 3): the
    * same edit as {@link update}, made to each copy not yet confirmed. A
@@ -948,11 +961,7 @@ export class TaskService {
     actorId: string,
     input: UpdateTaskInput,
   ): Promise<TaskView> {
-    const task = await this.taskRepo.findById(id, chapterId);
-    if (!task) throw new NotFoundException('Task not found');
-    if (!task.group_id) {
-      throw new BadRequestException("This task isn't for a group");
-    }
+    const { groupId } = await this.groupCopyOrThrow(id, chapterId);
     if (input.assignee_id !== undefined) {
       throw new BadRequestException(
         "Hand one member's copy to someone else on that copy alone",
@@ -962,7 +971,7 @@ export class TaskService {
       throw new BadRequestException(TASK_AUDIENCE_COPY.noPhotos);
     }
     const open = (
-      await this.taskRepo.findGroupCopies(chapterId, [task.group_id])
+      await this.taskRepo.findGroupCopies(chapterId, [groupId])
     ).filter((copy) => !copy.points_awarded);
     if (open.length === 0) {
       throw new BadRequestException(
@@ -1002,19 +1011,13 @@ export class TaskService {
    * {@link delete} deletes one task: its photos go after it.
    */
   async deleteGroup(id: string, chapterId: string): Promise<void> {
-    const task = await this.taskRepo.findById(id, chapterId);
-    if (!task) throw new NotFoundException('Task not found');
-    if (!task.group_id) {
-      throw new BadRequestException("This task isn't for a group");
-    }
-    const copies = await this.taskRepo.findGroupCopies(chapterId, [
-      task.group_id,
-    ]);
+    const { groupId } = await this.groupCopyOrThrow(id, chapterId);
+    const copies = await this.taskRepo.findGroupCopies(chapterId, [groupId]);
     const photos = await this.taskRepo.findPhotos(
       chapterId,
       copies.map((copy) => copy.id),
     );
-    await this.taskRepo.deleteGroup(chapterId, task.group_id);
+    await this.taskRepo.deleteGroup(chapterId, groupId);
     await this.releasePhotos(
       chapterId,
       photos.map((photo) => photo.storage_path),
@@ -1039,12 +1042,7 @@ export class TaskService {
     chapterId: string,
     assigneeIds: string[],
   ): Promise<{ removed: string[]; group: TaskGroupSummary }> {
-    const task = await this.taskRepo.findById(id, chapterId);
-    if (!task) throw new NotFoundException('Task not found');
-    if (!task.group_id) {
-      throw new BadRequestException("This task isn't for a group");
-    }
-    const groupId = task.group_id;
+    const { task, groupId } = await this.groupCopyOrThrow(id, chapterId);
     const copies = await this.taskRepo.findGroupCopies(chapterId, [groupId]);
     const asked = new Set(assigneeIds);
     const picked = copies.filter((copy) => asked.has(copy.assignee_id));
