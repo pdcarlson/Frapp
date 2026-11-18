@@ -9,7 +9,7 @@ import {
   activityDetailParts,
   type ActivityRow,
 } from "@repo/hooks/activity-rows";
-import type { ActivityFace } from "@repo/hooks";
+import { activityFaceStack, type ActivityFace } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import { FaceWithBadge } from "@/components/shared/face-with-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -94,16 +94,11 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
   );
 }
 
-/** How many faces a task for everyone shows before "+N", as on the phone. */
-const FACE_STACK_MAX = 3;
-
 /**
- * Whom a task for everyone went to (#5538, the phone's row since #5492): up
- * to three of the members the read previews (overdue first), each tucked
- * under the one before with the face badge's hairline edge, then "+N" for
- * the rest, as Slack's and GitHub's avatar stacks count the others. A member
- * the roster no longer holds is left out and counted in "+N". Decoration:
- * the row says who it went to and how many are done.
+ * Whom a task for everyone went to (#5538, the phone's row since #5492), as
+ * `activityFaceStack` picks them: each face tucked under the one before with
+ * the face badge's hairline edge, then "+N". Decoration: the row says who it
+ * went to and how many are done.
  */
 export function ActivityFaceStack({
   ids,
@@ -112,16 +107,12 @@ export function ActivityFaceStack({
   ids: string[];
   total: number;
 }) {
-  const faceFor = useContext(ActivityFaces);
-  const faces = ids
-    .map((id) => ({ id, face: faceFor(id) }))
-    .filter(
-      (entry): entry is { id: string; face: ActivityFace } =>
-        entry.face !== null,
-    )
-    .slice(0, FACE_STACK_MAX);
+  const { faces, more } = activityFaceStack(
+    ids,
+    total,
+    useContext(ActivityFaces),
+  );
   if (faces.length === 0) return null;
-  const more = total - faces.length;
   return (
     <span
       aria-hidden="true"

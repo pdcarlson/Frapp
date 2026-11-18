@@ -91,6 +91,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     }),
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
+    activityFaceStack: actual.activityFaceStack,
     activityReview: actual.activityReview,
     activityReviewQueue: actual.activityReviewQueue,
     activityRowAction: actual.activityRowAction,
@@ -1751,7 +1752,7 @@ describe("ActivityPage", () => {
     expect(refetch).toHaveBeenCalledTimes(2);
   });
 
-  it("sends a review the fresh read doesn't hold to the task board", async () => {
+  it("sends a review the fresh read doesn't hold to that task on the board", async () => {
     mockActivity.mockReturnValue({
       ...loaded(),
       refetch: vi.fn(() => Promise.resolve({ data: data() })),
@@ -1761,7 +1762,7 @@ describe("ActivityPage", () => {
     await act(async () => {});
 
     expect(screen.queryByText(/^panel:/)).not.toBeInTheDocument();
-    expect(mockReplace).toHaveBeenCalledWith("/tasks");
+    expect(mockReplace).toHaveBeenCalledWith("/tasks?task=gone");
   });
 
   it("dots an unread row and records the open when it is opened (#4405)", () => {

@@ -1348,8 +1348,14 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
         ...(items === undefined ? {} : { task_items: items }),
       },
     });
-  const madeTasks = (data: Activity, taskItems = true) =>
-    activityGroups(data, now, { taskItems })
+  /** Without `task_items`: a read from an API before the field. */
+  const withoutItems = (data: Activity): Activity => {
+    const older: Partial<Activity["made_by_you"]> = { ...data.made_by_you };
+    delete older.task_items;
+    return { ...data, made_by_you: older as Activity["made_by_you"] };
+  };
+  const madeTasks = (data: Activity) =>
+    activityGroups(data, now)
       .find((g) => g.id === "made-by-you")!
       .parts.find((part) => part.id === "tasks")!.rows;
 
@@ -1427,28 +1433,22 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
     expect(onTime!.badge).toBeNull();
   });
 
-  it("falls back to each copy from an API before task_items, or when not asked for them", () => {
+  it("falls back to each copy from an API before task_items", () => {
     const old = madeTasks(read(undefined));
     expect(old).toHaveLength(31);
     expect(old.every((row) => row.kind === "task")).toBe(true);
-    // Not asked for: one row per copy, as before.
-    const perCopy = madeTasks(read([{ kind: "group", group: group() }]), false);
-    expect(perCopy).toHaveLength(31);
-    expect(perCopy.every((row) => row.kind === "task")).toBe(true);
   });
 
   it("finds the group's row by the copy it opens", () => {
     const data = read([{ kind: "group", group: group() }]);
+    expect(findActivityTaskRow(data, "copy-7", now)?.key).toBe(
+      "made:task-group:group-1",
+    );
     expect(
-      findActivityTaskRow(data, "copy-7", now, { taskItems: true })?.key,
-    ).toBe("made:task-group:group-1");
-    expect(
-      findActivityTaskRow(data, "copy-7", now)?.key,
+      findActivityTaskRow(withoutItems(data), "copy-7", now)?.key,
       "without task_items, the copy's own row",
     ).toBe("made:task:copy-7");
-    expect(
-      findActivityTaskRow(data, "copy-8", now, { taskItems: true }),
-    ).toBeNull();
+    expect(findActivityTaskRow(data, "copy-8", now)).toBeNull();
   });
 });
 
@@ -1479,7 +1479,6 @@ describe("taskAwaitsReview (#5492, #5513)", () => {
         },
       }),
       new Date(),
-      { taskItems: true },
     )
       .find((group) => group.id === "made-by-you")!
       .rows.find((row) => row.kind === "task")!;

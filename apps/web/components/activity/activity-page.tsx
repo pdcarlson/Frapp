@@ -38,7 +38,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { chatDeepLink } from "@/lib/chat/chat-links";
-import { tasksGroupLink } from "@/lib/tasks/task-links";
+import { tasksGroupLink, tasksTaskLink } from "@/lib/tasks/task-links";
 import { cn } from "@/lib/utils";
 import { can, type ActivityCardKey } from "@repo/validation";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
@@ -114,7 +114,6 @@ import {
   type ActivityArchiveGroup,
   type ActivityAgendaFilter,
   type ActivityGroup,
-  type ActivityGroupsOptions,
   type ActivityPart,
   type ActivityRow,
   type ActivityRowProgress,
@@ -863,7 +862,6 @@ function SnoozedSection({ rows, kit }: { rows: ActivityRow[]; kit: RowKit }) {
  * Tasks you assigned as one row per task for everyone (#5538), as on the
  * phone: the row opens the group on the Tasks board (`TaskGroupRow`).
  */
-const GROUP_OPTIONS: ActivityGroupsOptions = { taskItems: true };
 
 /**
  * Reads `?review=<taskId>` (a "submitted a task" notification, `deepLinkFor`
@@ -1010,16 +1008,16 @@ export function ActivityPage() {
   // it, however the list is narrowed; a task no longer in the feed opens
   // nothing. The read is taken again first: the one in hand can predate the
   // submission (the page was open, or its read cached). A task the fresh
-  // read doesn't hold (confirmed elsewhere, or past the read's cap) goes to
-  // the board, whose waiting column lists every completion. The copy a task
-  // for everyone's row opens, found only there, opens the group on the
-  // board, as the row does (#5538).
+  // read doesn't hold (confirmed elsewhere, reopened, past the read's cap,
+  // or a copy of a task for everyone other than the one its row names) opens
+  // on the board, which opens it, or its group, in the task panel (#5538).
+  // The copy a task for everyone's row names opens the group, as the row does.
   const router = useRouter();
   const pathname = usePathname();
   const openReview = async (taskId: string) => {
     const result = await activity.refetch();
     const row = result.data
-      ? findActivityTaskRow(result.data, taskId, new Date(), GROUP_OPTIONS)
+      ? findActivityTaskRow(result.data, taskId, new Date())
       : null;
     if (row?.kind === "task-group") {
       router.replace(tasksGroupLink(row.group.id));
@@ -1027,7 +1025,7 @@ export function ActivityPage() {
       openFromList(row);
       router.replace(pathname, { scroll: false });
     } else {
-      router.replace("/tasks");
+      router.replace(tasksTaskLink(taskId));
     }
   };
   // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
@@ -1088,7 +1086,7 @@ export function ActivityPage() {
   );
   // What the member made, and the links posted for them, in order.
   const groups = useMemo(
-    () => (visible ? activityGroups(visible, now, GROUP_OPTIONS) : []),
+    () => (visible ? activityGroups(visible, now) : []),
     [visible, now],
   );
   // Narrowed to a kind, the page is the To do list alone.

@@ -3,6 +3,7 @@ import {
   render,
   screen,
   waitFor,
+  act,
   within,
 } from "@testing-library/react";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -46,13 +47,13 @@ const {
   toastSpy,
   searchRef,
   routerReplace,
-  tasksFetching,
+  tasksRefetch,
 } = vi.hoisted(() => ({
-  // The address's query (`?group=<id>`, #5538) and the board's replace of it.
+  // The address's query (`?group=<id>`, `?task=<id>`, #5538).
   searchRef: { current: new URLSearchParams() },
   routerReplace: vi.fn(),
-  // The tasks read re-reading over what it holds.
-  tasksFetching: { current: false },
+  // The tasks read taken again, before a linked task is called missing.
+  tasksRefetch: vi.fn(() => Promise.resolve()),
   // Postings up for grabs, and the writes on them (2026-11-18).
   openTasksRef: { current: [] as unknown[] },
   createOpenTaskMutate: vi.fn(),
@@ -113,8 +114,18 @@ const MEMBERS = [
 
 const TIERS = [{ id: "tier-exec", name: "Exec board", position: 1 }];
 const ROLES = [
-  { id: "role-everyone", name: "Member", system_key: "MEMBER", display_order: 9 },
-  { id: "role-pres", name: "President", tier_id: "tier-exec", display_order: 1 },
+  {
+    id: "role-everyone",
+    name: "Member",
+    system_key: "MEMBER",
+    display_order: 9,
+  },
+  {
+    id: "role-pres",
+    name: "President",
+    tier_id: "tier-exec",
+    display_order: 1,
+  },
   { id: "role-rush", name: "Recruitment Committee", display_order: 2 },
   { id: "role-house", name: "Housing Chair", display_order: 3 },
 ];
@@ -188,9 +199,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useTasks: () => ({
     data: tasksPending.current ? undefined : tasksRef.current,
     isPending: tasksPending.current,
-    isFetching: tasksFetching.current,
+    isFetching: false,
     isError: false,
-    refetch: vi.fn(),
+    refetch: tasksRefetch,
   }),
   useMembers: () => ({
     data:
@@ -335,10 +346,13 @@ const chapter = chapterSubscription(mockCurrentChapter);
 const trigger = () => screen.getByRole("button", { name: /^new task$/i });
 const addForm = () => screen.getByRole("form", { name: /add a task/i });
 const addSubmit = () => within(addForm()).getByRole("button", { name: "Add" });
-const titleField = () => within(addForm()).getByRole("textbox", { name: "Task title" });
+const titleField = () =>
+  within(addForm()).getByRole("textbox", { name: "Task title" });
 /** Picks people in the add line's Who picker, then closes it. */
 async function pickWho(...names: RegExp[]) {
-  await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
+  await userEvent.click(
+    within(addForm()).getByRole("button", { name: /^who/i }),
+  );
   for (const name of names) {
     await userEvent.click(await screen.findByRole("checkbox", { name }));
   }
@@ -357,7 +371,8 @@ const deleteButtons = () =>
 beforeEach(() => {
   searchRef.current = new URLSearchParams();
   routerReplace.mockClear();
-  tasksFetching.current = false;
+  tasksRefetch.mockReset();
+  tasksRefetch.mockImplementation(() => Promise.resolve());
   window.localStorage.clear();
   resetListLayoutForTests();
   // Most cases below read a task's controls off its Grid tile; the List's
@@ -389,7 +404,6 @@ function liveStatus(): HTMLElement | null {
       .find((el) => (el.textContent ?? "").trim() !== "") ?? null
   );
 }
-
 
 /**
  * Picks in the toolbar's View menu (grouping and List / Grid), which closes
@@ -429,7 +443,9 @@ describe("TasksBoard suggested tasks (#4313)", () => {
     tasksRef.current = TASKS;
     try {
       render(<TasksBoard />);
-      expect(screen.queryByRole("region", { name: "Suggested tasks" })).toBeNull();
+      expect(
+        screen.queryByRole("region", { name: "Suggested tasks" }),
+      ).toBeNull();
     } finally {
       tasksRef.current = [];
     }
@@ -440,7 +456,9 @@ describe("TasksBoard suggested tasks (#4313)", () => {
     suggestionsPending.current = true;
     try {
       render(<TasksBoard />);
-      expect(screen.queryByRole("region", { name: "Suggested tasks" })).toBeNull();
+      expect(
+        screen.queryByRole("region", { name: "Suggested tasks" }),
+      ).toBeNull();
       expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
     } finally {
       suggestionsPending.current = false;
@@ -699,9 +717,7 @@ describe("TasksBoard subscription gating", () => {
     // And the add line takes nothing that cannot succeed.
     // Add shows only once there's a title, which a gated line can't take.
     expect(titleField()).toBeDisabled();
-    expect(
-      within(addForm()).queryByRole("button", { name: "Add" }),
-    ).toBeNull();
+    expect(within(addForm()).queryByRole("button", { name: "Add" })).toBeNull();
   });
 
   it("gates the other four task writes, not just Create", () => {
@@ -931,7 +947,9 @@ describe("TasksBoard List / Grid", () => {
     expect(sweepItem()).not.toHaveClass("border");
     expect(confirmedList()).toHaveClass("divide-y");
     // A row says who, when and for how many points, and opens the task.
-    expect(within(sweepItem()!).getAllByText("Paul Carlson").length).toBeGreaterThan(0);
+    expect(
+      within(sweepItem()!).getAllByText("Paul Carlson").length,
+    ).toBeGreaterThan(0);
     expect(within(sweepItem()!).getByText("+5 pts")).toBeInTheDocument();
     // An empty group draws nothing in List: no "Nothing overdue" heading.
     expect(screen.queryByRole("region", { name: "Overdue" })).toBeNull();
@@ -943,7 +961,12 @@ describe("TasksBoard List / Grid", () => {
     resetListLayoutForTests();
     tasksRef.current = [
       ...TASKS,
-      { ...TASKS[0]!, id: "task-late", title: "Pay the house bill", status: "OVERDUE" },
+      {
+        ...TASKS[0]!,
+        id: "task-late",
+        title: "Pay the house bill",
+        status: "OVERDUE",
+      },
     ];
     render(<TasksBoard />);
     const names = screen
@@ -1122,7 +1145,8 @@ describe("TasksBoard flush layout", () => {
     // The add line heads the board, ahead of the first lane.
     const todo = screen.getByRole("region", { name: "To do" });
     expect(
-      addForm().compareDocumentPosition(todo) & Node.DOCUMENT_POSITION_FOLLOWING,
+      addForm().compareDocumentPosition(todo) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByRole("heading", { name: /no tasks yet/i })).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
@@ -1148,7 +1172,9 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     expect(more).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(trigger());
     expect(more).toHaveAttribute("aria-expanded", "true");
-    expect(within(addForm()).getByLabelText("Notes (optional)")).toBeInTheDocument();
+    expect(
+      within(addForm()).getByLabelText("Notes (optional)"),
+    ).toBeInTheDocument();
     expect(titleField()).toHaveFocus();
   });
 
@@ -1204,10 +1230,16 @@ describe("TasksBoard quick add (2026-11-18)", () => {
 
   it("gives a role's members a copy each through the tasks endpoint", async () => {
     render(<TasksBoard />);
-    await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
-    await userEvent.click(await screen.findByRole("radio", { name: "Roles and groups" }));
+    await userEvent.click(
+      within(addForm()).getByRole("button", { name: /^who/i }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Roles and groups" }),
+    );
     // A chapter with a dozen roles or fewer opens every tier.
-    await userEvent.click(await screen.findByRole("checkbox", { name: /Recruitment Committee/ }));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /Recruitment Committee/ }),
+    );
     await userEvent.keyboard("{Escape}");
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "2026-12-01" },
@@ -1225,10 +1257,18 @@ describe("TasksBoard quick add (2026-11-18)", () => {
 
   it("posts One claims it to Up for grabs", async () => {
     render(<TasksBoard />);
-    await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
-    await userEvent.click(await screen.findByRole("checkbox", { name: /Paul Carlson/ }));
-    await userEvent.click(await screen.findByRole("checkbox", { name: /Cole Martin/ }));
-    await userEvent.click(await screen.findByRole("radio", { name: "One claims it" }));
+    await userEvent.click(
+      within(addForm()).getByRole("button", { name: /^who/i }),
+    );
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /Paul Carlson/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: /Cole Martin/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "One claims it" }),
+    );
     await userEvent.keyboard("{Escape}");
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "2026-12-01" },
@@ -1237,7 +1277,10 @@ describe("TasksBoard quick add (2026-11-18)", () => {
 
     await waitFor(() => expect(createOpenTaskMutate).toHaveBeenCalledTimes(1));
     // Both members are the whole chapter: anyone may claim it.
-    const sent = createOpenTaskMutate.mock.calls[0]![0] as Record<string, unknown>;
+    const sent = createOpenTaskMutate.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
     expect(sent).toMatchObject({ title: "Drive to the airport" });
     expect(sent.user_ids).toBeUndefined();
     expect(createTaskMutate).not.toHaveBeenCalled();
@@ -1294,13 +1337,19 @@ describe("TasksBoard quick add (2026-11-18)", () => {
   it("closes only the picker on Escape inside it", async () => {
     render(<TasksBoard />);
     await userEvent.type(titleField(), "Order pizza");
-    await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
-    expect(await screen.findByRole("checkbox", { name: /Cole Martin/ })).toBeVisible();
+    await userEvent.click(
+      within(addForm()).getByRole("button", { name: /^who/i }),
+    );
+    expect(
+      await screen.findByRole("checkbox", { name: /Cole Martin/ }),
+    ).toBeVisible();
 
     await userEvent.keyboard("{Escape}");
 
     await waitFor(() =>
-      expect(screen.queryByRole("checkbox", { name: /Cole Martin/ })).toBeNull(),
+      expect(
+        screen.queryByRole("checkbox", { name: /Cole Martin/ }),
+      ).toBeNull(),
     );
     expect(titleField()).toHaveValue("Order pizza");
   });
@@ -1319,7 +1368,8 @@ describe("TasksBoard quick add (2026-11-18)", () => {
 
     const tile = screen.getByText("Sweep the chapter room");
     expect(
-      addForm().compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING,
+      addForm().compareDocumentPosition(tile) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -1438,7 +1488,10 @@ describe("TasksBoard editing a task (#4296)", () => {
   });
 
   /** Opens a task's panel from its Grid tile's Edit. */
-  async function openPanel(user: ReturnType<typeof userEvent.setup>, title: string) {
+  async function openPanel(
+    user: ReturnType<typeof userEvent.setup>,
+    title: string,
+  ) {
     await user.click(screen.getByRole("button", { name: `Edit ${title}` }));
     return screen.findByRole("dialog", { name: title });
   }
@@ -1449,9 +1502,13 @@ describe("TasksBoard editing a task (#4296)", () => {
 
     const panel = await openPanel(user, "Sweep the chapter room");
     expect(within(panel).queryByRole("button", { name: "Save" })).toBeNull();
-    expect(within(panel).getByText("Changes save as you make them.")).toBeInTheDocument();
+    expect(
+      within(panel).getByText("Changes save as you make them."),
+    ).toBeInTheDocument();
     await user.click(
-      within(panel).getByRole("button", { name: "Title: Sweep the chapter room" }),
+      within(panel).getByRole("button", {
+        name: "Title: Sweep the chapter room",
+      }),
     );
     const title = within(panel).getByLabelText("Title");
     expect(title).toHaveFocus();
@@ -1493,7 +1550,9 @@ describe("TasksBoard editing a task (#4296)", () => {
 
     const panel = await openPanel(user, "Sweep the chapter room");
     await user.click(
-      within(panel).getByRole("button", { name: "Title: Sweep the chapter room" }),
+      within(panel).getByRole("button", {
+        name: "Title: Sweep the chapter room",
+      }),
     );
     await user.keyboard("{Enter}");
 
@@ -1508,7 +1567,9 @@ describe("TasksBoard editing a task (#4296)", () => {
 
     const panel = await openPanel(user, "Sweep the chapter room");
     await user.click(
-      within(panel).getByRole("button", { name: "Title: Sweep the chapter room" }),
+      within(panel).getByRole("button", {
+        name: "Title: Sweep the chapter room",
+      }),
     );
     await user.type(within(panel).getByLabelText("Title"), "!{Enter}");
 
@@ -1524,13 +1585,17 @@ describe("TasksBoard editing a task (#4296)", () => {
 
     const panel = await openPanel(user, "Draft the rush calendar");
     await user.click(
-      within(panel).getByRole("button", { name: "Title: Draft the rush calendar" }),
+      within(panel).getByRole("button", {
+        name: "Title: Draft the rush calendar",
+      }),
     );
     await user.type(within(panel).getByLabelText("Title"), " now{Escape}");
 
     expect(updateTaskMutate).not.toHaveBeenCalled();
     expect(within(panel).queryByLabelText("Title")).toBeNull();
-    expect(screen.getByRole("dialog", { name: "Draft the rush calendar" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Draft the rush calendar" }),
+    ).toBeInTheDocument();
   });
 
   it("opens the same panel from a List row's title", async () => {
@@ -1542,7 +1607,9 @@ describe("TasksBoard editing a task (#4296)", () => {
     const row = screen
       .getAllByRole("listitem")
       .find((item) => item.getAttribute("data-task-row") === "task-todo")!;
-    await user.click(within(row).getByRole("button", { name: "Sweep the chapter room" }));
+    await user.click(
+      within(row).getByRole("button", { name: "Sweep the chapter room" }),
+    );
     expect(
       await screen.findByRole("dialog", { name: "Sweep the chapter room" }),
     ).toBeInTheDocument();
@@ -2124,10 +2191,16 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
       name: "Fill out the tabling form",
     });
     // Who's done is in the panel; repeat and photos aren't offered.
-    expect(within(panel).getByRole("region", { name: "Who's done" })).toBeInTheDocument();
-    expect(within(panel).getByText(TASK_AUDIENCE_COPY.noRepeat)).toBeInTheDocument();
+    expect(
+      within(panel).getByRole("region", { name: "Who's done" }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByText(TASK_AUDIENCE_COPY.noRepeat),
+    ).toBeInTheDocument();
     await user.click(
-      within(panel).getByRole("button", { name: "Title: Fill out the tabling form" }),
+      within(panel).getByRole("button", {
+        name: "Title: Fill out the tabling form",
+      }),
     );
     const title = within(panel).getByLabelText("Title");
     await user.clear(title);
@@ -2150,7 +2223,9 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
       name: "Fill out the tabling form, for everyone",
     });
     expect(within(row).getByText("1 of 3")).toBeInTheDocument();
-    await user.click(within(row).getByRole("button", { name: "Fill out the tabling form" }));
+    await user.click(
+      within(row).getByRole("button", { name: "Fill out the tabling form" }),
+    );
     expect(
       await screen.findByRole("dialog", { name: "Fill out the tabling form" }),
     ).toBeInTheDocument();
@@ -2178,8 +2253,15 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     ).toBeNull();
   });
 
-  describe("the group link, /tasks?group=<id> (#5538)", () => {
+  describe("the links, /tasks?group=<id> and ?task=<id> (#5538)", () => {
+    const dropsParam = () => {
+      const spy = vi.spyOn(window.history, "replaceState");
+      spy.mockClear();
+      return spy;
+    };
+
     it("opens the group in the task panel and drops the param", async () => {
+      const replaceState = dropsParam();
       searchRef.current = new URLSearchParams("group=group-1");
       render(<TasksBoard />);
       const panel = await screen.findByRole("dialog", {
@@ -2189,15 +2271,30 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
       expect(
         within(panel).getByRole("region", { name: "Who's done" }),
       ).toBeInTheDocument();
-      expect(routerReplace).toHaveBeenCalledWith("/tasks", { scroll: false });
+      expect(replaceState).toHaveBeenCalledTimes(1);
+      expect(tasksRefetch).not.toHaveBeenCalled();
       expect(toastSpy).not.toHaveBeenCalled();
     });
 
-    it("waits for a re-read before calling a group missing, then says so", async () => {
+    it("opens a copy's link as its group", async () => {
+      searchRef.current = new URLSearchParams("task=copy-other");
+      render(<TasksBoard />);
+      const panel = await screen.findByRole("dialog", {
+        name: "Fill out the tabling form",
+      });
+      expect(
+        within(panel).getByRole("region", { name: "Who's done" }),
+      ).toBeInTheDocument();
+    });
+
+    it("reads again before calling a group missing: a cached read can predate it", async () => {
       searchRef.current = new URLSearchParams("group=group-new");
-      tasksFetching.current = true;
+      let land!: () => void;
+      tasksRefetch.mockImplementation(
+        () => new Promise<void>((resolve) => (land = resolve)),
+      );
       const { rerender } = render(<TasksBoard />);
-      expect(routerReplace).not.toHaveBeenCalled();
+      await waitFor(() => expect(tasksRefetch).toHaveBeenCalledTimes(1));
       expect(toastSpy).not.toHaveBeenCalled();
 
       // The re-read lands with the group in it.
@@ -2205,8 +2302,8 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
         ...task,
         group_id: "group-new",
       }));
-      tasksFetching.current = false;
       rerender(<TasksBoard />);
+      await act(async () => land());
       expect(
         await screen.findByRole("dialog", {
           name: "Fill out the tabling form",
@@ -2215,16 +2312,18 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
       expect(toastSpy).not.toHaveBeenCalled();
     });
 
-    it("leaves the board as it is for a group the read doesn't hold", async () => {
+    it("says a group the re-read doesn't hold is gone, and leaves the board", async () => {
+      const replaceState = dropsParam();
       searchRef.current = new URLSearchParams("group=gone");
       render(<TasksBoard />);
       await waitFor(() =>
-        expect(routerReplace).toHaveBeenCalledWith("/tasks", { scroll: false }),
+        expect(toastSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Couldn't find that task" }),
+        ),
       );
+      expect(tasksRefetch).toHaveBeenCalledTimes(1);
+      expect(replaceState).toHaveBeenCalledTimes(1);
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Couldn't find that task" }),
-      );
     });
   });
 });
@@ -2280,7 +2379,9 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
     ).toBeEnabled();
     expect(within(row).queryByRole("button", { name: /^assign/i })).toBeNull();
     // The title is not a button for a member: there is no panel to open.
-    expect(within(row).queryByRole("button", { name: POSTING.title })).toBeNull();
+    expect(
+      within(row).queryByRole("button", { name: POSTING.title }),
+    ).toBeNull();
   });
 
   it("still leads a member's board when nothing is on their plate", () => {
@@ -2295,7 +2396,9 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
     render(<TasksBoard />);
 
     await userEvent.click(
-      within(section()).getByRole("button", { name: `Claim: ${POSTING.title}` }),
+      within(section()).getByRole("button", {
+        name: `Claim: ${POSTING.title}`,
+      }),
     );
 
     await waitFor(() => expect(claimMutate).toHaveBeenCalledWith("posting-1"));
@@ -2312,7 +2415,9 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
     render(<TasksBoard />);
 
     await userEvent.click(
-      within(section()).getByRole("button", { name: `Claim: ${POSTING.title}` }),
+      within(section()).getByRole("button", {
+        name: `Claim: ${POSTING.title}`,
+      }),
     );
 
     await waitFor(() =>
@@ -2327,11 +2432,17 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
     render(<TasksBoard />);
 
     await userEvent.click(
-      within(section()).getByRole("button", { name: `Assign ${POSTING.title}` }),
+      within(section()).getByRole("button", {
+        name: `Assign ${POSTING.title}`,
+      }),
     );
     // A person only: no roles tab, no mode switch.
-    expect(screen.queryByRole("radio", { name: "Roles and groups" })).toBeNull();
-    await userEvent.click(await screen.findByRole("radio", { name: /Cole Martin/ }));
+    expect(
+      screen.queryByRole("radio", { name: "Roles and groups" }),
+    ).toBeNull();
+    await userEvent.click(
+      await screen.findByRole("radio", { name: /Cole Martin/ }),
+    );
 
     await waitFor(() =>
       expect(assignMutate).toHaveBeenCalledWith({
@@ -2343,9 +2454,13 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
 
   it("opens the posting in a panel for an officer", async () => {
     render(<TasksBoard />);
-    await userEvent.click(within(section()).getByRole("button", { name: POSTING.title }));
+    await userEvent.click(
+      within(section()).getByRole("button", { name: POSTING.title }),
+    );
     const panel = await screen.findByRole("dialog", { name: POSTING.title });
-    expect(within(panel).getByRole("button", { name: /^due:/i })).toBeInTheDocument();
+    expect(
+      within(panel).getByRole("button", { name: /^due:/i }),
+    ).toBeInTheDocument();
   });
 
   it("offers Give it back on a task claimed from it", async () => {
@@ -2355,10 +2470,18 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
     const user = userEvent.setup();
     render(<TasksBoard />);
 
-    await user.click(screen.getByRole("button", { name: "Edit Sweep the chapter room" }));
-    const panel = await screen.findByRole("dialog", { name: "Sweep the chapter room" });
-    await user.click(within(panel).getByRole("button", { name: TASK_AUDIENCE_COPY.release }));
-    await waitFor(() => expect(releaseMutate).toHaveBeenCalledWith("task-todo"));
+    await user.click(
+      screen.getByRole("button", { name: "Edit Sweep the chapter room" }),
+    );
+    const panel = await screen.findByRole("dialog", {
+      name: "Sweep the chapter room",
+    });
+    await user.click(
+      within(panel).getByRole("button", { name: TASK_AUDIENCE_COPY.release }),
+    );
+    await waitFor(() =>
+      expect(releaseMutate).toHaveBeenCalledWith("task-todo"),
+    );
   });
 
   it("offers no Give it back once the task is done, or on someone else's", async () => {
@@ -2394,7 +2517,9 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
       name: "Book the philanthropy venue",
     });
     expect(
-      within(theirs).queryByRole("button", { name: TASK_AUDIENCE_COPY.release }),
+      within(theirs).queryByRole("button", {
+        name: TASK_AUDIENCE_COPY.release,
+      }),
     ).toBeNull();
   });
 });

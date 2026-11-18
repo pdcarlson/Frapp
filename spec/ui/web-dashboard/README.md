@@ -515,7 +515,8 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   (Changed in [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15: Archived polls is gone; a closed poll is in the Archive below with everything else that is over.)
   Tasks you assigned likewise leaves out a confirmed task.
   **A task for everyone is one row** ([#5538](https://github.com/frapplive/Frapp/issues/5538), 2026-11-18, as the phone has drawn it since #5492): its title, who it went to and when it is due ("Everyone · Due Fri", `taskGroupLabel`), a stack of up to three faces of whom it went to with "+N" for the rest, then the progress bar and "12 of 30" (read "12 of 30 done"), and **Overdue** when any copy is.
-  It is a link to the Tasks board with the group open in its task panel (`/tasks?group=<id>`, [`tasks.md` § Tasks for everyone](../../behavior/tasks.md#tasks-for-everyone)), never Activity's panel, which draws one task; a one-person task still opens Activity's panel.
+  It is a link to the Tasks board with the group open in its task panel (`/tasks?group=<id>`, [`tasks.md` § Tasks for everyone](../../behavior/tasks.md#tasks-for-everyone)), never Activity's panel, which draws one task as chat's card and would show one member's copy as if it were the group; a one-person task still opens Activity's panel.
+  A review link (`/activity?review=<id>`) opens what waits on the officer's review in Activity's panel; one for a copy of a task for everyone that no longer waits there, or any task the read no longer holds, opens on the board (`/tasks?task=<id>`), the copy's group in the task panel.
   Until then web listed a row per copy, so one task sent to 30 members was 30 rows.
   To do likewise drops a poll whose time ran out since the read.
   A group with nothing in it is left out rather than drawn as an empty line.

@@ -787,7 +787,6 @@ function part(
 export function activityGroups(
   activity: Activity,
   now: Date = new Date(),
-  options: ActivityGroupsOptions = {},
 ): ActivityGroup[] {
   const down = new Set(activity.unavailable);
   const downFor = (sections: ActivitySection[]) =>
@@ -808,7 +807,7 @@ export function activityGroups(
   const madeEvents = activity.made_by_you.events.map((event) =>
     eventRow(event, "made", now),
   );
-  const madeTasks = madeTaskRows(activity, now, options);
+  const madeTasks = madeTaskRows(activity, now);
 
   return [
     {
@@ -859,36 +858,16 @@ export function activityGroups(
   ];
 }
 
-/** How `activityGroups` builds Waiting on others. */
-export interface ActivityGroupsOptions {
-  /**
-   * Tasks you assigned from `made_by_you.task_items` (#5492), where a task for
-   * everyone is one row that opens its group: the phone's task screen, and
-   * since #5538 web's Tasks board (`/tasks?group=<id>`), never web's Activity
-   * panel, which draws one task as chat's card. Both clients pass it. Without
-   * it, or from an API before the field, each copy is its own row
-   * (`made_by_you.tasks`).
-   */
-  taskItems?: boolean;
-}
-
 /**
- * Tasks you assigned. From `task_items` when asked for and served (#5492):
- * the read has already left out what is finished and counted a task for
- * everyone once. Otherwise from `tasks`, each copy its own row, less the
- * confirmed ones, which are finished and in the Archive (#5127); the read
- * still serves those for phone builds from before the Archive.
+ * Tasks you assigned. From `task_items` when served (#5492): the read has
+ * already left out what is finished and counted a task for everyone once,
+ * as one row that opens its group (the phone's task screen, web's Tasks
+ * board since #5538). From an API before the field (a persisted cache, a
+ * server behind the build), from `tasks`, each copy its own row, less the
+ * confirmed ones, which are finished and in the Archive (#5127).
  */
-function madeTaskRows(
-  activity: Activity,
-  now: Date,
-  options: ActivityGroupsOptions,
-): ActivityRow[] {
-  // `?? null`: a read from an API before the field (a persisted cache, a
-  // server behind the build) has none.
-  const items = options.taskItems
-    ? (activity.made_by_you.task_items ?? null)
-    : null;
+function madeTaskRows(activity: Activity, now: Date): ActivityRow[] {
+  const items = activity.made_by_you.task_items ?? null;
   if (items) {
     return items.map((item) =>
       item.kind === "group"
@@ -1014,8 +993,7 @@ export function activityReviewRows(
  * what they assigned. Null when the feed no longer has it, such as a
  * completion confirmed from another device.
  *
- * With `taskItems` (`activityGroups`), a copy of a task for everyone the
- * viewer assigned finds the group's row when it is the copy that row opens
+ * A copy of a task for everyone the viewer assigned finds the group's row when it is the copy that row opens
  * (`task_id`); the read names no other copy, so another finds nothing there.
  * A completed copy is found first anyway, among what waits on review.
  */
@@ -1023,12 +1001,11 @@ export function findActivityTaskRow(
   activity: Activity,
   taskId: string,
   now: Date = new Date(),
-  options: ActivityGroupsOptions = {},
 ): ActivityRow | null {
   const rows = [
     ...activityReviewRows(activity, now),
     ...activityToDos(activity, now).map((todo) => todo.dated),
-    ...activityGroups(activity, now, options).flatMap((group) => group.rows),
+    ...activityGroups(activity, now).flatMap((group) => group.rows),
   ];
   return rows.find((row) => activityRowTaskId(row) === taskId) ?? null;
 }

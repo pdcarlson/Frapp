@@ -4,6 +4,7 @@ import {
   ACTIVITY_GLYPH_NAV,
   activityBadgeIsAsk,
   activityDetailParts,
+  activityFaceStack,
   type ActivityFace,
   type ActivityRow,
   type ActivityRowProgress,
@@ -358,34 +359,25 @@ function ActivityRowProgressLine({
   );
 }
 
-/** How many faces a task for everyone shows before "+N" (#5492). */
-const FACE_STACK_MAX = 3;
 /** Each face's side: the smallest avatar the phone draws (the mention picker's). */
 const FACE_STACK_SIZE = 24;
 /** How far each face tucks under the one before, as Slack's and GitHub's stacks. */
 const FACE_STACK_OVERLAP = 8;
 
 /**
- * Whom a task for everyone went to (#5492; Paul, 2026-11-18: "a stack of
- * faces and how many are done"): up to three of the members the read
- * previews (overdue first), each overlapping the one before, then "+N" for
- * the rest, as Slack's and GitHub's avatar stacks count the others. A member
- * the roster no longer holds is left out and counted in "+N". Decoration: the
+ * Whom a task for everyone went to (#5492), as `activityFaceStack` picks
+ * them: each face overlapping the one before, then "+N". Decoration: the
  * row's label says who it went to and how many are done.
  */
 function FaceStack({ ids, total }: { ids: string[]; total: number }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
-  const faceFor = useContext(ActivityFaces);
-  const faces = ids
-    .map((id) => ({ id, face: faceFor(id) }))
-    .filter(
-      (entry): entry is { id: string; face: ActivityFace } =>
-        entry.face !== null,
-    )
-    .slice(0, FACE_STACK_MAX);
+  const { faces, more } = activityFaceStack(
+    ids,
+    total,
+    useContext(ActivityFaces),
+  );
   if (faces.length === 0) return null;
-  const more = total - faces.length;
   return (
     <View style={styles.faceStack} testID="activity-face-stack">
       {faces.map(({ id, face }, index) => (
