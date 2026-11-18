@@ -22,7 +22,15 @@ import {
   TWO_LINE_MIN_HEIGHT,
 } from "@repo/hooks/calendar-time-grid";
 import { SignetTokens } from "@repo/theme/signet";
-import { CalendarTaskChip } from "@/components/events/calendar-tasks";
+import {
+  CalendarTaskChip,
+  type CalendarTaskMenuFor,
+} from "@/components/events/calendar-tasks";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { formatEventClock } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
@@ -63,6 +71,8 @@ export function EventsTimeGrid({
   onOpenTask,
   canCreate,
   onCreateAt,
+  eventMenuFor,
+  taskMenuFor,
 }: {
   /** The day, at local midnight. */
   day: Date;
@@ -73,6 +83,10 @@ export function EventsTimeGrid({
   onOpenTask: (taskId: string) => void;
   canCreate: boolean;
   onCreateAt: (day: Date, hour: number) => void;
+  /** An event's long-press menu (`useEventMenu`, #5492). */
+  eventMenuFor?: (event: EventRow) => ItemMenuHandle | null;
+  /** A task chip's (`useCalendarTaskMenu`, #5492). */
+  taskMenuFor?: CalendarTaskMenuFor;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -90,6 +104,12 @@ export function EventsTimeGrid({
   const isToday = key === todayKey;
   const dayLabel = longDay(day);
   const hasStrip = allDay.length > 0 || tasks.length > 0;
+  // An event's long press opens its menu (#5492), offered by name to a
+  // screen reader too.
+  const eventLongPress = (event: EventRow) => {
+    const menu = eventMenuFor?.(event) ?? null;
+    return { onLongPress: longPressOf(menu), ...itemMenuAccessibility(menu) };
+  };
 
   // Opened at 8 AM once.
   const scrollRef = useRef<ScrollView>(null);
@@ -148,6 +168,7 @@ export function EventsTimeGrid({
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${event.name}, all day${required(event)}`}
                 onPress={() => onOpen(event.id)}
+                {...eventLongPress(event)}
                 style={({ pressed }) => [
                   styles.allDayChip,
                   { borderLeftColor: blockBorder(event) },
@@ -164,6 +185,7 @@ export function EventsTimeGrid({
                 key={item.key}
                 item={item}
                 onOpenTask={onOpenTask}
+                menuFor={taskMenuFor}
               />
             ))}
           </View>
@@ -256,6 +278,7 @@ export function EventsTimeGrid({
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${event.name}, ${clock}${required(event)}`}
                   onPress={() => onOpen(event.id)}
+                  {...eventLongPress(event)}
                   style={({ pressed }) => [
                     styles.block,
                     {

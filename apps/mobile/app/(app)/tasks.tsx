@@ -77,13 +77,11 @@ import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
-import {
-  selectTaskRows,
-  toTaskRow,
-  type TaskRowModel,
-} from "@/lib/tasks/board";
+import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
+import { useTaskMenu } from "@/lib/tasks/use-task-menu";
+import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -116,6 +114,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * back to `IN_PROGRESS` (`spec/behavior/tasks.md` § Assignee Actions). The
  * box's writes, proof sheet and refusals are `useTaskToggle`
  * (`lib/tasks/use-task-toggle.tsx`), which the task screen's Mark done shares.
+ *
+ * A long press on a row or card opens the task's menu (`useTaskMenu`, #5492):
+ * Mark done, Edit, Reassign, Remove people, Duplicate and Delete, each to the
+ * viewer the API lets use it. Its Mark done is the box's, Undo and all.
  *
  * ## Why the board filters by assignee
  *
@@ -210,24 +212,16 @@ export default function TasksScreen() {
   // The task a row opens and the one Mark done's sheet is open on, read off
   // the board, or off the same query for a task the board has let go of
   // (finished more than a week ago).
+  const rowById = useTaskRowById();
   const findRow = useCallback(
     (id: string | null): TaskRowModel | null => {
       if (id === null) return null;
       const onBoard = MY_TASKS_GROUPS.flatMap(
         (group) => board.groups[group],
       ).find((row) => row.id === id);
-      if (onBoard) return onBoard;
-      const raw = Array.isArray(tasksQuery.data)
-        ? (tasksQuery.data as unknown[]).find(
-            (row) =>
-              !!row &&
-              typeof row === "object" &&
-              (row as { id?: unknown }).id === id,
-          )
-        : undefined;
-      return raw ? toTaskRow(raw as Record<string, unknown>) : null;
+      return onBoard ?? rowById(id);
     },
-    [board, tasksQuery.data],
+    [board, rowById],
   );
   // The box's writes, shared with the task screen's Mark done. Coming back
   // to the app on this screen also re-reads the clock (see `now` above): a
@@ -306,6 +300,10 @@ export default function TasksScreen() {
   useEffect(() => {
     if (createMounted) createRef.current?.present();
   }, [createMounted]);
+  // A row's long-press menu (#5492): its Mark done is the box's, and a
+  // Duplicate says where it went in the line New task's create uses.
+  const taskMenu = useTaskMenu({ toggles, onCreated: setCreated });
+  const { menuFor } = taskMenu;
   const openCreate = useCallback(() => {
     setCreated(null);
     if (createMounted) createRef.current?.present();
@@ -542,6 +540,7 @@ export default function TasksScreen() {
         isPending: pendingId === row.id,
         onToggle: canToggle(row) ? () => void toggle(row) : undefined,
         onOpen: () => openTask(row.id),
+        menu: menuFor(row),
       });
       if (layout === "grid") {
         return (
@@ -564,7 +563,7 @@ export default function TasksScreen() {
         </View>
       );
     },
-    [now, pendingId, canToggle, toggle, openTask, layout, styles.grid],
+    [now, pendingId, canToggle, toggle, openTask, menuFor, layout, styles.grid],
   );
 
   function renderBoard() {
@@ -766,6 +765,8 @@ export default function TasksScreen() {
       ) : null}
 
       <MarkDoneHost toggle={toggles} />
+
+      {taskMenu.host}
     </View>
   );
 }

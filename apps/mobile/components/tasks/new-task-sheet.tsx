@@ -79,6 +79,7 @@ import {
   editDraftOf,
   taskEditBody,
   type TaskEditTarget,
+  type TaskPrefill,
   duePresets,
   parsePointReward,
   resolveDue,
@@ -203,6 +204,18 @@ export interface NewTaskSheetProps {
    * (`key` on its id).
    */
   suggestion?: TaskSuggestionSeed;
+  /**
+   * Duplicate a task (#5492): a new task, opened on the original's words,
+   * points, proof, steps and who (`taskDuplicateOf`), and created as any new
+   * task is. Its description, which the form has no field for, goes with it.
+   * The host mounts one sheet per duplicate (`key`), with no kept draft.
+   */
+  prefill?: TaskPrefill;
+  /**
+   * An edit opened for Reassign (#5492): Assign to's picker rises over the
+   * sheet as soon as it is up, so the member picks who first.
+   */
+  openOnWho?: boolean;
   /**
    * Offer more than one person in Assign to (#4295 step 3; Paul,
    * 2026-11-18): several people, a role, a group or everyone in the
@@ -347,6 +360,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       onSaved,
       onClosed,
       suggestion,
+      prefill,
+      openOnWho = false,
       keptDraft,
       offerGroups = false,
     },
@@ -358,6 +373,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const pickerRef = useRef<BottomSheetModal>(null);
+    const whoOpened = useRef(false);
     const closeSheet = useSheetClose(ref);
     // Its hosts (the composer among them) dismiss it on a blur or a channel
     // switch, up or not (#5059): the ref they hold only reaches a sheet that
@@ -404,7 +420,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     // The draft kept from the screen's last visit (`keptDraft`); an edit's
     // over the task as it is now.
-    const keptName = keptDraft && !suggestion ? keptDraft : null;
+    const keptName = keptDraft && !suggestion && !prefill ? keptDraft : null;
     const keptOpening = useKeptSheetOpening<KeptTask>(keptName);
     const [opening] = useState(() =>
       keptOpening && editing ? keptEditOver(keptOpening, editing) : keptOpening,
@@ -415,10 +431,17 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       editing ? taskEditFieldsOf(editing) : undefined,
     );
     const [title, setTitle] = useState(
-      opening?.title ?? editBase?.title ?? suggestion?.title ?? "",
+      opening?.title ??
+        editBase?.title ??
+        suggestion?.title ??
+        prefill?.title ??
+        "",
     );
     const [pointsInput, setPointsInput] = useState(
-      opening?.pointsInput ?? editBase?.pointsInput ?? "",
+      opening?.pointsInput ??
+        editBase?.pointsInput ??
+        prefill?.pointsInput ??
+        "",
     );
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
@@ -428,7 +451,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           ? editBase.due
           : suggested
             ? { kind: "date", date: suggested.dueDate }
-            : DEFAULT_DUE_CHOICE,
+            : (prefill?.due ?? DEFAULT_DUE_CHOICE),
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(
@@ -436,11 +459,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         ? opening.dueTime
         : editBase
           ? editBase.dueTime
-          : (suggested?.dueTime ?? null),
+          : (suggested?.dueTime ?? prefill?.dueTime ?? null),
     );
     // The steps (#4003), and the one being typed, which sends as the last.
     const [subtasks, setSubtasks] = useState<string[]>(() => [
-      ...(opening?.subtasks ?? suggestion?.subtasks ?? []),
+      ...(opening?.subtasks ?? suggestion?.subtasks ?? prefill?.subtasks ?? []),
     ]);
     const [subtaskText, setSubtaskText] = useState(
       () => opening?.subtaskText ?? "",
@@ -451,13 +474,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         ? keptWho(opening)
         : editBase
           ? editBase.who
-          : (suggestion?.who ?? null),
+          : (suggestion?.who ?? prefill?.who ?? null),
     );
     // Photos and proof (#4635): the task's own reference photos still kept
     // (an edit), the ones picked here, which go up on Save, and the proof
     // control. A suggestion carries none, so its form leaves them out.
     const [proofKind, setProofKind] = useState<TaskProofKind>(
-      opening?.proofKind ?? editBase?.proofKind ?? "none",
+      opening?.proofKind ?? editBase?.proofKind ?? prefill?.proofKind ?? "none",
     );
     const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(() => {
       const photos = editing?.referencePhotos ?? [];
@@ -528,8 +551,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // A suggestion the meeting named nobody for stays unassigned until the
     // officer picks: defaulting it to them would be a guess. A host that
     // offers one person only never keeps more than one.
-    const pickedWho =
-      who && !offerGroups && who.kind !== "person" ? null : who;
+    const pickedWho = who && !offerGroups && who.kind !== "person" ? null : who;
     const effectiveWho: TaskWho | null =
       pickedWho ??
       (suggestion || !viewerUserId
@@ -598,6 +620,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       who: effectiveWho,
       pointsInput,
       proofKind,
+      description: prefill?.description ?? null,
     };
     const body = validateNewTask(draft, at, original ?? undefined);
     const timePassed = dueTimePassed(draft, at, original ?? undefined);
@@ -969,6 +992,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           handleComponent={SheetGrabber}
           backdropComponent={SheetScrim}
           onAnimate={onAnimate}
+          onChange={(index) => {
+            // Reassign: once the sheet is up, its picker rises over it.
+            if (!openOnWho || whoOpened.current || index < 0) return;
+            whoOpened.current = true;
+            pickerRef.current?.present();
+          }}
           onDismiss={closed}
         >
           <SheetBackToClose onClose={closeSheet} />

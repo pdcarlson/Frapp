@@ -588,6 +588,28 @@ describe("An officer on a task for everyone: a lot", () => {
   });
 
   describe("Remove people's select mode", () => {
+    it("opens in select mode from a row's long-press Remove people (select=1, #5492)", () => {
+      vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+        id: "t1",
+        select: "1",
+      });
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <TaskDetailsScreen />
+          </FrappThemeProvider>,
+        );
+      });
+      expect(control(tree, "Remove 0")).toBeDefined();
+      expect(control(tree, "Cancel")).toBeDefined();
+      // Cleared, so coming back to the screen doesn't select again.
+      expect(vi.mocked(expoRouter.useRouter)().setParams).toHaveBeenCalledWith({
+        select: undefined,
+      });
+      act(() => tree.unmount());
+    });
+
     it("lists everyone with a circle; a confirmed copy is dimmed and can't be picked", () => {
       const tree = render();
       press(tree, "Remove people");

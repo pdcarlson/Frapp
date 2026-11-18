@@ -3,9 +3,10 @@ import {
   isEmptyEventPatch,
   pickRepeatPreset,
 } from "@repo/validation";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   draftFromEvent,
+  duplicateEventTemplate,
   validateEventEdit,
   type EventEditTarget,
 } from "./edit-event";
@@ -243,5 +244,58 @@ describe("validateEventEdit", () => {
         patchOf(head, (d) => (d.repeat = editRepeatDraft(d.repeat, {}))),
       ),
     ).toBe(true);
+  });
+});
+
+describe("duplicateEventTemplate (#5492)", () => {
+  it("keeps an event still ahead as it is, as a one-time event", () => {
+    const draft = duplicateEventTemplate(
+      { ...EVENT, recurrence_rule: "WEEKLY" },
+      NOW,
+    );
+    expect(draft.name).toBe("Chapter");
+    expect(draft.start?.toISOString()).toBe(EVENT.start_time);
+    expect(draft.end?.toISOString()).toBe(EVENT.end_time);
+    expect(draft.repeat.preset).toBe("NONE");
+  });
+
+  it("moves an event that has started on by whole weeks, keeping its length", () => {
+    // Three weeks and a day after the start.
+    const later = new Date(
+      new Date(EVENT.start_time).getTime() + 22 * 24 * 60 * 60 * 1000,
+    );
+    const draft = duplicateEventTemplate(EVENT, later);
+    const start = draft.start!;
+    expect(start > later).toBe(true);
+    expect(
+      (start.getTime() - new Date(EVENT.start_time).getTime()) /
+        (24 * 60 * 60 * 1000),
+    ).toBe(28);
+    expect(draft.end!.getTime() - start.getTime()).toBe(90 * 60 * 1000);
+  });
+
+  it("lands ahead of now, at the same hour, across a spring-forward", () => {
+    // A zone with a spring-forward; CI runs in UTC and Asia/Tokyo, which
+    // have none. Node reads the zone afresh when it changes.
+    vi.stubEnv("TZ", "America/New_York");
+    try {
+      // Saturday 7 PM EST; now is the next Saturday 7:30 PM EDT, a week
+      // less half an hour later by the clock that changed in between.
+      const start = new Date(2026, 2, 7, 19, 0);
+      const now = new Date(2026, 2, 14, 19, 30);
+      const draft = duplicateEventTemplate(
+        {
+          ...EVENT,
+          start_time: start.toISOString(),
+          end_time: new Date(start.getTime() + 3_600_000).toISOString(),
+        },
+        now,
+      );
+      expect(draft.start! > now).toBe(true);
+      expect(draft.start!.getHours()).toBe(19);
+      expect(draft.start!.getDate()).toBe(21);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

@@ -1236,3 +1236,131 @@ describe("NewTaskSheet for more than one person (#4295 step 3; 2026-11-18)", () 
     act(() => tree.unmount());
   });
 });
+
+describe("Reassign, from a row's long press (#5492)", () => {
+  function renderEdit(openOnWho: boolean) {
+    const presented: string[] = [];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            openOnWho={openOnWho}
+            editing={{
+              id: "t1",
+              title: "Sweep the porch",
+              assigneeId: "user-2",
+              dueDay: "2026-09-30",
+              dueAt: null,
+              pointReward: null,
+              storedStatus: "TODO",
+              referencePhotos: [],
+              proofKind: "none",
+            }}
+          />
+        </FrappThemeProvider>,
+        {
+          // The picker is the tall one (`snapPoints: ["100%"]`).
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? {
+                  present: () =>
+                    presented.push(
+                      (element.props as { snapPoints?: unknown }).snapPoints
+                        ? "picker"
+                        : "form",
+                    ),
+                  dismiss: () => undefined,
+                }
+              : null,
+        },
+      );
+    });
+    const form = tree.root.find(
+      (node) =>
+        node.type === ("BottomSheetModal" as never) &&
+        typeof node.props.onDismiss === "function" &&
+        node.props.snapPoints === undefined,
+    );
+    return { tree, form, presented };
+  }
+
+  it("raises Assign to's picker once the edit sheet is up, and only once", () => {
+    const { tree, form, presented } = renderEdit(true);
+    expect(presented).toEqual([]);
+    act(() => form.props.onChange(0));
+    expect(presented).toEqual(["picker"]);
+    act(() => form.props.onChange(0));
+    expect(presented).toEqual(["picker"]);
+    act(() => tree.unmount());
+  });
+
+  it("leaves the picker down on a plain Edit", () => {
+    const { tree, form, presented } = renderEdit(false);
+    act(() => form.props.onChange(0));
+    expect(presented).toEqual([]);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Duplicate, from a row's long press (#5492)", () => {
+  function renderDuplicate(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            keptDraft="tasks-create"
+            prefill={{
+              title: "Sweep the porch",
+              description: "Behind the bins too.",
+              who: { kind: "person", userId: "user-2" },
+              pointsInput: "5",
+              proofKind: "photo",
+              subtasks: ["Sweep", "Mop"],
+              due: { kind: "date", date: "2026-09-30" },
+              dueTime: null,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("opens as New task on the original, and creates a new task with its description", () => {
+    failure = FAILED;
+    const tree = renderDuplicate();
+    expect(titleValueOf(tree)).toBe("Sweep the porch");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      title: "Sweep the porch",
+      description: "Behind the bins too.",
+      assignee_id: "user-2",
+      due_date: "2026-09-30",
+      point_reward: 5,
+      proof_kind: "photo",
+      subtasks: ["Sweep", "Mop"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("neither opens on nor keeps the screen's New task draft", () => {
+    failure = FAILED;
+    const kept = render({ keptDraft: "tasks-create" });
+    const title = kept.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Half a draft"));
+    act(() => kept.unmount());
+    const tree = renderDuplicate();
+    expect(titleValueOf(tree)).toBe("Sweep the porch");
+    act(() => tree.unmount());
+    const again = render({ keptDraft: "tasks-create" });
+    expect(titleValueOf(again)).toBe("Half a draft");
+    act(() => again.unmount());
+  });
+});

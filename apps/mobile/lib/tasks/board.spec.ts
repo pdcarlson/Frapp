@@ -110,6 +110,7 @@ describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () 
       task({
         group: {
           audience: "role",
+          target_id: "role-1",
           target_name: "Recruitment",
           total: 6,
           done: 2,
@@ -121,6 +122,7 @@ describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () 
     )!;
     expect(row.group).toEqual({
       audience: "role",
+      targetId: "role-1",
       targetName: "Recruitment",
       total: 6,
       done: 2,

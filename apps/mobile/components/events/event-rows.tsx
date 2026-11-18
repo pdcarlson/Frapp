@@ -10,6 +10,11 @@ import {
   leadRowStyles,
 } from "@/components/lead-tile";
 import { gutterBleed, PressableRow } from "@/components/list-section";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
 import { NavGlyph } from "@/components/nav-glyph";
 import { HairlineChip } from "@/components/status-chip";
 import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
@@ -94,12 +99,15 @@ export function EventRowFlat({
   now,
   isFirst,
   onPress,
+  menu = null,
 }: {
   event: EventRow;
   cadence: string | null;
   now: Date;
   isFirst: boolean;
   onPress: () => void;
+  /** The event's long-press menu (`useEventMenu`, #5492), or none. */
+  menu?: ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createEventRowStyles(tokens);
@@ -119,6 +127,8 @@ export function EventRowFlat({
       accessibilityLabel={accessibilityLabelOf(event, cadence)}
       accessibilityHint="View event details and check in."
       onPress={onPress}
+      onLongPress={longPressOf(menu)}
+      {...itemMenuAccessibility(menu)}
       style={[styles.leadRow, isFirst ? null : styles.flatDivider]}
     >
       <EventLeadTile />

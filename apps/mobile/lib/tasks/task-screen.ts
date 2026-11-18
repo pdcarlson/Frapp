@@ -9,7 +9,13 @@
  * moving someone's completion back is Send back, its own endpoint). Edit,
  * Delete and Remove people are `tasks:manage`, and Edit is refused once a
  * task is confirmed. There is no creator rule.
+ *
+ * A row's long-press menu (#5492) reads the same controls
+ * (`taskMenuKeys`), so the menu and the screen can't disagree about who may
+ * do what.
  */
+
+import { Alert } from "react-native";
 
 import {
   canReopenOwnTask,
@@ -78,6 +84,13 @@ export interface TaskScreenControls {
   delete: boolean;
   /** In More, destructive and last: every copy of a group task. */
   deleteForEveryone: boolean;
+  /**
+   * The long-press menu's Reassign: an edit opened on Assign to. Not on a
+   * group's copy, since a group edit refuses `assignee_id`.
+   */
+  reassign: boolean;
+  /** The long-press menu's Duplicate: New task, filled in from this one. */
+  duplicate: boolean;
 }
 
 export function taskScreenControls({
@@ -95,6 +108,13 @@ export function taskScreenControls({
 }): TaskScreenControls {
   const isAssignee = viewerId !== null && row.assigneeId === viewerId;
   const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  // The board's rule for its sheet's Edit (#4296): the edit form needs an
+  // assignee and a day, and a confirmed task can't change.
+  const edit =
+    canManage &&
+    !row.pointsAwarded &&
+    row.assigneeId !== null &&
+    row.dueDay !== null;
   return {
     // A status this build doesn't know has no sequence to send, so no Mark
     // done that would do nothing (the board's `canToggle` guard).
@@ -103,13 +123,7 @@ export function taskScreenControls({
       (isAssignee || canManage) &&
       !toggleRefused &&
       checkboxSequence(row).length > 0,
-    // The board's rule for its sheet's Edit (#4296): the edit form needs an
-    // assignee and a day, and a confirmed task can't change.
-    edit:
-      canManage &&
-      !row.pointsAwarded &&
-      row.assigneeId !== null &&
-      row.dueDay !== null,
+    edit,
     removePeople: canManage && row.groupId !== null,
     reopen:
       !toggleRefused &&
@@ -124,7 +138,74 @@ export function taskScreenControls({
     release: isAssignee && row.openTaskId !== null && !row.isDone,
     delete: canManage,
     deleteForEveryone: canManage && row.groupId !== null,
+    reassign: edit && row.groupId === null,
+    // Creating needs `tasks:manage` (`POST /v1/tasks`), nothing more.
+    duplicate: canManage,
   };
+}
+
+/** A task's long-press menu rows (#5492), in the order they are drawn. */
+export type TaskMenuKey =
+  | "markDone"
+  | "reopen"
+  | "edit"
+  | "reassign"
+  | "removePeople"
+  | "duplicate"
+  | "delete"
+  | "deleteForEveryone";
+
+/**
+ * Which rows a task's long-press menu draws: what the task screen offers the
+ * same viewer, less Give it back (the screen's, by its More). Mark done is
+ * the task screen's pill, so it leads; the two deletes are last, and red.
+ *
+ * `group`: a Calendar row that stands for every copy of a group task
+ * (an officer's "4 of 12 done"), which can only be acted on as a group:
+ * Remove people, Duplicate, Delete for everyone.
+ */
+export function taskMenuKeys(
+  controls: TaskScreenControls,
+  scope: "copy" | "group" = "copy",
+): TaskMenuKey[] {
+  const keys: TaskMenuKey[] = [];
+  if (scope === "copy") {
+    if (controls.markDone) keys.push("markDone");
+    if (controls.reopen) keys.push("reopen");
+    if (controls.edit) keys.push("edit");
+    if (controls.reassign) keys.push("reassign");
+  }
+  if (controls.removePeople) keys.push("removePeople");
+  if (controls.duplicate) keys.push("duplicate");
+  if (scope === "copy" && controls.delete) keys.push("delete");
+  if (controls.deleteForEveryone) keys.push("deleteForEveryone");
+  return keys;
+}
+
+/**
+ * Delete's question, the platform alert, for the task screen's More and a
+ * row's long-press menu alike. One copy's Delete, or, `everyone`, every copy
+ * of a group task. `onConfirm` runs on the red button.
+ */
+export function confirmTaskDelete(
+  title: string,
+  everyone: boolean,
+  onConfirm: () => void,
+): void {
+  Alert.alert(
+    everyone ? `Delete "${title}" for everyone?` : `Delete "${title}"?`,
+    everyone
+      ? "Every member's copy goes, including ones already marked done. This can't be undone."
+      : "This can't be undone.",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: everyone ? "Delete for everyone" : "Delete task",
+        style: "destructive",
+        onPress: onConfirm,
+      },
+    ],
+  );
 }
 
 /** One History line: what happened, then when (and why, for a send-back). */

@@ -1,12 +1,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
-import {
-  can,
-  checkInZoneLine,
-  seriesRuleOf,
-  seriesStartsIn,
-  statusLabel,
-} from "@repo/validation";
+import { can, checkInZoneLine, statusLabel } from "@repo/validation";
 import { formatPointsChip } from "@repo/formatting";
 import { useCallback, useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -35,7 +29,7 @@ import {
   NewEventSheet,
   useEventEditGrants,
 } from "@/components/events/new-event-sheet";
-import { type EventEditTarget } from "@/lib/events/edit-event";
+import { useEventEditTarget } from "@/lib/events/use-event-edit";
 import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
 import { SelfCheckInLink } from "@/components/events/self-check-in-link";
 import { BACK_TO_EVENTS, pinnedBackClearance } from "@/components/back-row";
@@ -64,7 +58,6 @@ import {
   selectMyAttendance,
   selectSeriesName,
   selectSeriesOccurrences,
-  withoutMeetingLists,
   type EventDetail,
 } from "@/lib/events/select";
 import { PressableRow } from "@/components/list-section";
@@ -164,50 +157,13 @@ export default function EventDetailsScreen() {
   const { accent } = useChapterBranding();
   const grants = useEventEditGrants();
   const editSheetRef = useRef<BottomSheetModal>(null);
-  // Read only for a generated occurrence an editor may open: the series'
-  // rule and start live on its parent.
-  const parentQuery = useEvent(
-    grants.edit && event?.parent_event_id ? event.parent_event_id : "",
-  );
-  const parent = useMemo(
-    () => selectEventDetail(parentQuery.data),
-    [parentQuery.data],
-  );
-  // The chapter's events, for the series' real next meeting: a Repeat change
-  // on a started series steps from it (`repeatEditAnchor`, #4746). Read only
-  // for an editor, and only on a series; the list is usually cached already.
-  const seriesListQuery = useEvents({
-    enabled:
-      grants.edit && !!(event?.parent_event_id || event?.recurrence_rule),
-  });
-  // Edit waits for both, so a Repeat change never steps from a guess while
-  // the list loads. A list read that fails leaves the guess from the rule.
-  const parentSettled =
-    (!event?.parent_event_id || !parentQuery.isPending) &&
-    !seriesListQuery.isLoading;
-  const editTarget = useMemo<EventEditTarget | null>(() => {
-    if (!event) return null;
-    const target = {
-      event,
-      seriesRule: seriesRuleOf(event, parent),
-      parent: event.parent_event_id ? parent : null,
-    };
-    return {
-      ...target,
-      seriesStarts: seriesStartsIn(target, seriesListQuery.data),
-    };
-  }, [event, parent, seriesListQuery.data]);
-  // The sheet's draft is seeded from the event when it mounts, so a save
-  // (or anyone else's) remounts it with what the server now holds.
-  // Not on the agenda or attachments: those save in place on this screen
-  // (#4934), and a check-off must not close an open Edit sheet under the
-  // officer. The sheet edits neither.
-  const editSheetKey = editTarget
-    ? JSON.stringify([
-        withoutMeetingLists(eventQuery.data),
-        parentQuery.data ?? null,
-      ])
-    : "";
+  // The series' rule, head and next meetings, read for an editor; the
+  // sheet remounts on what the server holds after a save (`sheetKey`).
+  const {
+    target: editTarget,
+    ready: parentSettled,
+    sheetKey: editSheetKey,
+  } = useEventEditTarget(event, eventQuery.data);
 
   // An edit kept past this screen (#4872) goes with its event: one deleted
   // since has no sheet to open it in.
