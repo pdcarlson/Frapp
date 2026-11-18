@@ -42,6 +42,10 @@ begin
 end;
 $$;
 
+-- A trigger needs no grant; nobody calls it as an RPC.
+revoke all on function public.member_nudges_default_subject()
+  from public, anon, authenticated;
+
 drop trigger if exists member_nudges_default_subject on public.member_nudges;
 create trigger member_nudges_default_subject
   before insert on public.member_nudges
