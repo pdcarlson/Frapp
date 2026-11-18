@@ -49,6 +49,7 @@ import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
+import { useKeepAboveKeyboard } from "@/lib/keep-above-keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -135,6 +136,10 @@ function EventAgendaSection({
   const [draft, setDraft] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  // The field and its error line stay above the keyboard while it is up,
+  // and each item added pushes the field down a row, so it scrolls with
+  // them and the item just added shows above it (#5463).
+  const { hold, ...keep } = useKeepAboveKeyboard();
   if (agenda.length === 0 && !canEdit) return null;
 
   const muted = tokens.color.text.mutedForeground;
@@ -242,31 +247,41 @@ function EventAgendaSection({
         </View>
       ))}
       {canEdit && !full ? (
-        <View style={[styles.ring, focused ? styles.ringActive : null]}>
-          <TextInput
-            value={draft}
-            onChangeText={(text) => {
-              setDraft(text);
-              setProblem(null);
-            }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            placeholder={
-              agenda.length === 0 ? "Add the first item" : "Add an item"
-            }
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Add an agenda item"
-            maxLength={EVENT_AGENDA_ITEM_MAX}
-            returnKeyType="done"
-            // Return adds the item and keeps the keyboard up for the next,
-            // as the subtask field does.
-            submitBehavior="submit"
-            onSubmitEditing={add}
-            style={[styles.field, focused ? styles.fieldFocused : null]}
-          />
+        <View ref={hold} onLayout={keep.onLayout} style={styles.section}>
+          <View style={[styles.ring, focused ? styles.ringActive : null]}>
+            <TextInput
+              value={draft}
+              onChangeText={(text) => {
+                setDraft(text);
+                setProblem(null);
+              }}
+              onFocus={() => {
+                setFocused(true);
+                keep.onFocus();
+              }}
+              onBlur={() => {
+                setFocused(false);
+                keep.onBlur();
+              }}
+              placeholder={
+                agenda.length === 0 ? "Add the first item" : "Add an item"
+              }
+              placeholderTextColor={tokens.color.text.muted}
+              accessibilityLabel="Add an agenda item"
+              maxLength={EVENT_AGENDA_ITEM_MAX}
+              returnKeyType="done"
+              // Return adds the item and keeps the keyboard up for the next,
+              // as the subtask field does.
+              submitBehavior="submit"
+              onSubmitEditing={add}
+              style={[styles.field, focused ? styles.fieldFocused : null]}
+            />
+          </View>
+          {problem ? <Text style={styles.error}>{problem}</Text> : null}
         </View>
+      ) : problem ? (
+        <Text style={styles.error}>{problem}</Text>
       ) : null}
-      {problem ? <Text style={styles.error}>{problem}</Text> : null}
       {canEdit && full ? (
         <Text style={styles.caption}>
           An agenda holds {EVENT_AGENDA_MAX} items.
@@ -480,6 +495,8 @@ function AddLinkForm({
   const [title, setTitle] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [focused, setFocused] = useState<"url" | "title" | null>(null);
+  // Low on the page, under the agenda: the form keeps above the keyboard.
+  const { hold, ...keep } = useKeepAboveKeyboard();
 
   function submit() {
     const refused = attachmentLinkProblem(url);
@@ -492,7 +509,7 @@ function AddLinkForm({
   }
 
   return (
-    <View style={styles.form}>
+    <View ref={hold} onLayout={keep.onLayout} style={styles.form}>
       <View style={[styles.ring, focused === "url" ? styles.ringActive : null]}>
         <TextInput
           value={url}
@@ -500,8 +517,14 @@ function AddLinkForm({
             setUrl(text);
             setProblem(null);
           }}
-          onFocus={() => setFocused("url")}
-          onBlur={() => setFocused(null)}
+          onFocus={() => {
+            setFocused("url");
+            keep.onFocus();
+          }}
+          onBlur={() => {
+            setFocused(null);
+            keep.onBlur();
+          }}
           placeholder="https://"
           placeholderTextColor={tokens.color.text.muted}
           accessibilityLabel="Link"
@@ -523,8 +546,14 @@ function AddLinkForm({
         <TextInput
           value={title}
           onChangeText={setTitle}
-          onFocus={() => setFocused("title")}
-          onBlur={() => setFocused(null)}
+          onFocus={() => {
+            setFocused("title");
+            keep.onFocus();
+          }}
+          onBlur={() => {
+            setFocused(null);
+            keep.onBlur();
+          }}
           placeholder="Title (optional)"
           placeholderTextColor={tokens.color.text.muted}
           accessibilityLabel="Title"
@@ -569,6 +598,8 @@ function PickDocument({
   const styles = createStyles(tokens, accent);
   const [search, setSearch] = useState("");
   const [focused, setFocused] = useState(false);
+  // The search field and the first matches keep above the keyboard.
+  const { hold, ...keep } = useKeepAboveKeyboard();
   const documents = useDocuments();
   const muted = tokens.color.text.mutedForeground;
   const matches = useMemo(() => {
@@ -580,13 +611,19 @@ function PickDocument({
   }, [documents.data, search, attached]);
 
   return (
-    <View style={styles.form}>
+    <View ref={hold} onLayout={keep.onLayout} style={styles.form}>
       <View style={[styles.ring, focused ? styles.ringActive : null]}>
         <TextInput
           value={search}
           onChangeText={setSearch}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={() => {
+            setFocused(true);
+            keep.onFocus();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            keep.onBlur();
+          }}
           placeholder="Find a file in Chapter Files"
           placeholderTextColor={tokens.color.text.muted}
           accessibilityLabel="Find a file in Chapter Files"

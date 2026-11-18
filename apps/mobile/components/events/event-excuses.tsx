@@ -22,6 +22,7 @@ import { StatusChip } from "@/components/status-chip";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
+import { useKeepAboveKeyboard } from "@/lib/keep-above-keyboard";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
 
@@ -301,9 +302,16 @@ function ExcuseComposer({
   // Saving the words already there would ask the server for nothing.
   const unchanged = initial !== "" && trimmed === initial.trim();
   const blocked = !trimmed || unchanged || busy || writeBlockedReason !== null;
+  // On Event details the line stays above the keyboard while it is typed.
+  const { hold, ...keep } = useKeepAboveKeyboard();
 
   return (
-    <View style={styles.section} accessibilityLabel={label}>
+    <View
+      ref={hold}
+      onLayout={keep.onLayout}
+      style={styles.section}
+      accessibilityLabel={label}
+    >
       <Text style={styles.sectionLabel}>{label}</Text>
       <View style={styles.composerRow}>
         <TextInput
@@ -313,6 +321,8 @@ function ExcuseComposer({
           placeholderTextColor={tokens.color.text.muted}
           maxLength={EVENT_EXCUSE_REASON_MAX}
           autoFocus
+          onFocus={keep.onFocus}
+          onBlur={keep.onBlur}
           returnKeyType="send"
           onSubmitEditing={() => {
             if (!blocked) onSubmit(trimmed);

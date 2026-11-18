@@ -56,6 +56,21 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
     );
   });
 
+  // #5463: Event details' agenda, link and excuse fields live in components,
+  // so the route scan below doesn't see them. The shell's area must stay on
+  // for the whole screen (switching it remounts the body and drops focus),
+  // and the screen must provide the reveal that scrolls a field above it.
+  it("(app)/event-details.tsx rises with the keyboard and keeps its fields above it", () => {
+    const source = readFileSync(
+      join(APP_DIR, "(app)/event-details.tsx"),
+      "utf8",
+    );
+    // Bare, so `avoidKeyboard={editing}` can't pass.
+    expect(source).toMatch(/<ScreenShell\b[^>]*\bavoidKeyboard\b(?!\s*=)/);
+    expect(source).toMatch(/<ScreenShell\b[^>]*\bscrollRef=\{scrollRef\}/);
+    expect(source).toMatch(/<ScrollRevealProvider value=\{reveal\}>/);
+  });
+
   it("sign-in leaves iOS to its scroll view's own keyboard inset", () => {
     // Its ScrollView sets `automaticallyAdjustKeyboardInsets`; a padding view
     // around it on iOS would count the keyboard twice.
