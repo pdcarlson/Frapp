@@ -134,8 +134,12 @@ constraints web habits most often break:
 - Provider chain in `app/_layout.tsx`, outer to inner: `GestureHandlerRootView` >
   `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
   `ObservabilityIdentityProvider` > `AnalyticsProvider` > `KeyboardProviderGuarded` >
-  `ClientPolicyGate` > `BottomSheetModalProvider`. The gate is the minimum-version prompt and
-  must stay outside the sheet provider, or an open sheet draws over it. Figtree loads there behind a splash hold.
+  `ClientPolicyGate` > `OverlayLayer` > `BottomSheetModalProvider`. The gate is the minimum-version prompt and
+  must stay outside the sheet provider, or an open sheet draws over it. `OverlayLayer`
+  (`components/overlay-layer.tsx`, mounted by the gate inside what its prompt covers) draws
+  whole-window overlays such as the glass item menu over the app and every sheet; what it draws
+  gets only the providers above it, not a screen's own context or the sheet provider's
+  ([`patterns.md` § Overlays](../../../spec/ui/mobile/patterns.md#overlays)). Figtree loads there behind a splash hold.
 - Expo Go is the local run path (`npm run start -w apps/mobile`, then scan from a device or
   emulator). It can't be verified headless. Native modules that crash Go at launch or break
   `expo export --platform web` must be imported through their isolation modules, which check the
