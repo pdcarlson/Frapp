@@ -85,7 +85,7 @@ function scriptedLine(prompt: string): string {
     return 'Picking a slot now takes a minute and gets you the time that suits you.';
   }
   if (fact(prompt, 'Minutes posted for') !== null) {
-    return 'A two-minute read catches you up on what was decided.';
+    return 'A quick read catches you up on what was decided.';
   }
   const left = fact(prompt, 'Left to reach it');
   return left

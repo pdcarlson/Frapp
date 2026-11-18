@@ -1013,11 +1013,12 @@ Half of an officer's job is nudging people, and a reminder alone ("Task due tomo
 So Frapp puts one short card on a member's Activity when something of theirs is worth a word: why it is worth doing now, and a small place to start.
 Paul asked for it on 2026-11-13 with Bevel Health's daily cards as the reference (#4777); this section is the member's card (#4781).
 Cards for chairs and officers, the chapter's own voice, and push are later steps of #4777 and are not built.
-Widened on 2026-11-18 (#5464; Paul: "I keep bringing it up and it never ends up getting to my device"): the card now picks from everything waiting on the member, an officer's queue included, and shows whether or not AI is available. The chapter's own voice and push are still later steps.
+Changed in #5464 by `pdcarlson`, 2026-11-18 (Paul: "I keep bringing it up and it never ends up getting to my device"): the card now picks from everything waiting on the member, including what waits on an officer, and shows whether or not AI is available. A card for chairs and exec about their committee or chapter (#4782), the chapter's own voice and push are still later steps.
+Why it never reached him, read on staging that day: no `member_nudges` row had ever been written for anyone and no nudge model call had ever been made. Paul had said yes to AI and the switch was on, but none of his tasks sat in the narrow windows below (all eight were handed out that day, inside the first-day grace), so the card had nothing to say.
 
 ### The card and its tray
 
-The phone's Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
+Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, then web; until the phone's step of #5464 lands it still draws the task card from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
 
 - **What earns a card.** Any of these, for the member, under each module's own rule for who may see it, with the module on:
   an event starting today or tomorrow (in the member's time zone) that they haven't checked in to or snoozed, until it ends;
@@ -1029,9 +1030,9 @@ The phone's Activity draws one card under the week card, from `POST /v1/activity
   minutes someone else posted in the last three days;
   their weekly study goal, from the third day of the week, when they are more than an hour behind an even pace.
 - **Which wins.** One order, in code: an event today, then a mention, then a task sent back or coming due, then a sign-up, then an event tomorrow, an unread announcement, the officer's queue, new minutes, the study goal, a task past due, and thanks last. The next three in that order are the tray.
-- **Every card is true without AI.** A card is the thing's own name, when or how many, and one button that settles it: Open event, Open, See the task, Sign up, Read, Review oldest, Start studying. That is the whole card when AI is off for the member, off on the server, or not configured (`ANTHROPIC_API_KEY` unset, as on production until #3279): a plain card, with no generated words. Before #5464 a member without AI got no card at all.
-- **AI adds one sentence, where it has something to add.** For an event, a sign-up, new minutes or the study goal, the model writes one sentence of at most 120 characters from the card's facts, under the same checks as below, and a sentence that fails them leaves the card plain. A mention, an announcement or an officer's queue already says everything in its count, and a channel's messages never go to a model for a card. A task card keeps its own words (below), and Frapp's fixed sentence is not drawn on this card: when the model didn't write, the task card is plain too.
-- **Shown whenever it is true** (Paul, 2026-11-18). An event, a mention, a sign-up or any other kind that isn't a task shows whenever it holds and leaves when its moment passes: an event when it ends, a mention or announcement when the channel is read or after two days, the officer's queue after a day. Only task cards keep the pacing below. A card something more useful overtakes before the member acts on it is withdrawn without a record, so it can return.
+- **Every card is true without AI.** A card is the thing's own name, when or how many, and one button that settles it: Open event, Open, See the task, Sign up, Read, Review oldest, Start studying. That is the whole card when AI is off for the member (no yes, or no `ai:use`), off for the chapter, or off on the server: a plain card, with no generated words. Before #5464 a member without AI got no card at all.
+- **AI adds one sentence, where it has something to add.** For an event, a sign-up, new minutes or the study goal, the model writes one sentence of at most 120 characters from the card's facts, under the same checks as below, and a sentence that fails them leaves the card plain. An event's name and place and a sign-up's title were typed by other members, so like a task's description they reach the model only where the chapter has Ask on; otherwise the card is plain. A mention, an announcement or an officer's queue already says everything in its count, and a channel's messages never go to a model for a card. A task card keeps its own words (below), and Frapp's fixed sentence is not drawn on this card: when the model didn't write, the task card is plain too.
+- **Shown whenever it is true** (Paul, 2026-11-18). An event, a mention, a sign-up or any other kind that isn't a task shows whenever it holds and leaves when its moment passes: an event when it ends, a mention or announcement when the channel is read or after two days, the officer's queue after a day. Only task cards keep the pacing below. A card something more useful overtakes before the member acts on it is withdrawn without a record, so it can return, except a task card the member already saw, which counts as shown. One that runs out its time leaves no record either.
 - **Waving one off.** The card and each tray item can be waved off; that subject is not raised again. A mention or announcement is the channel and its latest message, so it comes back when something new is posted there.
 - **The member's own switch** ("Nudges on Activity") still turns the card off entirely.
 
@@ -1082,7 +1083,7 @@ The phone's Activity draws one card under the week card, from `POST /v1/activity
 - **Nothing is scheduled and nothing is pushed.**
   The card is worked out when the member opens Activity.
   A card already showing is checked against the task as it is now: started or finished closes it as done (a task sent back is already started, so only finishing closes that one); handed to someone else, deleted, taken back, its deadline moved, or past its time closes it quietly.
-  So does AI or Tasks being turned off.
+  So does AI or Tasks being turned off, for the card `POST /v1/nudges/current` serves; on the widened card AI being turned off deletes the model's words from a showing card and leaves it plain.
   A card lasts seven days (a word of thanks three, and a "coming due" card never past the deadline).
 - **The card says nothing about how it was made.**
   It is headed "From Frapp", in Frapp's gold, and carries no model name, no "AI-generated" label and no explanation of the rules (Paul, 2026-11-13: "don't say more about the process than needs to be said to the end user").
@@ -1093,7 +1094,7 @@ The phone's Activity draws one card under the week card, from `POST /v1/activity
   Closing a card, however it closes, deletes its title, body and starting point.
   What stays is that this task was raised for this reason, so it is not raised again.
   A card whose member never comes back to it is closed, and its words deleted, the next time anyone in the chapter opens Activity after its time has passed; nothing runs on a schedule, so in a chapter nobody opens it waits until someone does.
-  A member's cards are deleted when they answer No on the AI sheet or delete their account.
+  A member's cards are deleted when they delete their account. Answering No on the AI sheet deletes every showing card with the model's words; since #5464 closed cards, which hold no words, stay as the record of what the member waved off, because the card itself shows without AI.
   No card text, task title or name is logged, and none goes to any outside service other than the AI provider that writes the card.
 
 > **Added 2026-11-13 (#4781, the building session's, Paul's to change).**

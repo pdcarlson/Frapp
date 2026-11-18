@@ -4,6 +4,7 @@ import type { ActivityStandingService } from './activity-standing.service';
 import type { ChatService } from './chat.service';
 import type { MeetingService } from './meeting.service';
 import type { MemberNudgeService } from './member-nudge/member-nudge.service';
+import type { RbacService } from './rbac.service';
 
 // Wednesday 18 November 2026, 2:00 PM in New York.
 const NOW = new Date('2026-11-18T19:00:00.000Z');
@@ -77,6 +78,9 @@ function setup(
     chat as unknown as ChatService,
     meetings as unknown as MeetingService,
     nudges as unknown as MemberNudgeService,
+    {
+      memberHasAnyPermission: jest.fn().mockResolvedValue(true),
+    } as unknown as RbacService,
   );
   const run = () =>
     service.card({
@@ -104,6 +108,7 @@ describe('ActivityCardService', () => {
       'study_behind',
     ]);
     expect(input.tasksOn).toBe(true);
+    expect(input).toEqual(expect.objectContaining({ aiUse: true }));
   });
 
   it('leaves a source out when its read fails, and still picks', async () => {

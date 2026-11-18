@@ -34,12 +34,14 @@ export interface IMemberNudgeRepository {
     since: string,
   ): Promise<MemberNudge[]>;
   /**
-   * Every card this member was already shown that is no longer showing:
-   * its subject and kind are not raised again.
+   * The cards this member was already shown, for these subjects, that are
+   * no longer showing: each subject and kind is not raised again. Only the
+   * subjects asked about are read, so no cap cuts the answer short.
    */
   findRaised(
     chapterId: string,
     userId: string,
+    subjectKeys: readonly string[],
   ): Promise<Pick<MemberNudge, 'task_id' | 'kind' | 'subject_key'>[]>;
   /**
    * Creates a showing card. Null when the member already has one showing or
@@ -85,12 +87,31 @@ export interface IMemberNudgeRepository {
     subject: Pick<MemberNudge, 'kind' | 'subject_key' | 'task_id'>,
     now: string,
   ): Promise<void>;
+  /**
+   * Deletes the AI's words from a showing card (`body`, `start_here`) and
+   * marks it `plain`: AI went off for the member while it showed. A task
+   * card's title is the model's too, so it takes `title` in its place.
+   */
+  stripWords(
+    chapterId: string,
+    userId: string,
+    id: string,
+    title: string,
+  ): Promise<void>;
+  /**
+   * The member answered No on the AI sheet: their showing cards with words
+   * the model wrote go, in every chapter. Closed rows hold no words and stay,
+   * as the record of what they waved off.
+   */
+  deleteWrittenByUser(userId: string): Promise<void>;
   /** Deletes every card of this person's, in every chapter. */
   deleteByUser(userId: string): Promise<void>;
 
   /**
-   * Closes every showing card in the chapter whose time has passed, and
-   * deletes its words. For cards whose member never came back to them.
+   * Closes every showing task card in the chapter whose time has passed, and
+   * deletes its words; deletes every other showing card past its time, so
+   * its subject can be raised again while it still holds (#5464). For cards
+   * whose member never came back to them.
    */
   closeExpired(chapterId: string, now: string): Promise<void>;
   findSettings(

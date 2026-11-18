@@ -359,7 +359,7 @@ export interface NudgeFacts {
   history: NudgeHistory;
 }
 
-function clip(text: string, max: number): string {
+export function clip(text: string, max: number): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 3).trimEnd()}...` : flat;
 }
@@ -375,7 +375,7 @@ function writtenDay(instant: number, timeZone: string, withTime: boolean) {
 }
 
 /** A calendar day as a count of days, in the member's time zone. */
-function dayNumber(instant: number, timeZone: string): number {
+export function dayNumber(instant: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat('en-CA', {
     year: 'numeric',
     month: '2-digit',
@@ -560,10 +560,10 @@ export function nudgeMessages(facts: NudgeFacts): LanguageModelMessage[] {
 
 // ── The checks ───────────────────────────────────────────────────────────────
 
-const EMOJI = /\p{Extended_Pictographic}/u;
-const MARKUP = /[*_#`<>[\]]|https?:\/\/|www\./i;
+export const EMOJI = /\p{Extended_Pictographic}/u;
+export const MARKUP = /[*_#`<>[\]]|https?:\/\/|www\./i;
 /** Words a card never uses, whatever the model thought fit. */
-const HARSH =
+export const HARSH =
   /\b(lazy|laziness|ashamed|shame|shameful|disappoint\w*|pathetic|excuses?|failure|failing|failed|embarrass\w*|let(?:ting)? (?:everyone|the chapter|your brothers|your sisters|us) down|fined|fines|probation|standing)\b/i;
 
 const NUMBER_WORDS: Record<string, number> = {
@@ -581,7 +581,7 @@ const NUMBER_WORDS: Record<string, number> = {
   twelve: 12,
 };
 
-function numbersIn(text: string): number[] {
+export function numbersIn(text: string): number[] {
   const found = (text.match(/\d+(?:[.,]\d+)*/g) ?? []).map((raw) =>
     Number(raw.replace(/,/g, '')),
   );
@@ -623,7 +623,7 @@ function numbersInFacts(facts: NudgeFacts): Set<number> {
   return allowed;
 }
 
-function sentences(text: string): number {
+export function sentences(text: string): number {
   return text.split(/[.?]+(?:\s|$)/).filter((part) => part.trim() !== '')
     .length;
 }

@@ -4,14 +4,15 @@ import {
   chatItems,
   eventItems,
   minutesItems,
-  NUDGE_MINUTES_WINDOW_MS,
   officerQueueItem,
   signupItems,
   studyItem,
   type NudgeItem,
 } from '#domain/utils/member-nudge-items';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { ActivityService } from './activity.service';
+import { RbacService } from './rbac.service';
 import { ActivityStandingService } from './activity-standing.service';
 import { ChatService } from './chat.service';
 import { MeetingService } from './meeting.service';
@@ -22,8 +23,10 @@ import {
 
 type EnabledModules = Record<string, boolean> | null;
 
-/** At most this many recently posted minutes are read. */
-const MINUTES_LIMIT = 5;
+/** At most this many recent meetings' minutes are read. */
+const MINUTES_LIMIT = 10;
+/** Meetings held this far back may have had their minutes posted lately. */
+const MINUTES_HELD_WINDOW_MS = 21 * 86_400_000;
 
 /**
  * The card at the top of a member's Activity (#5464, `spec/behavior/ai.md`
@@ -46,6 +49,7 @@ export class ActivityCardService {
     private readonly chat: ChatService,
     private readonly meetings: MeetingService,
     private readonly nudges: MemberNudgeService,
+    private readonly rbac: RbacService,
   ) {}
 
   async card(input: {
@@ -60,7 +64,10 @@ export class ActivityCardService {
     const { chapterId, userId, enabledModules, timeZone } = input;
     const on = (key: string) => isModuleEnabled(enabledModules, key);
 
-    const [activity, standing, chat, minutes] = await Promise.all([
+    const [aiUse, activity, standing, chat, minutes] = await Promise.all([
+      this.rbac
+        .memberHasAnyPermission(chapterId, userId, [SystemPermissions.AI_USE])
+        .catch(() => false),
       this.read('activity', () =>
         this.activity.getActivity(chapterId, userId, enabledModules, { now }),
       ),
@@ -84,7 +91,10 @@ export class ActivityCardService {
             this.meetings.listPostedSince(
               chapterId,
               userId,
-              new Date(now.getTime() - NUDGE_MINUTES_WINDOW_MS),
+              // This reads by when the meeting was held, and minutes are often
+              // posted days later: a wider stretch, then `minutesItems` keeps
+              // what was posted in the last three days.
+              new Date(now.getTime() - MINUTES_HELD_WINDOW_MS),
               MINUTES_LIMIT,
             ),
           )
@@ -133,6 +143,7 @@ export class ActivityCardService {
         ...(input.signal === undefined ? {} : { signal: input.signal }),
         items,
         tasksOn: on('tasks'),
+        aiUse,
       },
       now,
     );

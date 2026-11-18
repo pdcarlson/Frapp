@@ -84,6 +84,8 @@ function setup(options: { tasks?: Task[]; showing?: MemberNudge | null } = {}) {
     close: jest.fn().mockResolvedValue(true),
     deleteByUser: jest.fn().mockResolvedValue(undefined),
     deleteShowing: jest.fn().mockResolvedValue(undefined),
+    stripWords: jest.fn().mockResolvedValue(undefined),
+    deleteWrittenByUser: jest.fn().mockResolvedValue(undefined),
     dismissSubject: jest.fn().mockResolvedValue(undefined),
     closeExpired: jest.fn().mockResolvedValue(undefined),
     findSettings: jest.fn().mockResolvedValue(null),
@@ -454,10 +456,12 @@ describe('MemberNudgeService, the member closing and switching', () => {
     );
   });
 
-  it("deletes a member's cards when they say No on the AI sheet", async () => {
+  it("deletes a member's AI-written cards when they say No on the AI sheet", async () => {
     const { service, nudges, listeners } = setup();
     service.onModuleInit();
     await listeners[0]?.('user-1');
-    expect(nudges.deleteByUser).toHaveBeenCalledWith('user-1');
+    // Closed rows hold no words and stay, as what the member waved off.
+    expect(nudges.deleteWrittenByUser).toHaveBeenCalledWith('user-1');
+    expect(nudges.deleteByUser).not.toHaveBeenCalled();
   });
 });

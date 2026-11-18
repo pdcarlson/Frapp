@@ -73,6 +73,15 @@ describe('eventItems', () => {
     expect(item?.expiresAt).toBe(at(7 * HOUR));
   });
 
+  it('calls a morning event today, not tonight', () => {
+    const [item] = eventItems(
+      [event({ start_time: at(HOUR), end_time: at(2 * HOUR) })],
+      NOW,
+      TZ,
+    );
+    expect(item?.chip).toBe('Today');
+  });
+
   it('ranks tomorrow below today, and leaves out later days', () => {
     const items = eventItems(
       [
@@ -360,6 +369,35 @@ describe('orderNudgeItems', () => {
       [{ kind: 'event_soon', subject_key: 'event-1' }],
     );
     expect(ordered.map((item) => item.kind)).toEqual(['task_overdue']);
+  });
+
+  it("writes a timed task's weekday with its capital", () => {
+    const timed = taskItem(
+      'task_due_soon',
+      {
+        id: 'task-2',
+        title: 'Venue deposit',
+        due_date: '2026-11-20',
+        due_at: '2026-11-20T22:00:00.000Z',
+      },
+      NOW,
+      TZ,
+      at(DAY),
+    );
+    expect(timed.meta).toBe('Due Friday 5:00 PM');
+    const tomorrow = taskItem(
+      'task_due_soon',
+      {
+        id: 'task-3',
+        title: 'Agenda',
+        due_date: '2026-11-19',
+        due_at: '2026-11-19T15:00:00.000Z',
+      },
+      NOW,
+      TZ,
+      at(DAY),
+    );
+    expect(tomorrow.meta).toBe('Due tomorrow 10:00 AM');
   });
 
   it('writes a task card the same way as every other', () => {

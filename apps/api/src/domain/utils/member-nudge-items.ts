@@ -8,7 +8,17 @@ import {
 import type { LanguageModelMessage } from '../adapters/language-model.interface';
 import type { MemberNudge } from '../entities/member-nudge.entity';
 import type { Task } from '../entities/task.entity';
-import { taskDueInstant } from './member-nudge';
+import { formatMinutesRounded } from '@repo/formatting';
+import {
+  EMOJI,
+  HARSH,
+  MARKUP,
+  clip,
+  dayNumber,
+  numbersIn,
+  sentences,
+  taskDueInstant,
+} from './member-nudge';
 
 /**
  * The widened nudge card (#5464, `spec/behavior/ai.md` § Nudges): one card on
@@ -104,15 +114,7 @@ export const NUDGE_ITEM_RANK = {
 // ── Writing days and times ──────────────────────────────────────────────────
 
 /** A calendar day as a count of days, in the member's time zone. */
-export function zonedDayNumber(instant: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone,
-  }).format(new Date(instant));
-  return Math.round(Date.parse(`${parts}T00:00:00.000Z`) / DAY_MS);
-}
+export const zonedDayNumber = dayNumber;
 
 function clockTime(instant: number, timeZone: string): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -166,19 +168,8 @@ function relativePast(instant: number, now: Date, timeZone: string): string {
   return weekday(instant, timeZone);
 }
 
-/** "2h 30m", "45m", "6h". */
-export function hoursAndMinutes(minutes: number): string {
-  const whole = Math.max(0, Math.round(minutes));
-  const h = Math.floor(whole / 60);
-  const m = whole % 60;
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
-function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 3).trimEnd()}...` : flat;
-}
+/** "2h 30m", "45m", "6h": the shared study and service format. */
+export const hoursAndMinutes = formatMinutesRounded;
 
 function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -241,7 +232,14 @@ export function eventItems(
       headline: clip(event.name, 60),
       meta: parts.join(' · '),
       urgent: day <= 0,
-      chip: day <= 0 ? (start <= at ? 'Now' : 'Tonight') : 'Tomorrow',
+      chip:
+        day > 0
+          ? 'Tomorrow'
+          : start <= at
+            ? 'Now'
+            : hourOf(start, timeZone) >= 17
+              ? 'Tonight'
+              : 'Today',
       action: 'Open event',
       target: { type: 'event', id: event.id, channelId: null },
       rank:
@@ -581,8 +579,9 @@ export function taskItem(
       : dueDays === 1
         ? 'tomorrow'
         : weekday(Date.parse(`${task.due_date}T12:00:00.000Z`), 'UTC')
-    : relativeDayTime(due, now, timeZone).replace(/^(\w)/, (c) =>
-        c.toLowerCase(),
+    : relativeDayTime(due, now, timeZone).replace(
+        /^(Today|Tonight|Tomorrow)\b/,
+        (word) => word.toLowerCase(),
       );
   const meta =
     kind === 'task_praise'
@@ -690,36 +689,6 @@ export function nudgeLineMessages(
   return [{ role: 'user', content: facts.join('\n') }];
 }
 
-const EMOJI = /\p{Extended_Pictographic}/u;
-const MARKUP = /[*_#`<>[\]]|https?:\/\/|www\./i;
-const HARSH =
-  /\b(lazy|laziness|ashamed|shame|shameful|disappoint\w*|pathetic|excuses?|failure|failing|failed|embarrass\w*|let(?:ting)? (?:everyone|the chapter|your brothers|your sisters|us) down|fined|fines|probation|standing)\b/i;
-const NUMBER_WORDS: Record<string, number> = {
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-};
-
-function numbersIn(text: string): number[] {
-  const found = (text.match(/\d+(?:[.,]\d+)*/g) ?? []).map((raw) =>
-    Number(raw.replace(/,/g, '')),
-  );
-  for (const word of text.toLowerCase().match(/[a-z]+/g) ?? []) {
-    const value = NUMBER_WORDS[word];
-    if (value !== undefined) found.push(value);
-  }
-  return found;
-}
-
 /**
  * The model's sentence, cleaned, or null when it breaks a rule: too long,
  * more than one sentence, markup, an emoji or exclamation mark, a harsh word,
@@ -732,9 +701,7 @@ export function checkNudgeLine(
 ): string | null {
   const line = output.line.replace(/\s+/g, ' ').trim();
   if (line === '' || line.length > MEMBER_NUDGE_LINE_MAX) return null;
-  if (line.split(/[.?]+(?:\s|$)/).filter((p) => p.trim() !== '').length > 1) {
-    return null;
-  }
+  if (sentences(line) > 1) return null;
   if (EMOJI.test(line) || MARKUP.test(line) || line.includes('!')) return null;
   if (HARSH.test(line)) return null;
   const allowed = new Set([

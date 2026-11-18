@@ -108,6 +108,11 @@ export interface MemberNudgeCardInput extends MemberNudgeInput {
   items: readonly NudgeItem[];
   /** The chapter has Tasks on: the member's own task cards are in the pick. */
   tasksOn: boolean;
+  /**
+   * The member holds `ai:use`. Without it the model is never called and every
+   * card is plain, as `/v1/nudges/*` requires it at the route.
+   */
+  aiUse: boolean;
 }
 
 /** One card, or one tray item, as the clients draw it (#5464). */
@@ -194,10 +199,12 @@ export class MemberNudgeService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    // A No on the AI sheet takes the member's cards with it; deleting an
-    // account does the same in `anonymize_user`.
+    // A No on the AI sheet takes every showing card with the model's words
+    // with it. Closed rows hold no words and stay, as the record of what the
+    // member waved off, since the card itself shows without AI (#5464).
+    // Deleting an account removes them all in `anonymize_user`.
     this.consent.onConsentWithdrawn(async (userId) => {
-      await this.nudges.deleteByUser(userId);
+      await this.nudges.deleteWrittenByUser(userId);
     });
   }
 
@@ -274,10 +281,12 @@ export class MemberNudgeService implements OnModuleInit {
       recent: recent.filter((row) => isMemberNudgeTaskKind(row.kind)),
     });
     if (!budget.push && !budget.praise) return null;
-    const [open, raised] = await Promise.all([
-      this.ownTasks(chapterId, userId, now),
-      this.nudges.findRaised(chapterId, userId),
-    ]);
+    const open = await this.ownTasks(chapterId, userId, now);
+    const raised = await this.nudges.findRaised(
+      chapterId,
+      userId,
+      open.map((task) => task.id),
+    );
     const candidate = pickNudge({
       now,
       tasks: open,
@@ -341,15 +350,17 @@ export class MemberNudgeService implements OnModuleInit {
     if (settings && !settings.enabled) return none;
     await this.nudges.closeExpired(chapterId, now.toISOString());
     const entry = aiCatalogEntry(TASK);
-    const decision = await this.consent.check({
-      chapterId,
-      actingUserId: userId,
-      task: TASK,
-      family: entry.family,
-      provider: entry.provider,
-      model: entry.model,
-      promptVersion: MEMBER_NUDGE_PROMPT_VERSION,
-    });
+    const decision = input.aiUse
+      ? await this.consent.check({
+          chapterId,
+          actingUserId: userId,
+          task: TASK,
+          family: entry.family,
+          provider: entry.provider,
+          model: entry.model,
+          promptVersion: MEMBER_NUDGE_PROMPT_VERSION,
+        })
+      : { allowed: false };
     const aiOn = decision.allowed;
 
     // 2.
@@ -379,7 +390,19 @@ export class MemberNudgeService implements OnModuleInit {
         showing = null;
       }
     }
-    const raisedRead = this.nudges.findRaised(chapterId, userId);
+    if (showing && !aiOn && showing.written_by !== 'plain') {
+      // AI went off for this member, or the chapter, while the card showed:
+      // the model's words go, and the card stays as a plain one.
+      const title = taskEntry?.item.headline ?? showing.title ?? '';
+      await this.nudges.stripWords(chapterId, userId, showing.id, title);
+      showing = {
+        ...showing,
+        title,
+        body: null,
+        start_here: null,
+        written_by: 'plain',
+      };
+    }
     if (!taskEntry && input.tasksOn) {
       const recent = (
         await this.nudges.findRecent(
@@ -395,10 +418,12 @@ export class MemberNudgeService implements OnModuleInit {
         recent,
       });
       if (budget.push || budget.praise) {
-        const [open, raised] = await Promise.all([
-          this.ownTasks(chapterId, userId, now),
-          raisedRead,
-        ]);
+        const open = await this.ownTasks(chapterId, userId, now);
+        const raised = await this.nudges.findRaised(
+          chapterId,
+          userId,
+          open.map((task) => task.id),
+        );
         const candidate = pickNudge({
           now,
           tasks: open,
@@ -423,9 +448,14 @@ export class MemberNudgeService implements OnModuleInit {
     }
 
     // 3.
+    const raisedItems = await this.nudges.findRaised(
+      chapterId,
+      userId,
+      input.items.map((item) => item.subjectKey),
+    );
     const ordered = orderNudgeItems(
       taskEntry ? [...input.items, taskEntry.item] : input.items,
-      await raisedRead,
+      raisedItems,
     );
     const top = ordered[0];
     const tray = ordered
@@ -437,7 +467,17 @@ export class MemberNudgeService implements OnModuleInit {
         showing.kind !== top.kind ||
         showing.subject_key !== top.subjectKey)
     ) {
-      await this.nudges.deleteShowing(chapterId, userId, showing.id);
+      // Something more useful overtook it. A task card the member saw counts
+      // as shown, so #4781's pacing still sees it; anything else, or a task
+      // card never seen, leaves no record and may come back.
+      if (isMemberNudgeTaskKind(showing.kind) && showing.seen_at !== null) {
+        await this.nudges.close(chapterId, userId, showing.id, {
+          status: 'expired',
+          closed_at: now.toISOString(),
+        });
+      } else {
+        await this.nudges.deleteShowing(chapterId, userId, showing.id);
+      }
       showing = null;
     }
     if (!top) return none;
@@ -551,6 +591,12 @@ export class MemberNudgeService implements OnModuleInit {
     now: Date,
   ): Promise<string | null> {
     if (!item.facts) return null;
+    // An event's name and place, or a sign-up's title, were typed by other
+    // members: they reach the model only where the chapter has Ask on, as a
+    // task's description does (Paul, 2026-11-17). Otherwise the card is plain.
+    if (!(await this.consent.chapterSwitchOn(input.chapterId, 'ask'))) {
+      return null;
+    }
     const today = new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
       month: 'long',
@@ -678,11 +724,14 @@ export class MemberNudgeService implements OnModuleInit {
     );
     if (!enabled) {
       const showing = await this.nudges.findShowing(chapterId, userId);
-      if (showing) {
+      if (showing && isMemberNudgeTaskKind(showing.kind)) {
         await this.nudges.close(chapterId, userId, showing.id, {
           status: 'expired',
           closed_at: now.toISOString(),
         });
+      } else if (showing) {
+        // Not waved off, so it leaves no record: back on, it may return.
+        await this.nudges.deleteShowing(chapterId, userId, showing.id);
       }
     }
     return { enabled: saved.enabled };

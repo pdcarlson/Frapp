@@ -26,6 +26,27 @@ update public.member_nudges
    set subject_key = task_id::text
  where subject_key is null;
 
+-- The API from before this change inserts task cards without a subject. It
+-- runs while this applies, and is the target of an API rollback, so a row
+-- that arrives without one takes its task's id.
+create or replace function public.member_nudges_default_subject()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.subject_key is null then
+    new.subject_key := new.task_id::text;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists member_nudges_default_subject on public.member_nudges;
+create trigger member_nudges_default_subject
+  before insert on public.member_nudges
+  for each row execute function public.member_nudges_default_subject();
+
 alter table public.member_nudges
   alter column subject_key set not null,
   alter column task_id drop not null;

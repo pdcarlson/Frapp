@@ -104,6 +104,8 @@ function setup(
     markSeen: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(true),
     deleteShowing: jest.fn().mockResolvedValue(undefined),
+    stripWords: jest.fn().mockResolvedValue(undefined),
+    deleteWrittenByUser: jest.fn().mockResolvedValue(undefined),
     dismissSubject: jest.fn().mockResolvedValue(undefined),
     deleteByUser: jest.fn().mockResolvedValue(undefined),
     closeExpired: jest.fn().mockResolvedValue(undefined),
@@ -179,6 +181,7 @@ const INPUT = {
   userId: 'user-1',
   timeZone: TZ,
   tasksOn: true,
+  aiUse: true,
 };
 
 describe('MemberNudgeService.card', () => {
@@ -349,6 +352,114 @@ describe('MemberNudgeService.card', () => {
   });
 });
 
+describe('MemberNudgeService.card, what it keeps from #4781', () => {
+  const taskRow = (overrides: Partial<MemberNudge> = {}) =>
+    row(
+      {
+        chapter_id: 'chapter-1',
+        user_id: 'user-1',
+        kind: 'task_due_soon',
+        task_id: 'task-1',
+        subject_key: 'task-1',
+        title: 'A good day to start',
+        body: 'A call today keeps Friday calm.',
+        start_here: 'Call the first venue.',
+        written_by: 'ai',
+        expires_at: at(DAY),
+      },
+      overrides,
+    );
+
+  it('paces task cards: none within 20 hours of the last', async () => {
+    const { service, nudges } = setup({ tasks: [task()] });
+    nudges.findRecent.mockResolvedValue([
+      taskRow({
+        id: 'earlier',
+        task_id: 'task-0',
+        subject_key: 'task-0',
+        status: 'dismissed',
+        created_at: at(-2 * HOUR),
+      }),
+    ]);
+    const result = await service.card({ ...INPUT, items: [] }, NOW);
+    expect(result.card).toBeNull();
+    expect(nudges.create).not.toHaveBeenCalled();
+  });
+
+  it('closes a showing task card whose task is done, as done', async () => {
+    const { service, nudges } = setup({
+      showing: taskRow(),
+      tasks: [task({ status: TaskStatus.COMPLETED, completed_at: at(-HOUR) })],
+    });
+    await service.card({ ...INPUT, items: [] }, NOW);
+    expect(nudges.close).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      taskRow().id,
+      expect.objectContaining({ status: 'done' }),
+    );
+  });
+
+  it('strips the AI words from a showing card once AI is off', async () => {
+    const { service, nudges } = setup({
+      aiAllowed: false,
+      showing: taskRow(),
+      tasks: [task()],
+    });
+    const result = await service.card({ ...INPUT, items: [] }, NOW);
+    expect(nudges.stripWords).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      taskRow().id,
+      'Book the formal venue',
+    );
+    expect(result.card).toMatchObject({ line: null, start_here: null });
+  });
+
+  it('closes an overtaken task card the member saw, so pacing still counts it', async () => {
+    const seen = taskRow({ seen_at: at(-HOUR) });
+    const { service, nudges } = setup({ showing: seen, tasks: [task()] });
+    const result = await service.card({ ...INPUT, items: tonight }, NOW);
+    expect(nudges.close).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      seen.id,
+      expect.objectContaining({ status: 'expired' }),
+    );
+    expect(nudges.deleteShowing).not.toHaveBeenCalled();
+    expect(result.card?.kind).toBe('event_soon');
+  });
+
+  it('deletes an overtaken task card the member never saw', async () => {
+    const { service, nudges } = setup({ showing: taskRow(), tasks: [task()] });
+    await service.card({ ...INPUT, items: tonight }, NOW);
+    expect(nudges.deleteShowing).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      taskRow().id,
+    );
+  });
+
+  it('never asks about AI for a member without ai:use', async () => {
+    const { service, consent, gateway } = setup({ aiAllowed: true });
+    const result = await service.card(
+      { ...INPUT, aiUse: false, items: tonight },
+      NOW,
+    );
+    expect(consent.check).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+    expect(result.card?.line).toBeNull();
+  });
+
+  it("sends no member's typed words to the model where Ask is off", async () => {
+    const { service, consent, gateway } = setup({ aiAllowed: true });
+    consent.chapterSwitchOn.mockResolvedValue(false);
+    const result = await service.card({ ...INPUT, items: tonight }, NOW);
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+    expect(result.card?.line).toBeNull();
+  });
+});
+
 describe('MemberNudgeService.dismissSubject', () => {
   it('records any item kind for the member', async () => {
     const { service, nudges } = setup();
@@ -389,6 +500,29 @@ describe('MemberNudgeService.dismissSubject', () => {
 });
 
 describe('MemberNudgeService.current, beside the widened card', () => {
+  it('leaves a showing card that is not a task alone when AI is off', async () => {
+    const showing = row({
+      chapter_id: 'chapter-1',
+      user_id: 'user-1',
+      kind: 'event_soon',
+      task_id: null,
+      subject_key: 'event-1',
+      title: 'Chapter Meeting',
+      body: null,
+      start_here: null,
+      written_by: 'plain',
+      expires_at: at(7 * HOUR),
+    });
+    const { service, nudges } = setup({ aiAllowed: false, showing });
+    expect(
+      await service.current(
+        { chapterId: 'chapter-1', userId: 'user-1', timeZone: TZ },
+        NOW,
+      ),
+    ).toBeNull();
+    expect(nudges.close).not.toHaveBeenCalled();
+  });
+
   it('draws nothing while a card that is not a task is showing', async () => {
     const showing = row({
       chapter_id: 'chapter-1',
