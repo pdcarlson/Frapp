@@ -100,11 +100,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     turnOn: vi.fn(),
     pending: false,
   }),
-  // The nudge card's switch (#4781), drawn once the member said yes to AI.
-  useMemberNudgeSettings: (options: { enabled?: boolean }) => ({
-    data: options.enabled ? { enabled: true } : undefined,
-  }),
-  useSetMemberNudgesEnabled: () => ({ mutate: state.setNudges }),
+  // The Activity card's switch (#5464), drawn for every member.
+  useActivityNudgeSettings: () => ({ data: { enabled: true } }),
+  useSetActivityNudgesEnabled: () => ({ mutate: state.setNudges }),
   useChapterChatLevel: () => ({
     data: "all",
     isPending: false,
@@ -586,15 +584,16 @@ describe("Settings copy", () => {
       expect(row.props.value).toBe("0 on");
     });
 
-    it("offers the nudge switch only to a member who said yes to AI (#4781)", () => {
+    it("offers the nudge switch to every member, AI or not (#5464)", () => {
       const nudgeSwitch = (tree: ReactTestRenderer) =>
         tree.root.findAll(
           (node) =>
             node.props.accessibilityLabel === "Nudges on Activity" &&
             typeof node.props.onValueChange === "function",
         );
+      // The card shows without AI, so the switch does too.
       state.aiConsent = { answer: "no", sheet_changed: false };
-      expect(nudgeSwitch(render())).toHaveLength(0);
+      expect(nudgeSwitch(render()).length).toBeGreaterThan(0);
 
       state.aiConsent = { answer: "yes", sheet_changed: false };
       state.setNudges.mockClear();
