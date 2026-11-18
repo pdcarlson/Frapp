@@ -73,6 +73,7 @@ import {
   TASK_REVIEW_PUSH_THREAD,
   taskSubmittedCopy,
 } from './push-copy';
+import { displayNameFor, notifyQuietly } from './task-push';
 import { instantOrThrow } from './instant-bound';
 import { planSeriesStart, readTaskRule } from './task-series-schedule';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
@@ -695,14 +696,8 @@ export class TaskService {
   }
 
   /** A member's display name for a push, or null when it cannot be read. */
-  private async displayNameOf(userId: string): Promise<string | null> {
-    try {
-      const [user] = await this.userRepo.findByIds([userId]);
-      const name = user?.display_name?.trim();
-      return name ? name : null;
-    } catch {
-      return null;
-    }
+  private displayNameOf(userId: string): Promise<string | null> {
+    return displayNameFor(this.userRepo, userId);
   }
 
   /**
@@ -783,6 +778,16 @@ export class TaskService {
     const assigneeId = input.assignee_id ?? people[0];
     if (!assigneeId) {
       throw new BadRequestException('A task needs an assignee');
+    }
+    // A list of one is that person's task, held to the list's rule: active
+    // members only, as two or more are (`TaskAudienceReader.resolve`).
+    if (
+      input.assignee_ids != null &&
+      !(await this.audiences.reader(input.chapter_id)).activeIds.has(assigneeId)
+    ) {
+      throw new BadRequestException(
+        'Everyone you pick must be an active member of the chapter',
+      );
     }
     checkedDueDate(input.due_date);
     const dueAt = checkedDueAt(input.due_date, input.due_at);
@@ -1844,25 +1849,20 @@ export class TaskService {
     return this.viewWithPhotos(chapterId, updated);
   }
 
-  private async safeNotifyUser(
+  private safeNotifyUser(
     assigneeId: string,
     chapterId: string,
     payload: NotifyPayload,
     taskId: string,
     notificationContext = 'update',
   ): Promise<void> {
-    try {
-      await this.notificationService.notifyUser(assigneeId, chapterId, payload);
-    } catch (error) {
-      // A notification nobody retries (#4096): reported so a failing
-      // notifications write isn't silent.
-      reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'task-notify',
-        message: `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
-        error,
-      });
-    }
+    return notifyQuietly(this.notificationService, this.logger, {
+      userId: assigneeId,
+      chapterId,
+      payload,
+      site: 'task-notify',
+      about: `task ${taskId} (${notificationContext})`,
+    });
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

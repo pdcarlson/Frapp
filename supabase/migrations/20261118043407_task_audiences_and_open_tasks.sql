@@ -1,5 +1,5 @@
 -- Who a task can go to, and tasks up for grabs (Paul, 2026-11-18).
--- spec/behavior/tasks.md § Who a task goes to, § Up for grabs.
+-- spec/behavior/tasks.md § Tasks for everyone, § Up for grabs.
 --
 -- 1. A group task (`task_groups`, 20261117172708) now goes to everyone, to
 --    several people the officer picked, to everyone holding a role, or to
@@ -46,8 +46,6 @@ create or replace function public.create_task_group(
   p_chapter_id uuid,
   p_created_by uuid,
   p_audience text,
-  p_target_id uuid,
-  p_target_name text,
   p_assignee_ids uuid[],
   p_title text,
   p_description text,
@@ -55,7 +53,11 @@ create or replace function public.create_task_group(
   p_due_at timestamptz,
   p_point_reward int,
   p_proof_kind text,
-  p_subtask_titles text[]
+  p_subtask_titles text[],
+  -- Trailing with defaults so an API revision still running during a deploy
+  -- (named args without these two) resolves to this function.
+  p_target_id uuid default null,
+  p_target_name text default null
 )
 returns setof public.tasks
 language plpgsql
@@ -280,7 +282,7 @@ $$;
 -- the guard chain and the services. Lock EXECUTE to it, as create_task_group
 -- did. The roles are absent in bare Postgres (PGlite in CI), so each is
 -- guarded.
-revoke execute on function public.create_task_group(uuid, uuid, text, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[]) from public;
+revoke execute on function public.create_task_group(uuid, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[], uuid, text) from public;
 revoke execute on function public.claim_open_task(uuid, uuid, uuid, uuid) from public;
 revoke execute on function public.release_open_task(uuid, uuid, uuid) from public;
 
@@ -289,7 +291,7 @@ declare
   v_fn text;
 begin
   foreach v_fn in array array[
-    'public.create_task_group(uuid, uuid, text, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[])',
+    'public.create_task_group(uuid, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[], uuid, text)',
     'public.claim_open_task(uuid, uuid, uuid, uuid)',
     'public.release_open_task(uuid, uuid, uuid)'
   ] loop

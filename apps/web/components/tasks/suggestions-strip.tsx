@@ -52,11 +52,6 @@ export function SuggestionsStrip() {
             {noun}
             {from}
           </p>
-          {open ? null : (
-            <p className="text-caption text-muted-foreground">
-              Who and due are filled in where the minutes say.
-            </p>
-          )}
         </div>
         <Button
           type="button"

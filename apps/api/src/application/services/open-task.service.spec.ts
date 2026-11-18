@@ -301,6 +301,21 @@ describe('OpenTaskService (2026-11-18)', () => {
       );
     });
 
+    it("says the posting's due time in the poster's zone", async () => {
+      repo.findById.mockResolvedValue(
+        posting({ due_at: '2099-11-21T23:00:00.000Z' }),
+      );
+      notifications.timeZoneFor.mockResolvedValue('America/New_York');
+
+      await service.claim(CHAPTER, 'posting-1', 'sam');
+
+      expect(notifications.timeZoneFor).toHaveBeenCalledWith(OFFICER);
+      const push = notifications.notifyUser.mock.calls[0]![2] as {
+        body: string;
+      };
+      expect(push.body).toContain('6 PM');
+    });
+
     it('tells nobody when the poster claims it', async () => {
       await service.claim(CHAPTER, 'posting-1', OFFICER);
       expect(notifications.notifyUser).not.toHaveBeenCalled();
@@ -414,6 +429,20 @@ describe('OpenTaskService (2026-11-18)', () => {
         point_reward: null,
         subtask_titles: ['A', 'B'],
       });
+    });
+
+    it('refuses null proof or checklist with 400, never a failed write', async () => {
+      await expect(
+        service.update(CHAPTER, 'posting-1', OFFICER, {
+          proof_kind: null as unknown as undefined,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.update(CHAPTER, 'posting-1', OFFICER, {
+          subtasks: null as unknown as undefined,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repo.updateOpen).not.toHaveBeenCalled();
     });
 
     it('refuses an edit or a delete once claimed, with 409', async () => {

@@ -10,7 +10,7 @@ import {
 import { whoOfLegacyAssignee, whoRows, type WhoRow } from "./who-rows";
 
 /**
- * The phone's Assign to list (the Tasks overhaul § 2): which rows it draws.
+ * The phone's Assign to list (tasks.md § The Who picker): which rows it draws.
  * The picker's rules are specced with them in
  * `packages/hooks/src/task-who-picker.spec.ts`.
  */

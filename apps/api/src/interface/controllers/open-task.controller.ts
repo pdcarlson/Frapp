@@ -44,7 +44,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 /** Who may claim a new posting, from the body's scope fields. */
 function targetOf(dto: CreateOpenTaskDto): TaskAudienceTarget {
   const given = [dto.role_id, dto.group_id, dto.user_ids].filter(
-    (value) => value !== undefined,
+    (value) => value != null,
   );
   if (given.length > 1) {
     throw new BadRequestException(

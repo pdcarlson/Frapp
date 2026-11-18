@@ -193,7 +193,7 @@ export default function TasksScreen() {
   // apart or a dead `/v1/users/me` pins it on a skeleton with no way out.
   const viewerQuery = useCurrentUser();
   const tasksQuery = useTasks();
-  // Up for grabs (the Tasks overhaul § 3): what this member may claim, and
+  // Up for grabs (spec/behavior/tasks.md § Up for grabs): what this member may claim, and
   // for an officer who manages tasks, every open posting.
   const openTasksQuery = useOpenTasks();
   const pointsQuery = useMyPoints("semester");
@@ -623,7 +623,7 @@ export default function TasksScreen() {
         }
       : undefined;
 
-  // Up for grabs (the Tasks overhaul § 3). A claim is optimistic in the
+  // Up for grabs (spec/behavior/tasks.md § Up for grabs). A claim is optimistic in the
   // hook: the row leaves on the tap, the task lands in its day once the board
   // reads again, and a toast offers Give it back. A claim another member won
   // (a 409) says so, and the row stays gone while the list reads again.
@@ -634,6 +634,12 @@ export default function TasksScreen() {
   const [lostClaims, setLostClaims] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // Hidden only until the list reads again: the fresh read leaves out a
+  // claimed posting itself, and shows it again if its taker gives it back.
+  const openTasksReadAt = openTasksQuery.dataUpdatedAt;
+  useEffect(() => {
+    setLostClaims((lost) => (lost.size === 0 ? lost : new Set()));
+  }, [openTasksReadAt]);
   const openTasks = useMemo(
     () => selectOpenTasks(openTasksQuery.data, lostClaims),
     [openTasksQuery.data, lostClaims],

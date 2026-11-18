@@ -79,7 +79,7 @@ const TAB_OPTIONS: readonly { value: WhoTab; label: string }[] = [
 ];
 
 /**
- * Assign to, on the phone (Paul, 2026-11-18, the Tasks overhaul § 2): a tall
+ * Assign to, on the phone (Paul, 2026-11-18, tasks.md § The Who picker): a tall
  * step stacked over the task form, as Who can see stacks over Edit channel
  * (`channel-access-sheet.tsx`). People are a tick each; Roles and groups is
  * the chapter's own tree (roles under their tiers, then its groups), each

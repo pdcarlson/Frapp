@@ -42,7 +42,7 @@ export function UndoBar({
   aboveCreate?: boolean;
   /**
    * The one action's word: Undo, or another way back from what just
-   * happened, such as Give it back after a claim (the Tasks overhaul § 3).
+   * happened, such as Give it back after a claim (tasks.md § Up for grabs).
    */
   actionLabel?: string;
 }) {

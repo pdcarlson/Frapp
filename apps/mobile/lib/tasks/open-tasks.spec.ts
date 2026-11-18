@@ -9,7 +9,7 @@ import {
   selectOpenTasks,
 } from "./open-tasks";
 
-/** Up for grabs on the Tasks screen (the Tasks overhaul § 3), apart from it. */
+/** Up for grabs on the Tasks screen (tasks.md § Up for grabs), apart from it. */
 const NOW = new Date(2026, 10, 18, 9, 0); // Wednesday, November 18
 
 const posting = (over: Partial<OpenTask> = {}): OpenTask =>

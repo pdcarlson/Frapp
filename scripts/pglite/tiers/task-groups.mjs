@@ -27,7 +27,7 @@ console.log(
       await db.query(
         `select id, assignee_id, group_id, status, title, point_reward
            from create_task_group(
-             $1::uuid, $2::uuid, 'everyone', null, null,
+             $1::uuid, $2::uuid, 'everyone',
              array[$2::uuid, $3::uuid, $3::uuid],
              'Fill out the form', null, date '2026-11-20', null, 5, 'none',
              array['Open it', 'Send it'])`,
@@ -70,7 +70,7 @@ console.log(
     try {
       await db.query(
         `select * from create_task_group(
-           $1::uuid, $2::uuid, 'everyone', null, null, array[]::uuid[], 'Nobody', null,
+           $1::uuid, $2::uuid, 'everyone', array[]::uuid[], 'Nobody', null,
            date '2026-11-20', null, null, 'none', array[]::text[])`,
         [CHAPTER, A],
       );
@@ -97,9 +97,9 @@ console.log(
     const roleCopies = (
       await db.query(
         `select group_id from create_task_group(
-           $1::uuid, $2::uuid, 'role', $3::uuid, 'Recruitment Committee',
+           $1::uuid, $2::uuid, 'role',
            array[$2::uuid], 'Table at the fair', null, date '2026-11-20',
-           null, null, 'none', array[]::text[])`,
+           null, null, 'none', array[]::text[], $3::uuid, 'Recruitment Committee')`,
         [CHAPTER, A, ROLE],
       )
     ).rows;
@@ -114,7 +114,7 @@ console.log(
     try {
       await db.query(
         `select * from create_task_group(
-           $1::uuid, $2::uuid, 'group', null, null, array[$2::uuid], 'No group',
+           $1::uuid, $2::uuid, 'group', array[$2::uuid], 'No group',
            null, date '2026-11-20', null, null, 'none', array[]::text[])`,
         [CHAPTER, A],
       );

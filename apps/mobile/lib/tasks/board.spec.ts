@@ -104,7 +104,7 @@ describe("toTaskRow — photos, proof and send-back (#4635)", () => {
   });
 });
 
-describe("toTaskRow — groups and Up for grabs (the Tasks overhaul)", () => {
+describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () => {
   it("reads a group copy's summary and the posting it was claimed from", () => {
     const row = toTaskRow(
       task({

@@ -887,7 +887,7 @@ describe("Mark done with proof on the board (#4635)", () => {
   });
 });
 
-/** The Tasks overhaul § 3: open tasks a member may claim, above Today. */
+/** tasks.md § Up for grabs: open tasks a member may claim, above Today. */
 describe("Up for grabs", () => {
   /** Three days out, as the local calendar reads it, so it says "Due ...". */
   const soon = new Date(Date.now() + 3 * 86_400_000);

@@ -1,8 +1,8 @@
 /**
  * The Who picker's rules, for web's popover (`apps/web/components/tasks/
  * who-picker.tsx`) and the phone's Assign to sheet (`apps/mobile/components/
- * tasks/who-picker-sheet.tsx`) alike (Paul, 2026-11-18, the Tasks overhaul §
- * 2 "Picking who"). One copy, because the two apps drifting apart on what a
+ * tasks/who-picker-sheet.tsx`) alike (Paul, 2026-11-18; `spec/behavior/
+ * tasks.md` § The Who picker). One copy, because the two apps drifting apart on what a
  * tick means is how the same pick would make different tasks.
  *
  * The chapter reads as a tree: everyone in it at the top, then its roles

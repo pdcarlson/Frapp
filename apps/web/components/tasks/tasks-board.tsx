@@ -935,7 +935,6 @@ export function TasksBoard() {
   };
 
   const cardProps = (task: Task) => ({
-    layout,
     task,
     assigneeName:
       membersByUserId.get(task.assignee_id) ??
@@ -1362,12 +1361,10 @@ function taskListClassName(layout: ListLayout): string {
 }
 
 /**
- * One task, as a tile in a Grid column or a row of the List (#4175). Both
- * draw the same facts and the same controls, Edit and Delete included, from
- * this one body; only the frame and where the controls sit differ.
+ * One task as a tile in a Grid column (#4175). The List draws `TaskRow`
+ * instead, which opens the task panel for its controls (2026-11-18).
  */
 function TaskCard({
-  layout,
   task,
   showStatus = false,
   assigneeName,
@@ -1381,7 +1378,6 @@ function TaskCard({
   onReject,
   onDelete,
 }: {
-  layout: ListLayout;
   task: Task;
   /**
    * Say where the task stands on the tile: in My tasks and By person no
@@ -1430,7 +1426,6 @@ function TaskCard({
   const needsSignOff = taskNeedsSignOff(task);
   const autoSignedOff = taskSignedOffAutomatically(task);
   const sentBack = isSentBack(task);
-  const isRow = layout === "list";
 
   const summary = (
     <div className="min-w-0 flex-1">
@@ -1445,11 +1440,7 @@ function TaskCard({
       </p>
       {task.description ? (
         <p
-          className={cn(
-            "mt-1 text-caption text-muted-foreground",
-            // A row stays one line of description; a tile has the height.
-            isRow ? "line-clamp-1" : "line-clamp-2",
-          )}
+          className="mt-1 line-clamp-2 text-caption text-muted-foreground"
         >
           {task.description}
         </p>
@@ -1524,15 +1515,7 @@ function TaskCard({
   );
 
   const controls = (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-2",
-        // A row with nothing to offer this viewer draws no empty gap.
-        // In a row they end it, wrapping within its trailing half on a
-        // narrow page rather than taking a line of their own under it.
-        isRow ? "empty:hidden max-w-[55%] justify-end" : "mt-3",
-      )}
-    >
+    <div className="mt-3 flex flex-wrap items-center gap-2">
       {/*
           The inline status controls are writes too
           (`PATCH /v1/tasks/:id/status`), so they mirror the same gate as
@@ -1669,26 +1652,14 @@ function TaskCard({
     ) : null;
 
   return (
-    <li className={isRow ? "py-3" : "rounded-[14px] border border-border p-3"}>
-      {isRow ? (
-        // The row's facts lead and its controls end it, as a Linear list
-        // row's do; an opened checklist spans the row under both.
-        <>
-          <div className="flex items-start gap-3 @xl:gap-4">
-            {summary}
-            {controls}
-          </div>
-          {subtaskList}
-        </>
-      ) : (
-        // The tile as it always was: the checklist opens under the meta line
-        // that holds its toggle, and the controls end the tile.
-        <>
-          {summary}
-          {subtaskList}
-          {controls}
-        </>
-      )}
+    <li className="rounded-[14px] border border-border p-3">
+      {/*
+        The checklist opens under the meta line that holds its toggle, and
+        the controls end the tile.
+      */}
+      {summary}
+      {subtaskList}
+      {controls}
       {/*
         The one rule from the old column footer worth keeping: it explains a
         missing control, so it sits on the tile whose control is missing. Only

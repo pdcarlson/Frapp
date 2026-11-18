@@ -2293,4 +2293,41 @@ describe("TasksBoard up for grabs (2026-11-18)", () => {
     await user.click(within(panel).getByRole("button", { name: TASK_AUDIENCE_COPY.release }));
     await waitFor(() => expect(releaseMutate).toHaveBeenCalledWith("task-todo"));
   });
+
+  it("offers no Give it back once the task is done, or on someone else's", async () => {
+    tasksRef.current = [
+      {
+        ...TASKS[0]!,
+        id: "task-done",
+        title: "Wash the van",
+        status: "COMPLETED" as const,
+        completed_at: "2026-08-10T00:00:00Z",
+        open_task_id: "posting-1",
+      },
+      { ...TASKS[2]!, status: "TODO" as const, open_task_id: "posting-2" },
+    ];
+    openTasksRef.current = [];
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    await user.click(screen.getByRole("button", { name: "Edit Wash the van" }));
+    const done = await screen.findByRole("dialog", { name: "Wash the van" });
+    expect(
+      within(done).queryByRole("button", { name: TASK_AUDIENCE_COPY.release }),
+    ).toBeNull();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Wash the van" })).toBeNull(),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit Book the philanthropy venue" }),
+    );
+    const theirs = await screen.findByRole("dialog", {
+      name: "Book the philanthropy venue",
+    });
+    expect(
+      within(theirs).queryByRole("button", { name: TASK_AUDIENCE_COPY.release }),
+    ).toBeNull();
+  });
 });

@@ -114,10 +114,31 @@ console.log(
     await db.query(`delete from task_photos where task_id = $1`, [
       claimed[0].id,
     ]);
+    await db.query(`update tasks set status = 'COMPLETED' where id = $1`, [
+      claimed[0].id,
+    ]);
+    const whenDone = await codeOf(
+      `select * from release_open_task($1::uuid, $2::uuid, $3::uuid)`,
+      [CHAPTER, claimed[0].id, SAM],
+    );
+    await db.query(
+      `update tasks set status = 'TODO', points_awarded = true where id = $1`,
+      [claimed[0].id],
+    );
+    const whenPaid = await codeOf(
+      `select * from release_open_task($1::uuid, $2::uuid, $3::uuid)`,
+      [CHAPTER, claimed[0].id, SAM],
+    );
+    await db.query(`update tasks set points_awarded = false where id = $1`, [
+      claimed[0].id,
+    ]);
     check(
-      "giving back is refused to anyone but the assignee (42501) and once there's proof (FR409)",
-      notTheirs === "42501" && withProof === "FR409",
-      { notTheirs, withProof },
+      "giving back is refused to anyone but the assignee (42501), and once there's proof, it's done or its points are paid (FR409)",
+      notTheirs === "42501" &&
+        withProof === "FR409" &&
+        whenDone === "FR409" &&
+        whenPaid === "FR409",
+      { notTheirs, withProof, whenDone, whenPaid },
     );
 
     const released = (

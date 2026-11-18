@@ -527,6 +527,7 @@ describe('TaskService', () => {
       it.each([
         ['an alum', ['user-1', 'alum-1']],
         ['someone outside the chapter', ['user-1', 'stranger']],
+        ['only an alum', ['alum-1']],
       ])('refuses a list with %s', async (_label, ids) => {
         await expect(forPeople(ids)).rejects.toThrow(
           'Everyone you pick must be an active member of the chapter',

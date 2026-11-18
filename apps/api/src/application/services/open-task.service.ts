@@ -37,7 +37,7 @@ import {
   checkedSubtaskTitles,
 } from './task-input-checks';
 import { GROUP_NOTIFY_CONCURRENCY, TaskService } from './task.service';
-import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { displayNameFor, notifyQuietly } from './task-push';
 
 /** A posting's own fields, as an officer writes them. */
 export interface OpenTaskFields {
@@ -288,6 +288,12 @@ export class OpenTaskService {
     if (input.point_reward !== undefined) {
       changes.point_reward = input.point_reward || null;
     }
+    // Null isn't a value for either: no proof is "none", no checklist is [].
+    if (input.proof_kind === null || input.subtasks === null) {
+      throw new BadRequestException(
+        'Send proof_kind "none" or an empty subtasks list to clear them',
+      );
+    }
     if (input.proof_kind !== undefined) changes.proof_kind = input.proof_kind;
     if (input.subtasks !== undefined) {
       changes.subtask_titles = checkedSubtaskTitles(input.subtasks);
@@ -330,14 +336,21 @@ export class OpenTaskService {
     const task = await this.take(posting, userId);
 
     if (posting.created_by !== userId) {
-      const name = (await this.displayNameOf(userId)) ?? 'A member';
+      const [name, posterZone] = await Promise.all([
+        this.displayNameOf(userId),
+        posting.due_at
+          ? this.notificationService
+              .timeZoneFor(posting.created_by)
+              .catch(() => null)
+          : Promise.resolve(null),
+      ]);
       await this.safeNotify(
         posting.created_by,
         chapterId,
         {
-          title: `${name} claimed: ${posting.title}`,
+          title: `${name ?? 'A member'} claimed: ${posting.title}`,
           body: joinFacts(
-            `Due ${formatTaskDue(posting.due_date, null, { timeZone: null })}`,
+            `Due ${formatTaskDue(posting.due_date, posting.due_at, { timeZone: posterZone })}`,
             posting.point_reward ? `${posting.point_reward} points` : null,
           ),
           priority: 'NORMAL',
@@ -425,31 +438,22 @@ export class OpenTaskService {
   }
 
   /** A member's display name for a push, or null when it cannot be read. */
-  private async displayNameOf(userId: string): Promise<string | null> {
-    try {
-      const [user] = await this.userRepo.findByIds([userId]);
-      const name = user?.display_name?.trim();
-      return name ? name : null;
-    } catch {
-      return null;
-    }
+  private displayNameOf(userId: string): Promise<string | null> {
+    return displayNameFor(this.userRepo, userId);
   }
 
-  private async safeNotify(
+  private safeNotify(
     userId: string,
     chapterId: string,
     payload: NotifyPayload,
     openTaskId: string,
   ): Promise<void> {
-    try {
-      await this.notificationService.notifyUser(userId, chapterId, payload);
-    } catch (error) {
-      reportCaughtFailure(this.logger, {
-        level: 'warning',
-        site: 'open-task-notify',
-        message: `notifyUser failed for open task ${openTaskId} / user ${userId}`,
-        error,
-      });
-    }
+    return notifyQuietly(this.notificationService, this.logger, {
+      userId,
+      chapterId,
+      payload,
+      site: 'open-task-notify',
+      about: `open task ${openTaskId}`,
+    });
   }
 }

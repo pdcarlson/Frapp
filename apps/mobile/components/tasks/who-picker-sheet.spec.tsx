@@ -20,7 +20,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import { WhoPickerBody, WhoPickerFooter } from "./who-picker-sheet";
 
 /**
- * The Assign to picker's sheet (the Tasks overhaul § 2). Its rules have
+ * The Assign to picker's sheet (tasks.md § The Who picker). Its rules have
  * their own spec (`packages/hooks/src/task-who-picker.spec.ts`); this pins what a member
  * sees and taps. The list is gorhom's, a stand-in under test, so its rows are
  * drawn here through its own `renderItem`.

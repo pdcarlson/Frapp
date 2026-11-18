@@ -8,7 +8,7 @@ import { gutterBleed, PressableRow } from "@/components/list-section";
 import { openTaskLine } from "@/lib/tasks/open-tasks";
 
 /**
- * One task up for grabs on the Tasks screen (the Tasks overhaul § 3): the
+ * One task up for grabs on the Tasks screen (tasks.md § Up for grabs): the
  * title, "10 points · Philanthropy Committee · Due Friday", and a Claim pill.
  * Laid out as the board's own rows (`task-row.tsx`): flush, hairline-split,
  * the same height, so the section reads as part of the list and not a card

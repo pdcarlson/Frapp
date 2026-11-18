@@ -5,6 +5,7 @@ import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { isAiNotAvailable } from "./use-ai";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { invalidatePointReads } from "./use-points";
+import { openTaskKeys } from "./use-open-tasks";
 import { taskKeys } from "./use-tasks";
 
 /**
@@ -121,6 +122,8 @@ function useDropFromLists() {
     });
     if (made) {
       void queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      // A "someone" suggestion is posted to Up for grabs.
+      void queryClient.invalidateQueries({ queryKey: openTaskKeys.all });
       // An accepted points change or event (#718) lands on those pages.
       void invalidatePointReads(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });

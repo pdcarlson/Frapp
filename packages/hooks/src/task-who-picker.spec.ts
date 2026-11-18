@@ -32,7 +32,7 @@ import {
 } from "./task-who-picker";
 
 /**
- * The Who picker's rules (the Tasks overhaul § 2), apart from web's popover
+ * The Who picker's rules (tasks.md § The Who picker), apart from web's popover
  * and the phone's sheet: who it lists, what a tick does, and the words it
  * says.
  */

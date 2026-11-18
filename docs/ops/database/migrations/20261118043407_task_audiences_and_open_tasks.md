@@ -5,7 +5,7 @@
      lives in ../promotion.md and ../../db-rollback-playbook.md; link to it,
      don't copy it. -->
 
-Widens group tasks to several people, a role's holders or a group's members (`task_groups.audience` gains `people`, `role` and `group`, plus `target_id` and `target_name`), replaces `create_task_group` with a version that takes the target, and adds tasks up for grabs: the `open_tasks` table and the service-role functions `claim_open_task` and `release_open_task` (Paul, 2026-11-18; `spec/behavior/tasks.md` § Who a task goes to, § Up for grabs).
+Widens group tasks to several people, a role's holders or a group's members (`task_groups.audience` gains `people`, `role` and `group`, plus `target_id` and `target_name`), replaces `create_task_group` with a version that takes the target, and adds tasks up for grabs: the `open_tasks` table and the service-role functions `claim_open_task` and `release_open_task` (Paul, 2026-11-18; `spec/behavior/tasks.md` § Tasks for everyone, § Up for grabs).
 
 ## Promotion
 
@@ -13,9 +13,9 @@ Widens group tasks to several people, a role's holders or a group's members (`ta
 - **Checks**:
   - `select count(*) from public.open_tasks;` returns 0 right after promotion.
   - `select pg_get_constraintdef(oid) from pg_constraint where conname = 'task_groups_audience_check';` lists `everyone`, `people`, `role` and `group`.
-  - `select has_function_privilege('authenticated', 'public.claim_open_task(uuid, uuid, uuid, uuid)', 'execute');` returns false, and the same for `public.release_open_task(uuid, uuid, uuid)` and `public.create_task_group(uuid, uuid, text, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[])`.
+  - `select has_function_privilege('authenticated', 'public.claim_open_task(uuid, uuid, uuid, uuid)', 'execute');` returns false, and the same for `public.release_open_task(uuid, uuid, uuid)` and `public.create_task_group(uuid, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[], uuid, text)`.
   - `select count(*) from pg_proc where proname = 'create_task_group';` returns 1 (the old signature is gone).
-- **Promoter notes**: promote together with the API that calls the new `create_task_group` signature. The old signature is dropped, so an API from before this change can't create a task for everyone once this is applied, and the new API can't create one before it is: promote the migration and deploy the API back to back. Everything else is additive.
+- **Promoter notes**: promote before the API that sends `p_target_id` and `p_target_name`. The new `create_task_group` keeps every earlier parameter in place and adds those two last with `default null`, so an API from before this change still resolves it by name while the deploy rolls. The new API can't create a role or group task until this is applied. Everything else is additive.
 
 ## Rollback
 
@@ -25,7 +25,7 @@ Worth it only if the migration itself breaks something. Roll the API back first,
 drop function if exists public.release_open_task(uuid, uuid, uuid);
 drop function if exists public.claim_open_task(uuid, uuid, uuid, uuid);
 drop table if exists public.open_tasks;
-drop function if exists public.create_task_group(uuid, uuid, text, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[]);
+drop function if exists public.create_task_group(uuid, uuid, text, uuid[], text, text, date, timestamptz, int, text, text[], uuid, text);
 update public.task_groups set audience = 'everyone' where audience <> 'everyone';
 alter table public.task_groups drop constraint if exists task_groups_target_check;
 alter table public.task_groups drop constraint if exists task_groups_audience_check;

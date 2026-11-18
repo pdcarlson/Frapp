@@ -69,7 +69,7 @@ export interface TaskDetailSheetProps {
    */
   onEdit?: () => void;
   /**
-   * Give it back (the Tasks overhaul § 3): a task claimed from Up for grabs,
+   * Give it back (tasks.md § Up for grabs): a task claimed from Up for grabs,
    * offered to its assignee until it is done. The screen leaves it out
    * otherwise.
    */

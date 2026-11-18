@@ -84,7 +84,7 @@ describe("resolveNotificationTarget", () => {
   });
 
   it("opens the board for a task up for grabs, where Up for grabs sits on top", () => {
-    // "New task up for grabs" (the Tasks overhaul § 3) carries the posting's
+    // "New task up for grabs" (tasks.md § Up for grabs) carries the posting's
     // id; the board lists it above Today, so the board is the place.
     expect(
       resolveNotificationTarget(payload({ screen: "tasks", openTaskId: "o1" })),
