@@ -107,6 +107,42 @@ export function useMeetingActionItemTasks(
   });
 }
 
+/** One posted minutes of a series and its open action items. */
+export type SeriesOpenActionItems =
+  components["schemas"]["SeriesOpenActionItemsDto"];
+
+/**
+ * The action items still open across one repeating meeting's posted minutes,
+ * newest first (#5482): one read for the whole series, which the server
+ * answers from each minutes' content and its tasks together. Read again
+ * when the app comes back to it, not on a timer.
+ */
+export function useSeriesOpenActionItems(
+  seriesKey: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      ...meetingsKey(chapterId),
+      "series",
+      seriesKey ?? "",
+      "open-action-items",
+    ] as const,
+    queryFn: async ({ signal }): Promise<SeriesOpenActionItems[]> => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/series/{key}/open-action-items",
+        { signal, params: { path: { key: seriesKey! } } },
+      );
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!seriesKey,
+    refetchOnWindowFocus: true,
+  });
+}
+
 /** The sections the chapter's minutes show, in order. */
 export function useMeetingTemplate(options?: { enabled?: boolean }) {
   const client = useFrappClient();

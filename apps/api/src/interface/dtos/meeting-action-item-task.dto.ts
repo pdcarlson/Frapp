@@ -34,3 +34,44 @@ export class MeetingActionItemTaskDto {
   })
   group!: ActionItemTaskGroupDto | null;
 }
+
+/** An action item still open, as the series screen lists it (#5482). */
+export class OpenActionItemDto {
+  @ApiProperty({
+    minimum: 0,
+    description: 'The action item’s place in its minutes’ list, from 0.',
+  })
+  index!: number;
+
+  @ApiProperty()
+  text!: string;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  owner_user_id!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'A calendar day, `YYYY-MM-DD`.',
+  })
+  due_date!: string | null;
+
+  @ApiProperty({
+    type: ActionItemTaskGroupDto,
+    nullable: true,
+    description: 'A task for everyone: how many of its copies are done.',
+  })
+  group!: ActionItemTaskGroupDto | null;
+}
+
+/** One posted minutes of a series and its open action items. */
+export class SeriesOpenActionItemsDto {
+  @ApiProperty({ format: 'uuid' })
+  meeting_id!: string;
+
+  @ApiProperty({ format: 'date-time' })
+  event_start_time!: string;
+
+  @ApiProperty({ type: [OpenActionItemDto] })
+  items!: OpenActionItemDto[];
+}

@@ -4,7 +4,11 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { MEETING_COPY, MEETING_LIST_COPY } from "@repo/validation";
+import {
+  MEETING_COPY,
+  MEETING_LIST_COPY,
+  TASK_AUDIENCE_COPY,
+} from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -15,8 +19,10 @@ import { screenText } from "@/test/screen-text";
  */
 const state = vi.hoisted(() => ({
   rows: [] as Record<string, unknown>[],
-  meetings: new Map<string, unknown>(),
-  asked: [] as string[],
+  open: undefined as unknown[] | undefined,
+  openPending: false,
+  openKey: null as string | null,
+  refreshed: [] as unknown[],
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -27,10 +33,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isFetching: false,
     refetch: vi.fn(),
   }),
-  useMeeting: (id: string) => {
-    state.asked.push(id);
-    const data = state.meetings.get(id);
-    return { data, isPending: data === undefined, isError: false };
+  useSeriesOpenActionItems: (key: string | null) => {
+    state.openKey = key;
+    return {
+      data: state.open,
+      isPending: state.openPending,
+      isError: !state.openPending && state.open === undefined,
+    };
   },
   useMemberDisplayNames: () => ({ nameFor: () => "Sam" }),
 }));
@@ -53,7 +62,10 @@ vi.mock("@/components/screen-shell", () => ({
     ),
 }));
 vi.mock("@/components/pull-to-refresh", () => ({
-  useRefetchAll: () => undefined,
+  useRefetchAll: (queries: unknown[]) => {
+    state.refreshed = queries;
+    return undefined;
+  },
 }));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63", accentOnPrimary: "#131211" }),
@@ -83,12 +95,6 @@ function row(id: string, weeksAgo: number, over: Record<string, unknown> = {}) {
     ...over,
   };
 }
-const minutesWith = (text: string) => ({
-  id: "x",
-  content: {
-    action_items: [{ text, owner_user_id: null, due_date: null }],
-  },
-});
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -104,8 +110,9 @@ function render(): ReactTestRenderer {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.asked = [];
-  state.meetings = new Map();
+  state.open = [];
+  state.openPending = false;
+  state.openKey = null;
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ key: "head" });
 });
 
@@ -122,26 +129,70 @@ describe("Minutes series", () => {
     expect(text).toMatch(/Every \w+day/);
   });
 
-  it("reads action items from the latest three posted minutes only, newest first", () => {
-    state.rows = [
-      row("draft", 0, { status: "draft" }),
-      row("w1", 1),
-      row("w2", 2, { action_item_count: 0 }),
-      row("w3", 3),
-      row("w4", 4),
+  it("lists the open action items the series read gives, newest first, with a task for everyone's progress (#5482)", () => {
+    state.rows = [row("w1", 1), row("w9", 9)];
+    state.open = [
+      {
+        meeting_id: "w1",
+        event_start_time: daysAgo(8),
+        items: [
+          {
+            index: 0,
+            text: "Book the venue",
+            owner_user_id: null,
+            due_date: null,
+            group: null,
+          },
+        ],
+      },
+      {
+        meeting_id: "w9",
+        event_start_time: daysAgo(64),
+        items: [
+          {
+            index: 2,
+            text: "Order the shirts",
+            owner_user_id: null,
+            due_date: null,
+            group: { done: 3, total: 20 },
+          },
+        ],
+      },
     ];
-    state.meetings.set("w1", minutesWith("Book the venue"));
-    state.meetings.set("w3", minutesWith("Send the reminder"));
     const text = screenText(render());
-    // w4 is the fourth posted minutes: not read. w2 has none: not read.
-    expect(state.asked).toEqual(["w1", "w3"]);
-    expect(text).toContain("Book the venue");
+    expect(state.openKey).toBe("head");
+    expect(text).toContain(MEETING_LIST_COPY.seriesActions);
+    expect(text.indexOf("Book the venue")).toBeLessThan(
+      text.indexOf("Order the shirts"),
+    );
+    expect(text).toContain(TASK_AUDIENCE_COPY.progress(3, 20));
     expect(text).toContain(MEETING_LIST_COPY.noOwner);
+    expect(text).not.toContain(MEETING_LIST_COPY.seriesActionsNone);
+    // A pull refreshes the open items too, not only the minutes list.
+    expect(state.refreshed).toHaveLength(2);
   });
 
-  it("says when the latest minutes set no action items", () => {
-    state.rows = [row("a", 0, { action_item_count: 0 })];
+  it("says nothing is open once the read finds none", () => {
+    state.rows = [row("a", 0)];
+    state.open = [];
     expect(screenText(render())).toContain(MEETING_LIST_COPY.seriesActionsNone);
+  });
+
+  it("holds a row's shape while the read is out, and says so when it fails", () => {
+    state.rows = [row("a", 0)];
+    state.open = undefined;
+    state.openPending = true;
+    let text = screenText(render());
+    expect(text).not.toContain(MEETING_LIST_COPY.seriesActionsNone);
+    expect(text).not.toContain(MEETING_LIST_COPY.loadFailedTitle);
+    state.openPending = false;
+    text = screenText(render());
+    expect(text).toContain(MEETING_LIST_COPY.loadFailedTitle);
+  });
+
+  it("shows no action items section for a series whose minutes set none", () => {
+    state.rows = [row("a", 0, { action_item_count: 0 })];
+    expect(screenText(render())).not.toContain(MEETING_LIST_COPY.seriesActions);
   });
 
   it("says the series isn't here when none of its minutes are", () => {
