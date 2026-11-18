@@ -188,11 +188,11 @@ describe("createMentionSuggestion — Frapp's own row (#4713)", () => {
     }) as MentionSuggestionItem[];
   }
 
-  it("is last on a bare @, after the people the member is more likely to mean", () => {
+  it("is first on a bare @, so a member finds it unprompted (#5476)", () => {
     expect(itemsFor("", true).map((item) => item.kind)).toEqual([
-      "member",
-      "member",
       "ask",
+      "member",
+      "member",
     ]);
   });
 

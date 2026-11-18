@@ -750,6 +750,62 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'OpenTaskController.create': {
+    'open-task-created': [
+      [
+        'for a role, with points and a due time',
+        {
+          result: {
+            scope: 'role',
+            subtask_titles: ['Bring tape'],
+            point_reward: 10,
+            due_at: '2026-11-20T22:00:00.000Z',
+            proof_kind: 'photo',
+            eligible_count: 7,
+          },
+        },
+        {
+          scope: 'role',
+          eligible_count: 7,
+          has_due_time: true,
+          has_point_reward: true,
+          has_subtasks: true,
+          proof_kind: 'photo',
+        },
+      ],
+      [
+        'for the chapter',
+        {
+          result: {
+            scope: 'chapter',
+            subtask_titles: [],
+            point_reward: null,
+            due_at: null,
+            proof_kind: 'none',
+            eligible_count: 30,
+          },
+        },
+        {
+          scope: 'chapter',
+          eligible_count: 30,
+          has_due_time: false,
+          has_point_reward: false,
+          has_subtasks: false,
+          proof_kind: 'none',
+        },
+      ],
+    ],
+  },
+  'OpenTaskController.claim': {
+    'open-task-claimed': [
+      ['claimed by a member', {}, { assigned_by_officer: false }],
+    ],
+  },
+  'OpenTaskController.assign': {
+    'open-task-claimed': [
+      ['handed out by an officer', {}, { assigned_by_officer: true }],
+    ],
+  },
   'TaskController.updateStatus': {
     'task-status-changed': [
       [

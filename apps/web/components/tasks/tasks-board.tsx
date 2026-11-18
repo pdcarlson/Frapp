@@ -8,6 +8,8 @@ import {
   Link2,
   ChevronDown,
   Pencil,
+  Plus,
+  SlidersHorizontal,
   Trash2,
   Undo2,
   Users,
@@ -16,13 +18,16 @@ import {
   isFirstAiReadInFlight,
   useAiSuggestions,
   useConfirmTask,
+  useCreateOpenTask,
   useCreateTask,
   useCurrentUser,
   useDeleteTask,
   useEvents,
+  useMemberDisplayNames,
   useMembers,
   useMyPermissions,
   useNow,
+  useOpenTasks,
   useRejectTask,
   useChapterScope,
   useTasks,
@@ -37,12 +42,7 @@ import {
   taskDueBucket,
   type TaskDueBucket,
 } from "@repo/hooks";
-import type {
-  LiveTaskPhoto,
-  TaskEditScope,
-  TaskStatus,
-  TaskSubtask,
-} from "@repo/hooks";
+import type { TaskEditScope, TaskStatus } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import {
   formatDayTime,
@@ -54,12 +54,12 @@ import {
   TASK_AUDIENCE_COPY,
   TASK_SERIES_SCOPE_COPY,
   can,
+  taskGroupLabel,
   taskNeedsSignOff,
   taskSignedOffAutomatically,
-  type TaskProofKind,
-  type TaskSeriesLine,
 } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
+import { FOCUS_RING } from "@/components/ui/focus";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -88,10 +88,9 @@ import {
   actionStatus,
   canReopenOwnTask,
 } from "@repo/hooks";
-import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
-import { TaskEditForm } from "./task-edit-form";
 import { TaskRepeatLine } from "./task-repeat";
 import {
   MarkDoneControl,
@@ -99,74 +98,33 @@ import {
   TaskProof,
   type CompletionProof,
 } from "./task-photo";
-import { AddTaskRow, type TaskDraft } from "./add-task-row";
+import { AddTaskRow, type TaskCreate } from "./add-task-row";
+import type { BoardTask, GroupTileData } from "./board-task";
+import {
+  GroupTaskRow,
+  TASK_ROWS_CLASS,
+  TaskRow,
+  lowerFirst,
+  type RowPerson,
+} from "./task-row";
+import { TaskPanel, type TaskPanelTarget } from "./task-panel";
+import { OpenTaskPanel, UpForGrabs } from "./up-for-grabs";
+import { SuggestionsStrip } from "./suggestions-strip";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
-import { SuggestedTasks } from "@/components/ai/suggested-tasks";
-import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FilterChip, type FilterOption } from "@/components/shared/filter-chip";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { useListLayout, type ListLayout } from "@/lib/list-layout";
 
-type Task = {
-  id: string;
-  chapter_id: string;
-  title: string;
-  description: string | null;
-  assignee_id: string;
-  created_by: string;
-  due_date: string;
-  /** The moment it is due, when it has a time of day (#4003). */
-  due_at?: string | null;
-  /** Its checklist, in order (#4003). */
-  subtasks?: TaskSubtask[];
-  /** Task photos, reference then proof (#4635). */
-  photos?: LiveTaskPhoto[];
-  /** What Mark done needs (#4635). */
-  proof_kind?: TaskProofKind;
-  proof_link?: string | null;
-  /** When an officer last sent it back, and why (#4635). */
-  sent_back_at?: string | null;
-  sent_back_reason?: string | null;
-  completion_note?: string | null;
-  /** Display status — `OVERDUE` when derived. Drives the column grouping. */
-  status: TaskStatus;
-  /**
-   * The persisted status (#1051). Drives which action is offered: `OVERDUE`
-   * renders identically for a stored `TODO` and a stored `IN_PROGRESS`, and the
-   * server checks its transition table against this one. Optional because the
-   * pre-#1051 API did not send it; falling back to `status` reproduces the old
-   * behaviour, where an overdue task simply offered no action.
-   */
-  stored_status?: TaskStatus;
-  point_reward: number | null;
-  points_awarded: boolean;
-  completed_at: string | null;
-  confirmed_at: string | null;
-  created_at: string;
-  /** How it repeats, on a copy of a repeating task (#5119). */
-  series?: TaskSeriesLine | null;
-  /** The task for everyone this is one member's copy of (#4295 step 3). */
-  group_id?: string | null;
-  /** A task for everyone's progress over all its copies, as the API counts it. */
-  group?: { total: number; done: number } | null;
-};
-
-/**
- * A task for everyone on the chapter's status board (#4295 step 3): its
- * copies still to finish drawn as one tile, "14 of 20 done", the way Google
- * Classroom shows one assignment with its turned-in count rather than a row
- * per student. A copy marked done leaves it for Waiting on an officer, where
- * it is confirmed like any task.
- */
-type GroupTileData = {
-  id: string;
-  /** One open copy, read for what every copy shares. */
-  sample: Task;
-  /** The copies still to finish, soonest due first. */
-  open: Task[];
-  total: number;
-  done: number;
-};
+type Task = BoardTask;
 
 /*
  * The four columns, each named by its section label and count, in the shared
@@ -242,6 +200,17 @@ const GROUP_BY_OPTIONS = [
   { value: "person", label: "By person" },
 ] as const;
 
+const LAYOUT_OPTIONS = [
+  { value: "list", label: "List" },
+  { value: "grid", label: "Grid" },
+] as const satisfies readonly { value: ListLayout; label: string }[];
+
+/** The status groups' order in List: late first (by group id). */
+const LIST_STATUS_ORDER = ["overdue", "todo", "in_progress", "completed"];
+
+/** Rows a long List group shows before "N more". */
+const LIST_PREVIEW = 8;
+
 const STATUS_FILTER_ORDER: StatusFilter[] = [
   "TODO",
   "IN_PROGRESS",
@@ -293,6 +262,8 @@ export function TasksBoard() {
   const membersQuery = useMembers();
   const currentUser = useCurrentUser();
   const createTask = useCreateTask();
+  const createOpenTask = useCreateOpenTask();
+  const { avatarTintFor } = useMemberDisplayNames();
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
@@ -347,6 +318,13 @@ export function TasksBoard() {
     }
     return map;
   }, [members]);
+  const avatarsByUserId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const m of members) {
+      if (m.user_id) map.set(String(m.user_id), m.avatar_url ?? null);
+    }
+    return map;
+  }, [members]);
 
   // Since #560 the status mutations write the list entry in `onMutate`, so a
   // row re-renders into its next status immediately — "Mark done" can now
@@ -358,9 +336,22 @@ export function TasksBoard() {
     updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
 
   const [showAllConfirmed, setShowAllConfirmed] = useState(false);
+  // What the panel shows: a task, a group task, or a posting up for grabs.
+  const [opened, setOpened] = useState<
+    | { kind: "task" | "group" | "posting"; id: string }
+    | null
+  >(null);
+  // New task bumps it, which opens the add line's More (Paul, 2026-11-18).
+  const [expandSignal, setExpandSignal] = useState(0);
+  // List groups opened past their first rows.
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  // Shared with Up for grabs' own read, so a posting opens from the cache.
+  const openTasksQuery = useOpenTasks();
   // Grid is the board of status columns, the page's only view until #4175
   // and still its default; List is the same groups as rows, top to bottom.
-  const [layout] = useListLayout("tasks");
+  const [layout, setLayout] = useListLayout("tasks");
   const isGrid = layout === "grid";
 
   // Read here, ahead of the early returns, because My tasks needs it to pick
@@ -573,6 +564,13 @@ export function TasksBoard() {
               : [],
       }));
     }
+    if (!isGrid && view === "all" && groupBy === "status") {
+      // A list reads top to bottom, so what's late leads it, then what's
+      // to do, as Linear's and Todoist's lists put overdue first.
+      drawn.sort(
+        (a, b) => LIST_STATUS_ORDER.indexOf(a.id) - LIST_STATUS_ORDER.indexOf(b.id),
+      );
+    }
     for (const group of drawn) {
       group.tasks.sort(compareTasksByDue);
       group.groupTiles?.sort((a, b) => compareTasksByDue(a.sample, b.sample));
@@ -590,25 +588,32 @@ export function TasksBoard() {
     myUserId,
     membersByUserId,
     nowTick,
+    isGrid,
   ]);
 
-  // Resolves whether the task was created, so the add row knows to clear.
-  async function createFromDraft(draft: TaskDraft): Promise<boolean> {
+  // Resolves whether it was created, so the add line knows to clear. A
+  // task up for grabs goes to `POST /v1/open-tasks` (2026-11-18).
+  async function createFrom(create: TaskCreate): Promise<boolean> {
     try {
-      await createTask.mutateAsync(draft);
-      toast({
-        title: "Task created",
-        description: `${draft.title} is now assigned.`,
-      });
+      if (create.endpoint === "/v1/open-tasks") {
+        await createOpenTask.mutateAsync(create.body);
+        toast({
+          title: `Posted to ${TASK_AUDIENCE_COPY.upForGrabs}`,
+          description: create.body.title,
+        });
+      } else {
+        await createTask.mutateAsync(create.body);
+        toast({
+          title: "Task created",
+          description: `${create.body.title} is now assigned.`,
+        });
+      }
       return true;
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't create task",
-        description: getErrorMessage(
-          error,
-          "Retry in a moment or confirm the assignee is a chapter member.",
-        ),
-        variant: "destructive",
+        error,
+        fallback: "Retry in a moment or check who it's for.",
       });
       return false;
     }
@@ -844,21 +849,16 @@ export function TasksBoard() {
   }
 
   // The status lanes say which status a task is in; any other grouping puts
-  // the status on the tile.
+  // the status on the row.
   const statusGrouped = view === "all" && groupBy === "status";
-  // A board nothing matches draws no lanes, so the add row heads the page.
-  const addRowInTodo =
-    statusGrouped &&
-    (statusFilter === null || statusFilter === "TODO") &&
-    !(filtering && shown === 0);
   const addRow =
     canManage || !permissionsKnown ? (
       <Can permission="tasks:manage">
         <AddTaskRow
-          members={members}
           gate={gate}
-          pending={createTask.isPending}
-          onCreate={createFromDraft}
+          pending={createTask.isPending || createOpenTask.isPending}
+          onCreate={createFrom}
+          expandSignal={expandSignal}
         />
       </Can>
     ) : null;
@@ -877,6 +877,79 @@ export function TasksBoard() {
       can("members:view", permissionsPayload?.permissions)) &&
     membersQuery.isError &&
     membersQuery.data === undefined;
+
+  const nameOf = (id: string) =>
+    id === myUserId
+      ? "You"
+      : (membersByUserId.get(id) ?? memberFallbackLabel(id));
+  const personOf = (id: string): RowPerson => ({
+    name: membersByUserId.get(id) ?? memberFallbackLabel(id),
+    avatarUrl: avatarsByUserId.get(id) ?? null,
+    tint: avatarTintFor(id),
+  });
+
+  // The task, group or posting open in the panel, read from the live lists
+  // so it shows every change; gone (deleted, claimed) closes the panel.
+  let panelTarget: TaskPanelTarget | null = null;
+  if (opened?.kind === "task") {
+    const task = tasks.find((row) => row.id === opened.id);
+    panelTarget = task ? { kind: "task", task } : null;
+  } else if (opened?.kind === "group") {
+    const copies = tasks.filter((row) => row.group_id === opened.id);
+    const open = copies.filter((row) => isOpenStatus(row.status));
+    open.sort(compareTasksByDue);
+    const sample = open[0] ?? copies[0];
+    if (sample) {
+      panelTarget = {
+        kind: "group",
+        copies,
+        tile: {
+          id: opened.id,
+          sample,
+          open,
+          total: sample.group?.total ?? copies.length,
+          done: sample.group?.done ?? copies.length - open.length,
+        },
+      };
+    }
+  }
+
+  const rowProps = (task: Task, inWaiting: boolean) => {
+    const isMine = myUserId !== "" && task.assignee_id === myUserId;
+    return {
+      task,
+      person: personOf(task.assignee_id),
+      isMine,
+      showStatus: !statusGrouped && !inWaiting,
+      // Never on your own (#1056), and never while the viewer is unknown.
+      canConfirm:
+        canManage && myUserId !== "" && !isMine && taskNeedsSignOff(task),
+      gate,
+      lifecycleWritePending,
+      selected: opened?.kind === "task" && opened.id === task.id,
+      onOpen: () => setOpened({ kind: "task", id: task.id }),
+      onChangeStatus: (next: TaskStatus, proof?: CompletionProof) =>
+        changeStatus(task, next, proof),
+      onConfirm: () => void confirmCompletion(task),
+    };
+  };
+
+  const cardProps = (task: Task) => ({
+    task,
+    assigneeName:
+      membersByUserId.get(task.assignee_id) ??
+      memberFallbackLabel(task.assignee_id),
+    myUserId,
+    canManage,
+    gate,
+    lifecycleWritePending,
+    onOpen: () => setOpened({ kind: "task", id: task.id }),
+    onChangeStatus: (next: TaskStatus, proof?: CompletionProof) =>
+      changeStatus(task, next, proof),
+    onConfirm: () => void confirmCompletion(task),
+    onReject: () => void rejectCompletion(task),
+    onDelete: () => void removeTask(task),
+  });
 
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
@@ -911,52 +984,123 @@ export function TasksBoard() {
         }}
       />
 
-      {canManage ? <SuggestedTasks headingId="tasks-suggested" /> : null}
+      {/* One line until asked for (Paul, 2026-11-18). */}
+      {canManage ? <SuggestionsStrip /> : null}
 
       {plateIsClear ? (
         /*
           Done is one line (rule 7): a member's board with nothing on it is
           four empty columns, so the line takes its place, and says what's
-          next rather than only what isn't there.
+          next rather than only what isn't there. What's up for grabs still
+          leads it.
         */
-        <InlineNote>
-          {nextUpLine(eventsOn ? eventsQuery.data : undefined, nowTick)}
-        </InlineNote>
+        <>
+          <UpForGrabs
+            canManage={canManage}
+            gate={gate}
+            selectedId={opened?.kind === "posting" ? opened.id : null}
+            onOpen={(posting) => setOpened({ kind: "posting", id: posting.id })}
+          />
+          <InlineNote>
+            {nextUpLine(eventsOn ? eventsQuery.data : undefined, nowTick)}
+          </InlineNote>
+        </>
       ) : permissionsLoading && tasks.length === 0 ? null : (
         /*
-          Flush, not carded. Each column used to be a `<Card>` with a title,
-          a description and (under the completed column) a footer explaining
-          the confirm rule. A column is now a section on the page surface,
-          named by its label and count. In Grid the tiles inside keep a
-          hairline frame, because a kanban tile is a block with its own
-          controls; in List they are flush rows split by a hairline (#4175).
+          Flush, not carded. A group is a section on the page surface, named
+          by its label and count. In List (the default since 2026-11-18) each
+          task is a 40px row that opens the task's panel; in Grid the tiles
+          keep a hairline frame, because a kanban tile is a block with its
+          own controls.
         */
         <>
           {/*
-            One toolbar row over the groups. An officer's view switch leads
-            it (Asana's My tasks beside a project, Linear's My issues beside
-            the team's); the chapter's board adds its grouping and filter
-            chips (Linear's Display and Filter, as the Directory's chips
-            draw them). The List / Grid switch keeps the trailing edge,
-            where Linear's and Asana's List / Board sit.
+            At most two toolbar rows over the groups, even in the Tasks
+            column beside chat (~480px). The first: an officer's view switch
+            (Asana's My tasks beside a project, Linear's My issues beside the
+            team's), then View and New task at the trailing edge, where
+            Linear's and Asana's sit. View is one menu holding the grouping and
+            List / Grid, as Linear's Display menu holds both. The second: the
+            chapter's board's filter chips (Linear's Filter, as the
+            Directory's chips draw them).
           */}
-          <div className="flex flex-wrap items-center gap-2">
-            {canManage ? (
-              <SegmentedChoice
-                label="Whose tasks"
-                options={VIEW_OPTIONS}
-                value={view}
-                onChange={setOfficerView}
-              />
-            ) : null}
-            {view === "all" && canManage ? (
-              <>
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              {canManage ? (
                 <SegmentedChoice
-                  label="Group tasks"
-                  options={GROUP_BY_OPTIONS}
-                  value={groupBy}
-                  onChange={setGroupBy}
+                  label="Whose tasks"
+                  options={VIEW_OPTIONS}
+                  value={view}
+                  onChange={setOfficerView}
                 />
+              ) : null}
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="toolbar"
+                      variant="secondary"
+                      className="gap-1.5"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                      View
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" collisionPadding={12}>
+                    {view === "all" && canManage ? (
+                      <>
+                        <DropdownMenuLabel>Group tasks</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup
+                          value={groupBy}
+                          onValueChange={(next) =>
+                            setGroupBy(next as TasksGroupBy)
+                          }
+                        >
+                          {GROUP_BY_OPTIONS.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuLabel>Layout</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={layout}
+                      onValueChange={(next) => setLayout(next as ListLayout)}
+                    >
+                      {LAYOUT_OPTIONS.map((option) => (
+                        <DropdownMenuRadioItem
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="toolbar"
+                    className="gap-1.5"
+                    {...gate.controlProps()}
+                    onClick={() => setExpandSignal((n) => n + 1)}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    New task
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            {view === "all" && canManage ? (
+              <div className="flex flex-wrap items-center gap-2">
                 <FilterChip
                   label="Assignee"
                   anyLabel="Anyone"
@@ -990,18 +1134,20 @@ export function TasksBoard() {
                     Clear filters
                   </Button>
                 ) : null}
-              </>
+              </div>
             ) : null}
-            <div className="ml-auto">
-              <ListLayoutToggle screen="tasks" />
-            </div>
           </div>
           {/*
-            Rule 2: the first action sits where the first item goes. On the
-            status board that is the head of To do, as it always was; any
-            other grouping has no To do, so the add row heads the page.
+            Rule 2: the first action sits where the first item goes, so the
+            add line heads the list, as Todoist's quick add does.
           */}
-          {canManage && !addRowInTodo ? addRow : null}
+          {addRow}
+          <UpForGrabs
+            canManage={canManage}
+            gate={gate}
+            selectedId={opened?.kind === "posting" ? opened.id : null}
+            onOpen={(posting) => setOpened({ kind: "posting", id: posting.id })}
+          />
           {filtering && shown === 0 ? (
             <InlineNote>No tasks match these filters.</InlineNote>
           ) : view === "mine" && canManage && myUserId === "" ? (
@@ -1010,87 +1156,111 @@ export function TasksBoard() {
             viewerUnreadable ? null : (
               <InlineNote>Loading your tasks…</InlineNote>
             )
+          ) : view === "mine" && canManage && shown === 0 && confirmed.length === 0 ? (
+            <InlineNote>
+              Nothing on your plate. Tasks given to you show up here.
+            </InlineNote>
           ) : (
             <div
               className={
                 isGrid
                   ? "grid gap-x-6 gap-y-8 @2xl:grid-cols-2 @4xl:grid-cols-4"
-                  : "space-y-8"
+                  : "space-y-6"
               }
             >
               {groups.map((group) => {
                 const labelId = `tasks-column-${group.id}`;
-                const headsTodo = group.id === "todo" && addRowInTodo;
+                const tiles = group.groupTiles ?? [];
+                const count = group.tasks.length + tiles.length;
+                // In List, a group with nothing in it draws nothing: four
+                // empty headings would push the work down the page.
+                if (!isGrid && count === 0) return null;
+                const long =
+                  !isGrid &&
+                  !expandedGroups.has(group.id) &&
+                  group.tasks.length > LIST_PREVIEW + 2;
+                const rows = long
+                  ? group.tasks.slice(0, LIST_PREVIEW)
+                  : group.tasks;
                 return (
                   <section
                     key={group.id}
                     aria-labelledby={labelId}
-                    className="min-w-0 space-y-3"
+                    className={cn("min-w-0", isGrid ? "space-y-3" : "space-y-1")}
                   >
-                    <SectionLabel
-                      id={labelId}
-                      count={
-                        group.tasks.length + (group.groupTiles?.length ?? 0)
-                      }
-                    >
+                    <SectionLabel id={labelId} count={count}>
                       {group.label}
                     </SectionLabel>
-                    {headsTodo ? addRow : null}
-                    {group.groupTiles && group.groupTiles.length > 0 ? (
+                    {tiles.length > 0 ? (
                       <ul className={taskListClassName(layout)}>
-                        {group.groupTiles.map((tile) => (
-                          <GroupTaskCard
-                            key={tile.id}
-                            layout={layout}
-                            tile={tile}
-                            nameOf={(id) =>
-                              id === myUserId
-                                ? "You"
-                                : (membersByUserId.get(id) ??
-                                  memberFallbackLabel(id))
-                            }
-                            gate={gate}
-                            onDelete={() => void removeGroup(tile)}
-                          />
-                        ))}
+                        {tiles.map((tile) =>
+                          isGrid ? (
+                            <GroupTaskCard
+                              key={tile.id}
+                              tile={tile}
+                              nameOf={nameOf}
+                              gate={gate}
+                              onOpen={() =>
+                                setOpened({ kind: "group", id: tile.id })
+                              }
+                              onDelete={() => void removeGroup(tile)}
+                            />
+                          ) : (
+                            <GroupTaskRow
+                              key={tile.id}
+                              tile={tile}
+                              selected={
+                                opened?.kind === "group" && opened.id === tile.id
+                              }
+                              onOpen={() =>
+                                setOpened({ kind: "group", id: tile.id })
+                              }
+                            />
+                          ),
+                        )}
                       </ul>
                     ) : null}
                     {group.tasks.length === 0 ? (
-                      (group.groupTiles?.length ?? 0) > 0 ||
-                      (headsTodo && canManage) ? null : (
+                      tiles.length > 0 ? null : (
                         <p className="text-sm text-muted-foreground">
                           {group.empty}
                         </p>
                       )
                     ) : (
                       <ul className={taskListClassName(layout)}>
-                        {group.tasks.map((task) => (
-                          <TaskCard
-                            key={task.id}
-                            layout={layout}
-                            task={task}
-                            // Not under a heading that already says it.
-                            showStatus={
-                              !statusGrouped && group.id !== "waiting"
-                            }
-                            assigneeName={
-                              membersByUserId.get(task.assignee_id) ??
-                              memberFallbackLabel(task.assignee_id)
-                            }
-                            myUserId={myUserId}
-                            canManage={canManage}
-                            gate={gate}
-                            lifecycleWritePending={lifecycleWritePending}
-                            onChangeStatus={(next, proof) =>
-                              changeStatus(task, next, proof)
-                            }
-                            onConfirm={() => void confirmCompletion(task)}
-                            onReject={() => void rejectCompletion(task)}
-                            onDelete={() => void removeTask(task)}
-                          />
-                        ))}
+                        {rows.map((task) =>
+                          isGrid ? (
+                            <TaskCard
+                              key={task.id}
+                              {...cardProps(task)}
+                              // Not under a heading that already says it.
+                              showStatus={
+                                !statusGrouped && group.id !== "waiting"
+                              }
+                            />
+                          ) : (
+                            <TaskRow
+                              key={task.id}
+                              {...rowProps(task, group.id === "waiting")}
+                            />
+                          ),
+                        )}
                       </ul>
                     )}
+                    {long ? (
+                      <Button
+                        type="button"
+                        size="toolbar"
+                        variant="ghost"
+                        onClick={() =>
+                          setExpandedGroups((previous) =>
+                            new Set(previous).add(group.id),
+                          )
+                        }
+                      >
+                        {`${group.tasks.length - LIST_PREVIEW} more`}
+                      </Button>
+                    ) : null}
                   </section>
                 );
               })}
@@ -1100,11 +1270,10 @@ export function TasksBoard() {
       )}
 
       {/*
-        Confirmed tasks, under the columns rather than in them: they are
-        finished, so they are the quietest thing on the page, and the Waiting
-        on an officer column stays the officer's queue. Newest first, the
-        latest few by default, every one a click away (Delete lives on the
-        tile).
+        Confirmed tasks, under the groups rather than in them: they are
+        finished, so they are the quietest thing on the page, and Waiting on
+        an officer stays the officer's queue. Newest first, the latest few by
+        default, every one a click away.
       */}
       {confirmed.length > 0 ? (
         <section aria-labelledby="tasks-confirmed" className="space-y-3">
@@ -1121,25 +1290,13 @@ export function TasksBoard() {
             {(showAllConfirmed
               ? confirmed
               : confirmed.slice(0, CONFIRMED_PREVIEW)
-            ).map((task) => (
-              <TaskCard
-                key={task.id}
-                layout={layout}
-                task={task}
-                assigneeName={
-                  membersByUserId.get(task.assignee_id) ??
-                  memberFallbackLabel(task.assignee_id)
-                }
-                myUserId={myUserId}
-                canManage={canManage}
-                gate={gate}
-                lifecycleWritePending={lifecycleWritePending}
-                onChangeStatus={(next) => changeStatus(task, next)}
-                onConfirm={() => void confirmCompletion(task)}
-                onReject={() => void rejectCompletion(task)}
-                onDelete={() => void removeTask(task)}
-              />
-            ))}
+            ).map((task) =>
+              isGrid ? (
+                <TaskCard key={task.id} {...cardProps(task)} />
+              ) : (
+                <TaskRow key={task.id} {...rowProps(task, false)} />
+              ),
+            )}
           </ul>
           {confirmed.length > CONFIRMED_PREVIEW ? (
             <Button
@@ -1164,6 +1321,33 @@ export function TasksBoard() {
           sendingBack ? sendBack(sendingBack, body) : Promise.resolve()
         }
       />
+      <TaskPanel
+        target={panelTarget}
+        onClose={() => setOpened(null)}
+        personOf={personOf}
+        myUserId={myUserId}
+        canManage={canManage}
+        gate={gate}
+        lifecycleWritePending={lifecycleWritePending}
+        onChangeStatus={changeStatus}
+        onConfirm={(task) => void confirmCompletion(task)}
+        onReject={(task) => rejectCompletion(task)}
+        onDelete={(task) => void removeTask(task)}
+        onDeleteGroup={(tile) => void removeGroup(tile)}
+      />
+      {canManage ? (
+        <OpenTaskPanel
+          posting={
+            opened?.kind === "posting"
+              ? ((openTasksQuery.data ?? []).find(
+                  (posting) => posting.id === opened.id,
+                ) ?? null)
+              : null
+          }
+          gate={gate}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1173,16 +1357,14 @@ export function TasksBoard() {
  * split by a hairline, as the Documents and Directory lists are.
  */
 function taskListClassName(layout: ListLayout): string {
-  return layout === "grid" ? "space-y-2" : "divide-y divide-border";
+  return layout === "grid" ? "space-y-2" : TASK_ROWS_CLASS;
 }
 
 /**
- * One task, as a tile in a Grid column or a row of the List (#4175). Both
- * draw the same facts and the same controls, Edit and Delete included, from
- * this one body; only the frame and where the controls sit differ.
+ * One task as a tile in a Grid column (#4175). The List draws `TaskRow`
+ * instead, which opens the task panel for its controls (2026-11-18).
  */
 function TaskCard({
-  layout,
   task,
   showStatus = false,
   assigneeName,
@@ -1190,12 +1372,12 @@ function TaskCard({
   canManage,
   gate,
   lifecycleWritePending,
+  onOpen,
   onChangeStatus,
   onConfirm,
   onReject,
   onDelete,
 }: {
-  layout: ListLayout;
   task: Task;
   /**
    * Say where the task stands on the tile: in My tasks and By person no
@@ -1209,6 +1391,8 @@ function TaskCard({
   canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
+  /** Open the task in its panel, where it is edited (2026-11-18). */
+  onOpen: () => void;
   /** Resolves `false` when the write was refused (and already reported). */
   onChangeStatus: (
     next: TaskStatus,
@@ -1235,54 +1419,28 @@ function TaskCard({
   const due = taskDueClause(task);
   const status = actionStatus(task);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
-  // An officer's edit replaces the tile with the task form until it saves or
-  // is cancelled (#4296). A confirmed task's points were paid on it as it
-  // stood, so it has no Edit.
-  const [editing, setEditing] = useState(false);
+  // A confirmed task's points were paid on it as it stood, so it has no
+  // Edit; it still opens, to read.
   const editable = canManage && !task.points_awarded;
   // No points and no proof: Done as marked, nothing to confirm (#4635).
   const needsSignOff = taskNeedsSignOff(task);
   const autoSignedOff = taskSignedOffAutomatically(task);
   const sentBack = isSentBack(task);
-  const isRow = layout === "list";
-
-  if (editing && editable) {
-    return (
-      <li
-        aria-label={`Editing ${task.title}`}
-        className={cn(
-          "rounded-[14px] border border-ring/60 p-3",
-          isRow && "my-2",
-        )}
-        // Escape puts the tile back unsaved, like the + card's Escape. A
-        // picker open inside handles its own Escape in its portal first.
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) {
-            event.stopPropagation();
-            setEditing(false);
-          }
-        }}
-      >
-        <TaskEditForm
-          task={task}
-          assigneeName={assigneeName}
-          gate={gate}
-          onClose={() => setEditing(false)}
-        />
-      </li>
-    );
-  }
 
   const summary = (
     <div className="min-w-0 flex-1">
-      <p className="text-sm font-semibold text-foreground">{task.title}</p>
+      <p className="text-sm font-semibold text-foreground">
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn("rounded text-left hover:underline", FOCUS_RING)}
+        >
+          {task.title}
+        </button>
+      </p>
       {task.description ? (
         <p
-          className={cn(
-            "mt-1 text-caption text-muted-foreground",
-            // A row stays one line of description; a tile has the height.
-            isRow ? "line-clamp-1" : "line-clamp-2",
-          )}
+          className="mt-1 line-clamp-2 text-caption text-muted-foreground"
         >
           {task.description}
         </p>
@@ -1357,15 +1515,7 @@ function TaskCard({
   );
 
   const controls = (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-2",
-        // A row with nothing to offer this viewer draws no empty gap.
-        // In a row they end it, wrapping within its trailing half on a
-        // narrow page rather than taking a line of their own under it.
-        isRow ? "empty:hidden max-w-[55%] justify-end" : "mt-3",
-      )}
-    >
+    <div className="mt-3 flex flex-wrap items-center gap-2">
       {/*
           The inline status controls are writes too
           (`PATCH /v1/tasks/:id/status`), so they mirror the same gate as
@@ -1467,7 +1617,7 @@ function TaskCard({
             className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
             aria-label={`Edit ${task.title}`}
             {...gate.controlProps()}
-            onClick={() => setEditing(true)}
+            onClick={onOpen}
           >
             <Pencil className="h-4 w-4" aria-hidden="true" />
           </Button>
@@ -1502,26 +1652,14 @@ function TaskCard({
     ) : null;
 
   return (
-    <li className={isRow ? "py-3" : "rounded-[14px] border border-border p-3"}>
-      {isRow ? (
-        // The row's facts lead and its controls end it, as a Linear list
-        // row's do; an opened checklist spans the row under both.
-        <>
-          <div className="flex items-start gap-3 @xl:gap-4">
-            {summary}
-            {controls}
-          </div>
-          {subtaskList}
-        </>
-      ) : (
-        // The tile as it always was: the checklist opens under the meta line
-        // that holds its toggle, and the controls end the tile.
-        <>
-          {summary}
-          {subtaskList}
-          {controls}
-        </>
-      )}
+    <li className="rounded-[14px] border border-border p-3">
+      {/*
+        The checklist opens under the meta line that holds its toggle, and
+        the controls end the tile.
+      */}
+      {summary}
+      {subtaskList}
+      {controls}
       {/*
         The one rule from the old column footer worth keeping: it explains a
         missing control, so it sits on the tile whose control is missing. Only
@@ -1540,74 +1678,56 @@ function TaskCard({
 }
 
 /**
- * A task for everyone on the chapter's board (#4295 step 3): one tile for
- * its copies still to finish, with how many are done, the way Google
- * Classroom lists an assignment with its turned-in count. "Who's left"
- * opens the members still to finish and where each stands. Edit and Delete
- * act on everyone's copy; a member's own copy is changed from By person.
+ * A group task on the Grid board (#4295 step 3): one tile for its copies
+ * still to finish, with how many are done, the way Google Classroom lists an
+ * assignment with its turned-in count. "Who's left" opens the members still
+ * to finish and where each stands. Edit opens the group in the task panel,
+ * which saves to every copy; Delete removes every copy.
  */
 function GroupTaskCard({
-  layout,
   tile,
   nameOf,
   gate,
+  onOpen,
   onDelete,
 }: {
-  layout: ListLayout;
   tile: GroupTileData;
   nameOf: (userId: string) => string;
   gate: SubscriptionGate;
+  onOpen: () => void;
   onDelete: () => void;
 }) {
   const [whoOpen, setWhoOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
   const task = tile.sample;
-  const isRow = layout === "list";
   const due = taskDueClause(task);
   const whoId = `group-task-${tile.id}-who`;
   const progress = tile.total > 0 ? tile.done / tile.total : 0;
-
-  if (editing) {
-    return (
-      <li
-        aria-label={`Editing ${task.title} for everyone`}
-        className={cn(
-          "rounded-[14px] border border-ring/60 p-3",
-          isRow && "my-2",
-        )}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) {
-            event.stopPropagation();
-            setEditing(false);
-          }
-        }}
-      >
-        <TaskEditForm
-          group
-          task={task}
-          assigneeName={TASK_AUDIENCE_COPY.everyone}
-          gate={gate}
-          onClose={() => setEditing(false)}
-        />
-      </li>
-    );
-  }
+  const label = task.group
+    ? taskGroupLabel({
+        audience: task.group.audience ?? "everyone",
+        target_name: task.group.target_name,
+        total: tile.total,
+      })
+    : TASK_AUDIENCE_COPY.everyone;
 
   return (
     <li
-      aria-label={`${task.title}, for everyone`}
-      className={isRow ? "py-3" : "rounded-[14px] border border-border p-3"}
+      aria-label={`${task.title}, for ${lowerFirst(label)}`}
+      className="rounded-[14px] border border-border p-3"
     >
-      <div className={cn(isRow && "flex items-start gap-3 @xl:gap-4")}>
+      <div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">{task.title}</p>
-          {task.description ? (
-            <p
-              className={cn(
-                "mt-1 text-caption text-muted-foreground",
-                isRow ? "line-clamp-1" : "line-clamp-2",
-              )}
+          <p className="text-sm font-semibold text-foreground">
+            <button
+              type="button"
+              onClick={onOpen}
+              className={cn("rounded text-left hover:underline", FOCUS_RING)}
             >
+              {task.title}
+            </button>
+          </p>
+          {task.description ? (
+            <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">
               {task.description}
             </p>
           ) : null}
@@ -1622,9 +1742,9 @@ function GroupTaskCard({
                 <span aria-hidden="true">·</span>
               </>
             ) : null}
-            <span className="inline-flex items-center gap-1">
-              <Users className="h-3 w-3" aria-hidden="true" />
-              {TASK_AUDIENCE_COPY.everyone}
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <Users className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{label}</span>
             </span>
             {task.point_reward ? (
               <Badge className="ml-1">
@@ -1697,19 +1817,14 @@ function GroupTaskCard({
           ) : null}
         </div>
         <Can permission="tasks:manage">
-          <div
-            className={cn(
-              "flex items-center gap-2",
-              isRow ? "justify-end" : "mt-3 justify-end",
-            )}
-          >
+          <div className="mt-3 flex items-center justify-end gap-2">
             <Button
               size="toolbar"
               variant="ghost"
               className="w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
               aria-label={`Edit ${task.title} for everyone`}
               {...gate.controlProps()}
-              onClick={() => setEditing(true)}
+              onClick={onOpen}
             >
               <Pencil className="h-4 w-4" aria-hidden="true" />
             </Button>

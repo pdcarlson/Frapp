@@ -316,7 +316,7 @@ function build(
   const suggestions = new AiSuggestionService(
     rows as never,
     [
-      new TaskSuggestionKind(tasks as never),
+      new TaskSuggestionKind(tasks as never, {} as never),
       new EventSuggestionKind(events as never),
     ],
     [eventAccess, new TaskSuggestionSource(tasks as never, rbac as never)],

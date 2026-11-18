@@ -7951,7 +7951,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/MeetingSummaryDto"
+                    "$ref": "#/components/schemas/MeetingListItemDto"
                   }
                 }
               }
@@ -11793,6 +11793,53 @@
         ]
       }
     },
+    "/v1/tasks/{id}/release": {
+      "post": {
+        "description": "Its assignee only (403 otherwise), before it is finished: marked done, paid or carrying proof is a 409. The task is deleted and its posting is open again; answers the posting. 404 for a task not taken from Up for grabs.",
+        "operationId": "TaskController_release_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenTaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Give back a task claimed from Up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/tasks/{id}/subtasks": {
       "post": {
         "operationId": "TaskController_addSubtask_v1",
@@ -12009,6 +12056,276 @@
           }
         ],
         "summary": "Take members out of a group task: their copies go, the rest stay (#5492)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks": {
+      "get": {
+        "description": "The open postings the caller may claim now, oldest due first. A `tasks:manage` holder gets every open posting, with `viewer_can_claim` saying which they may claim themselves.",
+        "operationId": "OpenTaskController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OpenTaskDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List tasks up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "post": {
+        "description": "One task that someone in the chapter, a role, a chapter group or a list of people claims. Everyone who may claim it, but the poster, gets a push (\"Up for grabs: …\") in the Tasks category.",
+        "operationId": "OpenTaskController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOpenTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenTaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post a task up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks/{id}": {
+      "patch": {
+        "operationId": "OpenTaskController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOpenTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenTaskDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a task up for grabs while it is open (409 once claimed)",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "delete": {
+        "operationId": "OpenTaskController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a task up for grabs while it is open (409 once claimed)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks/{id}/claim": {
+      "post": {
+        "description": "The caller takes it, when they may claim it now (403 otherwise). Answers the new task as `GET /v1/tasks/:id` reads it, with `open_task_id` set. 409 \"Someone already claimed this\" when another claim got there first. The poster is told, unless they claimed it.",
+        "operationId": "OpenTaskController_claim_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim a task up for grabs",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/open-tasks/{id}/assign": {
+      "post": {
+        "description": "Any active member, whether or not they could claim it. They get the usual assignment push. Answers the new task as `GET /v1/tasks/:id` reads it; 409 once someone has claimed it.",
+        "operationId": "OpenTaskController_assign_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignOpenTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Hand a task up for grabs to one member",
         "tags": [
           "Tasks"
         ]
@@ -12233,6 +12550,55 @@
         "summary": "Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome.",
         "tags": [
           "AI suggestions"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/action-item-tasks": {
+      "get": {
+        "operationId": "MeetingActionItemTasksController_list_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingActionItemTaskDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Which action items of posted minutes became tasks, and whether each is done. Empty for a draft",
+        "tags": [
+          "Meetings"
         ]
       }
     },
@@ -16728,6 +17094,209 @@
         ]
       }
     },
+    "/v1/activity/card": {
+      "post": {
+        "description": "The one most useful thing waiting on the caller (an event today or tomorrow they haven't checked in to, an unread @mention, a task of theirs, an open sign-up, an unread announcement, an officer's queue, new minutes, a study goal behind), and up to three more for the tray. A POST because it may raise a new card, which may cost a model call. `line` is null whenever AI is off for the caller or the server: the card shows either way. Times are written in the `X-Time-Zone` zone.",
+        "operationId": "ActivityCardController_card_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityNudgeCardDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's card for Activity, and its tray",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/card/seen": {
+      "post": {
+        "operationId": "ActivityCardController_seen_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityNudgeSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the card was on screen",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/card/dismiss": {
+      "post": {
+        "description": "The caller does not want this one: it is not raised again. A mention or announcement comes back only when something new is posted in its channel. Answers 204 whether or not there was anything to close.",
+        "operationId": "ActivityCardController_dismiss_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityNudgeDismissDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Wave a card or tray item off",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/card/settings": {
+      "get": {
+        "description": "The same switch as `GET /v1/nudges/settings`, without its AI gate: the card shows without AI, so every member can turn it off.",
+        "operationId": "ActivityCardController_settings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own switch for the card",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "put": {
+        "description": "Off also closes the card that is showing.",
+        "operationId": "ActivityCardController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the card on or off for the caller",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/goals": {
       "get": {
         "operationId": "GoalsController_getGoals_v1",
@@ -16863,6 +17432,222 @@
         "summary": "Replace one measure's goals",
         "tags": [
           "Goals"
+        ]
+      }
+    },
+    "/v1/nudges/current": {
+      "post": {
+        "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
+        "operationId": "MemberNudgeController_current_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeCurrentDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`)."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's card for Activity, if one is due",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/{id}/seen": {
+      "post": {
+        "operationId": "MemberNudgeController_seen_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the card was on screen",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/{id}/dismiss": {
+      "post": {
+        "description": "Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.",
+        "operationId": "MemberNudgeController_dismiss_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissMemberNudgeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "No such card is showing for the caller."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close the card",
+        "tags": [
+          "AI"
+        ]
+      }
+    },
+    "/v1/nudges/settings": {
+      "get": {
+        "operationId": "MemberNudgeController_settings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own switch for these cards",
+        "tags": [
+          "AI"
+        ]
+      },
+      "put": {
+        "description": "Off also closes the card that is showing.",
+        "operationId": "MemberNudgeController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Turn the cards on or off for the caller",
+        "tags": [
+          "AI"
         ]
       }
     },
@@ -18888,222 +19673,6 @@
         "summary": "Propose fields for one of the caller's drafts from its redacted text",
         "tags": [
           "Backwork"
-        ]
-      }
-    },
-    "/v1/nudges/current": {
-      "post": {
-        "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
-        "operationId": "MemberNudgeController_current_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MemberNudgeCurrentDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "AI is off on this server (`ai.not_available`)."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The caller's card for Activity, if one is due",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/nudges/{id}/seen": {
-      "post": {
-        "operationId": "MemberNudgeController_seen_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Record that the card was on screen",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/nudges/{id}/dismiss": {
-      "post": {
-        "description": "Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.",
-        "operationId": "MemberNudgeController_dismiss_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DismissMemberNudgeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "404": {
-            "description": "No such card is showing for the caller."
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Close the card",
-        "tags": [
-          "AI"
-        ]
-      }
-    },
-    "/v1/nudges/settings": {
-      "get": {
-        "operationId": "MemberNudgeController_settings_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The caller's own switch for these cards",
-        "tags": [
-          "AI"
-        ]
-      },
-      "put": {
-        "description": "Off also closes the card that is showing.",
-        "operationId": "MemberNudgeController_updateSettings_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateMemberNudgeSettingsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MemberNudgeSettingsDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Turn the cards on or off for the caller",
-        "tags": [
-          "AI"
         ]
       }
     },
@@ -26719,7 +27288,7 @@
           }
         }
       },
-      "MeetingSummaryDto": {
+      "MeetingListItemDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -26771,6 +27340,29 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "series_key": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see."
+          },
+          "series_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series."
+          },
+          "decision_count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "action_item_count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "recorded": {
+            "type": "boolean",
+            "description": "A recording was used for these minutes."
           }
         },
         "required": [
@@ -26783,7 +27375,12 @@
           "status",
           "created_by",
           "posted_at",
-          "updated_at"
+          "updated_at",
+          "series_key",
+          "series_rule",
+          "decision_count",
+          "action_item_count",
+          "recorded"
         ]
       },
       "MeetingTemplateDto": {
@@ -26796,11 +27393,11 @@
               "type": "string",
               "enum": [
                 "summary",
+                "announcements",
                 "decisions",
                 "action_items",
                 "discussion_log",
                 "attendees",
-                "announcements",
                 "officer_reports",
                 "old_business",
                 "new_business"
@@ -27027,11 +27624,11 @@
               "type": "string",
               "enum": [
                 "summary",
+                "announcements",
                 "decisions",
                 "action_items",
                 "discussion_log",
                 "attendees",
-                "announcements",
                 "officer_reports",
                 "old_business",
                 "new_business"
@@ -28708,8 +29305,23 @@
           "audience": {
             "type": "string",
             "enum": [
-              "everyone"
-            ]
+              "everyone",
+              "people",
+              "role",
+              "group"
+            ],
+            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy."
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The role or chapter group it went to, for `role` and `group`; null otherwise."
+          },
+          "target_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
           },
           "total": {
             "type": "number",
@@ -28727,6 +29339,8 @@
         "required": [
           "id",
           "audience",
+          "target_id",
+          "target_name",
           "total",
           "done",
           "confirmed"
@@ -28793,14 +29407,33 @@
           },
           "assignee_id": {
             "type": "string",
-            "description": "User ID of the assignee. Send this or `audience`, exactly one of them."
+            "description": "User ID of the assignee. Send exactly one of this, `assignee_ids` and `audience`."
+          },
+          "assignee_ids": {
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "Several people picked one by one (2026-11-18), in place of `assignee_id` and `audience`: each gets their own copy, as with `audience`, and reads carry `group` with `audience: \"people\"`. Each must be an active member of the chapter (alumni refused); duplicates count once, and a list of one makes that person’s task. The same limits as `audience` apply.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "audience": {
             "type": "string",
             "enum": [
               "everyone"
             ],
-            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
+            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Narrow it with `audience_role_id` or `audience_group_id`. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
+          },
+          "audience_role_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members holding this role get a copy. The chapter’s Everyone role means everyone; the Alumni role is refused, and a role nobody holds is a 400 (\"Nobody holds that role yet\"). Not with `audience_group_id`."
+          },
+          "audience_group_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`."
           },
           "due_date": {
             "type": "string",
@@ -29181,6 +29814,150 @@
           }
         }
       },
+      "OpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The officer who posted it. The claimed task names them as its creator, so they review it."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ]
+          },
+          "subtask_titles": {
+            "description": "The checklist the claimed task starts with, in order.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "role",
+              "group",
+              "people"
+            ],
+            "description": "Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members) or `people` (`scope_user_ids`). Alumni never may."
+          },
+          "scope_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The role or group, for `role` and `group`."
+          },
+          "scope_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That role’s or group’s name as it reads now, or as it was when posted once it’s deleted. \"Someone in Philanthropy Chair\"."
+          },
+          "scope_user_ids": {
+            "nullable": true,
+            "description": "The people who may claim it, for `people`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "claimed"
+            ]
+          },
+          "claimed_task_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "eligible_count": {
+            "type": "number",
+            "description": "How many active members may claim it now."
+          },
+          "viewer_can_claim": {
+            "type": "boolean",
+            "description": "Whether the reader may claim it now."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "created_by",
+          "title",
+          "description",
+          "due_date",
+          "due_at",
+          "point_reward",
+          "proof_kind",
+          "subtask_titles",
+          "scope",
+          "scope_id",
+          "scope_name",
+          "scope_user_ids",
+          "status",
+          "claimed_task_id",
+          "claimed_by",
+          "claimed_at",
+          "created_at",
+          "updated_at",
+          "eligible_count",
+          "viewer_can_claim"
+        ]
+      },
       "CreateTaskSubtaskDto": {
         "type": "object",
         "properties": {
@@ -29286,6 +30063,131 @@
           "group"
         ]
       },
+      "CreateOpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "description": "The moment it is due, when it has a time of day (ISO 8601 with an offset), on `due_date` as the creator sees it.",
+            "format": "date-time"
+          },
+          "point_reward": {
+            "type": "number",
+            "description": "Points the claimed task awards when an officer confirms it.",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ],
+            "description": "What Mark done needs on the claimed task. Default `none`."
+          },
+          "subtasks": {
+            "description": "The checklist the claimed task starts with, in order. Blank lines are dropped.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this role’s active holders may claim it. The chapter’s Everyone role means anyone; the Alumni role is refused; a role nobody holds is a 400 (\"Nobody holds that role yet\")."
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400."
+          },
+          "user_ids": {
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "Only these people may claim it. Each must be an active member of the chapter (alumni refused).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "due_date"
+        ]
+      },
+      "UpdateOpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment it is due, or null to take its time off. Send it with `due_date`: the pair must agree."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "proof_kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "photo",
+              "link"
+            ]
+          },
+          "subtasks": {
+            "description": "The whole checklist as it should stand, in order.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AssignOpenTaskDto": {
+        "type": "object",
+        "properties": {
+          "assignee_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who gets it: any active member of the chapter, eligible to claim it or not."
+          }
+        },
+        "required": [
+          "assignee_id"
+        ]
+      },
       "AiSuggestionSourceDto": {
         "type": "object",
         "properties": {
@@ -29323,15 +30225,34 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Null when no name or role was said for it, or when it is for everyone: the screen shows \"Who?\" or \"Everyone\"."
+            "description": "Null when no name or role was said for it, or when it is for a group or several people: the screen shows \"Who?\" or who it is for."
+          },
+          "assignee_ids": {
+            "nullable": true,
+            "description": "Several people (2026-11-18): a copy each, or with `audience: \"someone\"` one task that one of them claims.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "audience": {
             "type": "string",
             "enum": [
-              "everyone"
+              "everyone",
+              "someone"
             ],
             "nullable": true,
-            "description": "Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy."
+            "description": "`everyone`: accepting gives each member of the group their own copy (#4295 step 3). `someone`: accepting posts one task up for grabs (2026-11-18). The group is the chapter unless `audience_role_id`, `audience_group_id` or (for `someone`) `assignee_ids` narrows it."
+          },
+          "audience_role_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "audience_group_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
           },
           "due_date": {
             "type": "string",
@@ -29359,7 +30280,10 @@
           "title",
           "description",
           "assignee_id",
+          "assignee_ids",
           "audience",
+          "audience_role_id",
+          "audience_group_id",
           "due_date",
           "due_at",
           "subtasks"
@@ -29666,15 +30590,37 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`."
+            "description": "Who the task is for. Required to accept when none was suggested, unless `assignee_ids` or `audience` is set. \"Who\" is one answer: an edit that sends any of `assignee_id`, `assignee_ids`, `audience`, `audience_role_id` and `audience_group_id` replaces it with what those say, so setting this alone clears the rest."
+          },
+          "assignee_ids": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Several people (2026-11-18): with no `audience`, accepting gives each their own copy; with `audience: \"someone\"`, it posts one task up for grabs that one of them claims. A list of one is that person.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "audience": {
             "type": "string",
             "enum": [
-              "everyone"
+              "everyone",
+              "someone"
             ],
             "nullable": true,
-            "description": "A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`."
+            "description": "A task for a group instead of one person: `everyone` gives each member of it their own copy (#4295 step 3); `someone` (2026-11-18) posts one task up for grabs that one of them claims, and the accept’s result id is then the posting’s. The group is the chapter, narrowed by `audience_role_id` or `audience_group_id`, or for `someone` by `assignee_ids`."
+          },
+          "audience_role_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "With `audience`: only this role’s holders (2026-11-18)."
+          },
+          "audience_group_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "With `audience`: only this chapter group’s members (2026-11-18)."
           },
           "due_date": {
             "type": "string",
@@ -29972,6 +30918,52 @@
         },
         "required": [
           "outcomes"
+        ]
+      },
+      "ActionItemTaskGroupDto": {
+        "type": "object",
+        "properties": {
+          "done": {
+            "type": "number",
+            "minimum": 0
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ]
+      },
+      "MeetingActionItemTaskDto": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The action item’s place in the minutes’ list, from 0."
+          },
+          "done": {
+            "type": "boolean",
+            "description": "Marked done: by its member, or by every copy of a task for everyone."
+          },
+          "group": {
+            "nullable": true,
+            "description": "A task for everyone: how many of its copies are done.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActionItemTaskGroupDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "index",
+          "done",
+          "group"
         ]
       },
       "AiConsentSheetProviderDto": {
@@ -33438,6 +34430,201 @@
           "fired_at"
         ]
       },
+      "ActivityNudgeItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The showing card's id, for `seen`; null for a tray item, which is only drawn."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client draws a kind it does not know with a neutral icon.",
+            "example": "event_soon"
+          },
+          "subject_key": {
+            "type": "string",
+            "description": "What the card is about, opaque to the client. Sent back with `kind` to dismiss it."
+          },
+          "headline": {
+            "type": "string",
+            "description": "The thing's own name: an event, a channel, a sign-up's title.",
+            "example": "Chapter Meeting"
+          },
+          "meta": {
+            "type": "string",
+            "description": "When, where or how many, written out in the caller's time zone (`X-Time-Zone`).",
+            "example": "Tonight 7:00 PM · Chapter House · Required"
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "Whether the time or count is pressing enough to draw in colour."
+          },
+          "chip": {
+            "type": "string",
+            "description": "The tray chip's few characters: a count, Tonight, Due Fri.",
+            "example": "Tonight"
+          },
+          "action": {
+            "type": "string",
+            "description": "The button's label.",
+            "example": "Open event"
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "task",
+              "event",
+              "message",
+              "channel",
+              "review",
+              "meeting",
+              "study"
+            ],
+            "description": "What the button opens: a task, an event, a chat message (a sign-up), a channel, the review queue, minutes, or study."
+          },
+          "target_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The id of what it opens: a task, event, message, channel, meeting, or the oldest item in the review queue; null for study."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel a message or channel target is in."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The task a task card is about."
+          },
+          "line": {
+            "type": "string",
+            "nullable": true,
+            "description": "One sentence Frapp AI wrote for the card, or null: a plain card, because AI is off for the caller or the server, or the kind is never written."
+          },
+          "start_here": {
+            "type": "string",
+            "nullable": true,
+            "description": "A task card's suggested place to start, when AI wrote one."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "False until the caller has had the card on screen."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "subject_key",
+          "headline",
+          "meta",
+          "urgent",
+          "chip",
+          "action",
+          "target_type",
+          "target_id",
+          "channel_id",
+          "task_id",
+          "line",
+          "start_here",
+          "seen"
+        ]
+      },
+      "ActivityNudgeCardDto": {
+        "type": "object",
+        "properties": {
+          "card": {
+            "nullable": true,
+            "description": "The one most useful thing waiting on the caller, or null when nothing is, or they turned these cards off.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActivityNudgeItemDto"
+              }
+            ]
+          },
+          "tray": {
+            "description": "Up to three more, in order, for the tray under the card.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityNudgeItemDto"
+            }
+          }
+        },
+        "required": [
+          "card",
+          "tray"
+        ]
+      },
+      "ActivityNudgeSeenDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ActivityNudgeDismissDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task_due_soon",
+              "task_overdue",
+              "task_sent_back",
+              "task_praise",
+              "event_soon",
+              "mention_unread",
+              "announcement_unread",
+              "signup_open",
+              "officer_queue",
+              "minutes_new",
+              "study_behind"
+            ]
+          },
+          "subject_key": {
+            "type": "string",
+            "description": "The `subject_key` the card or tray item carried."
+          }
+        },
+        "required": [
+          "kind",
+          "subject_key"
+        ]
+      },
+      "MemberNudgeSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The member's own switch for these cards."
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "UpdateMemberNudgeSettingsDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
       "RoleGoalDto": {
         "type": "object",
         "properties": {
@@ -33534,6 +34721,96 @@
           "points",
           "service",
           "study"
+        ]
+      },
+      "MemberNudgeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client shows a kind it does not know as a plain card.",
+            "example": "task_due_soon"
+          },
+          "title": {
+            "type": "string",
+            "description": "A few words, plain text."
+          },
+          "body": {
+            "type": "string",
+            "description": "One or two sentences, plain text."
+          },
+          "start_here": {
+            "type": "string",
+            "nullable": true,
+            "description": "A suggested place to start: one sentence, or null when the card has none."
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The task the card is about."
+          },
+          "task_title": {
+            "type": "string",
+            "description": "The task's own title."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "False until the member has had the card on screen."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "start_here",
+          "task_id",
+          "task_title",
+          "seen",
+          "created_at"
+        ]
+      },
+      "MemberNudgeCurrentDto": {
+        "type": "object",
+        "properties": {
+          "nudge": {
+            "nullable": true,
+            "description": "The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberNudgeDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "nudge"
+        ]
+      },
+      "DismissMemberNudgeDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_now",
+              "fewer",
+              "thanks"
+            ],
+            "description": "`not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks."
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "CreateDiscordImportDto": {
@@ -35339,119 +36616,6 @@
         },
         "required": [
           "status"
-        ]
-      },
-      "MemberNudgeDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string",
-            "description": "Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise today; a client shows a kind it does not know as a plain card.",
-            "example": "task_due_soon"
-          },
-          "title": {
-            "type": "string",
-            "description": "A few words, plain text."
-          },
-          "body": {
-            "type": "string",
-            "description": "One or two sentences, plain text."
-          },
-          "start_here": {
-            "type": "string",
-            "nullable": true,
-            "description": "A suggested place to start: one sentence, or null when the card has none."
-          },
-          "task_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The task the card is about."
-          },
-          "task_title": {
-            "type": "string",
-            "description": "The task's own title."
-          },
-          "seen": {
-            "type": "boolean",
-            "description": "False until the member has had the card on screen."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "body",
-          "start_here",
-          "task_id",
-          "task_title",
-          "seen",
-          "created_at"
-        ]
-      },
-      "MemberNudgeCurrentDto": {
-        "type": "object",
-        "properties": {
-          "nudge": {
-            "nullable": true,
-            "description": "The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/MemberNudgeDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "nudge"
-        ]
-      },
-      "DismissMemberNudgeDto": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string",
-            "enum": [
-              "not_now",
-              "fewer",
-              "thanks"
-            ],
-            "description": "`not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks."
-          }
-        },
-        "required": [
-          "reason"
-        ]
-      },
-      "MemberNudgeSettingsDto": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "The member's own switch for these cards."
-          }
-        },
-        "required": [
-          "enabled"
-        ]
-      },
-      "UpdateMemberNudgeSettingsDto": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "enabled"
         ]
       },
       "AiReportPolicyDto": {

@@ -94,6 +94,7 @@ import type {
   MessageReaction,
   Notification,
   NotificationPreference,
+  OpenTask,
   PledgeClass,
   PledgeClassAssignment,
   PointTransaction,
@@ -258,6 +259,7 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       notification_preferences: TableDefinition<NotificationPreference>;
       notifications: TableDefinition<Notification>;
+      open_tasks: TableDefinition<OpenTask>;
       point_transactions: TableDefinition<PointTransaction>;
       poll_votes: TableDefinition<PollVote>;
       prediction_answers: TableDefinition<PredictionAnswer>;
@@ -461,6 +463,20 @@ export interface Database {
         Returns: GoogleCalendarConnection[];
       };
       /**
+       * `20261118043407` — claim a task up for grabs for one member: the task
+       * and its checklist, and the posting marked claimed, under its row lock.
+       * Raises P0002 (no such posting) or FR409 (already claimed).
+       */
+      claim_open_task: {
+        Args: {
+          p_chapter_id: string;
+          p_open_task_id: string;
+          p_assignee_id: string;
+          p_created_by: string | null;
+        };
+        Returns: Task[];
+      };
+      /**
        * `20260901183000` — `returns boolean`. `true` on a successful claim,
        * `false` when the chapter's `needs_president` flag was already clear
        * (race lost to another claimant).
@@ -532,6 +548,8 @@ export interface Database {
           p_chapter_id: string;
           p_created_by: string;
           p_audience: string;
+          p_target_id: string | null;
+          p_target_name: string | null;
           p_assignee_ids: string[];
           p_title: string;
           p_description: string | null;
@@ -1066,6 +1084,19 @@ export interface Database {
        * match (wrong id/chapter, not PRIVATE) or the removal would have left
        * no current chapter member listed, which it refuses.
        */
+      /**
+       * `20261118043407` — give a claimed task back: the task goes and its
+       * posting opens again. Raises P0002 (not claimed from a posting), 42501
+       * (not the assignee) or FR409 (already done).
+       */
+      release_open_task: {
+        Args: {
+          p_chapter_id: string;
+          p_task_id: string;
+          p_user_id: string;
+        };
+        Returns: OpenTask[];
+      };
       remove_private_channel_member: {
         Args: {
           p_channel_id: string;

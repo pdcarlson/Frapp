@@ -124,6 +124,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     title: "New in this update",
     changes: [
       "A meeting's transcript now opens on its own page instead of under the minutes.",
+      "Typing @ in a channel now lists Frapp first, so you can ask it a question right where you are.",
+      "Suggested tasks from minutes come one at a time, with who and when filled in where the minutes left them out, and action items tick themselves off as their tasks are done.",
+      "Drafted minutes leave out side conversations and remarks about people, and spell misheard names the way your roster does.",
+    ],
+    web: [
+      "The search bar only searches now, and Ask Frapp has its own bar at the bottom of the page.",
     ],
     phone: [
       "Tapping a detail on your profile, like your bio or your birthday, now opens the editor right at that field with the keyboard ready.",
@@ -131,6 +137,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Opening the app now shows the Frapp logo until your chats are ready, then goes straight to them instead of grey placeholder rows.",
       "Adding agenda items to an event keeps the box you type in, and the item you just added, above the keyboard.",
       "While a recording turns into minutes, the step under way now says what it is doing, such as Drafting, with a spinner.",
+      "Tap the mic in Ask Frapp to talk instead of type: your words land in the box tidied up, without the ums and with punctuation, ready to edit and send.",
+      "Minutes are easier to find: each has a coloured tile for its meeting type and tags for drafts, recordings, decisions and action items, and once you have more than a few, a repeating meeting folds into one series with its own list, alongside search and type filters.",
+      "The top of Activity now shows the one thing waiting on you, like a meeting tonight, a mention or a sign-up, with the next few beside it.",
+      "After time away, the top of Chat shows the channels with something new since you left, with your mentions first.",
+      "Long-pressing a message opens its menu where the keyboard would be, so the message stays in view above it, highlighted.",
     ],
   },
   {

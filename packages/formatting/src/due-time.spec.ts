@@ -4,6 +4,7 @@ import {
   formatDueTimeLabel,
   splitDueEntry,
   suggestedDueTime,
+  suggestTaskDue,
 } from "./due-time";
 
 describe("formatDueTimeLabel", () => {
@@ -60,5 +61,20 @@ describe("splitDueEntry", () => {
       dueTime: "17:30",
     });
     expect(splitDueEntry("")).toEqual({ dueDate: "", dueTime: null });
+  });
+});
+
+describe("suggestTaskDue", () => {
+  it("is a week after the meeting", () => {
+    expect(
+      suggestTaskDue("2026-11-09T19:00:00", new Date("2026-11-10T12:00:00")),
+    ).toBe("2026-11-16");
+  });
+
+  it("is nothing for minutes old enough that the day has gone by, or with no meeting day", () => {
+    expect(
+      suggestTaskDue("2026-10-01T19:00:00", new Date("2026-11-10T12:00:00")),
+    ).toBeNull();
+    expect(suggestTaskDue(null)).toBeNull();
   });
 });

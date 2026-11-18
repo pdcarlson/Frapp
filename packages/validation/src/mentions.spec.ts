@@ -1478,11 +1478,11 @@ describe("@Frapp, the assistant's handle (#4713)", () => {
       }
     });
 
-    it("puts Frapp last on a bare @, so the first row is still a person", () => {
+    it("puts Frapp first on a bare @, so a member finds it unprompted (#5476)", () => {
       expect(mentionPickerRows(roster, [], "", { ask: true })).toEqual([
+        ask,
         { kind: "member", member: JANE, label: "Jane Doe" },
         { kind: "member", member: BOB, label: "Bob Stone" },
-        ask,
       ]);
     });
 
@@ -1513,7 +1513,7 @@ describe("@Frapp, the assistant's handle (#4713)", () => {
       }));
       const bare = mentionPickerRows(many, [], "", { ask: true });
       expect(bare).toHaveLength(8);
-      expect(bare.at(-1)).toEqual(ask);
+      expect(bare[0]).toEqual(ask);
       const typed = mentionPickerRows(many, [], "fr", { ask: true });
       expect(typed).toHaveLength(8);
       expect(typed[0]).toEqual(ask);

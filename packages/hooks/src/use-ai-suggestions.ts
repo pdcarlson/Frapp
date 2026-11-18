@@ -5,6 +5,7 @@ import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { isAiNotAvailable } from "./use-ai";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { invalidatePointReads } from "./use-points";
+import { openTaskKeys } from "./use-open-tasks";
 import { taskKeys } from "./use-tasks";
 
 /**
@@ -121,6 +122,8 @@ function useDropFromLists() {
     });
     if (made) {
       void queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      // A "someone" suggestion is posted to Up for grabs.
+      void queryClient.invalidateQueries({ queryKey: openTaskKeys.all });
       // An accepted points change or event (#718) lands on those pages.
       void invalidatePointReads(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
@@ -182,7 +185,13 @@ export function useAcceptAiSuggestion() {
       throwUnlessOk(result);
       return bodyOf(result.data);
     },
-    onSuccess: (_decision, { id }) => drop([id], true),
+    onSuccess: (_decision, { id }) => {
+      drop([id], true);
+      // A task made from an action item gives its minutes a checkbox.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey.at(-1) === "action-item-tasks",
+      });
+    },
     // Refused: someone else decided it, it expired, or its minutes changed.
     onError: () =>
       void queryClient.invalidateQueries({
@@ -258,6 +267,7 @@ export function useDismissAiSuggestion() {
 export function useDecideAiSuggestions() {
   const client = useFrappClient();
   const drop = useDropFromLists();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["ai-suggestions", "decide"],
     retry: false,
@@ -270,10 +280,15 @@ export function useDecideAiSuggestions() {
       throwUnlessOk(result);
       return bodyOf(result.data).outcomes;
     },
-    onSuccess: (outcomes) =>
+    onSuccess: (outcomes) => {
       drop(
         outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.id),
         true,
-      ),
+      );
+      // Tasks made from action items give their minutes checkboxes.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey.at(-1) === "action-item-tasks",
+      });
+    },
   });
 }

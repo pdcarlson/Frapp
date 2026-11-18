@@ -21,6 +21,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
+import { TASK_AUDIENCE_COPY } from "@repo/validation";
 import { TaskDetailSheet } from "./task-detail-sheet";
 import type { TaskRowModel } from "@/lib/tasks/board";
 
@@ -49,6 +50,8 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     sentBackReason: null,
     completionNote: null,
     photos: [],
+    group: null,
+    openTaskId: null,
     ...overrides,
   };
 }
@@ -239,6 +242,47 @@ describe("TaskDetailSheet", () => {
     expect(all).toContain("Done");
     expect(all).toContain("You marked this done. Nothing waits on an officer.");
     expect(pressByText(tree, "Mark not done")).toBeDefined();
+  });
+
+  it("says who a group task is for, and how many have done it", () => {
+    const tree = render(
+      <TaskDetailSheet
+        row={row({
+          group: { audience: "group", targetName: "Philanthropy", total: 6, done: 2 },
+        })}
+        assignedBy="Jordan Lee"
+      />,
+    );
+    expect(texts(tree).join("\n")).toContain(
+      `${TASK_AUDIENCE_COPY.everyoneIn("Philanthropy")} · ${TASK_AUDIENCE_COPY.progress(2, 6)}`,
+    );
+  });
+
+  it("offers Give it back on a task claimed from Up for grabs, until it's done", () => {
+    const onRelease = vi.fn();
+    const tree = render(
+      <TaskDetailSheet
+        row={row({ openTaskId: "open-1" })}
+        assignedBy="Jordan Lee"
+        onRelease={onRelease}
+      />,
+    );
+    act(() => pressByText(tree, TASK_AUDIENCE_COPY.release)!.props.onPress());
+    expect(onRelease).toHaveBeenCalledTimes(1);
+
+    const done = render(
+      <TaskDetailSheet
+        row={row({
+          openTaskId: "open-1",
+          storedStatus: "COMPLETED",
+          displayStatus: "COMPLETED",
+          isDone: true,
+        })}
+        assignedBy="Jordan Lee"
+        onRelease={onRelease}
+      />,
+    );
+    expect(pressByText(done, TASK_AUDIENCE_COPY.release)).toBeUndefined();
   });
 
   it("offers a member no Edit and no step editing", () => {

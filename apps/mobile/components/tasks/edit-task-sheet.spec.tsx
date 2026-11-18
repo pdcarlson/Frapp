@@ -38,10 +38,26 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     ],
   }),
   useCreateTask: () => ({ mutate: create_, isPending: false }),
+  useCreateOpenTask: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateTask: () => ({ mutate: update, isPending: false }),
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: mintPhoto }),
   useTaskPhotoUrl: () => ({ data: undefined }),
 }));
+
+// The chapter as the Assign to picker reads it (`use-who-directory.ts`).
+vi.mock("@/lib/tasks/use-who-directory", async () => {
+  const { buildWhoDirectory } = await import("@repo/hooks/task-who-picker");
+  const directory = buildWhoDirectory({
+    members: [
+      { user_id: "user-1", display_name: "Paul Carlson", role_ids: [] },
+      { user_id: "user-2", display_name: "Cole Martin", role_ids: [] },
+    ],
+    viewerUserId: "user-1",
+  });
+  return {
+    useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),
+  };
+});
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),

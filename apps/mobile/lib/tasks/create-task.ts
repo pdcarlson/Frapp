@@ -27,12 +27,19 @@ import {
  * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
-import type { EditableCardTask, LiveTaskPhoto } from "@repo/hooks";
+import type {
+  CreateOpenTaskBody,
+  EditableCardTask,
+  LiveTaskPhoto,
+  useCreateTask,
+} from "@repo/hooks";
 import {
+  TASK_AUDIENCE_COPY,
   TASK_SUBTASKS_MAX,
-  taskWhoFields,
-  type TaskAudience,
+  normalizeTaskWho,
+  taskWhoRequest,
   type TaskProofKind,
+  type TaskWho,
 } from "@repo/validation";
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
 
@@ -47,7 +54,12 @@ export interface NewTaskDraft {
   dueTime?: string | null;
   /** The steps, in order (#4003); blank lines are dropped on send. */
   subtasks?: string[];
-  assigneeId: string | null;
+  /**
+   * Who it is for (2026-11-18): one person, a copy each for several people,
+   * a role, a group or the chapter, or one task up for grabs among them.
+   * `null` while nobody is picked.
+   */
+  who: TaskWho | null;
   /** Raw keypad text, so a half-typed value is not silently coerced. */
   pointsInput: string;
   /** What Mark done needs (#4635); absent reads as None. */
@@ -207,13 +219,11 @@ export function parsePointReward(value: string): PointsParse {
 
 export interface ValidatedNewTask {
   title: string;
-  /** Who it is for; absent on a task for everyone. */
-  assignee_id?: string;
   /**
-   * A task for everyone (#4295 step 3): each active member gets their own
-   * copy. Set in place of `assignee_id` when the picker holds Everyone.
+   * Who it is for, never nobody. {@link createRequestOf} turns it into the
+   * create: a task, a copy each, or one task up for grabs.
    */
-  audience?: TaskAudience;
+  who: TaskWho;
   due_date: string;
   /** The moment it is due, when the draft has a time. */
   due_at?: string;
@@ -247,7 +257,8 @@ export function validateNewTask(
 ): ValidatedNewTask | null {
   const title = draft.title.trim();
   if (title.length === 0 || title.length > TITLE_MAX_LENGTH) return null;
-  if (!draft.assigneeId) return null;
+  const who = draft.who ? normalizeTaskWho(draft.who) : null;
+  if (!who) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)) return null;
   if (draft.dueTime && !/^\d{2}:\d{2}$/.test(draft.dueTime)) return null;
   if (dueTimePassed(draft, now, kept)) return null;
@@ -255,12 +266,7 @@ export function validateNewTask(
   const points = parsePointReward(draft.pointsInput);
   if (points.kind === "invalid") return null;
 
-  const body: ValidatedNewTask = {
-    title,
-    // The picker holds a member's id or Everyone (`taskWhoFields`).
-    ...taskWhoFields(draft.assigneeId),
-    due_date: draft.dueDate,
-  };
+  const body: ValidatedNewTask = { title, who, due_date: draft.dueDate };
   if (draft.dueTime) {
     const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
     if (due_at) body.due_at = due_at;
@@ -324,7 +330,7 @@ export function editDraftOf(task: TaskEditTarget): NewTaskDraft {
     dueDate,
     dueTime,
     subtasks: [],
-    assigneeId: task.assigneeId,
+    who: { kind: "person", userId: task.assigneeId },
     pointsInput: task.pointReward ? String(task.pointReward) : "",
     proofKind: task.proofKind,
   };
@@ -354,8 +360,9 @@ export function taskEditBody(
 ): TaskEditBody {
   const body: TaskEditBody = {};
   if (next.title !== task.title) body.title = next.title;
-  if (next.assignee_id && next.assignee_id !== task.assigneeId) {
-    body.assignee_id = next.assignee_id;
+  // An edit hands the task to one member; the picker offers no more.
+  if (next.who.kind === "person" && next.who.userId !== task.assigneeId) {
+    body.assignee_id = next.who.userId;
   }
   const dueAt = next.due_at ?? null;
   const storedAt = task.dueAt ? new Date(task.dueAt).toISOString() : null;
@@ -392,8 +399,54 @@ export function taskEditBody(
 export function taskCreatedLine(
   assigneeName: string | null,
   wasSelf: boolean,
+  /** It went on Up for grabs for someone to claim. */
+  upForGrabs = false,
 ): string {
+  if (upForGrabs) return `Posted to ${TASK_AUDIENCE_COPY.upForGrabs}.`;
   return wasSelf
     ? "Added to your tasks."
     : `Assigned to ${assigneeName ?? "your chapter member"}.`;
+}
+
+/** What `useCreateTask` sends. */
+export type CreateTaskBody = Parameters<
+  ReturnType<typeof useCreateTask>["mutate"]
+>[0];
+
+/**
+ * The create a validated form makes (`taskWhoRequest`): `POST /v1/tasks` for
+ * one person or a copy each, `POST /v1/open-tasks` for one task up for grabs,
+ * which carries no photos.
+ */
+export type TaskCreateRequest =
+  | { route: "task"; body: CreateTaskBody }
+  | { route: "open"; body: CreateOpenTaskBody };
+
+export function createRequestOf(task: ValidatedNewTask): TaskCreateRequest {
+  const { who, reference_photo_paths, ...fields } = task;
+  const request = taskWhoRequest(who);
+  if (!request) {
+    // `validateNewTask` never lets nobody through.
+    throw new Error("A task needs someone to do it.");
+  }
+  if (request.endpoint === "/v1/open-tasks") {
+    return { route: "open", body: { ...fields, ...request.fields } };
+  }
+  return {
+    route: "task",
+    body: {
+      ...fields,
+      ...request.fields,
+      ...(reference_photo_paths ? { reference_photo_paths } : {}),
+    },
+  };
+}
+
+/**
+ * Whether a who may carry reference photos: one person only. A copy each
+ * can't yet (`TASK_AUDIENCE_COPY.noPhotos`), and a task up for grabs takes
+ * none.
+ */
+export function whoTakesPhotos(who: TaskWho | null): boolean {
+  return !who || who.kind === "person";
 }

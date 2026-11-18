@@ -76,6 +76,37 @@ export interface TaskRowModel {
   completionNote: string | null;
   /** Reference photos, then proof photos, each in order (#4635). */
   photos: LiveTaskPhoto[];
+  /**
+   * The group this copy is one of (#4295 step 3; 2026-11-18): who the task
+   * went to and how far along the copies are, or `null` for one person's.
+   */
+  group: TaskRowGroup | null;
+  /**
+   * The Up for grabs posting it was claimed from, or `null`: its assignee
+   * can give it back until it is done.
+   */
+  openTaskId: string | null;
+}
+
+/** A group task's summary, as the task reads carry it (`group`). */
+export interface TaskRowGroup {
+  audience: string;
+  targetName: string | null;
+  total: number;
+  done: number;
+}
+
+function toGroup(value: unknown): TaskRowGroup | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const audience = str(record, "audience");
+  if (!audience) return null;
+  return {
+    audience,
+    targetName: str(record, "target_name"),
+    total: num(record, "total") ?? 0,
+    done: num(record, "done") ?? 0,
+  };
 }
 
 /**
@@ -194,6 +225,8 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     sentBackReason: str(row, "sent_back_reason"),
     completionNote: str(row, "completion_note"),
     photos: readLiveTaskPhotos(row.photos),
+    group: toGroup(row.group),
+    openTaskId: str(row, "open_task_id"),
   };
 }
 

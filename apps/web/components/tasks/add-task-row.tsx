@@ -1,24 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Plus, SlidersHorizontal } from "lucide-react";
 import { dueEntryFields } from "@repo/formatting";
-import { memberLabel } from "@repo/hooks/display-names";
+import type { CreateOpenTaskBody } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { FOCUS_RING } from "@/components/ui/focus";
-import {
-  DueDateField,
-  dueEntryPassed,
-} from "@/components/tasks/due-date-field";
+import { DateField } from "@/components/ui/date-field";
+import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
+import { dueEntryPassed } from "@/components/tasks/due-date-field";
 import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
@@ -32,25 +23,22 @@ import {
 } from "@/components/tasks/task-photo";
 import {
   TASK_AUDIENCE_COPY,
-  TASK_AUDIENCE_EVERYONE,
-  everyoneCount,
   noTaskRepeatDraft,
   taskRepeatRuleOf,
-  type TaskAudience,
+  taskWhoRequest,
   type RepeatDraft,
   type TaskProofKind,
+  type TaskWho,
+  type TaskWhoTaskFields,
 } from "@repo/validation";
 import { RepeatOptions } from "@/components/shared/repeat-options";
 import { firstDueOf } from "@/components/tasks/task-repeat";
+import { WhoPicker } from "@/components/tasks/who-picker";
 
-/** What `POST /v1/tasks` takes from the board. */
-export type TaskDraft = {
+/** What `POST /v1/tasks` takes from the page. */
+type NewTaskBody = {
   title: string;
   description?: string;
-  /** Who it is for; absent on a task for everyone. */
-  assignee_id?: string;
-  /** A task for everyone (#4295 step 3): a copy per active member. */
-  audience?: TaskAudience;
   due_date: string;
   /** Present only when the task has a time of day (#4003). */
   due_at?: string;
@@ -63,20 +51,22 @@ export type TaskDraft = {
   proof_kind?: TaskProofKind;
   /** Repeat on this rule (#5119); the task is the series' first copy. */
   recurrence_rule?: string;
-};
+} & TaskWhoTaskFields;
 
-type Member = {
-  user_id?: string | null;
-  display_name?: string | null;
-  is_alumni?: boolean | null;
-};
+/**
+ * A create from the add line: a task (one person, or a copy each) or a task
+ * up for grabs, as `taskWhoRequest` routes the pick.
+ */
+export type TaskCreate =
+  | { endpoint: "/v1/tasks"; body: NewTaskBody }
+  | { endpoint: "/v1/open-tasks"; body: CreateOpenTaskBody };
 
 const EMPTY = {
   title: "",
   description: "",
-  assignee_id: "",
-  due_date: "",
-  point_reward: "",
+  who: null as TaskWho | null,
+  due: "",
+  points: "",
   subtasks: [] as string[],
   repeat: noTaskRepeatDraft() as RepeatDraft,
   ...EMPTY_TASK_PHOTO_DRAFT,
@@ -85,7 +75,7 @@ const EMPTY = {
 type Missing = {
   /** Why the Repeat pick can't be saved (#5119). */
   repeat?: string;
-  assignee?: boolean;
+  who?: boolean;
   due?: boolean;
   passed?: boolean;
   /** Why the picked photo can't be sent, or why it didn't upload. */
@@ -93,321 +83,331 @@ type Missing = {
 };
 
 /**
- * The board's one way to create a task: a "+ Add a task" row at the top of
- * To do, where the new tile will land (empty-states rule 2). It replaced the
- * toolbar's New task button and its dialog.
- *
- * Pressing it opens the row in place. Typing a title and pressing Enter
- * creates the task once it has an assignee and a due date, which the API
- * requires (`CreateTaskDto`); a missing one is flagged and focused on submit,
- * never while typing (once flagged, the due field's line follows what is
- * typed until it reads as a date). The due date is typed as a month and a day, with no
- * year to set (`due-date-field.tsx`, #3928). After a create the row stays open with a fresh title,
- * so an officer can add several in a row. Escape or Cancel closes it.
+ * The page's quick add (Paul, 2026-11-18): one line, as Todoist's is. Type a
+ * title and press Enter; Who, Due and Points sit beside it as compact chips,
+ * so the common task never opens a form. At rest it is one line even in the
+ * Tasks column beside chat (~480px): the title, then short chips and More as
+ * an icon. Once the line is in use (focused, or something typed) the title
+ * and Add (once there is a title to add) take the first line and the chips
+ * sit under it, the way Linear's and Todoist's quick adds grow under the
+ * title rather than wrap ragged. A missing who or due is flagged and
+ * focused on Enter, never while typing. More opens the rest of the task in
+ * place: steps, notes, repeat, photos and proof. After a create the line
+ * clears for the next one. Escape clears what was typed.
  */
 export function AddTaskRow({
-  members,
   gate,
   pending,
   onCreate,
+  expandSignal = 0,
 }: {
-  members: Member[];
   gate: SubscriptionGate;
   pending: boolean;
-  /** Resolves whether the task was created; the caller owns the toasts. */
-  onCreate: (draft: TaskDraft) => Promise<boolean>;
+  /** Resolves whether it was created; the caller owns the toasts. */
+  onCreate: (create: TaskCreate) => Promise<boolean>;
+  /** Bumped by New task: open More and put the cursor in the title. */
+  expandSignal?: number;
 }) {
-  const [open, setOpen] = useState(false);
+  const ids = useId();
   const [draft, setDraft] = useState(EMPTY);
+  const [more, setMore] = useState(false);
   const [missing, setMissing] = useState<Missing>({});
   const titleRef = useRef<HTMLInputElement>(null);
-  const assigneeRef = useRef<HTMLButtonElement>(null);
+  const whoRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
-  const openerRef = useRef<HTMLButtonElement>(null);
   const uploadPhotos = useUploadTaskPhotos();
   const [uploading, setUploading] = useState(false);
   const busy = pending || uploading;
+  const controls = gate.controlProps();
 
-  function close() {
-    setOpen(false);
-    setDraft(EMPTY);
-    setMissing({});
-    // Back to the row that opened it, so focus doesn't drop to the page.
-    requestAnimationFrame(() => openerRef.current?.focus());
-  }
+  useEffect(() => {
+    if (expandSignal === 0) return;
+    setMore(true);
+    titleRef.current?.focus();
+  }, [expandSignal]);
+
+  // A copy each for a group, or one task up for grabs, can't repeat or carry
+  // photos yet (#4295 step 3): both are hidden, and nothing hidden is sent.
+  const single = draft.who === null || draft.who.kind === "person";
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const title = draft.title.trim();
     if (!title) {
       titleRef.current?.focus();
       return;
     }
+    const request = draft.who ? taskWhoRequest(draft.who) : null;
     const nextMissing: Missing = {
-      assignee: !draft.assignee_id,
-      due: !draft.due_date,
-      passed: dueEntryPassed(draft.due_date),
+      who: !request,
+      due: !draft.due,
+      passed: dueEntryPassed(draft.due),
     };
     setMissing(nextMissing);
-    if (nextMissing.assignee) {
-      assigneeRef.current?.focus();
+    if (nextMissing.who) {
+      whoRef.current?.focus();
       return;
     }
     if (nextMissing.due || nextMissing.passed) {
       dueRef.current?.focus();
       return;
     }
-    // A task for everyone can't repeat or carry photos yet (#4295 step 3):
-    // the row hides both, and nothing hidden is sent.
-    const forEveryone = draft.assignee_id === TASK_AUDIENCE_EVERYONE;
-    const firstDue = firstDueOf(draft.due_date, draft.repeat.timeZone);
+    const firstDue = firstDueOf(draft.due, draft.repeat.timeZone);
     const repeat =
-      firstDue && !forEveryone
-        ? taskRepeatRuleOf(draft.repeat, firstDue)
-        : null;
+      firstDue && single ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
     if (repeat && !repeat.ok) {
+      setMore(true);
       setMissing((prev) => ({ ...prev, repeat: repeat.error }));
       return;
     }
-    let referencePhotoPaths: string[] | undefined;
-    if (draft.photoFiles.length > 0 && !forEveryone) {
-      const problem = taskPhotosProblem(draft.photoFiles);
-      if (problem) {
-        setMissing((prev) => ({ ...prev, photo: problem }));
-        return;
-      }
-      setUploading(true);
-      try {
-        referencePhotoPaths = await uploadPhotos(draft.photoFiles);
-      } catch (error) {
-        setMissing((prev) => ({
-          ...prev,
-          photo: uploadFailureMessage(error),
-        }));
-        return;
-      } finally {
-        setUploading(false);
-      }
-    }
-    const created = await onCreate({
+    const base = {
       title,
       description: draft.description.trim() || undefined,
-      ...(forEveryone
-        ? { audience: TASK_AUDIENCE_EVERYONE }
-        : { assignee_id: draft.assignee_id }),
-      ...dueEntryFields(draft.due_date),
-      point_reward: parseGuardedInt(draft.point_reward),
+      ...dueEntryFields(draft.due),
+      point_reward: parseGuardedInt(draft.points),
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
-      reference_photo_paths: referencePhotoPaths,
       proof_kind: draft.proofKind === "none" ? undefined : draft.proofKind,
-      recurrence_rule: repeat?.ok ? (repeat.rule ?? undefined) : undefined,
-    });
+    };
+    let created: boolean;
+    if (request!.endpoint === "/v1/open-tasks") {
+      created = await onCreate({
+        endpoint: "/v1/open-tasks",
+        body: { ...base, ...request!.fields },
+      });
+    } else {
+      let referencePhotoPaths: string[] | undefined;
+      if (draft.photoFiles.length > 0 && single) {
+        const problem = taskPhotosProblem(draft.photoFiles);
+        if (problem) {
+          setMissing((prev) => ({ ...prev, photo: problem }));
+          return;
+        }
+        setUploading(true);
+        try {
+          referencePhotoPaths = await uploadPhotos(draft.photoFiles);
+        } catch (error) {
+          setMissing((prev) => ({ ...prev, photo: uploadFailureMessage(error) }));
+          return;
+        } finally {
+          setUploading(false);
+        }
+      }
+      created = await onCreate({
+        endpoint: "/v1/tasks",
+        body: {
+          ...base,
+          ...request!.fields,
+          reference_photo_paths: referencePhotoPaths,
+          recurrence_rule: repeat?.ok ? (repeat.rule ?? undefined) : undefined,
+        },
+      });
+    }
     if (!created) return;
     setDraft(EMPTY);
     setMissing({});
     titleRef.current?.focus();
   }
 
-  const forEveryone = draft.assignee_id === TASK_AUDIENCE_EVERYONE;
-
-  if (!open) {
-    const controls = gate.controlProps();
-    return (
-      <button
-        ref={openerRef}
-        type="button"
-        {...controls}
-        onClick={() => setOpen(true)}
-        className={cn(
-          "flex min-h-11 w-full items-center gap-2 rounded-[14px] border border-dashed border-input px-3 text-sm text-muted-foreground transition-colors",
-          "hover:bg-card-hover hover:text-foreground disabled:pointer-events-none disabled:text-disabled",
-          FOCUS_RING,
-        )}
-      >
-        <Plus className="h-4 w-4" aria-hidden="true" />
-        Add a task
-      </button>
-    );
-  }
+  const dirty =
+    draft.title !== "" || draft.who !== null || draft.due !== "" || draft.points !== "";
+  // Focus anywhere in the line, its pickers' popovers included (React's
+  // focus events bubble through their portals).
+  const [focused, setFocused] = useState(false);
+  const active = focused || dirty || more;
+  const hasTitle = draft.title.trim() !== "";
 
   return (
     <form
       aria-label="Add a task"
       onSubmit={(event) => void submit(event)}
+      noValidate
       onKeyDown={(event) => {
-        // An open Select list (and any other Radix layer) dismisses itself on
-        // Escape with `preventDefault`, not `stopPropagation`, and React still
-        // bubbles that key here from the portal. Closing the row too would
-        // throw away the draft the officer only meant to close a list over.
-        // Held while a create runs, like Cancel.
-        if (event.key === "Escape" && !event.defaultPrevented && !busy) {
+        // An open picker (any Radix layer) handles its own Escape first and
+        // marks it, so the line only clears when nothing above it took it.
+        if (event.key === "Escape" && !event.defaultPrevented && !busy && dirty) {
           event.preventDefault();
-          close();
+          setDraft(EMPTY);
+          setMissing({});
         }
       }}
-      className="space-y-2 rounded-[14px] border border-border p-3"
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next || !event.currentTarget.contains(next)) setFocused(false);
+      }}
+      className="rounded-[14px] border border-border"
     >
-      <Input
-        ref={titleRef}
-        autoFocus
-        aria-label="Task title"
-        placeholder="Task title"
-        value={draft.title}
-        onChange={(event) =>
-          setDraft((prev) => ({ ...prev, title: event.target.value }))
-        }
-      />
-      {/* Stacked, not side by side: a column is narrow, and a due field
-          holding a time ("Fri, Nov 13 · 7 PM") doesn't fit half of one. */}
-      <div className="grid grid-cols-1 gap-2">
-        <div className="min-w-0">
-          <Select
-            value={draft.assignee_id}
-            onValueChange={(value) => {
-              setDraft((prev) => ({ ...prev, assignee_id: value }));
-              setMissing((prev) => ({ ...prev, assignee: false }));
-            }}
+      <div
+        className={cn(
+          "flex items-center gap-1.5 p-1.5",
+          active ? "flex-wrap" : "flex-nowrap",
+        )}
+      >
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-1.5",
+            active && "basis-full",
+          )}
+        >
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2",
+              FOCUS_RING_WITHIN,
+            )}
           >
-            <SelectTrigger
-              ref={assigneeRef}
-              aria-label="Assignee"
-              aria-invalid={missing.assignee || undefined}
-              aria-describedby={
-                missing.assignee ? "add-task-assignee-missing" : undefined
+            <Plus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <input
+              ref={titleRef}
+              aria-label="Task title"
+              placeholder="Add a task"
+              value={draft.title}
+              disabled={controls.disabled}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, title: event.target.value }))
               }
+              className="h-9 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+            />
+          </div>
+          {hasTitle ? (
+            <Button
+              size="toolbar"
+              type="submit"
+              className="shrink-0"
+              {...gate.controlProps(busy)}
             >
-              <SelectValue placeholder="Assignee" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TASK_AUDIENCE_EVERYONE}>
-                {TASK_AUDIENCE_COPY.everyone}
-              </SelectItem>
-              {members.map((member) => (
-                <SelectItem
-                  key={member.user_id ?? "unknown"}
-                  value={String(member.user_id ?? "")}
-                >
-                  {memberLabel(member.display_name, member.user_id)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {missing.assignee ? (
-            <p
-              id="add-task-assignee-missing"
-              className="mt-1 text-caption text-destructive-text"
-            >
-              Pick an assignee.
-            </p>
-          ) : forEveryone ? (
-            <p className="mt-1 text-caption text-muted-foreground">
-              {TASK_AUDIENCE_COPY.everyoneHint(everyoneCount(members))}
-            </p>
+              {uploading ? "Adding photos…" : "Add"}
+            </Button>
           ) : null}
         </div>
-        <div className="min-w-0">
-          <DueDateField
+        <WhoPicker
+          ref={whoRef}
+          value={draft.who}
+          onChange={(who) => {
+            setDraft((prev) => ({ ...prev, who }));
+            setMissing((prev) => ({ ...prev, who: false }));
+          }}
+          invalid={missing.who}
+          aria-describedby={missing.who ? `${ids}-missing` : undefined}
+          disabled={controls.disabled}
+          className="max-w-[10rem] shrink-0"
+        />
+        <div className={cn("shrink-0", active ? "w-28" : "w-20")}>
+          <DateField
             ref={dueRef}
             aria-label="Due date"
-            placeholder="Due: Fri 5pm"
-            missing={missing.due}
-            passed={missing.passed}
-            value={draft.due_date}
-            onChange={(value) => {
-              setDraft((prev) => ({ ...prev, due_date: value }));
+            placeholder="Due"
+            lean="ahead"
+            withTime
+            value={draft.due}
+            aria-invalid={missing.due || missing.passed || undefined}
+            disabled={controls.disabled}
+            className="h-9"
+            onChange={(due) => {
+              setDraft((prev) => ({ ...prev, due }));
               setMissing((prev) => ({
                 ...prev,
-                due: prev.due && !value,
+                due: prev.due && !due,
                 passed: false,
               }));
             }}
           />
         </div>
-      </div>
-      <Input
-        type="number"
-        min={0}
-        aria-label="Points (optional)"
-        placeholder="Points (optional)"
-        value={draft.point_reward}
-        onChange={(event) => {
-          const next = guardIntDraft(event.target.value);
-          if (next === undefined) return;
-          setDraft((prev) => ({ ...prev, point_reward: next }));
-        }}
-      />
-      {forEveryone ? (
-        <p className="text-caption text-muted-foreground">
-          {TASK_AUDIENCE_COPY.noRepeat}
-        </p>
-      ) : (
-        <RepeatOptions
-          forTasks
-          idPrefix="add-task-repeat"
-          draft={draft.repeat}
-          start={firstDueOf(draft.due_date, draft.repeat.timeZone)}
-          showLength
-          disabled={busy}
-          onChange={(repeat) => {
-            setDraft((prev) => ({ ...prev, repeat }));
-            setMissing((prev) => ({ ...prev, repeat: undefined }));
+        <Input
+          type="number"
+          min={0}
+          aria-label="Points (optional)"
+          placeholder="Pts"
+          className="h-9 w-20 shrink-0"
+          value={draft.points}
+          disabled={controls.disabled}
+          onChange={(event) => {
+            const next = guardIntDraft(event.target.value);
+            if (next === undefined) return;
+            setDraft((prev) => ({ ...prev, points: next }));
           }}
         />
-      )}
-      {missing.repeat && !forEveryone ? (
-        <p className="text-caption text-destructive-text">{missing.repeat}</p>
-      ) : null}
-      <SubtaskListEditor
-        items={draft.subtasks}
-        disabled={pending}
-        onChange={(subtasks) => setDraft((prev) => ({ ...prev, subtasks }))}
-      />
-      <Textarea
-        rows={2}
-        aria-label="Description (optional)"
-        placeholder="Description (optional)"
-        value={draft.description}
-        onChange={(event) =>
-          setDraft((prev) => ({ ...prev, description: event.target.value }))
-        }
-      />
-      <TaskPhotoFields
-        id="add-task"
-        withoutPhotos={forEveryone}
-        draft={draft}
-        disabled={busy}
-        problem={missing.photo}
-        onChange={(patch: Partial<TaskPhotoDraft>) => {
-          setDraft((prev) => ({ ...prev, ...patch }));
-          if (patch.photoFiles) {
-            const files = patch.photoFiles;
-            setMissing((prev) => ({
-              ...prev,
-              photo: taskPhotosProblem(files),
-            }));
-          }
-        }}
-      />
-      <div className="flex items-center gap-2">
-        <Button size="toolbar" type="submit" {...gate.controlProps(busy)}>
-          {uploading ? "Adding photos…" : "Add task"}
-        </Button>
-        {/*
-          Not gated: it only closes the row, and a lapsed chapter still needs
-          a way out of a form it can't submit. Held while a create runs: the
-          write can't be called back, and its result would land on whatever
-          the row holds by then.
-        */}
         <Button
-          size="toolbar"
-          variant="ghost"
           type="button"
-          disabled={busy}
-          onClick={close}
+          size="toolbar"
+          variant={more ? "secondary" : "ghost"}
+          className="w-9 shrink-0 px-0"
+          aria-label="More"
+          title="More: steps, notes, repeat, photos"
+          aria-expanded={more}
+          aria-controls={`${ids}-more`}
+          onClick={() => setMore((open) => !open)}
         >
-          Cancel
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
+      {missing.who || missing.due || missing.passed ? (
+        <p id={`${ids}-missing`} role="alert" className="px-3 pb-2 text-caption text-destructive-text">
+          {[
+            missing.who ? "Pick who it's for." : null,
+            missing.due
+              ? "Pick a due date, like Friday or Friday 5pm."
+              : missing.passed
+                ? "That time has already passed. Pick a later time or another day."
+                : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        </p>
+      ) : null}
+      {more ? (
+        <div id={`${ids}-more`} className="grid gap-3 border-t border-border p-3">
+          <SubtaskListEditor
+            items={draft.subtasks}
+            disabled={busy}
+            onChange={(subtasks) => setDraft((prev) => ({ ...prev, subtasks }))}
+          />
+          <Textarea
+            rows={2}
+            aria-label="Notes (optional)"
+            placeholder="Notes (optional)"
+            value={draft.description}
+            onChange={(event) =>
+              setDraft((prev) => ({ ...prev, description: event.target.value }))
+            }
+          />
+          {single ? (
+            <RepeatOptions
+              forTasks
+              idPrefix={`${ids}-repeat`}
+              draft={draft.repeat}
+              start={firstDueOf(draft.due, draft.repeat.timeZone)}
+              showLength
+              disabled={busy}
+              onChange={(repeat) => {
+                setDraft((prev) => ({ ...prev, repeat }));
+                setMissing((prev) => ({ ...prev, repeat: undefined }));
+              }}
+            />
+          ) : (
+            <p className="text-caption text-muted-foreground">
+              {TASK_AUDIENCE_COPY.noRepeat}
+            </p>
+          )}
+          {missing.repeat && single ? (
+            <p className="text-caption text-destructive-text">{missing.repeat}</p>
+          ) : null}
+          <TaskPhotoFields
+            id={`${ids}-photos`}
+            withoutPhotos={!single}
+            draft={draft}
+            disabled={busy}
+            problem={missing.photo}
+            onChange={(patch: Partial<TaskPhotoDraft>) => {
+              setDraft((prev) => ({ ...prev, ...patch }));
+              if (patch.photoFiles) {
+                const files = patch.photoFiles;
+                setMissing((prev) => ({ ...prev, photo: taskPhotosProblem(files) }));
+              }
+            }}
+          />
+        </div>
+      ) : null}
     </form>
   );
 }

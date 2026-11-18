@@ -9,6 +9,7 @@ import { cardFilledContainers } from "@/tests/card-surfaces";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { TASK_AUDIENCE_COPY } from "@repo/validation";
 import {
   expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
@@ -37,7 +38,20 @@ const {
   membersRefetch,
   failedReadsKeepData,
   deleteTaskMutate,
+  openTasksRef,
+  createOpenTaskMutate,
+  claimMutate,
+  assignMutate,
+  releaseMutate,
+  toastSpy,
 } = vi.hoisted(() => ({
+  // Postings up for grabs, and the writes on them (2026-11-18).
+  openTasksRef: { current: [] as unknown[] },
+  createOpenTaskMutate: vi.fn(),
+  claimMutate: vi.fn(),
+  assignMutate: vi.fn(),
+  releaseMutate: vi.fn(),
+  toastSpy: vi.fn(),
   // The delete, by id or with a scope on a repeating task (#5119).
   deleteTaskMutate: vi.fn(),
   // `GET /v1/users/me` and `GET /v1/members` failed with nothing cached
@@ -85,8 +99,26 @@ const {
 const ME = "u-me";
 
 const MEMBERS = [
-  { user_id: ME, display_name: "Paul Carlson" },
-  { user_id: "u-other", display_name: "Cole Martin" },
+  { user_id: ME, display_name: "Paul Carlson", role_ids: ["role-pres"] },
+  { user_id: "u-other", display_name: "Cole Martin", role_ids: ["role-rush"] },
+];
+
+const TIERS = [{ id: "tier-exec", name: "Exec board", position: 1 }];
+const ROLES = [
+  { id: "role-everyone", name: "Member", system_key: "MEMBER", display_order: 9 },
+  { id: "role-pres", name: "President", tier_id: "tier-exec", display_order: 1 },
+  { id: "role-rush", name: "Recruitment Committee", display_order: 2 },
+  { id: "role-house", name: "Housing Chair", display_order: 3 },
+];
+
+// One task the minutes suggest, so an officer's strip has a line to draw.
+const SUGGESTIONS = [
+  {
+    id: "sug-1",
+    kind: "task",
+    task: { title: "Order the formal tickets" },
+    source: { type: "meeting", id: "meeting-1" },
+  },
 ];
 
 const TASKS = [
@@ -160,7 +192,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: membersRefetch,
   }),
   useAiSuggestions: (options?: { enabled?: boolean }) => ({
-    data: suggestionsPending.current ? undefined : { items: [] },
+    data: suggestionsPending.current ? undefined : { items: SUGGESTIONS },
     isPending: suggestionsPending.current && (options?.enabled ?? true),
     fetchStatus:
       suggestionsPending.current && (options?.enabled ?? true)
@@ -206,6 +238,32 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAddSubtask: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteSubtask: () => ({ mutate: vi.fn(), isPending: false }),
   useSetSubtaskDone: () => ({ mutate: vi.fn(), isPending: false }),
+  // Faces read the roster; here every member has their initials.
+  useMemberDisplayNames: () => ({
+    avatarTintFor: () => null,
+    nameFor: () => null,
+    avatarFor: () => null,
+  }),
+  // The Who picker's lists (2026-11-18).
+  useRoles: () => ({ data: ROLES }),
+  useRoleTiers: () => ({ data: TIERS }),
+  useGroups: () => ({ data: [] }),
+  useMeetings: () => ({ data: [] }),
+  // Up for grabs (2026-11-18).
+  useOpenTasks: () => ({
+    data: openTasksRef.current,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useCreateOpenTask: () => ({
+    mutateAsync: createOpenTaskMutate,
+    isPending: false,
+  }),
+  useClaimOpenTask: () => ({ mutateAsync: claimMutate, isPending: false }),
+  useAssignOpenTask: () => ({ mutateAsync: assignMutate, isPending: false }),
+  useReleaseTask: () => ({ mutateAsync: releaseMutate, isPending: false }),
+  useUpdateOpenTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteOpenTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
@@ -250,7 +308,8 @@ vi.mock("@/components/shared/can", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: toastSpy }),
+  toast: toastSpy,
 }));
 
 const { TasksBoard } = await import("./tasks-board");
@@ -258,9 +317,19 @@ const { resetListLayoutForTests } = await import("@/lib/list-layout");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
-// The add row at the top of To do: the board's one way to create a task.
-const trigger = () => screen.getByRole("button", { name: /^add a task$/i });
+// New task in the toolbar, and the quick-add line it opens (2026-11-18).
+const trigger = () => screen.getByRole("button", { name: /^new task$/i });
 const addForm = () => screen.getByRole("form", { name: /add a task/i });
+const addSubmit = () => within(addForm()).getByRole("button", { name: "Add" });
+const titleField = () => within(addForm()).getByRole("textbox", { name: "Task title" });
+/** Picks people in the add line's Who picker, then closes it. */
+async function pickWho(...names: RegExp[]) {
+  await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
+  for (const name of names) {
+    await userEvent.click(await screen.findByRole("checkbox", { name }));
+  }
+  await userEvent.keyboard("{Escape}");
+}
 const startButton = () => screen.getByRole("button", { name: /^start$/i });
 const completeButton = () => screen.getByRole("button", { name: /mark done/i });
 const confirmButton = () => screen.getByRole("button", { name: /^confirm$/i });
@@ -274,6 +343,11 @@ const deleteButtons = () =>
 beforeEach(() => {
   window.localStorage.clear();
   resetListLayoutForTests();
+  // Most cases below read a task's controls off its Grid tile; the List's
+  // rows and the panel have their own cases, which pick List themselves.
+  window.localStorage.setItem("frapp.tasks.layout.viewer-1", "grid");
+  openTasksRef.current = [];
+  toastSpy.mockClear();
   permissionsRef.current = ["tasks:manage"];
   permissionsFailed.current = false;
   eventsRef.current = [];
@@ -299,18 +373,46 @@ function liveStatus(): HTMLElement | null {
   );
 }
 
+
+/**
+ * Picks in the toolbar's View menu (grouping and List / Grid), which closes
+ * on the pick.
+ */
+async function pickView(name: string) {
+  await userEvent.click(screen.getByRole("button", { name: "View" }));
+  await userEvent.click(await screen.findByRole("menuitemradio", { name }));
+}
+
+/** Whether a View menu pick is the current one; the menu closes again. */
+async function viewChecked(name: string): Promise<boolean> {
+  await userEvent.click(screen.getByRole("button", { name: "View" }));
+  const item = await screen.findByRole("menuitemradio", { name });
+  const checked = item.getAttribute("aria-checked") === "true";
+  await userEvent.keyboard("{Escape}");
+  return checked;
+}
+
 describe("TasksBoard suggested tasks (#4313)", () => {
-  it("puts the Suggested list above the columns for an officer, and nowhere for a member", () => {
+  it("folds an officer's suggestions to one line over the board, and shows none to a member", async () => {
     chapter.active();
     const { unmount } = render(<TasksBoard />);
+    const strip = screen.getByRole("region", { name: "Suggested tasks" });
+    expect(strip).toHaveTextContent("1 suggested task from the minutes");
+    // The list waits for Review, so it pushes nothing down (Paul, 2026-11-18).
+    expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+    const review = within(strip).getByRole("button", { name: "Review" });
+    expect(review).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(review);
     expect(screen.getByTestId("suggested-tasks")).toBeInTheDocument();
+    await userEvent.click(within(strip).getByRole("button", { name: "Hide" }));
+    expect(screen.queryByTestId("suggested-tasks")).toBeNull();
     unmount();
 
     permissionsRef.current = ["members:view"];
     tasksRef.current = TASKS;
     try {
       render(<TasksBoard />);
-      expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+      expect(screen.queryByRole("region", { name: "Suggested tasks" })).toBeNull();
     } finally {
       tasksRef.current = [];
     }
@@ -321,10 +423,8 @@ describe("TasksBoard suggested tasks (#4313)", () => {
     suggestionsPending.current = true;
     try {
       render(<TasksBoard />);
-      expect(screen.queryByTestId("suggested-tasks")).toBeNull();
-      expect(
-        screen.queryByRole("button", { name: /^add a task$/i }),
-      ).toBeNull();
+      expect(screen.queryByRole("region", { name: "Suggested tasks" })).toBeNull();
+      expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
     } finally {
       suggestionsPending.current = false;
     }
@@ -336,9 +436,7 @@ describe("TasksBoard suggested tasks (#4313)", () => {
     suggestionsFailures.current = 1;
     try {
       render(<TasksBoard />);
-      expect(
-        screen.getByRole("button", { name: /^add a task$/i }),
-      ).toBeInTheDocument();
+      expect(addForm()).toBeInTheDocument();
     } finally {
       suggestionsPending.current = false;
       suggestionsFailures.current = 0;
@@ -581,11 +679,12 @@ describe("TasksBoard subscription gating", () => {
     // §5 rule 4: disabled, not hidden — the board is still readable.
     expect(screen.getByText(/sweep the chapter room/i)).toBeInTheDocument();
 
-    // And the row must not open onto an action that cannot succeed.
-    await userEvent.click(trigger());
+    // And the add line takes nothing that cannot succeed.
+    // Add shows only once there's a title, which a gated line can't take.
+    expect(titleField()).toBeDisabled();
     expect(
-      screen.queryByRole("form", { name: /add a task/i }),
-    ).not.toBeInTheDocument();
+      within(addForm()).queryByRole("button", { name: "Add" }),
+    ).toBeNull();
   });
 
   it("gates the other four task writes, not just Create", () => {
@@ -652,22 +751,19 @@ describe("TasksBoard subscription gating", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("disables Add task in an open row when the subscription lapses under it", async () => {
-    // A background refetch can revoke the write while the row is open. The
-    // row keeps what was typed, and its submit says why it can't run.
+  it("disables Add on a typed line when the subscription lapses under it", async () => {
+    // A background refetch can revoke the write while a title is typed. The
+    // line keeps what was typed, and its submit says why it can't run.
     chapter.active();
     const { rerender } = render(<TasksBoard />);
-    await userEvent.click(trigger());
-    const submit = within(addForm()).getByRole("button", { name: "Add task" });
-    expect(submit).toBeEnabled();
+    await userEvent.type(titleField(), "Order the jerseys");
+    expect(addSubmit()).toBeEnabled();
 
     chapter.incomplete();
     rerender(<TasksBoard />);
 
-    expect(submit).toBeDisabled();
-    expect(
-      within(addForm()).getByRole("button", { name: "Cancel" }),
-    ).toBeEnabled();
+    expect(addSubmit()).toBeDisabled();
+    expect(titleField()).toHaveValue("Order the jerseys");
   });
 
   it("leaves the reads and the board itself ungated", () => {
@@ -805,57 +901,71 @@ describe("TasksBoard List / Grid", () => {
   const sweepItem = () =>
     within(todoRegion()).getByText("Sweep the chapter room").closest("li");
 
-  const layoutChoice = (name: "List" | "Grid") =>
-    within(screen.getByRole("radiogroup", { name: "Layout" })).getByRole(
-      "radio",
-      { name },
-    );
-
-  it("opens on the board, as Grid, until the person picks", () => {
-    render(<TasksBoard />);
-    expect(layoutChoice("Grid")).toHaveAttribute("aria-checked", "true");
-    // Lanes side by side, each task a framed tile, Confirmed as a grid.
-    expect(todoRegion().parentElement).toHaveClass("@4xl:grid-cols-4");
-    expect(todoRegion().querySelector("ul")).not.toHaveClass("divide-y");
-    expect(sweepItem()).toHaveClass("rounded-[14px]", "border");
-    expect(confirmedList()).toHaveClass("@4xl:grid-cols-4");
-  });
-
-  it("draws the same groups as rows in List, keeping Edit and Delete, and remembers it", async () => {
-    const user = userEvent.setup();
-    const { container, unmount } = render(<TasksBoard />);
-    await user.click(layoutChoice("List"));
-
-    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
+  it("opens as a compact List until the person picks (Paul, 2026-11-18)", async () => {
+    window.localStorage.clear();
+    resetListLayoutForTests();
+    const { container } = render(<TasksBoard />);
+    expect(await viewChecked("List")).toBe(true);
     const todo = todoRegion();
-    // Groups stacked, not lanes; each task a flush row, not a framed tile;
-    // the Confirmed list rows too.
+    // Groups stacked, not lanes; each task a flush 40px row; Confirmed too.
     expect(todo.parentElement).not.toHaveClass("grid");
     expect(todo.querySelector("ul")).toHaveClass("divide-y");
-    expect(sweepItem()).toHaveClass("py-3");
+    expect(sweepItem()).toHaveClass("min-h-10");
     expect(sweepItem()).not.toHaveClass("border");
     expect(confirmedList()).toHaveClass("divide-y");
-    expect(confirmedList()).not.toHaveClass("grid");
-    expect(
-      within(todo).getByRole("button", {
+    // A row says who, when and for how many points, and opens the task.
+    expect(within(sweepItem()!).getAllByText("Paul Carlson").length).toBeGreaterThan(0);
+    expect(within(sweepItem()!).getByText("+5 pts")).toBeInTheDocument();
+    // An empty group draws nothing in List: no "Nothing overdue" heading.
+    expect(screen.queryByRole("region", { name: "Overdue" })).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("puts what's late first in List", () => {
+    window.localStorage.clear();
+    resetListLayoutForTests();
+    tasksRef.current = [
+      ...TASKS,
+      { ...TASKS[0]!, id: "task-late", title: "Pay the house bill", status: "OVERDUE" },
+    ];
+    render(<TasksBoard />);
+    const names = screen
+      .getAllByRole("region")
+      .map((region) => region.getAttribute("aria-labelledby"))
+      .filter((id) => id?.startsWith("tasks-column-"));
+    expect(names[0]).toBe("tasks-column-overdue");
+    expect(names[1]).toBe("tasks-column-todo");
+  });
+
+  it("draws the same groups as framed tiles in Grid, whose Edit opens the panel, and remembers it", async () => {
+    window.localStorage.clear();
+    resetListLayoutForTests();
+    const user = userEvent.setup();
+    const { unmount } = render(<TasksBoard />);
+    await pickView("Grid");
+
+    expect(await viewChecked("Grid")).toBe(true);
+    expect(todoRegion().parentElement).toHaveClass("@4xl:grid-cols-4");
+    expect(sweepItem()).toHaveClass("rounded-[14px]", "border");
+    expect(confirmedList()).toHaveClass("@4xl:grid-cols-4");
+    // Grid keeps all four lanes, the empty one included.
+    expect(screen.getByRole("region", { name: "Overdue" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("frapp.tasks.layout.viewer-1")).toBe(
+      "grid",
+    );
+
+    await user.click(
+      within(todoRegion()).getByRole("button", {
         name: /^edit sweep the chapter room$/i,
       }),
-    ).toBeInTheDocument();
-    expect(
-      within(todo).getByRole("button", {
-        name: /^delete sweep the chapter room$/i,
-      }),
-    ).toBeInTheDocument();
-    // The same four groups and Confirmed, and the page stays flush.
-    expect(screen.getAllByRole("region")).toHaveLength(5);
-    expect(cardFilledContainers(container)).toEqual([]);
-    expect(window.localStorage.getItem("frapp.tasks.layout.viewer-1")).toBe(
-      "list",
     );
+    expect(
+      await screen.findByRole("dialog", { name: "Sweep the chapter room" }),
+    ).toBeInTheDocument();
 
     unmount();
     render(<TasksBoard />);
-    expect(layoutChoice("List")).toHaveAttribute("aria-checked", "true");
+    expect(await viewChecked("Grid")).toBe(true);
   });
 });
 
@@ -893,12 +1003,10 @@ describe("TasksBoard point reward guard (#2206)", () => {
   // The row needs a title, an assignee and a due date before it submits.
   async function openCreate() {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    fireEvent.change(screen.getByLabelText("Task title"), {
+    fireEvent.change(titleField(), {
       target: { value: "Order the composites" },
     });
-    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
-    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    await pickWho(/Cole Martin/);
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "2026-12-01" },
     });
@@ -982,7 +1090,7 @@ describe("TasksBoard flush layout", () => {
     expect(screen.queryByText(/\d+\/\d+\/\d{4}/)).toBeNull();
   });
 
-  it("keeps the columns at zero for an officer, on the page surface", () => {
+  it("keeps the Grid columns at zero for an officer, on the page surface", () => {
     tasksRef.current = [];
     const { container } = render(<TasksBoard />);
 
@@ -994,74 +1102,72 @@ describe("TasksBoard flush layout", () => {
     ]) {
       expect(screen.getByRole("region", { name })).toBeInTheDocument();
     }
-    // The add row is where the first tile lands, in place of "No tasks".
+    // The add line heads the board, ahead of the first lane.
     const todo = screen.getByRole("region", { name: "To do" });
     expect(
-      within(todo).getByRole("button", { name: /^add a task$/i }),
-    ).toBeInTheDocument();
-    expect(within(todo).queryByText("No tasks")).toBeNull();
+      addForm().compareDocumentPosition(todo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.queryByRole("heading", { name: /no tasks yet/i })).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 });
 
-describe("TasksBoard add row", () => {
+describe("TasksBoard quick add (2026-11-18)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tasksRef.current = [];
     currentUserRef.current = { id: ME };
     chapter.active();
     createTaskMutate.mockResolvedValue({});
+    createOpenTaskMutate.mockResolvedValue({});
   });
 
-  it("is the only create control: no toolbar button, no dialog", async () => {
+  it("is one line at the head of the board, and New task opens its More", async () => {
     render(<TasksBoard />);
 
-    expect(screen.queryByRole("button", { name: /new task/i })).toBeNull();
-    await userEvent.click(trigger());
-    expect(screen.queryByRole("dialog")).toBeNull();
     expect(addForm()).toBeInTheDocument();
-    expect(screen.getByLabelText("Task title")).toHaveFocus();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const more = within(addForm()).getByRole("button", { name: /^more$/i });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(trigger());
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(within(addForm()).getByLabelText("Notes (optional)")).toBeInTheDocument();
+    expect(titleField()).toHaveFocus();
   });
 
-  it("flags a missing assignee and due date on Enter, and sends nothing", async () => {
+  it("flags who and a due date on Enter, and sends nothing", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
 
-    await userEvent.type(
-      screen.getByLabelText("Task title"),
-      "Order pizza{Enter}",
-    );
+    await userEvent.type(titleField(), "Order pizza{Enter}");
 
     expect(createTaskMutate).not.toHaveBeenCalled();
-    expect(screen.getByText("Pick an assignee.")).toBeInTheDocument();
-    expect(screen.getByText("Pick a due date.")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Assignee" })).toHaveFocus();
+    const alert = within(addForm()).getByRole("alert");
+    expect(alert).toHaveTextContent("Pick who it's for.");
+    expect(alert).toHaveTextContent(/pick a due date/i);
+    expect(
+      within(addForm()).getByRole("button", { name: /^who/i }),
+    ).toHaveFocus();
   });
 
   it("flags nothing while typing", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
 
-    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza");
+    await userEvent.type(titleField(), "Order pizza");
 
-    expect(screen.queryByText("Pick an assignee.")).toBeNull();
-    expect(screen.queryByText("Pick a due date.")).toBeNull();
+    expect(within(addForm()).queryByRole("alert")).toBeNull();
   });
 
-  it("creates on Enter once the row is complete, then clears for the next one", async () => {
+  it("creates for one person on Enter, then clears for the next one", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
-    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    await pickWho(/Cole Martin/);
+    expect(
+      within(addForm()).getByRole("button", { name: "Who: Cole Martin" }),
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "2026-12-01" },
     });
 
-    await userEvent.type(
-      screen.getByLabelText("Task title"),
-      "  Order pizza  {Enter}",
-    );
+    await userEvent.type(titleField(), "  Order pizza  {Enter}");
 
     await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
     expect(createTaskMutate.mock.calls[0]![0]).toEqual({
@@ -1071,27 +1177,66 @@ describe("TasksBoard add row", () => {
       due_date: "2026-12-01",
       point_reward: undefined,
     });
-    // Still open, emptied and focused, for the next task.
-    await waitFor(() =>
-      expect(screen.getByLabelText("Task title")).toHaveValue(""),
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Task created" }),
     );
-    expect(screen.getByLabelText("Task title")).toHaveFocus();
+    await waitFor(() => expect(titleField()).toHaveValue(""));
+    expect(titleField()).toHaveFocus();
     expect(screen.getByLabelText("Due date")).toHaveValue("");
+  });
+
+  it("gives a role's members a copy each through the tasks endpoint", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Roles and groups" }));
+    // A chapter with a dozen roles or fewer opens every tier.
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Recruitment Committee/ }));
+    await userEvent.keyboard("{Escape}");
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
+    await userEvent.type(titleField(), "Rush flyers{Enter}");
+
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    expect(createTaskMutate.mock.calls[0]![0]).toMatchObject({
+      title: "Rush flyers",
+      audience: "everyone",
+      audience_role_id: "role-rush",
+    });
+    expect(createOpenTaskMutate).not.toHaveBeenCalled();
+  });
+
+  it("posts One claims it to Up for grabs", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Paul Carlson/ }));
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Cole Martin/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: "One claims it" }));
+    await userEvent.keyboard("{Escape}");
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
+    await userEvent.type(titleField(), "Drive to the airport{Enter}");
+
+    await waitFor(() => expect(createOpenTaskMutate).toHaveBeenCalledTimes(1));
+    // Both members are the whole chapter: anyone may claim it.
+    const sent = createOpenTaskMutate.mock.calls[0]![0] as Record<string, unknown>;
+    expect(sent).toMatchObject({ title: "Drive to the airport" });
+    expect(sent.user_ids).toBeUndefined();
+    expect(createTaskMutate).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Posted to Up for grabs" }),
+    );
   });
 
   it("takes the due date as a typed month and day, with no year to set (#3928)", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
-    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    await pickWho(/Cole Martin/);
     const due = screen.getByLabelText("Due date");
     // Not the browser's date input, which shows and asks for MM/DD/YYYY.
     expect(due).toHaveAttribute("type", "text");
     await userEvent.type(due, "12/31");
-    await userEvent.type(
-      screen.getByLabelText("Task title"),
-      "Order pizza{Enter}",
-    );
+    await userEvent.type(titleField(), "Order pizza{Enter}");
 
     await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
     const sent = createTaskMutate.mock.calls[0]![0] as { due_date: string };
@@ -1101,74 +1246,63 @@ describe("TasksBoard add row", () => {
 
   it("focuses the due field when it is the one thing missing", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
-    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
-    await userEvent.type(
-      screen.getByLabelText("Task title"),
-      "Order pizza{Enter}",
-    );
+    await pickWho(/Cole Martin/);
+    await userEvent.type(titleField(), "Order pizza{Enter}");
 
-    expect(await screen.findByText("Pick a due date.")).toBeInTheDocument();
+    expect(await within(addForm()).findByRole("alert")).toHaveTextContent(
+      /pick a due date/i,
+    );
     expect(screen.getByLabelText("Due date")).toHaveFocus();
     expect(createTaskMutate).not.toHaveBeenCalled();
   });
 
   it("keeps what was typed when the create fails", async () => {
     createTaskMutate.mockRejectedValueOnce(new Error("nope"));
-    await openRowWithEverything();
+    await fillLine();
     fireEvent.submit(addForm());
 
     await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
-    expect(screen.getByLabelText("Task title")).toHaveValue("Order pizza");
+    expect(titleField()).toHaveValue("Order pizza");
   });
 
   it("puts focus back on a blank title instead of sending it", async () => {
-    await openRowWithEverything();
-    fireEvent.change(screen.getByLabelText("Task title"), {
-      target: { value: "   " },
-    });
+    await fillLine();
+    fireEvent.change(titleField(), { target: { value: "   " } });
     fireEvent.submit(addForm());
 
     expect(createTaskMutate).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Task title")).toHaveFocus();
+    expect(titleField()).toHaveFocus();
   });
 
-  it("closes only the list on Escape inside the assignee picker", async () => {
+  it("closes only the picker on Escape inside it", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza");
-    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
-    expect(screen.getByRole("option", { name: "Cole Martin" })).toBeVisible();
+    await userEvent.type(titleField(), "Order pizza");
+    await userEvent.click(within(addForm()).getByRole("button", { name: /^who/i }));
+    expect(await screen.findByRole("checkbox", { name: /Cole Martin/ })).toBeVisible();
 
     await userEvent.keyboard("{Escape}");
 
-    expect(screen.queryByRole("option", { name: "Cole Martin" })).toBeNull();
-    expect(addForm()).toBeInTheDocument();
-    expect(screen.getByLabelText("Task title")).toHaveValue("Order pizza");
+    await waitFor(() =>
+      expect(screen.queryByRole("checkbox", { name: /Cole Martin/ })).toBeNull(),
+    );
+    expect(titleField()).toHaveValue("Order pizza");
   });
 
-  it("closes on Escape and hands focus back to the row", async () => {
+  it("clears the line on Escape", async () => {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    await userEvent.type(screen.getByLabelText("Task title"), "Order{Escape}");
+    await userEvent.type(titleField(), "Order{Escape}");
 
-    expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
-    await waitFor(() => expect(trigger()).toHaveFocus());
-    // Reopening starts blank.
-    await userEvent.click(trigger());
-    expect(screen.getByLabelText("Task title")).toHaveValue("");
+    expect(titleField()).toHaveValue("");
+    expect(addForm()).toBeInTheDocument();
   });
 
-  it("stays at the top of To do once the column has tiles", () => {
+  it("sits above the first lane once the board has tasks", () => {
     tasksRef.current = TASKS;
     render(<TasksBoard />);
 
-    const todo = screen.getByRole("region", { name: "To do" });
-    const row = within(todo).getByRole("button", { name: /^add a task$/i });
-    const tile = within(todo).getByText("Sweep the chapter room");
+    const tile = screen.getByText("Sweep the chapter room");
     expect(
-      row.compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING,
+      addForm().compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -1177,20 +1311,17 @@ describe("TasksBoard add row", () => {
     tasksRef.current = TASKS.slice(0, 2);
     render(<TasksBoard />);
 
-    expect(screen.queryByRole("button", { name: /^add a task$/i })).toBeNull();
-    // A member sees My tasks, which has no To do lane to head.
+    expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^new task$/i })).toBeNull();
+    // A member sees My tasks, which has no To do lane.
     expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
     expect(screen.getByRole("region", { name: "Today" })).toBeInTheDocument();
   });
 
-  async function openRowWithEverything() {
+  async function fillLine() {
     render(<TasksBoard />);
-    await userEvent.click(trigger());
-    fireEvent.change(screen.getByLabelText("Task title"), {
-      target: { value: "Order pizza" },
-    });
-    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
-    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    fireEvent.change(titleField(), { target: { value: "Order pizza" } });
+    await pickWho(/Cole Martin/);
     fireEvent.change(screen.getByLabelText("Due date"), {
       target: { value: "2026-12-01" },
     });
@@ -1265,10 +1396,9 @@ describe("TasksBoard member with nothing assigned", () => {
     permissionsFailed.current = true;
     render(<TasksBoard />);
 
-    const todo = screen.getByRole("region", { name: "To do" });
-    expect(
-      within(todo).getByText("Permissions unavailable"),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "To do" })).toBeInTheDocument();
+    // Where the add line would be.
+    expect(screen.getByText("Permissions unavailable")).toBeInTheDocument();
     expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
   });
 
@@ -1290,21 +1420,26 @@ describe("TasksBoard editing a task (#4296)", () => {
     updateTaskMutate.mockResolvedValue(undefined);
   });
 
-  it("turns the tile into the task form and saves only what changed", async () => {
+  /** Opens a task's panel from its Grid tile's Edit. */
+  async function openPanel(user: ReturnType<typeof userEvent.setup>, title: string) {
+    await user.click(screen.getByRole("button", { name: `Edit ${title}` }));
+    return screen.findByRole("dialog", { name: title });
+  }
+
+  it("opens the panel and saves only the field that changed, with no Save button", async () => {
     const user = userEvent.setup();
     render(<TasksBoard />);
 
+    const panel = await openPanel(user, "Sweep the chapter room");
+    expect(within(panel).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(within(panel).getByText("Changes save as you make them.")).toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Edit Sweep the chapter room" }),
+      within(panel).getByRole("button", { name: "Title: Sweep the chapter room" }),
     );
-    const editor = screen.getByRole("listitem", {
-      name: "Editing Sweep the chapter room",
-    });
-    const title = within(editor).getByLabelText("Title");
+    const title = within(panel).getByLabelText("Title");
     expect(title).toHaveFocus();
     await user.clear(title);
-    await user.type(title, "Sweep and mop the chapter room");
-    await user.click(within(editor).getByRole("button", { name: "Save" }));
+    await user.type(title, "Sweep and mop the chapter room{Enter}");
 
     await waitFor(() =>
       expect(updateTaskMutate).toHaveBeenCalledWith({
@@ -1312,72 +1447,89 @@ describe("TasksBoard editing a task (#4296)", () => {
         body: { title: "Sweep and mop the chapter room" },
       }),
     );
+    expect(within(panel).queryByLabelText("Title")).toBeNull();
+  });
+
+  it("saves points on their own when the field loses focus", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    const panel = await openPanel(user, "Sweep the chapter room");
+    await user.click(within(panel).getByRole("button", { name: "Points: 5" }));
+    const points = within(panel).getByLabelText("Points");
+    await user.clear(points);
+    await user.type(points, "12");
+    await user.click(within(panel).getByText("Changes save as you make them."));
+
     await waitFor(() =>
-      expect(
-        screen.queryByRole("listitem", { name: /^editing/i }),
-      ).not.toBeInTheDocument(),
+      expect(updateTaskMutate).toHaveBeenCalledWith({
+        id: "task-todo",
+        body: { point_reward: 12 },
+      }),
     );
+    expect(updateTaskMutate).toHaveBeenCalledTimes(1);
   });
 
   it("sends nothing when nothing changed", async () => {
     const user = userEvent.setup();
     render(<TasksBoard />);
 
+    const panel = await openPanel(user, "Sweep the chapter room");
     await user.click(
-      screen.getByRole("button", { name: "Edit Sweep the chapter room" }),
+      within(panel).getByRole("button", { name: "Title: Sweep the chapter room" }),
     );
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.keyboard("{Enter}");
 
     expect(updateTaskMutate).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole("listitem", { name: /^editing/i }),
-    ).not.toBeInTheDocument();
+    expect(within(panel).queryByLabelText("Title")).toBeNull();
   });
 
-  it("keeps the form open when the save fails", async () => {
+  it("keeps what was typed when the save fails", async () => {
     updateTaskMutate.mockRejectedValue(new Error("down"));
     const user = userEvent.setup();
     render(<TasksBoard />);
 
+    const panel = await openPanel(user, "Sweep the chapter room");
     await user.click(
-      screen.getByRole("button", { name: "Edit Sweep the chapter room" }),
+      within(panel).getByRole("button", { name: "Title: Sweep the chapter room" }),
     );
-    const title = screen.getByLabelText("Title");
-    await user.type(title, "!");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.type(within(panel).getByLabelText("Title"), "!{Enter}");
 
     await waitFor(() => expect(updateTaskMutate).toHaveBeenCalled());
+    expect(await within(panel).findByLabelText("Title")).toHaveValue(
+      "Sweep the chapter room!",
+    );
+  });
+
+  it("puts the value back on Escape without saving, and keeps the panel open", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    const panel = await openPanel(user, "Draft the rush calendar");
+    await user.click(
+      within(panel).getByRole("button", { name: "Title: Draft the rush calendar" }),
+    );
+    await user.type(within(panel).getByLabelText("Title"), " now{Escape}");
+
+    expect(updateTaskMutate).not.toHaveBeenCalled();
+    expect(within(panel).queryByLabelText("Title")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Draft the rush calendar" })).toBeInTheDocument();
+  });
+
+  it("opens the same panel from a List row's title", async () => {
+    window.localStorage.setItem("frapp.tasks.layout.viewer-1", "list");
+    resetListLayoutForTests();
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    const row = screen
+      .getAllByRole("listitem")
+      .find((item) => item.getAttribute("data-task-row") === "task-todo")!;
+    await user.click(within(row).getByRole("button", { name: "Sweep the chapter room" }));
     expect(
-      screen.getByRole("listitem", { name: /^editing/i }),
+      await screen.findByRole("dialog", { name: "Sweep the chapter room" }),
     ).toBeInTheDocument();
-  });
-
-  it("puts Cancel back to the tile without saving", async () => {
-    const user = userEvent.setup();
-    render(<TasksBoard />);
-
-    await user.click(
-      screen.getByRole("button", { name: "Edit Draft the rush calendar" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-
-    expect(updateTaskMutate).not.toHaveBeenCalled();
-    expect(screen.getByText("Draft the rush calendar")).toBeInTheDocument();
-  });
-
-  it("puts the tile back on Escape", async () => {
-    const user = userEvent.setup();
-    render(<TasksBoard />);
-
-    await user.click(
-      screen.getByRole("button", { name: "Edit Sweep the chapter room" }),
-    );
-    await user.keyboard("{Escape}");
-
-    expect(updateTaskMutate).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole("listitem", { name: /^editing/i }),
-    ).not.toBeInTheDocument();
+    expect(row).toHaveAttribute("aria-current", "true");
   });
 
   it("offers no Edit without tasks:manage, or on a confirmed task", () => {
@@ -1671,10 +1823,8 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
     expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
     expect(screen.queryByText("Order shirts")).toBeNull();
-    // The add row heads the page when no To do lane is drawn.
-    expect(
-      screen.getByRole("button", { name: /^add a task$/i }),
-    ).toBeInTheDocument();
+    // The add line heads the page in either view.
+    expect(addForm()).toBeInTheDocument();
   });
 
   it("filters the chapter's board by assignee, status and due date, and clears them", async () => {
@@ -1724,10 +1874,8 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
       screen.getByText("No tasks match these filters."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
-    // With no To do lane to head, the add row heads the page.
-    expect(
-      screen.getByRole("button", { name: /^add a task$/i }),
-    ).toBeInTheDocument();
+    // The add line stays at the head of the page.
+    expect(addForm()).toBeInTheDocument();
   });
 
   it("keeps a picked value named after its last task leaves", async () => {
@@ -1783,14 +1931,8 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
   });
 
   it("groups the chapter's board by person, with each tile's status", async () => {
-    const user = userEvent.setup();
     render(<TasksBoard />);
-    await user.click(
-      within(screen.getByRole("radiogroup", { name: "Group tasks" })).getByRole(
-        "radio",
-        { name: "By person" },
-      ),
-    );
+    await pickView("By person");
 
     expect(titlesIn("Cole Martin")).toEqual(["Order shirts"]);
     // By name, whatever order the read listed them in.
@@ -1914,7 +2056,7 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     expect(within(tile).getByText("1 of 3 done")).toBeInTheDocument();
     // Not a tile per open copy; the one marked done waits on an officer.
     expect(
-      screen.getAllByText("Fill out the tabling form", { selector: "p" }),
+      screen.getAllByText("Fill out the tabling form", { selector: "button" }),
     ).toHaveLength(2);
     expect(
       within(tile).getByRole("progressbar", { name: /1 of 3 done/ }),
@@ -1952,7 +2094,7 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     );
   });
 
-  it("edits everyone's copy, sending the change with the group scope", async () => {
+  it("edits everyone's copy in the panel, sending the change with the group scope", async () => {
     updateTaskMutate.mockReset().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<TasksBoard />);
@@ -1961,13 +2103,18 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
         name: "Edit Fill out the tabling form for everyone",
       }),
     );
-    const editor = screen.getByRole("listitem", {
-      name: "Editing Fill out the tabling form for everyone",
+    const panel = await screen.findByRole("dialog", {
+      name: "Fill out the tabling form",
     });
-    const title = within(editor).getByLabelText("Title");
+    // Who's done is in the panel; repeat and photos aren't offered.
+    expect(within(panel).getByRole("region", { name: "Who's done" })).toBeInTheDocument();
+    expect(within(panel).getByText(TASK_AUDIENCE_COPY.noRepeat)).toBeInTheDocument();
+    await user.click(
+      within(panel).getByRole("button", { name: "Title: Fill out the tabling form" }),
+    );
+    const title = within(panel).getByLabelText("Title");
     await user.clear(title);
-    await user.type(title, "Fill out the new form");
-    await user.click(within(editor).getByRole("button", { name: "Save" }));
+    await user.type(title, "Fill out the new form{Enter}");
 
     await waitFor(() =>
       expect(updateTaskMutate).toHaveBeenCalledWith({
@@ -1977,30 +2124,19 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     );
   });
 
-  it("saving the group unchanged sends its fields, to bring every copy level", async () => {
-    updateTaskMutate.mockReset().mockResolvedValue(undefined);
+  it("draws the group as one List row with its progress, which opens the panel", async () => {
+    window.localStorage.setItem("frapp.tasks.layout.viewer-1", "list");
+    resetListLayoutForTests();
     const user = userEvent.setup();
     render(<TasksBoard />);
-    await user.click(
-      screen.getByRole("button", {
-        name: "Edit Fill out the tabling form for everyone",
-      }),
-    );
-    const editor = screen.getByRole("listitem", {
-      name: "Editing Fill out the tabling form for everyone",
+    const row = screen.getByRole("listitem", {
+      name: "Fill out the tabling form, for everyone",
     });
-    await user.click(within(editor).getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(updateTaskMutate).toHaveBeenCalledTimes(1));
-    const sent = updateTaskMutate.mock.calls[0]![0] as {
-      body: Record<string, unknown>;
-    };
-    expect(sent.body).toMatchObject({
-      title: "Fill out the tabling form",
-      due_date: "2099-11-20",
-      scope: "group",
-    });
-    expect("reference_photo_paths" in sent.body).toBe(false);
+    expect(within(row).getByText("1 of 3")).toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: "Fill out the tabling form" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Fill out the tabling form" }),
+    ).toBeInTheDocument();
   });
 
   it("counts the group as the API does, copies on other pages included", () => {
@@ -2015,13 +2151,183 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
     expect(within(tile).getByText("14 of 20 done")).toBeInTheDocument();
   });
 
-  it("shows each copy on its own once a filter asks about members", () => {
+  it("shows each copy on its own once a filter asks about members", async () => {
     render(<TasksBoard />);
-    fireEvent.click(screen.getByRole("radio", { name: "By person" }));
+    await pickView("By person");
     expect(
       screen.queryByRole("listitem", {
         name: "Fill out the tabling form, for everyone",
       }),
+    ).toBeNull();
+  });
+});
+
+describe("TasksBoard up for grabs (2026-11-18)", () => {
+  const POSTING = {
+    id: "posting-1",
+    chapter_id: "chap-1",
+    created_by: "u-admin",
+    title: "Drive the speaker from the airport",
+    description: null,
+    due_date: "2099-11-21",
+    due_at: null,
+    point_reward: 15,
+    proof_kind: "none",
+    subtask_titles: [],
+    scope: "role",
+    scope_id: "role-rush",
+    scope_name: "Recruitment Committee",
+    scope_user_ids: null,
+    status: "open",
+    claimed_task_id: null,
+    claimed_by: null,
+    claimed_at: null,
+    created_at: "2026-11-01T00:00:00Z",
+    updated_at: "2026-11-01T00:00:00Z",
+    eligible_count: 4,
+    viewer_can_claim: true,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    currentUserRef.current = { id: ME };
+    tasksRef.current = TASKS;
+    openTasksRef.current = [POSTING];
+  });
+
+  const section = () => screen.getByRole("region", { name: /up for grabs/i });
+
+  it("shows a member who may claim it, with points, and nothing an officer has", () => {
+    permissionsRef.current = ["members:view"];
+    render(<TasksBoard />);
+
+    const row = within(section()).getByText(POSTING.title).closest("li")!;
+    // Who may claim it and when, under the title.
+    expect(
+      within(row).getByText(/^Someone in Recruitment Committee · Due /),
+    ).toBeInTheDocument();
+    expect(within(row).getByText("+15 pts")).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: `Claim: ${POSTING.title}` }),
+    ).toBeEnabled();
+    expect(within(row).queryByRole("button", { name: /^assign/i })).toBeNull();
+    // The title is not a button for a member: there is no panel to open.
+    expect(within(row).queryByRole("button", { name: POSTING.title })).toBeNull();
+  });
+
+  it("still leads a member's board when nothing is on their plate", () => {
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = [];
+    render(<TasksBoard />);
+    expect(section()).toBeInTheDocument();
+  });
+
+  it("says it's yours, and when it's due, with Give it back", async () => {
+    claimMutate.mockResolvedValue({ id: "task-claimed" });
+    render(<TasksBoard />);
+
+    await userEvent.click(
+      within(section()).getByRole("button", { name: `Claim: ${POSTING.title}` }),
+    );
+
+    await waitFor(() => expect(claimMutate).toHaveBeenCalledWith("posting-1"));
+    const shown = toastSpy.mock.calls.at(-1)![0] as {
+      title: string;
+      action?: React.ReactElement;
+    };
+    expect(shown.title).toMatch(/^It's yours\. Due /);
+    expect(shown.action).toBeDefined();
+  });
+
+  it("says someone got there first on a 409", async () => {
+    claimMutate.mockRejectedValue({ status: 409 });
+    render(<TasksBoard />);
+
+    await userEvent.click(
+      within(section()).getByRole("button", { name: `Claim: ${POSTING.title}` }),
+    );
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ title: TASK_AUDIENCE_COPY.alreadyClaimed }),
+      ),
+    );
+  });
+
+  it("lets an officer assign it to one person", async () => {
+    assignMutate.mockResolvedValue({});
+    render(<TasksBoard />);
+
+    await userEvent.click(
+      within(section()).getByRole("button", { name: `Assign ${POSTING.title}` }),
+    );
+    // A person only: no roles tab, no mode switch.
+    expect(screen.queryByRole("radio", { name: "Roles and groups" })).toBeNull();
+    await userEvent.click(await screen.findByRole("radio", { name: /Cole Martin/ }));
+
+    await waitFor(() =>
+      expect(assignMutate).toHaveBeenCalledWith({
+        id: "posting-1",
+        assigneeId: "u-other",
+      }),
+    );
+  });
+
+  it("opens the posting in a panel for an officer", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(within(section()).getByRole("button", { name: POSTING.title }));
+    const panel = await screen.findByRole("dialog", { name: POSTING.title });
+    expect(within(panel).getByRole("button", { name: /^due:/i })).toBeInTheDocument();
+  });
+
+  it("offers Give it back on a task claimed from it", async () => {
+    releaseMutate.mockResolvedValue({});
+    tasksRef.current = [{ ...TASKS[0]!, open_task_id: "posting-1" }];
+    openTasksRef.current = [];
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    await user.click(screen.getByRole("button", { name: "Edit Sweep the chapter room" }));
+    const panel = await screen.findByRole("dialog", { name: "Sweep the chapter room" });
+    await user.click(within(panel).getByRole("button", { name: TASK_AUDIENCE_COPY.release }));
+    await waitFor(() => expect(releaseMutate).toHaveBeenCalledWith("task-todo"));
+  });
+
+  it("offers no Give it back once the task is done, or on someone else's", async () => {
+    tasksRef.current = [
+      {
+        ...TASKS[0]!,
+        id: "task-done",
+        title: "Wash the van",
+        status: "COMPLETED" as const,
+        completed_at: "2026-08-10T00:00:00Z",
+        open_task_id: "posting-1",
+      },
+      { ...TASKS[2]!, status: "TODO" as const, open_task_id: "posting-2" },
+    ];
+    openTasksRef.current = [];
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    await user.click(screen.getByRole("button", { name: "Edit Wash the van" }));
+    const done = await screen.findByRole("dialog", { name: "Wash the van" });
+    expect(
+      within(done).queryByRole("button", { name: TASK_AUDIENCE_COPY.release }),
+    ).toBeNull();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Wash the van" })).toBeNull(),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit Book the philanthropy venue" }),
+    );
+    const theirs = await screen.findByRole("dialog", {
+      name: "Book the philanthropy venue",
+    });
+    expect(
+      within(theirs).queryByRole("button", { name: TASK_AUDIENCE_COPY.release }),
     ).toBeNull();
   });
 });

@@ -104,6 +104,30 @@ describe("toTaskRow — photos, proof and send-back (#4635)", () => {
   });
 });
 
+describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () => {
+  it("reads a group copy's summary and the posting it was claimed from", () => {
+    const row = toTaskRow(
+      task({
+        group: { audience: "role", target_name: "Recruitment", total: 6, done: 2 },
+        open_task_id: "open-1",
+      }),
+    )!;
+    expect(row.group).toEqual({
+      audience: "role",
+      targetName: "Recruitment",
+      total: 6,
+      done: 2,
+    });
+    expect(row.openTaskId).toBe("open-1");
+  });
+
+  it("reads a one-person task as no group, claimed from nothing", () => {
+    const row = toTaskRow(task({ group: { total: 3 } }))!;
+    expect(row.group).toBeNull();
+    expect(row.openTaskId).toBeNull();
+  });
+});
+
 describe("selectTaskRows — narrowing", () => {
   it("survives a payload that is not a list", () => {
     for (const value of [null, undefined, {}, "rows", 7]) {

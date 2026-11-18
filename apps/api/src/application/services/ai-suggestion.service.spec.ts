@@ -299,7 +299,7 @@ function build(
   };
   const service = new AiSuggestionService(
     repo,
-    [new TaskSuggestionKind(tasks as never)],
+    [new TaskSuggestionKind(tasks as never, {} as never)],
     [meetingAccess],
     rbac as never,
     notifications as never,
@@ -780,7 +780,10 @@ describe('AiSuggestionService (#4309)', () => {
         title: 'Task 1',
         description: null,
         assignee_id: ASSIGNEE,
+        assignee_ids: null,
         audience: null,
+        audience_role_id: null,
+        audience_group_id: null,
         created_by: OFFICER,
         due_date: '2026-11-14',
         due_at: null,
@@ -1103,7 +1106,7 @@ describe("a member's own request as a source (#718)", () => {
     };
     const service = new AiSuggestionService(
       repo,
-      [new TaskSuggestionKind(tasks as never)],
+      [new TaskSuggestionKind(tasks as never, {} as never)],
       [new RequestSuggestionSource()],
       rbac as never,
       { notifyMembers: jest.fn(async () => undefined) } as never,

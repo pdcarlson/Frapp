@@ -37,6 +37,8 @@ export const SCREEN_TITLES = {
   "calendar-day": "Day",
   // A pushed screen since #4610, opened from Activity, Calendar and Up next.
   tasks: "Tasks",
+  // One task, pushed from a task row (#5492).
+  "task-details": "Task",
   // The thread names a channel, which a capsule has no room for; "Chat" is
   // where the member is going back to.
   "chat-thread": "Chat",
@@ -59,6 +61,7 @@ export const SCREEN_TITLES = {
   "minutes-details": "Minutes",
   // A meeting's transcript, pushed from its minutes (Paul, 2026-11-18).
   "minutes-transcript": "Transcript",
+  "minutes-series": "Series",
   // Tasks and, since #3930, events: `AI_SUGGESTION_COPY.listHeading`.
   "suggested-tasks": "Suggested",
   "arrange-channels": "Arrange channels",

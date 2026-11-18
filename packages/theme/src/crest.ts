@@ -19,3 +19,15 @@ export const FRAPP_CREST_PATH =
  * sides are 5:6.
  */
 export const FRAPP_CREST_VIEW_BOX = "151 110 720 864";
+
+/**
+ * Ask's send arrow, transcribed from `canvas-screens.dc.html` s17: on the
+ * end of the Ask bar on both clients and on the phone conversation's send
+ * button, so they are one mark (#5476 moved it here from the phone's
+ * `ask-bar.tsx` when web's bar took it too). A stroke, not a fill.
+ */
+export const ASK_SEND_GLYPH = {
+  viewBox: "0 0 17 17",
+  path: "M2.5 8.5h9M8 3.5l6 5-6 5",
+  strokeWidth: 1.9,
+} as const;

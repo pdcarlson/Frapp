@@ -17,6 +17,7 @@
 
 import {
   describeRepeatPattern,
+  eventSeriesKey,
   ordinal,
   parseRepeatRule,
 } from "@repo/validation";
@@ -53,16 +54,8 @@ function startMs(event: SeriesEventLike): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-/**
- * Which series a row belongs to: the head's id. `null` for a one-time event,
- * and for an occurrence detached into a standalone event (no parent, no rule).
- */
-export function eventSeriesKey(event: SeriesEventLike): string | null {
-  const parent = nonEmptyString(event.parent_event_id);
-  if (parent) return parent;
-  const id = nonEmptyString(event.id);
-  return id && nonEmptyString(event.recurrence_rule) ? id : null;
-}
+/** Which series a row belongs to (`eventSeriesKey` in `@repo/validation`). */
+export { eventSeriesKey };
 
 /** Whether the row is a meeting of a repeating series, head or generated. */
 export function isSeriesEvent(event: SeriesEventLike): boolean {

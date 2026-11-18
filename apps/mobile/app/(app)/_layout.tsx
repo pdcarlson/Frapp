@@ -91,6 +91,12 @@ export default function AppLayout() {
       {/* The task board left the tab bar for Activity and Calendar
           (#4610); it opens from Activity, a task on Calendar and Up next. */}
       <Stack.Screen name="tasks" options={{ title: SCREEN_TITLES.tasks }} />
+      {/* One task, pushed from a task row anywhere (#5492): the screen that
+          replaces the task sheets. */}
+      <Stack.Screen
+        name="task-details"
+        options={{ title: SCREEN_TITLES["task-details"] }}
+      />
       {/* Calendar left the tab bar for Messages (#5310, Paul's direction
           B): the month, pushed from Activity's Calendar row. The route
           stays `events` so links and notification targets keep working. */}
@@ -137,6 +143,10 @@ export default function AppLayout() {
       <Stack.Screen
         name="minutes-transcript"
         options={{ title: SCREEN_TITLES["minutes-transcript"] }}
+      />
+      <Stack.Screen
+        name="minutes-series"
+        options={{ title: SCREEN_TITLES["minutes-series"] }}
       />
       <Stack.Screen
         name="suggested-tasks"

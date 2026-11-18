@@ -33,6 +33,7 @@ const card = (overrides: Record<string, unknown> = {}) => ({
   user_id: USER_SHARED,
   kind: 'task_due_soon',
   task_id: TASK,
+  subject_key: TASK,
   title: 'A good day to start',
   body: 'A call today keeps Monday calm.',
   start_here: 'Call the first venue.',
@@ -123,12 +124,89 @@ describe('SupabaseMemberNudgeRepository — tenant scope', () => {
 
   it('reads only what the member was already shown in the chapter', async () => {
     const raised = await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.findRaised(CHAPTER_A, USER_SHARED),
+      repo.findRaised(CHAPTER_A, USER_SHARED, [TASK]),
     );
+    // A card still showing is not raised yet: only a closed one is (#5464),
+    // so a card something more useful overtook can come back.
+    expect(raised).toEqual([]);
+    await repo.close(CHAPTER_A, USER_SHARED, 'card-a', {
+      status: 'dismissed',
+      dismiss_reason: 'not_now',
+      closed_at: '2026-11-13T16:00:00.000Z',
+    });
     // The fake returns whole rows whatever the column list says.
-    expect(raised).toEqual([
+    expect(await repo.findRaised(CHAPTER_A, USER_SHARED, [TASK])).toEqual([
       expect.objectContaining({ task_id: TASK, kind: 'task_due_soon' }),
     ]);
+    // Only the subjects asked about.
+    expect(
+      await repo.findRaised(CHAPTER_A, USER_SHARED, ['another-subject']),
+    ).toEqual([]);
+  });
+
+  it('strips the words from only the member’s own showing card', async () => {
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.stripWords(CHAPTER_A, USER_SHARED, 'card-a', 'Book the venue'),
+    );
+    expect(cardsOf(CHAPTER_A, USER_SHARED)[0]).toEqual(
+      expect.objectContaining({
+        status: 'showing',
+        title: 'Book the venue',
+        body: null,
+        start_here: null,
+        written_by: 'plain',
+      }),
+    );
+    expect(cardsOf(CHAPTER_B, USER_SHARED)[0]?.written_by).toBe('ai');
+    expect(cardsOf(CHAPTER_A, USER_A)[0]?.written_by).toBe('ai');
+  });
+
+  it('deletes only the showing AI-written cards on a No, keeping closed records', async () => {
+    const closed = {
+      status: 'dismissed',
+      kind: 'mention_unread',
+      task_id: null,
+      subject_key: 'ch:m',
+      written_by: 'plain',
+      title: null,
+      body: null,
+      start_here: null,
+      closed_at: NOW,
+    };
+    const extra = seed();
+    extra.member_nudges.push(
+      inA({ id: 'closed-a', ...card(closed) }),
+      inB({ id: 'closed-b', ...card(closed) }),
+    );
+    harness = createTenantHarness({ tables: extra });
+    repo = new SupabaseMemberNudgeRepository(harness.client);
+    await repo.deleteWrittenByUser(USER_SHARED);
+    expect(
+      harness
+        .rows('member_nudges')
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(['card-a-other', 'card-b-other', 'closed-a', 'closed-b'].sort());
+  });
+  it('closes an expired task card but deletes any other expired card', async () => {
+    const event = {
+      kind: 'event_soon',
+      task_id: null,
+      subject_key: 'event-1',
+      user_id: 'someone-else',
+    };
+    const extra = seed();
+    extra.member_nudges.push(
+      inA({ id: 'event-a', ...card(event) }),
+      inB({ id: 'event-b', ...card(event) }),
+    );
+    harness = createTenantHarness({ tables: extra });
+    repo = new SupabaseMemberNudgeRepository(harness.client);
+    await repo.closeExpired(CHAPTER_A, '2999-01-01T00:00:00.000Z');
+    const ids = harness.rows('member_nudges').map((row) => row.id);
+    expect(ids).not.toContain('event-a');
+    expect(ids).toContain('event-b');
+    expect(cardsOf(CHAPTER_A, USER_SHARED)[0]?.status).toBe('expired');
   });
 
   it('creates a card inside the chapter, showing', async () => {
@@ -138,6 +216,7 @@ describe('SupabaseMemberNudgeRepository — tenant scope', () => {
         user_id: USER_A,
         kind: 'task_overdue',
         task_id: TASK,
+        subject_key: TASK,
         title: 'Still open',
         body: 'Finishing it now still counts.',
         start_here: null,
@@ -198,6 +277,64 @@ describe('SupabaseMemberNudgeRepository — tenant scope', () => {
       }),
     ).resolves.toBe(false);
     expect(cardsOf(CHAPTER_A, USER_A)[0]?.status).toBe('showing');
+  });
+
+  it('deletes only the member’s own showing card, leaving no record', async () => {
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.deleteShowing(CHAPTER_A, USER_SHARED, 'card-a'),
+    );
+    expect(cardsOf(CHAPTER_A, USER_SHARED)).toEqual([]);
+    expect(cardsOf(CHAPTER_B, USER_SHARED)).toHaveLength(1);
+
+    // The other chapter's twin, or another member's card: left alone.
+    await repo.deleteShowing(CHAPTER_A, USER_SHARED, 'card-b');
+    await repo.deleteShowing(CHAPTER_A, USER_SHARED, 'card-a-other');
+    expect(cardsOf(CHAPTER_B, USER_SHARED)).toHaveLength(1);
+    expect(cardsOf(CHAPTER_A, USER_A)).toHaveLength(1);
+  });
+
+  it('dismisses the showing card for a subject, in the chapter only', async () => {
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.dismissSubject(
+        CHAPTER_A,
+        USER_SHARED,
+        { kind: 'task_due_soon', subject_key: TASK, task_id: TASK },
+        NOW,
+      ),
+    );
+    expect(cardsOf(CHAPTER_A, USER_SHARED)).toEqual([
+      expect.objectContaining({ status: 'dismissed', title: null, body: null }),
+    ]);
+    expect(cardsOf(CHAPTER_B, USER_SHARED)[0]?.status).toBe('showing');
+    expect(cardsOf(CHAPTER_A, USER_A)[0]?.status).toBe('showing');
+  });
+
+  it('writes a closed record for a tray item that was never showing', async () => {
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.dismissSubject(
+        CHAPTER_A,
+        USER_SHARED,
+        {
+          kind: 'mention_unread',
+          subject_key: 'channel:message',
+          task_id: null,
+        },
+        NOW,
+      ),
+    );
+    expect(cardsOf(CHAPTER_A, USER_SHARED)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          chapter_id: CHAPTER_A,
+          kind: 'mention_unread',
+          subject_key: 'channel:message',
+          status: 'dismissed',
+          title: null,
+          closed_at: NOW,
+        }),
+      ]),
+    );
+    expect(cardsOf(CHAPTER_B, USER_SHARED)).toHaveLength(1);
   });
 
   it('closes cards past their time in this chapter only', async () => {

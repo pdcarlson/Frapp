@@ -23,6 +23,12 @@ vi.mock("@repo/hooks", () => ({
   putSignedUpload: photo.put,
   useCurrentChapter: () => mockCurrentChapter(),
   useMembers: () => MEMBERS_QUERY,
+  // The Who picker's other lists (2026-11-18): none needed here.
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -364,7 +370,7 @@ describe("TaskForm's due time (#4512)", () => {
       initialAssigneeId: "u-1",
       suggestion: true,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
     await waitFor(() => expect(onPost).toHaveBeenCalledTimes(1));
   });
 

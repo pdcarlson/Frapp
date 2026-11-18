@@ -100,11 +100,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     turnOn: vi.fn(),
     pending: false,
   }),
-  // The nudge card's switch (#4781), drawn once the member said yes to AI.
-  useMemberNudgeSettings: (options: { enabled?: boolean }) => ({
-    data: options.enabled ? { enabled: true } : undefined,
-  }),
-  useSetMemberNudgesEnabled: () => ({ mutate: state.setNudges }),
+  // The Activity card's switch (#5464), drawn for every member.
+  useActivityNudgeSettings: () => ({ data: { enabled: true } }),
+  useSetActivityNudgesEnabled: () => ({ mutate: state.setNudges }),
   useChapterChatLevel: () => ({
     data: "all",
     isPending: false,
@@ -327,9 +325,10 @@ describe("Settings switches", () => {
 
     // Push, quiet hours, then one per notification category this member is
     // shown (no permissions here, so not the officers' join switch, nor the
-    // weekly recap, which goes to `members:view`).
+    // weekly recap, which goes to `members:view`), and the Activity card's
+    // own switch (#5464).
     expect(pushSwitches(tree)).toHaveLength(1);
-    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 2);
+    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 2 + 1);
     for (const node of switches) {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");
@@ -508,7 +507,13 @@ describe("Settings copy", () => {
       const headers = tree.root
         .findAll((node) => node.type === SectionHeader)
         .map((node) => node.props.children);
-      expect(headers).toEqual(["Notifications", "Chat", "AI", "Account"]);
+      expect(headers).toEqual([
+        "Notifications",
+        "Chat",
+        "Activity",
+        "AI",
+        "Account",
+      ]);
       const text = screenText(tree);
       expect(text.indexOf("Nudges on Activity")).toBeGreaterThan(
         text.indexOf("Chat density"),
@@ -586,15 +591,16 @@ describe("Settings copy", () => {
       expect(row.props.value).toBe("0 on");
     });
 
-    it("offers the nudge switch only to a member who said yes to AI (#4781)", () => {
+    it("offers the nudge switch to every member, AI or not (#5464)", () => {
       const nudgeSwitch = (tree: ReactTestRenderer) =>
         tree.root.findAll(
           (node) =>
             node.props.accessibilityLabel === "Nudges on Activity" &&
             typeof node.props.onValueChange === "function",
         );
+      // The card shows without AI, so the switch does too.
       state.aiConsent = { answer: "no", sheet_changed: false };
-      expect(nudgeSwitch(render())).toHaveLength(0);
+      expect(nudgeSwitch(render()).length).toBeGreaterThan(0);
 
       state.aiConsent = { answer: "yes", sheet_changed: false };
       state.setNudges.mockClear();

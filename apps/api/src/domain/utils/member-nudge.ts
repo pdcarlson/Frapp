@@ -3,7 +3,7 @@ import {
   MEMBER_NUDGE_BODY_MAX,
   MEMBER_NUDGE_START_MAX,
   MEMBER_NUDGE_TITLE_MAX,
-  type MemberNudgeKind,
+  type MemberNudgeTaskKind,
 } from '@repo/validation';
 import type { LanguageModelMessage } from '../adapters/language-model.interface';
 import type { MemberNudge } from '../entities/member-nudge.entity';
@@ -77,12 +77,15 @@ export function taskDueInstant(
 }
 
 export interface NudgeCandidate {
-  kind: MemberNudgeKind;
+  kind: MemberNudgeTaskKind;
   task: Task;
 }
 
 /** Which kind of card, if any, this task is worth right now. */
-export function nudgeKindFor(task: Task, now: Date): MemberNudgeKind | null {
+export function nudgeKindFor(
+  task: Task,
+  now: Date,
+): MemberNudgeTaskKind | null {
   const at = now.getTime();
   const due = taskDueInstant(task);
   if (task.status === TaskStatus.COMPLETED) {
@@ -120,7 +123,7 @@ export function nudgeKindFor(task: Task, now: Date): MemberNudgeKind | null {
     : null;
 }
 
-const PUSH_ORDER: readonly MemberNudgeKind[] = [
+const PUSH_ORDER: readonly MemberNudgeTaskKind[] = [
   'task_sent_back',
   'task_due_soon',
   'task_overdue',
@@ -188,13 +191,13 @@ export function pickNudge(input: {
   const raised = new Set(
     input.raised.map((row) => `${row.task_id}:${row.kind}`),
   );
-  const byKind = new Map<MemberNudgeKind, Task[]>();
+  const byKind = new Map<MemberNudgeTaskKind, Task[]>();
   for (const task of input.tasks) {
     const kind = nudgeKindFor(task, input.now);
     if (kind === null || raised.has(`${task.id}:${kind}`)) continue;
     byKind.set(kind, [...(byKind.get(kind) ?? []), task]);
   }
-  const first = (kind: MemberNudgeKind): NudgeCandidate | null => {
+  const first = (kind: MemberNudgeTaskKind): NudgeCandidate | null => {
     const tasks = byKind.get(kind);
     if (!tasks || tasks.length === 0) return null;
     // The nearest deadline first; for thanks, the latest finish.
@@ -334,7 +337,7 @@ export function nudgeHistory(input: {
 
 /** Everything the model is told, and everything a check may hold it to. */
 export interface NudgeFacts {
-  kind: MemberNudgeKind;
+  kind: MemberNudgeTaskKind;
   /** The member's first name, or empty when they have none on file. */
   firstName: string;
   /** Today, written out, in the member's time zone. */
@@ -356,7 +359,7 @@ export interface NudgeFacts {
   history: NudgeHistory;
 }
 
-function clip(text: string, max: number): string {
+export function clip(text: string, max: number): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 3).trimEnd()}...` : flat;
 }
@@ -372,7 +375,7 @@ function writtenDay(instant: number, timeZone: string, withTime: boolean) {
 }
 
 /** A calendar day as a count of days, in the member's time zone. */
-function dayNumber(instant: number, timeZone: string): number {
+export function dayNumber(instant: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat('en-CA', {
     year: 'numeric',
     month: '2-digit',
@@ -465,7 +468,7 @@ export const NudgeOutputSchema = z.object({
 });
 export type NudgeOutput = z.infer<typeof NudgeOutputSchema>;
 
-const KIND_BRIEF: Record<MemberNudgeKind, string> = {
+const KIND_BRIEF: Record<MemberNudgeTaskKind, string> = {
   task_due_soon:
     'The task is coming due and the member has not started it. Make starting today feel small and worth it.',
   task_overdue:
@@ -557,10 +560,10 @@ export function nudgeMessages(facts: NudgeFacts): LanguageModelMessage[] {
 
 // ── The checks ───────────────────────────────────────────────────────────────
 
-const EMOJI = /\p{Extended_Pictographic}/u;
-const MARKUP = /[*_#`<>[\]]|https?:\/\/|www\./i;
+export const EMOJI = /\p{Extended_Pictographic}/u;
+export const MARKUP = /[*_#`<>[\]]|https?:\/\/|www\./i;
 /** Words a card never uses, whatever the model thought fit. */
-const HARSH =
+export const HARSH =
   /\b(lazy|laziness|ashamed|shame|shameful|disappoint\w*|pathetic|excuses?|failure|failing|failed|embarrass\w*|let(?:ting)? (?:everyone|the chapter|your brothers|your sisters|us) down|fined|fines|probation|standing)\b/i;
 
 const NUMBER_WORDS: Record<string, number> = {
@@ -578,7 +581,7 @@ const NUMBER_WORDS: Record<string, number> = {
   twelve: 12,
 };
 
-function numbersIn(text: string): number[] {
+export function numbersIn(text: string): number[] {
   const found = (text.match(/\d+(?:[.,]\d+)*/g) ?? []).map((raw) =>
     Number(raw.replace(/,/g, '')),
   );
@@ -620,7 +623,7 @@ function numbersInFacts(facts: NudgeFacts): Set<number> {
   return allowed;
 }
 
-function sentences(text: string): number {
+export function sentences(text: string): number {
   return text.split(/[.?]+(?:\s|$)/).filter((part) => part.trim() !== '')
     .length;
 }

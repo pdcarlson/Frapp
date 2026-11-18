@@ -198,10 +198,11 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             onClick={() => selectItem(index)}
           >
             {item.kind === "ask" ? (
-              // Frapp's own mark, in the chapter's colour as the composer's
-              // Ask button draws it (`ask-host.tsx`).
+              // Frapp's own mark, in the chapter's colour on the chapter's
+              // tint, so the first row reads as Frapp at a glance rather than
+              // as another grey disc beside the roles (#5476).
               <span
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-popover"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-subtle"
                 aria-hidden="true"
                 data-mention-ask-glyph
               >

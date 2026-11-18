@@ -20,6 +20,8 @@ const MEETING_B = '0b000000-0000-4000-8000-000000000090';
 // them (the harness's rule for twins).
 const EVENT = '0c000000-0000-4000-8000-000000000091';
 const UPDATED = '2026-11-10T00:00:00.000Z';
+const RECORDED = '0d000000-0000-4000-8000-000000000092';
+const FAILED = '0d000000-0000-4000-8000-000000000093';
 
 const row = {
   event_name: 'Chapter meeting',
@@ -40,6 +42,14 @@ const seed = () => ({
   meetings: [
     inA({ id: MEETING_A, event_id: EVENT, ...row }),
     inB({ id: MEETING_B, event_id: EVENT, ...row }),
+  ],
+  // The same meeting ids in both chapters, so only the chapter filter
+  // separates them; one recording failed in each.
+  meeting_recordings: [
+    inA({ id: 'rec-a', meeting_id: RECORDED, status: 'ready' }),
+    inB({ id: 'rec-b', meeting_id: RECORDED, status: 'ready' }),
+    inA({ id: 'failed-a', meeting_id: FAILED, status: 'failed' }),
+    inB({ id: 'failed-b', meeting_id: FAILED, status: 'failed' }),
   ],
   // The table's key is chapter_id; the harness tracks rows by an id.
   meeting_templates: [
@@ -101,6 +111,13 @@ describe('SupabaseMeetingRepository — tenant scope', () => {
       repo.findPostedSince(CHAPTER_B, '2026-09-13T00:00:00.000Z', 5),
     );
     expect(found.map((r) => r.id)).toEqual(['recent-b']);
+  });
+
+  it("findRecordedIds reads only the caller chapter's recordings that haven't failed (#5290)", async () => {
+    const ids = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findRecordedIds(CHAPTER_B, [RECORDED, FAILED]),
+    );
+    expect([...ids]).toEqual([RECORDED]);
   });
 
   it("findById misses another chapter's minutes", async () => {

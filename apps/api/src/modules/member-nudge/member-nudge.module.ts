@@ -35,5 +35,7 @@ import { RbacModule } from '../rbac/rbac.module';
     { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
+  // Activity's card (#5464) picks and writes through it.
+  exports: [MemberNudgeService],
 })
 export class MemberNudgeModule {}

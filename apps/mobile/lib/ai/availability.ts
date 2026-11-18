@@ -43,13 +43,6 @@ export interface AiSurfaces {
   catchUp: boolean;
   /** Minutes drafted from notes: the chapter's switch is on. */
   meetingNotes: boolean;
-  /**
-   * The nudge card on Activity (#4781): the chapter's nudges switch, which
-   * starts on (Paul, 2026-11-17), and the member's `ai:use`. Not Ask's
-   * switch any more. The member's own yes is the server's to check: without
-   * it the card read answers with no card.
-   */
-  nudges: boolean;
   /** Every read behind the answers above has settled, either way. */
   ready: boolean;
 }
@@ -74,7 +67,9 @@ export function useAiSurfaces(): AiSurfaces {
     ready:
       available === false ||
       consent.isError ||
-      (available === true && !settings.isPending && !permissionsQuery.isPending),
+      (available === true &&
+        !settings.isPending &&
+        !permissionsQuery.isPending),
     ask: mayUse && settings.data?.ask === true,
     catchUp:
       mayUse &&
@@ -84,7 +79,6 @@ export function useAiSurfaces(): AiSurfaces {
     // switch and the member's own yes, and web offers drafting on the same
     // terms, so the phone does too.
     meetingNotes: available === true && settings.data?.meeting_notes === true,
-    nudges: mayUse && settings.data?.nudges === true,
   };
 }
 

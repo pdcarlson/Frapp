@@ -2583,7 +2583,8 @@ describe("Composer in the audit log", () => {
 /**
  * Ask Frapp has no control in the composer (#4904, Paul's pick of
  * 2026-11-13): it was a button here for a day (#4702) and read as out of
- * place. The top bar's field asks; `@Frapp` typed here still does (#4713).
+ * place. The floating Ask bar asks (#5476); `@Frapp` typed here still does
+ * (#4713).
  */
 describe("Composer carries no Ask Frapp control (#4904)", () => {
   it.each([
