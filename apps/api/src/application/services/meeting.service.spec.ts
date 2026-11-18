@@ -849,6 +849,80 @@ describe('MeetingService', () => {
       expect(second.content.action_items).toHaveLength(2);
     });
 
+    describe('tabled items (#5522)', () => {
+      const FIRST = '2026-11-03T23:00:00.000Z';
+      const tabled = (text: string, first: string | null, times = 1) => ({
+        text,
+        first_meeting_id: first,
+        first_start_time: first ? FIRST : null,
+        times,
+      });
+
+      it('stores them, and keeps them when a save leaves them out', async () => {
+        const first = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: { tabled: [tabled('Formal budget', null)] },
+        });
+        expect(first.content.tabled).toEqual([tabled('Formal budget', null)]);
+        const second = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: first.meeting.updated_at,
+          content: { summary: 'Budget came up.' },
+        });
+        expect(second.content.tabled).toEqual([tabled('Formal budget', null)]);
+      });
+
+      it('keeps a carried item’s first date and count when a draft lists it again', async () => {
+        const EARLIER = '0a000000-0000-4000-8000-000000000001';
+        rows.set(EARLIER, meeting({ id: EARLIER }));
+        const carried = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: { tabled: [tabled('Rush shirts', EARLIER, 2)] },
+        });
+        const redrafted = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: carried.meeting.updated_at,
+          content: {
+            tabled: [
+              tabled('rush shirts', null),
+              tabled('Formal budget', null),
+            ],
+          },
+        });
+        expect(redrafted.content.tabled).toEqual([
+          tabled('rush shirts', EARLIER, 2),
+          tabled('Formal budget', null),
+        ]);
+      });
+
+      it('refuses one whose first minutes aren’t this chapter’s', async () => {
+        await expect(
+          service.update(CHAPTER, 'mtg-1', SECRETARY, {
+            expected_updated_at: meeting().updated_at,
+            content: {
+              tabled: [
+                tabled('Formal budget', '99999999-9999-4999-8999-999999999999'),
+              ],
+            },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('refuses a first date it couldn’t read back', async () => {
+        await expect(
+          service.update(CHAPTER, 'mtg-1', SECRETARY, {
+            expected_updated_at: meeting().updated_at,
+            content: {
+              tabled: [
+                {
+                  ...tabled('Formal budget', null),
+                  first_start_time: '2026-11-03',
+                },
+              ],
+            },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
     it('saves the TL;DR, and keeps it when a save leaves it out (#5523)', async () => {
       const first = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
         expected_updated_at: meeting().updated_at,

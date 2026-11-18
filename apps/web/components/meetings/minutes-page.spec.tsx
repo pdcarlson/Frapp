@@ -571,6 +571,45 @@ describe("MinutesPage", () => {
     expect(mocks.update.mock.calls[0]![0].body.content.decisions).toEqual([]);
   });
 
+  it("tables an item by hand and takes one out, saving what's left (#5522)", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: {
+        ...EMPTY,
+        tabled: [
+          {
+            text: "Rush shirts",
+            first_meeting_id: null,
+            first_start_time: null,
+            times: 1,
+          },
+        ],
+      },
+      sections: ["summary", "tabled", "discussion_log"],
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue(draft);
+    render(<MinutesPage id="m-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Table an item" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Tabled item 2" }), {
+      target: { value: "Formal budget " },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove tabled item 1" }),
+    );
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
+    expect(mocks.update.mock.calls[0]![0].body.content.tabled).toEqual([
+      {
+        text: "Formal budget",
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      },
+    ]);
+  });
+
   it("says someone else saved, and keeps the typing, when a save is stale", async () => {
     const draft = minutes({
       status: "draft",

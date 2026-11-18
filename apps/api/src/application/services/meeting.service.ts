@@ -10,6 +10,7 @@ import {
 import {
   EMPTY_MEETING_CONTENT,
   MEETING_TEXT_MAX_LENGTH,
+  MeetingTabledItemSchema,
   STANDARDS_MEETING_REFUSAL,
   STANDARDS_MEETING_TYPE,
   isMeetingType,
@@ -17,6 +18,7 @@ import {
   eventSeriesKey,
   readMeetingContent,
   type MeetingContent,
+  type MeetingTabledItem,
   type MeetingSectionKey,
   type MeetingType,
 } from '@repo/validation';
@@ -572,10 +574,13 @@ export class MeetingService {
     }
     if (input.content) {
       await this.assertOwnersAreMembers(chapterId, input.content);
-      write.content = {
-        ...readMeetingContent(meeting.content),
-        ...pickContent(input.content),
-      };
+      const stored = readMeetingContent(meeting.content);
+      const patch = pickContent(input.content);
+      if (patch.tabled !== undefined) {
+        patch.tabled = keepTabledOrigins(patch.tabled, stored.tabled);
+        await this.assertTabledFromChapter(chapterId, patch.tabled, stored);
+      }
+      write.content = { ...stored, ...patch };
     }
     const event = await this.liveEvent(chapterId, meeting);
     if (event) {
@@ -1128,6 +1133,46 @@ export class MeetingService {
     }
   }
 
+  /**
+   * Every tabled item reads back as sent (#5522): one the shared schema
+   * would drop on read is refused here instead, and the minutes it says
+   * first tabled it are minutes of this chapter.
+   */
+  private async assertTabledFromChapter(
+    chapterId: string,
+    tabled: readonly MeetingTabledItem[],
+    stored: MeetingContent,
+  ): Promise<void> {
+    if (
+      tabled.some((item) => !MeetingTabledItemSchema.safeParse(item).success)
+    ) {
+      throw new BadRequestException(
+        'A tabled item needs its text, and where it was first tabled as a meeting id and a start time with its offset, or neither.',
+      );
+    }
+    const known = new Set(
+      stored.tabled.flatMap((item) =>
+        item.first_meeting_id ? [item.first_meeting_id] : [],
+      ),
+    );
+    const named = [
+      ...new Set(
+        tabled.flatMap((item) =>
+          item.first_meeting_id && !known.has(item.first_meeting_id)
+            ? [item.first_meeting_id]
+            : [],
+        ),
+      ),
+    ];
+    for (const id of named) {
+      if (!(await this.meetingRepo.findById(chapterId, id))) {
+        throw new BadRequestException(
+          'A tabled item names minutes that aren’t this chapter’s.',
+        );
+      }
+    }
+  }
+
   private alreadyStarted(): ConflictException {
     return new ConflictException({
       code: 'meeting.already_started',
@@ -1153,6 +1198,36 @@ function otherLabelFor(
   if (type !== 'other') return null;
   const trimmed = label?.trim();
   return trimmed ? trimmed : null;
+}
+
+/**
+ * A tabled matter keeps where it was first tabled (#5522): a list written
+ * without it (a draft asked for again) takes the first date and count of
+ * the stored item with the same words, so drafting again never makes a
+ * carried matter read as new.
+ */
+export function keepTabledOrigins(
+  next: readonly MeetingTabledItem[],
+  stored: readonly MeetingTabledItem[],
+): MeetingTabledItem[] {
+  const key = (text: string) => text.trim().toLowerCase();
+  const carried = new Map(
+    stored
+      .filter((item) => item.first_meeting_id)
+      .map((item) => [key(item.text), item]),
+  );
+  return next.map((item) => {
+    if (item.first_meeting_id) return item;
+    const origin = carried.get(key(item.text));
+    return origin
+      ? {
+          ...item,
+          first_meeting_id: origin.first_meeting_id,
+          first_start_time: origin.first_start_time,
+          times: Math.max(item.times, origin.times),
+        }
+      : item;
+  });
 }
 
 /** Only the known sections of a patch, so a stray key is never stored. */

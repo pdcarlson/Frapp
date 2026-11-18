@@ -247,6 +247,19 @@ describe('verifyMinutesDraft', () => {
     expect(review.left_out).toBe(1);
   });
 
+  it('puts a tabled matter’s quote back to its line, as a decision’s is', () => {
+    const line = NOTES.split('\n')
+      .find((l) => l.trim().length > 0)!
+      .trim();
+    const { content } = verifyMinutesDraft(
+      output({
+        tabled: [{ text: 'Formal budget', quote: `${line.toUpperCase()}.` }],
+      }),
+      request(),
+    );
+    expect(content.tabled?.map((item) => item.text)).toEqual(['Formal budget']);
+  });
+
   it('asks for what was tabled, never a matter that was settled', () => {
     const { content } = buildMinutesDraftPrompt(request()).messages[0];
     expect(content).toContain('- tabled:');

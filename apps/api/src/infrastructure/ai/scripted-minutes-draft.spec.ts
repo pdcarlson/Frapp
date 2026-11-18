@@ -51,6 +51,35 @@ describe('scriptedMinutesDraft', () => {
     expect(draft.open_questions).toHaveLength(1);
   });
 
+  it('lists what was tabled, still as a decision, and not every table (#5522)', () => {
+    const prompt = buildMinutesDraftPrompt({
+      meetingName: 'Cabinet',
+      meetingType: 'exec',
+      otherLabel: null,
+      meetingDate: '2026-11-09',
+      sections: DEFAULT_MEETING_SECTIONS,
+      roster: [],
+      notes: [
+        'motion to table the formal budget passed 12-3',
+        'set up tables for rush',
+        'Alex will reserve a table at Marios by Friday',
+      ].join('\n'),
+    });
+    const draft = MeetingDraftOutputSchema.parse(
+      (
+        scriptedMinutesDraft({ messages: prompt.messages } as never) as {
+          object: unknown;
+        }
+      ).object,
+    );
+    expect(draft.tabled.map((item) => item.quote)).toEqual([
+      'motion to table the formal budget passed 12-3',
+    ]);
+    expect(draft.decisions.map((item) => item.quote)).toEqual([
+      'motion to table the formal budget passed 12-3',
+    ]);
+  });
+
   it('reads several sources and lists a disagreement between them (#4935)', () => {
     const base = {
       kind: 'notes' as const,

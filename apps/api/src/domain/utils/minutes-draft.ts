@@ -880,6 +880,7 @@ function withRecoveredQuotes(
     ...output,
     decisions: output.decisions.map(fix),
     action_items: output.action_items.map(fix),
+    tabled: (output.tabled ?? []).map(fix),
     conflicts: output.conflicts?.map((conflict) => ({
       ...conflict,
       versions: conflict.versions.map(fix),

@@ -4,6 +4,7 @@ import {
   type MeetingType,
   type MeetingVote,
 } from "./meetings";
+import { ordinal } from "./recurrence";
 
 /**
  * Words the minutes screens share, on web and on the phone, so the two never
@@ -68,11 +69,6 @@ export function meetingTabledFromLabel(
   return parts.join(" · ");
 }
 
-function ordinal(n: number): string {
-  const tens = n % 100;
-  if (tens >= 11 && tens <= 13) return `${n}th`;
-  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
-}
 
 export function meetingSectionLabel(key: MeetingSectionKey): string {
   return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;

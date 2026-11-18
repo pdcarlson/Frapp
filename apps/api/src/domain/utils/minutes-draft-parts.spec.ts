@@ -135,6 +135,21 @@ describe('drafting a long meeting in parts', () => {
     expect(merged.open_questions).toEqual(['Who books it?']);
   });
 
+  it('keeps every part’s tabled matters, each once (#5522)', () => {
+    const shirts = { text: 'Rush shirts', quote: 'table shirts' };
+    const merged = mergeParts([
+      { ...empty, tabled: [shirts] },
+      {
+        ...empty,
+        tabled: [shirts, { text: 'Formal budget', quote: 'push budget' }],
+      },
+    ]);
+    expect(merged.tabled.map((item) => item.text)).toEqual([
+      'Rush shirts',
+      'Formal budget',
+    ]);
+  });
+
   it('takes a TL;DR bullet from each part in turn, each once (#5523)', () => {
     const merged = mergeParts([
       {

@@ -1368,8 +1368,7 @@ function DecisionsEditor({
 
 /**
  * What the meeting tabled (#5522): each matter, with where it was first
- * tabled when an earlier meeting did. A later meeting's agenda offers them
- * back.
+ * tabled when an earlier meeting did.
  */
 function TabledView({ items }: { items: MeetingTabledItem[] }) {
   return (

@@ -131,6 +131,18 @@ describe('the editor’s read over a draft', () => {
     });
   });
 
+  it('passes every part’s tabled matters through untouched (#5522)', () => {
+    const tabled = [{ text: 'Formal budget', quote: 'push budget' }];
+    const out = applyReview(
+      [
+        { ...empty, tabled },
+        { ...empty, tabled: [] },
+      ],
+      { ...empty, decisions: [], action_items: [], open_questions: [] },
+    );
+    expect(out.tabled).toEqual(tabled);
+  });
+
   it('takes the words of the candidate that holds the count, whichever is named first', () => {
     const counted: MeetingDraftOutput[] = [
       {

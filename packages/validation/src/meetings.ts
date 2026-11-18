@@ -69,9 +69,9 @@ export const MEETING_SECTIONS = [
   { key: "decisions", label: "Decisions", defaultOn: true },
   { key: "action_items", label: "Action items", defaultOn: true },
   // What the meeting put off to a later one (#5522; Paul, 2026-11-18: "it
-  // should keep track of what items are tabled"). Its items come back as
-  // suggestions on a later meeting's agenda. Empty unless something was
-  // tabled, so it reads only where it has something.
+  // should keep track of what items are tabled"), for a later meeting's
+  // agenda to pick up (#5534). Empty unless something was tabled, so it
+  // reads only where it has something.
   { key: "tabled", label: "Tabled", defaultOn: true },
   // The notes themselves: every topic with its detail. Always on, because
   // minutes without them lose what was said (Paul, 2026-11-17: "a 7-minute
