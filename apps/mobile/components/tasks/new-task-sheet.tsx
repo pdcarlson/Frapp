@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
@@ -11,9 +11,7 @@ import {
   AI_SUGGESTION_COPY,
   TASK_AUDIENCE_COPY,
   TASK_PHOTOS_MAX,
-  TASK_PROOF_KIND_HINTS,
-  TASK_PROOF_KIND_LABELS,
-  TASK_PROOF_KINDS,
+  TASK_TITLE_MAX_LENGTH,
   aiSuggestionRefusalLine,
   type TaskProofKind,
   type TaskWho,
@@ -26,17 +24,11 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
-import {
-  avatarRadius,
-  fieldTypeRole,
-  typeRole,
-  useFrappTheme,
-} from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   useChapterBranding,
   type ChapterBranding,
 } from "@/lib/chapter-branding";
-import { initialsFor } from "@/lib/more/narrow";
 import { FilterChips } from "@/components/filter-chips";
 import {
   SheetGrabber,
@@ -55,7 +47,11 @@ import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
 import { TaskPhotoPicker } from "@/components/tasks/task-photos";
-import { Segmented } from "@/components/segmented";
+import {
+  AssigneeRow,
+  PointsField,
+  ProofField,
+} from "@/components/tasks/task-form-fields";
 import {
   photoRoom,
   pickTaskPhotos,
@@ -64,16 +60,15 @@ import {
   type PendingTaskPhoto,
 } from "@/lib/tasks/task-photos";
 import {
-  dueEntryFromTask,
   dueTimePassed,
   localIsoDate,
-  splitDueEntry,
   suggestedDueTime,
 } from "@repo/formatting";
-import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   DEFAULT_DUE_CHOICE,
+  TASK_FORM_COPY,
   createRequestOf,
+  storedDueOf,
   whoTakesPhotos,
   dueChoiceOf,
   type TaskPrefill,
@@ -288,12 +283,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const suggested = useMemo(
       () =>
         suggestion?.dueDay
-          ? splitDueEntry(
-              dueEntryFromTask({
-                due_date: suggestion.dueDay,
-                due_at: suggestion.dueAt,
-              }),
-            )
+          ? storedDueOf({
+              dueDay: suggestion.dueDay,
+              dueAt: suggestion.dueAt,
+            })
           : null,
       [suggestion],
     );
@@ -796,7 +789,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 placeholder="Collect ride-share forms"
                 placeholderTextColor={tokens.color.text.muted}
                 accessibilityLabel="Task title"
-                maxLength={TITLE_MAX_LENGTH}
+                maxLength={TASK_TITLE_MAX_LENGTH}
                 style={[
                   styles.field,
                   titleFocused ? styles.fieldFocused : null,
@@ -815,19 +808,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               </View>
 
               {suggestion ? null : (
-                <View style={[styles.field, styles.splitField]}>
-                  <Text style={[styles.pointsSign, { color: accent }]}>+</Text>
-                  <BottomSheetTextInput
-                    value={pointsInput}
-                    onChangeText={setPointsInput}
-                    editable={!pending}
-                    placeholder="pts"
-                    placeholderTextColor={tokens.color.text.muted}
-                    accessibilityLabel="Point reward"
-                    keyboardType="number-pad"
-                    style={styles.pointsInput}
-                  />
-                </View>
+                <PointsField
+                  input={BottomSheetTextInput}
+                  value={pointsInput}
+                  onChangeText={setPointsInput}
+                  editable={!pending}
+                  style={styles.splitField}
+                />
               )}
             </View>
 
@@ -895,44 +882,20 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                   ) : null}
                 </View>
 
-                <View style={styles.group}>
-                  <Text style={styles.groupLabel}>Proof</Text>
-                  <Segmented
-                    options={TASK_PROOF_KINDS.map((kind) => ({
-                      value: kind,
-                      label: TASK_PROOF_KIND_LABELS[kind],
-                    }))}
-                    value={proofKind}
-                    onChange={setProofKind}
-                    accessibilityLabel="Proof to mark it done"
-                    disabled={pending}
-                  />
-                  <Text style={styles.note}>
-                    {TASK_PROOF_KIND_HINTS[proofKind]}
-                  </Text>
-                </View>
+                <ProofField
+                  value={proofKind}
+                  onChange={setProofKind}
+                  disabled={pending}
+                />
               </>
             )}
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Assignee: ${assigneeLabel}`}
-              accessibilityHint="Choose who this task is for."
-              accessibilityState={{ disabled: pending }}
+            <AssigneeRow
+              label={assigneeLabel}
+              name={assigneeName}
               disabled={pending}
               onPress={() => pickerRef.current?.present()}
-              style={styles.assigneeRow}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {initialsFor(assigneeName)}
-                </Text>
-              </View>
-              <Text style={styles.fieldValue} numberOfLines={1}>
-                {assigneeLabel}
-              </Text>
-              <Text style={styles.assigneeHint}>assignee</Text>
-            </Pressable>
+            />
 
             {forGroup ? (
               <Text style={styles.note}>
@@ -941,16 +904,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             ) : null}
 
             {timePassed ? (
-              <Text style={styles.error}>
-                That time has already passed today. Pick a later time or another
-                day.
-              </Text>
+              <Text style={styles.error}>{TASK_FORM_COPY.timePassed}</Text>
             ) : null}
 
             {pointsInvalid ? (
-              <Text style={styles.error}>
-                Points must be a whole number, up to 100,000.
-              </Text>
+              <Text style={styles.error}>{TASK_FORM_COPY.points}</Text>
             ) : null}
 
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
@@ -1021,49 +979,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     splitField: {
       flex: 1,
-    },
-    fieldValue: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    pointsSign: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pointsInput: {
-      flex: 1,
-      // No lineHeight on a single-line input, or iOS draws the text low.
-      ...fieldTypeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    assigneeRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-    },
-    assigneeHint: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    avatar: {
-      width: 26,
-      height: 26,
-      borderRadius: avatarRadius(26),
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarText: {
-      // TODO-DESIGN: Canvas draws these initials at 10.5px/700; `caption` is
-      // 12.5/400 and is the smallest role available.
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),

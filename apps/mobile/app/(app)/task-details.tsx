@@ -1,4 +1,5 @@
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
+import { statusOf } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -57,12 +58,13 @@ import {
 import { WhoHasIt } from "@/components/tasks/who-has-it";
 import { GroupProgress } from "@/components/tasks/group-progress";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { showActionMenu } from "@/lib/action-menu";
 import { goBackTo } from "@/lib/href";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
-import { useTaskEdit } from "@/lib/tasks/use-task-edit";
+import { taskEditDraftName, useTaskEdit } from "@/lib/tasks/use-task-edit";
 import {
   confirmBarLabel,
   confirmTaskDelete,
@@ -131,10 +133,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * under them (`TaskEditForm`). Each field saves itself as it is left, through
  * `PATCH /v1/tasks/:id` as web's task panel saves, and on a group task's copy
  * with `scope: "group"`, so every copy not yet confirmed changes
- * (`useTaskEdit`). The bar becomes one accent Done, which saves what is
- * still being typed and puts the screen back. A row's long-press Edit, and
- * chat's task card's, push this screen with `edit=1`, and Reassign with
- * `who=1`, which opens Assign to's picker over it.
+ * (`useTaskEdit`); Who hands over that one copy. The bar becomes one accent
+ * Done, which saves what is still being typed, waits on every save on its
+ * way, and puts the screen back. What doesn't save as the screen goes is
+ * kept for the task's next edit (`task-edit:<id>`). A row's long-press
+ * Edit, and chat's task card's, push this screen with `edit=1`, and
+ * Reassign with `who=1`, which opens Assign to's picker over it.
  *
  * ## Confirm and Send back
  *
@@ -184,6 +188,14 @@ export default function TaskDetailsScreen() {
         : null,
     [taskQuery.data],
   );
+
+  // An edit left unsaved past this screen (#4872) goes with its task: one
+  // deleted since has no screen to edit it on.
+  const taskGone =
+    !taskQuery.isPending &&
+    taskQuery.isError &&
+    statusOf(taskQuery.error) === 404;
+  useDropKeptSheetDraft(taskId ? taskEditDraftName(taskId) : null, taskGone);
 
   if (!taskId) {
     return (
@@ -365,7 +377,7 @@ function TaskScreen({
   // and Done puts it back once what is still typed has saved. Only while
   // the viewer may edit: a confirm landing meanwhile ends it.
   const edit = useTaskEdit(row);
-  const { reset: resetEdit, commitAll } = edit;
+  const { begin: beginEdit, discard: discardEdit, commitAll } = edit;
   const [editMode, setEditMode] = useState(false);
   const editing = editMode && controls.edit;
   const [finishing, setFinishing] = useState(false);
@@ -373,9 +385,18 @@ function TaskScreen({
   const startEdit = useCallback(() => {
     setSelecting(false);
     setPicked(new Set());
-    resetEdit();
+    beginEdit();
     setEditMode(true);
-  }, [resetEdit]);
+  }, [beginEdit]);
+  // Confirmed meanwhile (here, on web, by another officer): edit mode ends,
+  // and what was still typed goes with it, since the API would refuse it.
+  const canEdit = controls.edit;
+  useEffect(() => {
+    if (!editMode || canEdit) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the task's read moved under the screen (confirmed elsewhere); edit mode follows it
+    setEditMode(false);
+    discardEdit();
+  }, [editMode, canEdit, discardEdit]);
   const finishEdit = async () => {
     if (finishing) return;
     Keyboard.dismiss();
@@ -386,16 +407,27 @@ function TaskScreen({
     if (saved) setEditMode(false);
   };
   // Arrived from a row's Edit or Reassign, or chat's card: edit mode once,
-  // and the params cleared so a return here doesn't reopen it.
+  // and the params cleared so a return here doesn't reopen it. A task the
+  // viewer can't edit clears them too, and opens as it reads.
   const arrivedEditing = useRef(false);
-  const canEdit = controls.edit;
   useEffect(() => {
-    if (!arrival || arrivedEditing.current || !canEdit) return;
+    if (!arrival || arrivedEditing.current) return;
     arrivedEditing.current = true;
+    router.setParams({ edit: undefined, who: undefined });
+    if (!canEdit) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot route param, cleared above, opens edit mode once
     startEdit();
     setWhoOnArrival(arrival === "who");
-    router.setParams({ edit: undefined, who: undefined });
   }, [arrival, canEdit, startEdit, router]);
+  // What an edit's last save said outlasts edit mode, until the next thing
+  // the member does here.
+  const { dismiss: dismissEdit } = edit;
+  const afterEdit =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A) => {
+      dismissEdit();
+      run(...args);
+    };
 
   // Delete, after the platform alert, then back to the board.
   const deleteTask = useDeleteTask();
@@ -555,7 +587,8 @@ function TaskScreen({
     : (toggles.refusal ??
       review.refusal?.text ??
       toggles.notice ??
-      deleteFailed);
+      deleteFailed ??
+      edit.failure);
   const pending = toggles.pendingId === row.id;
   // More and the pill's words as the layout counts them, so neither changes
   // while Send back is held out of More.
@@ -722,7 +755,8 @@ function TaskScreen({
             glyph={(ink) => <CheckGlyph color={ink} />}
             fill={accent}
             ink={tokens.color.gold.onHouse}
-            busy={finishing}
+            // Held while a save is out: Done waits on them all.
+            busy={finishing || edit.saving}
             onPress={() => void finishEdit()}
           />
         </TaskActionBar>
@@ -751,7 +785,7 @@ function TaskScreen({
               fill={accent}
               ink={tokens.color.gold.onHouse}
               busy={pending}
-              onPress={() => void toggles.toggle(row)}
+              onPress={afterEdit(() => void toggles.toggle(row))}
             />
           ) : null}
           {controls.confirm ? (
@@ -764,7 +798,7 @@ function TaskScreen({
               // Its own send reads busy, not dimmed.
               disabled={review.disabled && review.confirmingId !== row.id}
               busy={review.confirmingId === row.id}
-              onPress={() => review.confirm(row)}
+              onPress={afterEdit(() => review.confirm(row))}
             />
           ) : null}
           {sendBackRound ? (
@@ -775,7 +809,7 @@ function TaskScreen({
                 "Opens a sheet for the reason it goes back to its assignee."
               }
               disabled={review.disabled}
-              onPress={() => review.sendBack(row)}
+              onPress={afterEdit(() => review.sendBack(row))}
             >
               <UndoGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
@@ -793,13 +827,13 @@ function TaskScreen({
             <TaskBarIcon
               label="Remove people"
               hint="Pick members to take out of this task."
-              onPress={startSelecting}
+              onPress={afterEdit(startSelecting)}
             >
               <MinusGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}
           {showMore ? (
-            <TaskBarIcon label="More" onPress={openMore}>
+            <TaskBarIcon label="More" onPress={afterEdit(openMore)}>
               <MoreGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}

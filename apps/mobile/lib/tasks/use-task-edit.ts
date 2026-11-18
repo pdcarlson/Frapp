@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { errorCopy } from "@repo/hooks/error-copy";
 import {
+  dropKeptDraft,
+  readKeptDraft,
+  useKeptDraftKeys,
+  writeKeptDraft,
+} from "@repo/hooks/kept-drafts";
+import {
   useRequestTaskPhotoUploadUrl,
   useUpdateTask,
   type TaskEdit,
@@ -18,6 +24,7 @@ import {
   proofSave,
   reassignRestarts,
   referencePhotos,
+  rowAfter,
   scopedEdit,
   TASK_EDIT_COPY,
   titleSave,
@@ -41,6 +48,9 @@ interface TaskEditDrafts {
 
 type DraftKey = keyof TaskEditDrafts;
 
+/** Every field that saves: the typed ones, and those sent as they change. */
+type FieldKey = DraftKey | "proof" | "photos" | "who";
+
 const NO_DRAFTS: TaskEditDrafts = {
   title: null,
   description: null,
@@ -55,11 +65,27 @@ const DRAFT_KEYS: readonly DraftKey[] = [
   "due",
 ];
 
+/** The order a refusal is said in when more than one is open: the form's. */
+const FIELD_ORDER: readonly FieldKey[] = [
+  "title",
+  "due",
+  "points",
+  "description",
+  "proof",
+  "photos",
+  "who",
+];
+
+const SENT_KEYS: readonly FieldKey[] = ["proof", "photos", "who"];
+
 /**
  * How long the due waits after a pick before it saves: the platform's time
  * wheel reports each stop, and only the last should be sent.
  */
 const DUE_SAVE_DELAY_MS = 600;
+
+/** The kept-drafts name an edit left unsaved is kept under (#4872). */
+export const taskEditDraftName = (taskId: string) => `task-edit:${taskId}`;
 
 function saveOf(
   key: DraftKey,
@@ -83,6 +109,12 @@ function saveOf(
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+/** A field's latest save, which the next one of that field waits on. */
+interface PendingSave {
+  value: unknown;
+  saved: Promise<boolean>;
+}
+
 export interface TaskEditing {
   drafts: TaskEditDrafts;
   /** A text field as typed; saved by `commit` (on blur or Return). */
@@ -91,10 +123,20 @@ export interface TaskEditing {
   pickDue: (next: TaskDueDraft) => void;
   /** Save one field's draft, if it differs from the task. */
   commit: (key: DraftKey) => Promise<boolean>;
-  /** Save every field still held, for Done: false while one didn't save. */
+  /**
+   * Save every field still held, and wait on every save on its way (proof,
+   * photos, who included), for Done: false while one of them didn't save.
+   */
   commitAll: () => Promise<boolean>;
-  /** Forget every draft, for a new visit to edit mode. */
-  reset: () => void;
+  /**
+   * A new visit to edit mode: what an earlier visit left unsaved, kept past
+   * the screen, comes back as the drafts; anything else is forgotten.
+   */
+  begin: () => void;
+  /** Drop every draft unsent: the task can no longer be edited. */
+  discard: () => void;
+  /** Put away what the last saves said, for the screen's next action. */
+  dismiss: () => void;
   setProof: (next: TaskProofKind) => void;
   /** Take one reference photo off the task. */
   removePhoto: (photoId: string) => void;
@@ -105,13 +147,16 @@ export interface TaskEditing {
   /** The library is opening. */
   picking: boolean;
   /**
-   * Hand the task to another member, asking first when that starts it over
-   * (`nameOf` names both in the question).
+   * Hand the task (on a group, this copy) to another member, asking first
+   * when that starts it over (`nameOf` names both in the question).
    */
   reassign: (userId: string, nameOf: (userId: string) => string) => void;
   /** A save is in flight: the screen says "Saving…". */
   saving: boolean;
-  /** The last save's refusal, in the API's words, or a field's problem. */
+  /**
+   * The first field's refusal still open, in the API's words, or a field's
+   * problem. It outlasts edit mode, so one landing after Done is still said.
+   */
   failure: string | null;
 }
 
@@ -123,30 +168,57 @@ export interface TaskEditing {
  * lands and the task is read again, and a refusal is said in the API's
  * words with the draft kept for another try.
  *
+ * A field's saves go one after another, each waiting on the one before, so
+ * they land in the order they were made; and a change is measured against
+ * the task as the save before it will leave it (`rowAfter`), so a change
+ * back to what the task said before still sends. Each field keeps its own
+ * refusal, so one field's save never clears another's.
+ *
  * Held by the screen rather than the fields, so Done can save what is still
- * being typed, and a draft left when the screen goes is saved then.
+ * being typed and wait on what is on its way. A draft left when the screen
+ * goes is saved then; one that can't be (offline, refused, not a number) is
+ * kept past the screen under `task-edit:<id>` (#4872), and the next edit of
+ * the task opens on it.
  */
 export function useTaskEdit(row: TaskRowModel): TaskEditing {
   const { mutateAsync } = useUpdateTask();
   const { mutateAsync: requestPhotoUrl } = useRequestTaskPhotoUploadUrl();
+  const keys = useKeptDraftKeys();
   const [drafts, setDrafts] = useState<TaskEditDrafts>(NO_DRAFTS);
   const [inFlight, setInFlight] = useState(0);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failures, setFailures] = useState<Partial<Record<FieldKey, string>>>(
+    {},
+  );
   const [uploading, setUploading] = useState<readonly PickedImage[]>([]);
   const [picking, setPicking] = useState(false);
 
   // Read by the callbacks, which outlive a render: the task as last read,
-  // the drafts as last typed, and what is on its way.
+  // the drafts as last typed, each field's save on its way, and what each
+  // field's saves will have made of the task until it is read again.
   const rowRef = useRef(row);
+  const live = useRef<TaskEditDrafts>(NO_DRAFTS);
+  const pending = useRef<Partial<Record<FieldKey, PendingSave>>>({});
+  const assumed = useRef<Partial<Record<FieldKey, TaskEdit>>>({});
+  const upload = useRef<Promise<boolean> | null>(null);
+  const failuresRef = useRef<Partial<Record<FieldKey, string>>>({});
+  const dueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keptKey = useRef(keys.draft(taskEditDraftName(row.id)));
   useEffect(() => {
     rowRef.current = row;
-  }, [row]);
-  const live = useRef<TaskEditDrafts>(NO_DRAFTS);
-  // Each field's save on its way, and what it sent.
-  const sent = useRef<
-    Partial<Record<DraftKey, { value: unknown; saved: Promise<boolean> }>>
-  >({});
-  const dueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    keptKey.current = keys.draft(taskEditDraftName(row.id));
+    // A fresh read holds every save that has landed.
+    for (const key of Object.keys(assumed.current) as FieldKey[]) {
+      if (!pending.current[key]) delete assumed.current[key];
+    }
+  }, [row, keys]);
+
+  const setFailure = useCallback((key: FieldKey, text: string | null) => {
+    const next = { ...failuresRef.current };
+    if (text === null) delete next[key];
+    else next[key] = text;
+    failuresRef.current = next;
+    setFailures(next);
+  }, []);
 
   const setDraft = useCallback(
     <K extends DraftKey>(key: K, value: TaskEditDrafts[K]) => {
@@ -156,10 +228,27 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     [],
   );
 
+  /** The task as the saves on their way will leave it. */
+  const baseline = useCallback((): TaskRowModel => {
+    let task = rowRef.current;
+    for (const body of Object.values(assumed.current)) {
+      if (body) task = rowAfter(task, body);
+    }
+    return task;
+  }, []);
+
+  /** The reference photos' paths as the saves on their way leave them. */
+  const storedPaths = useCallback(
+    (): string[] =>
+      assumed.current.photos?.reference_photo_paths ??
+      referencePhotos(rowRef.current).map((photo) => photo.storage_path),
+    [],
+  );
+
   const send = useCallback(
-    async (body: TaskEdit): Promise<boolean> => {
+    async (key: FieldKey, body: TaskEdit): Promise<boolean> => {
       const task = rowRef.current;
-      setFailure(null);
+      setFailure(key, null);
       setInFlight((count) => count + 1);
       try {
         await mutateAsync({ id: task.id, body: scopedEdit(task, body) });
@@ -168,6 +257,7 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
         // The API's own sentence where it wrote one for members ("Every
         // copy is already confirmed…"), else the fallback.
         setFailure(
+          key,
           errorCopy(error, TASK_EDIT_COPY.failed, {
             serverWritesForMembers: true,
           }),
@@ -177,20 +267,41 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
         setInFlight((count) => count - 1);
       }
     },
-    [mutateAsync],
+    [mutateAsync, setFailure],
+  );
+
+  /** Send after this field's save before it, whatever that one's outcome. */
+  const enqueue = useCallback(
+    async (key: FieldKey, value: unknown, body: TaskEdit): Promise<boolean> => {
+      const before = pending.current[key]?.saved;
+      assumed.current[key] = body;
+      // At once with none before it, so the request leaves on the tap.
+      const saved = before
+        ? before.then(() => send(key, body))
+        : send(key, body);
+      pending.current[key] = { value, saved };
+      const ok = await saved;
+      if (pending.current[key]?.saved === saved) {
+        delete pending.current[key];
+        // The last of this field's saves failed: the task stands as read.
+        if (!ok) delete assumed.current[key];
+      }
+      return ok;
+    },
+    [send],
   );
 
   /** A change that isn't a draft (proof, photos, who): sent at once. */
-  const sendNow = useCallback(
-    async (result: TaskFieldSave): Promise<boolean> => {
-      if (result.kind === "none") return true;
+  const sendField = useCallback(
+    async (key: FieldKey, result: TaskFieldSave): Promise<boolean> => {
+      if (result.kind === "none") return pending.current[key]?.saved ?? true;
       if (result.kind === "problem") {
-        setFailure(result.message);
+        setFailure(key, result.message);
         return false;
       }
-      return send(result.body);
+      return enqueue(key, result.body, result.body);
     },
-    [send],
+    [enqueue, setFailure],
   );
 
   const commit = useCallback(
@@ -200,61 +311,80 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
         dueTimer.current = null;
       }
       const value = live.current[key];
-      if (value === null) return true;
+      const flying = pending.current[key];
+      if (value === null) return flying?.saved ?? true;
       // Already on its way: Done right after a blur sends it once, and
       // waits on that save rather than closing before it lands.
-      const flying = sent.current[key];
       if (flying && same(flying.value, value)) return flying.saved;
-      const result = saveOf(key, rowRef.current, live.current);
-      if (result.kind === "none") {
-        setDraft(key, null);
-        return true;
-      }
+      const result = saveOf(key, baseline(), live.current);
       if (result.kind === "problem") {
-        setFailure(result.message);
+        setFailure(key, result.message);
         return false;
       }
-      const saved = send(result.body);
-      sent.current[key] = { value, saved };
-      const ok = await saved;
-      if (sent.current[key]?.saved === saved) delete sent.current[key];
+      setFailure(key, null);
+      const ok =
+        result.kind === "none"
+          ? await (flying?.saved ?? Promise.resolve(true))
+          : await enqueue(key, value, result.body);
       // Saved: the field shows the task, read again by now. Typed over
       // meanwhile: what was typed since stays to be saved.
       if (ok && same(live.current[key], value)) setDraft(key, null);
       return ok;
     },
-    [send, setDraft],
+    [baseline, enqueue, setDraft, setFailure],
   );
 
   const commitAll = useCallback(async () => {
-    const results = await Promise.all(DRAFT_KEYS.map((key) => commit(key)));
-    return results.every(Boolean);
+    const typed = await Promise.all(DRAFT_KEYS.map((key) => commit(key)));
+    const sent = await Promise.all([
+      ...SENT_KEYS.map((key) => pending.current[key]?.saved ?? true),
+      upload.current ?? true,
+    ]);
+    return [...typed, ...sent].every(Boolean);
   }, [commit]);
 
   // A draft left as the screen goes (back with the keyboard up, or a day
-  // picked a moment ago) is saved then, as every field saves as it is left.
+  // picked a moment ago) is saved then, as every field saves as it is left;
+  // one that doesn't save is kept for the next edit of the task.
   const commitRef = useRef(commit);
   useEffect(() => {
     commitRef.current = commit;
   }, [commit]);
   useEffect(
     () => () => {
-      for (const key of DRAFT_KEYS) void commitRef.current(key);
+      const left = live.current;
+      const name = keptKey.current;
+      void Promise.all(
+        DRAFT_KEYS.map(async (key) => ({
+          key,
+          ok: left[key] === null || (await commitRef.current(key)),
+        })),
+      ).then((results) => {
+        const unsaved = results.filter(({ ok }) => !ok);
+        if (unsaved.length === 0) return;
+        const kept: Partial<TaskEditDrafts> = {};
+        for (const { key } of unsaved)
+          Object.assign(kept, { [key]: left[key] });
+        writeKeptDraft(name, {
+          ...(readKeptDraft<Partial<TaskEditDrafts>>(name) ?? {}),
+          ...kept,
+        });
+      });
     },
     [],
   );
 
   const type = useCallback(
     (key: "title" | "description" | "points", text: string) => {
-      setFailure(null);
+      setFailure(key, null);
       setDraft(key, text);
     },
-    [setDraft],
+    [setDraft, setFailure],
   );
 
   const pickDue = useCallback(
     (next: TaskDueDraft) => {
-      setFailure(null);
+      setFailure("due", null);
       setDraft("due", next);
       if (dueTimer.current) clearTimeout(dueTimer.current);
       dueTimer.current = setTimeout(() => {
@@ -262,81 +392,113 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
         void commit("due");
       }, DUE_SAVE_DELAY_MS);
     },
-    [commit, setDraft],
+    [commit, setDraft, setFailure],
   );
 
-  const reset = useCallback(() => {
+  const discard = useCallback(() => {
     if (dueTimer.current) clearTimeout(dueTimer.current);
     dueTimer.current = null;
     live.current = NO_DRAFTS;
     setDrafts(NO_DRAFTS);
-    setFailure(null);
   }, []);
 
+  const dismiss = useCallback(() => {
+    failuresRef.current = {};
+    setFailures({});
+  }, []);
+
+  const begin = useCallback(() => {
+    discard();
+    dismiss();
+    const name = keptKey.current;
+    const kept = readKeptDraft<Partial<TaskEditDrafts>>(name);
+    if (!kept) return;
+    dropKeptDraft(name);
+    live.current = { ...NO_DRAFTS, ...kept };
+    setDrafts(live.current);
+  }, [discard, dismiss]);
+
   const setProof = useCallback(
-    (next: TaskProofKind) => void sendNow(proofSave(rowRef.current, next)),
-    [sendNow],
+    (next: TaskProofKind) =>
+      void sendField("proof", proofSave(baseline(), next)),
+    [sendField, baseline],
   );
 
   const removePhoto = useCallback(
     (photoId: string) => {
-      const task = rowRef.current;
-      const paths = referencePhotos(task)
-        .filter((photo) => photo.id !== photoId)
-        .map((photo) => photo.storage_path);
-      void sendNow(photosSave(task, paths));
+      const path = referencePhotos(rowRef.current).find(
+        (photo) => photo.id === photoId,
+      )?.storage_path;
+      if (!path) return;
+      const stored = storedPaths();
+      void sendField(
+        "photos",
+        photosSave(
+          stored,
+          stored.filter((each) => each !== path),
+        ),
+      );
     },
-    [sendNow],
+    [sendField, storedPaths],
   );
 
   const addPhotos = useCallback(async () => {
-    if (picking || uploading.length > 0) return;
-    setFailure(null);
+    if (picking || upload.current) return;
+    setFailure("photos", null);
     setPicking(true);
-    const kept = referencePhotos(rowRef.current);
+    const room = photoRoom(storedPaths().length);
     let picked;
     try {
-      picked = await pickTaskPhotos(photoRoom(kept.length));
+      picked = await pickTaskPhotos(room);
     } finally {
       setPicking(false);
     }
     if (picked.status === "refused") {
-      setFailure(picked.reason);
+      setFailure("photos", picked.reason);
       return;
     }
     if (picked.status !== "picked" || picked.images.length === 0) return;
-    const images = picked.images.slice(0, photoRoom(kept.length));
+    const pick = picked;
+    const images = pick.images.slice(0, room);
     setUploading(images);
-    const up = await uploadTaskPhotos(
-      images.map((image) => ({ image })),
-      (request) => requestPhotoUrl(request),
-      TASK_PHOTO_GATE_COPY.task,
-    );
-    if (up.status !== "uploaded") {
+    // Done waits on the whole of it: the upload, then the save.
+    const run = (async (): Promise<boolean> => {
+      const up = await uploadTaskPhotos(
+        images.map((image) => ({ image })),
+        (request) => requestPhotoUrl(request),
+        TASK_PHOTO_GATE_COPY.task,
+      );
+      if (up.status !== "uploaded") {
+        setFailure("photos", up.reason);
+        return false;
+      }
+      // The task's own as they will stand, then the new ones: a photo
+      // removed while these went up stays removed.
+      const stored = storedPaths();
+      const ok = await sendField(
+        "photos",
+        photosSave(stored, [...stored, ...up.paths]),
+      );
+      // `refused`: some were turned down at the pick (type, size).
+      if (ok && pick.refused) setFailure("photos", pick.refused);
+      return ok;
+    })();
+    upload.current = run;
+    try {
+      await run;
+    } finally {
+      upload.current = null;
       setUploading([]);
-      setFailure(up.reason);
-      return;
     }
-    // The task's own as they stand now, then the new ones: a photo removed
-    // while these went up stays removed.
-    const task = rowRef.current;
-    const paths = [
-      ...referencePhotos(task).map((photo) => photo.storage_path),
-      ...up.paths,
-    ];
-    await sendNow(photosSave(task, paths));
-    setUploading([]);
-    // `picked.refused`: some were turned down at the pick (type, size).
-    if (picked.refused) setFailure(picked.refused);
-  }, [picking, uploading.length, requestPhotoUrl, sendNow]);
+  }, [picking, storedPaths, requestPhotoUrl, sendField, setFailure]);
 
   const reassign = useCallback(
     (userId: string, nameOf: (userId: string) => string) => {
-      const task = rowRef.current;
+      const task = baseline();
       const result = assigneeSave(task, userId);
       if (result.kind !== "save") return;
       if (!reassignRestarts(task)) {
-        void sendNow(result);
+        void sendField("who", result);
         return;
       }
       // The platform alert, as web's panel asks: the task starts over at To
@@ -348,13 +510,18 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
           { text: "Cancel", style: "cancel" },
           {
             text: "Give it to them",
-            onPress: () => void sendNow(result),
+            onPress: () => void sendField("who", result),
           },
         ],
       );
     },
-    [sendNow],
+    [sendField, baseline],
   );
+
+  const failure =
+    FIELD_ORDER.map((key) => failures[key]).find(
+      (text): text is string => text !== undefined,
+    ) ?? null;
 
   return {
     drafts,
@@ -362,7 +529,9 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     pickDue,
     commit,
     commitAll,
-    reset,
+    begin,
+    discard,
+    dismiss,
     setProof,
     removePhoto,
     addPhotos,

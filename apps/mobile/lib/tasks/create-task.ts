@@ -31,13 +31,40 @@ import type { CreateOpenTaskBody, useCreateTask } from "@repo/hooks";
 import {
   TASK_AUDIENCE_COPY,
   TASK_SUBTASKS_MAX,
+  TASK_TITLE_MAX_LENGTH,
   normalizeTaskWho,
   taskWhoRequest,
   type TaskProofKind,
   type TaskWho,
 } from "@repo/validation";
-import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
+import { POINTS_MAX } from "./limits";
 import type { TaskRowModel } from "./board";
+
+/**
+ * What the task forms say about a value they can't send: the New task sheet
+ * and the task screen's edit alike (#5514).
+ */
+export const TASK_FORM_COPY = {
+  points: `Points must be a whole number, up to ${POINTS_MAX.toLocaleString("en-US")}.`,
+  timePassed:
+    "That time has already passed today. Pick a later time or another day.",
+} as const;
+
+/**
+ * A task's stored due (`due_date`, and `due_at` when it has a time) as the
+ * forms hold it: the day and `HH:MM` of its `due_at` on this device, or the
+ * stored day with no time. The inverse of `dueEntryFields`, read alike by
+ * New task's suggestion and Duplicate and the task screen's edit.
+ */
+export function storedDueOf(due: { dueDay: string; dueAt: string | null }): {
+  dueDate: string;
+  dueTime: string | null;
+} {
+  const { dueDate, dueTime } = splitDueEntry(
+    dueEntryFromTask({ due_date: due.dueDay, due_at: due.dueAt }),
+  );
+  return { dueDate, dueTime: dueTime ?? null };
+}
 
 export interface NewTaskDraft {
   title: string;
@@ -256,7 +283,7 @@ export function validateNewTask(
   now: Date = new Date(),
 ): ValidatedNewTask | null {
   const title = draft.title.trim();
-  if (title.length === 0 || title.length > TITLE_MAX_LENGTH) return null;
+  if (title.length === 0 || title.length > TASK_TITLE_MAX_LENGTH) return null;
   const who = draft.who ? normalizeTaskWho(draft.who) : null;
   if (!who) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)) return null;
@@ -345,9 +372,7 @@ export function taskDuplicateOf(
   now: Date,
 ): TaskPrefill {
   const { dueDate, dueTime } = row.dueDay
-    ? splitDueEntry(
-        dueEntryFromTask({ due_date: row.dueDay, due_at: row.dueAt }),
-      )
+    ? storedDueOf({ dueDay: row.dueDay, dueAt: row.dueAt })
     : { dueDate: "", dueTime: null };
   // A day that has gone would only be refused; New task's Today stands in.
   const ahead = dueDate !== "" && dueDate >= localIsoDate(now);

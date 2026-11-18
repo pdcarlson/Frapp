@@ -370,16 +370,29 @@ describe("an officer on a group's copy", () => {
     tasks = [groupCopy(ME), groupCopy("u-ana")];
   });
 
-  it("offers Remove people and Delete for everyone, and no Reassign", () => {
+  it("offers Remove people, Delete for everyone, and Reassign for this copy (#5514)", () => {
     const tree = render();
     expect(longPress(tree)).toEqual([
       "Mark done",
       "Edit",
+      "Reassign",
       "Remove people",
       "Duplicate",
       "Delete",
       "Delete for everyone",
     ]);
+  });
+
+  it("Reassign opens the copy's screen on Assign to, which hands over that one copy", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    const tree = render();
+    longPress(tree);
+    pick(tree, "Reassign");
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/task-details",
+      params: { id: `copy-${ME}`, who: "1" },
+    });
   });
 
   it("Remove people opens the task's screen in select mode", () => {

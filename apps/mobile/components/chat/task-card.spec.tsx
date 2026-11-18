@@ -665,4 +665,24 @@ describe("TaskCard — Edit (#4512)", () => {
     });
     expect(hasEdit(render("admin-1"))).toBe(false);
   });
+
+  // The task screen's own rule (`taskEditable`, #5514), so the card never
+  // pushes an edit the screen won't draw.
+  it("isn't offered on a task up for grabs, which has no assignee yet", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = editable({ assignee_id: null });
+    expect(hasEdit(render("admin-1"))).toBe(false);
+  });
+
+  it("isn't offered on a completion signed off as it was marked, with no points paid", () => {
+    state.permissions = ["tasks:manage"];
+    state.live = editable({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: null,
+      completed_at: "2026-11-06T10:00:00.000Z",
+      confirmed_at: "2026-11-06T10:00:00.000Z",
+    });
+    expect(hasEdit(render("admin-1"))).toBe(false);
+  });
 });

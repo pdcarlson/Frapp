@@ -43,7 +43,7 @@ import {
 } from "@/lib/tasks/board";
 import { checkboxSequence } from "@/lib/tasks/transitions";
 import { markDoneLabel } from "@/lib/tasks/task-photos";
-import { taskEditable } from "@/lib/tasks/task-edit";
+import { editFactsOfRow, taskEditable } from "@/lib/tasks/task-edit";
 
 /**
  * Who a group task went to, in the shared words (`taskGroupLabel`):
@@ -115,7 +115,8 @@ export interface TaskScreenControls {
   deleteForEveryone: boolean;
   /**
    * The long-press menu's Reassign: the screen's edit, opened on Assign to.
-   * Not on a group's copy, since a group edit refuses `assignee_id`.
+   * On a group's copy too, which hands over that one copy (#5514): the
+   * instance edit takes `assignee_id`, though a group edit refuses it.
    */
   reassign: boolean;
   /** The long-press menu's Duplicate: New task, filled in from this one. */
@@ -154,7 +155,7 @@ export function taskScreenControls({
     !toggleRefused && taskAwaitsReview(reviewed, { viewerId, canManage });
   // The screen's edit in place (#5514): a confirmed task can't change, and
   // the fields need an assignee and a day.
-  const edit = taskEditable(row, canManage);
+  const edit = taskEditable(editFactsOfRow(row), canManage);
   return {
     // A status this build doesn't know has no sequence to send, so no Mark
     // done that would do nothing (the board's `canToggle` guard).
@@ -190,7 +191,7 @@ export function taskScreenControls({
     release: isAssignee && row.openTaskId !== null && !row.isDone,
     delete: canManage,
     deleteForEveryone: canManage && row.groupId !== null,
-    reassign: edit && row.groupId === null,
+    reassign: edit,
     // Creating needs `tasks:manage` (`POST /v1/tasks`), nothing more.
     duplicate: canManage,
   };

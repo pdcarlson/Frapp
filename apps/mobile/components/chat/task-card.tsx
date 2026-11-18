@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useRouter } from "expo-router";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import {
-  canEditCardTask,
   canReadCardTask,
   isSentBack,
   readLiveTask,
@@ -22,6 +21,7 @@ import {
 } from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
+import { editFactsOfLive, taskEditable } from "@/lib/tasks/task-edit";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { MarkDoneSheet } from "@/components/tasks/mark-done-sheet";
 import {
@@ -68,9 +68,9 @@ import { useCardWrite } from "./use-card-write";
  * off the stored status (#1051), and a `tasks:manage` holder confirms or
  * sends back a completion, never confirming their own (#1056); a
  * `tasks:manage` holder also
- * gets Edit on an unconfirmed task (`canEditCardTask`, #4512), which pushes
- * the task's screen in its edit mode (`edit=1`, #5514), where the task is
- * changed in place. The writes are the shared
+ * gets Edit on a task the task screen will edit (`taskEditable`, #4512), which
+ * pushes the task's screen in its edit mode (`edit=1`, #5514), where the task
+ * is changed in place. The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
  *
  * Photos and proof (#4635): the card shows the task's reference photos and,
@@ -125,10 +125,15 @@ export function TaskCard({
         canManage,
       });
 
-  // An officer's Edit (#4512), the board's rule (`canEditCardTask`): a
-  // tasks:manage holder until the task is confirmed. It pushes the task's
+  // An officer's Edit (#4512): the task screen's own rule (`taskEditable`),
+  // read off the live task, so the card never opens an edit the screen
+  // won't draw: a tasks:manage holder until the task is confirmed, on a task
+  // with an assignee and a day (not one up for grabs). It pushes the task's
   // screen in its edit mode (#5514), where each field saves as it is left.
-  const editable = !tasksOff && canEditCardTask({ live, canManage });
+  const editable =
+    !tasksOff &&
+    live !== null &&
+    taskEditable(editFactsOfLive(live), canManage);
 
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();

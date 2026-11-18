@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { LiveTaskPhoto } from "@repo/hooks";
+import type { LiveTask, LiveTaskPhoto } from "@repo/hooks";
 import { toTaskRow, type TaskRowModel } from "./board";
 import {
   assigneeSave,
   descriptionSave,
   dueDraftOf,
   dueSave,
+  editFactsOfLive,
+  editFactsOfRow,
   photosSave,
   pointsSave,
   proofSave,
   reassignRestarts,
+  rowAfter,
   scopedEdit,
   TASK_EDIT_COPY,
   taskEditable,
@@ -171,27 +174,27 @@ describe("proof, photos and who", () => {
   });
 
   it("sends the reference photos as the whole set, only when it changed", () => {
-    const held = row({ photos: [photo("a"), photo("b"), photo("c", "proof")] });
-    const paths = [photo("a").storage_path, photo("b").storage_path];
-    expect(photosSave(held, paths)).toEqual({ kind: "none" });
-    expect(photosSave(held, [photo("b").storage_path])).toEqual({
+    const stored = [photo("a").storage_path, photo("b").storage_path];
+    expect(photosSave(stored, [...stored])).toEqual({ kind: "none" });
+    expect(photosSave(stored, [photo("b").storage_path])).toEqual({
       kind: "save",
       body: { reference_photo_paths: [photo("b").storage_path] },
     });
-    expect(photosSave(held, [])).toEqual({
+    expect(photosSave(stored, [])).toEqual({
       kind: "save",
       body: { reference_photo_paths: [] },
     });
   });
 
-  it("hands one task to someone else, never a group's copy", () => {
+  it("hands a task, or one copy of a group's, to someone else", () => {
     expect(assigneeSave(row(), "u2")).toEqual({
       kind: "save",
       body: { assignee_id: "u2" },
     });
     expect(assigneeSave(row(), "u1")).toEqual({ kind: "none" });
     expect(assigneeSave(row({ group_id: "g1" }), "u2")).toEqual({
-      kind: "none",
+      kind: "save",
+      body: { assignee_id: "u2" },
     });
   });
 
@@ -205,24 +208,83 @@ describe("proof, photos and who", () => {
   });
 });
 
+describe("a change measured against the save before it", () => {
+  it("reads the task as each field's save will leave it", () => {
+    const after = rowAfter(row(), {
+      title: "Mop",
+      description: null,
+      point_reward: 10,
+      due_date: "2026-10-02",
+      due_at: null,
+      proof_kind: "photo",
+    });
+    expect(after).toMatchObject({
+      title: "Mop",
+      description: null,
+      pointReward: 10,
+      dueDay: "2026-10-02",
+      dueAt: null,
+      proofKind: "photo",
+    });
+    // A change back to what the task said before still sends.
+    expect(titleSave(after, "Sweep")).toEqual({
+      kind: "save",
+      body: { title: "Sweep" },
+    });
+    // What a body doesn't name stays as read.
+    expect(rowAfter(row(), { title: "Mop" }).description).toBe(
+      "Front and back.",
+    );
+  });
+});
+
 describe("who may edit, and how far it reaches", () => {
-  it("edits every copy not yet confirmed on a group task's copy", () => {
-    expect(scopedEdit(row({ group_id: "g1" }), { title: "Mop" })).toEqual({
+  it("edits every copy not yet confirmed on a group task's copy, but hands over only this copy", () => {
+    const copy = row({ group_id: "g1" });
+    expect(scopedEdit(copy, { title: "Mop" })).toEqual({
       title: "Mop",
       scope: "group",
+    });
+    // A group edit refuses `assignee_id`; the instance edit takes it.
+    expect(scopedEdit(copy, { assignee_id: "u2" })).toEqual({
+      assignee_id: "u2",
     });
     expect(scopedEdit(row(), { title: "Mop" })).toEqual({ title: "Mop" });
   });
 
   it("is a tasks:manage holder's, until the task is confirmed", () => {
-    expect(taskEditable(row(), true)).toBe(true);
-    expect(taskEditable(row(), false)).toBe(false);
-    expect(taskEditable(row({ points_awarded: true }), true)).toBe(false);
-    expect(
-      taskEditable(row({ confirmed_at: "2026-09-29T10:00:00.000Z" }), true),
-    ).toBe(false);
+    const can = (overrides: Record<string, unknown>, manage = true) =>
+      taskEditable(editFactsOfRow(row(overrides)), manage);
+    expect(can({})).toBe(true);
+    expect(can({}, false)).toBe(false);
+    expect(can({ points_awarded: true })).toBe(false);
+    expect(can({ confirmed_at: "2026-09-29T10:00:00.000Z" })).toBe(false);
     // The fields need a day and an assignee.
-    expect(taskEditable(row({ due_date: null }), true)).toBe(false);
-    expect(taskEditable(row({ assignee_id: null }), true)).toBe(false);
+    expect(can({ due_date: null })).toBe(false);
+    expect(can({ assignee_id: null })).toBe(false);
+  });
+
+  it("reads a chat card's live task by the same rule", () => {
+    const live = {
+      points_awarded: false,
+      confirmed_at: null,
+      assignee_id: "u1" as string | undefined,
+      due: "2026-09-30" as string | undefined,
+    } as LiveTask;
+    expect(taskEditable(editFactsOfLive(live), true)).toBe(true);
+    // Up for grabs: no assignee yet, so nothing for the screen to edit.
+    expect(
+      taskEditable(editFactsOfLive({ ...live, assignee_id: undefined }), true),
+    ).toBe(false);
+    // Signed off as it was marked, with no points paid.
+    expect(
+      taskEditable(
+        editFactsOfLive({ ...live, confirmed_at: "2026-09-29T10:00:00Z" }),
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      taskEditable(editFactsOfLive({ ...live, due: undefined }), true),
+    ).toBe(false);
   });
 });

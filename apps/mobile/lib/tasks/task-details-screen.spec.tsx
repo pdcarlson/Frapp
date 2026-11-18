@@ -20,6 +20,8 @@ import {
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import type { ActionMenu } from "@/lib/action-menu";
+import { ProofField } from "@/components/tasks/task-form-fields";
+import { TASK_EDIT_COPY } from "@/lib/tasks/task-edit";
 import { TASK_AUDIENCE_COPY } from "@repo/validation";
 
 /**
@@ -615,12 +617,21 @@ describe("An officer on a task for everyone: a lot", () => {
     const tree = render();
     press(tree, "Edit task");
     expect(screenText(tree)).toContain("Edit task");
-    expect(screenText(tree)).toContain(
-      "Changes go to every copy not yet confirmed.",
-    );
-    // Who and photos change per copy only: a group's edit leaves them out.
-    expect(control(tree, `Assignee: ${NAMES[ME]}`)).toBeUndefined();
+    expect(screenText(tree)).toContain(TASK_EDIT_COPY.group);
+    // Photos change per copy only: a group's edit leaves them out. Who
+    // stays, and hands over this one copy.
     expect(screenText(tree)).not.toContain("Photos");
+    expect(control(tree, `Assignee: ${NAMES[ME]}`)).toBeDefined();
+    const picker = tree.root.find(
+      (node) => (node.type as unknown) === "WhoPickerSheet",
+    );
+    await act(async () => {
+      picker.props.onChange({ kind: "person", userId: "u-cal" });
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: `copy-${ME}`,
+      body: { assignee_id: "u-cal" },
+    });
     const title = field(tree, "Task title");
     act(() => title.props.onChangeText("Fill in the housing form by Friday"));
     await act(async () => {
@@ -1276,6 +1287,125 @@ describe("An officer edits a task in place (#5514)", () => {
           node.props.accessibilityLabel === "Task title",
       ),
     ).toHaveLength(0);
+    // Cleared all the same, so it doesn't linger on the screen's route.
+    expect(vi.mocked(expoRouter.useRouter)().setParams).toHaveBeenCalledWith({
+      edit: undefined,
+      who: undefined,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("ends edit mode when a confirm lands meanwhile", () => {
+    task = {
+      ...PLAIN,
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      point_reward: 15,
+      completed_at: "2026-11-18T09:00:00.000Z",
+    };
+    const tree = render();
+    press(tree, "Edit task");
+    expect(control(tree, "Done")).toBeDefined();
+    act(() => field(tree, "Task title").props.onChangeText("Mop the porch"));
+    // Confirmed from web, or by another officer: the read comes back paid.
+    task = {
+      ...task,
+      points_awarded: true,
+      confirmed_at: "2026-11-18T10:00:00.000Z",
+    };
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <TaskDetailsScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(control(tree, "Done")).toBeUndefined();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "TextInput" &&
+          node.props.accessibilityLabel === "Task title",
+      ),
+    ).toHaveLength(0);
+    expect(screenText(tree)).toContain("Sweep the porch");
+    act(() => tree.unmount());
+    // What was typed went with it: nothing is sent for a confirmed task.
+    expect(updateTask).not.toHaveBeenCalled();
+  });
+
+  it("holds Done on a proof save, and says its refusal", async () => {
+    let fail!: (error: unknown) => void;
+    updateTask.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((_, reject) => {
+          fail = reject;
+        }),
+    );
+    const tree = render();
+    press(tree, "Edit task");
+    act(() => tree.root.findByType(ProofField).props.onChange("photo"));
+    expect(updateTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { proof_kind: "photo" },
+    });
+    // Busy while it is out.
+    expect(control(tree, "Done")!.props.accessibilityState.busy).toBe(true);
+    // Done pressed as it goes out (a tap landing just before the hold):
+    // it waits on the save rather than closing over it.
+    act(() => control(tree, "Done")!.props.onPress());
+    expect(field(tree, "Task title")).toBeDefined();
+    await act(async () => {
+      fail({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "This task was confirmed, so it can't change.",
+      });
+    });
+    // Still editing, and the refusal said.
+    expect(field(tree, "Task title")).toBeDefined();
+    expect(screenText(tree)).toContain(
+      "This task was confirmed, so it can't change.",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("still says a refusal that lands after Done closed edit mode, until the next action", async () => {
+    let fail!: (error: unknown) => void;
+    updateTask.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((_, reject) => {
+          fail = reject;
+        }),
+    );
+    task = { ...PLAIN, status: "IN_PROGRESS", stored_status: "IN_PROGRESS" };
+    const tree = render();
+    press(tree, "Edit task");
+    // Who asks first; Done can close before the answer.
+    const picker = tree.root.find(
+      (node) => (node.type as unknown) === "WhoPickerSheet",
+    );
+    act(() => picker.props.onChange({ kind: "person", userId: OFFICER }));
+    const buttons = vi.mocked(Alert.alert).mock.calls[0]![2]!;
+    await act(async () => {
+      control(tree, "Done")!.props.onPress();
+    });
+    expect(control(tree, "Done")).toBeUndefined();
+    await act(async () => {
+      buttons.find((button) => button.text === "Give it to them")!.onPress?.();
+    });
+    await act(async () => {
+      fail({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "That member isn't in this chapter.",
+      });
+    });
+    expect(screenText(tree)).toContain("That member isn't in this chapter.");
+    press(tree, "More");
+    expect(screenText(tree)).not.toContain(
+      "That member isn't in this chapter.",
+    );
     act(() => tree.unmount());
   });
 });

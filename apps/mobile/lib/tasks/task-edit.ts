@@ -1,13 +1,7 @@
-import {
-  dueEntryFields,
-  dueEntryFromTask,
-  dueTimePassed,
-  splitDueEntry,
-} from "@repo/formatting";
-import type { TaskEdit } from "@repo/hooks";
-import type { TaskProofKind } from "@repo/validation";
-import { parsePointReward } from "./create-task";
-import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
+import { dueEntryFields, dueTimePassed } from "@repo/formatting";
+import type { LiveTask, TaskEdit } from "@repo/hooks";
+import { TASK_TITLE_MAX_LENGTH, type TaskProofKind } from "@repo/validation";
+import { parsePointReward, storedDueOf, TASK_FORM_COPY } from "./create-task";
 import type { TaskRowModel } from "./board";
 
 /**
@@ -17,10 +11,12 @@ import type { TaskRowModel } from "./board";
  * Each field saves on its own through `PATCH /v1/tasks/:id`, as web's task
  * panel does (`apps/web/components/tasks/task-panel.tsx`): a field sends only
  * itself, and only when it changed. A group task's copy sends
- * `scope: "group"`, so the edit reaches every copy not yet confirmed, and
- * never who it is for or its photos, which change per copy only (the API's
- * 400). A copy of a repeating task saves to that copy alone, as the phone's
- * edit always did; web asks "This task only" or "All upcoming tasks".
+ * `scope: "group"`, so the edit reaches every copy not yet confirmed, except
+ * who it is for, which hands over that one copy (no scope, the API's
+ * instance edit). Its photos change per copy only, and the screen leaves
+ * them out on a group (the API's 400). A copy of a repeating task saves to
+ * that copy alone, as the phone's edit always did; web asks "This task only"
+ * or "All upcoming tasks".
  */
 
 /** What one field's change sends, or why it can't. */
@@ -32,13 +28,12 @@ export type TaskFieldSave =
   | { kind: "problem"; message: string };
 
 export const TASK_EDIT_COPY = {
-  titleTooLong: `Keep the title to ${TITLE_MAX_LENGTH} characters.`,
-  points: `Points must be a whole number, up to ${POINTS_MAX.toLocaleString("en-US")}.`,
-  timePassed:
-    "That time has already passed today. Pick a later time or another day.",
+  titleTooLong: `Keep the title to ${TASK_TITLE_MAX_LENGTH} characters.`,
+  ...TASK_FORM_COPY,
   failed: "Couldn't save the task. Try again.",
   /** Under the fields on a group task's copy. */
-  group: "Changes go to every copy not yet confirmed.",
+  group:
+    "The title, notes, due and points change every copy not yet confirmed. Who changes this copy only.",
   saving: "Saving…",
 } as const;
 
@@ -51,7 +46,7 @@ const NONE: TaskFieldSave = { kind: "none" };
 export function titleSave(row: TaskRowModel, typed: string): TaskFieldSave {
   const title = typed.trim();
   if (!title || title === row.title) return NONE;
-  if (title.length > TITLE_MAX_LENGTH) {
+  if (title.length > TASK_TITLE_MAX_LENGTH) {
     return { kind: "problem", message: TASK_EDIT_COPY.titleTooLong };
   }
   return { kind: "save", body: { title } };
@@ -87,16 +82,16 @@ export interface TaskDueDraft {
 }
 
 /**
- * The task's due as the date and time fields open on it: a timed task on
- * the day and time of its `due_at` on this device, as web's edit reads it.
+ * The task's due as the date and time fields open on it (`storedDueOf`).
  * `null` for a task with no day, which the fields can't hold.
  */
 export function dueDraftOf(row: TaskRowModel): TaskDueDraft | null {
   if (!row.dueDay) return null;
-  const { dueDate, dueTime } = splitDueEntry(
-    dueEntryFromTask({ due_date: row.dueDay, due_at: row.dueAt }),
-  );
-  return { date: dueDate, time: dueTime ?? null };
+  const { dueDate, dueTime } = storedDueOf({
+    dueDay: row.dueDay,
+    dueAt: row.dueAt,
+  });
+  return { date: dueDate, time: dueTime };
 }
 
 /**
@@ -138,14 +133,13 @@ export function proofSave(
 }
 
 /**
- * The reference photos as they should stand, in order: the task's own kept,
- * then any just uploaded. Sent whole, and only when the set changed.
+ * The reference photos as they should stand, in order, against the set as
+ * it stands (`stored`): sent whole, and only when it changed.
  */
 export function photosSave(
-  row: TaskRowModel,
+  stored: readonly string[],
   paths: readonly string[],
 ): TaskFieldSave {
-  const stored = referencePhotos(row).map((photo) => photo.storage_path);
   const same =
     paths.length === stored.length &&
     paths.every((path, i) => path === stored[i]);
@@ -153,9 +147,12 @@ export function photosSave(
   return { kind: "save", body: { reference_photo_paths: [...paths] } };
 }
 
-/** Hand the task to another member: one copy only, never a group's. */
+/**
+ * Hand the task to another member. On a group's copy too: that one copy
+ * becomes theirs, sent with no scope (`scopedEdit`).
+ */
 export function assigneeSave(row: TaskRowModel, userId: string): TaskFieldSave {
-  if (row.groupId !== null || userId === row.assigneeId) return NONE;
+  if (userId === row.assigneeId) return NONE;
   return { kind: "save", body: { assignee_id: userId } };
 }
 
@@ -167,9 +164,36 @@ export function reassignRestarts(row: TaskRowModel): boolean {
   return row.storedStatus !== null && row.storedStatus !== "TODO";
 }
 
-/** A group task's copy edits every copy not yet confirmed (`scope`). */
+/**
+ * A group task's copy edits every copy not yet confirmed (`scope: "group"`),
+ * except a new assignee, which hands over this copy alone: a group edit
+ * refuses `assignee_id`, and the instance edit takes it.
+ */
 export function scopedEdit(row: TaskRowModel, body: TaskEdit): TaskEdit {
-  return row.groupId !== null ? { ...body, scope: "group" } : body;
+  if (row.groupId === null || body.assignee_id !== undefined) return body;
+  return { ...body, scope: "group" };
+}
+
+/**
+ * The task as it will read once `body` lands: what a field's next change is
+ * measured against while an earlier one of it is on its way, so a change
+ * back to what the task said before still sends.
+ */
+export function rowAfter(row: TaskRowModel, body: TaskEdit): TaskRowModel {
+  return {
+    ...row,
+    ...(body.title !== undefined ? { title: body.title } : {}),
+    ...(body.description !== undefined
+      ? { description: body.description }
+      : {}),
+    ...(body.point_reward !== undefined
+      ? { pointReward: body.point_reward }
+      : {}),
+    ...(body.due_date !== undefined ? { dueDay: body.due_date } : {}),
+    ...(body.due_at !== undefined ? { dueAt: body.due_at } : {}),
+    ...(body.proof_kind !== undefined ? { proofKind: body.proof_kind } : {}),
+    ...(body.assignee_id !== undefined ? { assigneeId: body.assignee_id } : {}),
+  };
 }
 
 /** The task's reference photos, the ones an edit keeps or removes. */
@@ -177,17 +201,47 @@ export function referencePhotos(row: TaskRowModel): TaskRowModel["photos"] {
   return row.photos.filter((photo) => photo.kind === "reference");
 }
 
+/** What decides whether a task can be edited, from a row or a card's read. */
+export interface TaskEditFacts {
+  pointsAwarded: boolean;
+  confirmedAt: string | null;
+  assigneeId: string | null;
+  /** It has a day, which the due field needs. */
+  hasDue: boolean;
+}
+
+export function editFactsOfRow(row: TaskRowModel): TaskEditFacts {
+  return {
+    pointsAwarded: row.pointsAwarded,
+    confirmedAt: row.confirmedAt,
+    assigneeId: row.assigneeId,
+    hasDue: row.dueDay !== null,
+  };
+}
+
+/** A chat card's live task, as `taskEditable` reads it. */
+export function editFactsOfLive(live: LiveTask): TaskEditFacts {
+  return {
+    pointsAwarded: live.points_awarded,
+    confirmedAt: live.confirmed_at,
+    assigneeId: live.assignee_id ?? null,
+    hasDue: !!live.due,
+  };
+}
+
 /**
- * Who the screen may edit in place (#5514): a `tasks:manage` holder, until
- * the task is confirmed (paid, or signed off), with an assignee and a day,
- * which the fields need. The API refuses an edit once confirmed.
+ * Who may edit a task in place (#5514), the task screen's rule and the chat
+ * card's Edit gate alike, so the card never opens an edit the screen won't
+ * draw: a `tasks:manage` holder, until the task is confirmed (paid, or
+ * signed off), with an assignee and a day, which the fields need (a task up
+ * for grabs has no assignee yet). The API refuses an edit once confirmed.
  */
-export function taskEditable(row: TaskRowModel, canManage: boolean): boolean {
+export function taskEditable(task: TaskEditFacts, canManage: boolean): boolean {
   return (
     canManage &&
-    !row.pointsAwarded &&
-    row.confirmedAt === null &&
-    row.assigneeId !== null &&
-    row.dueDay !== null
+    !task.pointsAwarded &&
+    task.confirmedAt === null &&
+    task.assigneeId !== null &&
+    task.hasDue
   );
 }

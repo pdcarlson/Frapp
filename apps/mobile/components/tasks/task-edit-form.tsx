@@ -1,33 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  TASK_PROOF_KIND_HINTS,
-  TASK_PROOF_KIND_LABELS,
-  TASK_PROOF_KINDS,
-} from "@repo/validation";
+import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
 import { localIsoDate, suggestedDueTime } from "@repo/formatting";
 import type { MemberAvatarTint } from "@repo/hooks";
-import {
-  avatarRadius,
-  fieldTypeRole,
-  typeRole,
-  useFrappTheme,
-} from "@/lib/theme";
-import {
-  useChapterBranding,
-  type ChapterBranding,
-} from "@/lib/chapter-branding";
-import { initialsFor } from "@/lib/more/narrow";
-import { MemberAvatar } from "@/components/member-avatar";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
-import { Segmented } from "@/components/segmented";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { TaskPhotoPicker } from "@/components/tasks/task-photos";
+import {
+  AssigneeRow,
+  PointsField,
+  ProofField,
+} from "@/components/tasks/task-form-fields";
 import { WhoPickerSheet } from "@/components/tasks/who-picker-sheet";
-import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import {
   dueDraftOf,
@@ -51,15 +40,16 @@ interface TaskEditPeople {
  * description were: the title, the due day and time, the points, the notes,
  * what Mark done needs, the photos and who it is for, each saving itself as
  * it is left (`useTaskEdit`). The New task sheet's controls, drawn on the
- * screen: the platform's date and time pickers (`DueDateField`,
- * `DueTimeField`), the accent "+" points field, the app's segmented control
- * and the photo picker. Apple Reminders and Things 3 edit a to-do in place
- * the same way, a field at a time with nothing to Save.
+ * screen from the same components (`task-form-fields.tsx`, the platform's
+ * date and time pickers, the photo picker). Apple Reminders and Things 3
+ * edit a to-do in place the same way, a field at a time with nothing to
+ * Save.
  *
- * A group task's copy edits every copy not yet confirmed, so it leaves out
- * who it is for and its photos, which change per copy only, and says so.
- * Who opens Assign to's picker over the screen, the one place a chooser
- * still rises: a roster of a whole chapter doesn't fit in place.
+ * On a group task's copy the title, notes, due, points and proof change
+ * every copy not yet confirmed, Who hands over this copy alone, and the
+ * photos, which change per copy only, are left out; one line says so. Who
+ * opens Assign to's picker over the screen, the one place a chooser still
+ * rises: a roster of a whole chapter doesn't fit in place.
  */
 export function TaskEditForm({
   row,
@@ -76,8 +66,8 @@ export function TaskEditForm({
   onWhoOpened?: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
   const [focused, setFocused] = useState<TextKey | null>(null);
   // Read once per visit, so "Add a time" and the earliest day don't move
   // under the officer mid-edit.
@@ -100,7 +90,8 @@ export function TaskEditForm({
       setFocused(null);
       void edit.commit(key);
     },
-    placeholderTextColor: tokens.color.text.muted,
+    returnKeyType: "done" as const,
+    onSubmitEditing: () => void edit.commit(key),
   });
 
   return (
@@ -112,9 +103,8 @@ export function TaskEditForm({
           {...textProps("title")}
           accessibilityLabel="Task title"
           placeholder="Collect ride-share forms"
-          maxLength={TITLE_MAX_LENGTH}
-          returnKeyType="done"
-          onSubmitEditing={() => void edit.commit("title")}
+          placeholderTextColor={tokens.color.text.muted}
+          maxLength={TASK_TITLE_MAX_LENGTH}
           style={[
             styles.field,
             focused === "title" ? styles.fieldFocused : null,
@@ -132,24 +122,11 @@ export function TaskEditForm({
               onChange={(date) => edit.pickDue({ ...due, date })}
             />
           </View>
-          <View
-            style={[
-              styles.box,
-              styles.split,
-              focused === "points" ? styles.fieldFocused : null,
-            ]}
-          >
-            <Text style={[styles.pointsSign, { color: brand.accent }]}>+</Text>
-            <TextInput
-              {...textProps("points")}
-              accessibilityLabel="Point reward"
-              placeholder="pts"
-              keyboardType="number-pad"
-              returnKeyType="done"
-              onSubmitEditing={() => void edit.commit("points")}
-              style={styles.pointsInput}
-            />
-          </View>
+          <PointsField
+            {...textProps("points")}
+            focused={focused === "points"}
+            style={styles.split}
+          />
         </View>
       ) : null}
 
@@ -172,8 +149,12 @@ export function TaskEditForm({
       >
         <TextInput
           {...textProps("description")}
+          // Return is a new line in the notes; they save when left.
+          returnKeyType="default"
+          onSubmitEditing={undefined}
           accessibilityLabel="Notes"
           placeholder="Notes"
+          placeholderTextColor={tokens.color.text.muted}
           multiline
           style={[
             styles.field,
@@ -183,20 +164,11 @@ export function TaskEditForm({
         />
       </View>
 
-      <View style={styles.group}>
-        <Text style={styles.groupLabel}>Proof</Text>
-        <Segmented
-          options={TASK_PROOF_KINDS.map((kind) => ({
-            value: kind,
-            label: TASK_PROOF_KIND_LABELS[kind],
-          }))}
-          value={row.proofKind}
-          onChange={edit.setProof}
-          accessibilityLabel="Proof to mark it done"
-          disabled={edit.saving}
-        />
-        <Text style={styles.note}>{TASK_PROOF_KIND_HINTS[row.proofKind]}</Text>
-      </View>
+      <ProofField
+        value={row.proofKind}
+        onChange={edit.setProof}
+        disabled={edit.saving}
+      />
 
       {isGroup ? null : (
         <View style={styles.group}>
@@ -215,7 +187,7 @@ export function TaskEditForm({
         </View>
       )}
 
-      {isGroup || !row.assigneeId ? null : (
+      {row.assigneeId ? (
         <WhoField
           assigneeId={row.assigneeId}
           people={people}
@@ -224,10 +196,10 @@ export function TaskEditForm({
           openOnMount={openWho}
           onOpened={onWhoOpened}
         />
-      )}
+      ) : null}
 
-      {/* One line, said only when there is something to say: a group's
-          reach, or a save on its way. */}
+      {/* One line, said only when there is something to say: a save on its
+          way, or how far a group's edit reaches. */}
       {edit.saving ? (
         <Text style={styles.note} accessibilityLiveRegion="polite">
           {TASK_EDIT_COPY.saving}
@@ -255,9 +227,6 @@ function WhoField({
   openOnMount: boolean;
   onOpened?: () => void;
 }) {
-  const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
   const pickerRef = useRef<BottomSheetModal>(null);
   const whoRead = useWhoDirectory({ groups: false });
   const name = people.nameOf(assigneeId);
@@ -270,28 +239,14 @@ function WhoField({
 
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Assignee: ${name}`}
-        accessibilityHint="Choose who this task is for."
-        accessibilityState={{ disabled }}
+      <AssigneeRow
+        label={name}
+        name={name}
+        avatarUri={people.avatarFor(assigneeId)}
+        tint={people.tintFor(assigneeId)}
         disabled={disabled}
         onPress={() => pickerRef.current?.present()}
-        style={styles.assigneeRow}
-      >
-        <MemberAvatar
-          uri={people.avatarFor(assigneeId)}
-          initials={initialsFor(name)}
-          size={avatarSize(tokens)}
-          style={styles.avatar}
-          textStyle={styles.avatarText}
-          tint={people.tintFor(assigneeId)}
-        />
-        <Text style={styles.fieldValue} numberOfLines={1}>
-          {name}
-        </Text>
-        <Text style={styles.note}>assignee</Text>
-      </Pressable>
+      />
       <WhoPickerSheet
         ref={pickerRef}
         value={{ kind: "person", userId: assigneeId }}
@@ -307,11 +262,8 @@ function WhoField({
   );
 }
 
-/** 24pt, Who has it's and the member rows' avatar. */
-const avatarSize = (tokens: SignetTokens) => tokens.spacing.xl;
-
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
-  const fieldStyles = sheetFieldStyles(tokens, brand.accent);
+function createStyles(tokens: SignetTokens, accent: string) {
+  const fieldStyles = sheetFieldStyles(tokens, accent);
   return StyleSheet.create({
     form: {
       gap: tokens.spacing.sm,
@@ -338,15 +290,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     split: {
       flex: 1,
     },
-    pointsSign: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pointsInput: {
-      flex: 1,
-      // No lineHeight on a single-line input, or iOS draws the text low.
-      ...fieldTypeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
     group: {
       gap: tokens.spacing.xs,
     },
@@ -355,34 +298,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.foreground,
     },
     note: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    assigneeRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-    },
-    fieldValue: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    avatar: {
-      width: avatarSize(tokens),
-      height: avatarSize(tokens),
-      borderRadius: avatarRadius(avatarSize(tokens)),
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
