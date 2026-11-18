@@ -23,7 +23,8 @@ const PHONE_ONLY: readonly ActivityCardKey[] = ["nudge", "calendar"];
  * Edit Activity on web (#5520): the phone's editor, in place of the page until
  * Done (`apps/mobile/components/activity/activity-editor.tsx`, whose comment
  * names the comparables). Remove and Add hide and bring back a card; the
- * arrows move it. Done saves to the member's account, so the phone shows the
+ * shared `ReorderList` moves it (drag or the arrow keys on its handle with a
+ * mouse, Move up and Move down on a touch screen). Done saves to the member's account, so the phone shows the
  * same page. The rule is `spec/behavior/activity.md` § Cards.
  */
 export function ActivityEditor({

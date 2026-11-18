@@ -160,6 +160,8 @@ describe("editing", () => {
     expect(dropped.shown).toHaveLength(start.shown.length);
     expect(moveActivityCardTo(start, "nudge", 99).shown.at(-1)).toBe("nudge");
     expect(moveActivityCardTo(start, "nudge", 0)).toBe(start);
+    // A drag past the top drops it first, never counted from the end.
+    expect(moveActivityCardTo(start, "links", -3).shown[0]).toBe("links");
   });
 
   it("knows when nothing changed", () => {

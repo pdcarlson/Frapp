@@ -94,6 +94,31 @@ describe("ActivityEditor (#5520)", () => {
     ]);
   });
 
+  it("drops a dragged card where the drag ends, and holds the rest still meanwhile", () => {
+    const onDraggingChange = vi.fn();
+    const { tree, onDone } = render({ onDraggingChange });
+    const handles = tree.root.findAll(
+      (n) => n.type === ("GestureDetector" as never),
+    );
+    expect(handles).toHaveLength(START.shown.length);
+    const at = START.shown.indexOf("links");
+    const last = handles[at]!.props.gesture.handlers;
+    act(() => last.onBegin());
+    expect(onDraggingChange).toHaveBeenLastCalledWith(true);
+    // While held, Hide waits.
+    const hide = tree.root.findAll(
+      (n) => n.props.accessibilityLabel === "Hide Links" && n.props.onPress,
+    )[0]!;
+    expect(hide.props.disabled).toBe(true);
+    // Up three rows of 64.
+    act(() => last.onUpdate({ translationY: -3 * 64 }));
+    act(() => last.onFinalize());
+    expect(onDraggingChange).toHaveBeenLastCalledWith(false);
+    press(tree, "Done");
+    const shown = onDone.mock.calls[0]![0].shown;
+    expect(shown.indexOf("links")).toBe(at - 3);
+  });
+
   it("never offers to hide To do", () => {
     const { tree } = render({});
     expect(has(tree, "Hide To do")).toBe(false);

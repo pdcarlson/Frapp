@@ -1,1 +1,1 @@
-Edit Activity's cards now move by dragging their handle, on your phone and on the web.
+Edit Activity's cards now move by dragging: hold a card's handle on your phone, or drag it with a mouse on the web.

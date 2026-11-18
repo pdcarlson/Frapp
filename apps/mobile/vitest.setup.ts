@@ -448,6 +448,8 @@ vi.mock("react-native-reanimated", () => {
       }),
     // A spec can read what an animation was asked for (the tab bar fold).
     withTiming: vi.fn(<T>(value: T) => value),
+    // A gesture's worklet hands its result back to JS (`lib/drag-rows.ts`).
+    runOnJS: <A extends unknown[]>(fn: (...args: A) => void) => fn,
     withRepeat: vi.fn(<T>(value: T) => value),
     cancelAnimation: vi.fn(),
     useReducedMotion: vi.fn(() => false),

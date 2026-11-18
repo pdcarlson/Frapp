@@ -249,6 +249,8 @@ export default function ActivityScreen() {
   // the member's arrangement and role are known: an editor opened on the
   // default would save it over their own.
   const [editing, setEditing] = useState(false);
+  // A card held in the editor stops the page's scroll, so the list holds still.
+  const [editorDragging, setEditorDragging] = useState(false);
   const canEdit = layout.isSuccess && permissionsRead.data !== undefined;
   const finishEditing = (next: ActivityCardArrangement) => {
     setEditing(false);
@@ -579,7 +581,11 @@ export default function ActivityScreen() {
           initial={arrangement}
           role={cardRole}
           saved={layout.data?.saved ?? false}
-          onDone={finishEditing}
+          onDone={(next) => {
+            setEditorDragging(false);
+            finishEditing(next);
+          }}
+          onDraggingChange={setEditorDragging}
           onReset={() => {
             setEditing(false);
             resetLayout.mutate(undefined, {
@@ -743,6 +749,7 @@ export default function ActivityScreen() {
           title="Activity"
           refresh={refresh}
           scrollRef={scrollRef}
+          scrollEnabled={!editorDragging}
           headerAction={moduleOn("tasks") ? <TaskBoardLink /> : undefined}
         >
           {renderBody()}

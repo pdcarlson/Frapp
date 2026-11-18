@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   BackHandler,
   Platform,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import {
   ACTIVITY_CARD_COPY,
@@ -38,8 +39,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Edit Activity (#5520; Paul's pick, 2026-11-18, after Bevel's Edit Home and
  * Apple Fitness's Edit Summary): the page's cards as a list, in place of the
- * page, until Done. Minus hides a card, plus brings it back, and the arrows
- * move it. This week stays first, as Fitness keeps its rings. Done saves the
+ * page, until Done. Minus hides a card, plus brings it back, and dragging
+ * its handle moves it (a screen reader gets Move up and Move down). This week stays first, as Fitness keeps its rings. Done saves the
  * arrangement to the member's account, so web shows the same page; Reset goes
  * back to the role's default. The rule is `spec/behavior/activity.md` § Cards.
  */
@@ -49,6 +50,7 @@ export function ActivityEditor({
   saved,
   onDone,
   onReset,
+  onDraggingChange,
 }: {
   initial: ActivityCardArrangement;
   role: ActivityCardRole;
@@ -56,6 +58,8 @@ export function ActivityEditor({
   saved: boolean;
   onDone: (arrangement: ActivityCardArrangement) => void;
   onReset: () => void;
+  /** A card is held: the screen stops its scroll so the list holds still. */
+  onDraggingChange?: (dragging: boolean) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -80,19 +84,37 @@ export function ActivityEditor({
   useEffect(() => {
     count.set(draft.shown.length);
   }, [draft.shown.length, count]);
-  const onDragStart = useCallback(() => undefined, []);
+  // While a card is held, nothing else moves: Hide and the Move actions are
+  // off, and the screen's scroll stops (Arrange channels does the same).
+  const [dragging, setDragging] = useState(false);
+  // Counts drops, so the held row lets go only once the new order is drawn.
+  const [drops, setDrops] = useState(0);
+  const onDragStart = useCallback(() => {
+    setDragging(true);
+    onDraggingChange?.(true);
+  }, [onDraggingChange]);
   const onDrop = useCallback(
     (from: number, rows: number) => {
       setDraft((current) => {
         const key = current.shown[from];
         return key ? moveActivityCardTo(current, key, from + rows) : current;
       });
-      heldIndex.set(-1);
-      dragY.set(0);
+      setDrops((n) => n + 1);
+      setDragging(false);
+      onDraggingChange?.(false);
     },
-    [heldIndex, dragY],
+    [onDraggingChange],
   );
-  const drag = { heldIndex, dragY, count, onDragStart, onDrop };
+  useLayoutEffect(() => {
+    // After the dropped order has rendered, never before: reset first and
+    // the row would flash at its old place.
+    heldIndex.set(-1);
+    dragY.set(0);
+  }, [drops, heldIndex, dragY]);
+  // Rows grow with the reader's text size, still one height for every row.
+  const { fontScale } = useWindowDimensions();
+  const rowHeight = Math.max(ROW_HEIGHT, Math.ceil(16 + 40 * fontScale));
+  const drag = { heldIndex, dragY, count, onDragStart, onDrop, rowHeight };
 
   return (
     <View style={styles.body}>
@@ -131,6 +153,7 @@ export function ActivityEditor({
             index={index}
             isLast={index === draft.shown.length - 1}
             drag={drag}
+            locked={dragging}
             onHide={() => setDraft(hideActivityCard(draft, key))}
             onMove={(direction) =>
               setDraft(moveActivityCard(draft, key, direction))
@@ -180,9 +203,11 @@ type DragState = {
   count: SharedValue<number>;
   onDragStart: () => void;
   onDrop: (from: number, rows: number) => void;
+  /** Every shown row's height, so a drag's distance is a count of rows. */
+  rowHeight: number;
 };
 
-/** Every shown row is one height, so a drag's distance is a count of rows. */
+/** The shown rows' height at the default text size. */
 const ROW_HEIGHT = 64;
 
 function ShownRow({
@@ -190,6 +215,7 @@ function ShownRow({
   index,
   isLast,
   drag,
+  locked,
   onHide,
   onMove,
 }: {
@@ -197,6 +223,8 @@ function ShownRow({
   index: number;
   isLast: boolean;
   drag: DragState;
+  /** Another card is held: Hide and the Move actions wait. */
+  locked: boolean;
   onHide: () => void;
   onMove: (direction: -1 | 1) => void;
 }) {
@@ -204,31 +232,42 @@ function ShownRow({
   const styles = createStyles(tokens);
   const name = ACTIVITY_CARD_COPY[cardKey].name;
   const hideable = canHideActivityCard(cardKey);
+  const { rowHeight, ...dragState } = drag;
   const { style: lifted, pan } = useDragRow({
     index,
-    rowHeight: ROW_HEIGHT,
+    rowHeight,
     liftedFill: tokens.color.surface.popover,
-    ...drag,
+    ...dragState,
   });
   return (
     <Animated.View
-      style={[styles.row, styles.shownRow, lifted]}
+      style={[styles.row, { height: rowHeight }, lifted]}
       // A screen reader moves a row with these, since it can't drag.
       accessible
       accessibilityLabel={name}
-      accessibilityActions={[
-        ...(hideable ? [{ name: "hide", label: `Hide ${name}` }] : []),
-        ...(index === 0 ? [] : [{ name: "up", label: "Move up" }]),
-        ...(isLast ? [] : [{ name: "down", label: "Move down" }]),
-      ]}
+      accessibilityActions={
+        locked
+          ? []
+          : [
+              ...(hideable ? [{ name: "hide", label: `Hide ${name}` }] : []),
+              ...(index === 0 ? [] : [{ name: "up", label: "Move up" }]),
+              ...(isLast ? [] : [{ name: "down", label: "Move down" }]),
+            ]
+      }
       onAccessibilityAction={(event) => {
+        if (locked) return;
         if (event.nativeEvent.actionName === "hide" && hideable) onHide();
         if (event.nativeEvent.actionName === "up") onMove(-1);
         if (event.nativeEvent.actionName === "down") onMove(1);
       }}
     >
       {hideable ? (
-        <RoundButton label={`Hide ${name}`} tone="remove" onPress={onHide} />
+        <RoundButton
+          label={`Hide ${name}`}
+          tone="remove"
+          disabled={locked}
+          onPress={onHide}
+        />
       ) : (
         // Holds the column, so every name lines up.
         <View style={styles.hit} />
@@ -275,10 +314,12 @@ function CardText({
 function RoundButton({
   label,
   tone,
+  disabled = false,
   onPress,
 }: {
   label: string;
   tone: "add" | "remove";
+  disabled?: boolean;
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -291,8 +332,13 @@ function RoundButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.hit, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.hit,
+        (pressed || disabled) && styles.pressed,
+      ]}
     >
       <View style={[styles.round, { backgroundColor: fill }]}>
         {tone === "add" ? (
@@ -353,7 +399,6 @@ function createStyles(tokens: SignetTokens) {
       borderTopColor: tokens.color.border.hairline,
     },
     noTop: { borderTopWidth: 0 },
-    shownRow: { height: ROW_HEIGHT, minHeight: ROW_HEIGHT },
     weekRow: { paddingLeft: tokens.spacing.lg },
     text: { flex: 1, paddingVertical: tokens.spacing.sm },
     name: {
