@@ -97,7 +97,9 @@ function liveDetails(token: string) {
     state: "live",
     chapter_id: "ch-1",
     member_count: 41,
-    sent_at: "2026-11-19T20:00:00.000Z",
+    // Noon UTC: the same calendar day from Hawaii to Tokyo, so the date line
+    // reads the same in every CI time zone.
+    sent_at: "2026-11-19T12:00:00.000Z",
   };
 }
 

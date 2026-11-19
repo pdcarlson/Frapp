@@ -108,7 +108,7 @@ const LIVE = {
   state: "live",
   chapter_id: CHAPTER_ID,
   member_count: 41,
-  sent_at: "2026-11-14T20:00:00.000Z",
+  sent_at: "2026-11-14T12:00:00.000Z", // noon UTC: the same day in every CI time zone
 };
 
 function signedIn() {

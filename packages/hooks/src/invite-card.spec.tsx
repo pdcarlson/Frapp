@@ -32,7 +32,7 @@ const DETAILS: InviteDetails = {
   state: "live",
   chapter_id: "00000000-0000-4000-8000-000000000001",
   member_count: 41,
-  sent_at: "2026-11-14T20:00:00.000Z",
+  sent_at: "2026-11-14T12:00:00.000Z", // noon UTC: the same day in every CI time zone
 };
 
 describe("useInviteDetails (#5625)", () => {
