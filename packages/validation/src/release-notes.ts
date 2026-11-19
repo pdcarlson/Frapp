@@ -136,6 +136,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When a meeting's minutes haven't been posted, you can tap Request minutes on the event to remind whoever is writing them.",
       "Search settings from the top of Chapter settings and Settings, or from search, and it takes you straight to the setting you meant, even if you call it something else.",
       "Each suggested task is now one tidy card with who and when as chips, Create task, and a ⋯ menu for changing, dismissing or reporting it, shown one at a time with \"1 of 8\" on the web and your phone.",
+      "A role an officer gives you now stays until an officer takes it off; you can still leave the roles you picked while they're offered.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
