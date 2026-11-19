@@ -17,7 +17,11 @@ import {
 } from "@/components/documents/upload-document-panel";
 import { FolderImportPanel } from "@/components/documents/folder-import-panel";
 import type { ImportContext } from "@/lib/documents/folder-import-session";
-import { DriveFolderPanel } from "@/components/documents/drive-folder-panel";
+import {
+  DriveFolderPanel,
+  driveFolderShown,
+  driveNeedsAttention,
+} from "@/components/documents/drive-folder-panel";
 import type {
   ChapterDocument,
   FolderRow,
@@ -59,13 +63,15 @@ export function UploadMenu({
 }) {
   const openImport = useRef<(() => void) | null>(null);
   const openDrive = useRef<(() => void) | null>(null);
-  const drive = useGoogleDriveStatus();
+  // Drive's status is `chapter_docs:manage` only on the API, so nobody else
+  // asks for it (the panel's own read shares this one's cache).
+  const drive = useGoogleDriveStatus({ enabled: canManage });
   const driveData = canManage ? drive.data : undefined;
-  // The panel draws nothing while this server has no service account and
-  // nothing is connected, so neither does its item.
-  const showDrive =
-    !!driveData && (driveData.available || !!driveData.connection);
-  const driveNeedsAttention = driveData?.connection?.status === "no_access";
+  const showDrive = driveFolderShown(driveData);
+  const needsAttention = driveNeedsAttention(driveData);
+  // The items carry the gate's reason and its notice, as the buttons did.
+  const { title, "aria-describedby": describedBy } = gate.controlProps();
+  const gateReason = { title, "aria-describedby": describedBy };
   const hasMenu = canUpload || showDrive;
   if (!hasMenu) return null;
 
@@ -89,14 +95,14 @@ export function UploadMenu({
             size="toolbar"
             className={canUpload ? "-ml-px rounded-l-none px-2" : "gap-2"}
             aria-label={
-              driveNeedsAttention
+              needsAttention
                 ? "More ways to add documents: Google Drive needs attention"
                 : "More ways to add documents"
             }
           >
             {canUpload ? null : "Add documents"}
             <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            {driveNeedsAttention ? (
+            {needsAttention ? (
               <span
                 aria-hidden="true"
                 className="h-2 w-2 rounded-full bg-destructive"
@@ -108,6 +114,7 @@ export function UploadMenu({
           {canUpload ? (
             <DropdownMenuItem
               disabled={!gate.allowed}
+              {...gateReason}
               onSelect={() => openImport.current?.()}
             >
               <FolderUp className="h-4 w-4" aria-hidden="true" />
@@ -117,11 +124,12 @@ export function UploadMenu({
           {showDrive ? (
             <DropdownMenuItem
               disabled={!gate.allowed}
+              {...gateReason}
               onSelect={() => openDrive.current?.()}
             >
               <FolderSync className="h-4 w-4" aria-hidden="true" />
               {driveData?.connection ? "Google Drive" : "Connect Google Drive"}
-              {driveNeedsAttention ? (
+              {needsAttention ? (
                 <span className="sr-only">: needs attention</span>
               ) : null}
             </DropdownMenuItem>

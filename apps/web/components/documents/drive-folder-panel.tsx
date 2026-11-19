@@ -48,6 +48,24 @@ import { getErrorMessage } from "@/lib/utils";
  * Comparable: Notion's and Slack's Google Drive connections, which also ask
  * for the folder and then show its last sync with a Sync now control.
  */
+/**
+ * Whether the Drive panel, and the Upload menu's item that opens it, show:
+ * not while this server has no service account and nothing is connected.
+ * One rule for both, so the item never opens a panel that draws nothing.
+ */
+export function driveFolderShown(
+  data: GoogleDriveStatus | undefined,
+): data is GoogleDriveStatus {
+  return !!data && (data.available || !!data.connection);
+}
+
+/** The connected folder lost its sharing, so Drive needs the officer. */
+export function driveNeedsAttention(
+  data: GoogleDriveStatus | undefined,
+): boolean {
+  return data?.connection?.status === "no_access";
+}
+
 export function DriveFolderPanel({
   gate,
   documents = [],
@@ -71,7 +89,7 @@ export function DriveFolderPanel({
     if (openerRef) openerRef.current = () => dialog.setOpen(true);
   });
   const data = status.data;
-  if (!data || (!data.available && !data.connection)) return null;
+  if (!driveFolderShown(data)) return null;
   const connected = data.connection;
 
   return (

@@ -12,6 +12,7 @@ import {
 import {
   buildFolderTree,
   folderAncestors,
+  folderPlace,
   folderStartsOpen,
   liftMarkedFolders,
   type FolderTreeNode,
@@ -680,13 +681,18 @@ export function FolderMenu({
   ...rail
 }: Parameters<typeof FolderRail>[0] & { className?: string }) {
   const [open, setOpen] = useState(false);
-  const { activeFolder } = rail;
+  const { activeFolder, railFolders } = rail;
+  // The name the rail gives the folder, by its own tree rule, so the
+  // control and the rail it opens never disagree.
   const label =
     activeFolder === null
       ? "All files"
       : activeFolder === ""
         ? "No folder"
-        : (activeFolder.split(" / ").at(-1) ?? activeFolder);
+        : folderPlace(
+            activeFolder,
+            new Set(railFolders.map((folder) => folder.name)),
+          ).label;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -702,9 +708,16 @@ export function FolderMenu({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
         </Button>
       </PopoverTrigger>
+      {/*
+        Stays open while a dialog its rail opened (New folder, Rename, Who
+        can see, a delete's confirmation) has focus: closing on that focus
+        would unmount the control the dialog hands focus back to, and the
+        Edit mode with it. A click outside or Escape still closes it.
+      */}
       <PopoverContent
         align="start"
         className="max-h-[min(70vh,32rem)] w-64 overflow-y-auto p-2"
+        onFocusOutside={(event) => event.preventDefault()}
       >
         <FolderRail
           {...rail}

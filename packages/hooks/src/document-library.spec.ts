@@ -727,8 +727,13 @@ describe("documentFolderHues (#5576)", () => {
     expect(new Set(hues).size).toBe(4);
   });
 
-  it("colours a subfolder as its top folder, ignoring case", () => {
-    expect(hue("Rush / 2024 / Flyers")).toBe(hue("rush"));
+  it("colours a subfolder as the folder the rail draws it under", () => {
+    expect(hue("Rush / 2024")).toBe(hue("Rush"));
+  });
+
+  it("keeps two path-named folders with no parent folder apart, as the rail does", () => {
+    const paths = documentFolderHues(["Rush / Socials", "Rush / Budget"]);
+    expect(paths("Rush / Socials")).not.toBe(paths("Rush / Budget"));
   });
 
   it("still colours a folder the list doesn't hold", () => {

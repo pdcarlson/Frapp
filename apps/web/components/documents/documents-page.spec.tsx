@@ -115,6 +115,13 @@ const BYLAWS = {
 };
 
 
+// Drive's status (#5157), for the Upload menu's Drive item (#5576).
+const mockDriveStatus = vi.hoisted(() =>
+  vi.fn<(options?: { enabled?: boolean }) => { data: unknown }>(() => ({
+    data: undefined,
+  })),
+);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
@@ -143,7 +150,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useConfirmDocumentUploads: () => ({ mutateAsync: vi.fn() }),
   useInvalidateDocuments: () => vi.fn(),
   // The Google Drive folder (#5157); `drive-folder-panel.spec.tsx` covers it.
-  useGoogleDriveStatus: () => ({ data: undefined }),
+  useGoogleDriveStatus: (options?: { enabled?: boolean }) =>
+    mockDriveStatus(options),
+  useConnectGoogleDrive: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSyncGoogleDrive: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDisconnectGoogleDrive: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useOpenUpDriveCopy: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
@@ -2375,6 +2387,87 @@ describe("DocumentsPage wiring across its split components (#3273)", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+  });
+
+  it("asks for Drive's status only for an officer who manages documents (#5576)", () => {
+    manageGate.granted = false;
+    render(<DocumentsPage />);
+    expect(mockDriveStatus).toHaveBeenCalledWith({ enabled: false });
+    expect(mockDriveStatus).not.toHaveBeenCalledWith({ enabled: true });
+    manageGate.granted = true;
+  });
+
+  it("opens Google Drive from the Upload menu when the server offers it (#5576)", async () => {
+    manageGate.granted = true;
+    mockDriveStatus.mockReturnValue({
+      data: {
+        available: true,
+        connection: null,
+        service_account_email: "drive@example.com",
+      },
+    });
+    try {
+      const user = userEvent.setup();
+      render(<DocumentsPage />);
+      await user.click(
+        screen.getByRole("button", { name: "More ways to add documents" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Connect Google Drive" }),
+      );
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    } finally {
+      mockDriveStatus.mockReturnValue({ data: undefined });
+    }
+  });
+
+  it("keeps a row's controls out of sight until hover or focus, and behind More on touch (#5576)", () => {
+    render(<DocumentsPage />);
+    const star = screen.getByRole("button", { name: "Star Chapter bylaws" });
+    const controls = star.closest("div")!;
+    // jsdom can't run the media queries, so the classes are the contract.
+    expect(controls.className).toContain("pointer-fine:opacity-0");
+    expect(controls.className).toContain("pointer-fine:group-hover/row:opacity-100");
+    expect(controls.className).toContain("pointer-fine:group-focus-within/row:opacity-100");
+    expect(controls.className).toContain("pointer-coarse:hidden");
+    const more = screen.getByRole("button", { name: "Actions for Chapter bylaws" });
+    expect(more.className).toContain("pointer-coarse:inline-flex");
+    expect(more.className).toMatch(/(^|\s)hidden(\s|$)/);
+  });
+
+  it("offers the row's actions from the touch More menu (#5576)", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(
+      screen.getByRole("button", { name: "Actions for Chapter bylaws" }),
+    );
+    expect(
+      (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+    ).toEqual(expect.arrayContaining(["Star", "Download"]));
+  });
+
+  it("paints each file's tile, and its folder's rail glyph, in the folder's hue (#5576)", () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0 },
+      { id: "f-2", name: "Rush", sort_order: 1 },
+    ];
+    documentsQuery.data = [
+      BYLAWS,
+      { ...BYLAWS, id: "doc-2", title: "Rush schedule", folder: "Rush" },
+    ];
+    render(<DocumentsPage />);
+    const tile = (title: string) =>
+      screen
+        .getByRole("button", { name: new RegExp(`^${title}`) })
+        .querySelector<HTMLElement>("span[style]")!;
+    const governance = tile("Chapter bylaws").style.color;
+    const rush = tile("Rush schedule").style.color;
+    expect(governance).not.toBe("");
+    expect(rush).not.toBe(governance);
+    const railGlyph = screen
+      .getAllByRole("button", { name: /^Governance/ })[0]!
+      .querySelector<HTMLElement>("span[style]")!;
+    expect(railGlyph.style.color).toBe(governance);
   });
 
   it("keeps an upload draft when the permission gate unmounts the sheet and comes back", async () => {

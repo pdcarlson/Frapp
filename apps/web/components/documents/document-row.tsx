@@ -1,10 +1,16 @@
 "use client";
 
-import { Download, Loader2, Trash2, Users } from "lucide-react";
+import { Download, Loader2, MoreHorizontal, Trash2, Users } from "lucide-react";
 import { formatDay } from "@repo/formatting";
 import { memberAvatarTint } from "@repo/hooks";
 import { isDriveCopy, uploadedLine } from "@repo/hooks/document-library";
 import { IconButton } from "@/components/ui/icon-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Can } from "@/components/shared/can";
 import {
@@ -101,11 +107,12 @@ function FolderHueTile({ hue }: { hue: string }) {
  * shows files rather than a strip of icons per file. Hidden by opacity, not
  * `invisible`, so Tab still reaches them and their focus brings them up;
  * `pointer-events-none` keeps a click at the end of a row from landing on a
- * control nobody can see. A touch screen has no hover, so there they stay
- * in line.
+ * control nobody can see. A touch screen has no hover, so there the same
+ * actions sit behind one More button (`RowActionsMenu`), as Drive's and
+ * Dropbox's touch layouts put them.
  */
 const ROW_CONTROLS_CLASS = [
-  "shrink-0",
+  "shrink-0 pointer-coarse:hidden",
   "pointer-fine:absolute pointer-fine:inset-y-0 pointer-fine:right-0 pointer-fine:bg-card-hover pointer-fine:pl-2",
   "pointer-fine:pointer-events-none pointer-fine:opacity-0",
   "pointer-fine:group-hover/row:pointer-events-auto pointer-fine:group-hover/row:opacity-100",
@@ -225,7 +232,101 @@ export function DocumentRow({
         onSetAccess={onSetAccess}
         className={ROW_CONTROLS_CLASS}
       />
+      <RowActionsMenu
+        doc={doc}
+        gate={gate}
+        deleting={deleting}
+        starred={starred}
+        pinBusy={pinBusy}
+        onDelete={onDelete}
+        onToggleStar={onToggleStar}
+        onTogglePin={onTogglePin}
+        onSetAccess={onSetAccess}
+      />
     </li>
+  );
+}
+
+/**
+ * The row's actions on a touch screen (#5576): one More button opening the
+ * same Star, Pin, Who can see, Download and Delete, under the same names and
+ * gates as the hover controls. Hidden wherever a mouse can hover.
+ */
+function RowActionsMenu({
+  doc,
+  gate,
+  deleting,
+  starred,
+  pinBusy,
+  onDelete,
+  onToggleStar,
+  onTogglePin,
+  onSetAccess,
+}: Omit<Parameters<typeof DocumentControls>[0], "className">) {
+  const { download, fetchingId } = useDocumentDownload();
+  const pinned = !!doc.pinned_at;
+  const { title, "aria-describedby": describedBy } = gate.controlProps();
+  const gateReason = { title, "aria-describedby": describedBy };
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          label={`Actions for ${doc.title}`}
+          className="hidden shrink-0 pointer-coarse:inline-flex"
+        >
+          <MoreHorizontal />
+        </IconButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[200px]">
+        <DropdownMenuItem
+          disabled={!gate.allowed}
+          {...gateReason}
+          onSelect={() => onToggleStar(doc)}
+        >
+          <StarGlyph className="h-4 w-4" active={starred} />
+          {starred ? "Unstar" : "Star"}
+        </DropdownMenuItem>
+        <Can permission="chapter_docs:manage">
+          <DropdownMenuItem
+            disabled={!gate.allowed || pinBusy}
+            {...gateReason}
+            onSelect={() => onTogglePin(doc)}
+          >
+            <PinGlyph className="h-4 w-4" active={pinned} />
+            {pinned ? "Unpin for the chapter" : "Pin for the chapter"}
+          </DropdownMenuItem>
+        </Can>
+        {onSetAccess ? (
+          <DropdownMenuItem
+            disabled={!gate.allowed}
+            {...gateReason}
+            onSelect={() => onSetAccess(doc)}
+          >
+            <Users className="h-4 w-4" aria-hidden="true" />
+            Who can see
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem
+          disabled={fetchingId === doc.id}
+          onSelect={() => void download(doc.id)}
+        >
+          <Download className="h-4 w-4" aria-hidden="true" />
+          Download
+        </DropdownMenuItem>
+        <Can permission="chapter_docs:manage">
+          {isDriveCopy(doc) ? null : (
+            <DropdownMenuItem
+              disabled={!gate.allowed || deleting}
+              {...gateReason}
+              onSelect={() => onDelete(doc)}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              Delete
+            </DropdownMenuItem>
+          )}
+        </Can>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
