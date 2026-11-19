@@ -67,7 +67,7 @@ export function TaskDetailSkeleton() {
   const styles = createTaskFactStyles(tokens);
   const { caption, label } = tokens.typography.role;
   return (
-    <SkeletonRegion label="Loading task" style={styles.skeleton}>
+    <SkeletonRegion label="Loading task" flush style={styles.skeleton}>
       <SkeletonBlock
         width={tokens.spacing["3xl"] + tokens.spacing.lg}
         height={tokens.spacing.xl}
