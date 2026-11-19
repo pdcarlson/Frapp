@@ -1,4 +1,4 @@
-# 20261119181720_client_table_grants_and_chat_members_view.sql
+# 20261119210325_client_table_grants_and_chat_members_view.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure

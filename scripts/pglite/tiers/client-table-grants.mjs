@@ -1,6 +1,6 @@
 import { db, runAssertions } from "../harness.mjs";
 
-// ─── Client table grants (20261119181720) ───────────────────────────────────
+// ─── Client table grants (20261119210325) ───────────────────────────────────
 //
 // Supabase grants `anon` and `authenticated` every privilege on every public
 // table by default, which left row-level security as the only barrier between

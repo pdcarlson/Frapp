@@ -60,7 +60,7 @@ frapp_acl_log() {
 # to PostgreSQL's PUBLIC EXECUTE default, so there is nothing here to repair.
 #
 # Only `service_role` is repaired. The client roles `anon` and `authenticated` hold exactly
-# what migration 20261119181720 grants them (SELECT on chat_messages, SELECT and DELETE on
+# what migration 20261119210325 grants them (SELECT on chat_messages, SELECT and DELETE on
 # chat_message_actions, to authenticated; nothing to anon), on hosted and here alike. That
 # migration also revoked their default privileges and their leftover `Dxtm` bits, so granting
 # them DML here would make the local stack more open than hosted, and would hide a client

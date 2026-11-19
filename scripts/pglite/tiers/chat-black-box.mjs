@@ -66,7 +66,7 @@ if (readSeeded) {
       -- authenticated, as on hosted, so a policy bound to anon or public
       -- applies to it and one bound to authenticated does not. It gets the same
       -- table grants on purpose, although hosted anon holds none since
-      -- 20261119181720 (tiers/client-table-grants.mjs): with the grant in
+      -- 20261119210325 (tiers/client-table-grants.mjs): with the grant in
       -- place, the read reaches RLS, so these assertions prove the policies
       -- alone also deny the anon key, the layer under the missing grant. It
       -- gets no EXECUTE on can_read_chat_message, which is revoked from anon
@@ -801,7 +801,7 @@ if (readSeeded) {
       // The read probe below is `select`-only, so it is structurally blind to
       // the WRITE half of default-deny: `for insert with check (true)` or
       // `for update using (true)` leaves every read assertion green. That
-      // matters even though 20261119181720 revoked the client roles' table
+      // matters even though 20261119210325 revoked the client roles' table
       // grants (held there by tiers/client-table-grants.mjs): a later
       // migration that grants a write back, together with a permissive UPDATE
       // policy, would let any signed-in client rewrite `members.role_ids` and
