@@ -229,10 +229,11 @@ export function useEmailInvites() {
 /**
  * Join a chapter with an invite token.
  *
- * `accept_terms_privacy` is the join screen's Terms checkbox (#2302);
- * `useJoinTermsCheckbox` decides when to send it. Without it, a user who hasn't
- * accepted the current Terms is refused with a 403 (`isTermsRequiredError`),
- * and the token stays usable.
+ * `accept_terms_privacy` is the join screen's Terms line (#2302, #5625):
+ * every join from a screen showing it sends it, since tapping Join or a
+ * Continue button under the line is the acceptance. Without it, a user who
+ * hasn't accepted the current Terms is refused with a 403
+ * (`isTermsRequiredError`), and the token stays usable.
  */
 export function useRedeemInvite() {
   const client = useFrappClient();
@@ -293,21 +294,23 @@ export function usePendingInvites(userId: string | null) {
 }
 
 /**
- * What an invite is for, read without using it up (#3352): the chapter's name,
- * school, text mark and color, who sent it and the role it grants. The join
- * screen's confirm card shows it before the member taps Join. Pass `null` for
- * no invite yet.
+ * The invite card (#5625): the chapter's name, school, text mark and color,
+ * who sent it, how many members it has, and whether the link still works
+ * (`state`). Answers for a dead link too, so its card can still say whose
+ * chapter it was and offer to ask for a new one. Needs no sign-in: it is what
+ * a visitor sees before they have an account. Pass `null` for no invite yet.
  *
- * Not retried: a 410 is a dead link and stays one, and anything else leaves
- * the card showing the bare invite, which can still be joined. Keyed by the
- * token, which is a secret, so it lives only in this query cache.
+ * Not retried: a 404 is a link that never was an invite and stays one.
+ * Keyed by the token, which is a secret, so it lives only in this query
+ * cache. Replaces the signed-in `POST /v1/invites/preview` (#3352), which
+ * stays on the API for builds already in people's hands.
  */
-export function useInvitePreview(token: string | null) {
+export function useInviteDetails(token: string | null) {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["invite-preview", token],
+    queryKey: ["invite-details", token],
     queryFn: async ({ signal }) => {
-      const { data, error } = await client.POST("/v1/invites/preview", {
+      const { data, error } = await client.POST("/v1/invites/details", {
         signal,
         body: { token: token as string },
       });
@@ -317,6 +320,31 @@ export function useInvitePreview(token: string | null) {
     enabled: !!token,
     retry: false,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * "Ask Paul for a new link" on a dead invite's card (#5625): tells whoever
+ * sent it, by name, that the signed-in caller wants a new one. A 409 means
+ * the link works after all, or the caller is already in the chapter.
+ */
+export function useAskForNewLink() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["invites", "ask-for-new-link"],
+    mutationFn: async (token: string) => {
+      const { error } = await client.POST("/v1/invites/ask-for-new-link", {
+        body: { token },
+      });
+      if (error) throw error;
+    },
+    onError: (_error, token) => {
+      // The link's state may have changed under the card: read it again.
+      void queryClient.invalidateQueries({
+        queryKey: ["invite-details", token],
+      });
+    },
   });
 }
 
