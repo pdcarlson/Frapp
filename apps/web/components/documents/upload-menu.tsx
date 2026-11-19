@@ -4,6 +4,8 @@ import { useRef } from "react";
 import { ChevronDown, FolderSync, FolderUp } from "lucide-react";
 import { useGoogleDriveStatus, type DocumentTypeRow } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
+import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -91,9 +93,12 @@ export function UploadMenu({
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             size="toolbar"
-            className={canUpload ? "-ml-px rounded-l-none px-2" : "gap-2"}
+            className={cn(
+              PAGE_ACTION_CLASSES,
+              canUpload ? "-ml-px rounded-l-none px-2" : null,
+            )}
             aria-label={
               needsAttention
                 ? "More ways to add documents: Google Drive needs attention"

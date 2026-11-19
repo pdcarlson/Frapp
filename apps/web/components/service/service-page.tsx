@@ -14,6 +14,7 @@ import {
 import { can } from "@repo/validation";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
+import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -307,7 +308,12 @@ export function ServiceHoursPage() {
             onCloseAutoFocus={logDialog.contentProps.onCloseAutoFocus}
             gate={gate}
             trigger={
-              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+              <Button
+                size="toolbar"
+                variant="ghost"
+                className={PAGE_ACTION_CLASSES}
+                {...gate.controlProps()}
+              >
                 <Plus className="h-4 w-4" /> Log service
               </Button>
             }

@@ -11,6 +11,7 @@ import {
 } from "@repo/hooks";
 import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { Button } from "@/components/ui/button";
+import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -521,13 +522,14 @@ export function UploadDocumentPanel({
     <>
       {/*
         Compact and outlined (#5576): the page's fill goes to the files, not
-        to the button that adds one. "Upload" on the button, the full name
+        to the button that adds one. In the accent, as every page's main
+        action is (`new-button.tsx`, Paul 2026-11-19). "Upload" on the button, the full name
         for a screen reader.
       */}
       <Button
-        variant="secondary"
+        variant="ghost"
         size="toolbar"
-        className={cn("gap-2", triggerClassName)}
+        className={cn(PAGE_ACTION_CLASSES, triggerClassName)}
         aria-label="Upload document"
         onClick={() => openPanel()}
         {...gate.controlProps()}

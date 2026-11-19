@@ -12,7 +12,7 @@ import {
 } from "react";
 import { OpenLinkedEvent } from "./open-linked-event";
 import { CalendarSubscribeMenu } from "./calendar-subscribe-menu";
-import { ChevronLeft, ChevronRight, ListFilter, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListFilter } from "lucide-react";
 import {
   RolesGlyph,
   SearchGlyph,
@@ -76,6 +76,7 @@ import {
   eventsCount,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -1281,16 +1282,11 @@ export function EventsPage() {
         </Popover>
         <CalendarSubscribeMenu iconOnly={narrow} />
         <Can allOf={EVENT_CREATE_PERMISSIONS}>
-          <Button
-            size="toolbar"
-            variant="ghost"
-            className="gap-2 border-primary/35 text-primary hover:bg-primary/10 hover:text-primary"
+          <NewButton
+            thing="event"
             {...eventWriteControls}
             onClick={() => openCreate(null)}
-          >
-            <Plus className="h-4 w-4" />
-            New event
-          </Button>
+          />
         </Can>
       </PageActions>
 

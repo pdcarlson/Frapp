@@ -1,5 +1,7 @@
 "use client";
 
+import type * as React from "react";
+
 import { X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { PageTitleText } from "@/components/layout/top-bar";
@@ -31,23 +33,36 @@ export function ToolPageHeader({
   pageTitle,
   titleIsHeading,
   onClose,
+  actionSlotRef,
 }: {
   pageTitle: PageTitle | null;
   /** Whether this copy is the route's `<h1>` (the shell knows it is wide). */
   titleIsHeading: boolean;
   onClose: () => void;
+  /**
+   * The box the page's `PageActions` renders into, between the title and the
+   * X (`page-actions.tsx`, Paul 2026-11-19).
+   */
+  actionSlotRef?: React.Ref<HTMLDivElement>;
 }) {
   return (
     // A `div`, not a `<header>`: the top bar is the page's one banner.
     <div
       data-tool-page-header=""
-      className="hidden h-12 shrink-0 items-center gap-3 border-b border-border px-4 min-[1056px]:flex sm:px-6"
+      // `@container`: a page's actions break on the page's own width, which
+      // this header shares, as they did in the row under it.
+      className="@container hidden h-12 shrink-0 items-center gap-3 border-b border-border px-4 min-[1056px]:flex sm:px-6"
     >
       <div className="flex min-w-0 flex-1 items-center">
         {pageTitle ? (
           <PageTitleText pageTitle={pageTitle} asHeading={titleIsHeading} />
         ) : null}
       </div>
+      <div
+        ref={actionSlotRef}
+        data-tool-page-actions=""
+        className="flex min-w-0 shrink items-center justify-end empty:hidden"
+      />
       <PanelCloseButton
         label={pageTitle ? `Close ${pageTitle.title}` : "Close page"}
         onClick={onClose}

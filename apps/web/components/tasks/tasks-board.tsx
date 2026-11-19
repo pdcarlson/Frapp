@@ -9,7 +9,6 @@ import {
   Link2,
   ChevronDown,
   Pencil,
-  Plus,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -63,6 +62,8 @@ import {
 import { ToastAction } from "@/components/ui/toast";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
+import { PageActions } from "@/components/layout/page-actions";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
@@ -1126,8 +1127,8 @@ export function TasksBoard() {
             chapter's board's filter chips (Linear's Filter, as the
             Directory's chips draw them).
           */}
-          <div className="grid gap-2">
-            <div className="flex items-center gap-2">
+          <div className="grid gap-2 empty:hidden">
+            <div className="flex items-center gap-2 empty:hidden">
               {canManage || (permissionsKnown && follows) ? (
                 <SegmentedChoice
                   label="Whose tasks"
@@ -1136,7 +1137,10 @@ export function TasksBoard() {
                   onChange={canManage ? setOfficerView : setMemberPick}
                 />
               ) : null}
-              <div className="ml-auto flex shrink-0 items-center gap-2">
+              {/* View and New task are the page's actions: in the page header
+                  from the side-by-side width up (`page-actions.tsx`), at the
+                  trailing edge of this row below it. */}
+              <PageActions className="ml-auto shrink-0 flex-nowrap">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -1191,18 +1195,14 @@ export function TasksBoard() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {canManage ? (
-                  <Button
+                  <NewButton
                     type="button"
-                    size="toolbar"
-                    className="gap-1.5"
+                    thing="task"
                     {...gate.controlProps()}
                     onClick={() => setExpandSignal((n) => n + 1)}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    New task
-                  </Button>
+                  />
                 ) : null}
-              </div>
+              </PageActions>
             </div>
             {view === "all" && canManage ? (
               <div className="flex flex-wrap items-center gap-2">

@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import {
@@ -35,6 +36,8 @@ import {
 import { MAX_BACKWORK_ZIP_LABEL, can } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
+import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
+import { PageActions } from "@/components/layout/page-actions";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   DropdownMenu,
@@ -665,59 +668,68 @@ export function BackworkPage() {
               )}
             </IconButton>
           ) : null}
-          <Can permission="backwork:admin">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="toolbar"
-                  className="w-9 px-0 pointer-coarse:w-11"
-                  aria-label="More backwork options"
-                  title="More"
-                >
-                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[260px]">
-                <DropdownMenuItem
-                  disabled={!gate.allowed}
-                  aria-describedby={gate.controlProps()["aria-describedby"]}
-                  onSelect={() => setCleanupOpen(true)}
-                >
-                  <Pencil aria-hidden="true" />
-                  Clean up professors and departments
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {/* Portaled, so it can live beside the menu that opens it. */}
-            <BackworkTaxonomyDrawer
-              open={cleanupOpen}
-              onOpenChange={setCleanupOpen}
-              gate={gate}
-            />
-          </Can>
-          <Can permission="backwork:upload">
-            <Button asChild size="toolbar" variant="secondary" className="gap-2">
-              <Link href="/backwork/upload">
-                <FolderUp className="h-4 w-4" aria-hidden="true" /> Bulk upload
-              </Link>
-            </Button>
-          </Can>
-          <Can permission="backwork:upload">
-            <BackworkUploadSheet gate={gate}>
-              <Button
-                type="button"
-                size="toolbar"
-                className="gap-2"
-                {...gate.controlProps()}
-              >
-                Upload
-              </Button>
-            </BackworkUploadSheet>
-          </Can>
         </div>
       </section>
+
+      {/*
+        The page's actions, in its header from the side-by-side width up
+        (`page-actions.tsx`): the admin menu, Bulk upload and Upload.
+      */}
+      <PageActions>
+        <Can permission="backwork:admin">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                size="toolbar"
+                className="w-9 px-0 pointer-coarse:w-11"
+                aria-label="More backwork options"
+                title="More"
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[260px]">
+              <DropdownMenuItem
+                disabled={!gate.allowed}
+                aria-describedby={gate.controlProps()["aria-describedby"]}
+                onSelect={() => setCleanupOpen(true)}
+              >
+                <Pencil aria-hidden="true" />
+                Clean up professors and departments
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Portaled, so it can live beside the menu that opens it. */}
+          <BackworkTaxonomyDrawer
+            open={cleanupOpen}
+            onOpenChange={setCleanupOpen}
+            gate={gate}
+          />
+        </Can>
+        <Can permission="backwork:upload">
+          <Button asChild size="toolbar" variant="secondary" className="gap-2">
+            <Link href="/backwork/upload">
+              <FolderUp className="h-4 w-4" aria-hidden="true" /> Bulk upload
+            </Link>
+          </Button>
+        </Can>
+        <Can permission="backwork:upload">
+          <BackworkUploadSheet gate={gate}>
+            <Button
+              type="button"
+              size="toolbar"
+              variant="ghost"
+              className={PAGE_ACTION_CLASSES}
+              {...gate.controlProps()}
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              Upload
+            </Button>
+          </BackworkUploadSheet>
+        </Can>
+      </PageActions>
 
       {/*
         Disable, don't hide (§5 rule 4): the library stays browsable and

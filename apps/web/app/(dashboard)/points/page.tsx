@@ -15,6 +15,7 @@ import {
 import { can } from "@repo/validation";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
+import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -387,12 +388,12 @@ export default function PointsPage() {
     // window is wide, so the two panes count the page's own width.
     <div className="@container space-y-6">
       {/*
-        One toolbar row: the window choice, the archive picker and the route's
-        action, rather than a summary card. `PageActions` wraps them once the
-        row runs out of width, which is what holds the 375px floor (#1142 was
-        this row overflowing inside the old card header).
+        The window choice and the archive picker are a view of the page, not
+        an action, and they need the page's width, so they stay a row in the
+        body that wraps to hold the 375px floor (#1142). Adjust points, the
+        page's action, sits in the page header (`page-actions.tsx`).
       */}
-      <PageActions>
+      <div className="flex min-h-[34px] max-w-full flex-wrap items-center gap-2">
         {/*
             A segmented choice, not three primaries: the selected window is
             the outlined Secondary and the others are Ghost, so the row's
@@ -445,14 +446,16 @@ export default function PointsPage() {
             </SelectContent>
           </Select>
         ) : null}
+      </div>
+      <PageActions>
         {/*
-            The window buttons beside this trigger are reads and stay live
-            while it is gated: a lapsed chapter keeps its full ledger history.
+            The window buttons in the body are reads and stay live while this
+            is gated: a lapsed chapter keeps its full ledger history.
           */}
         <Button
           size="toolbar"
-          variant="secondary"
-          className="gap-2"
+          variant="ghost"
+          className={PAGE_ACTION_CLASSES}
           {...adjustGate.controlProps()}
           onClick={() => adjustDialog.setOpen(true)}
         >

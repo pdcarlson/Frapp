@@ -32,6 +32,7 @@ import { ErrorState } from "@/components/shared/async-states";
 import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -162,7 +163,7 @@ function ChapterMeetingsPage() {
     <div className="space-y-6">
       <Can permission="meetings:record">
         <PageActions>
-          <Button onClick={() => setStarting(true)}>New minutes</Button>
+          <NewButton thing="minutes" onClick={() => setStarting(true)} />
         </PageActions>
       </Can>
 

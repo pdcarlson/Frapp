@@ -8,7 +8,7 @@ import {
   writeKeptPanel,
 } from "@repo/hooks/kept-drafts";
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
+import { Pencil, Power, PowerOff, Trash2 } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useCurrentChapter,
@@ -18,7 +18,7 @@ import {
   useUpdateGeofence,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
-import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Badge } from "@/components/ui/badge";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -216,15 +216,11 @@ export function StudyZonesManager() {
           Zones
         </SectionLabel>
         {canManageZones ? (
-          <Button
-            size="toolbar"
-            className="gap-2"
+          <NewButton
+            thing="study zone"
             {...gate.controlProps()}
             onClick={() => openEditor(null)}
-          >
-            <Plus className="h-4 w-4" />
-            New study zone
-          </Button>
+          />
         ) : null}
       </div>
       <Can
