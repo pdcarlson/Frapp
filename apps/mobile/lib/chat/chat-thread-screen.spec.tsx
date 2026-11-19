@@ -150,24 +150,6 @@ vi.mock("@/components/chat/message-thread-screen", async () => {
   };
 });
 
-const presentProfileSheet = vi.fn();
-vi.mock("@/components/directory/member-detail-sheet", async () => {
-  const { createElement, forwardRef, useImperativeHandle } =
-    await import("react");
-  return {
-    MemberDetailSheet: forwardRef(function MemberDetailSheet(
-      props: Record<string, unknown>,
-      ref,
-    ) {
-      useImperativeHandle(ref, () => ({
-        present: presentProfileSheet,
-        dismiss: vi.fn(),
-      }));
-      return createElement("MemberDetailSheet", props);
-    }),
-  };
-});
-
 const presentPollSheet = vi.fn();
 const dismissPollSheet = vi.fn();
 vi.mock("@/components/chat/new-poll-sheet", async () => {
@@ -2282,21 +2264,57 @@ describe("chat thread channel start", () => {
 });
 
 describe("chat thread member profile", () => {
-  it("opens the profile sheet for whoever a row names, from a name, photo or @ chip", () => {
+  // #5568: the Directory's profile screen, pushed over the thread, which
+  // names itself so Message to this DM's member goes back to it.
+  it("pushes the profile screen for whoever a row names, from a name, photo or @ chip", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
     const tree = render();
     const row = rows(tree)[0]!;
     act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
-    expect(presentProfileSheet).toHaveBeenCalled();
-    const sheet = tree.root.findByType("MemberDetailSheet" as never);
-    expect(sheet.props.member).toEqual({ userId: "user-42" });
-    expect(sheet.props.openChannelId).toBe(CHANNEL);
-    // The member list opens the same sheet.
-    expect(
-      tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
-    ).toBe(row.props.onOpenProfile);
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: "user-42", channelId: CHANNEL },
+    });
+    act(() => tree.unmount());
+  });
+
+  // From a row of the member list, the same screen; coming back from it
+  // reopens the list, which the push's blur closed.
+  it("reopens the member list on return from a profile it opened", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    const tree = render();
+    const list = tree.root.findByType("ChannelMemberSheet" as never);
+    act(() => (list.props.onOpenProfile as (id: string) => void)("user-7"));
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: "user-7", channelId: CHANNEL },
+    });
+    act(() => blurThread());
+    presentMemberSheet.mockClear();
+    act(() => refocus());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    // Once: a later return from elsewhere doesn't reopen it.
+    act(() => blurThread());
+    act(() => refocus());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't reopen the list after a profile opened from a message", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
+    act(() => blurThread());
+    presentMemberSheet.mockClear();
+    act(() => refocus());
+    expect(presentMemberSheet).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });
+
+const blurThread = (expoRouter as unknown as { __blur: () => void }).__blur;
 
 describe("chat thread member list (#3536)", () => {
   const membersButtons = (tree: ReactTestRenderer) =>

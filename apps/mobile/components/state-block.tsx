@@ -101,13 +101,10 @@ type StateBlockProps = {
  */
 export function SkeletonLines({
   lines = 3,
-  showTile = false,
   tone = "card",
 }: {
   /** Text rows to draw. Widths cycle through the ~45–70% range §10 specifies. */
   lines?: number;
-  /** Draw a leading control-sized block, for a list whose rows carry an avatar. */
-  showTile?: boolean;
   /** The tone of what the skeleton turns into: `card` cards, or a `list` (`ListSection`). */
   tone?: "card" | "list";
 }) {
@@ -138,13 +135,6 @@ export function SkeletonLines({
       <SkeletonPulse>
         <SkeletonGroundContext.Provider value={inSheet}>
           <View style={styles.skeletonStack}>
-            {showTile ? (
-              <SkeletonBlock
-                width={tokens.touch.minimum}
-                height={tokens.touch.minimum}
-                radius={tokens.radius.control}
-              />
-            ) : null}
             {Array.from({ length: lines }, (_, index) => (
               <SkeletonBlock
                 key={index}

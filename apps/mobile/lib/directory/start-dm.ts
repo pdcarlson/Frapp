@@ -3,7 +3,7 @@ import { isBlockableSender } from "@repo/chat-core/blocks";
 import type { BlockListStatus } from "@repo/validation";
 
 /**
- * The member sheet's Message action (#2773): start, or reopen, a 1:1 DM with
+ * The member profile's Message action (#2773): start, or reopen, a 1:1 DM with
  * the member on screen. `POST /v1/channels/dm` is get-or-create, so a member
  * you already have a DM with gets that thread back, and opening it again is
  * also what brings back a DM you hid (`reopenHidden` on chat home relies on

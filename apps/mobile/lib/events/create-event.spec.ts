@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHECK_IN_OPENS_ERROR,
   editRepeatDraft,
   pickRepeatPreset,
   repeatDraftFromRule,
@@ -7,11 +8,9 @@ import {
 import {
   calendarHourStart,
   pickedDayStart,
-  CHECK_IN_OPENS_ERROR,
   defaultEventStart,
   applyEventType,
   emptyEventDraft,
-  moreOptionsSummary,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -186,57 +185,6 @@ describe("attendance by role", () => {
   });
 });
 
-describe("the More options summary", () => {
-  it("says points, who's coming and repeat while closed", () => {
-    expect(
-      moreOptionsSummary(
-        {
-          pointsInput: "10",
-          checkInOpensInput: "10",
-          attendance: { everyone: "required", roles: { a: "optional" } },
-          repeat: repeatDraftFromRule("BIWEEKLY"),
-        },
-        (id) => (id === "a" ? "Alumni" : undefined),
-        local(10, 20),
-      ),
-    ).toBe(
-      "10 points · Alumni optional, everyone else required · Every 2 weeks",
-    );
-    expect(
-      moreOptionsSummary(emptyEventDraft(), () => undefined, local(10, 20)),
-    ).toBe("10 points · Optional for everyone · Doesn't repeat");
-  });
-
-  it("says a check-in lead only when it isn't the default", () => {
-    const summary = (checkInOpensInput: string) =>
-      moreOptionsSummary(
-        { ...emptyEventDraft(), checkInOpensInput },
-        () => undefined,
-        local(10, 20),
-      );
-    expect(summary("30")).toBe(
-      "10 points · Optional for everyone · Check-in opens 30 min early · Doesn't repeat",
-    );
-    expect(summary("0")).toContain("Check-in opens at the start");
-    expect(summary("")).not.toContain("Check-in");
-    expect(summary("500")).toContain("Check-in time needs a fix");
-  });
-
-  it("says a structured cadence", () => {
-    const weekly = editRepeatDraft(
-      pickRepeatPreset(emptyEventDraft().repeat, "WEEKLY"),
-      { countInput: "20" },
-    );
-    expect(
-      moreOptionsSummary(
-        { ...emptyEventDraft(), repeat: weekly },
-        () => undefined,
-        new Date("2026-11-11T00:00:00Z"),
-      ),
-    ).toMatch(/· Every \w+day$/);
-  });
-});
-
 describe("Repeat on create", () => {
   it("sends the structured rule the controls build", () => {
     const repeat = editRepeatDraft(
@@ -398,17 +346,6 @@ describe("a member who can't edit events", () => {
       typeFilledName: "Chapter meeting",
     });
   });
-
-  it("sees no points in the More options summary", () => {
-    expect(
-      moreOptionsSummary(
-        emptyEventDraft(),
-        () => undefined,
-        local(10, 20),
-        false,
-      ),
-    ).not.toMatch(/pts/);
-  });
 });
 
 // #4818: an hour pressed in the Calendar's Day grid.
@@ -433,7 +370,7 @@ describe("calendarHourStart", () => {
   });
 });
 
-// #5113: the Calendar header's +, with a day picked.
+// #5113: the Calendar's +, with a day picked.
 describe("pickedDayStart", () => {
   it("starts a later day at the usual hour", () => {
     expect(pickedDayStart(local(9, 0), EVENING)).toEqual(local(9, 19));

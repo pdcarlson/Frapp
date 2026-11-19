@@ -179,7 +179,7 @@ export interface MessageItemProps {
   /**
    * Opens a member's profile by `users.id`: the author's from their name or
    * photo, or a mentioned member's from an `@` chip. Optional, so a surface
-   * with no profile sheet draws plain names.
+   * with no member profile draws plain names.
    */
   onOpenProfile?: (userId: string) => void;
   /**

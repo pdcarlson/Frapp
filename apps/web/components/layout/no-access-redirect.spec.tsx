@@ -48,7 +48,10 @@ describe("NoAccessRedirect (#3236)", () => {
 
   it("does not strand a member who belongs to another chapter", () => {
     state.permissions = { data: { permissions: [] } };
-    state.chapters = { data: [...ONE_CHAPTER, { chapter_id: "c2" }], isSuccess: true };
+    state.chapters = {
+      data: [...ONE_CHAPTER, { chapter_id: "c2" }],
+      isSuccess: true,
+    };
     render(<NoAccessRedirect />);
     expect(replace).not.toHaveBeenCalled();
   });

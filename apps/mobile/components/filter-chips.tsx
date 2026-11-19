@@ -85,6 +85,13 @@ export interface FilterChip {
  * is the card's own fill. Pressing an off chip ripples on Android and lifts
  * a step on iOS (`usePressFeedback`, through `PressableRow`). An on chip ripples on Android and holds
  * still on iOS: its fill is the state, and the lift would paint over it.
+ *
+ * Quiet (#5568, Paul 2026-11-19): a list's filter row, where the accent fill
+ * made the chip the loudest thing on screen, louder than the rows it filters.
+ * On is then a neutral step up instead: the card fill, the control edge and
+ * foreground text, as iOS Mail's and Slack's filter pills light without
+ * colour, so the colour on the screen stays on the content. A chip that picks
+ * a value in a form keeps the accent.
  */
 export function Chip({
   label,
@@ -100,6 +107,7 @@ export function Chip({
   longPressLabel,
   onLayout,
   onCard = false,
+  quiet = false,
 }: {
   label: string;
   on: boolean;
@@ -117,6 +125,8 @@ export function Chip({
   onLayout?: (event: LayoutChangeEvent) => void;
   /** The chip is drawn on a card, not on a screen or a sheet's own fill. */
   onCard?: boolean;
+  /** A list's filter: on draws neutral, not in the accent (see above). */
+  quiet?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const surfaces = useRaisedSurfaces();
@@ -157,16 +167,27 @@ export function Chip({
       style={[
         styles.chip,
         mark || trailing ? styles.chipWithMark : null,
-        on
-          ? { backgroundColor: accentPrimary }
-          : [
-              styles.chipIdle,
-              onCard ? { backgroundColor: surfaces.raised } : null,
-            ],
+        on && quiet
+          ? styles.chipOnQuiet
+          : on
+            ? { backgroundColor: accentPrimary }
+            : [
+                styles.chipIdle,
+                onCard ? { backgroundColor: surfaces.raised } : null,
+              ],
       ]}
     >
       {mark}
-      <Text style={[styles.chipText, on ? { color: accentOnPrimary } : null]}>
+      <Text
+        style={[
+          styles.chipText,
+          on && quiet
+            ? styles.chipTextOnQuiet
+            : on
+              ? { color: accentOnPrimary }
+              : null,
+        ]}
+      >
         {label}
       </Text>
       {trailing}
@@ -272,6 +293,7 @@ export function FilterChips({
   accessibilityLabel,
   scroll = false,
   trailing,
+  quiet = false,
 }: {
   chips: readonly FilterChip[];
   selected: string | null;
@@ -288,6 +310,8 @@ export function FilterChips({
    * (Directory's Filters chip).
    */
   trailing?: ReactNode;
+  /** A list's filter row: the selected chip draws neutral (`Chip`'s quiet). */
+  quiet?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -313,6 +337,7 @@ export function FilterChips({
             accessibilityRole="tab"
             accessibilityState={{ selected: selected === chip.value }}
             on={selected === chip.value}
+            quiet={quiet}
             onPress={() => onSelect(chip.value)}
             mark={chip.mark}
             trailing={chip.trailing}
@@ -452,6 +477,14 @@ function createStyles(tokens: SignetTokens) {
     chipText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
+    },
+    chipOnQuiet: {
+      backgroundColor: tokens.color.surface.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.control,
+    },
+    chipTextOnQuiet: {
+      color: tokens.color.text.foreground,
     },
     search: {
       borderRadius: tokens.radius.control,

@@ -521,7 +521,7 @@ describe("a proposal in the Ask conversation", () => {
         start: new Date("2026-11-15T23:48:00Z"),
         end: new Date("2026-11-16T00:48:00Z"),
         attendance: { everyone: "optional", roles: {} },
-        showMore: true,
+        openRow: null,
       });
       expect(form.template?.repeat).toMatchObject({
         preset: "WEEKLY",

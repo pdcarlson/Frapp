@@ -1,6 +1,8 @@
 import {
   attendanceInvitesNobody,
   attendanceFromEvent,
+  CHECK_IN_OPENS_ERROR,
+  parseCheckInOpens,
   attendanceToWire,
   eventEditPatch,
   repeatDraftFromRule,
@@ -11,8 +13,6 @@ import {
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 import {
-  CHECK_IN_OPENS_ERROR,
-  parseCheckInOpens,
   type NewEventDraft,
   type NewEventErrors,
 } from "./create-event";
@@ -65,7 +65,7 @@ export function draftFromEvent(target: EventEditTarget): NewEventDraft {
     repeat: repeatDraftFromRule(seriesRule),
     description: event.description ?? "",
     notes: event.notes ?? "",
-    showMore: false,
+    openRow: null,
   };
 }
 

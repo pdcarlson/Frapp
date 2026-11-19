@@ -38,8 +38,8 @@ export type SettingsNavGroup = {
  *
  * The rail answers to its container, not the window (`@3xl`, 768px): the page
  * that draws it wraps it in `@container`. A tool page shares the window with
- * chat (#3779), so at a 1440px window its pane can be 480px wide, where a
- * 200px rail leaves the section about 210px. Below the container width each
+ * chat (#3779), so its pane can be as narrow as 375px when the member widens
+ * chat (#5575), where a 200px rail leaves the section about 120px. Below the container width each
  * group wraps into a row of chips under its eyebrow, above the section.
  */
 export function SettingsNavRail({

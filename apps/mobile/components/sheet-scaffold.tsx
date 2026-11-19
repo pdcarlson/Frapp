@@ -187,12 +187,19 @@ export function SheetGrabber() {
  * so a Cancel or Done there is a second close button
  * (`spec/ui/design-system/components.md` § Chrome weight). An action menu
  * (the message long-press) draws no SheetHeader at all.
+ *
+ * `action` puts the form's commit in the row, opposite the title, as Apple
+ * Calendar's new event sheet puts Add (#5561): a small accent button rather
+ * than a full-width one at the foot, so it stays in reach however short or
+ * long the form runs. The New event sheet uses it; web's event form puts
+ * Create in its header the same way.
  */
 export function SheetHeader({
   title,
   onCancel,
   cancelLabel = "Cancel",
   cancelDisabled = false,
+  action,
 }: {
   title: string;
   onCancel?: () => void;
@@ -204,13 +211,24 @@ export function SheetHeader({
    * failed. A swipe still closes such a sheet, keeping the draft.
    */
   cancelDisabled?: boolean;
+  action?: {
+    label: string;
+    onPress: () => void;
+    disabled?: boolean;
+    accent: string;
+    onAccent: string;
+    accessibilityLabel?: string;
+    accessibilityHint?: string;
+  };
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   return (
     <View style={styles.headerRow}>
-      <Text style={styles.title}>{title}</Text>
+      <Text style={[styles.title, action ? styles.titleFill : null]}>
+        {title}
+      </Text>
       {/* `hitSlop` meets the 44pt floor while keeping components.md §9's compact
           visual — the #939 ruling. */}
       {onCancel ? (
@@ -228,6 +246,27 @@ export function SheetHeader({
             ]}
           >
             {cancelLabel}
+          </Text>
+        </Pressable>
+      ) : null}
+      {action ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action.accessibilityLabel}
+          accessibilityHint={action.accessibilityHint}
+          accessibilityState={{ disabled: !!action.disabled }}
+          disabled={action.disabled}
+          onPress={action.onPress}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          style={({ pressed }) => [
+            styles.headerAction,
+            { backgroundColor: action.accent },
+            action.disabled ? styles.primaryButtonDisabled : null,
+            pressed && !action.disabled ? styles.primaryButtonPressed : null,
+          ]}
+        >
+          <Text style={[styles.primaryLabel, { color: action.onAccent }]}>
+            {action.label}
           </Text>
         </Pressable>
       ) : null}
@@ -291,23 +330,15 @@ export function SheetCloseButton({
 
 /**
  * A tall sheet's header row: an optional title and the close X. A record
- * sheet passes no title, because the record's own name heads the body (the
- * member sheet used to say "Member" above "Marcus Ellison").
- *
- * `actions` are the record's own icon controls (`IconButton`s), drawn just
- * before the close, as web's `PanelHeader` draws them: the member sheet's `⋯`
- * sits here, so what a viewer only now and then reaches for stays off the
- * record's face (`components.md` § Chrome weight).
+ * sheet passes no title, because the record's own name heads the body.
  */
 export function TallSheetHeader({
   title,
   onClose,
-  actions,
   doneAccent,
 }: {
   title?: string;
   onClose: () => void;
-  actions?: ReactNode;
   /**
    * When set, closes with a "Done" word in this accent instead of the X, for a tall
    * sheet stacked over a form to set one of its fields (Who's coming over New
@@ -327,7 +358,6 @@ export function TallSheetHeader({
         </Text>
       ) : null}
       <View style={styles.headerActions}>
-        {actions}
         {doneAccent ? (
           <Pressable
             accessibilityRole="button"
@@ -685,6 +715,21 @@ function createStyles(tokens: SignetTokens) {
     },
     cancelDisabled: {
       opacity: 0.5,
+    },
+    titleFill: {
+      flex: 1,
+    },
+    // A header's commit, not the full-width Primary at a form's foot: drawn
+    // at 32, the height mobile's filter chips draw at the Chip step
+    // (foundations.md §9), and `hitSlop` reaches the 44pt floor.
+    headerAction: {
+      minHeight: 32,
+      minWidth: 72,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.control,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: tokens.spacing.md,
     },
     primaryButton: {
       marginTop: tokens.spacing.sm,

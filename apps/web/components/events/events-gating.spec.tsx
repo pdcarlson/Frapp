@@ -97,7 +97,10 @@ function renderEditor() {
 }
 
 const saveButton = () => screen.getByRole("button", { name: /create event/i });
-const cancelButton = () => screen.getByRole("button", { name: /cancel/i });
+// The form closes from its header (#5561): the sheet's Close, or Back when
+// docked beside the page.
+const closeButton = () =>
+  screen.getByRole("button", { name: /^(close|back to events)$/i });
 const autoAbsentButton = () =>
   screen.getByRole("button", { name: /run auto-absent/i });
 const rowStatusSelect = () =>
@@ -138,11 +141,11 @@ describe("EventEditorDialog subscription gating", () => {
     );
   });
 
-  it("leaves Cancel live so the blocked dialog is not a trap", () => {
+  it("leaves the way out live so the blocked dialog is not a trap", () => {
     chapter.incomplete();
     renderEditor();
 
-    expect(cancelButton()).toBeEnabled();
+    expect(closeButton()).toBeEnabled();
   });
 
   it("keeps the save button disabled while editing too", () => {

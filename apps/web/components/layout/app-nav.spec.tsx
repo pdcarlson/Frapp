@@ -307,7 +307,7 @@ describe("AppNav", () => {
     expect(ask).toHaveClass("h-[34px]");
     unmount();
 
-    // With no toggle (a forced rail) it still has its place.
+    // With no toggle passed, the rail still has its place.
     const { unmount: unmountRail } = renderNav({ collapsed: true });
     const crest = screen.getByRole("button", { name: "Ask Frapp" });
     expect(crest).not.toHaveTextContent("Ask Frapp");

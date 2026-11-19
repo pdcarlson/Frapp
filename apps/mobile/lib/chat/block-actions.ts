@@ -18,7 +18,7 @@ import { useBlockMember, useFrappClient, useUnblockMember } from "@repo/hooks";
 
 /**
  * Block and unblock for every mobile surface that offers them — the message
- * actions sheet, the tombstone, the directory's member sheet and Settings →
+ * actions sheet, the tombstone, the directory's member profile and Settings →
  * Blocked members — so the copy and the cache choreography exist once.
  *
  * `spec/behavior/chat/README.md` § Block owns what a block does. The strings

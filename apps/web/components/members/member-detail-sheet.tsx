@@ -227,8 +227,9 @@ function toggleSelection(
  * directory's Actives and Alumni rows open it directly. In chat a sender's
  * name or photo, an `@` chip and a member-list row open the small
  * `MemberPopout` beside them first, and this sheet is its View profile
- * (#4593). Mobile's sheet
- * (`apps/mobile/components/directory/member-detail-sheet.tsx`) is the
+ * (#4593). Mobile's member profile
+ * (`apps/mobile/components/directory/member-profile-screen.tsx`, a pushed
+ * screen since #5568, with the photo and name on its title row) is the
  * reference, and this draws its order: photo, name and the class-year line,
  * Message, then how to reach them (phone, email) with member since, roles as
  * colored chips in the chapter's rank, pledge class, the custom fields the

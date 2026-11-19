@@ -124,6 +124,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     title: "New in this update",
     changes: [
     ],
+    web: [
+      "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
+    ],
     phone: [
       "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",
     ],

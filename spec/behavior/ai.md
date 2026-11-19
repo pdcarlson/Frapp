@@ -823,7 +823,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A finished task links to Tasks and a finished event to that event; a finished points change links nowhere, because the phone has no points page.
 - **Every card has Edit beside Cancel and Confirm** (Paul, 2026-11-15, #5117).
   *(Changed in #5148 by pdcarlson, 2026-11-16: Cancel is now Dismiss in the card's ··· menu, and Confirm is named for the action; see How a card reads below.)*
-  An event's Edit opens the ordinary New event form filled in from the card, with More options open (who's coming by role, the end, notes, the repeat), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
+  An event's Edit opens the ordinary New event form filled in from the card, every row showing what it holds (who's coming by role, the end, notes, the repeat; More options until #5561), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
   The event is made either way, and the card says it was added.
   If the form's answer carries no event id, or the proposal can no longer record it, the proposal is taken down instead, so it is never drawn again with a Confirm that would make the event a second time.
   A task's Edit opens the task form on the phone (as Confirm on a task missing who or when already did) and turns the task's name and details into fields on web, where who and when are already fields on the card.

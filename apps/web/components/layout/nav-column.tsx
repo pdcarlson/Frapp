@@ -17,15 +17,16 @@ import { cn } from "@/lib/utils";
  *
  * The chapter switcher sits in a 48px band that lines up with the top bar and
  * the column headers beside it. 240px expanded, 56px as a rail: the rail is
- * the member's preference, or forced while chat and a tool share a window too
- * narrow for the full nav (`shell-layout.ts`).
+ * the member's preference. Until #5575 the shell also forced it while chat
+ * and a tool shared a window too narrow for the full nav; with chat a single
+ * side panel the full nav always fits.
  */
 
 type NavColumnProps = {
-  /** Rail: the preference, or forced by the shell. */
+  /** Rail: the member's preference. */
   collapsed: boolean;
-  /** The preference toggle; absent while the shell forces the rail. */
-  onToggleCollapsed?: () => void;
+  /** The preference toggle. */
+  onToggleCollapsed: () => void;
   permissions: readonly string[] | null | undefined;
   isModuleEnabled?: (moduleKey: string) => boolean;
   pathname: string;
@@ -35,8 +36,6 @@ type NavColumnProps = {
   chatView?: ChatView;
   /** Closes the open tool, from the side-by-side width up. */
   onCloseTool?: () => void;
-  /** Extra classes on the column, merged last (the shell's band visibility). */
-  className?: string;
 };
 
 export function NavColumn({
@@ -48,7 +47,6 @@ export function NavColumn({
   chatRow,
   chatView,
   onCloseTool,
-  className,
 }: NavColumnProps) {
   const { highlighted, counts } = useNavHighlights();
 
@@ -58,7 +56,6 @@ export function NavColumn({
       className={cn(
         "box-border flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
         collapsed ? "w-14" : "w-60",
-        className,
       )}
     >
       {/*

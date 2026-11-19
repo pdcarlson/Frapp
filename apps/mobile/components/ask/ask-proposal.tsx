@@ -468,7 +468,7 @@ function EventFacts({
 /**
  * The ··· in a card's corner (Paul, 2026-11-16, #5148: Cancel goes into the
  * menu): Dismiss, and Report this when it is offered. The iOS action sheet,
- * or Android's dialog, as the member sheet's menu (`member-menu.ts`).
+ * or Android's dialog, as the member profile's menu (`member-menu.ts`).
  */
 function openCardMenu(
   title: string,

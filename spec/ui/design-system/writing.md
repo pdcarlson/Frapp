@@ -361,7 +361,7 @@ The time-window line is its own row because the default window (Upcoming) hides 
 The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Calendar (s06, Events until #4610) is the month alone since #5310: it has no List and no switch to remember.
-With nothing current or upcoming, the picked day's list under the month says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)* *(Changed in #5310 by `pdcarlson`, 2026-11-17: the line was the List's or the Calendar's, whichever was showing; the month's day list is the only place left for it.)*
+With nothing current or upcoming, the picked day's list under the month says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)* *(Changed in #5570 by Paul, 2026-11-19: that + is now the Calendar's floating one at the bottom right, as on the task board; the words didn't change.)* *(Changed in #5310 by `pdcarlson`, 2026-11-17: the line was the List's or the Calendar's, whichever was showing; the month's day list is the only place left for it.)*
 It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
 Otherwise a day with nothing on it says `Nothing on this day.` (2026-11-09). The List's `Nothing in the next two weeks.` and its folded `Later` row (#4135, 2026-11-13) went with the List in #5310; web's Events list kept its own until its agenda (#5560), which says `Nothing this week.` instead.
 
@@ -467,7 +467,7 @@ The board keeps its four columns at zero for a `tasks:manage` holder, and the ad
 Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one.
 A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
 
-Mobile's task board (s08, a tab until #4610, now pushed from Activity) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a holder of `tasks:manage` and `members:view` (New task's grants) reads ` Tap + to assign a task.` after it, since New task lives in the + (the tab bar's, 2026-11-07, and the board's own since #4610).
+Mobile's task board (s08, a tab until #4610, now pushed from Activity) is a personal board for everyone, so with nothing assigned it writes the same line under the points line, from the same `nextUpLine` (`@repo/formatting`), and a holder of `tasks:manage` and `members:view` (New task's grants) reads ` Tap + to assign a task.` after it, since New task lives in the + (the tab bar's, 2026-11-07, and the board's own since #4610).
 It replaced the `You're all clear` card.
 
 ### Service Hours (dashboard)
@@ -501,9 +501,8 @@ It replaced the `You're all clear` card.
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
 | Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and every filter (one line) |
 | Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
-| Capped list (status line above the rows; both apps) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search or filter), mobile s12 | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then **Clear search** when only a search is set, or **Clear filters**, which clears the search and every filter; inside a folder chip `Nothing in {folder} matches “{query}”.` (or `… matches these filters.`) with **Search all files** (one line). The capped-list line is the one above |
+| Empty (search or filter), mobile s12 | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then **Clear search** when only a search is set, or **Clear filters**, which clears the search and every filter; inside a folder chip `Nothing in {folder} matches “{query}”.` (or `… matches these filters.`) with **Search all files** (one line) |
 | Delete (both apps) | `Delete {title}?` | `This removes the file from chapter storage immediately and cannot be undone.`, confirm **Delete document** (web's confirm dialog, mobile's system alert after a long press). Mobile's failure line under the search: the refusal's own reason when there is one, else `Couldn't delete “{title}”. Try again in a moment.` |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
@@ -587,7 +586,7 @@ Two constraints bind every one of them, and both are the point rather than style
 
 | Surface | Description |
 |---|---|
-| New event (sheet from the tab bar's +, the Calendar header's +, or an hour of its grid) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
+| New event (sheet from the tab bar's +, the Calendar's floating +, or an hour of its grid) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card, task screen) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, on the task screen for Mark done, Confirm and Send back (#5513; a row's long-press menu says a refused Confirm in the platform alert, and Send back's sheet says its own), and on a mobile chat task card for Start, Mark done, Confirm and Send back (one copy for all, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On each, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -610,7 +609,7 @@ Both clients derive the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
-| New event (sheet from the tab bar's +, the Calendar header's +, or an hour of its grid) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
+| New event (sheet from the tab bar's +, the Calendar's floating +, or an hour of its grid) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` In place of Check in on the phone's event card and Event detail, and on web's chat event card while check-in is open (#4136, 2026-11-13; `CHECK_IN_MODULE_OFF_LINE` in `@repo/validation`) |
@@ -1124,7 +1123,7 @@ The delete confirmation is one wording for both clients, so it lives in `package
 
 ### Edit roles (mobile s13)
 
-The role editor behind the directory member sheet's Roles row, the one place on mobile roles are edited.
+The role editor behind the directory member profile's Roles row, the one place on mobile roles are edited.
 Who gets it, and what it changes, is owned by [`../mobile/screens.md`](../mobile/screens.md) s13.
 
 | State | Title | Description | Home |
@@ -1141,13 +1140,13 @@ When the officer has already opened someone else, a failed save still alerts, an
 
 ### Start a DM (mobile s13)
 
-The directory member sheet's Message action (#2773).
+The directory member profile's Message action (#2773).
 The behavior is owned by [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Direct Messages, and who it is offered for by [`../mobile/screens.md`](../mobile/screens.md) s13.
 Web's member sheet has its own Message button with older failure copy; bringing it onto these strings through a shared module is #2791.
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-detail-sheet.tsx` |
+| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-profile-screen.tsx` |
 | Start failed | `Couldn't message <name>` | `The conversation couldn't be opened. Check your connection and try again.` (an alert) | mobile `lib/directory/start-dm.ts` (`startDmFailedTitle`, `START_DM_FAILED_BODY`) |
 | Block list loading, or a read in flight (a retry included) | — | `Message` · `Checking your block list first.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_CHECKING_BLOCK_LIST`) |
 | Block list read failed, waiting for the network | — | `Message` · `Couldn't check your block list first. Retries when you're back online.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_BLOCK_LIST_UNCHECKED`), with `BLOCK_LIST_WAITING_FOR_NETWORK` from `block-copy` |

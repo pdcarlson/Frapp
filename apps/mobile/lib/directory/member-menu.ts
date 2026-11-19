@@ -1,5 +1,5 @@
 /**
- * The member profile sheet's `⋯` menu (s13): what a viewer reaches for only
+ * The member profile's `⋯` menu (s13): what a viewer reaches for only
  * now and then, kept off the profile's face (Paul, 2026-11-11: nobody opens a
  * profile to remove someone, and web drew Remove member as a big red button
  * on his own profile). Edit name and graduation year where the API says this

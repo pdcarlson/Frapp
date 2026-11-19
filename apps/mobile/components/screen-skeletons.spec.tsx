@@ -544,8 +544,7 @@ describe("Loading states stay shaped like their screens", () => {
    * the per-screen pass didn't reach. This list only shrinks.
    */
   const GENERIC_ALLOWED = new Set([
-    // List-shaped, so these two are owed their own skeletons (#3522).
-    "components/directory/member-detail-sheet.tsx",
+    // List-shaped, so this one is owed its own skeleton (#3522).
     "components/settings/blocked-members-sheet.tsx",
     "components/state-block.tsx",
   ]);

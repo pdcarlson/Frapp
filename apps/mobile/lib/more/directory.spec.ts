@@ -35,12 +35,41 @@ describe("selectDirectoryRows", () => {
       ["pc-beta", "Beta"],
     ]);
     const MEMBERS = [
-      { id: "m-1", user_id: "u-1", display_name: "Zoe Adams", pledge_class_id: "pc-alpha", order_number: 2, graduation_year: 2027 },
-      { id: "m-2", user_id: "u-2", display_name: "Andre Silva", pledge_class_id: "pc-beta", order_number: 1 },
-      { id: "m-3", user_id: "u-3", display_name: "Marcus Reid", pledge_class_id: "pc-alpha", order_number: 1 },
+      {
+        id: "m-1",
+        user_id: "u-1",
+        display_name: "Zoe Adams",
+        pledge_class_id: "pc-alpha",
+        order_number: 2,
+        graduation_year: 2027,
+      },
+      {
+        id: "m-2",
+        user_id: "u-2",
+        display_name: "Andre Silva",
+        pledge_class_id: "pc-beta",
+        order_number: 1,
+      },
+      {
+        id: "m-3",
+        user_id: "u-3",
+        display_name: "Marcus Reid",
+        pledge_class_id: "pc-alpha",
+        order_number: 1,
+      },
       { id: "m-4", user_id: "u-4", display_name: "Ben Ortiz" },
-      { id: "m-5", user_id: "u-5", display_name: "Cal Young", pledge_class_id: "pc-alpha" },
-      { id: "m-6", user_id: "u-6", display_name: "Dev Patel", order_number: 40 },
+      {
+        id: "m-5",
+        user_id: "u-5",
+        display_name: "Cal Young",
+        pledge_class_id: "pc-alpha",
+      },
+      {
+        id: "m-6",
+        user_id: "u-6",
+        display_name: "Dev Patel",
+        order_number: 40,
+      },
     ];
 
     it("leads a member's meta line with their class when its name is known", () => {
@@ -101,9 +130,24 @@ describe("selectDirectoryRows", () => {
       expect(
         selectDirectoryRows(
           [
-            { id: "m-1", user_id: "u-1", display_name: "Zoe Adams", pledge_class_id: "pc-alpha" },
-            { id: "m-2", user_id: "u-2", display_name: "Andre Silva", pledge_class_id: "pc-alpha" },
-            { id: "m-3", user_id: "u-3", display_name: "Marcus Reid", pledge_class_id: "pc-alpha" },
+            {
+              id: "m-1",
+              user_id: "u-1",
+              display_name: "Zoe Adams",
+              pledge_class_id: "pc-alpha",
+            },
+            {
+              id: "m-2",
+              user_id: "u-2",
+              display_name: "Andre Silva",
+              pledge_class_id: "pc-alpha",
+            },
+            {
+              id: "m-3",
+              user_id: "u-3",
+              display_name: "Marcus Reid",
+              pledge_class_id: "pc-alpha",
+            },
           ],
           { fraternalOrder: [{ id: "pc-alpha" }] },
         ).map((row) => row.displayName),
@@ -144,7 +188,7 @@ describe("selectDirectoryRows", () => {
   });
 
   // `GET /v1/members/{id}` takes the member row's id, not the user id, so the
-  // profile sheet needs both; a row missing either cannot open it.
+  // profile needs both; a row missing either cannot open it.
   it("keeps the member id the profile route takes and drops a row without one", () => {
     const rows = selectDirectoryRows([
       { user_id: "u-2", display_name: "No member id" },

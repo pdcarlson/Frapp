@@ -3,10 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, ChevronDown, Loader2 } from "lucide-react";
-import {
-  useAccessibleChapters,
-  useCurrentChapter,
-} from "@repo/hooks";
+import { useAccessibleChapters, useCurrentChapter } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
 import type { ChapterMark } from "@repo/validation";
 import { chapterMarkFor, CrestTile } from "@/components/layout/crest-tile";
