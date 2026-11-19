@@ -1,1 +1,0 @@
-Minutes now open with the TL;DR, then the dates coming up, bold decision headlines and a checklist of action items with yours first, and the menu at the top right changes the meeting's name, time, type and who was there.
