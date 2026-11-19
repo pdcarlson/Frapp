@@ -199,7 +199,7 @@ describe("TaskRow — a copy of a group task (#5699)", () => {
         onToggle={() => {}}
       />,
     );
-    expect(texts(tree)).toContain("Due Sep 30 · Everyone · 14 of 20 done");
+    expect(texts(tree)).toContain("Due September 30 · Everyone · 14 of 20 done");
   });
 
   it("names the role, tier or group a copy went to", () => {
@@ -222,7 +222,7 @@ describe("TaskRow — a copy of a group task (#5699)", () => {
       />,
     );
     expect(texts(tree)).toContain(
-      "Due Sep 30 · Everyone in Exec board · 1 of 4 done",
+      "Due September 30 · Everyone in Exec board · 1 of 4 done",
     );
   });
 
