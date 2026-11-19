@@ -120,6 +120,15 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-19",
+    title: "New in this update",
+    changes: [
+    ],
+    phone: [
+      "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",
+    ],
+  },
+  {
     date: "2026-11-18",
     title: "New in this update",
     changes: [
