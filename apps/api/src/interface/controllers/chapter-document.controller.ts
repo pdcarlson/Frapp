@@ -233,7 +233,7 @@ export class ChapterDocumentController {
   @ThrottleFanOutWrite()
   @ApiOperation({
     summary:
-      'Move up to 200 documents into one folder; all move or none (not copies from the Google Drive folder)',
+      'Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder)',
   })
   @ApiOkResponse({ type: ChapterDocumentDto, isArray: true })
   async move(

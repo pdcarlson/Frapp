@@ -1997,7 +1997,24 @@ describe('ChapterDocumentService', () => {
       drive_link_status: 'active',
     };
 
+    const rush: ChapterDocumentFolder = {
+      ...baseFolder,
+      id: 'folder-rush',
+      name: 'Rush',
+    };
+    const exec: ChapterDocumentFolder = {
+      ...baseFolder,
+      id: 'folder-exec',
+      name: 'Exec',
+      who_can_see: ['tier:exec'],
+    };
+
     beforeEach(() => {
+      // The chapter has an open Rush folder and an exec-only Exec folder.
+      mockFolderRepo.findByName.mockImplementation(
+        async (_chapter: string, name: string) =>
+          [rush, exec].find((folder) => folder.name === name) ?? null,
+      );
       mockDocumentRepo.findById.mockResolvedValue(baseDocument);
       mockDocumentRepo.updateFiling.mockImplementation(
         async (_id, _chapter, patch) => ({ ...baseDocument, ...patch }),
@@ -2017,18 +2034,52 @@ describe('ChapterDocumentService', () => {
       expect(mockRbac.memberHasAnyPermission).not.toHaveBeenCalled();
     });
 
-    it("moves a file into another folder, making a folder that doesn't exist yet", async () => {
+    it('moves a file into another folder', async () => {
       await service.updateDocument('doc-1', 'ch-1', 'user-1', {
         folder: ' Rush ',
       });
-      expect(mockFolderRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ chapter_id: 'ch-1', name: 'Rush' }),
-      );
+      expect(mockFolderRepo.create).not.toHaveBeenCalled();
       expect(mockDocumentRepo.updateFiling).toHaveBeenCalledWith(
         'doc-1',
         'ch-1',
         { folder: 'Rush' },
       );
+    });
+
+    it("makes a folder the chapter doesn't have yet, for someone who can upload", async () => {
+      await expect(
+        service.updateDocument('doc-1', 'ch-1', 'user-1', { folder: 'Formal' }),
+      ).rejects.toThrow('Only someone who can upload files');
+      expect(mockFolderRepo.create).not.toHaveBeenCalled();
+
+      mockRbac.memberHasAnyPermission.mockResolvedValue(true);
+      await service.updateDocument('doc-1', 'ch-1', 'user-1', {
+        folder: 'Formal',
+      });
+      expect(mockRbac.memberHasAnyPermission).toHaveBeenLastCalledWith(
+        'ch-1',
+        'user-1',
+        ['chapter_docs:upload', 'chapter_docs:manage'],
+      );
+      expect(mockFolderRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ chapter_id: 'ch-1', name: 'Formal' }),
+      );
+      expect(mockDocumentRepo.updateFiling).toHaveBeenCalledWith(
+        'doc-1',
+        'ch-1',
+        { folder: 'Formal' },
+      );
+    });
+
+    it("refuses to take an upload out of a folder its uploader can't see", async () => {
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...baseDocument,
+        folder: 'Exec',
+      });
+      await expect(
+        service.updateDocument('doc-1', 'ch-1', 'user-1', { folder: null }),
+      ).rejects.toThrow("You can't move a file out of a folder you can't see");
+      expect(mockDocumentRepo.updateFiling).not.toHaveBeenCalled();
     });
 
     it('moves a file out of every folder with null', async () => {
@@ -2092,6 +2143,22 @@ describe('ChapterDocumentService', () => {
       expect(mockDocumentRepo.updateFiling).not.toHaveBeenCalled();
     });
 
+    it("takes a linked file's own name sent back, spaces and all, as no rename", async () => {
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...linked,
+        title: 'Plan ',
+      });
+      await service.updateDocument('doc-linked', 'ch-1', 'user-1', {
+        title: 'Plan ',
+        folder: 'Rush',
+      });
+      expect(mockDocumentRepo.updateFiling).toHaveBeenCalledWith(
+        'doc-linked',
+        'ch-1',
+        { folder: 'Rush' },
+      );
+    });
+
     it("keeps Drive's name on a linked file but lets it move", async () => {
       mockDocumentRepo.findById.mockResolvedValue(linked);
       await expect(
@@ -2124,12 +2191,6 @@ describe('ChapterDocumentService', () => {
     });
 
     it("refuses a move into a folder the member can't see", async () => {
-      mockFolderRepo.findByName.mockResolvedValue({
-        ...baseFolder,
-        id: 'folder-exec',
-        name: 'Exec',
-        who_can_see: ['tier:exec'],
-      });
       await expect(
         service.updateDocument('doc-1', 'ch-1', 'user-1', { folder: 'Exec' }),
       ).rejects.toThrow("You can't file into that folder");
@@ -2167,6 +2228,30 @@ describe('ChapterDocumentService', () => {
         await expect(
           service.moveDocuments(['doc-1', 'doc-2'], 'ch-1', 'user-1', 'Rush'),
         ).rejects.toThrow(NotFoundException);
+        expect(mockDocumentRepo.moveMany).not.toHaveBeenCalled();
+      });
+
+      it("moves none when one is there but the member can't see it", async () => {
+        mockFolderRepo.findByChapter.mockResolvedValue([
+          { ...baseFolder, who_can_see: ['tier:exec'] },
+        ]);
+        mockRbac.getChannelAccessHolder.mockResolvedValue(holder());
+        mockRbac.memberHasAnyPermission.mockResolvedValue(true);
+        mockDocumentRepo.findByIds.mockResolvedValue([
+          baseDocument,
+          { ...second, uploaded_by: 'user-2' },
+        ]);
+        await expect(
+          service.moveDocuments(['doc-1', 'doc-2'], 'ch-1', 'user-1', 'Rush'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockDocumentRepo.moveMany).not.toHaveBeenCalled();
+      });
+
+      it("moves none into a folder the member can't see", async () => {
+        mockDocumentRepo.findByIds.mockResolvedValue([baseDocument, second]);
+        await expect(
+          service.moveDocuments(['doc-1', 'doc-2'], 'ch-1', 'user-1', 'Exec'),
+        ).rejects.toThrow("You can't file into that folder");
         expect(mockDocumentRepo.moveMany).not.toHaveBeenCalled();
       });
 

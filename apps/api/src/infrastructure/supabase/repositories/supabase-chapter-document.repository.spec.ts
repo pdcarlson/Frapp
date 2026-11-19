@@ -370,6 +370,19 @@ describe('SupabaseChapterDocumentRepository — paging and refiling', () => {
     );
   });
 
+  it('orders files added at the same moment by id, across pages', async () => {
+    const sameMoment = { created_at: '2026-11-19T12:00:00.000Z' };
+    const harness = harnessWith(
+      twins([[5, sameMoment], [1, sameMoment], [9], [3, sameMoment]]),
+    );
+    const repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const all = await repo.findByChapter(CHAPTER_A);
+    expect(all.map((doc) => doc.id)).toEqual(
+      [1, 3, 5, 9].map((n) => id('a', n)),
+    );
+  });
+
   it('reads every Drive copy and linked file past the row cap', async () => {
     const harness = harnessWith(
       twins([

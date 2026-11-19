@@ -14344,7 +14344,7 @@
             "bearer": []
           }
         ],
-        "summary": "Move up to 200 documents into one folder; all move or none (not copies from the Google Drive folder)",
+        "summary": "Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder)",
         "tags": [
           "Documents"
         ]

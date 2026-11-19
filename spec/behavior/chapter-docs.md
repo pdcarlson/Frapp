@@ -5,7 +5,7 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 ## Permissions
 
 - `chapter_docs:upload` — Upload new documents.
-- `chapter_docs:manage` — Delete documents, create/rename/delete folders, add, rename and delete document types, and connect or disconnect the chapter's Google Drive folder.
+- `chapter_docs:manage` — Delete documents, rename and move any document they see ([§ Rename and move](#rename-and-move)), create/rename/delete folders, add, rename and delete document types, and connect or disconnect the chapter's Google Drive folder.
 - Reads are gated on `members:view`, which every seeded role holds (the President holds it from its starting tier, beside the `*` wildcard) — so every member can open Documents, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
 - Inside Documents, a folder or file can be limited to some tiers, roles and groups ([§ Who can see](#who-can-see)). `chapter_docs:manage` is not a way past that: a manager sees only what a list lets them see.
 
@@ -55,11 +55,13 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 *(Added 2026-11-19, [#5563](https://github.com/frapplive/Frapp/issues/5563), Paul's UI audit; the API half, ahead of the screens in [#5584](https://github.com/frapplive/Frapp/issues/5584).)* A file can be renamed and moved to another folder after upload, rather than deleted and uploaded again, which lost its pins, stars, list and links. Comparable apps: Google Drive's and Dropbox's Rename and Move to, and the Files app's Move.
 
 - **Who.** A file's uploader, or a member with `chapter_docs:manage`, among those who see it: the same people who set who sees it (§ Who can see). A file the caller can't see is a 404.
-- **One file.** `PATCH /v1/documents/{id}` takes `title`, `folder`, or both. The title is trimmed and can't be empty. `folder: null` files it at the top level; a folder name the chapter doesn't have yet makes the folder, as an upload does. Moving into a folder the caller can't see is refused (403), as filing an upload there is. Nothing changed answers the file as it was.
-- **Many files.** `POST /v1/documents/move` takes `document_ids` (1 to 200) and `folder` (a name, or `null`), all or none: one file the caller can't see, may not refile, or that is a Drive folder copy refuses the whole move.
-- **Google Drive.** A copy from the connected folder is renamed and moved only in Drive (409). A file added by its link (§ Google Drive file by link) keeps Drive's name (renaming it is a 409, since the next copy would bring Drive's back) but can be moved to any folder.
-- **Who sees it after a move.** A file keeps its own list and takes its new folder's, so moving it into a limited folder narrows who sees it and moving it out may widen it. The screens say so before moving (#5584); the API doesn't ask.
+- **Where to.** A move needs the caller to see the folder the file leaves (an uploader sees their own file even in a folder whose list they were later left off, and taking it out would open it to more people) and the folder it enters, as filing an upload there does; either one refused is a 403. A folder name the chapter doesn't have yet makes the folder, for a member with `chapter_docs:upload` or `chapter_docs:manage`, as an upload or a new folder needs; without either it is a 403.
+- **One file.** `PATCH /v1/documents/{id}` takes `title`, `folder`, or both. The title is trimmed and can't be empty; sending the file's own name back is no rename. `folder: null` files it at the top level. Nothing changed answers the file as it was.
+- **Many files.** `POST /v1/documents/move` takes `document_ids` (1 to 200) and `folder` (a name, or `null`). One file the caller can't see, may not refile, or that is a Drive folder copy refuses the whole move. A file deleted while the move runs is left out of the answer.
+- **Google Drive.** A copy from the connected folder is renamed and moved only in Drive (409). A file added by its link (§ Google Drive file by link) keeps Drive's name (renaming it is a 409, since the next copy would bring Drive's back) but can be moved.
+- **Who sees it after a move.** As [§ Who can see](#who-can-see) says under Moving, so moving a file into a limited folder can narrow who sees it and moving it out can widen it. The screens say so before moving (#5584); the API doesn't ask.
 - A rename re-reads the file for Frapp AI, as any title change does (the corpus trigger on `chapter_documents`).
+
 ## Document types
 
 *(Added 2026-11-13, #3642 piece 4; Shawn's go on the folder-import plan, 2026-11-12.)* Each chapter has its own ordered list of document types (`chapter_document_types`), so the library stops filling with near-duplicates ("Bylaws", "bylaws", "By-laws") and filters and suggestions have a fixed list to aim at. Comparable apps: Linear's labels and Notion's select options, edited from the menu that applies them.

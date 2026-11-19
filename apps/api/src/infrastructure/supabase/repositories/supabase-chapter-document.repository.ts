@@ -10,7 +10,7 @@ import type {
   ChapterDocumentFilter,
 } from '#domain/repositories/chapter-document.repository.interface';
 import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
-import { escapeLikePattern, fetchAllPages } from '../supabase.utils';
+import { escapeLikePattern, fetchAllById } from '../supabase.utils';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
@@ -22,6 +22,13 @@ const PAGE_SIZE = 1000;
  * connected Drive folder (`drive_file_id` set, `drive_link_status` null).
  */
 const NOT_A_FOLDER_COPY = 'drive_file_id.is.null,drive_link_status.not.is.null';
+
+/** Newest first, then by id, so files added together keep one order. */
+function newestFirst(a: ChapterDocument, b: ChapterDocument): number {
+  const byTime = Date.parse(b.created_at) - Date.parse(a.created_at);
+  if (byTime !== 0) return byTime;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 
 @Injectable()
 export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
@@ -61,39 +68,36 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   /**
    * Every document the filter matches, read in pages (#5585): one read was
    * cut at PostgREST's 1,000-row cap with no error, so a chapter past 1,000
-   * files lost its oldest ones and its folders looked empty. Newest first,
-   * then id, so the pages never overlap or skip a row.
+   * files lost its oldest ones and its folders looked empty. Paged by id, so
+   * a file added or deleted mid-read can't make a page repeat or skip
+   * another (`fetchAllById`), then sorted newest first.
    */
   async findByChapter(
     chapterId: string,
     filter?: ChapterDocumentFilter,
   ): Promise<ChapterDocument[]> {
-    return fetchAllPages(
-      (from, to) => {
-        let query = this.supabase
-          .from('chapter_documents')
-          .select('*')
-          .eq('chapter_id', chapterId);
+    const rows = await fetchAllById((after) => {
+      let query = this.supabase
+        .from('chapter_documents')
+        .select('*')
+        .eq('chapter_id', chapterId);
 
-        if (filter?.folder !== undefined) {
-          if (filter.folder === null) {
-            query = query.is('folder', null);
-          } else {
-            query = query.eq('folder', filter.folder);
-          }
+      if (filter?.folder !== undefined) {
+        if (filter.folder === null) {
+          query = query.is('folder', null);
+        } else {
+          query = query.eq('folder', filter.folder);
         }
+      }
 
-        if (filter?.search) {
-          query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
-        }
+      if (filter?.search) {
+        query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
+      }
+      if (after !== null) query = query.gt('id', after);
 
-        return query
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: true })
-          .range(from, to);
-      },
-      { pageSize: PAGE_SIZE },
-    );
+      return query.order('id', { ascending: true }).limit(PAGE_SIZE);
+    });
+    return rows.sort(newestFirst);
   }
 
   /**
@@ -195,18 +199,16 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   // 1,000 rows would copy the missing ones again and leave them behind on
   // disconnect.
   async findDriveCopies(chapterId: string): Promise<ChapterDocument[]> {
-    return fetchAllPages(
-      (from, to) =>
-        this.supabase
-          .from('chapter_documents')
-          .select('*')
-          .eq('chapter_id', chapterId)
-          .not('drive_file_id', 'is', null)
-          .is('drive_link_status', null)
-          .order('id', { ascending: true })
-          .range(from, to),
-      { pageSize: PAGE_SIZE },
-    );
+    return fetchAllById((after) => {
+      let query = this.supabase
+        .from('chapter_documents')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .not('drive_file_id', 'is', null)
+        .is('drive_link_status', null);
+      if (after !== null) query = query.gt('id', after);
+      return query.order('id', { ascending: true }).limit(PAGE_SIZE);
+    });
   }
 
   async findByDriveFileId(
@@ -224,17 +226,15 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   }
 
   async findLinkedDriveFileIds(chapterId: string): Promise<Set<string>> {
-    const rows = await fetchAllPages(
-      (from, to) =>
-        this.supabase
-          .from('chapter_documents')
-          .select('id, drive_file_id')
-          .eq('chapter_id', chapterId)
-          .not('drive_link_status', 'is', null)
-          .order('id', { ascending: true })
-          .range(from, to),
-      { pageSize: PAGE_SIZE },
-    );
+    const rows = await fetchAllById((after) => {
+      let query = this.supabase
+        .from('chapter_documents')
+        .select('id, drive_file_id')
+        .eq('chapter_id', chapterId)
+        .not('drive_link_status', 'is', null);
+      if (after !== null) query = query.gt('id', after);
+      return query.order('id', { ascending: true }).limit(PAGE_SIZE);
+    });
     return new Set(
       rows
         .map((row) => row.drive_file_id)

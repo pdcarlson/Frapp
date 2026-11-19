@@ -4255,7 +4255,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Move up to 200 documents into one folder; all move or none (not copies from the Google Drive folder) */
+        /** Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder) */
         post: operations["ChapterDocumentController_move_v1"];
         delete?: never;
         options?: never;

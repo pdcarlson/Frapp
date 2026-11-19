@@ -51,4 +51,18 @@ describe('MoveDocumentsDto', () => {
       errorsFor(MoveDocumentsDto, { document_ids: [], folder: null }),
     ).toEqual(['document_ids']);
   });
+
+  it('takes up to 200 files a call', () => {
+    const many = (n: number) =>
+      Array.from(
+        { length: n },
+        (_, i) => `0a000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      );
+    expect(
+      errorsFor(MoveDocumentsDto, { document_ids: many(200), folder: null }),
+    ).toEqual([]);
+    expect(
+      errorsFor(MoveDocumentsDto, { document_ids: many(201), folder: null }),
+    ).toEqual(['document_ids']);
+  });
 });
