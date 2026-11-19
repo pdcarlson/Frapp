@@ -45,7 +45,7 @@ export function formatLocaleDate(value: unknown): string {
 }
 
 /**
- * A clock with its date: `"Aug 16, 5:09 PM"` (locale-dependent), or `""` when
+ * A clock with its date: `"August 16 at 5:09 PM"` (locale-dependent), or `""` when
  * missing. The chat popovers (pins, saved messages, search) and the events
  * calendar use it. The thread's author line does not: the date there lives in
  * the day divider, so it takes {@link formatTimeOfDay}.
@@ -59,7 +59,7 @@ export function formatClock(value: unknown): string {
   return parsed.toLocaleString(undefined, {
     hour: "numeric",
     minute: "2-digit",
-    month: "short",
+    month: "long",
     day: "numeric",
   });
 }
@@ -103,7 +103,7 @@ function clockParts(at: Date): Intl.DateTimeFormatPart[] {
  * What a run's author line prints, on web and mobile alike. It carries no date
  * on purpose: in the compact chat layout the date lives only in the day
  * divider (`components.md` §11, #2873), and {@link formatClock}'s
- * `"Aug 16, 5:09 PM"` on every author line is exactly what that decision
+ * `"August 16 at 5:09 PM"` on every author line is exactly what that decision
  * removed.
  */
 export function formatTimeOfDay(value: unknown): string {

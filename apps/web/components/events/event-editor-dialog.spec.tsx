@@ -380,7 +380,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
     openRow("Repeat");
     fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
-    expect(screen.getByText(/13 meetings, the last on Sep 23\./)).toBeTruthy();
+    expect(screen.getByText(/13 meetings, the last on September 23\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -418,7 +418,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       target: { value: "2026-07-15" },
     });
     expect(
-      screen.getByText(/^\d meetings, the last on Jul 1\d\./),
+      screen.getByText(/^\d meetings, the last on July 1\d\./),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -512,7 +512,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
 
     it("moves stored weekdays with a start moved in the same save", async () => {
       renderEdit(head);
-      // Monday Jul 5 → Tuesday Jul 6, same time, and 8 meetings.
+      // Monday July 5 → Tuesday July 6, same time, and 8 meetings.
       openRow("When");
       fireEvent.change(screen.getByLabelText("Starts, day"), {
         target: { value: "2027-07-06" },
@@ -543,7 +543,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
         target: { value: "6" },
       });
-      expect(screen.getByText(/^6 meetings, the last on Aug 9/)).toBeTruthy();
+      expect(screen.getByText(/^6 meetings, the last on August 9/)).toBeTruthy();
       const body = await saved();
       expect(body).toMatchObject({
         recurrence_rule: RULE.replace("COUNT=10", "COUNT=6"),
@@ -734,7 +734,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
   // #4746: a Repeat change on a started series steps from its real next
   // meeting, read from the chapter's events, not from the rule's pattern.
   describe("Repeat on a started series", () => {
-    // Monthly on the 5th from Mon 2027-07-05; the August meeting was moved
+    // Monthly on the 5th from Monday 2027-07-05; the August meeting was moved
     // by hand to the 7th. The clock is past the head, before August.
     const RULE = "FREQ=MONTHLY;INTERVAL=1;COUNT=10;TZID=America/New_York";
     const head = {
@@ -795,13 +795,13 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       renderEdit();
       expect(useEventsMock).toHaveBeenCalledWith({ enabled: true });
       shorten();
-      expect(screen.getByText(/^3 meetings, the last on Oct 7/)).toBeTruthy();
+      expect(screen.getByText(/^3 meetings, the last on October 7/)).toBeTruthy();
     });
 
     it("counts from the rule's pattern when the events can't be read", () => {
       renderEdit();
       shorten();
-      expect(screen.getByText(/^3 meetings, the last on Oct 5/)).toBeTruthy();
+      expect(screen.getByText(/^3 meetings, the last on October 5/)).toBeTruthy();
     });
 
     it("holds Repeat and Save while the events load", () => {

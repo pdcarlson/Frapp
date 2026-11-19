@@ -84,7 +84,7 @@ describe("documentMeta", () => {
         ],
         { "u-1": "Ryan Castellano" },
       ),
-    ).toEqual(["Uploaded Aug 12 by Ryan Castellano · Governance · Bylaws"]);
+    ).toEqual(["Uploaded August 12 by Ryan Castellano · Governance · Bylaws"]);
   });
 
   it("says a Drive copy came from Google Drive, not who filed it (#5157)", () => {
@@ -102,7 +102,7 @@ describe("documentMeta", () => {
         ],
         { "u-1": "Ryan Castellano" },
       ),
-    ).toEqual(["From Google Drive, added Aug 12 · Rush"]);
+    ).toEqual(["From Google Drive, added August 12 · Rush"]);
   });
 
   it("leaves off an uploader the roster can't name", () => {
@@ -115,7 +115,7 @@ describe("documentMeta", () => {
           created_at: "2026-08-12T14:00:00.000Z",
         },
       ]),
-    ).toEqual(["Uploaded Aug 12"]);
+    ).toEqual(["Uploaded August 12"]);
   });
 
   it("omits the line when nothing is known", () => {

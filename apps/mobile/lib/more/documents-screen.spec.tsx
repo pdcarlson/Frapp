@@ -885,7 +885,7 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(documentsArgs.every((args) => args.length === 0)).toBe(true);
     act(() => byLabel(tree, "Search documents").props.onChangeText(""));
     expect(screenText(tree)).toContain(
-      "Uploaded Oct 1 by Ana Ruiz · Finance · Spreadsheet",
+      "Uploaded October 1 by Ana Ruiz · Finance · Spreadsheet",
     );
   });
 

@@ -75,7 +75,7 @@ describe("selectServiceEntryRows", () => {
   // 11th, so the selector parses at noon.
   it("renders the calendar date the member submitted, not the day before", () => {
     const [row] = selectServiceEntryRows([entry({ date: "2026-08-12" })]);
-    expect(row?.meta).toContain("Aug 12");
+    expect(row?.meta).toContain("August 12");
   });
 
   it("drops a row whose status is not one the API defines", () => {
@@ -149,7 +149,7 @@ describe("serviceDatePresets", () => {
       {
         daysAgo: 2,
         label: new Date(2026, 10, 3).toLocaleDateString(undefined, {
-          weekday: "short",
+          weekday: "long",
         }),
         date: "2026-11-03",
         relative: false,
@@ -157,7 +157,7 @@ describe("serviceDatePresets", () => {
       {
         daysAgo: 3,
         label: new Date(2026, 10, 2).toLocaleDateString(undefined, {
-          weekday: "short",
+          weekday: "long",
         }),
         date: "2026-11-02",
         relative: false,

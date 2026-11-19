@@ -257,8 +257,8 @@ export function ScheduleWhenField({
   );
   maximumDate.setDate(maximumDate.getDate() + SCHEDULE_MAX_DAYS);
   const day = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
+    weekday: "long",
+    month: "long",
     day: "numeric",
   }).format(value);
   const time = formatScheduleTime(value);
@@ -370,6 +370,8 @@ function createStyles(tokens: SignetTokens) {
     },
     whenRow: {
       flexDirection: "row",
+      // The written-out day can push the time pill off a narrow phone.
+      flexWrap: "wrap",
       alignItems: "center",
       gap: tokens.spacing.sm,
     },

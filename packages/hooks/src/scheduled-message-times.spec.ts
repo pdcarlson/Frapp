@@ -42,6 +42,11 @@ describe("formatScheduledFor", () => {
     expect(formatScheduledFor(at(2026, 11, 20, 9), now)).not.toMatch(/2026/);
     expect(formatScheduledFor(at(2027, 1, 5, 9), now)).toMatch(/2027/);
   });
+  it("writes a later day out, never abbreviated", () => {
+    expect(formatScheduledFor(at(2026, 11, 20, 9), now)).toMatch(
+      /^Friday, November 20 at 9:00\sAM$/,
+    );
+  });
 });
 
 describe("scheduleTimeProblem", () => {

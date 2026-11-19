@@ -130,11 +130,11 @@ export function formatAmount(cents: number): string {
 }
 
 function shortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
 /**
- * A bare `YYYY-MM-DD` calendar date → `"Sep 15"`.
+ * A bare `YYYY-MM-DD` calendar date → `"September 15"`.
  *
  * Parsed at local noon: a bare date at UTC midnight renders as the previous day
  * west of Greenwich, and UTC noon as the next day at UTC+12 and east (#3026).
@@ -151,7 +151,7 @@ function formatCalendarDate(value: string): string {
   return shortDate(date);
 }
 
-/** A full ISO instant → `"Feb 3"` in the member's own zone. */
+/** A full ISO instant → `"February 3"` in the member's own zone. */
 function formatInstant(value: string): string | null {
   const date = parseInstant(value);
   return date ? shortDate(date) : null;
@@ -240,7 +240,7 @@ export function selectNextDueInvoice(rows: InvoiceRow[]): InvoiceRow | null {
 /**
  * A history row's meta line.
  *
- * TODO-DESIGN: Canvas draws a payment method here (`Paid Feb 3 · Visa ··4242`,
+ * TODO-DESIGN: Canvas draws a payment method here (`Paid February 3 · Visa ··4242`,
  * `Apple Pay`, `plan (3 of 3)`). None of it is reachable. `financial_invoices`
  * has no method column, and `billing.md` states outright that "invoice DTOs do
  * not expose Stripe fields" — the only source is

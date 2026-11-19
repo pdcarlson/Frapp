@@ -142,7 +142,7 @@ describe("TaskRow — the overdue colour", () => {
       />,
     );
 
-    expect(styleOfText(tree, "Due Sep 30").color).toBe(
+    expect(styleOfText(tree, "Due September 30").color).toBe(
       signetDarkTokens.color.text.mutedForeground,
     );
   });
@@ -162,7 +162,7 @@ describe("TaskRow — a task a group follows (#5473)", () => {
         onOpen={() => {}}
       />,
     );
-    expect(texts(tree)).toContain("Due Sep 30 · From Exec board");
+    expect(texts(tree)).toContain("Due September 30 · From Exec board");
     const labelled = tree.root.findAll(
       (node) =>
         typeof node.props?.accessibilityLabel === "string" &&

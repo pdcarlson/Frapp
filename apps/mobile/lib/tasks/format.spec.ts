@@ -34,7 +34,7 @@ describe("formatDueSubtitle", () => {
   it("uses a weekday inside the week and a date beyond it", () => {
     expect(formatDueSubtitle("2026-08-23", NOW)).toBe("Due Sunday");
     // Exactly 7 days out is where the weekday name stops being unambiguous.
-    expect(formatDueSubtitle("2026-08-24", NOW)).toBe("Due Aug 24");
+    expect(formatDueSubtitle("2026-08-24", NOW)).toBe("Due August 24");
   });
 
   it("parses a bare date at local noon, so it never slips a day", () => {
@@ -55,7 +55,7 @@ describe("formatDueSubtitle", () => {
           "Due tomorrow",
         );
         expect(formatDueSubtitle("2026-08-24", morning), zone).toBe(
-          "Due Aug 24",
+          "Due August 24",
         );
       });
     }
@@ -70,13 +70,13 @@ describe("formatDueSubtitle", () => {
 
 describe("formatDueDate", () => {
   it("draws the plain date, whatever the countdown would say", () => {
-    expect(formatDueDate("2026-08-18", NOW)).toBe("Due Aug 18");
-    expect(formatDueDate("2026-08-14", NOW)).toBe("Due Aug 14");
+    expect(formatDueDate("2026-08-18", NOW)).toBe("Due August 18");
+    expect(formatDueDate("2026-08-14", NOW)).toBe("Due August 14");
   });
 
   it("keeps a bare date on its own day west of Greenwich", () => {
     inZone("America/Los_Angeles", () => {
-      expect(formatDueDate("2026-08-22", NOW)).toBe("Due Aug 22");
+      expect(formatDueDate("2026-08-22", NOW)).toBe("Due August 22");
     });
   });
 
