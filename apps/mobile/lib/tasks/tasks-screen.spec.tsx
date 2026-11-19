@@ -155,6 +155,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useChapterRoster: () => ({ data: [] }),
+  useMemberDisplayNames: () => ({ byId: { "user-3": "Sam Rivera" } }),
   useOpenTasks: () => ({
     data: openTasks,
     isError: openTasksError,
@@ -1053,6 +1054,12 @@ describe("Up for grabs", () => {
     });
     act(() => refocus());
     expect(screenText(tree)).toContain("Added to your tasks.");
+    // Someone else's hand-over names them.
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      assigned: "user-3",
+    });
+    act(() => refocus());
+    expect(screenText(tree)).toContain("Assigned to Sam Rivera.");
     expect(router.setParams).toHaveBeenCalledWith({
       released: undefined,
       assigned: undefined,

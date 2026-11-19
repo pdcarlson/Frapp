@@ -6,7 +6,7 @@ import { emptyEventDraft, type NewEventDraft } from "@/lib/events/create-event";
 
 /**
  * New event, filled in to start at a time the screen picks: the Calendar's
- * header + (the picked day, #5113) and the Day grid's tap on an hour
+ * floating + (the picked day, #5113, #5570) and the Day grid's tap on an hour
  * (#4818). `open(start)` presents a fresh sheet (a `null` start is the
  * sheet's own default); `openWith(template)` presents one filled in from a
  * whole draft (an event's long-press Duplicate, #5492). Render `sheet` once

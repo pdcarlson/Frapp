@@ -2,17 +2,17 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { OpenTask } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { TASK_AUDIENCE_COPY } from "@repo/validation";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { openTaskLine } from "@/lib/tasks/open-tasks";
 
 /**
  * One task up for grabs on the Tasks screen (tasks.md § Up for grabs): the
- * title, "10 points · Philanthropy Committee · Due Friday", and a Claim pill.
+ * title, "10 points · Philanthropy Committee · Due Friday", and a Claim pill
+ * (a hairline outline, quieter than the title since #5570).
  * Laid out as the board's own rows (`task-row.tsx`): flush, hairline-split,
  * the same height, so the section reads as part of the list and not a card
- * above it. The pill sits where a task's points chip sits.
+ * above it. The pill sits where a task's points sit.
  *
  * Claim is optimistic (`useClaimOpenTask`): the row leaves on the tap, so it
  * has no pending state of its own. A tap elsewhere pushes the posting's own
@@ -35,7 +35,6 @@ export function OpenTaskRow({
   isFirst?: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const line = openTaskLine(posting, now);
 
@@ -71,13 +70,10 @@ export function OpenTaskRow({
           onPress={onClaim}
           style={({ pressed }) => [
             styles.pill,
-            { backgroundColor: tint(accent, 0.16), borderColor: tint(accent, 0.3) },
             pressed ? styles.pressed : null,
           ]}
         >
-          <Text style={[styles.pillLabel, { color: accent }]}>
-            {TASK_AUDIENCE_COPY.claim}
-          </Text>
+          <Text style={styles.pillLabel}>{TASK_AUDIENCE_COPY.claim}</Text>
         </Pressable>
       ) : null}
     </PressableRow>
@@ -110,16 +106,21 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
+    // A hairline outline with caption text, not an accent pill (#5570):
+    // the title is the loudest thing on the row, as Todoist keeps a row's
+    // own buttons quiet beside its task.
     pill: {
       minHeight: 30,
       paddingHorizontal: tokens.spacing.md,
       borderRadius: tokens.radius.chip,
       borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
       alignItems: "center",
       justifyContent: "center",
     },
     pillLabel: {
-      ...typeRole(tokens.typography.role.label),
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.foreground,
     },
     pressed: {
       opacity: 0.7,

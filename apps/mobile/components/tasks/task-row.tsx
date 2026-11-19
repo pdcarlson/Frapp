@@ -94,7 +94,7 @@ const CHECKBOX_SLOP = 10;
 
 /**
  * What a task says, read once for its row and its Grid card alike (#4175), so
- * the two layouts can't drift on a status word, the red, or the points chip.
+ * the two layouts can't drift on a status word, the red, or the points.
  */
 function taskFacts(row: TaskRowModel, now: Date) {
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
@@ -335,7 +335,7 @@ export function TaskRow({
 /**
  * s08's Grid layout (#4175): one task as a card, two to a line
  * (`components/grid-line.tsx` lays the lines out). The card is the row stood
- * on end, the box and points chip over the title and its due line, and it
+ * on end, the box and points over the title and its due line, and it
  * takes the row's two targets: the box completes or takes back, anywhere else
  * opens the task's screen, where Edit sits for an officer. Linear's and
  * Asana's board cards carry the same facts as their list rows.

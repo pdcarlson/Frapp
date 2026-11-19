@@ -481,7 +481,7 @@ describe("Calendar states", () => {
     expect(scroll.props.refreshControl).toBeDefined();
   });
 
-  it("points a creator at the header's + when nothing is scheduled", () => {
+  it("points a creator at the + when nothing is scheduled", () => {
     // An owner's grant is the wildcard.
     permissions = ["*"];
     events = [];
@@ -490,7 +490,7 @@ describe("Calendar states", () => {
     expect(screenText(tree)).toContain(
       "Nothing scheduled yet. Tap + to add the first event.",
     );
-    // The + the line names is the screen's own, in the header (#5113).
+    // The + the line names is the screen's own floating one (#5570).
     expect(createButton(tree)).toBeDefined();
     permissions = [];
   });
@@ -1164,6 +1164,43 @@ describe("Calendar long-press menus", () => {
         tree.root.findByType(ScreenShell).findAllByType(UndoBar),
       ).toHaveLength(0);
     }
+  });
+
+  // #5570: the Calendar's New event is the floating +, so the bar sits over
+  // it for a member who has it, and on the bottom edge for one who doesn't.
+  it("lifts the menu's Undo over the floating + for a member who can create", async () => {
+    const due = localIsoDate(MOUNTED_AT);
+    tasks = [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: due,
+        status: "TODO",
+        stored_status: "TODO",
+      },
+    ];
+    for (const [grants, lifted] of [
+      [["*"], true],
+      [[], false],
+    ] as const) {
+      permissions = [...grants];
+      const tree = render();
+      const row = tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.accessibilityLabel).startsWith("Clean the kitchen"),
+      )[0]!;
+      openMenu(row);
+      await act(async () => {
+        items(tree)
+          .find((node) => node.props.accessibilityLabel === "Mark done")!
+          .props.onPress();
+      });
+      expect(tree.root.findByType(UndoBar).props.aboveCreate).toBe(lifted);
+    }
+    permissions = [];
   });
 
   it("says Edit is opening while the event reads", () => {

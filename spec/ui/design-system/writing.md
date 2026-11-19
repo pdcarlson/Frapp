@@ -361,7 +361,7 @@ The time-window line is its own row because the default window (Upcoming) hides 
 The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Calendar (s06, Events until #4610) is the month alone since #5310: it has no List and no switch to remember.
-With nothing current or upcoming, the picked day's list under the month says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)* *(Changed in #5310 by `pdcarlson`, 2026-11-17: the line was the List's or the Calendar's, whichever was showing; the month's day list is the only place left for it.)*
+With nothing current or upcoming, the picked day's list under the month says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)* *(Changed in #5570 by Paul, 2026-11-19: that + is now the Calendar's floating one at the bottom right, as on the task board; the words didn't change.)* *(Changed in #5310 by `pdcarlson`, 2026-11-17: the line was the List's or the Calendar's, whichever was showing; the month's day list is the only place left for it.)*
 It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
 Otherwise a day with nothing on it says `Nothing on this day.` (2026-11-09). The List's `Nothing in the next two weeks.` and its folded `Later` row (#4135, 2026-11-13) went with the List in #5310; web's Events list keeps its own.
 
@@ -587,7 +587,7 @@ Two constraints bind every one of them, and both are the point rather than style
 
 | Surface | Description |
 |---|---|
-| New event (sheet from the tab bar's +, the Calendar header's +, or an hour of its grid) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
+| New event (sheet from the tab bar's +, the Calendar's floating +, or an hour of its grid) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card, task screen) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, on the task screen for Mark done, Confirm and Send back (#5513; a row's long-press menu says a refused Confirm in the platform alert, and Send back's sheet says its own), and on a mobile chat task card for Start, Mark done, Confirm and Send back (one copy for all, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On each, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -610,7 +610,7 @@ Both clients derive the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
-| New event (sheet from the tab bar's +, the Calendar header's +, or an hour of its grid) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
+| New event (sheet from the tab bar's +, the Calendar's floating +, or an hour of its grid) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` In place of Check in on the phone's event card and Event detail, and on web's chat event card while check-in is open (#4136, 2026-11-13; `CHECK_IN_MODULE_OFF_LINE` in `@repo/validation`) |

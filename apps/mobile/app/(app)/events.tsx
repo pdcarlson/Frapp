@@ -139,7 +139,7 @@ export default function EventsScreen() {
   }
 
   // One line where the rows would be, not a card (`writing.md` § 4, rule 7):
-  // the fact, and for a creator the way to change it, the header's + (#5113).
+  // the fact, and for a creator the way to change it, the floating + (#5570).
   // The fact is web's line too (#4135); the how is the phone's own.
   const nothingScheduled = canCreateEvents
     ? `${EVENTS_COPY.empty} Tap + to add the first event.`

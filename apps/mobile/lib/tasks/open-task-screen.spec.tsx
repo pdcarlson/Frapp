@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import * as expoRouter from "expo-router";
-import { Alert } from "react-native";
+import { AccessibilityInfo, Alert } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -50,6 +50,8 @@ let openTasks: unknown[] | undefined = [POSTING];
 let openTasksError = false;
 let permissions: string[] = [];
 const claimMutate = vi.fn();
+/** Whether a claim is on its way, as `useClaimOpenTask` reports it. */
+let claimPending = false;
 const assignMutate = vi.fn();
 const deleteMutate = vi.fn();
 
@@ -63,8 +65,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(async () => undefined),
   }),
   usePermissionList: () => permissions,
-  useChapterRoster: () => ({ data: [] }),
-  useClaimOpenTask: () => ({ mutate: claimMutate, isPending: false }),
+  useMemberDisplayNames: () => ({ byId: { "user-3": "Sam Rivera" } }),
+  useViewerUserId: () => "user-1",
+  useClaimOpenTask: () => ({ mutate: claimMutate, isPending: claimPending }),
   useAssignOpenTask: () => ({ mutate: assignMutate, isPending: false }),
   useDeleteOpenTask: () => ({ mutate: deleteMutate, isPending: false }),
 }));
@@ -116,6 +119,7 @@ beforeEach(() => {
   openTasks = [POSTING];
   openTasksError = false;
   permissions = [];
+  claimPending = false;
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
     posting: "open-1",
   });
@@ -158,17 +162,25 @@ describe("A task up for grabs, on its own screen (#5570)", () => {
     act(() => control(tree, TASK_AUDIENCE_COPY.claim)!.props.onPress());
     expect(claimMutate).toHaveBeenCalledWith("open-1", expect.anything());
     // The claim is optimistic: the posting leaves the list at once, and the
-    // screen holds it rather than flash "isn't on Up for grabs".
+    // screen holds it while the claim is on its way rather than flash
+    // "isn't on Up for grabs".
     openTasks = [];
-    act(() =>
-      tree.update(
-        <FrappThemeProvider>
-          <TaskDetailsRoute />
-        </FrappThemeProvider>,
-      ),
-    );
+    claimPending = true;
+    const rerender = () =>
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <TaskDetailsRoute />
+          </FrappThemeProvider>,
+        ),
+      );
+    rerender();
+    expect(screenText(tree)).toContain("Drive the van");
+    expect(screenText(tree)).not.toContain("any more");
     const options = claimMutate.mock.calls[0]![1] as MutateOptions;
+    claimPending = false;
     act(() => options.onSuccess?.({ id: "task-9" }));
+    rerender();
     expect(screenText(tree)).toContain("Drive the van");
     expect(router.replace).toHaveBeenCalledWith({
       pathname: "/task-details",
@@ -201,7 +213,11 @@ describe("A task up for grabs, on its own screen (#5570)", () => {
       { id: "open-1", assigneeId: "user-3" },
       expect.anything(),
     );
+    const announce = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
     act(() => (assignMutate.mock.calls[0]![1] as MutateOptions).onSuccess?.());
+    // Said before it goes, since the board's line has no live region.
+    expect(announce).toHaveBeenCalledWith("Assigned to Sam Rivera.");
+    announce.mockRestore();
     expect(router.dismissTo).toHaveBeenCalledWith({
       pathname: "/tasks",
       params: { assigned: "user-3" },
@@ -215,6 +231,9 @@ describe("A task up for grabs, on its own screen (#5570)", () => {
     }[];
     act(() => buttons.find((button) => button.text === "Delete")!.onPress!());
     expect(deleteMutate).toHaveBeenCalledWith("open-1", expect.anything());
+    vi.mocked(router.dismissTo).mockClear();
+    act(() => (deleteMutate.mock.calls[0]![1] as MutateOptions).onSuccess?.());
+    expect(router.dismissTo).toHaveBeenCalledWith("/tasks");
     alert.mockRestore();
     act(() => tree.unmount());
   });

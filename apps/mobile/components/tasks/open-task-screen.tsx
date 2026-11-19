@@ -5,14 +5,13 @@ import { useRouter } from "expo-router";
 import { formatPoints } from "@repo/formatting";
 import {
   useAssignOpenTask,
-  useChapterRoster,
   useClaimOpenTask,
   useDeleteOpenTask,
   useOpenTasks,
   usePermissionList,
+  useViewerUserId,
   type OpenTask,
 } from "@repo/hooks";
-import { memberLabel } from "@repo/hooks/display-names";
 import {
   TASK_AUDIENCE_COPY,
   TASK_PROOF_KIND_HINTS,
@@ -24,11 +23,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_TASKS } from "@/components/back-row";
 import { HairlineChip } from "@/components/status-chip";
 import { InlineNote } from "@/components/inline-note";
-import {
-  ErrorState,
-  SkeletonRegion,
-  SkeletonText,
-} from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
 import {
   CheckGlyph,
   PersonGlyph,
@@ -41,10 +36,18 @@ import {
   TaskBarPill,
 } from "@/components/tasks/task-action-bar";
 import { OpenTaskAssignPicker } from "@/components/tasks/open-task-picker";
+import {
+  createTaskFactStyles,
+  TaskDetailSkeleton,
+  TaskFact,
+  TaskFacts,
+} from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { goBackTo } from "@/lib/href";
 import { successHaptic } from "@/lib/haptics";
 import { formatDueDate } from "@/lib/tasks/format";
+import { taskCreatedLine } from "@/lib/tasks/create-task";
+import { useMemberLabel } from "@/lib/tasks/use-member-label";
 import {
   ASSIGNED_PARAM,
   claimLost,
@@ -80,6 +83,7 @@ const POSTING_FAILED = "That didn't go through. Try again.";
 export function OpenTaskScreen({ postingId }: { postingId: string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const factStyles = createTaskFactStyles(tokens);
   const { accent } = useChapterBranding();
   const router = useRouter();
 
@@ -101,16 +105,8 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
   const permissions = usePermissionList();
   const canManage = canAll(PLUS_MENU_PERMISSIONS.task, permissions);
 
-  const rosterQuery = useChapterRoster();
-  const nameOf = useCallback(
-    (userId: string) =>
-      memberLabel(
-        (rosterQuery.data ?? []).find((member) => member.user_id === userId)
-          ?.display_name,
-        userId,
-      ),
-    [rosterQuery.data],
-  );
+  const nameOf = useMemberLabel();
+  const viewerUserId = useViewerUserId();
 
   const claimOpen = useClaimOpenTask();
   const assignOpen = useAssignOpenTask();
@@ -155,6 +151,11 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
       {
         onSuccess: () => {
           setLeaving(true);
+          // Said here, as Give it back says its line before it goes: the
+          // board's line has no live region to speak it on arrival.
+          AccessibilityInfo.announceForAccessibility(
+            taskCreatedLine(nameOf(userId), userId === viewerUserId),
+          );
           goBackTo(router, {
             pathname: "/tasks",
             params: { [ASSIGNED_PARAM]: userId },
@@ -192,10 +193,7 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
     if (openTasksQuery.data === undefined && !openTasksQuery.isError) {
       return (
         <ScreenShell back={BACK_TO_TASKS} title="Task">
-          <SkeletonRegion label="Loading task" style={styles.skeleton}>
-            <SkeletonText role={tokens.typography.role.caption} width="30%" />
-            <SkeletonText role={tokens.typography.role.label} width="70%" />
-          </SkeletonRegion>
+          <TaskDetailSkeleton />
         </ScreenShell>
       );
     }
@@ -232,23 +230,30 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
         </View>
 
         {due || posting.point_reward || steps > 0 ? (
-          <View style={styles.facts}>
-            {due ? <Fact label="Due" value={due.replace(/^Due /, "")} /> : null}
+          <TaskFacts>
+            {due ? (
+              <TaskFact label="Due" value={due.replace(/^Due /, "")} />
+            ) : null}
             {posting.point_reward ? (
-              <Fact label="Points" value={formatPoints(posting.point_reward)} />
+              <TaskFact
+                label="Points"
+                value={formatPoints(posting.point_reward)}
+              />
             ) : null}
             {steps > 0 ? (
-              <Fact
+              <TaskFact
                 label="Steps"
                 value={`${steps} ${steps === 1 ? "step" : "steps"}`}
               />
             ) : null}
-          </View>
+          </TaskFacts>
         ) : null}
 
         <View style={styles.whoFact}>
-          <Text style={styles.factLabel}>Who can claim</Text>
-          <Text style={styles.factValue}>{openTaskWho(posting, nameOf)}</Text>
+          <Text style={factStyles.factLabel}>Who can claim</Text>
+          <Text style={factStyles.factValue}>
+            {openTaskWho(posting, nameOf)}
+          </Text>
         </View>
 
         {problem ? (
@@ -318,53 +323,16 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
   );
 }
 
-/** One fact: a caption over its value, as the task screen's. */
-function Fact({ label, value }: { label: string; value: string }) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  return (
-    <View
-      style={styles.fact}
-      accessible
-      accessibilityLabel={`${label}: ${value}`}
-    >
-      <Text style={styles.factLabel}>{label}</Text>
-      <Text style={styles.factValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     frame: {
       flex: 1,
     },
-    skeleton: {
-      gap: tokens.spacing.md,
-    },
     chipRow: {
       flexDirection: "row",
     },
-    facts: {
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-    },
-    fact: {
-      flex: 1,
-      gap: tokens.spacing.xs,
-    },
     whoFact: {
       gap: tokens.spacing.xs,
-    },
-    factLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    factValue: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
     description: {
       ...typeRole(tokens.typography.role.body),

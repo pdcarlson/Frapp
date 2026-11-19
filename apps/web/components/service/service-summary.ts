@@ -73,7 +73,7 @@ export type RankedServiceRow = ServiceLeaderboardRow & {
 
 /**
  * Places for the server's ranking (approved minutes descending, then name).
- * Equal totals share a place, the way `/points` and the phone's points card
+ * Equal totals share a place, the way `/points` and the phone's points line
  * number a tie, so two members on the same hours never read as first and
  * second.
  */

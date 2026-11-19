@@ -433,7 +433,7 @@ describe("calendarHourStart", () => {
   });
 });
 
-// #5113: the Calendar header's +, with a day picked.
+// #5113: the Calendar's +, with a day picked.
 describe("pickedDayStart", () => {
   it("starts a later day at the usual hour", () => {
     expect(pickedDayStart(local(9, 0), EVENING)).toEqual(local(9, 19));

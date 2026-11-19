@@ -12,7 +12,6 @@ import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
-  useChapterRoster,
   useClaimOpenTask,
   useOpenTasks,
   useReleaseTask,
@@ -29,7 +28,6 @@ import {
   type OpenTask,
 } from "@repo/hooks";
 import { nextUpLine } from "@repo/formatting";
-import { memberLabel } from "@repo/hooks/display-names";
 import { TASK_AUDIENCE_COPY, canAll, isModuleEnabled } from "@repo/validation";
 import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
@@ -76,6 +74,7 @@ import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
 import { useTaskMenu } from "@/lib/tasks/use-task-menu";
 import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
+import { useMemberLabel } from "@/lib/tasks/use-member-label";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -314,16 +313,7 @@ export default function TasksScreen() {
   // as after its own toast's Give it back, then clears the param.
   // `/tasks?assigned=<userId>`: a posting's screen handed it to that member
   // (#5570), and the line says who has it, as after New task.
-  const rosterQuery = useChapterRoster();
-  const nameOf = useCallback(
-    (userId: string) =>
-      memberLabel(
-        (rosterQuery.data ?? []).find((member) => member.user_id === userId)
-          ?.display_name,
-        userId,
-      ),
-    [rosterQuery.data],
-  );
+  const nameOf = useMemberLabel();
   const {
     [RELEASED_PARAM]: released,
     [ASSIGNED_PARAM]: assignedTo,

@@ -271,7 +271,7 @@ describe("TaskRow — the completed row", () => {
   });
 });
 
-describe("TaskRow — the points chip", () => {
+describe("TaskRow — the points", () => {
   it("draws nothing for a task carrying no reward", () => {
     const tree = render(
       <TaskRow
