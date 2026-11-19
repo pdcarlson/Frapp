@@ -3,7 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as ImagePicker from "expo-image-picker";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -65,6 +65,10 @@ const FAILED = {
 const TRY_AGAIN = "That didn't save. Your task is still here — try again.";
 
 const mintPhoto = vi.hoisted(() => vi.fn());
+// From's choices (#5473), as `useWhoDirectory` reads them; none by default.
+const whoFollowers = vi.hoisted(
+  () => [] as { entry: string; kind: string; name: string; count: number }[],
+);
 let failure: unknown = REFUSED;
 let createPending = false;
 const mutate = vi.fn(
@@ -97,7 +101,12 @@ vi.mock("@/lib/tasks/use-who-directory", async () => {
     viewerUserId: "user-1",
   });
   return {
-    useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),
+    useWhoDirectory: () => ({
+      directory,
+      people: "ready",
+      sets: "ready",
+      followers: whoFollowers,
+    }),
   };
 });
 
@@ -1248,6 +1257,172 @@ describe("NewTaskSheet for more than one person (#4295 step 3; 2026-11-18)", () 
   });
 });
 
+describe("New task's From (#5473)", () => {
+  const EXEC = "tier:7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  beforeEach(() => {
+    whoFollowers.splice(0, whoFollowers.length, {
+      entry: EXEC,
+      kind: "tier",
+      name: "Exec board",
+      count: 4,
+    });
+  });
+  afterEach(() => {
+    whoFollowers.splice(0, whoFollowers.length);
+  });
+
+  function renderOffering(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  const fromSheet = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.title === "From" && typeof node.props.onSelect === "function",
+    );
+
+  it("starts on Just you and sends no follower", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    expect(screenText(tree)).toContain("Just you");
+    submitTask(tree);
+    expect(mutate.mock.calls[0]![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("sends the tier picked, and says what it means", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    expect(
+      fromSheet(tree).props.options.map(
+        (option: { label: string }) => option.label,
+      ),
+    ).toEqual(["Just you", "Exec board · 4"]);
+    act(() => fromSheet(tree).props.onSelect(EXEC));
+    expect(screenText(tree)).toContain(
+      "Everyone in Exec board can see this task and how it's going. Officers still confirm it.",
+    );
+    submitTask(tree);
+    expect(mutate.mock.calls[0]![0]).toMatchObject({ followed_by: EXEC });
+    act(() => tree.unmount());
+  });
+
+  function renderDuplicate(followedBy: string): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            prefill={{
+              title: "Sweep the porch",
+              description: null,
+              who: { kind: "person", userId: "user-2" },
+              pointsInput: "",
+              proofKind: "none",
+              subtasks: [],
+              due: { kind: "date", date: "2026-09-30" },
+              dueTime: null,
+              followedBy,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("duplicates a task's From when it is one of the officer's own", () => {
+    failure = FAILED;
+    const tree = renderDuplicate(EXEC);
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).toMatchObject({ followed_by: EXEC });
+    act(() => tree.unmount());
+  });
+
+  it("opens a Duplicate on Just you when the officer isn't in its group", () => {
+    failure = FAILED;
+    const tree = renderDuplicate("group:0d9e8f7a-6b5c-4d3e-9f21-0a1b2c3d4e5f");
+    expect(screenText(tree)).toContain("Just you");
+    expect(screenText(tree)).not.toContain("a deleted group");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("says a repeating task can't be from a group, and sends none", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    act(() => fromSheet(tree).props.onSelect(EXEC));
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            node.props.accessibilityRole === "button",
+        )
+        .props.onPress(),
+    );
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    expect(screenText(tree)).toContain(
+      "A repeating task can't be from a group yet.",
+    );
+    expect(tree.root.findAll((node) => node.props.title === "From")).toHaveLength(0);
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("offers no From to a suggestion, which can't carry one", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            suggestion={{
+              title: "Book the venue",
+              who: null,
+              dueDay: null,
+              dueAt: null,
+              subtasks: [],
+              accept: vi.fn(),
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(tree)).not.toContain("Just you");
+    // Nor a tier in its picker: its payload has no tier field yet.
+    expect(
+      tree.root.find(
+        (node) =>
+          typeof node.props.onChange === "function" &&
+          node.props.tiers !== undefined,
+      ).props.tiers,
+    ).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
 describe("Duplicate, from a row's long press (#5492)", () => {
   function renderDuplicate(): ReactTestRenderer {
     let tree!: ReactTestRenderer;
@@ -1267,6 +1442,7 @@ describe("Duplicate, from a row's long press (#5492)", () => {
               subtasks: ["Sweep", "Mop"],
               due: { kind: "date", date: "2026-09-30" },
               dueTime: null,
+              followedBy: null,
             }}
           />
         </FrappThemeProvider>,

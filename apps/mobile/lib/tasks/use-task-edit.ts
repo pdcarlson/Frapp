@@ -27,6 +27,7 @@ import {
   dueSave,
   photosSave,
   pointsSave,
+  followerSave,
   proofSave,
   reassignRestarts,
   referencePhotos,
@@ -59,7 +60,7 @@ interface TaskEditDrafts {
 type DraftKey = keyof TaskEditDrafts;
 
 /** Every field that saves: the typed ones, and those sent as they change. */
-type FieldKey = DraftKey | "proof" | "photos" | "who";
+type FieldKey = DraftKey | "proof" | "photos" | "who" | "follower";
 
 const NO_DRAFTS: TaskEditDrafts = {
   title: null,
@@ -87,9 +88,10 @@ const FIELD_ORDER: readonly FieldKey[] = [
   "proof",
   "photos",
   "who",
+  "follower",
 ];
 
-const SENT_KEYS: readonly FieldKey[] = ["proof", "photos", "who"];
+const SENT_KEYS: readonly FieldKey[] = ["proof", "photos", "who", "follower"];
 
 /**
  * Commit every draft: the fields together, then the Repeat (#5119). A
@@ -175,6 +177,8 @@ export interface TaskEditing {
   /** Put away what the last saves said, for the screen's next action. */
   dismiss: () => void;
   setProof: (next: TaskProofKind) => void;
+  /** From (#5473): a tier, role or group entry, or `null` for none. */
+  setFollower: (next: string | null) => void;
   /** Take one reference photo off the task. */
   removePhoto: (photoId: string) => void;
   /** Pick photos from the library and add them to the task. */
@@ -511,6 +515,12 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     [sendField, baseline],
   );
 
+  const setFollower = useCallback(
+    (next: string | null) =>
+      void sendField("follower", followerSave(baseline(), next)),
+    [sendField, baseline],
+  );
+
   const removePhoto = useCallback(
     (photoId: string) => {
       const path = referencePhotos(rowRef.current).find(
@@ -621,6 +631,7 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     discard,
     dismiss,
     setProof,
+    setFollower,
     removePhoto,
     addPhotos,
     uploading,

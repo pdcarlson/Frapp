@@ -85,6 +85,14 @@ export interface TaskRowModel {
   /** The minutes it was suggested from (#5562): read for their name now. */
   meetingId: string | null;
   /**
+   * The tier, role or group it is from (#5473, `tasks.md` § Following a
+   * task), as `tier:<id>` / `role:<id>` / `group:<id>`, or `null` for a task
+   * from its creator alone.
+   */
+  followedBy: string | null;
+  /** That tier's, role's or group's name now; `null` once deleted. */
+  followedByName: string | null;
+  /**
    * The group this copy is one of (#4295 step 3; 2026-11-18): who the task
    * went to and how far along the copies are, or `null` for one person's.
    */
@@ -247,6 +255,8 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     createdAt: str(row, "created_at"),
     groupId: str(row, "group_id"),
     meetingId: str(row, "meeting_id"),
+    followedBy: str(row, "followed_by"),
+    followedByName: str(row, "followed_by_name"),
     group: toGroup(row.group),
     openTaskId: str(row, "open_task_id"),
     series: readTaskSeries(row.series),
