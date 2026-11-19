@@ -190,6 +190,17 @@ describe('OpenTaskService (2026-11-18)', () => {
       );
     });
 
+    it('keeps the minutes it was suggested from, by id (#5562)', async () => {
+      await create({ kind: 'chapter' }, { meeting_id: 'meeting-1' });
+      expect(repo.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
+      await create({ kind: 'chapter' });
+      expect(repo.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ meeting_id: null }),
+      );
+    });
+
     it('posts one for anyone in the chapter, the officer not pushed', async () => {
       const view = await create({ kind: 'chapter' });
 

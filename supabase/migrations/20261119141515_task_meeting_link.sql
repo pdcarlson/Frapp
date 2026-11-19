@@ -7,21 +7,19 @@
 -- the minutes' id, and each screen reads the meeting's name live, under the
 -- reader's own right to read those minutes.
 --
--- 1. `meeting_id` on tasks and open_tasks, cleared when the minutes go.
+-- 1. `meeting_id` on tasks and open_tasks. No foreign key: an accept that
+--    races the minutes' delete must still make its task (the suggestion
+--    service already expects its source to vanish mid-accept), and the
+--    screens read the meeting under the reader's rule, so an id whose
+--    minutes are gone simply shows nothing.
 -- 2. `claim_open_task` carries the posting's meeting to the task it writes.
 -- 3. Backfill from the accepted suggestions, then take the old
 --    "From the minutes of …" line out of the descriptions now linked.
 
-alter table public.tasks
-  add column if not exists meeting_id uuid
-    references public.meetings(id) on delete set null;
+alter table public.tasks add column if not exists meeting_id uuid;
+alter table public.open_tasks add column if not exists meeting_id uuid;
 
-alter table public.open_tasks
-  add column if not exists meeting_id uuid
-    references public.meetings(id) on delete set null;
-
--- Small and sparse: only tasks made from minutes have one. Indexed for the
--- foreign key's delete.
+-- Small and sparse: only tasks made from minutes have one.
 create index if not exists tasks_meeting_id_idx
   on public.tasks (meeting_id) where meeting_id is not null;
 create index if not exists open_tasks_meeting_id_idx
@@ -86,7 +84,9 @@ $$;
 
 -- Backfill: what each accepted task suggestion from minutes became. A task
 -- for a group links every copy; a posting links itself and the task it was
--- claimed as. Only a meeting of the same chapter that still exists.
+-- claimed as. Only a meeting of the same chapter that still exists. Each
+-- pass is a plain join on a key (the task's id, then its group's id), so it
+-- touches only the linked rows while the column's ALTER holds the table.
 with made as (
   select s.chapter_id, s.source_id as meeting_id, s.result_id
     from public.ai_suggestions s
@@ -100,15 +100,19 @@ with made as (
 update public.tasks t
    set meeting_id = made.meeting_id
   from made
- where t.chapter_id = made.chapter_id
-   and t.meeting_id is null
-   and (
-     t.id = made.result_id
-     or t.group_id = (
-       select g.group_id from public.tasks g
-        where g.id = made.result_id and g.group_id is not null
-     )
-   );
+ where t.id = made.result_id
+   and t.chapter_id = made.chapter_id
+   and t.meeting_id is null;
+
+-- The other copies of a group whose first copy was the accept's result.
+update public.tasks t
+   set meeting_id = linked.meeting_id
+  from public.tasks linked
+ where linked.meeting_id is not null
+   and linked.group_id is not null
+   and t.group_id = linked.group_id
+   and t.chapter_id = linked.chapter_id
+   and t.meeting_id is null;
 
 with made as (
   select s.chapter_id, s.source_id as meeting_id, s.result_id

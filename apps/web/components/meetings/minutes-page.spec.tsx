@@ -333,9 +333,8 @@ describe("MinutesPage", () => {
       screen.getByRole("heading", { name: "Chapter meeting" }),
     ).toBeTruthy();
     expect(screen.getByText("Budget approved.")).toBeTruthy();
-    expect(
-      screen.getByLabelText("30 for, 2 against, 1 abstaining").textContent,
-    ).toBe("30–2–1");
+    // The vote in words under the decision, as the phone reads it (#5562).
+    expect(screen.getByText("30 for, 2 against, 1 abstaining")).toBeTruthy();
     expect(screen.getByText(/Sam Lee · Due/)).toBeTruthy();
     // Attendance is a row under the minutes, its count on the row.
     expect(screen.getByText("2 attended")).toBeTruthy();

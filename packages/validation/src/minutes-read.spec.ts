@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_MEETING_CONTENT, type MeetingContent } from "./meetings";
 import {
+  minutesActionMeta,
   minutesActionRows,
+  minutesActionStatePrefix,
+  minutesAttendanceDetail,
+  minutesPreviewCuts,
   minutesDateTile,
   minutesJumps,
   minutesReadSections,
@@ -152,6 +156,60 @@ describe("minutesActionRows", () => {
 
   it("marks nothing as the reader's without a reader", () => {
     expect(minutesActionRows(items, null).some((row) => row.mine)).toBe(false);
+  });
+
+  it("puts the reader's own with a due day before their undated ones", () => {
+    const rows = minutesActionRows(
+      [
+        { text: "Undated", owner_user_id: ME, due_date: null },
+        { text: "Dated", owner_user_id: ME, due_date: "2026-12-01" },
+      ],
+      ME,
+    );
+    expect(rows.map((row) => row.item.text)).toEqual(["Dated", "Undated"]);
+  });
+});
+
+describe("the read helpers both apps share (#5562)", () => {
+  it("cuts a list only when Show all would hide more than one line", () => {
+    expect(minutesPreviewCuts(5, 4)).toBe(false);
+    expect(minutesPreviewCuts(6, 4)).toBe(true);
+  });
+
+  it("counts who attended, late included, or says it wasn't taken", () => {
+    expect(minutesAttendanceDetail(null)).toBe("Not taken");
+    expect(
+      minutesAttendanceDetail({ present: [], late: [], excused: [] }),
+    ).toBe("Not taken");
+    expect(
+      minutesAttendanceDetail({
+        present: ["a", "b"],
+        late: ["c"],
+        excused: ["d"],
+      }),
+    ).toBe("3 attended");
+  });
+
+  it("writes an action item's line and what a screen reader hears first", () => {
+    expect(
+      minutesActionMeta({
+        owner: "Sam",
+        dueLabel: "Fri, Nov 21",
+        group: { done: 2, total: 5 },
+        done: false,
+      }),
+    ).toBe("Sam · Due Fri, Nov 21 · 2 of 5 done");
+    expect(
+      minutesActionMeta({
+        owner: "Sam",
+        dueLabel: null,
+        group: { done: 5, total: 5 },
+        done: true,
+      }),
+    ).toBe("Sam");
+    expect(minutesActionStatePrefix(true, true)).toBe("Done: ");
+    expect(minutesActionStatePrefix(false, true)).toBe("Not done yet: ");
+    expect(minutesActionStatePrefix(false, false)).toBe("");
   });
 });
 

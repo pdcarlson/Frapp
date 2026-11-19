@@ -1333,6 +1333,22 @@ describe('TaskService', () => {
   });
 
   describe('create', () => {
+    it('links a task suggested from minutes to them by id (#5562)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Book the bus',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        meeting_id: 'meeting-1',
+      });
+      expect(mockTaskRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
+    });
+
     it('should create task successfully', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockTaskRepo.create.mockResolvedValue(baseTask);

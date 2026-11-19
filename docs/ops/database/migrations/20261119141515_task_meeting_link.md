@@ -9,13 +9,13 @@ Tasks and Up for grabs postings made from minutes keep the minutes' id in `meeti
 
 ## Promotion
 
-- **Purpose**: adds a nullable `meeting_id` (foreign key to `meetings`, `on delete set null`) to `tasks` and `open_tasks`, has `claim_open_task` carry it to the claimed task, backfills both from accepted task suggestions whose source is a meeting, and takes the trailing "From the minutes of …." line out of the descriptions it linked and out of pending suggestions' payloads.
-- **Checks**: `select count(*) from tasks where meeting_id is not null;` is about the number of accepted meeting task suggestions (more for tasks for everyone, one per copy); `select count(*) from tasks where meeting_id is not null and description like '%From the minutes of%';` is 0.
-- **Promoter notes**: run before the API deploy. The old API ignores the new column, and the new API reads it as null when it isn't there yet only through the generated types, so apply it first. It rewrites data (the descriptions and pending payloads named above) in one pass; the line it removes is generated text, never typed by a member.
+- **Purpose**: adds a nullable `meeting_id` to `tasks` and `open_tasks` (no foreign key, so an accept that races the minutes' delete still makes its task; an id whose minutes are gone shows nothing on screen), has `claim_open_task` carry it to the claimed task, backfills both from accepted task suggestions whose source is a meeting, and takes the generated "From the minutes of …" line out of the descriptions it linked and out of pending suggestions' payloads, only where that line ends the description; text after it is left as it is.
+- **Checks**: `select count(*) from tasks where meeting_id is not null;` is about the number of accepted meeting task suggestions (more for tasks for everyone, one per copy); `select count(*) from tasks where meeting_id is not null and description ~ 'From the minutes of [^\n]*\.\s*$';` is 0 (a line followed by more text is kept on purpose).
+- **Promoter notes**: run before the API deploy. The old API ignores the new column, and the new API reads it as null when it isn't there yet only through the generated types, so apply it first. It rewrites data (the descriptions and pending payloads named above); the line it removes was generated, and only where nothing a member typed follows it. `ADD COLUMN` holds `tasks` and `open_tasks` exclusively until the migration commits; the backfill joins on keys (a task's id, then its group's id) and touches only the linked rows, a few hundred on staging, so the hold is short.
 
 ## Rollback
 
-Reverting the schema is rarely worth it: the column is nullable and unused by the old API. If needed, a forward migration drops the columns and restores the earlier `claim_open_task` body from `20261118043407_task_audiences_and_open_tasks.sql`. The removed description lines are not restored; the screens of the older API would then show no meeting name for those tasks.
+Reverting the schema is rarely worth it: the columns are nullable and unused by the old API. If needed, a forward migration drops the columns and restores the earlier `claim_open_task` body from `20261118043407_task_audiences_and_open_tasks.sql`. The removed description lines are not restored; the screens of the older API would then show no meeting name for those tasks.
 
 ```sql
 alter table public.tasks drop column if exists meeting_id;

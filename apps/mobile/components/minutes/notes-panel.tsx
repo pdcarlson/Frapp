@@ -100,6 +100,25 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** How long typing rests before the notes save: every notes box's wait. */
 const NOTES_AUTOSAVE_MS = 800;
 
+/**
+ * What a draft reads besides this officer's notes: other note-takers' notes,
+ * and the recording's transcript, a source of its own since #4935 that is
+ * never put into this box. The screen's "Drafting" line reads it too, so it
+ * says the same as the panel's (#5562).
+ */
+export function useOtherSources(
+  meetingId: string,
+  recording: MeetingRecordingState | null | undefined,
+) {
+  const notesState = useMeetingNotes(meetingId).data ?? null;
+  const transcriptReady =
+    recording?.status === "ready" && !!recording.transcript;
+  const otherWriters = (notesState?.takers ?? []).filter(
+    (taker) => taker.notes.trim() !== "" && taker.held === null,
+  );
+  return { othersWrote: otherWriters.length > 0 || transcriptReady };
+}
+
 export interface NotesPanelHandle {
   /** Asks for a draft from these notes and the transcript. */
   draft: () => Promise<void>;
@@ -223,15 +242,7 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
       if (was === "drafting" || state.status === "applied") settled.current();
     }, [state.status]);
 
-    // Since #4935 the recording's transcript is a source of its own, read by
-    // the draft beside everyone's notes, and is never put into this box.
-    const notesState = useMeetingNotes(meetingId).data ?? null;
-    const transcriptReady =
-      recording?.status === "ready" && !!recording.transcript;
-    const otherWriters = (notesState?.takers ?? []).filter(
-      (taker) => taker.notes.trim() !== "" && taker.held === null,
-    );
-    const othersWrote = otherWriters.length > 0 || transcriptReady;
+    const { othersWrote } = useOtherSources(meetingId, recording);
     const choose = useChooseMeetingDraftVersion();
     const viewer = useCurrentUser().data as { id?: string } | undefined;
     const myName = useMemberDisplayNames().nameFor(viewer?.id ?? "");

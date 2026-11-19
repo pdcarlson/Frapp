@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import {
   MEETING_COPY,
+  MEETING_NOTE_TAKERS_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
 } from "@repo/validation";
@@ -42,6 +43,7 @@ const state = vi.hoisted(() => ({
   notesProps: null as Record<string, unknown> | null,
   panelDraft: vi.fn(),
   panelStop: vi.fn(),
+  othersWrote: false,
   row: null as Record<string, unknown> | null,
   rowArgs: null as Record<string, unknown> | null,
   stage: null as Record<string, unknown> | null,
@@ -167,6 +169,7 @@ vi.mock("@/components/minutes/notes-panel", async () => {
       state.notesProps = props;
       return null;
     }),
+    useOtherSources: () => ({ othersWrote: state.othersWrote }),
   };
 });
 vi.mock("@/components/minutes/summary-note", async () => {
@@ -289,6 +292,7 @@ beforeEach(() => {
   state.controls = 0;
   state.recorder = { phase: "idle", refusal: null };
   state.notesProps = null;
+  state.othersWrote = false;
   state.summaryProps = null;
   state.event = undefined;
   state.draftPending = false;
@@ -678,6 +682,13 @@ describe("Minutes on the phone", () => {
       button(tree, MEETING_NOTES_COPY.stop).props.onPress(),
     );
     expect(state.panelStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the pinned draft reads everyone's notes when others wrote too, as the web does (#5562)", () => {
+    state.draft = { status: "drafting" };
+    state.othersWrote = true;
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_NOTE_TAKERS_COPY.draftingAll);
   });
 
   it("links the tasks suggested from posted minutes, and asks only where AI is on", () => {

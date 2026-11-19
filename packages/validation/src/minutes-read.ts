@@ -24,15 +24,11 @@ import { meetingSectionLabel } from "./meeting-copy";
 export const MINUTES_READ_COPY = {
   readSummary: "Read the full summary",
   hideSummary: "Hide the summary",
-  showMore: (count: number) => `Show ${count} more`,
   showAll: (count: number) => `Show all ${count}`,
   showFewer: "Show fewer",
   allTopics: (count: number) => `Show all ${count} topics`,
-  topics: (count: number) => (count === 1 ? "1 topic" : `${count} topics`),
-  dates: (count: number) => (count === 1 ? "1 date" : `${count} dates`),
   mine: "Mine",
   all: (count: number) => `All ${count}`,
-  noneMine: "None of these are yours.",
   done: (count: number) => `${count} done`,
   points: (count: number) => (count === 1 ? "1 point" : `${count} points`),
   nobodyNamed: "Nobody named yet",
@@ -83,6 +79,7 @@ export const MINUTES_READ_COPY = {
     changeWho: "Change who's invited",
     otherLabel: "What kind of meeting (optional)",
     endBeforeStart: "End after it starts.",
+    startRequired: "Pick when it starts.",
     eventNote:
       "Name, time and who can read belong to the meeting's event, so changing them here changes the event too.",
     eventOnly:
@@ -101,6 +98,74 @@ export const MINUTES_PREVIEW = {
   announcements: 4,
   topics: 5,
 } as const;
+
+/**
+ * Whether a list of `count` cuts at `preview`: a list one longer than the
+ * preview shows whole, since "Show all" would only hide one line.
+ */
+export function minutesPreviewCuts(count: number, preview: number): boolean {
+  return count > preview + 1;
+}
+
+interface MinutesAttendees {
+  present: readonly string[];
+  late: readonly string[];
+  excused: readonly string[];
+}
+
+/** Whether anyone was marked present, late or excused. */
+export function minutesHaveAttendees(
+  attendees: MinutesAttendees | null | undefined,
+): boolean {
+  return (
+    !!attendees &&
+    attendees.present.length +
+      attendees.late.length +
+      attendees.excused.length >
+      0
+  );
+}
+
+/** The Attendance row's detail: "12 attended", or "Not taken". */
+export function minutesAttendanceDetail(
+  attendees: MinutesAttendees | null | undefined,
+): string {
+  if (!attendees || !minutesHaveAttendees(attendees)) {
+    return MINUTES_READ_COPY.attendanceNone;
+  }
+  return MINUTES_READ_COPY.attended(
+    attendees.present.length + attendees.late.length,
+  );
+}
+
+/**
+ * An action item's line under it: who, when, and how far a task for a group
+ * has got. The same words on the web and the phone.
+ */
+export function minutesActionMeta(parts: {
+  owner: string;
+  dueLabel: string | null;
+  group: { done: number; total: number } | null;
+  done: boolean;
+}): string {
+  return [
+    parts.owner,
+    parts.dueLabel ? MINUTES_READ_COPY.due(parts.dueLabel) : null,
+    parts.group && !parts.done
+      ? `${parts.group.done} of ${parts.group.total} done`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** What a screen reader hears before an action item's text. */
+export function minutesActionStatePrefix(
+  done: boolean,
+  hasTask: boolean,
+): string {
+  return done ? "Done: " : hasTask ? "Not done yet: " : "";
+}
 
 /**
  * The sections the read view draws as their own blocks, in order. The
@@ -226,11 +291,15 @@ export function minutesActionRows(
   }));
   const rank = (row: MinutesActionRow) =>
     row.mine ? 0 : row.item.due_date ? 1 : 2;
+  // Undated last within a rank too: the reader's own with a due day first.
+  const byDue = (a: MinutesActionRow, b: MinutesActionRow) => {
+    const x = a.item.due_date;
+    const y = b.item.due_date;
+    if (x && y) return x.localeCompare(y);
+    return x ? -1 : y ? 1 : 0;
+  };
   return rows.sort(
-    (a, b) =>
-      rank(a) - rank(b) ||
-      (a.item.due_date ?? "").localeCompare(b.item.due_date ?? "") ||
-      a.index - b.index,
+    (a, b) => rank(a) - rank(b) || byDue(a, b) || a.index - b.index,
   );
 }
 

@@ -19,8 +19,12 @@ import {
   meetingSectionLabel,
   meetingTabledFromLabel,
   meetingVoteLine,
+  minutesActionMeta,
   minutesActionRows,
+  minutesActionStatePrefix,
+  minutesAttendanceDetail,
   minutesDateTile,
+  minutesPreviewCuts,
   minutesReadSections,
   minutesTopics,
   parseMinutesNotes,
@@ -108,7 +112,7 @@ export function MinutesBody({
       {attendance ? (
         <OpenRow
           label={MINUTES_READ_COPY.attendance}
-          detail={attendanceDetail(meeting)}
+          detail={minutesAttendanceDetail(meeting.attendees)}
         >
           <Attendees meeting={meeting} nameFor={nameFor} />
         </OpenRow>
@@ -167,15 +171,6 @@ function attendeeGroups(meeting: MeetingMinutes) {
   ].filter((group) => group.ids.length > 0);
 }
 
-/** "12 attended", or "Not taken" when nobody was marked. */
-function attendanceDetail(meeting: MeetingMinutes): string {
-  const a = meeting.attendees;
-  if (!a || attendeeGroups(meeting).length === 0) {
-    return MINUTES_READ_COPY.attendanceNone;
-  }
-  return MINUTES_READ_COPY.attended(a.present.length + a.late.length);
-}
-
 function Attendees({
   meeting,
   nameFor,
@@ -217,7 +212,7 @@ function Attendees({
 /** The first `preview` of a list, all of it once asked. */
 function usePreview<T>(items: readonly T[], preview: number) {
   const [open, setOpen] = useState(false);
-  const cut = items.length > preview + 1;
+  const cut = minutesPreviewCuts(items.length, preview);
   return {
     shown: cut && !open ? items.slice(0, preview) : items,
     cut,
@@ -477,9 +472,10 @@ function ActionChecklist({
   const styles = createStyles(tokens);
   const rows = minutesActionRows(items, viewerId);
   const mineCount = rows.filter((row) => row.mine).length;
-  const [filter, setFilter] = useState<"mine" | "all">(
-    mineCount > 0 ? "mine" : "all",
-  );
+  // Null until the reader picks: Mine when some are theirs, worked out each
+  // render, so a viewer who loads after the minutes still opens on Mine.
+  const [picked, setFilter] = useState<"mine" | "all" | null>(null);
+  const filter = picked ?? (mineCount > 0 ? "mine" : "all");
   const filtered =
     filter === "mine" && mineCount > 0 ? rows.filter((row) => row.mine) : rows;
   const list = usePreview(filtered, MINUTES_PREVIEW.action_items);
@@ -512,15 +508,14 @@ function ActionChecklist({
         const isDone = task?.done ?? false;
         const meta = [
           mine ? MINUTES_READ_COPY.yours : null,
-          item.owner_user_id
-            ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
-            : MINUTES_READ_COPY.nobodyNamed,
-          item.due_date
-            ? MINUTES_READ_COPY.due(meetingDueLabel(item.due_date))
-            : null,
-          task?.group && !isDone
-            ? `${task.group.done} of ${task.group.total} done`
-            : null,
+          minutesActionMeta({
+            owner: item.owner_user_id
+              ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
+              : MINUTES_READ_COPY.nobodyNamed,
+            dueLabel: item.due_date ? meetingDueLabel(item.due_date) : null,
+            group: task?.group ?? null,
+            done: isDone,
+          }),
         ]
           .filter(Boolean)
           .join(" · ");
@@ -528,7 +523,7 @@ function ActionChecklist({
           <View
             key={index}
             accessible
-            accessibilityLabel={`${isDone ? "Done: " : ""}${item.text}. ${meta}`}
+            accessibilityLabel={`${minutesActionStatePrefix(isDone, !!task)}${item.text}. ${meta}`}
             style={styles.item}
           >
             <View

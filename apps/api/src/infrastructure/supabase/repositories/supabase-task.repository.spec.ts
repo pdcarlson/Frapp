@@ -1072,3 +1072,65 @@ describe('SupabaseTaskRepository — taking members out of a group (#5492)', () 
     expect(harness.ops).toHaveLength(0);
   });
 });
+
+describe('SupabaseTaskRepository — a group from minutes (#5562)', () => {
+  const copies = [
+    { id: 'c1', group_id: 'g1', meeting_id: null },
+    { id: 'c2', group_id: 'g1', meeting_id: null },
+  ];
+  const input = {
+    chapter_id: CHAPTER_B,
+    created_by: USER_SHARED,
+    audience: 'everyone' as const,
+    target_id: null,
+    target_name: null,
+    assignee_ids: ['u1', 'u2'],
+    title: 'Book the bus',
+    description: null,
+    due_date: '2026-11-20',
+    due_at: null,
+    point_reward: null,
+    proof_kind: 'none' as const,
+    subtask_titles: [],
+    meeting_id: 'm1',
+  };
+  const fakeClient = (linkResult: { data: unknown; error: unknown }) => {
+    const calls: Array<[string, unknown]> = [];
+    const chain = {
+      update: (row: unknown) => (calls.push(['update', row]), chain),
+      eq: (column: string, value: unknown) => (
+        calls.push([column, value]),
+        chain
+      ),
+      select: () => Promise.resolve(linkResult),
+    };
+    const client = {
+      rpc: () => Promise.resolve({ data: copies, error: null }),
+      from: (table: string) => (calls.push(['from', table]), chain),
+    };
+    return { client, calls };
+  };
+
+  it('links every copy to the minutes, within the chapter and the group', async () => {
+    const { client, calls } = fakeClient({
+      data: copies.map((copy) => ({ ...copy, meeting_id: 'm1' })),
+      error: null,
+    });
+    const repo = new SupabaseTaskRepository(client as never);
+    const made = await repo.createGroup(input);
+    expect(made.map((copy) => copy.meeting_id)).toEqual(['m1', 'm1']);
+    expect(calls).toEqual([
+      ['from', 'tasks'],
+      ['update', { meeting_id: 'm1' }],
+      ['chapter_id', CHAPTER_B],
+      ['group_id', 'g1'],
+    ]);
+  });
+
+  it('keeps the copies when the link fails, so a retry never makes the group twice', async () => {
+    const { client } = fakeClient({ data: null, error: { message: 'boom' } });
+    const repo = new SupabaseTaskRepository(client as never);
+    const made = await repo.createGroup(input);
+    expect(made.map((copy) => copy.id)).toEqual(['c1', 'c2']);
+  });
+});

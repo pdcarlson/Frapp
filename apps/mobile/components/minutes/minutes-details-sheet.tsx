@@ -17,7 +17,7 @@ import {
   MEETING_TYPE_LABELS,
   MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
-  eventOthersInvited,
+  eventInvitedRoleNames,
   type MeetingType,
 } from "@repo/validation";
 import { WhenRow } from "@/components/events/new-event-sheet";
@@ -161,20 +161,9 @@ function DetailsForm({
     type !== meeting.meeting_type ||
     (type === "other" && otherLabel.trim() !== (meeting.other_label ?? ""));
 
-  const roleNames = (() => {
-    const data = event.data;
-    if (!data || eventOthersInvited(data)) return null;
-    const byId = new Map(
-      toRoleOptions(roles.data).map((role) => [role.id, role.name]),
-    );
-    const names = [
-      ...(data.required_role_ids ?? []),
-      ...(data.optional_role_ids ?? []),
-    ]
-      .map((id) => byId.get(id))
-      .filter((value): value is string => !!value);
-    return names.length > 0 ? names.join(", ") : null;
-  })();
+  const roleNames = event.data
+    ? eventInvitedRoleNames(event.data, toRoleOptions(roles.data))
+    : null;
 
   async function save() {
     setProblem(null);
@@ -247,7 +236,7 @@ function DetailsForm({
           <View style={styles.group}>
             <Text style={styles.label}>{copy.when}</Text>
             <WhenRow
-              label="Starts"
+              label={copy.starts}
               value={start}
               now={now}
               minimumDate={EARLIEST}
@@ -264,7 +253,7 @@ function DetailsForm({
             />
             {end ? (
               <WhenRow
-                label="Ends"
+                label={copy.ends}
                 value={end}
                 now={now}
                 minimumDate={EARLIEST}

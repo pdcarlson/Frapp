@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { StyleSheet } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDraftState, MeetingRecordingState } from "@repo/hooks";
 import {
@@ -500,6 +501,10 @@ describe("NotesPanel", () => {
     expect(screenText(tree)).toContain("160 words");
     await press(tree, MINUTES_READ_COPY.pastedTranscript.view);
     expect(field(tree).props.value).toBe(transcript);
+    // Shown again, it keeps a fixed height and scrolls inside.
+    expect(StyleSheet.flatten(field(tree).props.style)).toMatchObject({
+      maxHeight: 260,
+    });
     await press(tree, MINUTES_READ_COPY.pastedTranscript.hide);
     await press(tree, MINUTES_READ_COPY.pastedTranscript.remove);
     expect(confirm).toHaveBeenCalled();

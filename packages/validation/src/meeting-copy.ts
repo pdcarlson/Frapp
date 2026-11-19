@@ -69,7 +69,6 @@ export function meetingTabledFromLabel(
   return parts.join(" · ");
 }
 
-
 export function meetingSectionLabel(key: MeetingSectionKey): string {
   return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;
 }
@@ -198,6 +197,8 @@ export const MEETING_COPY = {
   dateDay: "Day",
   dateWhat: "What happens",
   dateWhatPlaceholder: "What happens that day",
+  /** Under a Coming up row with words and no day: it is not kept without one. */
+  dateNeedsDay: "Pick a day, or this line is not kept.",
   removeDate: "Remove date",
   addDate: "Add a date",
   saveFailed: "Not saved yet. It tries again as you type.",

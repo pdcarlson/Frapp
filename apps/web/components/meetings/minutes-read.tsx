@@ -10,8 +10,13 @@ import {
   MINUTES_PREVIEW,
   MINUTES_READ_COPY,
   meetingTabledFromLabel,
+  minutesActionMeta,
   minutesActionRows,
+  minutesActionStatePrefix,
+  minutesAttendanceDetail,
   minutesDateTile,
+  minutesHaveAttendees,
+  minutesPreviewCuts,
   minutesTopics,
   parseMinutesNotes,
   type MeetingActionItem,
@@ -67,7 +72,7 @@ function ShowAll({
 /** The first `preview` of a list, all of it once asked. */
 function usePreview<T>(items: readonly T[], preview: number) {
   const [open, setOpen] = useState(false);
-  const cut = items.length > preview + 1;
+  const cut = minutesPreviewCuts(items.length, preview);
   return {
     shown: cut && !open ? items.slice(0, preview) : items,
     cut,
@@ -185,13 +190,6 @@ export function DatesView({ dates }: { dates: readonly MeetingDateItem[] }) {
   );
 }
 
-/** "22–5", with abstentions only when there were some: "22–5–1". */
-function voteTally(vote: NonNullable<MeetingDecision["vote"]>): string {
-  const counts = [vote.for, vote.against];
-  if (vote.abstain > 0) counts.push(vote.abstain);
-  return counts.join("–");
-}
-
 /**
  * Decisions lead with their headline in bold, the detail grey under it, so
  * a scroll reads the outcomes without reading the motions.
@@ -207,29 +205,23 @@ export function DecisionsView({
       <ul role="list" className="space-y-3 text-sm">
         {list.shown.map((decision, index) => (
           <li key={index} className="border-l-2 border-primary py-0.5 pl-3">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <p
-                className={cn(
-                  "min-w-0 whitespace-pre-wrap break-words",
-                  decision.headline && "font-semibold",
-                )}
-              >
-                {decision.headline || decision.text}
-              </p>
-              {decision.vote ? (
-                <Badge
-                  variant="outline"
-                  title={voteLine(decision.vote)}
-                  aria-label={voteLine(decision.vote)}
-                  className="tabular-nums"
-                >
-                  {voteTally(decision.vote)}
-                </Badge>
-              ) : null}
-            </div>
+            <p
+              className={cn(
+                "min-w-0 whitespace-pre-wrap break-words",
+                decision.headline && "font-semibold",
+              )}
+            >
+              {decision.headline || decision.text}
+            </p>
             {decision.headline ? (
               <p className="whitespace-pre-wrap break-words text-muted-foreground">
                 {decision.text}
+              </p>
+            ) : null}
+            {/* The phone's words, under the decision (#5562). */}
+            {decision.vote ? (
+              <p className="text-caption text-muted-foreground tabular-nums">
+                {voteLine(decision.vote)}
               </p>
             ) : null}
           </li>
@@ -266,9 +258,10 @@ export function ActionChecklist({
 }) {
   const rows = minutesActionRows(items, viewerId);
   const mineCount = rows.filter((row) => row.mine).length;
-  const [filter, setFilter] = useState<"mine" | "all">(
-    mineCount > 0 ? "mine" : "all",
-  );
+  // Null until the reader picks: Mine when some are theirs, worked out each
+  // render, so a viewer who loads after the minutes still opens on Mine.
+  const [picked, setFilter] = useState<"mine" | "all" | null>(null);
+  const filter = picked ?? (mineCount > 0 ? "mine" : "all");
   const filtered =
     filter === "mine" && mineCount > 0 ? rows.filter((row) => row.mine) : rows;
   const list = usePreview(filtered, MINUTES_PREVIEW.action_items);
@@ -301,17 +294,14 @@ export function ActionChecklist({
         {list.shown.map(({ item, index, mine }) => {
           const task = tasks.get(index);
           const isDone = task?.done ?? false;
-          const meta = [
-            item.owner_user_id
+          const meta = minutesActionMeta({
+            owner: item.owner_user_id
               ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
               : MINUTES_READ_COPY.nobodyNamed,
-            item.due_date
-              ? MINUTES_READ_COPY.due(meetingDueLabel(item.due_date))
-              : null,
-            task?.group && !isDone
-              ? `${task.group.done} of ${task.group.total} done`
-              : null,
-          ].filter(Boolean);
+            dueLabel: item.due_date ? meetingDueLabel(item.due_date) : null,
+            group: task?.group ?? null,
+            done: isDone,
+          });
           return (
             <li key={index} className="flex gap-3">
               <span
@@ -334,15 +324,13 @@ export function ActionChecklist({
                     )}
                   >
                     <span className="sr-only">
-                      {isDone ? "Done: " : task ? "Not done yet: " : ""}
+                      {minutesActionStatePrefix(isDone, !!task)}
                     </span>
                     {item.text}
                   </p>
                   {mine ? <Badge>{MINUTES_READ_COPY.yours}</Badge> : null}
                 </div>
-                <p className="text-caption text-muted-foreground">
-                  {meta.join(" · ")}
-                </p>
+                <p className="text-caption text-muted-foreground">{meta}</p>
               </div>
             </li>
           );
@@ -536,8 +524,7 @@ export function TopicsView({ text }: { text: string }) {
 }
 
 export function hasAttendees(meeting: MeetingMinutes): boolean {
-  const a = meeting.attendees;
-  return !!a && a.present.length + a.late.length + a.excused.length > 0;
+  return minutesHaveAttendees(meeting.attendees);
 }
 
 /** Who came, by how they were marked. */
@@ -617,7 +604,5 @@ export function MinutesRow({
 
 /** "12 attended", or "Not taken" when nobody was marked. */
 export function attendanceDetail(meeting: MeetingMinutes): string {
-  const a = meeting.attendees;
-  if (!a || !hasAttendees(meeting)) return MINUTES_READ_COPY.attendanceNone;
-  return MINUTES_READ_COPY.attended(a.present.length + a.late.length);
+  return minutesAttendanceDetail(meeting.attendees);
 }

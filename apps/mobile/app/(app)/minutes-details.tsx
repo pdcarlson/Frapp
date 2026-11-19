@@ -29,6 +29,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   MEETING_COPY,
   MEETING_LIST_COPY,
+  MEETING_NOTE_TAKERS_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
   MINUTES_READ_COPY,
@@ -67,6 +68,7 @@ import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet"
 import {
   NotesPanel,
   type NotesPanelHandle,
+  useOtherSources,
 } from "@/components/minutes/notes-panel";
 import { TextAction } from "@/components/minutes/recorder-controls";
 import {
@@ -281,6 +283,7 @@ function LoadedMinutes({
   const steps = recordingPipeline(meeting.id, recorderState, recordingState, {
     drafting,
   });
+  const { othersWrote } = useOtherSources(meeting.id, recordingState);
 
   // The tasks suggested from these minutes, for someone who could accept
   // them. Read only once the minutes are posted, which is what makes them.
@@ -501,7 +504,9 @@ function LoadedMinutes({
         <View style={styles.draftingBar}>
           <ActivityIndicator color={tokens.color.text.mutedForeground} />
           <Text accessibilityLiveRegion="polite" style={[styles.draftingText]}>
-            {MEETING_NOTES_COPY.drafting}
+            {othersWrote
+              ? MEETING_NOTE_TAKERS_COPY.draftingAll
+              : MEETING_NOTES_COPY.drafting}
           </Text>
           <TextAction
             label={MEETING_NOTES_COPY.stop}

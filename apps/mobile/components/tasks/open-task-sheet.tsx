@@ -1,10 +1,15 @@
 import { forwardRef, useEffect, useRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import { useRouter } from "expo-router";
 import { formatPoints } from "@repo/formatting";
-import type { OpenTask } from "@repo/hooks";
+import { useMeeting, type OpenTask } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { TASK_AUDIENCE_COPY, TASK_PROOF_KIND_HINTS } from "@repo/validation";
+import {
+  AI_SUGGESTION_COPY,
+  TASK_AUDIENCE_COPY,
+  TASK_PROOF_KIND_HINTS,
+} from "@repo/validation";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -106,6 +111,12 @@ export const OpenTaskSheet = forwardRef<BottomSheetModal, OpenTaskSheetProps>(
                     value={`${steps} ${steps === 1 ? "step" : "steps"}`}
                   />
                 ) : null}
+                {posting.meeting_id ? (
+                  <MinutesFact
+                    meetingId={posting.meeting_id}
+                    onOpen={closeSheet}
+                  />
+                ) : null}
               </View>
 
               {posting.description ? (
@@ -168,6 +179,42 @@ export const OpenTaskSheet = forwardRef<BottomSheetModal, OpenTaskSheetProps>(
     );
   },
 );
+
+/**
+ * The minutes the posting was suggested from, by id, with the meeting's name
+ * as it is now (#5562); the task screen and the web panel show the same row.
+ * Opening them closes the sheet first, so the minutes don't open under it.
+ */
+function MinutesFact({
+  meetingId,
+  onOpen,
+}: {
+  meetingId: string;
+  onOpen: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const router = useRouter();
+  const name = useMeeting(meetingId).data?.event_name;
+  if (!name) return null;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${AI_SUGGESTION_COPY.taskMinutes}: ${name}`}
+      onPress={() => {
+        onOpen();
+        router.push({ pathname: "/minutes-details", params: { id: meetingId } });
+      }}
+      style={({ pressed }) => [styles.fact, pressed && { opacity: 0.6 }]}
+    >
+      <Text style={styles.factLabel}>{AI_SUGGESTION_COPY.taskMinutes}</Text>
+      <Text style={[styles.factValue, { color: accent }]} numberOfLines={2}>
+        {name}
+      </Text>
+    </Pressable>
+  );
+}
 
 function Fact({ label, value }: { label: string; value: string }) {
   const { tokens } = useFrappTheme();

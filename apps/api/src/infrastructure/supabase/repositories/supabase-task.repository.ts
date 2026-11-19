@@ -1,5 +1,5 @@
 import { chunkIds } from '#domain/utils/chunk-ids';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
   FrappSupabaseClient,
@@ -23,6 +23,7 @@ import {
   type TaskSeries,
   type TaskSubtask,
 } from '#domain/entities/task.entity';
+import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { escapeFilterValue, fetchAllPages } from '../supabase.utils';
 
@@ -37,6 +38,8 @@ const TASK_PAGE_SIZE = 1000;
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
+  private readonly logger = new Logger(SupabaseTaskRepository.name);
+
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
@@ -371,14 +374,26 @@ export class SupabaseTaskRepository implements ITaskRepository {
     const groupId = copies[0]?.group_id;
     if (!meetingId || !groupId) return copies;
     // The minutes it came from (#5562), on every copy. The function predates
-    // the column, so it is set here rather than in its signature.
+    // the column, so it is set here rather than in its signature. The copies
+    // are already made, so a failed link is reported and the copies stand:
+    // throwing would put the suggestion back and a second accept would make
+    // the whole group again. A copy without its link only loses its Minutes
+    // row.
     const { data: linked, error: linkError } = await this.supabase
       .from('tasks')
       .update({ meeting_id: meetingId })
       .eq('chapter_id', input.chapter_id)
       .eq('group_id', groupId)
       .select();
-    if (linkError) throw new SupabaseQueryError(linkError);
+    if (linkError) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-group-meeting-link',
+        message: `group ${groupId} made without its minutes link`,
+        error: linkError,
+      });
+      return copies;
+    }
     const byId = new Map((linked ?? []).map((task) => [task.id, task]));
     return copies.map((copy) => byId.get(copy.id) ?? copy);
   }

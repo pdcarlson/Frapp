@@ -566,39 +566,49 @@ function Minutes({
    * stay on screen and go with their own save (#5562).
    */
   async function saveType(next: MinutesTypeValue): Promise<boolean> {
+    // Held as a save is, so an autosave that starts meanwhile waits for it
+    // and goes out on the version it lands on, not the one it replaced.
     while (inFlight.current) await inFlight.current;
     const otherLabel = next.other_label.trim();
     const typeOnly = {
       meeting_type: next.meeting_type,
       other_label: next.meeting_type === "other" ? next.other_label : "",
     };
-    try {
-      const saved = await update.mutateAsync({
-        id: meeting.id,
-        body: {
-          expected_updated_at: loadedAtRef.current,
-          meeting_type: next.meeting_type,
-          other_label:
-            next.meeting_type === "other" && otherLabel ? otherLabel : null,
-        },
-      });
-      loadedAtRef.current = saved.updated_at;
-      baseRef.current = { ...baseRef.current, ...typeOnly };
-      setLoadedAt(saved.updated_at);
-      setBase((current) => ({ ...current, ...typeOnly }));
-      setDraft((current) => ({ ...current, ...typeOnly }));
-      return true;
-    } catch (error) {
-      if (codeOf(error) === "meeting.stale") {
-        setStale(true);
-        return false;
+    const run = (async (): Promise<MeetingMinutes | null> => {
+      try {
+        const saved = await update.mutateAsync({
+          id: meeting.id,
+          body: {
+            expected_updated_at: loadedAtRef.current,
+            meeting_type: next.meeting_type,
+            other_label:
+              next.meeting_type === "other" && otherLabel ? otherLabel : null,
+          },
+        });
+        loadedAtRef.current = saved.updated_at;
+        baseRef.current = { ...baseRef.current, ...typeOnly };
+        setLoadedAt(saved.updated_at);
+        setBase((current) => ({ ...current, ...typeOnly }));
+        setDraft((current) => ({ ...current, ...typeOnly }));
+        return saved;
+      } catch (error) {
+        if (codeOf(error) === "meeting.stale") {
+          setStale(true);
+          return null;
+        }
+        toast({
+          title: MINUTES_READ_COPY.details.saveFailed,
+          description: getErrorMessage(error, "Try again in a moment."),
+          variant: "destructive",
+        });
+        return null;
       }
-      toast({
-        title: MINUTES_READ_COPY.details.saveFailed,
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
-      });
-      return false;
+    })();
+    inFlight.current = run;
+    try {
+      return (await run) !== null;
+    } finally {
+      if (inFlight.current === run) inFlight.current = null;
     }
   }
 
@@ -690,14 +700,19 @@ function Minutes({
               {meeting.event_name}
             </h2>
             <p className="break-words text-caption text-muted-foreground">
-              {typeLabel} meeting, {when}
-              {posting
-                ? ", posting"
-                : isDraft
-                  ? `, ${MEETING_COPY.draftBadge.toLowerCase()}`
-                  : meeting.posted_at
-                    ? `. ${MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}`
-                    : ""}
+              {/* The phone's line, word for word (#5562). */}
+              {[
+                `${typeLabel} meeting, ${when}`,
+                posting
+                  ? "Posting"
+                  : isDraft
+                    ? MEETING_COPY.draftBadge
+                    : meeting.posted_at
+                      ? MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))
+                      : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1279,31 +1294,48 @@ function DatesEditor({
     );
   return (
     <div className="space-y-3">
-      {items.map((item, index) => (
-        <div key={index} className="flex items-start gap-2">
-          <Input
-            type="date"
-            aria-label={`${MEETING_COPY.dateDay} ${index + 1}`}
-            className="w-40 shrink-0"
-            value={item.date}
-            onChange={(event) => set(index, { date: event.target.value })}
-          />
-          <Input
-            id={`${ids}-${index}`}
-            aria-label={`${MEETING_COPY.dateWhat} ${index + 1}`}
-            placeholder={MEETING_COPY.dateWhatPlaceholder}
-            value={item.text}
-            maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
-            onChange={(event) => set(index, { text: event.target.value })}
-          />
-          <IconButton
-            label={`${MEETING_COPY.removeDate} ${index + 1}`}
-            onClick={() => onChange(items.filter((_, at) => at !== index))}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </IconButton>
-        </div>
-      ))}
+      {items.map((item, index) => {
+        // A row with words and no day isn't kept on save (Coming up is days),
+        // so it says so instead of vanishing.
+        const needsDay = item.text.trim() !== "" && item.date === "";
+        return (
+          <div key={index} className="space-y-1">
+            <div className="flex items-start gap-2">
+              <Input
+                type="date"
+                aria-label={`${MEETING_COPY.dateDay} ${index + 1}`}
+                aria-invalid={needsDay || undefined}
+                aria-describedby={needsDay ? `${ids}-${index}-day` : undefined}
+                className="w-40 shrink-0"
+                value={item.date}
+                onChange={(event) => set(index, { date: event.target.value })}
+              />
+              <Input
+                id={`${ids}-${index}`}
+                aria-label={`${MEETING_COPY.dateWhat} ${index + 1}`}
+                placeholder={MEETING_COPY.dateWhatPlaceholder}
+                value={item.text}
+                maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
+                onChange={(event) => set(index, { text: event.target.value })}
+              />
+              <IconButton
+                label={`${MEETING_COPY.removeDate} ${index + 1}`}
+                onClick={() => onChange(items.filter((_, at) => at !== index))}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+            </div>
+            {needsDay ? (
+              <p
+                id={`${ids}-${index}-day`}
+                className="text-caption text-destructive"
+              >
+                {MEETING_COPY.dateNeedsDay}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
       {items.length < MEETING_DATES_MAX_ITEMS ? (
         <Button
           variant="secondary"

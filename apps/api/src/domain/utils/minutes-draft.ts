@@ -1146,7 +1146,6 @@ function mentions(quote: string, handle: Handle): boolean {
   return pattern.test(quote);
 }
 
-/** A `YYYY-MM-DD` that is a day on the calendar, or null. */
 /**
  * A decision's headline as the minutes keep it (#5562): one line, at most
  * {@link MEETING_DECISION_HEADLINE_MAX_LENGTH} characters, and none when it
@@ -1205,6 +1204,7 @@ export function verifiedDates(
     .slice(0, MEETING_DATES_MAX_ITEMS);
 }
 
+/** A `YYYY-MM-DD` that is a day on the calendar, or null. */
 function realDate(value: string | null): string | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const at = new Date(`${value}T00:00:00.000Z`);

@@ -15,7 +15,7 @@ import {
   MEETING_TYPE_LABELS,
   MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
-  eventOthersInvited,
+  eventInvitedRoleNames,
   type MeetingType,
 } from "@repo/validation";
 import { inlineNoteActionClassName } from "@/components/shared/inline-note";
@@ -117,6 +117,8 @@ function DetailsForm({
   const [tried, setTried] = useState(false);
 
   const nameMissing = canEditEvent && name.trim().length === 0;
+  // A cleared start can't be sent (the event needs one), so it holds Save.
+  const startMissing = canEditEvent && !Number.isFinite(Date.parse(start));
   const endBeforeStart =
     canEditEvent && !!start && !!end && Date.parse(end) <= Date.parse(start);
   const eventChanged =
@@ -129,24 +131,13 @@ function DetailsForm({
     (nextType.meeting_type === "other" &&
       nextType.other_label.trim() !== type.other_label.trim());
 
-  const roleNames = (() => {
-    const data = event.data;
-    if (!data || eventOthersInvited(data)) return null;
-    const byId = new Map(
-      toRoleOptions(roles.data).map((role) => [role.id, role.name]),
-    );
-    const names = [
-      ...(data.required_role_ids ?? []),
-      ...(data.optional_role_ids ?? []),
-    ]
-      .map((id) => byId.get(id))
-      .filter((value): value is string => !!value);
-    return names.length > 0 ? names.join(", ") : null;
-  })();
+  const roleNames = event.data
+    ? eventInvitedRoleNames(event.data, toRoleOptions(roles.data))
+    : null;
 
   async function save() {
     setTried(true);
-    if (nameMissing || endBeforeStart) return;
+    if (nameMissing || startMissing || endBeforeStart) return;
     if (!eventChanged && !typeChanged) {
       onDone();
       return;
@@ -233,6 +224,9 @@ function DetailsForm({
                   onChange={(next) => setEnd(next.target.value)}
                 />
               </div>
+              {tried && startMissing ? (
+                <FieldError>{copy.startRequired}</FieldError>
+              ) : null}
               {tried && endBeforeStart ? (
                 <FieldError>{copy.endBeforeStart}</FieldError>
               ) : null}
