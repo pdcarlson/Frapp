@@ -908,7 +908,6 @@ function ChannelThreadScreen() {
     startCatchUp({
       kind: "channel",
       channelId,
-      channelName: openChannel.channel.name ?? null,
       unread:
         arrival.channelId === channelId && arrival.unread
           ? {
@@ -1954,6 +1953,7 @@ function ChannelThreadScreen() {
               action={CHAT_CATCH_UP_COPY.resume_action}
               onAction={catchUp.resume}
               onDismiss={catchUp.drop}
+              dismissLabel={CHAT_CATCH_UP_COPY.close}
             />
           ) : catchUpOffer ? (
             <CatchUpStrip

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
+  BackHandler,
   Keyboard,
   Pressable,
   ScrollView,
@@ -8,7 +9,13 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useChatCatchUp, type ChatCatchUpTarget } from "@repo/hooks";
+import {
+  catchUpFirstRange,
+  catchUpRangesFor,
+  catchUpTargetFor,
+  useChatCatchUp,
+  type CatchUpScope,
+} from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -17,7 +24,6 @@ import {
   CHAT_CATCH_UP_POINT_KINDS,
   chatCatchUpGroupOf,
   chatCatchUpNotes,
-  chatCatchUpSince,
   chatCatchUpTooLittleLine,
   chatCatchUpUnavailableLine,
   chatCatchUpWhen,
@@ -73,37 +79,9 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 /** The most of the screen the open summary takes. */
 const MAX_SHARE_OF_SCREEN = 1 / 3;
 
-/** What a summary is of. The same shape web's takes. */
-export type CatchUpScope =
-  | {
-      kind: "channel";
-      channelId: string;
-      channelName: string | null;
-      /**
-       * The stretch that was new when the member opened the channel, or null
-       * when there was none (or it is not known).
-       */
-      unread: { count: number; as_of: string } | null;
-    }
-  | {
-      kind: "thread";
-      channelId: string;
-      channelName: string | null;
-      rootId: string;
-    };
+export type { CatchUpScope };
 
 type Held = { kind: "consent" } | { kind: "failed"; message: string };
-
-function targetFor(
-  scope: CatchUpScope,
-  range: ChatCatchUpRange,
-): ChatCatchUpTarget {
-  if (scope.kind === "thread") return { thread_root_id: scope.rootId };
-  if (range === "unread" && scope.unread) return { unread: scope.unread };
-  return {
-    since: chatCatchUpSince(range === "week" ? "week" : "day", new Date()),
-  };
-}
 
 export interface CatchUp {
   /** Asks for a summary straight away and opens it under the header. */
@@ -186,15 +164,14 @@ export function useCatchUp({
         setHeld({ kind: "consent" });
         return;
       }
-      await run(next.channelId, targetFor(next, nextRange));
+      await run(next.channelId, catchUpTargetFor(next, nextRange));
     },
     [ensureConsent, run],
   );
 
   const start = useCallback(
     (next: CatchUpScope) => {
-      const nextRange: ChatCatchUpRange =
-        next.kind === "channel" && next.unread ? "unread" : "day";
+      const nextRange = catchUpFirstRange(next);
       reset();
       setAway(false);
       setScope(next);
@@ -293,6 +270,15 @@ function CatchUpBlock({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const { height } = useWindowDimensions();
+  // Android's Back ends the summary first, as it closed the sheet the
+  // summary used to be, before it leaves the channel.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
   const working = !held && run?.phase === "working";
   const title =
     scope.kind === "thread"
@@ -350,10 +336,7 @@ function CatchUpBlock({
             dense
             value={range}
             onChange={onRange}
-            options={(scope.unread
-              ? (["unread", "day", "week"] as const)
-              : (["day", "week"] as const)
-            ).map((value) => ({
+            options={catchUpRangesFor(scope).map((value) => ({
               value,
               label: CHAT_CATCH_UP_COPY.ranges[value],
             }))}
@@ -621,11 +604,14 @@ export function CatchUpStrip({
   action,
   onAction,
   onDismiss,
+  dismissLabel = CHAT_CATCH_UP_COPY.offer_dismiss,
 }: {
   line: string;
   action: string;
   onAction: () => void;
   onDismiss: () => void;
+  /** The ×'s name: Dismiss for the offer, Close the summary once folded. */
+  dismissLabel?: string;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -647,7 +633,7 @@ export function CatchUpStrip({
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={CHAT_CATCH_UP_COPY.offer_dismiss}
+        accessibilityLabel={dismissLabel}
         onPress={onDismiss}
         style={({ pressed }) => [
           styles.stripDismiss,

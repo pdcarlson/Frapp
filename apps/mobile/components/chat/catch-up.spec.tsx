@@ -114,18 +114,16 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
       node.props.accessibilityLabel === label,
   );
 
-const CHANNEL: CatchUpScope = {
+const CHANNEL = {
   kind: "channel",
   channelId: "c1",
-  channelName: "general",
   unread: { count: 60, as_of: "2026-11-12T15:00:00.000Z" },
-};
-const THREAD: CatchUpScope = {
+} satisfies CatchUpScope;
+const THREAD = {
   kind: "thread",
   channelId: "c1",
-  channelName: "general",
   rootId: "m1",
-};
+} satisfies CatchUpScope;
 const POINT = {
   kind: "for_you",
   text: "Ana asked you to bring the banner.",

@@ -545,10 +545,9 @@ export function MessageThreadScreen({
     startCatchUp({
       kind: "thread",
       channelId,
-      channelName: openChannel?.channel.name ?? null,
       rootId,
     });
-  }, [startCatchUp, channelId, openChannel, rootId]);
+  }, [startCatchUp, channelId, rootId]);
   const [offerDismissed, setOfferDismissed] = useState(false);
 
   // Unblock from a tombstone, as s05 offers it; the thread is read again so
@@ -1004,6 +1003,7 @@ export function MessageThreadScreen({
               action={CHAT_CATCH_UP_COPY.resume_action}
               onAction={catchUp.resume}
               onDismiss={catchUp.drop}
+              dismissLabel={CHAT_CATCH_UP_COPY.close}
             />
           ) : canSummarize &&
             !catchUp.active &&

@@ -9,16 +9,18 @@ import {
 } from "react";
 import { X } from "lucide-react";
 import {
+  catchUpFirstRange,
+  catchUpRangesFor,
+  catchUpTargetFor,
   errorCopy,
   useChatCatchUp,
-  type ChatCatchUpTarget,
+  type CatchUpScope,
 } from "@repo/hooks";
 import {
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_POINT_KINDS,
   chatCatchUpGroupOf,
   chatCatchUpNotes,
-  chatCatchUpSince,
   chatCatchUpTooLittleLine,
   chatCatchUpUnavailableLine,
   chatCatchUpWhen,
@@ -51,7 +53,7 @@ import { cn } from "@/lib/utils";
  * is always readable under it, and pressing a line scrolls the conversation
  * to that message with the summary still above it.
  *
- * **Hide folds it to one line** ("Your summary is still here.", Show
+ * **Hide folds it to one line** ("Your summary is still here.", Back to
  * summary), the same strip the phone shows after a line is pressed. Close
  * ends it. Nothing dims and nothing is modal: Escape inside the block closes
  * it, and the composer keeps its own Escape.
@@ -68,32 +70,9 @@ import { cn } from "@/lib/utils";
  * group lands, under a header and range control that are already in place.
  */
 
-/** What a summary is of. */
-export type CatchUpScope =
-  | {
-      kind: "channel";
-      channelId: string;
-      channelName: string | null;
-      /**
-       * The stretch that was new when the member opened the channel, or null
-       * when there was none (or it is not known).
-       */
-      unread: { count: number; as_of: string } | null;
-    }
-  | {
-      kind: "thread";
-      channelId: string;
-      channelName: string | null;
-      rootId: string;
-    };
+export type { CatchUpScope };
 
 type Held = { kind: "consent" } | { kind: "failed"; message: string };
-
-function targetFor(scope: CatchUpScope, range: ChatCatchUpRange): ChatCatchUpTarget {
-  if (scope.kind === "thread") return { thread_root_id: scope.rootId };
-  if (range === "unread" && scope.unread) return { unread: scope.unread };
-  return { since: chatCatchUpSince(range === "week" ? "week" : "day", new Date()) };
-}
 
 /**
  * The summary and what opens it. `start` asks for a summary straight away: of
@@ -104,14 +83,21 @@ function targetFor(scope: CatchUpScope, range: ChatCatchUpRange): ChatCatchUpTar
  */
 export function useCatchUp({
   activeChannelId,
+  activeThreadRootId,
   nameFor,
   onOpenPoint,
 }: {
   /** The channel on screen. A summary of any other channel is dropped. */
   activeChannelId: string | null;
+  /**
+   * The thread open beside or over the channel, or null. A thread's summary
+   * is drawn in its thread, so closing that thread or opening another ends
+   * it, rather than leaving it open with nowhere to show.
+   */
+  activeThreadRootId: string | null;
   nameFor: (userId: string) => string | null;
-  /** Opens the message a line rests on. */
-  onOpenPoint: (point: ChatCatchUpPoint) => void;
+  /** Opens the message a line rests on, given what the summary is of. */
+  onOpenPoint: (point: ChatCatchUpPoint, scope: CatchUpScope) => void;
 }): {
   /** The channel a summary is open for, or null. */
   openChannelId: string | null;
@@ -135,8 +121,13 @@ export function useCatchUp({
   const returnFocus = useRef<HTMLElement | null>(null);
   const block = useRef<HTMLElement | null>(null);
 
-  // Leaving the channel ends its summary (state adjusted during render).
-  if (scope && scope.channelId !== activeChannelId) {
+  // Leaving the channel ends its summary, and leaving the thread ends a
+  // thread's (state adjusted during render).
+  if (
+    scope &&
+    (scope.channelId !== activeChannelId ||
+      (scope.kind === "thread" && scope.rootId !== activeThreadRootId))
+  ) {
     setScope(null);
     setHeld(null);
   }
@@ -150,7 +141,9 @@ export function useCatchUp({
   // Into the block as it opens, so Escape closes it and Tab starts inside
   // it; back to whatever opened it when it closes, unless the member has
   // moved on into the conversation.
-  const scopeKey = scope ? `${scope.kind}:${scope.channelId}` : null;
+  const scopeKey = scope
+    ? `${scope.channelId}:${scope.kind === "thread" ? scope.rootId : ""}`
+    : null;
   useEffect(() => {
     if (!scopeKey) return;
     const opener = returnFocus.current;
@@ -183,7 +176,7 @@ export function useCatchUp({
         setHeld({ kind: "consent" });
         return;
       }
-      await run(next.channelId, targetFor(next, nextRange));
+      await run(next.channelId, catchUpTargetFor(next, nextRange));
     },
     [ensureConsent, run],
   );
@@ -192,8 +185,7 @@ export function useCatchUp({
     (next: CatchUpScope) => {
       const active = document.activeElement;
       returnFocus.current = active instanceof HTMLElement ? active : null;
-      const nextRange: ChatCatchUpRange =
-        next.kind === "channel" && next.unread ? "unread" : "day";
+      const nextRange = catchUpFirstRange(next);
       reset();
       setScope(next);
       setRange(nextRange);
@@ -206,6 +198,14 @@ export function useCatchUp({
   const close = useCallback(() => {
     setScope(null);
     setHeld(null);
+  }, []);
+
+  // Hide and Back to summary each swap out the control that was pressed, so
+  // focus goes to the block itself rather than falling to the page, where
+  // Escape and Tab would no longer reach it.
+  const fold = useCallback((next: boolean) => {
+    setFolded(next);
+    requestAnimationFrame(() => block.current?.focus({ preventScroll: true }));
   }, []);
 
   const shown = scope && current?.channelId === scope.channelId ? current : null;
@@ -222,7 +222,11 @@ export function useCatchUp({
       }
       data-slot="catch-up"
       data-folded={folded ? "" : undefined}
-      className="flex max-h-[33%] min-h-0 shrink-0 flex-col border-b border-border bg-surface-1 outline-none"
+      className={cn(
+        "flex max-h-[33%] min-h-0 shrink-0 flex-col bg-surface-1 outline-none",
+        // Folded, the strip draws its own hairline.
+        !folded && "border-b border-border",
+      )}
       onKeyDown={(event) => {
         // Escape inside the block only, and only when nothing inside (the
         // consent sheet, Report this) took it first.
@@ -233,28 +237,13 @@ export function useCatchUp({
       }}
     >
       {folded ? (
-        <div className="flex h-9 items-center gap-2 pl-4 pr-1 pointer-coarse:h-11">
-          <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-            {CHAT_CATCH_UP_COPY.resume_line}
-          </span>
-          <button
-            type="button"
-            onClick={() => setFolded(false)}
-            className={cn(
-              "shrink-0 rounded-sm px-2 text-caption font-semibold text-foreground hover:underline",
-              FOCUS_RING_OFFSET,
-            )}
-          >
-            {CHAT_CATCH_UP_COPY.resume_action}
-          </button>
-          <IconButton
-            label={CHAT_CATCH_UP_COPY.close}
-            onClick={close}
-            className="shrink-0"
-          >
-            <X />
-          </IconButton>
-        </div>
+        <CatchUpStrip
+          line={CHAT_CATCH_UP_COPY.resume_line}
+          action={CHAT_CATCH_UP_COPY.resume_action}
+          onAction={() => fold(false)}
+          dismissLabel={CHAT_CATCH_UP_COPY.close}
+          onDismiss={close}
+        />
       ) : (
         <>
           <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 pb-1 pl-4 pr-1 pt-2">
@@ -275,10 +264,7 @@ export function useCatchUp({
                   setRange(next);
                   void summarize(scope, next);
                 }}
-                options={(scope.unread
-                  ? (["unread", "day", "week"] as const)
-                  : (["day", "week"] as const)
-                ).map((value) => ({
+                options={catchUpRangesFor(scope).map((value) => ({
                   value,
                   label: CHAT_CATCH_UP_COPY.ranges[value],
                 }))}
@@ -287,7 +273,7 @@ export function useCatchUp({
             <span className="ml-auto flex shrink-0 items-center">
               <button
                 type="button"
-                onClick={() => setFolded(true)}
+                onClick={() => fold(true)}
                 className={cn(
                   "rounded-sm px-2 text-caption font-semibold text-muted-foreground hover:text-foreground",
                   FOCUS_RING_OFFSET,
@@ -333,7 +319,7 @@ export function useCatchUp({
                   summary={shown.summary}
                   nameFor={nameFor}
                   onAgain={() => void summarize(scope, range)}
-                  onOpenPoint={onOpenPoint}
+                  onOpenPoint={(point) => onOpenPoint(point, scope)}
                 />
               ) : null}
             </div>
@@ -534,32 +520,59 @@ export function CatchUpOffer({
   return (
     <div role="status" aria-live="polite" className="shrink-0">
       {line ? (
-        <div
-          data-slot="catch-up-offer"
-          className="flex h-9 items-center gap-2 border-b border-border bg-surface-1 pl-4 pr-1 pointer-coarse:h-11"
-        >
-          <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-            {line}
-          </span>
-          <button
-            type="button"
-            onClick={onStart}
-            className={cn(
-              "shrink-0 rounded-sm px-2 text-caption font-semibold text-foreground hover:underline",
-              FOCUS_RING_OFFSET,
-            )}
-          >
-            {CHAT_CATCH_UP_COPY.offer_action}
-          </button>
-          <IconButton
-            label={CHAT_CATCH_UP_COPY.offer_dismiss}
-            onClick={onDismiss}
-            className="shrink-0"
-          >
-            <X />
-          </IconButton>
-        </div>
+        <CatchUpStrip
+          slot="catch-up-offer"
+          line={line}
+          action={CHAT_CATCH_UP_COPY.offer_action}
+          onAction={onStart}
+          dismissLabel={CHAT_CATCH_UP_COPY.offer_dismiss}
+          onDismiss={onDismiss}
+        />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * One line, one action and an ×: the offer above a busy channel, and the
+ * open summary folded (Hide). The phone's `CatchUpStrip` is the same strip.
+ */
+function CatchUpStrip({
+  slot,
+  line,
+  action,
+  onAction,
+  dismissLabel,
+  onDismiss,
+}: {
+  slot?: string;
+  line: string;
+  action: string;
+  onAction: () => void;
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      data-slot={slot}
+      className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-surface-1 pl-4 pr-1 pointer-coarse:h-11"
+    >
+      <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
+        {line}
+      </span>
+      <button
+        type="button"
+        onClick={onAction}
+        className={cn(
+          "shrink-0 rounded-sm px-2 text-caption font-semibold text-foreground hover:underline",
+          FOCUS_RING_OFFSET,
+        )}
+      >
+        {action}
+      </button>
+      <IconButton label={dismissLabel} onClick={onDismiss} className="shrink-0">
+        <X />
+      </IconButton>
     </div>
   );
 }

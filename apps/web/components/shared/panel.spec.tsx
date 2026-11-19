@@ -268,9 +268,10 @@ describe('Panel docked "here"', () => {
     const region = await screen.findByRole("region", { name: "Create channel" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(region.parentElement).toBe(screen.getByTestId("chat"));
-    expect(
-      (screen.getByRole("button", { name: "Send" }) as HTMLElement).inert,
-    ).toBe(true);
+    // Covered: inert, and hidden so a focus trap around the host skips it.
+    const send = screen.getByText("Send");
+    expect(send.inert).toBe(true);
+    expect(send.style.visibility).toBe("hidden");
     const page = document.querySelector("[data-tool-column]") as HTMLElement;
     expect(page.inert).not.toBe(true);
 

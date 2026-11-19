@@ -263,7 +263,7 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   useBlockActions: () => ({ unblock, block: vi.fn(), reloadMaskedCopies }),
 }));
 
-/** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
+/** Catch me up (#3946): the gate, and the summary's hook, both stood in. */
 const catchUp = vi.hoisted(() => ({
   /** Whether this member has Ask (`useAiSurfaces().ask`). */
   ask: false,
@@ -296,7 +296,11 @@ vi.mock("@/components/chat/catch-up", async (importOriginal) => ({
       active: catchUp.active,
       resume: catchUp.resume,
       drop: catchUp.drop,
-      block: null,
+      // The open summary, drawn by the screen under its header.
+      block:
+        catchUp.active && !catchUp.waiting
+          ? React.createElement("Text", null, "Open summary block")
+          : null,
       sheets: null,
     };
   },
@@ -922,7 +926,6 @@ describe("Catch me up on a thread (#3946)", () => {
     expect(catchUp.start).toHaveBeenCalledWith({
       kind: "thread",
       channelId: CHANNEL,
-      channelName: "general",
       rootId: ROOT,
     });
     act(() => tree.unmount());
@@ -940,6 +943,17 @@ describe("Catch me up on a thread (#3946)", () => {
     expect(catchUp.start).not.toHaveBeenCalled();
     // The divider's action is still there for a change of mind.
     expect(byLabel(tree, CHAT_CATCH_UP_COPY.thread_action)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("draws the open summary in the thread, under the header", () => {
+    catchUp.surface = true;
+    catchUp.active = true;
+    thread = longThread(34);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Open summary block");
+    expect(text).not.toContain(chatCatchUpThreadOfferLine(34));
     act(() => tree.unmount());
   });
 

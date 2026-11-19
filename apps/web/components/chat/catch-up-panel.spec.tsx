@@ -62,7 +62,6 @@ const UNREAD = { count: 140, as_of: "2026-11-12T15:00:00.000Z" };
 const CHANNEL_SCOPE: CatchUpScope = {
   kind: "channel",
   channelId: CHANNEL,
-  channelName: "general",
   unread: UNREAD,
 };
 
@@ -105,13 +104,16 @@ const onOpenPoint = vi.fn();
 
 function Harness({
   activeChannelId = CHANNEL,
+  activeThreadRootId = "root-1",
   scope = CHANNEL_SCOPE,
 }: {
   activeChannelId?: string | null;
+  activeThreadRootId?: string | null;
   scope?: CatchUpScope;
 }) {
   const panel = useCatchUp({
     activeChannelId,
+    activeThreadRootId,
     nameFor: (id) => (id === "user-1" ? "Sam Okafor" : null),
     onOpenPoint,
   });
@@ -190,7 +192,6 @@ describe("useCatchUp", () => {
       scope: {
         kind: "thread",
         channelId: CHANNEL,
-        channelName: "general",
         rootId: "root-1",
       },
     });
@@ -299,6 +300,7 @@ describe("useCatchUp", () => {
     );
     expect(onOpenPoint).toHaveBeenCalledWith(
       expect.objectContaining({ message_id: "m2" }),
+      CHANNEL_SCOPE,
     );
     // The summary stays above the conversation for the next line.
     expect(screen.getByText("Dues are due Friday.")).toBeInTheDocument();
