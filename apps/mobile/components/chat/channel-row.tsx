@@ -504,7 +504,7 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <SkeletonRegion label="Loading channels" style={styles.skeletonList}>
+    <SkeletonRegion label="Loading channels" style={styles.skeletonList} flush>
       <View style={styles.skeletonCaption}>
         <SkeletonBlock
           width={tokens.spacing["3xl"]}

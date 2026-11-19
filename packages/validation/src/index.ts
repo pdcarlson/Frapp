@@ -226,6 +226,7 @@ export * from "./service-receipt";
 // The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).
 export * from "./sign-up-links";
 export * from "./signed-upload";
+export * from "./similar-task";
 export * from "./status-labels";
 // Study zone shapes: a circle or a traced outline, and the polygon a circle
 // is stored as (map picker, Pick study zones on a map).

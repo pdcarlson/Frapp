@@ -18,9 +18,12 @@ import {
   useDismissAiSuggestion,
   useMeetings,
   useMembers,
+  existingTaskLine,
+  useSimilarTasks,
   type AiSuggestion,
   type AiSuggestionDismissReason,
   type AiSuggestionSourceRef,
+  type ExistingTask,
   type TaskSuggestionEdits,
 } from "@repo/hooks";
 import {
@@ -33,6 +36,7 @@ import { codeOf } from "@repo/api-sdk";
 import {
   AI_SUGGESTION_COPY,
   LAST_YEAR_COPY,
+  SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
   lastYearTaskLine,
 } from "@repo/validation";
@@ -51,6 +55,7 @@ import {
 } from "@/components/meetings/meeting-copy";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ReportAiButton } from "@/components/ai/report-ai";
+import { tasksTaskLink } from "@/lib/tasks/task-links";
 import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
@@ -80,6 +85,14 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * same card under a line that says so, with one more answer: already
  * planned. It carries last year's checklist and nobody's name, because the
  * officer who did it has likely handed the job on.
+ *
+ * A suggestion that reads like a task the chapter already has open (#5562,
+ * `similar-task.ts`) says so before it can be created twice: the card sets
+ * the two side by side and asks which it is, the way Linear and Jira show
+ * likely duplicates as an issue is filed. Already a task records the
+ * existing task as the suggestion's, so the action item follows it; Create
+ * anyway brings back the usual card. Until one is pressed, Create all leaves
+ * it out, and it waits for the task list to be read at all.
  */
 
 /** `AI_SUGGESTION_DECIDE_MAX` on the API: decisions one request may carry. */
@@ -202,6 +215,9 @@ export function SuggestedTasks({
   const [busyId, setBusyId] = useState<string | null>(null);
   // The card whose Create task is on its way, to say so on its button.
   const [creatingId, setCreatingId] = useState<string | null>(null);
+  // The open task each suggestion reads like, from the tasks this officer
+  // can see (#5562).
+  const similar = useSimilarTasks(items);
 
   const [index, setIndex] = useState(0);
 
@@ -247,9 +263,11 @@ export function SuggestedTasks({
   // button creates cards the officer may never have brought up, and a guess
   // is only saved from the card that showed it.
   const saidOf = (item: WaitingSuggestion) => rowValues(item, edits[item.id]);
-  // A row open in the form is decided there, with what was typed into it.
+  const twinOf = (item: WaitingSuggestion) => similar.twinOf(item.id);
+  // A row open in the form is decided there, with what was typed into it,
+  // and one that looks like an existing task waits for the officer's word.
   const ready = items.filter((item) => {
-    if (item.id === formFor) return false;
+    if (item.id === formFor || !similar.known || twinOf(item)) return false;
     const values = saidOf(item);
     return values.who && values.due;
   });
@@ -291,6 +309,29 @@ export function SuggestedTasks({
     } finally {
       setBusyId(null);
       setCreatingId(null);
+    }
+  }
+
+  /** Already a task: the suggestion is that task, and its item follows it. */
+  async function linkRow(item: WaitingSuggestion, existing: ExistingTask) {
+    setBusyId(item.id);
+    try {
+      await accept.mutateAsync({
+        id: item.id,
+        task: { existing_task_id: existing.id },
+      });
+      toast({
+        title: SIMILAR_TASK_COPY.linked,
+        description: existing.title,
+      });
+    } catch (error) {
+      toast({
+        title: SIMILAR_TASK_COPY.linkFailed,
+        description: suggestionRefusalLine(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -441,6 +482,9 @@ export function SuggestedTasks({
             ? () => void dismissRow(current, "already_doing")
             : undefined
         }
+        existing={twinOf(current)}
+        onSameTask={(existing) => void linkRow(current, existing)}
+        onDifferentTask={() => similar.keep(current.id)}
         onOpenForm={() => setFormFor(current.id)}
         onCloseForm={() => setFormFor(null)}
         acceptWith={async (task) => {
@@ -464,7 +508,9 @@ export function SuggestedTasks({
               ? AI_SUGGESTION_COPY.accepting
               : ready.length === items.length
                 ? AI_SUGGESTION_COPY.acceptAll(ready.length)
-                : AI_SUGGESTION_COPY.acceptReady(ready.length)}
+                : items.some(twinOf)
+                  ? SIMILAR_TASK_COPY.acceptReady(ready.length)
+                  : AI_SUGGESTION_COPY.acceptReady(ready.length)}
           </Button>
         </div>
       ) : null}
@@ -485,6 +531,9 @@ function SuggestedTaskRow({
   onAccept,
   onDismiss,
   onAlreadyDoing,
+  existing,
+  onSameTask,
+  onDifferentTask,
   onOpenForm,
   onCloseForm,
   acceptWith,
@@ -504,6 +553,10 @@ function SuggestedTaskRow({
   onDismiss: () => void;
   /** Only on a "this time last year" row: the chapter is already on it. */
   onAlreadyDoing?: () => void;
+  /** The open task this suggestion reads like, until the officer says. */
+  existing: ExistingTask | null;
+  onSameTask: (existing: ExistingTask) => void;
+  onDifferentTask: () => void;
   onOpenForm: () => void;
   onCloseForm: () => void;
   acceptWith: (task: TaskSuggestionEdits) => Promise<void>;
@@ -563,6 +616,20 @@ function SuggestedTaskRow({
           }}
         />
       </div>
+    );
+  }
+
+  if (existing) {
+    return (
+      <SimilarTaskCard
+        item={item}
+        existing={existing}
+        disabled={disabled}
+        pending={pending}
+        onSame={() => onSameTask(existing)}
+        onDifferent={onDifferentTask}
+        onDismiss={onDismiss}
+      />
     );
   }
 
@@ -659,6 +726,97 @@ function SuggestedTaskRow({
             {pending ? AI_SUGGESTION_COPY.accepting : AI_SUGGESTION_COPY.accept}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A suggestion beside the open task it reads like (#5562): the two titles
+ * side by side, where the existing one stands, and the one question.
+ */
+function SimilarTaskCard({
+  item,
+  existing,
+  disabled,
+  pending,
+  onSame,
+  onDifferent,
+  onDismiss,
+}: {
+  item: WaitingSuggestion;
+  existing: ExistingTask;
+  disabled: boolean;
+  pending: boolean;
+  onSame: () => void;
+  onDifferent: () => void;
+  onDismiss: () => void;
+}) {
+  const { task } = item;
+  const where = existingTaskLine(existing);
+  return (
+    <div
+      aria-busy={pending || undefined}
+      className="space-y-3 rounded-[14px] border border-border p-4"
+    >
+      <p className="text-caption font-medium text-muted-foreground">
+        {SIMILAR_TASK_COPY.heading}
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="text-caption text-muted-foreground">
+            {SIMILAR_TASK_COPY.suggested}
+          </p>
+          <p className="break-words text-base font-medium">{task.title}</p>
+          {item.quote && item.quote !== task.title ? (
+            <p className="break-words text-caption text-muted-foreground">
+              “{item.quote}”
+            </p>
+          ) : null}
+        </div>
+        <div className="min-w-0 space-y-1 border-l border-border pl-3">
+          <p className="text-caption text-muted-foreground">
+            {SIMILAR_TASK_COPY.existing}
+          </p>
+          <p className="break-words text-base font-medium">{existing.title}</p>
+          {where ? (
+            <p className="text-caption text-muted-foreground">{where}</p>
+          ) : null}
+          <Link
+            href={tasksTaskLink(existing.id)}
+            className="inline-block text-caption underline underline-offset-2 hover:text-foreground"
+          >
+            {SIMILAR_TASK_COPY.openExisting}
+          </Link>
+        </div>
+      </div>
+      <div className="flex items-center justify-end gap-1">
+        <ReportAiButton
+          iconOnly
+          name={task.title}
+          target={{ subject: "ai_suggestion", subjectId: item.id }}
+        />
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={`Dismiss ${task.title}`}
+          title="Dismiss"
+          disabled={disabled}
+          onClick={onDismiss}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={disabled}
+          onClick={onDifferent}
+        >
+          {SIMILAR_TASK_COPY.different}
+        </Button>
+        <Button size="sm" disabled={disabled} onClick={onSame}>
+          {SIMILAR_TASK_COPY.same}
+        </Button>
       </div>
     </div>
   );

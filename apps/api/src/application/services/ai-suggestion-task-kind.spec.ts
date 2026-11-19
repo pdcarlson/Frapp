@@ -317,4 +317,53 @@ describe('TaskSuggestionKind (#4309)', () => {
       );
     });
   });
+
+  describe('a task the chapter already has (#5562, "Already a task")', () => {
+    const EXISTING = '55555555-5555-4555-8555-555555555555';
+
+    it('records the existing task and makes nothing, even with who and when missing', async () => {
+      const findById = jest.fn().mockResolvedValue({ id: EXISTING });
+      const create = jest.fn();
+      const post = jest.fn();
+      const linking = new TaskSuggestionKind(
+        { findById, create } as never,
+        { create: post } as never,
+      );
+      const before = linking.normalizeProposal({ title: 'Book the hall' })!;
+      const payload = linking.applyEdits(before, {
+        existing_task_id: EXISTING,
+        title: 'Ignored',
+      });
+      expect(() => linking.assertAcceptable(payload)).not.toThrow();
+      // Naming the task it already is changes nothing about the suggestion.
+      expect(linking.countsAsEdited(before, payload)).toBe(false);
+      await expect(
+        linking.commit({
+          chapterId: 'chapter-1',
+          userId: 'officer-1',
+          payload,
+          source: { type: 'meeting', id: 'meeting-1' },
+        }),
+      ).resolves.toEqual({ resultId: EXISTING });
+      expect(findById).toHaveBeenCalledWith(EXISTING, 'chapter-1');
+      expect(create).not.toHaveBeenCalled();
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it('refuses an existing task that is not an id', () => {
+      expect(() =>
+        kind.applyEdits(kind.normalizeProposal({ title: 'A' })!, {
+          existing_task_id: 'not-an-id',
+        }),
+      ).toThrow(BadRequestException);
+    });
+
+    it('still counts a changed title as an edit', () => {
+      const before = kind.normalizeProposal({ title: 'A' })!;
+      expect(
+        kind.countsAsEdited(before, kind.applyEdits(before, { title: 'B' })),
+      ).toBe(true);
+      expect(kind.countsAsEdited(before, before)).toBe(false);
+    });
+  });
 });

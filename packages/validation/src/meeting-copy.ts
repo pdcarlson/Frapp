@@ -81,13 +81,19 @@ export function meetingVoteLine(vote: MeetingVote | null): string {
 
 /**
  * The type an event's name suggests, so "Exec meeting" opens on Exec. Only a
- * starting point; the officer picks.
+ * starting point; the officer picks. A name that says no type is Other with
+ * no label, never Chapter: Chapter minutes read the last chapter meeting's
+ * action items, so "Ben Cunningham Meeting" filed as Chapter carried fifteen
+ * of them in (Paul, 2026-11-19).
  */
 export function guessMeetingType(eventName: string): MeetingType {
   const name = eventName.toLowerCase();
   if (/\bexec|executive|e-board|eboard|officer/.test(name)) return "exec";
   if (/committee|\bchair/.test(name)) return "committee";
-  return "chapter";
+  if (/\bchapters?\b|\bgeneral (body )?meeting\b|\bgb?m\b/.test(name)) {
+    return "chapter";
+  }
+  return "other";
 }
 
 /** `2026-11-09` for the calendar day `value` falls on where the reader is. */

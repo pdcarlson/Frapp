@@ -703,7 +703,7 @@ export function MemberProfileSkeleton() {
   const styles = createStyles(tokens);
   const { caption, label } = tokens.typography.role;
   return (
-    <SkeletonRegion label="Loading member" style={styles.body}>
+    <SkeletonRegion label="Loading member" style={styles.body} flush>
       <View style={styles.skeletonIdentity}>
         <SkeletonBlock
           width={PROFILE_AVATAR_SIZE}

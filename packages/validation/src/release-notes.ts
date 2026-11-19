@@ -128,12 +128,15 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A long transcript pasted into your notes now folds into a card you can view or remove.",
       "Minutes now open with the TL;DR, then the dates coming up, bold decision headlines and a checklist of action items with yours first, and the menu at the top right changes the meeting's name, time, type and who was there.",
       "A task made from minutes now names its meeting as it's called today, with a link to the minutes, and a long task title wraps so you can read all of it.",
+      "Minutes for a meeting whose name doesn't suggest a type are filed as Other, and no longer pull in the last chapter meeting's action items.",
+      "A suggested task that looks like one you already have now shows the two side by side, so you can mark it as that task, and its action item follows it, or create it anyway.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
       "You can now set how many minutes before an event check-in opens when you make or edit it.",
       "With a page open on a wide window, the page now gets the main space and chat sits in a narrower panel on the right that you can drag wider, so lists and names no longer get cut off.",
       "Events is now one list of events, tasks and birthdays by day, each in its own colour, with a small month beside it to jump to any day.",
+      "Documents shows your files sooner: search and one Filters menu sit above the list, each file is tinted by its folder, and a file's actions appear when you point at it.",
     ],
     phone: [
       "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",

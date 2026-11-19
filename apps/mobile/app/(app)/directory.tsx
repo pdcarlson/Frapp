@@ -715,7 +715,7 @@ export function MemberListSkeleton({
   const { role } = tokens.typography;
 
   return (
-    <SkeletonRegion label={label}>
+    <SkeletonRegion label={label} flush>
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>
           <SkeletonBlock

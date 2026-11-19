@@ -19,7 +19,7 @@ import { useViewerUserId } from "@repo/hooks";
 export type ListLayout = "list" | "grid";
 
 /** The screens that offer the toggle. A new one joins here. */
-export type ListLayoutScreen = "directory" | "documents" | "tasks";
+export type ListLayoutScreen = "directory" | "tasks";
 
 /**
  * The layout a screen opens in before this person picks one: List
@@ -29,7 +29,6 @@ export type ListLayoutScreen = "directory" | "documents" | "tasks";
  */
 const DEFAULT_LIST_LAYOUT: Record<ListLayoutScreen, ListLayout> = {
   directory: "list",
-  documents: "list",
   tasks: "list",
 };
 

@@ -31266,6 +31266,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "existing_task_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A task the chapter already has that this suggestion is (#5562, \"Already a task\"). When set, nothing is made and every other field is ignored: the accept records that task as the suggestion's, so the action item it came from follows that task. It must be a task in the chapter."
           }
         }
       },
