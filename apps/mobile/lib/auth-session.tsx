@@ -16,6 +16,7 @@ import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
 import { MemberFacingError } from "@repo/hooks/error-copy";
+import { describeEmailCodeError } from "@repo/hooks/auth-error-copy";
 import {
   describeAuthReturnError,
   describeOAuthKickoffError,
@@ -622,11 +623,14 @@ export function AuthSessionProvider({
         type: "email",
       });
       if (error) {
-        reportAuthFailure({
-          flow: "email_code_verify",
-          screen: "/join",
-          error,
-        });
+        // A mistyped code is the member's, not a failure to report.
+        if (!describeEmailCodeError(error).wrongCode) {
+          reportAuthFailure({
+            flow: "email_code_verify",
+            screen: "/join",
+            error,
+          });
+        }
         throw error;
       }
     },

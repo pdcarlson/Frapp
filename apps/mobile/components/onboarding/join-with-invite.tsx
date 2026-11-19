@@ -49,6 +49,8 @@ import { successHaptic } from "@/lib/haptics";
 import {
   clearRememberedInviteThen,
   consumeRememberedInviteToken,
+  peekRememberedInviteThen,
+  peekRememberedInviteToken,
   rememberInviteToken,
   type JoinThen,
 } from "@/lib/onboarding/invite-token";
@@ -192,11 +194,29 @@ export function JoinWithInvite({
   // off the remembered invite first, so a relaunch never repeats it.
   useEffect(() => {
     if (acted.current || then === null) return;
+    // A link that can't be read has nothing to carry on with: let go of the
+    // hold, so the screen's account line stays usable.
+    if (details.isError) {
+      acted.current = true;
+      clearRememberedInviteThen();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect acts once on what a sign-in came back to do; each branch starts or releases the screen's hold
+      setBusy(false);
+      return;
+    }
     if (!signedIn || !invite || chapters.isLoading) return;
     acted.current = true;
-    clearRememberedInviteThen();
-    if (alreadyIn) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect acts once on what a sign-in came back to do; each branch starts or releases the screen's hold
+    // The mark is taken, not just read: if this card was left mounted under
+    // another one after the sign-in, only the first to act joins, and the
+    // other stands down instead of redeeming the same invite twice.
+    // A card for another invite, left mounted under this one, neither acts
+    // nor takes this invite's mark.
+    const stillMarked =
+      peekRememberedInviteToken() === token &&
+      peekRememberedInviteThen() === then;
+    if (stillMarked) clearRememberedInviteThen();
+    if (!stillMarked) {
+      setBusy(false);
+    } else if (alreadyIn) {
       void openChapter(invite.chapter_id);
     } else if (then === "join" && invite.state === "live") {
       void join(invite);
@@ -208,11 +228,13 @@ export function JoinWithInvite({
     alreadyIn,
     askForLink,
     chapters.isLoading,
+    details.isError,
     invite,
     join,
     openChapter,
     signedIn,
     then,
+    token,
   ]);
 
   // A sign-in from here that the member abandoned leaves them signed out;
@@ -227,7 +249,8 @@ export function JoinWithInvite({
 
   const passwordSignIn = () => {
     startSignIn("join");
-    router.push("/sign-in");
+    // Marked, so sign-in doesn't send a remembered invite back to this card.
+    router.push({ pathname: "/sign-in", params: { password: "1" } });
   };
 
   const entering = stepFadeIn(tokens);

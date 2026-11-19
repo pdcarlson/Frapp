@@ -120,6 +120,15 @@ describe("the invite card's words (#5625)", () => {
     expect(deadInviteCopy({ ...DETAILS, state }).title).toBe(title);
   });
 
+  it("tells a locked chapter apart: the link is fine, the chapter can't take members", () => {
+    const copy = deadInviteCopy({ ...DETAILS, state: "locked" });
+    expect(copy.title).toBe("This chapter isn't taking new members right now");
+    expect(copy.ask).toBe("Let Paul know");
+    expect(askForNewLinkCopy({ ...DETAILS, state: "locked" }).sent).toContain(
+      "this link works once the chapter is restored",
+    );
+  });
+
   it("still reads when the sender's profile is gone", () => {
     const copy = deadInviteCopy({
       ...DETAILS,

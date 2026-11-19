@@ -45,18 +45,17 @@ export function isCreateChapterVisit(search: string): boolean {
 }
 
 /**
- * Whether this visit could skip the page at all: the footer's marked visit,
- * with no invite in the URL. The page waits on the reads below only for
- * such a visit, so the rule lives here and nowhere else.
+ * Whether this visit could skip the page at all: the footer's marked visit.
+ * A visit with an invite in the URL never reaches this rule, because the page
+ * shows that invite's card instead (`JoinWithInvite`). The page waits on the
+ * reads below only for such a visit, so the rule lives here and nowhere else.
  */
 export function isJoinSkipCandidate({
   from,
-  hasInvite,
 }: {
   from: string | null;
-  hasInvite: boolean;
 }): boolean {
-  return from === JOIN_FROM_SIGN_IN && !hasInvite;
+  return from === JOIN_FROM_SIGN_IN;
 }
 
 /**
@@ -68,19 +67,17 @@ export function isJoinSkipCandidate({
  */
 export function shouldSkipJoinForMember({
   from,
-  hasInvite,
   membershipCount,
   offerCount,
   hasAccess,
 }: {
   from: string | null;
-  hasInvite: boolean;
   membershipCount: number;
   offerCount: number;
   hasAccess: boolean;
 }): boolean {
   return (
-    isJoinSkipCandidate({ from, hasInvite }) &&
+    isJoinSkipCandidate({ from }) &&
     membershipCount > 0 &&
     offerCount === 0 &&
     hasAccess
@@ -91,20 +88,91 @@ export function shouldSkipJoinForMember({
  * What a sign-in started from the invite card goes on to do when it lands back
  * on `/join` (#5625): `join` the chapter, or `ask` the sender for a new link.
  * The card's Continue buttons put it on their return path, so one tap is
- * sign-in and join together. A visit without it never acts on its own: an
- * existing member who opens a link is shown the card, not joined behind
- * their back.
+ * sign-in and join together.
+ *
+ * The URL alone is not enough, because anyone can write `then=join` into a
+ * link. The card also leaves a mark in this browser when a way in is tapped
+ * ({@link rememberJoinMark}), for that token and for 30 minutes, and the page
+ * acts only when the two agree ({@link joinThenFor}). So a visit without that
+ * tap never acts on its own: an existing member who opens a crafted link is
+ * shown the card, not joined or announced behind their back. The phone keeps
+ * the same mark beside its remembered invite
+ * (`apps/mobile/lib/onboarding/invite-token.ts`).
  */
 export const JOIN_THEN_KEY = "then";
 export type JoinThen = "join" | "ask";
+
+export const JOIN_MARK_STORAGE_KEY = "frapp.join-then";
+/** How long a tap on the card stays good for: a sign-in round trip, not a day. */
+export const JOIN_MARK_MS = 30 * 60 * 1000;
 
 export function readJoinThen(search: URLSearchParams): JoinThen | null {
   const value = search.get(JOIN_THEN_KEY);
   return value === "join" || value === "ask" ? value : null;
 }
 
+/** Notes that this browser tapped a way in on `token`'s card, to then do `then`. */
+export function rememberJoinMark(
+  token: string,
+  then: JoinThen,
+  now: number = Date.now(),
+): void {
+  try {
+    window.localStorage.setItem(
+      JOIN_MARK_STORAGE_KEY,
+      JSON.stringify({ token, then, at: now }),
+    );
+  } catch {
+    // Storage off (a private window): the card shows, and Join is one more tap.
+  }
+}
+
+/** Forgets the mark, once it has been acted on. */
+export function clearJoinMark(): void {
+  try {
+    window.localStorage.removeItem(JOIN_MARK_STORAGE_KEY);
+  } catch {
+    // Nothing stored to clear.
+  }
+}
+
+/**
+ * What this visit should carry on with: the URL's `then`, only when this
+ * browser's own mark names the same token and the same `then` and is under
+ * {@link JOIN_MARK_MS} old. Otherwise nothing.
+ */
+export function joinThenFor(
+  token: string,
+  search: URLSearchParams,
+  now: number = Date.now(),
+): JoinThen | null {
+  const fromUrl = readJoinThen(search);
+  if (fromUrl === null) return null;
+  try {
+    const raw = window.localStorage.getItem(JOIN_MARK_STORAGE_KEY);
+    if (!raw) return null;
+    const mark = JSON.parse(raw) as {
+      token?: unknown;
+      then?: unknown;
+      at?: unknown;
+    };
+    const fresh =
+      typeof mark.at === "number" &&
+      now - mark.at >= 0 &&
+      now - mark.at < JOIN_MARK_MS;
+    return mark.token === token && mark.then === fromUrl && fresh
+      ? fromUrl
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** `/join` with this visit's query, marked to finish with `then`. */
-export function joinReturnPath(search: URLSearchParams, then: JoinThen): string {
+export function joinReturnPath(
+  search: URLSearchParams,
+  then: JoinThen,
+): string {
   const next = new URLSearchParams(search.toString());
   next.set(JOIN_THEN_KEY, then);
   return `/join?${next.toString()}`;

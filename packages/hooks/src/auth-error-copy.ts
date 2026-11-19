@@ -101,6 +101,29 @@ export const EMAIL_CODE_COPY = {
   sendAgainIn: (seconds: number) => `Send again in ${seconds}s`,
 } as const;
 
+/**
+ * What a failed code check says (#5625), and whether the code itself was the
+ * problem. GoTrue answers a wrong or expired code with `otp_expired` (a 403)
+ * or a 400; only then is the field cleared. Anything else (offline, too many
+ * tries, an Auth outage) is not the member's code, so it says what happened
+ * and keeps the code for another try.
+ */
+export function describeEmailCodeError(error: unknown): {
+  message: string;
+  wrongCode: boolean;
+} {
+  const status = statusOf(error);
+  if (
+    authCodeOf(error) === "otp_expired" ||
+    status === 400 ||
+    status === 401 ||
+    status === 403
+  ) {
+    return { message: EMAIL_CODE_COPY.wrongCode, wrongCode: true };
+  }
+  return { message: authFallbackCopy(error), wrongCode: false };
+}
+
 export const EMAIL_SEND_CAPPED_COPY =
   "We can't send email right now. Too many went out in the last hour. Try again in a few minutes.";
 

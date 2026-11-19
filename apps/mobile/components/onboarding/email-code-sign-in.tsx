@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, View } from "react-native";
 import {
   cooldownCopy,
   describeEmailSendError,
+  describeEmailCodeError,
   EMAIL_CODE_COPY,
   EMAIL_CODE_LENGTH,
   EMAIL_RESEND_COOLDOWN_SECONDS,
@@ -101,9 +102,12 @@ export function EmailCodeSignIn({
     try {
       await verifyEmailCode({ email: email.trim().toLowerCase(), code: value });
       // Signed in: the session change carries the card on from here.
-    } catch {
-      setError(EMAIL_CODE_COPY.wrongCode);
-      setCode("");
+    } catch (caught) {
+      const { message, wrongCode } = describeEmailCodeError(caught);
+      setError(message);
+      if (wrongCode) setCode("");
+      // Not the code's fault: keep it, and let the same code go again.
+      else lastTried.current = null;
       codeRef.current?.focus();
     } finally {
       setVerifying(false);

@@ -59,8 +59,8 @@ import {
  *   answers a job the admin started themselves, so neither gets one. The
  *   report alert uses it rather than `chat` because it is moderation work, not
  *   a message. "New member joined" was here too until #4008 moved it to its
- *   own `members` switch; "invite accepted" is a system line in the inviter's
- *   DM, not a push, and "role change" sends nothing yet.
+ *   own `members` switch, with the inviter's "invite accepted" and "asked for
+ *   a new invite" (#5625); "role change" sends nothing yet.
  *
  * `default` is the fallback the service substitutes when a payload omits a
  * category — never a member preference. There is no `study` category at all
@@ -150,7 +150,8 @@ export const NOTIFICATION_CATEGORIES = [
     defaultEnabled: true,
   },
   {
-    // "<Name> joined" (#4008). Only the members who are sent it see the
+    // "<Name> joined" (#4008), and the inviter's own "accepted your invite"
+    // and "asked for a new invite" (#5625). Only the members who are sent it see the
     // switch: `MEMBER_JOINED_AUDIENCE` is both who `InviteService` pushes and
     // who `shownNotificationCategories` draws this row for. Chat reports and
     // the Discord import notice stay on `admin`, unswitchable (docblock above).
@@ -158,7 +159,8 @@ export const NOTIFICATION_CATEGORIES = [
     // Named for what sets it off rather than a noun like the rows above:
     // Shawn found "New members" didn't say what the switch does (#4008).
     label: "Someone joins the chapter",
-    description: "A notice each time a new member joins.",
+    description:
+      "A notice each time a new member joins, and when someone asks you for a new invite.",
     defaultEnabled: true,
     audience: MEMBER_JOINED_AUDIENCE,
   },

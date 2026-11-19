@@ -30,6 +30,14 @@ enable_signup = true
 double_confirm_changes = false
 enable_confirmations = false
 
+# Prints the 6-digit code beside the link, as the hosted templates do
+# (docs/ops/deployment/supabase.md § Both templates print the 6-digit code), so
+# the invite card's email code works on the local stack. Local confirmations are
+# off, so Magic Link is the only template a sign-in sends here.
+[auth.email.template.magic_link]
+subject = "Sign in to Frapp"
+content_path = "./supabase/templates/magic-link.html"
+
 # Stamps the active chapter into every issued access token as the
 # `active_chapter_id` claim, which ChapterGuard treats as authoritative per
 # spec/behavior/multi-tenancy.md. Local only -- hosted projects enable this in

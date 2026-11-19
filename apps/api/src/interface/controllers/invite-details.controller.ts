@@ -7,10 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';
 import { ThrottlePublicTokenRead } from '../decorators/throttle-profiles.decorator';
-import {
-  InviteDetailsResponseDto,
-  PreviewInviteDto,
-} from '../dtos/invite.dto';
+import { InviteDetailsResponseDto, PreviewInviteDto } from '../dtos/invite.dto';
 
 /**
  * The one invite route that needs no account (#5625): the card an invite link
@@ -42,7 +39,9 @@ export class InviteDetailsController {
       "An invite link's chapter, sender, role and whether it still works, with no account needed",
   })
   @ApiOkResponse({ type: InviteDetailsResponseDto })
-  @ApiNotFoundResponse({ description: 'No such invite, or its chapter is gone' })
+  @ApiNotFoundResponse({
+    description: 'No such invite, or its chapter is gone',
+  })
   async details(
     @Body() dto: PreviewInviteDto,
   ): Promise<InviteDetailsResponseDto> {

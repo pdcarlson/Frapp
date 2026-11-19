@@ -51,6 +51,7 @@ import {
   extractInviteTokenFromQuery,
   peekInviteTokenFromLink,
   peekRememberedInviteThen,
+  peekRememberedInviteToken,
   rememberInviteToken,
   takeInviteTokenFromLink,
   useRememberedInviteToken,
@@ -206,8 +207,12 @@ export default function JoinChapter() {
     // A fresh invite is remembered until it is joined or declined: through
     // a sign-in on the card, and a relaunch (`invite-token.ts`). A remembered
     // one (read back after a sign-in, or from the phone after a relaunch)
-    // opens the card again.
-    if (fresh) rememberInviteToken(fresh);
+    // opens the card again. The same invite coming back in the route (this
+    // screen mounting again after the sign-in it started) keeps its join
+    // mark, so the card still carries on with it.
+    if (fresh && fresh !== peekRememberedInviteToken()) {
+      rememberInviteToken(fresh);
+    }
     const next = fresh ?? rememberedInvite;
     if (next) {
       // A link just opened wins over whatever the field holds: the confirm

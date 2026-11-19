@@ -1580,7 +1580,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   Nothing they send reaches the blocker.
 
 - **A member cannot block themselves, nor the system actor.**
-  Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken.
+  Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken.
   (A poll and its tally are _not_ in that set: `poll` is not a server-only kind, so they are authored by the member who created the poll.)
 - **Blocking is reversible, and the unblock affordance is durable.**
   The blocked-members list is the one place a block can always be undone (mobile: Settings → Blocked members; web: Settings → Blocked members, the personal page on the account menu, `/preferences?section=blocked`); a tombstone in a thread the member may never reopen is not sufficient.
@@ -1782,7 +1782,7 @@ A member with no receipt for a channel has never opened it, so **every** message
 - **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently).
   A `system_audit` row the audit mirror wrote, keyed `client_message_id = 'audit:<id>'` (`auditMirrorClientId`), is a log line, not a message to anyone.
   It never pushes either, whatever level the member set: `decidePush` refuses a mirror row ahead of every preference ([`../notifications.md`](../notifications.md#chat-notification-preferences)).
-  The server's other `system_audit` notices (a poll closing, an invite accepted, the chapter welcome) are addressed to members and still count.
+  The server's other `system_audit` notices (a poll closing, the chapter welcome) are addressed to members and still count.
 
 Mention count is the subset of that same set which mentions the viewer, plus every message-thread reply in the channel that mentions them and is newer than both the channel's cursor and their read of that thread (§ Messages → Message threads).
 A thread reply is never in the unread set itself.
@@ -2554,7 +2554,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
   Mobile caches each photo on disk by its storage path rather than its signed URL, so the API re-signing a photo doesn't download it again; a new photo is a new path, so it is never served stale.
   A 1:1 DM shows the other participant; a group DM keeps a chapter-supplied title and otherwise summarises participants.
   A sender that cannot be resolved — a deleted account, whose membership row `anonymize_user` purges — degrades to a truncated id rather than a blank name, and an empty stored `display_name` counts as unresolved because the column is `NOT NULL DEFAULT ''`.
-  The system actor (`SYSTEM_SENDER_ID`: the welcome, the audit bridge, a poll's closing notice, an invite-accept DM) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347).
+  The system actor (`SYSTEM_SENDER_ID`: the welcome, the audit bridge, a poll's closing notice) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347).
   Before that it fell through to the truncated id and read "Member 000000".
 - **The name is deliberately not joined onto the message.**
   Messages reach the cache four ways, and the live one is a `postgres_changes` echo of the `chat_messages` row, which cannot carry a join.

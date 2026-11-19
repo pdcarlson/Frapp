@@ -165,11 +165,7 @@ function JoinWithoutInvite() {
   const openChatMembership = hasAccess ? currentMembership : null;
 
   const visitFrom = searchParams.get("from");
-  const visitHasInvite = false;
-  const skipCandidate = isJoinSkipCandidate({
-    from: visitFrom,
-    hasInvite: visitHasInvite,
-  });
+  const skipCandidate = isJoinSkipCandidate({ from: visitFrom });
   // Decided once, on arrival. Re-deciding on every render would fire mid-join:
   // a redeem refetches the chapter list, which turns 0 memberships into 1
   // while `selectChapter` is still running.
@@ -246,7 +242,6 @@ function JoinWithoutInvite() {
     setSkipDecision(
       shouldSkipJoinForMember({
         from: visitFrom,
-        hasInvite: visitHasInvite,
         membershipCount: memberships.length,
         offerCount: pendingInvites.data?.length ?? 0,
         hasAccess,

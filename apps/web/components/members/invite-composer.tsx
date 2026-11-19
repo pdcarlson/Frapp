@@ -278,8 +278,8 @@ export function InviteComposer({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">Or share a link</p>
           <p className="text-caption text-muted-foreground">
-            Paste it in a group chat. Each link lets one person join, for 24
-            hours.
+            Paste it in a group chat. Each link lets one person join, for 7
+            days.
           </p>
         </div>
         <Button

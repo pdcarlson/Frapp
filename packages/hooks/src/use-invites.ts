@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { markLegalAcceptanceRecorded } from "./legal-acceptance";
+import { inviteLongDate } from "./invite-card";
 import type { components } from "@repo/api-sdk";
 
 /**
@@ -201,11 +202,7 @@ export function useCreateChapterLink() {
 export function chapterLinkExpiryLabel(
   link: Pick<InviteListItem, "status" | "expires_at">,
 ): string {
-  const date = new Date(link.expires_at).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  const date = inviteLongDate(link.expires_at);
   return link.status === "expired" ? `Expired ${date}` : `Works until ${date}`;
 }
 

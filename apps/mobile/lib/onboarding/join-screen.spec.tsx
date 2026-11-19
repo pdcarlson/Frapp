@@ -1333,6 +1333,33 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(peekRememberedInviteToken()).toBeNull();
   });
 
+  it("keeps the mark when the screen mounts again with the same invite in its route", async () => {
+    // The sign-in leaves and comes back to /join?token=…: the route's invite
+    // is the remembered one, so it must not be re-remembered without its mark.
+    rememberInviteToken("invite-token-54", "join");
+    params.mockReturnValue({ token: "invite-token-54" });
+    authStatus = "authenticated";
+    render();
+    await settle();
+
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-54",
+      accept_terms_privacy: true,
+    });
+  });
+
+  it("drops the mark when the route brings a different invite", async () => {
+    rememberInviteToken("invite-token-55", "join");
+    params.mockReturnValue({ token: "invite-token-56" });
+    authStatus = "authenticated";
+    render();
+    await settle();
+
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+    expect(peekRememberedInviteToken()).toBe("invite-token-56");
+    expect(peekRememberedInviteThen()).toBeNull();
+  });
+
   it("doesn't join on its own for an invite remembered without the mark", async () => {
     rememberInviteToken("invite-token-53");
     authStatus = "authenticated";

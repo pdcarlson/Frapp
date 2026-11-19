@@ -90,6 +90,11 @@ vi.mock("@/lib/app-install", () => ({
 }));
 
 import { JoinWithInvite } from "./join-with-invite";
+import {
+  JOIN_MARK_STORAGE_KEY,
+  clearJoinMark,
+  rememberJoinMark,
+} from "@/lib/auth/join-visit";
 
 const CHAPTER_ID = "00000000-0000-4000-8000-000000000001";
 const LIVE = {
@@ -112,6 +117,7 @@ function signedIn() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearJoinMark();
   h.details.data = LIVE;
   h.details.error = null;
   h.details.isLoading = false;
@@ -165,6 +171,11 @@ describe("the invite card, signed out (#5625)", () => {
     const { options } = h.auth.signInWithOAuth.mock.calls[0]![0];
     const next = new URL(options.redirectTo).searchParams.get("next");
     expect(next).toBe("/join?token=tok-1&then=join");
+    // The browser half of the mark, without which the URL's then=join does
+    // nothing when Apple sends them back.
+    expect(
+      JSON.parse(window.localStorage.getItem(JOIN_MARK_STORAGE_KEY) ?? "null"),
+    ).toMatchObject({ token: "tok-1", then: "join" });
   });
 
   it("signs in with the email's code without leaving, then joins", async () => {
@@ -263,12 +274,39 @@ describe("the invite card, signed in (#5625)", () => {
   });
 
   it("joins by itself, once, when a sign-in from the card comes back", async () => {
+    rememberJoinMark("tok-1", "join");
     h.search = new URLSearchParams("token=tok-1&then=join");
     render(<JoinWithInvite token="tok-1" />);
 
     await waitFor(() => expect(h.redeem).toHaveBeenCalledTimes(1));
     expect(h.replace).toHaveBeenCalledWith("/join?token=tok-1");
     await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+  });
+
+  it("never joins on a crafted then=join link this browser never started", async () => {
+    h.search = new URLSearchParams("token=tok-1&then=join");
+    render(<JoinWithInvite token="tok-1" />);
+
+    await screen.findByRole("button", { name: "Join chapter" });
+    expect(h.redeem).not.toHaveBeenCalled();
+  });
+
+  it("never joins on a mark left for another invite", async () => {
+    rememberJoinMark("tok-2", "join");
+    h.search = new URLSearchParams("token=tok-1&then=join");
+    render(<JoinWithInvite token="tok-1" />);
+
+    await screen.findByRole("button", { name: "Join chapter" });
+    expect(h.redeem).not.toHaveBeenCalled();
+  });
+
+  it("never joins on a mark older than half an hour", async () => {
+    rememberJoinMark("tok-1", "join", Date.now() - 31 * 60 * 1000);
+    h.search = new URLSearchParams("token=tok-1&then=join");
+    render(<JoinWithInvite token="tok-1" />);
+
+    await screen.findByRole("button", { name: "Join chapter" });
+    expect(h.redeem).not.toHaveBeenCalled();
   });
 
   it("never joins by itself on a plain visit", async () => {
@@ -291,6 +329,7 @@ describe("the invite card, signed in (#5625)", () => {
 
   it("opens the chapter for a member who signed in from the card, without redeeming", async () => {
     h.chapters.data = [{ chapter_id: CHAPTER_ID }];
+    rememberJoinMark("tok-1", "join");
     h.search = new URLSearchParams("token=tok-1&then=join");
     render(<JoinWithInvite token="tok-1" />);
 
@@ -368,6 +407,7 @@ describe("a dead link (#5625)", () => {
 
   it("asks by itself when that sign-in comes back", async () => {
     signedIn();
+    rememberJoinMark("tok-1", "ask");
     h.search = new URLSearchParams("token=tok-1&then=ask");
     render(<JoinWithInvite token="tok-1" />);
 

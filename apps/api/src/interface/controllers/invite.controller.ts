@@ -29,6 +29,7 @@ import { FreeTier, GraceBlocked } from '../decorators/subscription.decorator';
 import {
   ThrottleExpensiveWrite,
   ThrottleFanOutWrite,
+  ThrottlePersonalNudge,
 } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentUser,
@@ -193,7 +194,7 @@ export class InviteController {
 
   @Post('ask-for-new-link')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ThrottleFanOutWrite()
+  @ThrottlePersonalNudge()
   @ApiOperation({
     summary: "Ask a dead invite's sender for a new link",
     description:

@@ -7274,7 +7274,7 @@ export interface components {
         };
         RedeemInviteDto: {
             token: string;
-            /** @description True when the user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Needed only if they haven't accepted the current version. */
+            /** @description True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version. */
             accept_terms_privacy?: boolean;
         };
         PendingInviteDto: {
@@ -7307,17 +7307,17 @@ export interface components {
             role: string | null;
             expires_at: string;
             /**
-             * @description Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role). Only `live` can be joined.
+             * @description Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role); `locked` (a working link into a chapter whose subscription is inactive, so it can't take new members until it's restored). Only `live` can be joined.
              * @enum {string}
              */
-            state: "live" | "expired" | "used" | "off";
+            state: "live" | "expired" | "used" | "off" | "locked";
             /**
              * Format: uuid
              * @description The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join.
              */
             chapter_id: string;
             /**
-             * @description How many members the chapter has now.
+             * @description How many members the chapter has now. 0 when the link does not work: only a live link earns the count.
              * @example 41
              */
             member_count: number;

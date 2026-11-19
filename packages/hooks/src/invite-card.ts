@@ -38,8 +38,12 @@ export function inviteCardLine(
     .join(" · ");
 }
 
-/** A written-out date, the way dates read across the apps: "Friday, November 14". */
-function longDate(iso: string): string {
+/**
+ * A written-out date, the way dates read across the apps: "Friday, November
+ * 14". The one copy for the invite surfaces: the dead card's "sent it on" and
+ * the chapter link's "Works until" (`chapterLinkExpiryLabel`).
+ */
+export function inviteLongDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -57,7 +61,7 @@ export function deadInviteCopy(
   const first = inviterFirstName(details);
   const whom = first ?? "the officer who sent it";
   const sent = details.invited_by
-    ? `${details.invited_by} sent it on ${longDate(details.sent_at)}`
+    ? `${details.invited_by} sent it on ${inviteLongDate(details.sent_at)}`
     : null;
   const ask = first ? `Ask ${first} for a new link` : "Ask for a new link";
   switch (details.state) {
@@ -75,6 +79,16 @@ export function deadInviteCopy(
         body: `An officer turned this link off. Ask ${whom} for a new one.`,
         ask,
       };
+    case "locked":
+      // Nothing is wrong with the link: the chapter can't take new members
+      // while its subscription is inactive, and the same link works once
+      // it's restored. The button tells the sender someone tried.
+      return {
+        title: "This chapter isn't taking new members right now",
+        sent,
+        body: `Its Frapp subscription is inactive. Let ${whom} know, and this same link works once it's restored.`,
+        ask: first ? `Let ${first} know` : "Let them know",
+      };
     default:
       return {
         title: "This invite has expired",
@@ -86,19 +100,26 @@ export function deadInviteCopy(
 }
 
 /** Under the Ask button before it's pressed, and what replaces it after. */
-export function askForNewLinkCopy(details: Pick<InviteDetails, "invited_by">): {
+export function askForNewLinkCopy(
+  details: Pick<InviteDetails, "invited_by" | "state">,
+): {
   hint: string;
   sent: string;
   signedOutHint: string;
 } {
   const first = inviterFirstName(details);
+  const locked = details.state === "locked";
   return {
     hint: first
       ? `${first} gets a notification with your name.`
       : "They get a notification with your name.",
-    sent: first
-      ? `Asked. ${first} got a notification with your name and can send you a new link.`
-      : "Asked. They got a notification with your name and can send you a new link.",
+    sent: locked
+      ? first
+        ? `Done. ${first} knows you tried to join, and this link works once the chapter is restored.`
+        : "Done. They know you tried to join, and this link works once the chapter is restored."
+      : first
+        ? `Asked. ${first} got a notification with your name and can send you a new link.`
+        : "Asked. They got a notification with your name and can send you a new link.",
     signedOutHint: first
       ? `Sign in first, so ${first} knows who's asking.`
       : "Sign in first, so they know who's asking.",

@@ -373,7 +373,7 @@ A gate's refusal of either write is told in a member's words, `rushCardGateRefus
 Voter names are never shown); mobile draws `poll`, `signup`, `form`, `role_picker`, `event`, `task`, `points`, `hours`, `rush`, `announcement`, `system_audit` and `ask_answer` as cards in the same row frame (`apps/mobile/components/chat/`), and `dues` and `loading` as text via `message-item.tsx`; a card whose payload doesn't read is drawn as its `content` text, as on web.
 The `announcement` card draws the message's `content` through the message markdown, and `payload.body` only when `content` is empty: `content` is what the push and the channel preview showed, and `announcement` is not a server-only kind, so a client could send a body that says something else.
 The `system_audit` card names its actor through `actorLabel` (`@repo/hooks`): the roster's name, "Frapp" for the system, or the member fallback, never a bare id prefix.
-Only the `#chapter-audit` mirror writes that payload; the server's own notices (a poll closing, an invite accepted, the chapter welcome) are `system_audit` rows without one, whose `content` is the whole sentence: mobile draws them as text, and web as that sentence in a muted card frame, because the renderer registry keeps every card kind out of the text body.
+Only the `#chapter-audit` mirror writes that payload; the server's own notices (a poll closing, the chapter welcome) are `system_audit` rows without one, whose `content` is the whole sentence: mobile draws them as text, and web as that sentence in a muted card frame, because the renderer registry keeps every card kind out of the text body.
 The `task` card is an immutable creation-time snapshot (`assigner → assignee`, title, due date, point reward) whose **live** status is read back through the task query
 — the chat message row is never mutated — and carries inline lifecycle actions: the assignee can Start / Mark done and a `tasks:manage` admin can Confirm / Reject, gated client-side for UX with the existing task REST endpoints as the trust boundary.
 No control and no status badge is drawn until the live task is read, because the payload's status is the creation-time `TODO` forever (#2065); a viewer who can't read the task sees the snapshot without a live status ([`../tasks.md` § Chat Integration](../tasks.md#chat-integration)).
@@ -399,7 +399,7 @@ This is a server-originated insert that bypasses the client send path and goes d
 - Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues.
   The audit row itself is always the source of truth.
 
-The same `system_audit` message pattern is reused, targeted to a DM, for the invite-accept notification (see [README.md](./README.md) → _Direct Messages_).
+The same `system_audit` message pattern is reused, targeted to a DM, for a DM poll's closing notice. The invite-accept notice used to be one too; since #5625 it is a notification to the inviter ([`notifications.md`](../notifications.md)).
 
 ## The team's Dev log channel
 

@@ -31,8 +31,11 @@ import {
   JOIN_IN_BROWSER_KEY,
   JOIN_IN_BROWSER_VALUE,
   joinPathWithoutThen,
+  clearJoinMark,
   joinReturnPath,
+  joinThenFor,
   readJoinThen,
+  rememberJoinMark,
   type JoinThen,
 } from "@/lib/auth/join-visit";
 import { getLiveSessionUser } from "@/lib/auth/rejected-session";
@@ -96,7 +99,11 @@ export function JoinWithInvite({ token }: { token: string }) {
   // A sign-in finished on this page (the email code) acts like one that came
   // back marked: it carries on with what the visitor started.
   const [localThen, setLocalThen] = useState<JoinThen | null>(null);
-  const then = localThen ?? readJoinThen(searchParams);
+  // Read once on arrival: the URL's mark, honored only when this browser
+  // tapped a way in on this card (`joinThenFor`), so a crafted link can't
+  // join or ask on a signed-in visitor's behalf.
+  const [arrivedThen] = useState(() => joinThenFor(token, searchParams));
+  const then = localThen ?? arrivedThen;
   // Held for the whole join, through `selectChapter` and the navigation, so a
   // second tap can't redeem twice. Starts held when the visit comes back to
   // join, so the Join button never flashes before it presses itself.
@@ -227,16 +234,25 @@ export function JoinWithInvite({ token }: { token: string }) {
   // off the URL first, so a refresh or Back never repeats it.
   useEffect(() => {
     if (acted.current || then === null) return;
+    // A link that can't be read has nothing to carry on with: let go of the
+    // hold, so the screen's Signed in as stays usable.
+    if (details.isError) {
+      acted.current = true;
+      clearJoinMark();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect acts once on what a sign-in came back to do; each branch starts or releases the page's hold
+      setBusy(false);
+      return;
+    }
     // A sign-in that didn't take leaves the visit signed out, and the
     // signed-out card reads no hold; nothing to undo here.
     if (!ready || !invite || chapters.isLoading) return;
     acted.current = true;
+    clearJoinMark();
     if (readJoinThen(searchParams)) {
       router.replace(joinPathWithoutThen(searchParams));
     }
     if (alreadyIn) {
       toast({ title: `You're already in ${invite.chapter_name}` });
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect acts once on what a sign-in came back to do; each branch starts or releases the page's hold
       void openChapter(invite.chapter_id);
     } else if (then === "join" && invite.state === "live") {
       void join(invite);
@@ -248,6 +264,7 @@ export function JoinWithInvite({ token }: { token: string }) {
     alreadyIn,
     askForLink,
     chapters.isLoading,
+    details.isError,
     invite,
     join,
     openChapter,
@@ -408,6 +425,7 @@ export function JoinWithInvite({ token }: { token: string }) {
               </p>
               <JoinSignIn
                 returnTo={joinReturnPath(searchParams, "ask")}
+                onStart={() => rememberJoinMark(token, "ask")}
                 onSignedIn={() => signedInHere("ask")}
               />
               <TermsLine action="continuing" />
@@ -453,10 +471,16 @@ export function JoinWithInvite({ token }: { token: string }) {
     return (
       <AuthScreen
         hero={<InviteHero details={invite} />}
-        footer={<PasswordSignInLine returnTo={returnTo} />}
+        footer={
+          <PasswordSignInLine
+            returnTo={returnTo}
+            onStart={() => rememberJoinMark(token, "join")}
+          />
+        }
       >
         <JoinSignIn
           returnTo={returnTo}
+          onStart={() => rememberJoinMark(token, "join")}
           onSignedIn={() => signedInHere("join")}
         />
         <TermsLine action="continuing" className="mt-4" />

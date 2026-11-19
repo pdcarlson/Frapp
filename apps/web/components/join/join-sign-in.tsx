@@ -33,11 +33,14 @@ const PROVIDERS: { id: OAuthProvider; name: string }[] = [
  */
 export function JoinSignIn({
   returnTo,
+  onStart,
   onSignedIn,
   disabled = false,
 }: {
   /** Where every way in lands once signed in (already open-redirect safe). */
   returnTo: string;
+  /** A way in was tapped: the card notes it, so its return may carry on. */
+  onStart: () => void;
   /** The email code signed this tab in without leaving it. */
   onSignedIn: () => void;
   disabled?: boolean;
@@ -48,6 +51,7 @@ export function JoinSignIn({
 
   async function start(provider: OAuthProvider) {
     setPending(provider);
+    onStart();
     try {
       const { error } = await startWebOAuth(
         createSupabaseBrowserClient(),
@@ -72,6 +76,7 @@ export function JoinSignIn({
     return (
       <EmailCodeSignIn
         redirectTo={returnTo}
+        onSending={onStart}
         onSignedIn={onSignedIn}
         onBack={() => setEmailOpen(false)}
         disabled={disabled}
@@ -115,12 +120,20 @@ export function JoinSignIn({
 }
 
 /** The footer for an account that signs in with a password. */
-export function PasswordSignInLine({ returnTo }: { returnTo: string }) {
+export function PasswordSignInLine({
+  returnTo,
+  onStart,
+}: {
+  returnTo: string;
+  /** Tapped: the card notes it, so the return from sign-in may carry on. */
+  onStart?: () => void;
+}) {
   return (
     <p>
       Have a password?{" "}
       <Link
         href={`/sign-in?redirectTo=${encodeURIComponent(returnTo)}`}
+        onClick={onStart}
         className="font-semibold text-accent-text hover:underline"
       >
         Sign in

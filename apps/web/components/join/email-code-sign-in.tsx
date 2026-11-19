@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import {
   cooldownCopy,
   describeEmailSendError,
+  describeEmailCodeError,
   EMAIL_CODE_COPY,
   EMAIL_CODE_LENGTH,
   EMAIL_RESEND_COOLDOWN_SECONDS,
@@ -30,11 +31,14 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
  */
 export function EmailCodeSignIn({
   redirectTo,
+  onSending,
   onSignedIn,
   onBack,
   disabled = false,
 }: {
   redirectTo: string;
+  /** The email is about to go out: its link may come back to this card. */
+  onSending: () => void;
   onSignedIn: () => void;
   onBack: () => void;
   disabled?: boolean;
@@ -67,6 +71,7 @@ export function EmailCodeSignIn({
     }
     setSending(true);
     setError(null);
+    onSending();
     try {
       const supabase = createSupabaseBrowserClient();
       const { error: sendError } = await supabase.auth.signInWithOtp({
@@ -116,13 +121,19 @@ export function EmailCodeSignIn({
       if (verifyError) throw verifyError;
       onSignedIn();
     } catch (caught) {
-      reportAuthFailure({
-        flow: "email_code_verify",
-        screen: "/join",
-        error: caught,
-      });
-      setError(EMAIL_CODE_COPY.wrongCode);
-      setCode("");
+      const { message, wrongCode } = describeEmailCodeError(caught);
+      setError(message);
+      if (wrongCode) {
+        setCode("");
+      } else {
+        // Not the code's fault: keep it, and let the same code go again.
+        lastTried.current = null;
+        reportAuthFailure({
+          flow: "email_code_verify",
+          screen: "/join",
+          error: caught,
+        });
+      }
       codeRef.current?.focus();
     } finally {
       setVerifying(false);

@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Redirect, useLocalSearchParams } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   cooldownCopy,
@@ -39,6 +40,7 @@ import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-prim
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import { useRememberedInviteToken } from "@/lib/onboarding/invite-token";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
@@ -58,6 +60,14 @@ export default function SignIn() {
     signInWithPassword,
     status,
   } = useAuthSession();
+  // The invite card's own "Have a password? Sign in" comes here on purpose
+  // (`password=1`). Any other arrival with an invite remembered (the app
+  // reopened after it was closed mid-sign-in) goes back to that invite's
+  // card, which signs in and joins in one tap (#5625).
+  const { password: passwordOnly } = useLocalSearchParams<{
+    password?: string;
+  }>();
+  const rememberedInvite = useRememberedInviteToken();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -328,6 +338,14 @@ export default function SignIn() {
       ) : null}
     </>
   );
+
+  if (
+    rememberedInvite !== null &&
+    passwordOnly !== "1" &&
+    status === "unauthenticated"
+  ) {
+    return <Redirect href="/(auth)/join" />;
+  }
 
   return (
     // Safe area on every edge: `(auth)` renders with `headerShown: false`, so
