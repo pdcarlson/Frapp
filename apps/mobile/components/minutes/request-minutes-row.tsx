@@ -33,7 +33,9 @@ export function RequestMinutesRow({ state }: { state: MinutesRequestState }) {
         <ListRow
           label={MEETING_ENTRY_COPY.label}
           value={MINUTES_REQUEST_COPY.requested}
-          description={MINUTES_REQUEST_COPY.requestedStatus}
+          // The value says it was asked for; the longer web status wraps
+          // beside it here and grows the card.
+          description={MINUTES_REQUEST_COPY.notPosted}
           variant="detail"
         />
       ) : (
