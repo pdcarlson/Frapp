@@ -51,9 +51,12 @@ export function ToolPageHeader({
       data-tool-page-header=""
       // `@container`: a page's actions break on the page's own width, which
       // this header shares, as they did in the row under it.
-      className="@container hidden h-12 shrink-0 items-center gap-3 border-b border-border px-4 min-[1056px]:flex sm:px-6"
+      // Below the side-by-side width it shows only when a page put actions
+      // in it (`page-actions.tsx`), as one pinned row of them: the title is
+      // in the top bar there and there is nothing to close into.
+      className="@container hidden h-12 shrink-0 items-center gap-3 border-b border-border px-4 min-[1056px]:flex sm:px-6 has-[[data-page-actions]:not(:empty)]:flex"
     >
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="hidden min-w-0 flex-1 items-center min-[1056px]:flex">
         {pageTitle ? (
           <PageTitleText pageTitle={pageTitle} asHeading={titleIsHeading} />
         ) : null}
@@ -61,12 +64,12 @@ export function ToolPageHeader({
       <div
         ref={actionSlotRef}
         data-tool-page-actions=""
-        className="flex min-w-0 shrink items-center justify-end empty:hidden"
+        className="ml-auto flex min-w-0 shrink items-center justify-end empty:hidden"
       />
       <PanelCloseButton
         label={pageTitle ? `Close ${pageTitle.title}` : "Close page"}
         onClick={onClose}
-        className="-mr-2"
+        className="-mr-2 max-[1055px]:hidden"
       />
     </div>
   );

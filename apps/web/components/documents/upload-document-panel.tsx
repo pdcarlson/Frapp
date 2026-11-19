@@ -11,7 +11,6 @@ import {
 } from "@repo/hooks";
 import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { Button } from "@/components/ui/button";
-import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -527,9 +526,9 @@ export function UploadDocumentPanel({
         for a screen reader.
       */}
       <Button
-        variant="ghost"
+        variant="action"
         size="toolbar"
-        className={cn(PAGE_ACTION_CLASSES, triggerClassName)}
+        className={cn("gap-2", triggerClassName)}
         aria-label="Upload document"
         onClick={() => openPanel()}
         {...gate.controlProps()}

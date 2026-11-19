@@ -15,7 +15,6 @@ import {
 import { can } from "@repo/validation";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -454,8 +453,8 @@ export default function PointsPage() {
           */}
         <Button
           size="toolbar"
-          variant="ghost"
-          className={PAGE_ACTION_CLASSES}
+          variant="action"
+          className="gap-2"
           {...adjustGate.controlProps()}
           onClick={() => adjustDialog.setOpen(true)}
         >

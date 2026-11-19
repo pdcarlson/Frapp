@@ -36,7 +36,6 @@ import {
 import { MAX_BACKWORK_ZIP_LABEL, can } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import { PAGE_ACTION_CLASSES } from "@/components/ui/new-button";
 import { PageActions } from "@/components/layout/page-actions";
 import { IconButton } from "@/components/ui/icon-button";
 import {
@@ -672,11 +671,12 @@ export function BackworkPage() {
       </section>
 
       {/*
-        The page's actions, in its header from the side-by-side width up
-        (`page-actions.tsx`): the admin menu, Bulk upload and Upload.
+        The page's actions, in its header (`page-actions.tsx`): Upload, and
+        one More menu for the rest (Bulk upload, and an admin's clean-up), so
+        the row fits beside chat at 375px.
       */}
       <PageActions>
-        <Can permission="backwork:admin">
+        {isAdmin || canUpload ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -691,16 +691,28 @@ export function BackworkPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[260px]">
-              <DropdownMenuItem
-                disabled={!gate.allowed}
-                aria-describedby={gate.controlProps()["aria-describedby"]}
-                onSelect={() => setCleanupOpen(true)}
-              >
-                <Pencil aria-hidden="true" />
-                Clean up professors and departments
-              </DropdownMenuItem>
+              {canUpload ? (
+                <DropdownMenuItem asChild>
+                  <Link href="/backwork/upload">
+                    <FolderUp aria-hidden="true" />
+                    Bulk upload
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
+              {isAdmin ? (
+                <DropdownMenuItem
+                  disabled={!gate.allowed}
+                  aria-describedby={gate.controlProps()["aria-describedby"]}
+                  onSelect={() => setCleanupOpen(true)}
+                >
+                  <Pencil aria-hidden="true" />
+                  Clean up professors and departments
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
+        ) : null}
+        <Can permission="backwork:admin">
           {/* Portaled, so it can live beside the menu that opens it. */}
           <BackworkTaxonomyDrawer
             open={cleanupOpen}
@@ -709,19 +721,12 @@ export function BackworkPage() {
           />
         </Can>
         <Can permission="backwork:upload">
-          <Button asChild size="toolbar" variant="secondary" className="gap-2">
-            <Link href="/backwork/upload">
-              <FolderUp className="h-4 w-4" aria-hidden="true" /> Bulk upload
-            </Link>
-          </Button>
-        </Can>
-        <Can permission="backwork:upload">
           <BackworkUploadSheet gate={gate}>
             <Button
               type="button"
               size="toolbar"
-              variant="ghost"
-              className={PAGE_ACTION_CLASSES}
+              variant="action"
+              className="gap-2"
               {...gate.controlProps()}
             >
               <Upload className="h-4 w-4" aria-hidden="true" />

@@ -8,13 +8,7 @@ import {
 import { NewButton, newLabel } from "@/components/ui/new-button";
 
 /** The shell's wiring: a header slot, and the page under it. */
-function Shell({
-  headerShown,
-  children,
-}: {
-  headerShown: boolean;
-  children: React.ReactNode;
-}) {
+function Shell({ children }: { children: React.ReactNode }) {
   const [slot, setSlot] = React.useState<HTMLDivElement | null>(null);
   return (
     <>
@@ -22,18 +16,16 @@ function Shell({
         <div ref={setSlot} />
       </div>
       <div data-testid="page">
-        <PageHeaderSlotProvider slot={headerShown ? slot : null}>
-          {children}
-        </PageHeaderSlotProvider>
+        <PageHeaderSlotProvider slot={slot}>{children}</PageHeaderSlotProvider>
       </div>
     </>
   );
 }
 
 describe("PageActions", () => {
-  it("renders into the page header when the header shows (Paul, 2026-11-19)", () => {
+  it("renders into the page header (Paul, 2026-11-19)", () => {
     render(
-      <Shell headerShown>
+      <Shell>
         <PageActions>
           <NewButton thing="minutes" />
         </PageActions>
@@ -48,21 +40,18 @@ describe("PageActions", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("stays a row at the top of the page when there is no page header", () => {
+  it("renders nothing inside the shell until the header slot mounts, so it never lands in the body first", () => {
     render(
-      <Shell headerShown={false}>
-        <PageActions>
-          <NewButton thing="event" />
-        </PageActions>
-      </Shell>,
+      <PageHeaderSlotProvider slot={null}>
+        <div data-testid="page">
+          <PageActions>
+            <NewButton thing="event" />
+          </PageActions>
+        </div>
+      </PageHeaderSlotProvider>,
     );
     expect(
-      within(screen.getByTestId("page")).getByRole("button", {
-        name: "New event",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("header")).queryByRole("button"),
+      within(screen.getByTestId("page")).queryByRole("button"),
     ).not.toBeInTheDocument();
   });
 

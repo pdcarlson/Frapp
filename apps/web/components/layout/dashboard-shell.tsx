@@ -283,8 +283,8 @@ export function DashboardShell({
     the page.
   */
   const toolColumnRef = useRef<HTMLDivElement>(null);
-  // The tool page header's action slot (`page-actions.tsx`): a page's actions
-  // render there once the header shows, at the side-by-side width.
+  // The tool page header's action slot (`page-actions.tsx`): a page's
+  // actions render there at every width.
   const [headerActionSlot, setHeaderActionSlot] =
     useState<HTMLDivElement | null>(null);
   const closeChatPanel = useCallback(() => {
@@ -650,9 +650,7 @@ export function DashboardShell({
                   askBar && "max-lg:pb-24 max-lg:[--ask-bar-room:4.5rem]",
                 )}
               >
-                <PageHeaderSlotProvider
-                  slot={split === true ? headerActionSlot : null}
-                >
+                <PageHeaderSlotProvider slot={headerActionSlot}>
                   {children}
                 </PageHeaderSlotProvider>
               </div>

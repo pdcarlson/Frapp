@@ -5,30 +5,42 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
- * A route's actions: its create button, search, filter, an export menu. They
- * sit in the page's own header, between the title and the X (Paul,
- * 2026-11-19: "what if the new minutes button goes up to the Minutes section
- * header next to the x?", then "what if we do that across the board?"), the
- * way Linear, Notion and Slack's right-hand panels put a view's actions in
- * its title row rather than a band of their own under it. The band cost every
- * page a 34px row and pushed the list down for one button.
+ * A route's actions: its create button, an upload, its search and filter
+ * when they fit as buttons (Events'), an export menu. They sit in the page's
+ * own header, between the title and the X (Paul, 2026-11-19: "what if the new
+ * minutes button goes up to the Minutes section header next to the x?", then
+ * "what if we do that across the board?"), the way Linear, Notion and
+ * Slack's right-hand panels put a view's actions in its title row rather than
+ * a band of their own under it. The band cost every page a 34px row and
+ * pushed the list down for one button.
  *
- * **Where it lands.** From the side-by-side width up the tool page has its own
- * 48px header (`tool-page-header.tsx`), and this renders into that header's
- * action slot through a portal, so a page writes its actions once, inline,
- * next to the state they use. Below that width there is no page header (the
- * title is in the top bar, which already holds find, the bell and the
- * account), so the row stays at the top of the page, trailing-aligned, as it
- * always was.
+ * **Always the header, inside the shell.** The page writes its actions once,
+ * inline, next to the state they use, and this portals them into the tool
+ * page header's action slot (`tool-page-header.tsx`). The slot is the same box
+ * at every width, so nothing remounts when the window crosses the
+ * side-by-side width (a half-filled Log service form keeps its draft). From
+ * that width up the header is title, actions, X. Below it the title is in the
+ * top bar and there is nothing to close into, so the header shows only when
+ * it holds actions, as one pinned row of them. The header's CSS decides that,
+ * not a media query in JS, so no width has to be known first.
+ *
+ * On the server, and for the one commit before the slot mounts, it renders
+ * nothing. From the side-by-side width up the header row is already drawn at
+ * its 48px, so the actions fill in place and nothing under them moves. Below
+ * it the row appears with them, once, on load; it no longer arrives in the
+ * body and then jumps into the header, which is what a media-query switch did.
  *
  * Only actions belong here. A control that needs the page's width to read (a
- * segmented window choice, a month picker) stays in the body: the header is
- * one 48px row with no room to wrap.
+ * segmented window choice, a search field with filter chips beside it) stays
+ * in the body: the header is one 48px row with no room to wrap.
+ *
+ * Outside the shell (a test, a page with no tool header) it renders inline as
+ * a trailing row.
  *
  * **An empty row collapses** (`empty:hidden`). Most call sites wrap their
  * controls in a `<Can>`, which renders nothing for a role without the
- * permission and while permissions load; without the collapse those members
- * would get a blank band.
+ * permission and while permissions load; the header's `:has()` rule then
+ * keeps a narrow window from drawing an empty band.
  */
 
 type PageActionsProps = {
@@ -37,10 +49,12 @@ type PageActionsProps = {
 };
 
 /**
- * The tool page header's action slot, or `null` when there is no page header
- * at this width (or outside the shell: a test, a page outside the dashboard).
+ * The tool page header's action slot. `undefined` outside the shell (no
+ * provider); `null` inside it until the slot has mounted.
  */
-const PageHeaderSlotContext = React.createContext<HTMLElement | null>(null);
+const PageHeaderSlotContext = React.createContext<
+  HTMLElement | null | undefined
+>(undefined);
 
 export function PageHeaderSlotProvider({
   slot,
@@ -56,18 +70,13 @@ export function PageHeaderSlotProvider({
   );
 }
 
-/** Whether `PageActions` renders into the page header here. */
-export function usePageActionsInHeader(): boolean {
-  return React.useContext(PageHeaderSlotContext) !== null;
-}
-
 export function PageActions({ children, className }: PageActionsProps) {
   const slot = React.useContext(PageHeaderSlotContext);
+  if (slot === null) return null;
   if (slot) {
     return createPortal(
-      // One row, never wrapping: the header is 48px. The slot itself
-      // shrinks, so a long set of actions squeezes the title (which
-      // truncates) before it pushes the X off the edge.
+      // One row, never wrapping: the header is 48px. Buttons that can say
+      // less there do (`NewButton` drops to its +) so the title keeps room.
       <div
         data-page-actions="header"
         className="flex min-w-0 items-center justify-end gap-2 empty:hidden"
