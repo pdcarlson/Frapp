@@ -1,5 +1,9 @@
 import { nextJsConfig } from "@repo/eslint-config/next-js";
-import { webUiSyntax, webUiSyntaxExcept } from "@repo/eslint-config/ui-rules";
+import {
+  TEST_FILES,
+  webUiSyntax,
+  webUiSyntaxExcept,
+} from "@repo/eslint-config/ui-rules";
 
 /** @type {import("eslint").Linter.Config[]} */
 export default [
@@ -37,11 +41,20 @@ export default [
       "no-restricted-syntax": ["error", ...webUiSyntax],
     },
   },
+  {
+    // Specs use emoji as members' own content; every other UI rule applies.
+    files: TEST_FILES,
+    rules: {
+      "no-restricted-syntax": ["error", ...webUiSyntaxExcept(["emoji"])],
+    },
+  },
   // Files that predate a rule, grandfathered from that rule alone until the
   // issue beside them lands; every other UI rule still applies. This list only
   // shrinks: never add a file to pass lint.
   ...Object.entries(
     groupByFile({
+      // Not grandfathered: the emoji picker's own data is members' content.
+      emoji: ["lib/chat/drawable-emoji.ts"],
       // #5682: native date and time inputs onto DateField / TimeField.
       nativeDateTime: [
         "components/tasks/due-time-control.tsx",
@@ -53,15 +66,6 @@ export default [
         "components/chat/signup-form.tsx",
         "components/events/event-editor-dialog.tsx",
         "components/personal-settings/quiet-hours-section.tsx",
-      ],
-      // The header-actions PR (thread "Put page actions in headers app-wide")
-      // moves these onto NewButton; it deletes this group when it merges.
-      handRolledNewButton: [
-        "components/chat-admin/chat-admin-page.tsx",
-        "components/events/events-page.tsx",
-        "components/geofences/study-zones-manager.tsx",
-        "components/meetings/meetings-page.tsx",
-        "components/tasks/tasks-board.tsx",
       ],
     }),
   ).map(([file, except]) => ({

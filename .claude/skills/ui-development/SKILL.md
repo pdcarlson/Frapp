@@ -22,15 +22,18 @@ without being told:
 
 1. **Before designing, read [`rulebook.md`](rulebook.md) in full** (every ruling Paul has given, by
    theme) and [`principles.md`](../../../spec/ui/design-system/principles.md) (the P1 to P8 checks). A
-   brief that contradicts the rulebook loses unless Paul himself wrote the contradiction; say so in the PR.
+   brief that contradicts a ruling is built only when Paul asked for it, or when Shawn, Winston or Evan
+   is deliberately trying something new as `AGENTS.md` § ADR discipline allows; either way the PR names
+   the ruling it changes and edits its line. A coordinator's brief that contradicts one by accident
+   follows the ruling.
 2. **Build on both apps in one PR**, from the shared components below, never a hand-built copy of one.
 3. **Before the PR opens, run [`review-checklist.md`](review-checklist.md)**: captures as member, chair,
    exec and empty on web and phone; the sibling sweep (fix the pattern everywhere, never only where Paul
    saw it); the rulebook walk; using it as a member would. Its evidence goes in the PR body.
 4. **A rule a syntax tree can see becomes lint** in `packages/eslint-config/ui-rules.js`, with the
    remaining sites grandfathered by file in the app's eslint config (that list only shrinks).
-5. **When Paul gives a new UI ruling,** add it to `rulebook.md` (dated, imperative, with the check id)
-   in the PR that acts on it, so the next thread starts with it.
+5. **When Paul gives a new UI ruling,** the PR that acts on it changes the spec that owns the detail and
+   adds its dated one-line entry to `rulebook.md`, so the next thread starts with it.
 
 ### Shared components, by job
 
@@ -38,8 +41,8 @@ Reach for these before writing markup. A screen that hand-builds one of these jo
 
 | Job | Web (`apps/web/components/`) | Phone (`apps/mobile/components/`) |
 | --- | --- | --- |
-| Page actions in the header | `layout/page-actions.tsx` `PageActions` (portals into `ToolPageHeader`'s slot) | `screen-shell.tsx` header, `header-button.tsx` `HeaderButton` |
-| Create ("New …") | `ui/new-button.tsx` `NewButton`; other main actions `PAGE_ACTION_CLASSES` | `ScreenShell` `createAction` (`floating-create-button.tsx`) |
+| Page actions in the header | `layout/page-actions.tsx` `PageActions` (moves into the page header with #5686) | `screen-shell.tsx` header, `header-button.tsx` `HeaderButton` |
+| Create ("New …") | `ui/new-button.tsx` `NewButton`; other main actions `<Button variant="action">` (both land with #5686) | `ScreenShell` `createAction` (`floating-create-button.tsx`) |
 | A record or long form | `shared/panel.tsx` `Panel` (docked) | `sheet-scaffold.tsx` |
 | Row menu | `shared/row-menu.tsx`, `ui/context-menu.tsx` | `item-actions-menu.tsx`, `glass-menu.tsx` |
 | A pick from options | `ui/select.tsx`, `ui/dropdown-menu.tsx`, `shared/searchable-picker.tsx` | `option-sheet.tsx` |

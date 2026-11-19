@@ -1,5 +1,16 @@
 import { config as reactInternalConfig } from "@repo/eslint-config/react-internal";
-import { mobileUiSyntax } from "@repo/eslint-config/ui-rules";
+import { mobileUiSyntaxExcept, TEST_FILES } from "@repo/eslint-config/ui-rules";
+
+/**
+ * A dynamic `import()` of a non-Expo-Go native module (see the rule below).
+ * Named so the spec override can keep it while dropping the emoji rule.
+ */
+const nativeModuleImport = {
+  selector:
+    "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication|expo-audio|expo-speech-recognition|@react-native-google-signin\\/google-signin)($|\\/)/]",
+  message:
+    "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth, @/lib/google-auth, @/lib/minutes/recorder/device, @/lib/dictation/speech).",
+};
 
 /** @type {import("eslint").Linter.Config[]} */
 export default [
@@ -37,13 +48,8 @@ export default [
         // The owner's UI rulings a syntax tree can check
         // (packages/eslint-config/ui-rules.js). They share this one entry
         // because a second config object setting the rule would replace it.
-        ...mobileUiSyntax,
-        {
-          selector:
-            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication|expo-audio|expo-speech-recognition|@react-native-google-signin\\/google-signin)($|\\/)/]",
-          message:
-            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth, @/lib/google-auth, @/lib/minutes/recorder/device, @/lib/dictation/speech).",
-        },
+        ...mobileUiSyntaxExcept([]),
+        nativeModuleImport,
       ],
       "no-restricted-imports": [
         "error",
@@ -120,6 +126,27 @@ export default [
           ],
         },
       ],
+    },
+  },
+  {
+    // Specs use emoji as members' own content (a reaction, a message body);
+    // they keep the native-module guard. A later object replaces the rule's
+    // options, so this one restates the guard (ui-rules.js).
+    files: TEST_FILES,
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...mobileUiSyntaxExcept(["emoji"]),
+        nativeModuleImport,
+      ],
+    },
+  },
+  {
+    // The keyboard isolation module is outside the native-module guard above,
+    // which would otherwise leave it outside the UI rules too.
+    files: ["lib/keyboard.tsx"],
+    rules: {
+      "no-restricted-syntax": ["error", ...mobileUiSyntaxExcept([])],
     },
   },
 ];

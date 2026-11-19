@@ -8,9 +8,13 @@ mediocre level."
 
 How to read it:
 
-- The seven checks every screen passes are [`spec/ui/design-system/principles.md`](../../../spec/ui/design-system/principles.md)
+- The eight checks every screen passes are [`spec/ui/design-system/principles.md`](../../../spec/ui/design-system/principles.md)
   (P1 to P8). This file doesn't restate them. It holds the concrete rulings behind them, cited by check
   id where one exists, so a rule here is never weaker than the check it refines.
+- This is an index of rulings, one line each. Where a spec under `spec/ui/` owns the detail (sizes,
+  row anatomy, motion, copy), the spec is canonical and the line here points at it. When Paul gives a
+  new ruling, the PR that acts on it changes the owning spec and adds or edits its line here; if the two
+  ever disagree, the spec wins and the disagreement is fixed in that PR (`AGENTS.md` § Spec vs code).
 - A rule here beats a pattern already on screen. The repo is mid-rebuild, so code that breaks a rule is
   debt, not precedent (`AGENTS.md` § Tech debt protocol).
 - Dates are 2026. A ruling marked **changed** replaced an earlier one; the earlier one is gone, don't
@@ -51,7 +55,7 @@ These cause most of the iterations, so they come first.
 9. **Show it.** A visual change gets a before/after page of the real screens (`SKILL.md` § Proposing a
    UI change). A changed documented pattern updates its spec in the same PR. (11-05)
 10. **Don't re-propose what Paul already rejected:** the gray surface ladder (11-11), removing pages
-    beside chat (11-12), overlay side cards (11-19), message previews on channel rows (11-07).
+    beside chat (11-12), overlay side cards (11-19), message previews on chat home's channel rows (11-07).
 
 ## 2. Page layout
 
@@ -59,15 +63,17 @@ These cause most of the iterations, so they come first.
   switches, export and the create button sit in the header beside the title, the way Linear, Notion and
   Slack put them. A row of controls under the header is the defect Paul called out on Events, Meetings,
   Service hours, Documents, Points and Directory. On web a page renders its actions inside `PageActions`
-  (`components/layout/page-actions.tsx`), which puts them in `ToolPageHeader`'s slot between the title
-  and the close at 1056px and wider. Only a control that needs the page's width (Points' window switch)
-  stays in the body. (11-19, P8.1)
+  (`components/layout/page-actions.tsx`); with #5686 it portals them into the page header between the
+  title and the close at every width. Until #5686 merges, `PageActions` still draws its own row, so a
+  page built before then is checked again after. Only a control that needs the page's width (Points'
+  window switch) stays in the body. (11-19, P8.1)
 - **One create button, one look, everywhere.** Every "New …" action is the same shared component with
   the same icon, style and wording pattern ("New event", "New minutes", "New task"), on web and phone.
   A filled pill on one page and an outlined button on the next is a defect. On web it is
-  `<NewButton thing="event" />` (`components/ui/new-button.tsx`, outlined accent, Paul's pick 11-19); a
-  page's main action that isn't "New" (Log service, Upload, Adjust points) uses that file's
-  `PAGE_ACTION_CLASSES`. **lint** flags a hand-rolled `<Button>New …</Button>`. On the phone's pushed
+  `<NewButton thing="event" />` (`components/ui/new-button.tsx`, outlined accent, Paul's pick 11-19), and
+  a page's main action that isn't "New" (Log service, Upload, Adjust points) is
+  `<Button variant="action">`; both land with #5686, which also adds the lint rule against a
+  hand-rolled `<Button>New …</Button>`. On the phone's pushed
   screens it is the floating glass "+" (`ScreenShell`'s `createAction`); on the four tabs that spot is the
   tab bar's quick-actions "+". Whether the phone moves it into the header is open with Paul (11-19).
   (11-05, 11-19, P8.2)
@@ -106,8 +112,10 @@ These cause most of the iterations, so they come first.
 
 - **Rows, not cards.** Compact, Slack-style one-line rows, "simple and FAST". A card around every row is
   P3.6. Excuses, suggested tasks and channel rows are one clean row each. (11-07, 11-15, 11-19)
-- **Channel rows show no date and no message preview.** Read rows are muted gray, unread rows bold white
-  with a pip. (11-07, 11-11)
+- **Chat home's channel rows show no date and no message preview.** Read rows are muted gray, unread
+  rows bold white with a pip (11-07, 11-11). The Messages screen's conversation rows are the exception:
+  they show the last line and when it was sent, WhatsApp-style (changed in #5519, 2026-11-18;
+  `spec/ui/mobile/screens.md`).
 - **Every row with actions has a menu:** right-click on web, long-press with a haptic on the phone, in
   Frapp's own glass menu (`ItemActionsMenu`, `GlassMenu`, web `RowMenu`). No hover-only pins. Delete is
   red and last. (11-06, 11-18, P7.4)
@@ -127,7 +135,9 @@ These cause most of the iterations, so they come first.
   (11-06, 11-12, 11-16, 11-19)
 - **lint** **No native `<select>` on web.** Use `Select` or a `DropdownMenu` that shows its state and
   sticks. (11-06)
-- **lint** **No browser `confirm`, `alert` or `prompt`.** A destructive step uses `useConfirmDialog`.
+- **lint** **No browser `confirm`, `alert` or `prompt`** (`window.`, `globalThis.`, or bare `alert` and
+  `prompt`; a bare `confirm` is the usual local name for `useConfirmDialog`'s function, so check that one
+  yourself). A destructive step uses `useConfirmDialog`.
 - **Never "are you sure" on leaving a form. Keep the draft** (Gmail, Linear): Back, Escape, click-away or
   leaving the page keeps it; Cancel and Save drop it (`useKeptFormDraft`, `useKeptSheetDraft`). (11-13)
 - **Validate on blur or submit, never per keystroke.** Placeholders never contradict other fields; don't
@@ -163,8 +173,9 @@ These cause most of the iterations, so they come first.
 ## 6. Words and dates
 
 - **No abbreviations.** "Today", "Tomorrow", the weekday within the week, else "November 14", with the
-  year only when it differs. Never "tmrw", "Sun", "Oct 27" or a "Yesterday" stamp on a row. Format
-  through `@repo/formatting`. (11-07)
+  year only when it differs. Never "tmrw", "Sun" or "Oct 27" on an event, task or channel row. Format
+  through `@repo/formatting`. (11-07) The Messages screen's last-sent time is its own format
+  (`formatConversationTime`, #5519).
 - **No wall of text.** One line and a Copy button beats a paragraph nobody reads. (11-06, P1)
 - **"Frapp", never "Signet",** anywhere a member can see. FIJI chapters never show Greek letters, system
   posts included. (11-04)
@@ -175,8 +186,8 @@ These cause most of the iterations, so they come first.
 
 ## 7. Look
 
-- **lint** **No emoji** in anything Frapp draws or writes, mockups and proposal pages included. Members'
-  own emoji are their content. (11-05)
+- **lint** **No emoji** in anything Frapp draws or writes, mockups and proposal pages included: lint checks
+  every string in product source, specs aside. Members' own emoji are their content. (11-05)
 - **Compact controls** from the control size scale (Chip 24, Row 32, Small 36, Field 40; 44 for touch).
   "All the bubbles just feel way too big." (11-05, foundations §9)
 - **Near-black neutral surfaces**, no warm yellow. On the phone every card sits one surface step down;
@@ -186,7 +197,9 @@ These cause most of the iterations, so they come first.
 - **Mobile chrome is floating glass** (the Bevel direction): glass tab pill, round glass "+", glass back
   capsule; nothing glass inside content; no glows or shadows. (11-05, 11-06)
 - **Status colours and shapes match across apps.** (P6.2)
-- **One motion vocabulary:** the shared `signature` motion, no one-off animations. (11-05)
+- **Motion comes from the four shared classes** (micro-feedback, standard transition, context shift,
+  signature) in `foundations.md` § 11, never a one-off duration or curve. Signature is only for the few
+  deliberate fun moments its catalog lists. (11-05, 11-06)
 - **Icons are drawn glyphs** from the duotone set, consistent per meaning across the app ("just be
   consistent"). (11-05)
 

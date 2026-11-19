@@ -10,7 +10,12 @@ Run it on every screen the PR touches, and on every sibling the sweep finds.
 ## 1. Capture the real screens
 
 Capture before and after, from the running app on the seeded demo chapter
-([`demo-data.md` § Capture screenshots](../../../docs/guides/demo-data.md#capture-screenshots)):
+([`demo-data.md` § Capture screenshots](../../../docs/guides/demo-data.md#capture-screenshots)). The
+seed signs in one login, the demo president, which is the exec. On web, the member and chair captures
+use **View as a role** (`spec/ui/web-dashboard/README.md`, any role's page) with the chapter's member
+role and a committee chair's role; the empty capture is a fresh chapter from the onboarding wizard. On
+the phone, where View as doesn't exist yet, read the member and chair layout from the screen's code and
+the role gates it uses, and say so in the PR (seeded per-role logins are #5687):
 
 | | Web (1440 wide, and beside chat at 1056+) | Phone (iPhone size) |
 | --- | --- | --- |
@@ -51,8 +56,8 @@ Go through [`rulebook.md`](rulebook.md) section by section against the captures,
 [`principles.md`](../../../spec/ui/design-system/principles.md) P1 to P8 by id. In the PR, list only
 what failed and how it was fixed or filed, by id or rulebook section. The questions that catch the most:
 
-- **Header:** are all page actions in the header, and is the create action the shared `NewButton` /
-  the floating "+"? (P8)
+- **Header:** are all page actions in the header (`PageActions`), and is the create action the shared
+  `NewButton` / the floating "+"? (P8)
 - **Parity:** does the phone have the same structure, options, wording and order as web, in this PR?
   (P6)
 - **Three people:** does the member's screen look intentional and not empty, and is the exec's first

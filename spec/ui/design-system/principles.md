@@ -141,7 +141,7 @@ Owner, 2026-11-19, after page actions sat on their own row on some pages and in 
 
 | Check | Fails when |
 | --- | --- |
-| P8.1 | A page's actions (search, filters, view switches, export, create) sit on a row of their own under the header rather than in the page header, unless the control needs the page's full width. |
+| P8.1 | A page's actions (search, filters, view switches, export, create) sit on a row of their own under the header rather than in the page header, unless the control needs the page's full width. Web's `PageActions` moves into the header with #5686, which updates [`../web-dashboard/README.md`](../web-dashboard/README.md) § Page grammar to match. |
 | P8.2 | A create action is drawn by hand instead of the shared New button (web) or the floating "+" (phone), or two pages word it differently ("Add event", "+ Create task"). |
 | P8.3 | The same kind of row, form, record page or picker is laid out differently on two screens (a different order, a different menu, a card on one and a row on the other). |
 | P8.4 | A fix for a pattern landed on the screen it was reported on while sibling screens with the same pattern were neither fixed nor filed. |

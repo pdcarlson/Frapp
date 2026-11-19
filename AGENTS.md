@@ -83,7 +83,7 @@ Turborepo + npm workspaces: 5 apps, 13 shared packages. Product and architecture
 
 | Step | Command |
 | ---- | ------- |
-| Lint | `npm run lint` / `npm run lint:api` (read-only) |
+| Lint | `npm run lint` / `npm run lint:api` (read-only); `npm run check:ui-rules` proves the UI rules in `packages/eslint-config/ui-rules.js` still fire |
 | Lint autofix | `npm run lint:api:fix`, the only lint script that writes; see [`CONTRIBUTING.md` § Linting, types, and tests](CONTRIBUTING.md#linting-types-and-tests) |
 | Tests | `npm run test -w apps/api` |
 | Build | `npm run build` |
