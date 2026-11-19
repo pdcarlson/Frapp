@@ -179,15 +179,15 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#050505",
-      surface1: "#1A1A1A",
-      card: "#262626",
-      popover: "#313131",
+      background: "#0B0A0D",
+      surface1: "#151419",
+      card: "#1F1D25",
+      popover: "#2A2830",
     },
     border: {
-      hairline: "rgba(255,255,255,0.08)",
+      hairline: "rgba(255,255,255,0.12)",
       input: "rgba(255,255,255,0.14)",
-      control: "rgba(255,255,255,0.42)",
+      control: "rgba(255,255,255,0.40)",
     },
     text: {
       foreground: "#F5F5F5",

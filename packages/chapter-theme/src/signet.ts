@@ -49,10 +49,10 @@ export type { SignetPalette };
  * ship. `--background` is also the generator's `background` parameter.
  */
 export const SIGNET_FILL_SURFACES = {
-  "--background": "#050505",
-  "--surface-1": "#1A1A1A",
-  "--card": "#262626",
-  "--popover": "#313131",
+  "--background": "#0B0A0D",
+  "--surface-1": "#151419",
+  "--card": "#1F1D25",
+  "--popover": "#2A2830",
 } as const;
 
 /**
@@ -90,7 +90,7 @@ export const HOUSE_SEED = "#DDB844";
  * only a seed outside the corpus is not caught, so widen the corpus when you
  * touch hue-specific or input-handling code.
  */
-export const SIGNET_ENGINE_VERSION = 3;
+export const SIGNET_ENGINE_VERSION = 4;
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = AA_NORMAL;

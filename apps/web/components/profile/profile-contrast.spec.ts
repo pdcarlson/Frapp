@@ -36,7 +36,8 @@ describe("the archetype card's selected state", () => {
     // version of the right answer. Measured across all 19 seeds it spans
     // 1.026:1 to 1.094:1 against the surface it sat on (`#FFFFFF` the best), so
     // the *best* case in the whole corpus is still no visible selection. On the
-    // 2026-11-12 ladder's darker floor the best is 1.088:1.
+    // 2026-11-12 ladder's darker floor the best was 1.088:1, and 1.096:1 on the
+    // 2026-11-19 violet floor.
     let best = 0;
     for (const seed of SEEDS) {
       const washed = applyAlpha(
@@ -47,7 +48,7 @@ describe("the archetype card's selected state", () => {
       best = Math.max(best, ratio(washed, WIZARD_SURFACE));
     }
     expect(best).toBeLessThan(INDISTINGUISHABLE);
-    expect(best).toBeCloseTo(1.088, 2);
+    expect(best).toBeCloseTo(1.096, 2);
   });
 
   it("would have caught `hover:bg-accent/50`, which was a colour over itself", () => {
@@ -61,10 +62,10 @@ describe("the archetype card's selected state", () => {
     // (2026-11-12, #3826) The wider ladder makes this particular wash visible,
     // 1.18:1, so the measurement no longer convicts it on its own: what keeps
     // it out is that the alias is deleted and `elevation-call-sites.spec.ts`
-    // bans the name. It stays pinned so a ladder change that narrows the steps
+    // bans the name. The softer 2026-11-19 ladder brings it back to 1.13:1. It stays pinned so a ladder change that narrows the steps
     // again shows up here.
     const washed = applyAlpha(SURFACE.popover, 0.5, WIZARD_SURFACE);
-    expect(ratio(washed, WIZARD_SURFACE)).toBeCloseTo(1.183, 2);
+    expect(ratio(washed, WIZARD_SURFACE)).toBeCloseTo(1.134, 2);
   });
 
   it("separates selected from resting and from hover, under every seed", () => {
@@ -92,9 +93,10 @@ describe("a fill inside `--popover` (the first-run slideshow's step strip, delet
     // `--popover`, so the strip composited to 1.044:1 against its own
     // container on the 2026-11-05 ladder (1.050:1, `#211E19`, when first
     // measured; 1.064:1 on the warm greenfield ladder). On the 2026-11-12
-    // ladder it is 1.103:1, still under the perceptible bound.
+    // ladder it was 1.103:1, and 1.094:1 on the 2026-11-19 one, still under the
+    // perceptible bound.
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
-    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.103, 2);
+    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.094, 2);
     expect(ratio(washed, SURFACE.popover)).toBeLessThan(INDISTINGUISHABLE);
   });
 
@@ -158,11 +160,12 @@ describe("the step indicator's track", () => {
     // `#F42F22` at 3.844 and 4.701 until the neutral ladder and engine v2
     // (2026-11-05) lifted `#800000` too, then `#BF0A30`'s `#D83144` at 3.527 and
     // 4.188 until the 2026-11-12 ladder (#3826) raised every fill's floor; now
-    // `#4B1A7E`'s `#9B70D9`. The ranking is the same throughout, and on
+    // `#4B1A7E`'s `#9B70D9`. The 2026-11-19 ladder's brighter hairline (12%)
+    // narrows the border track's figure. The ranking is the same throughout, and on
     // `--background` the fill clears the 3:1 non-text floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(4.783, 2);
-    expect(worstOnBackground).toBeCloseTo(5.545, 2);
+    expect(worstOnBorder).toBeCloseTo(3.772, 2);
+    expect(worstOnBackground).toBeCloseTo(5.015, 2);
   });
 });
 
@@ -173,7 +176,7 @@ describe("the emerald notice `/join` shipped", () => {
     // the tone that actually shipped was the light branch: near-black text on
     // the app floor. The family's last raw-palette colour and last inert `dark:`.
     expect(ratio("#064e3b", SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(2.097, 2);
+    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(2.032, 2);
   });
 
   it("keeps the danger tone the rebuilt inline error uses above the gate", () => {

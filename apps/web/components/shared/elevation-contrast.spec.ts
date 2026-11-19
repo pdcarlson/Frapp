@@ -12,6 +12,7 @@ import {
   SURFACE,
   statusTint,
   INDISTINGUISHABLE,
+  LADDER_STEP_FLOOR,
   TEXT,
 } from "@/tests/signet-contrast";
 
@@ -62,11 +63,13 @@ describe("the aliases that made two fills invisible (deleted, #3036)", () => {
   });
 });
 
-describe("every ladder step is perceptibly its own surface (#3826, #2399)", () => {
-  // The floor the 2026-11-12 ladder was chosen to clear. Before it, the steps
-  // were 1.05 / 1.05 / 1.08 and nothing asserted a minimum: the pins in this
-  // file only recorded that two fills aliased, so a ladder could get tighter
-  // and stay green. This one fails if any adjacent pair drops under the bound.
+describe("every ladder step is a gentle step up (2026-11-19)", () => {
+  // The owner's pick on 2026-11-19 ("softer steps than today"): the groups
+  // mockup's violet near-black ladder, stepping 1.08 / 1.10 / 1.15. Each step
+  // must still rise (a step that does not is an alias, the defect at the top of
+  // this file) and clear LADDER_STEP_FLOOR, and none may be harder than the
+  // 2026-11-12 ladder's steps (#3826, 1.17 / 1.15 / 1.16) it replaced. The
+  // hairline, not the fill, is what separates a column, a card and a menu now.
   const LADDER = [
     ["--background", SURFACE.background],
     ["--surface-1", SURFACE.surface1],
@@ -77,7 +80,8 @@ describe("every ladder step is perceptibly its own surface (#3826, #2399)", () =
     "%s to %s",
     (_lower, _upper, lower, upper) => {
       expect(luminance(upper)).toBeGreaterThan(luminance(lower));
-      expect(ratio(upper, lower)).toBeGreaterThanOrEqual(INDISTINGUISHABLE);
+      expect(ratio(upper, lower)).toBeGreaterThanOrEqual(LADDER_STEP_FLOOR);
+      expect(ratio(upper, lower)).toBeLessThanOrEqual(INDISTINGUISHABLE);
     },
   );
 });
@@ -87,8 +91,9 @@ describe("a state cannot elevate above the step it renders in", () => {
     // `--popover` is the top of the ladder, so a `--card` panel inside a
     // `SheetContent` is a step DOWN — it reads as a hole, not as elevation.
     // Until the 2026-11-12 ladder (#3826) the step was also imperceptible;
-    // now it is visible (1.16:1), which makes the hole plainer, not better.
-    expect(ratio(SURFACE.card, SURFACE.popover)).toBeCloseTo(1.163, 2);
+    // since then it is visible (1.15:1 on the 2026-11-19 ladder), which makes
+    // the hole plainer, not better.
+    expect(ratio(SURFACE.card, SURFACE.popover)).toBeCloseTo(1.146, 2);
     expect(luminance(SURFACE.card)).toBeLessThan(luminance(SURFACE.popover));
   });
 
@@ -174,18 +179,25 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
    * elevated step lifted toward white, which is distinct from every step by
    * being above all of them.
    */
-  it("is the lowest neutral perceptibly above --popover, so a ladder change cannot leave it behind", () => {
+  it("is the lowest step perceptibly above --popover in its hue, so a ladder change cannot leave it behind", () => {
     // An opaque literal (no `color-mix` floor), held to its derivation here
     // rather than trusted to be re-derived by whoever next moves the ladder.
     // Until the 2026-11-12 ladder (#3826) the derivation was `--popover` lifted
     // 6% toward white; on the lighter `--popover` that overshot what the text
-    // on it can afford (role-colors-contrast.spec.ts), so it is now the first
-    // neutral grey that clears the perceptible bound, and no higher.
-    const grey = (v: number) =>
-      "#" + v.toString(16).padStart(2, "0").toUpperCase().repeat(3);
-    let v = parseHex(SURFACE.popover)!.r;
-    while (ratio(grey(v), SURFACE.popover) < INDISTINGUISHABLE) v += 1;
-    expect(CARD_HOVER.toUpperCase()).toBe(grey(v));
+    // on it can afford (role-colors-contrast.spec.ts), so it is the first
+    // step that clears the perceptible bound, and no higher. Since the
+    // 2026-11-19 violet ladder the step keeps `--popover`'s tint: every
+    // channel rises by the same amount, as the ladder's own steps do.
+    const { r, g, b } = parseHex(SURFACE.popover)!;
+    const lift = (n: number) =>
+      "#" +
+      [r + n, g + n, b + n]
+        .map((c) => c.toString(16).padStart(2, "0"))
+        .join("")
+        .toUpperCase();
+    let n = 0;
+    while (ratio(lift(n), SURFACE.popover) < INDISTINGUISHABLE) n += 1;
+    expect(CARD_HOVER.toUpperCase()).toBe(lift(n));
   });
 
   it.each(STEPS)("reads as a state on %s", (_name, step) => {

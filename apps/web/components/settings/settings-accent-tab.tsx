@@ -128,11 +128,13 @@ export function SettingsAccentTab({
   // a disabled control is paired with its reason).
   const accentHexHintId = useId();
 
-  // #1157: the preview swatch sits on a Signet card, so the WCAG check runs
-  // against that dark surface, with a fallback legible on it. The resolver
+  // #1157: the WCAG check runs against a dark Signet surface, with a fallback
+  // legible on it. Since the 2026-11-19 ladder it is `--popover`, the lightest
+  // step an accent paints on: the darker violet `--card` let through accents
+  // no label ink reads on at AA (`settings-contrast.spec.ts`). The resolver
   // requires both and throws on a non-hex value, so these stay constants.
   const accent = resolveChapterAccentColor(accentDraft || undefined, {
-    background: signetDarkTokens.color.surface.card,
+    background: signetDarkTokens.color.surface.popover,
     fallbackAccent: signetDarkTokens.color.gold.house,
   });
   // What Save sends: the draft as the `#RRGGBB` the API's DTO requires. The
@@ -205,7 +207,7 @@ export function SettingsAccentTab({
     `{ chapterName, university, logo }` — no colour of any kind.
   - **"against white"** — #1157 moved the check to the dark card
     it actually renders on (`resolveChapterAccentColor` is
-    called with `background: surface.card` above). The code
+    called with `background: surface.popover` above). The code
     moved; the sentence did not.
   - **"invalid colors fall back to the [design system's]
     default"** —

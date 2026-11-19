@@ -6,7 +6,7 @@
  */
 
 /** Signet's background (`packages/theme/src/signet.ts`, surface.background). */
-export const WINDOW_BACKGROUND = "#050505";
+export const WINDOW_BACKGROUND = "#0B0A0D";
 
 export function offlinePageHtml(appUrl: string): string {
   // The URL goes into a script as a JSON string, so a quote can't break out.
@@ -28,10 +28,10 @@ export function offlinePageHtml(appUrl: string): string {
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
   p { margin: 0 0 16px; color: rgba(255,255,255,0.64); }
   button {
-    font: inherit; color: inherit; background: #262626; cursor: pointer;
+    font: inherit; color: inherit; background: #1F1D25; cursor: pointer;
     border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; padding: 6px 14px;
   }
-  button:hover { background: #313131; }
+  button:hover { background: #2A2830; }
 </style>
 </head>
 <body>

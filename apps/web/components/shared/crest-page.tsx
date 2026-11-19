@@ -110,7 +110,7 @@ export function CrestPage({
   children: React.ReactNode;
 }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface-1 px-6 py-12 sm:flex-row sm:gap-12">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-card px-6 py-12 sm:flex-row sm:gap-12">
       {/*
         `aria-hidden` and an empty `alt`: the crest is a decorative restatement
         of a page that already says what happened in text, the same call

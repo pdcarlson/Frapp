@@ -26,8 +26,8 @@ describe("AvatarFallback", () => {
       </Avatar>,
     );
     const fallback = screen.getByText("JD");
-    // #43362B and #F2994A, as the browser serializes them.
-    expect(fallback.style.backgroundColor).toBe("rgb(67, 54, 43)");
+    // #3D2E2A and #F2994A, as the browser serializes them.
+    expect(fallback.style.backgroundColor).toBe("rgb(61, 46, 42)");
     expect(fallback.style.color).toBe("rgb(242, 153, 74)");
     expect(fallback.getAttribute("data-avatar-tint")).toBe("#F2994A");
   });

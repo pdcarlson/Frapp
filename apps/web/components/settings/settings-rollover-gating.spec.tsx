@@ -343,7 +343,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#313131", ratio: 3.21 },
+        { role: "--signet-accent-text", against: "#2A2830", ratio: 3.21 },
       ],
     });
     const user = userEvent.setup();
@@ -366,7 +366,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#313131", ratio: 4.47 },
+        { role: "--signet-accent-text", against: "#2A2830", ratio: 4.47 },
       ],
     });
     const user = userEvent.setup();
@@ -450,7 +450,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#313131", ratio: 3.21 },
+        { role: "--signet-accent-text", against: "#2A2830", ratio: 3.21 },
       ],
     });
     const user = userEvent.setup();
@@ -480,7 +480,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-text", against: "#313131", ratio: 3.21 },
+        { role: "--signet-accent-text", against: "#2A2830", ratio: 3.21 },
         {
           role: "--signet-accent-on-primary",
           against: "--signet-accent-primary",

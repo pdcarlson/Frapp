@@ -172,19 +172,18 @@ const LIFTED_FILLS: Record<
   string,
   { before: string; after: string; hover: string }
 > = {
-  "#000000": { before: "#6E6E6E", after: "#868686", hover: "#7A7A7A" },
-  "#003087": { before: "#003087", after: "#5185E3", hover: "#4578D5" },
-  "#006400": { before: "#006400", after: "#459740", hover: "#378A33" },
-  "#1F4E79": { before: "#1F4E79", after: "#5A8AB9", hover: "#4E7DAC" },
-  "#472B62": { before: "#8758B4", after: "#A071CF", hover: "#9465C2" },
-  "#4B0082": { before: "#4B0082", after: "#A16CE5", hover: "#955FD7" },
-  "#4B1A7E": { before: "#4B1A7E", after: "#9B70D9", hover: "#8F64CB" },
-  "#4B2E2E": { before: "#AB7877", after: "#AC7978", hover: "#9F6D6C" },
-  "#800000": { before: "#800000", after: "#D96051", hover: "#CB5345" },
-  "#8B0000": { before: "#8B0000", after: "#DD5D4D", hover: "#CF5041" },
-  "#8B4513": { before: "#8B4513", after: "#BE7346", hover: "#B0673A" },
-  "#BF0A30": { before: "#BF0A30", after: "#EF4956", hover: "#E03A4A" },
-  "#CC0000": { before: "#CC0000", after: "#F64233", hover: "#E73125" },
+  "#000000": { before: "#6E6E6E", after: "#828282", hover: "#767676" },
+  "#003087": { before: "#1C6CFE", after: "#2D7BFF", hover: "#1E6DF0" },
+  "#006400": { before: "#006400", after: "#41943C", hover: "#33872E" },
+  "#1F4E79": { before: "#1F4E79", after: "#5585B3", hover: "#4978A5" },
+  "#472B62": { before: "#8758B4", after: "#9B6CCA", hover: "#8E5FBC" },
+  "#4B0082": { before: "#901FED", after: "#AD51FF", hover: "#A042F1" },
+  "#4B1A7E": { before: "#8939DE", after: "#A358FC", hover: "#974AEE" },
+  "#800000": { before: "#800000", after: "#D25B4C", hover: "#C44E40" },
+  "#8B0000": { before: "#8B0000", after: "#D75748", hover: "#C84A3C" },
+  "#8B4513": { before: "#8B4513", after: "#B96F41", hover: "#AB6234" },
+  "#BF0A30": { before: "#BF0A30", after: "#E94351", hover: "#DA3345" },
+  "#CC0000": { before: "#CC0000", after: "#EF3B2D", hover: "#E0291D" },
 };
 
 describe("deriveSignetPalette", () => {
@@ -310,8 +309,8 @@ describe("deriveSignetPalette", () => {
         );
       }
       // And a scale fails partly, step by step: black's unlifted scale
-      // (`#6E6E6E` / `#606060`), the case #2586 added for its hover. On the
-      // 2026-11-12 ladder its fill clears the two darkest steps only, and its
+      // (`#6E6E6E` / `#616161`), the case #2586 added for its hover. On the
+      // 2026-11-19 ladder its fill clears every step but `--popover`, and its
       // hover only the floor.
       const navy = unlifted("#000000");
       const navyChecks = signetFillChecks({
@@ -323,7 +322,6 @@ describe("deriveSignetPalette", () => {
           .filter((check) => !check.passes)
           .map((check) => `${check.role} ${check.against}`),
       ).toEqual([
-        "--signet-accent-primary --card",
         "--signet-accent-primary --popover",
         "--signet-accent-hover --surface-1",
         "--signet-accent-hover --card",
@@ -348,7 +346,7 @@ describe("deriveSignetPalette", () => {
       };
       expect(liftAccent("#8B0000", paintsCrimson)).toBeNull();
       const real = liftAccent("#8B0000");
-      expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#DD5D4D");
+      expect(normalizeHex(real!.generated.accentScale[8]!)).toBe("#D75748");
     });
 
     it("judges fine-step candidates by the scale the generator paints, too", () => {
@@ -441,16 +439,16 @@ describe("deriveSignetPalette", () => {
       const { palette, resolvedSeed } = deriveSignetPalette("#8B0000");
       expect(resolvedSeed).toBe("#8B0000");
       expect(unliftedFill("#8B0000")).toBe("#8B0000");
-      expect(palette["--signet-accent-primary"]).toBe("#DD5D4D");
-      expect(palette["--signet-accent-hover"]).toBe("#CF5041");
-      expect(ratio("#CF5041", LADDER.popover)).toBeGreaterThanOrEqual(3);
+      expect(palette["--signet-accent-primary"]).toBe("#D75748");
+      expect(palette["--signet-accent-hover"]).toBe("#C84A3C");
+      expect(ratio("#C84A3C", LADDER.popover)).toBeGreaterThanOrEqual(3);
       // The label turns black. White cleared AA on #2541's `#C34437` (5.00:1),
       // but no label reads at 4.5:1 on both a fill and a hover this far apart
       // once the hover clears 3:1 (accent-engine.md §8), so the lift runs on
       // until black clears the hover.
       expect(palette["--signet-accent-on-primary"]).toBe("#000000");
-      expect(ratio("#000000", "#CF5041")).toBeGreaterThanOrEqual(4.5);
-      expect(ratio("#FFFFFF", "#DD5D4D")).toBeLessThan(4.5);
+      expect(ratio("#000000", "#C84A3C")).toBeGreaterThanOrEqual(4.5);
+      expect(ratio("#FFFFFF", "#D75748")).toBeLessThan(4.5);
     });
 
     it("pins every lifted fill and hover, and changes only the lightness", () => {
@@ -632,6 +630,7 @@ const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
   1: "7a88bfcb9c0c79372b194d0ea6136042f25e115990ffd41b7067f17a020d7f4e",
   2: "93b7e168eb5148ea62bf538a47ef22bb90dda9986347a90ae7967a59bb519d58",
   3: "89e1d6ea820edc21017c36d83fd2545ee22a1014426fc0f515d09766d7c05abb",
+  4: "9d0cef43e2c11ded06d022c5b6004871c1e912a5aed25f332483ce4e66ccd411",
 };
 
 /**

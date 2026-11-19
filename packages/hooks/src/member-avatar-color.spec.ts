@@ -109,14 +109,16 @@ describe("memberAvatarTint contrast", () => {
 
   it("reproduces the #3860 measurements, re-seated for the #3826 ladder", () => {
     // #3860 measured 18% over the old `--popover`: Orange `#443426` at 5.34:1,
-    // Violet 4.79:1. 14% over the new `--card` paints nearly the same fill.
-    expect(memberAvatarTint("#F2994A").fill).toBe("#43362B");
+    // Violet 4.79:1. 14% over the `--card` paints nearly the same fill
+    // (`#43362B` on the 2026-11-12 card; `#3D2E2A` on the darker 2026-11-19
+    // violet card, which only raises the initials' contrast).
+    expect(memberAvatarTint("#F2994A").fill).toBe("#3D2E2A");
     expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(
-      5.24,
+      5.81,
       1,
     );
     expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(
-      4.69,
+      5.19,
       1,
     );
   });

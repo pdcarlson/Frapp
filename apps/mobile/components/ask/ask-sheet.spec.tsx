@@ -836,7 +836,7 @@ describe("the sheet itself (#4702)", () => {
     const tree = render();
     const background = flat(sheet(tree)!.props.backgroundStyle);
     // `surface.background`; a sheet's own fill is `surface.popover`.
-    expect(String(background.backgroundColor)).toBe("#050505");
+    expect(String(background.backgroundColor)).toBe("#0B0A0D");
     // Still a sheet's shape.
     expect(background.borderTopLeftRadius).toBeGreaterThan(0);
   });

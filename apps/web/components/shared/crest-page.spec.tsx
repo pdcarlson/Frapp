@@ -1,4 +1,5 @@
 import { signetDarkTokens } from "@repo/theme/signet";
+import { contrastRatio, parseHex } from "@repo/color";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -128,14 +129,27 @@ describe("the crest", () => {
   );
 
   it("is drawn on the ladder step nearest the mark's field, so the tile edge does not show", () => {
-    // The raster's field is `#1A1A1A`, and since the 2026-11-12 surface ladder
-    // (#3826) so is `--surface-1`, so the tile edge measures 1.00:1. (Between
-    // 2026-11-05 and then the page painted `--card`, the nearest step.) That is
-    // what lets the board's `opacity:.9` wash be dropped.
-    expect(signetDarkTokens.color.surface.surface1).toBe("#1A1A1A");
+    // The raster's field is `#1A1A1A`. From the 2026-11-12 surface ladder
+    // (#3826) until 2026-11-19 so was `--surface-1` (1.00:1); on the
+    // 2026-11-19 violet ladder the nearest step is `--card` (`#1F1D25`),
+    // 1.045:1 off the field (`--surface-1` is 1.053:1). (Between 2026-11-05 and 2026-11-12 the
+    // page painted `--card`, the nearest step then.) That is what lets the
+    // board's `opacity:.9` wash be dropped.
+    const field = "#1A1A1A";
+    const steps = Object.values(signetDarkTokens.color.surface);
+    const nearest = steps.reduce((a, b) =>
+      contrastRatio(parseHex(a)!, parseHex(field)!) <=
+      contrastRatio(parseHex(b)!, parseHex(field)!)
+        ? a
+        : b,
+    );
+    expect(nearest).toBe(signetDarkTokens.color.surface.card);
+    expect(
+      contrastRatio(parseHex(nearest)!, parseHex(field)!),
+    ).toBeLessThan(1.05);
     const { container } = render(<NotFound />);
     expect(container.querySelector("main")?.className).toMatch(
-      /\bbg-surface-1\b/,
+      /\bbg-card\b/,
     );
     expect(container.querySelector("img")?.className).not.toMatch(/\bopacity-/);
   });
