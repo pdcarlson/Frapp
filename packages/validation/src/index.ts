@@ -119,6 +119,9 @@ export * from "./invite-emails";
 // drift on what a copied join link is or whether a public http: origin is
 // allowed. See ./invite-token.
 export * from "./invite-token";
+// The invite carried through an install by the clipboard (#5626). See
+// ./invite-paste.
+export * from "./invite-paste";
 export * from "./last-year";
 export * from "./legal";
 // The words and date labels the minutes screens share on web and mobile.

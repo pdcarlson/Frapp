@@ -40,7 +40,11 @@ import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-prim
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
-import { useRememberedInviteToken } from "@/lib/onboarding/invite-token";
+import { InvitePasteStrip } from "@/components/onboarding/invite-paste";
+import {
+  rememberInviteToken,
+  useRememberedInviteToken,
+} from "@/lib/onboarding/invite-token";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
@@ -563,6 +567,17 @@ export default function SignIn() {
               </View>
 
               <View style={styles.actions}>
+                {/*
+                  The invite Get Frapp copied on web `/join` (#5626): pasted,
+                  it is remembered, and the redirect above opens its card,
+                  which signs in and joins in one tap. Above the ways in,
+                  since a newcomer reads down to it first; someone signing
+                  back in passes over it.
+                */}
+                <InvitePasteStrip
+                  onInvite={(token) => rememberInviteToken(token)}
+                  disabled={busy}
+                />
                 {messages}
                 {renderProvider(layout.primary, true)}
                 {layout.secondary

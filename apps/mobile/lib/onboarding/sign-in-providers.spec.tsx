@@ -164,7 +164,9 @@ describe("sign-in providers on Android", () => {
 
   it("shows Google, then email, with Apple behind Other ways to sign in", () => {
     const tree = render();
+    // The "Joining a chapter?" strip's Paste leads (#5626).
     expect(buttonLabels(tree.root)).toEqual([
+      "Paste",
       "Continue with Google",
       "Continue with email",
       "Other ways to sign in",
@@ -180,6 +182,7 @@ describe("sign-in providers on Android", () => {
       pressableLabelled(tree.root, "Other ways to sign in").props.onPress();
     });
     expect(buttonLabels(tree.root)).toEqual([
+      "Paste",
       "Continue with Google",
       "Continue with email",
       "Continue with Apple",
@@ -201,6 +204,7 @@ describe("sign-in providers on iOS", () => {
   it("shows Apple, then Google, then email, with nothing tucked away", () => {
     const tree = render();
     expect(buttonLabels(tree.root)).toEqual([
+      "Paste",
       "Continue with Apple",
       "Continue with Google",
       "Continue with email",

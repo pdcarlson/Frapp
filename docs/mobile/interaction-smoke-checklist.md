@@ -25,15 +25,16 @@ came with #2302 (PR #2611).
 | Sign in (`/(auth)/sign-in`) | Email me a link (Magic link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / Terms / welcome / tabs |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Settings (`/(app)/preferences`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
-| Join (`/(auth)/join`) | First view | Asks "How are you getting in?" with I have an invite and I'm starting our chapter; no invite field; `Signed in as <email> · Sign out` under the header, and no Delete account until Account is tapped |
+| Sign in (`/(auth)/sign-in`) | Fresh install after tapping Get Frapp on web `/join` (#5626) | "Joining a chapter?" strip above the ways in; one Paste tap (no "Allow Paste" prompt on iOS 16+) opens the invite card; a non-invite paste says "That isn't a Frapp invite" in the strip's line, nothing moves |
+| Join (`/(auth)/join`) | First view | Asks "Joining a chapter?" with Paste pinned and "Starting a chapter? Create a chapter" under it; no invite field; `Signed in as <email> · Sign out` under the header, and no Delete account until Account is tapped |
 | Join (`/(auth)/join`) | Open an invite link while signed in with no chapter | Skips the question and the field: "Join <chapter>?" opens with the chapter's mark, name and school, who invited you and the role |
 | Join (`/(auth)/join`) | Account (top corner) | Shows the signed-in email and Delete account (Sign out is on the screen's face); tapping outside, or Android back, closes it |
-| Join (`/(auth)/join`) | I have an invite, then back | Opens "Join with an invite"; the gold ‹ Back row and Android back return to the question without leaving the app |
-| Join (`/(auth)/join`) | Paste an invite, Continue, then back | Continue opens the "Join <chapter>?" card without using the invite; back returns to the field with the invite still in it |
+| Join (`/(auth)/join`) | Copy an invite link, Paste, then back | Paste opens the invite card without using the invite; the gold ‹ Back row and Android back return to the question without leaving the app |
+| Join (`/(auth)/join`) | Copy some other text, Paste | The line under the title says "That isn't a Frapp invite…" in place; nothing moves, no card |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box unticked | For a user who hasn't accepted the current Terms, shows the checkbox and `Agree to the Terms of Service and Privacy Policy to join.`; redeems nothing |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box ticked (or already accepted, no box shown) | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
-| Join (`/(auth)/join`) | Expired / already-used invite | The confirm step shows the 410 sentence and Join chapter is disabled; back leads to the field |
-| Join (`/(auth)/join`) | I'm starting our chapter | Opens `(auth)/create-chapter` |
+| Join (`/(auth)/join`) | Expired / already-used invite | The confirm step shows the 410 sentence and Join chapter is disabled; back leads to the question |
+| Join (`/(auth)/join`) | Create a chapter | Opens `(auth)/create-chapter` |
 | Terms (`/(auth)/terms`) | Agree and continue, box unticked | Shows `Agree to the Terms of Service and Privacy Policy to continue.`; records nothing |
 | Terms (`/(auth)/terms`) | Tick the box, Agree and continue | `POST /v1/users/me/legal-acceptance`; the gate moves on to welcome or `/` |
 | Terms (`/(auth)/terms`) | Sign out / Delete account | Sign out routes to sign-in; Delete account confirms, deletes, and signs out (Settings is unreachable from here) |
