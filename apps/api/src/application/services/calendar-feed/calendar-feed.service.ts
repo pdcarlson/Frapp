@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -28,6 +29,7 @@ import { resolveAppOrigin } from '../../../infrastructure/email/invite-link.util
 import { buildIcsCalendar, type IcsItem } from './ics';
 import { calendarFeedTokenKeyRing } from '../../../config/calendar-feed-config';
 import {
+  AiTextCipherError,
   openAiText,
   sealAiText,
   type AiTextKeyRing,
@@ -74,6 +76,14 @@ const TASK_LIMIT = 500;
 const RENDER_TTL_MS = 5 * 60 * 1000;
 /** Links whose render is kept at once, per API instance. */
 const RENDER_CACHE_MAX = 2000;
+/** Links from before sealing that the boot pass seals per read. */
+const LEGACY_BATCH = 100;
+/**
+ * Reads the boot pass makes at most, far above the one row per member per
+ * chapter the table holds, so a write that somehow leaves a row unsealed
+ * can't keep it reading the same rows forever.
+ */
+const LEGACY_MAX_BATCHES = 500;
 
 /**
  * Calendar subscription links (#3322, step 1;
@@ -87,7 +97,7 @@ const RENDER_CACHE_MAX = 2000;
  * event or a role change reaches the calendar at its next check.
  */
 @Injectable()
-export class CalendarFeedService {
+export class CalendarFeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(CalendarFeedService.name);
   private readonly apiBase: string | null;
   private readonly appOrigin: string;
@@ -114,41 +124,91 @@ export class CalendarFeedService {
     });
   }
 
+  /**
+   * Seals every link made before tokens were sealed, so none keeps its token
+   * readable until it happens to be fetched or shown. In the background and
+   * best effort: boot doesn't wait, a failure is logged, and the next boot or
+   * the link's next fetch picks up what is left. Several instances may run
+   * it at once; a link already sealed is left as it is.
+   */
+  onApplicationBootstrap(): void {
+    const ring = this.keyRing;
+    if (!ring) return;
+    void this.sealAllLegacy(ring).catch((error: unknown) => {
+      this.logger.warn(
+        `calendar-feed: sealing older links stopped (${describeFailure(error)})`,
+      );
+    });
+  }
+
+  /** Seals legacy links in batches until none is left; returns how many. */
+  async sealAllLegacy(ring: AiTextKeyRing): Promise<number> {
+    let sealed = 0;
+    for (let read = 0; read < LEGACY_MAX_BATCHES; read += 1) {
+      const batch = await this.feeds.findLegacy(LEGACY_BATCH);
+      for (const feed of batch) {
+        if (feed.token === null) continue;
+        await this.feeds.sealLegacy(
+          feed.id,
+          sealAiText(
+            ring,
+            feed.token,
+            sealContext(feed.chapter_id, feed.user_id),
+          ),
+        );
+        sealed += 1;
+      }
+      if (batch.length < LEGACY_BATCH) return sealed;
+    }
+    return sealed;
+  }
+
   /** The member's link, made on first ask. Asking again returns the same one. */
   async ensure(chapterId: string, userId: string): Promise<CalendarFeedLink> {
     const base = this.requireApiBase();
-    const ring = this.requireKeyRing();
     const live = await this.feeds.findLive(chapterId, userId);
-    if (live) return this.linkFor(base, await this.tokenOf(ring, live));
-    try {
-      return this.linkFor(base, await this.mint(ring, chapterId, userId));
-    } catch (error) {
-      // Two devices asking at once: the partial unique index lets one insert
-      // win, and the other reads what it made.
-      const winner = await this.feeds.findLive(chapterId, userId);
-      if (winner) return this.linkFor(base, await this.tokenOf(ring, winner));
-      throw error;
+    if (live) {
+      const token = await this.shownToken(live);
+      if (token !== null) return this.linkFor(base, token);
+      // Its sealed copy no longer opens (its key was dropped), so it can't be
+      // shown again: cut it off and hand out a new one, rather than leave the
+      // member a menu that fails every time with no way to reset.
+      await this.feeds.revokeLive(chapterId, userId);
+      this.rendered.delete(live.token_hash);
     }
+    return this.linkFor(base, await this.mintOrWinner(chapterId, userId));
   }
 
   /**
    * A new link, and the old one emptied: a calendar subscribed to the old link
-   * shows nothing from the next time it checks (`fetch`).
+   * shows nothing from the next time it checks (`fetch`). Cutting the old
+   * link off needs no key, so it happens first: a leaked link stops even on a
+   * server that can't make a new one (that part answers 503).
    */
   async reset(chapterId: string, userId: string): Promise<CalendarFeedLink> {
     const base = this.requireApiBase();
-    const ring = this.requireKeyRing();
     const old = await this.feeds.findLive(chapterId, userId);
     await this.feeds.revokeLive(chapterId, userId);
     if (old) this.rendered.delete(old.token_hash);
+    return this.linkFor(base, await this.mintOrWinner(chapterId, userId));
+  }
+
+  /**
+   * A new link's token. When the insert is refused because another request
+   * (a second device, a reset racing an `ensure`) made the member's live link
+   * first, the one that won.
+   */
+  private async mintOrWinner(
+    chapterId: string,
+    userId: string,
+  ): Promise<string> {
+    const ring = this.requireKeyRing();
     try {
-      return this.linkFor(base, await this.mint(ring, chapterId, userId));
+      return await this.mint(ring, chapterId, userId);
     } catch (error) {
-      // A second reset, or an `ensure`, landed between the revoke and the
-      // insert and made the new link first: the old one is revoked either
-      // way, so hand back the one that won rather than report a failure.
       const winner = await this.feeds.findLive(chapterId, userId);
-      if (winner) return this.linkFor(base, await this.tokenOf(ring, winner));
+      const token = winner ? await this.shownToken(winner) : null;
+      if (token !== null) return token;
       throw error;
     }
   }
@@ -324,24 +384,31 @@ export class CalendarFeedService {
     return token;
   }
 
-  /** The token a stored link carries: its sealed copy, or a legacy plaintext. */
-  private async tokenOf(
-    ring: AiTextKeyRing,
-    feed: CalendarFeed,
-  ): Promise<string> {
+  /**
+   * The token a stored link carries, to show it again: a legacy plaintext
+   * (sealed on the way, when there is a key), or its sealed copy opened.
+   * Null when the sealed copy won't open, which only a dropped key causes.
+   * A sealed link with no key on this server answers 503.
+   */
+  private async shownToken(feed: CalendarFeed): Promise<string | null> {
     if (feed.token !== null) {
-      await this.sealLegacy(ring, feed, feed.token);
+      if (this.keyRing) await this.sealLegacy(this.keyRing, feed, feed.token);
       return feed.token;
     }
-    if (feed.token_sealed === null) {
-      // The table's check makes this unreachable; say so rather than guess.
-      throw new Error('Calendar link has neither form of its token');
+    const ring = this.requireKeyRing();
+    if (feed.token_sealed === null) return null;
+    try {
+      return openAiText(
+        ring,
+        feed.token_sealed,
+        sealContext(feed.chapter_id, feed.user_id),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `calendar-feed: a sealed link didn't open (${describeFailure(error)}); reissuing it`,
+      );
+      return null;
     }
-    return openAiText(
-      ring,
-      feed.token_sealed,
-      sealContext(feed.chapter_id, feed.user_id),
-    );
   }
 
   /**
@@ -360,7 +427,7 @@ export class CalendarFeedService {
       );
     } catch (error) {
       this.logger.warn(
-        `calendar-feed: sealing a legacy link failed (${error instanceof Error ? error.name : 'unknown'})`,
+        `calendar-feed: sealing a legacy link failed (${describeFailure(error)})`,
       );
     }
   }
@@ -401,6 +468,17 @@ export class CalendarFeedService {
     }
     return this.keyRing;
   }
+}
+
+/**
+ * What a log line says about a failure: the cipher's reason, or the error's
+ * name and its SQLSTATE when the database refused. Never a value.
+ */
+function describeFailure(error: unknown): string {
+  if (error instanceof AiTextCipherError) return error.reason;
+  const code = (error as { code?: unknown } | null)?.code;
+  const name = error instanceof Error ? error.name : 'unknown';
+  return typeof code === 'string' ? `${name} ${code}` : name;
 }
 
 /**

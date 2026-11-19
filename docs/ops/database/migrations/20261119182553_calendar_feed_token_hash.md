@@ -19,11 +19,11 @@ Calendar subscription links are no longer kept readable in the database: a link 
   ```
 
   After the API deploys with the key set, open Subscribe to calendar in the Events menu on staging: the link shows, and fetching it in a browser downloads a calendar. A link made before the deploy still fetches, and afterwards `select count(*) from public.calendar_feeds where token is not null and revoked_at is null` falls as links are fetched.
-- **Promoter notes**: writes data (the hash backfill, one update over the table, which holds one row per member per chapter at most). Apply before or after the API deploy; the trigger covers the gap. `CALENDAR_FEED_TOKEN_KEY` must be set in Infisical for the environment before the API deploys, or making and showing links answers 503 (existing links still fetch).
+- **Promoter notes**: writes data (the hash backfill, one update over the table, which holds one row per member per chapter at most). Apply **before** the API deploy, as the deploy workflows do: the new API reads `token_hash`, which doesn't exist until this runs. The trigger covers the other half of the window, an API from before this migration still inserting plaintext links. Links the new API made or sealed carry no plaintext, so an old instance still serving gets a 404 for them in a calendar app until it is replaced; the window is one rollout. `CALENDAR_FEED_TOKEN_KEY` must be set in Infisical for the environment before the API deploys, or making a new link answers 503 (existing links still fetch and show). With the key, the API's boot pass seals every remaining plaintext link.
 
 ## Rollback
 
-Worth reverting only if the new API has to be rolled back. The old API reads `token`, which sealed links no longer have, so their members get a 404 in their calendar app and must copy their link again. Revoke those links so the menu makes fresh ones, then restore the old shape in a forward migration:
+Worth reverting only if the new API has to be rolled back. The old API reads `token`, which sealed links no longer have, so their members get a 404 in their calendar app and must copy their link again. Delete those links so the menu makes fresh ones (the old shape can't hold a link without its plaintext), then restore the old shape in a forward migration:
 
 ```sql
 delete from public.calendar_feeds where token is null;

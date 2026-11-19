@@ -23,6 +23,12 @@ export interface ICalendarFeedRepository {
    * that only applies while the plaintext is still there.
    */
   sealLegacy(id: string, tokenSealed: string): Promise<void>;
+  /**
+   * Up to `limit` links still holding a plaintext token, live or revoked, in
+   * any chapter: the boot pass seals them. Unscoped on purpose, since it
+   * converts the whole table and returns nothing to a caller.
+   */
+  findLegacy(limit: number): Promise<CalendarFeed[]>;
   /** Stamp `revoked_at` on the member's live link in the chapter, if any. */
   revokeLive(chapterId: string, userId: string): Promise<void>;
 }

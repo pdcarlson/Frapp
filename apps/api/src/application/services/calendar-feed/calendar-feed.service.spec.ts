@@ -22,7 +22,9 @@ const USER = 'user-1';
 const TOKEN = 'a'.repeat(43);
 const NOW = new Date('2026-11-12T19:00:00.000Z');
 const KEY = `k1:${Buffer.alloc(32, 7).toString('base64')}`;
-const RING = parseAiTextKeyRing(KEY, 'CALENDAR_FEED_TOKEN_KEY');
+const PARSED_RING = parseAiTextKeyRing(KEY, 'CALENDAR_FEED_TOKEN_KEY');
+if (!PARSED_RING) throw new Error('test key ring did not parse');
+const RING = PARSED_RING;
 const CONTEXT = `calendar-feed:${CHAPTER}:${USER}`;
 
 /** A link made before tokens were sealed: its token stored in plain text. */
@@ -143,6 +145,7 @@ function setup({
       ),
     revokeLive: jest.fn().mockResolvedValue(undefined),
     sealLegacy: jest.fn().mockResolvedValue(undefined),
+    findLegacy: jest.fn().mockResolvedValue([]),
   };
   const chapters = {
     findById: jest.fn().mockResolvedValue({
@@ -224,32 +227,64 @@ describe('CalendarFeedService.ensure / reset', () => {
     expect(openAiText(RING, sealed, CONTEXT)).toBe(TOKEN);
   });
 
-  it("won't open a sealed copy moved onto another member's link", async () => {
+  it("won't open a sealed copy moved onto another member's link, and reissues it", async () => {
     const { service, feeds } = setup();
-    feeds.findLive.mockResolvedValue(
+    feeds.findLive.mockResolvedValueOnce(
       sealedRow(TOKEN, { user_id: 'someone-else' }),
     );
-    await expect(service.ensure(CHAPTER, 'someone-else')).rejects.toThrow();
+    const link = await service.ensure(CHAPTER, 'someone-else');
+    expect(link.url).not.toContain(`token=${TOKEN}`);
+    expect(feeds.revokeLive).toHaveBeenCalledWith(CHAPTER, 'someone-else');
+    expect(feeds.create).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses to make or show a link without CALENDAR_FEED_TOKEN_KEY', async () => {
+  it('reissues a link sealed under a key that was dropped, instead of failing every time', async () => {
+    const { service, feeds } = setup({
+      key: `k2:${Buffer.alloc(32, 9).toString('base64')}`,
+    });
+    feeds.findLive.mockResolvedValueOnce(sealedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).not.toContain(`token=${TOKEN}`);
+    expect(feeds.revokeLive.mock.invocationCallOrder[0]).toBeLessThan(
+      feeds.create.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('without CALENDAR_FEED_TOKEN_KEY, makes no new link and shows no sealed one', async () => {
     const { service, feeds } = setup({ key: '' });
     await expect(service.ensure(CHAPTER, USER)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
-    await expect(service.reset(CHAPTER, USER)).rejects.toBeInstanceOf(
+    feeds.findLive.mockResolvedValue(sealedRow());
+    await expect(service.ensure(CHAPTER, USER)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
     expect(feeds.create).not.toHaveBeenCalled();
-    expect(feeds.revokeLive).not.toHaveBeenCalled();
   });
 
-  it('hands back the link a racing request made', async () => {
+  it('without CALENDAR_FEED_TOKEN_KEY, still shows a link from before sealing', async () => {
+    const { service, feeds } = setup({ key: '' });
+    feeds.findLive.mockResolvedValue(feedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).toContain(`token=${TOKEN}`);
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
+  });
+
+  it('without CALENDAR_FEED_TOKEN_KEY, reset still cuts the old link off', async () => {
+    const { service, feeds } = setup({ key: '' });
+    await expect(service.reset(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(feeds.revokeLive).toHaveBeenCalledWith(CHAPTER, USER);
+    expect(feeds.create).not.toHaveBeenCalled();
+  });
+
+  it('hands back the link a racing request made, opened from its sealed copy', async () => {
     const { service, feeds } = setup();
     feeds.create.mockRejectedValue(new Error('duplicate key'));
     feeds.findLive
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(feedRow({ token: 'b'.repeat(43) }));
+      .mockResolvedValueOnce(sealedRow('b'.repeat(43)));
     const link = await service.ensure(CHAPTER, USER);
     expect(link.url).toContain(`token=${'b'.repeat(43)}`);
   });
@@ -274,8 +309,8 @@ describe('CalendarFeedService.ensure / reset', () => {
     const { service, feeds } = setup();
     feeds.create.mockRejectedValue(new Error('duplicate key'));
     feeds.findLive
-      .mockResolvedValueOnce(feedRow())
-      .mockResolvedValueOnce(feedRow({ token: 'b'.repeat(43) }));
+      .mockResolvedValueOnce(sealedRow())
+      .mockResolvedValueOnce(sealedRow('b'.repeat(43)));
     const link = await service.reset(CHAPTER, USER);
     expect(link.url).toContain(`token=${'b'.repeat(43)}`);
   });
@@ -436,5 +471,39 @@ describe('CalendarFeedService.fetch', () => {
     expect(eventService.findByChapter).toHaveBeenCalled();
     expect(taskService.list).not.toHaveBeenCalled();
     expect(ics).not.toContain('Due:');
+  });
+});
+
+describe('CalendarFeedService boot pass', () => {
+  it('seals every link from before sealing, batch by batch', async () => {
+    const { service, feeds } = setup();
+    const legacy = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        feedRow({ id: `legacy-${i}`, token: `${i}`.padStart(43, 'x') }),
+      );
+    feeds.findLegacy
+      .mockResolvedValueOnce(legacy(100))
+      .mockResolvedValueOnce(legacy(3));
+    const sealed = await service.sealAllLegacy(RING);
+    expect(sealed).toBe(103);
+    expect(feeds.findLegacy).toHaveBeenCalledTimes(2);
+    const [id, envelope] = feeds.sealLegacy.mock.calls[0];
+    expect(id).toBe('legacy-0');
+    expect(openAiText(RING, envelope, CONTEXT)).toBe('0'.padStart(43, 'x'));
+  });
+
+  it('does nothing at boot without CALENDAR_FEED_TOKEN_KEY', () => {
+    const { service, feeds } = setup({ key: '' });
+    service.onApplicationBootstrap();
+    expect(feeds.findLegacy).not.toHaveBeenCalled();
+  });
+
+  it('stops reading after a bounded number of batches', async () => {
+    const { service, feeds } = setup();
+    feeds.findLegacy.mockResolvedValue(
+      Array.from({ length: 100 }, (_, i) => feedRow({ id: `stuck-${i}` })),
+    );
+    await service.sealAllLegacy(RING);
+    expect(feeds.findLegacy).toHaveBeenCalledTimes(500);
   });
 });

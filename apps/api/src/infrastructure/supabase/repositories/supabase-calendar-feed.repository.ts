@@ -8,8 +8,9 @@ import { SupabaseQueryError } from '../supabase-query-error';
 /**
  * Members' calendar subscription links (#3322).
  *
- * Every query but `findByTokenHash` and `sealLegacy` filters on `chapter_id`
- * and `user_id`; `sealLegacy` names one row by id. The
+ * Every query but `findByTokenHash`, `sealLegacy` and `findLegacy` filters on
+ * `chapter_id` and `user_id`; `sealLegacy` names one row by id, and
+ * `findLegacy` reads the rows still to seal across the table. The
  * table enables RLS with no policies, so only the API (service role) reaches
  * it, and a link is served only through `CalendarFeedService`.
  */
@@ -73,6 +74,17 @@ export class SupabaseCalendarFeedRepository implements ICalendarFeedRepository {
       .eq('id', id)
       .not('token', 'is', null);
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async findLegacy(limit: number): Promise<CalendarFeed[]> {
+    const { data, error } = await this.supabase
+      .from('calendar_feeds')
+      .select('*')
+      .not('token', 'is', null)
+      .order('id')
+      .limit(limit);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
   }
 
   async revokeLive(chapterId: string, userId: string): Promise<void> {

@@ -169,4 +169,13 @@ describe('SupabaseCalendarFeedRepository — tenant scope', () => {
       ['id', 'token'].sort(),
     );
   });
+
+  it('findLegacy reads the rows still holding plaintext, across chapters', async () => {
+    const legacy = await repo.findLegacy(10);
+
+    expect(legacy.map((row) => row.id).sort()).toEqual(
+      [FEED_A_OTHER, FEED_A_REVOKED, FEED_B_OTHER, FEED_B_REVOKED].sort(),
+    );
+    expect(harness.ops[0].filters.map((f) => f.column)).toEqual(['token']);
+  });
 });

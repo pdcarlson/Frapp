@@ -109,15 +109,17 @@ try {
     ),
     "a link with both its plaintext and its sealed copy is refused",
   ]);
+  await db.exec(
+    `update calendar_feeds set revoked_at = now() where user_id = '${U.b}';`,
+  );
+  // With U.b's link revoked, the length check is what refuses this, not the
+  // one-live-link index.
   checks.push([
     await rejects(
       `insert into calendar_feeds (chapter_id, user_id, token) values ('${CH}', '${U.b}', 'short');`,
     ),
     "a token shorter than 32 characters is refused",
   ]);
-  await db.exec(
-    `update calendar_feeds set revoked_at = now() where user_id = '${U.b}';`,
-  );
   checks.push([
     await rejects(
       `insert into calendar_feeds (chapter_id, user_id, token) values ('${CH}', '${U.b}', '${T("a")}');`,
