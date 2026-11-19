@@ -246,7 +246,7 @@ then, and the Member rows took the chapter accent before that.
 | Documents | `documents`, `file-text` | `DocumentsGlyph` |
 | Directory | `directory`, `users-three` | `DirectoryGlyph` |
 | Settings | `settings`, `gear-six` | `SettingsGlyph` |
-| Switch chapter, Create a chapter | `chapter`, `bank` (the columned chapter house) | none |
+| Create a chapter (Switch chapter until 2026-11-19) | `chapter`, `bank` (the columned chapter house) | none |
 | Invite members (Admin) | `invite`, `user-plus` (`InviteGlyph`) | `InviteGlyph` |
 | Host check-in (Admin) | `hostCheckIn`, `qr-code` | none |
 

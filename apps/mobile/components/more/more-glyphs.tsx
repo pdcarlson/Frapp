@@ -93,7 +93,7 @@ export function SettingsGlyph(props: HubGlyphProps) {
   return <HubGlyph name="settings" {...props} />;
 }
 
-/** Switch chapter and Create a chapter: the columned chapter house. */
+/** Create a chapter: the columned chapter house. */
 export function ChapterGlyph(props: HubGlyphProps) {
   return <HubGlyph name="chapter" {...props} />;
 }

@@ -45,13 +45,13 @@ describe("the You tab's place hues", () => {
     expect(destinationHue("hostCheckIn")).toBe(NOTIFICATION_TILE_HUE.events);
   });
 
-  it("gives each place its own hue; only the two settings rows share one", () => {
+  it("gives each place its own hue", () => {
     const byHue = new Map<string, YouDestination[]>();
     for (const place of places) {
       const hue = destinationHue(place);
       byHue.set(hue, [...(byHue.get(hue) ?? []), place]);
     }
     const shared = [...byHue.values()].filter((group) => group.length > 1);
-    expect(shared).toEqual([["settings", "chapterSettings"]]);
+    expect(shared).toEqual([]);
   });
 });

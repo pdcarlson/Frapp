@@ -484,13 +484,14 @@ export function ErrorState({
  * disabled. A spinner there would hang forever and an error would blame
  * the network for a missing chapter context.
  *
- * Points at the Switch chapter row on You, which is the only entry to the picker
- * (`spec/ui/mobile/navigation.md`).
+ * Points at Switch chapter in the chapter menu on Chat home's title, the only
+ * entry to the picker (`spec/ui/mobile/navigation.md` § Chapter menu). The
+ * menu draws even while no chapter is known, so the way out is always there.
  */
 export function NoChapterState({ noun }: { noun: string }) {
   return (
     <InlineNote>
-      {`Choose a chapter from You → Switch chapter to see ${noun}.`}
+      {`Tap the chapter menu at the top of Chat, then Switch chapter, to see ${noun}.`}
     </InlineNote>
   );
 }

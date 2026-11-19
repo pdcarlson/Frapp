@@ -145,7 +145,7 @@ describe("AccountMenu", () => {
   });
 
   it("opens the member's own Settings page, the second door (#3856)", async () => {
-    // The nav's row is "Chapter settings"; this one is the member's, and it
+    // The chapter menu's item is "Chapter settings"; this one is the member's, and it
     // replaced the "Notification settings" anchor into `/profile`, whose
     // settings sections moved to this page.
     const user = userEvent.setup();

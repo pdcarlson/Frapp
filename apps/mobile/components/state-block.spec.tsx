@@ -317,7 +317,7 @@ describe("NoChapterState", () => {
   it("says where to pick a chapter in one line", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     expect(texts(tree).join("")).toBe(
-      "Choose a chapter from You → Switch chapter to see the directory.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to see the directory.",
     );
   });
 });
@@ -330,7 +330,9 @@ describe("NoChapterState", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     const copy = texts(tree).join(" ");
 
-    expect(copy).toContain("You → Switch chapter");
+    expect(copy).toContain(
+      "chapter menu at the top of Chat, then Switch chapter",
+    );
     expect(copy).toContain("the directory");
   });
 });

@@ -171,7 +171,7 @@ export default function AppLayout() {
         name="arrange-channels"
         options={{ title: SCREEN_TITLES["arrange-channels"] }}
       />
-      {/* Chapter settings and its Roles screens (#4074), from You → Admin. */}
+      {/* Chapter settings and its Roles screens (#4074), from Chat home's chapter menu. */}
       <Stack.Screen
         name="chapter-settings"
         options={{ title: SCREEN_TITLES["chapter-settings"] }}
