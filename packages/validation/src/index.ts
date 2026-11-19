@@ -123,7 +123,6 @@ export * from "./last-year";
 export * from "./legal";
 // The words and date labels the minutes screens share on web and mobile.
 export * from "./meeting-copy";
-export * from "./minutes-request-copy";
 // Minutes drafted from notes (#4312): the model's output schema, the draft's
 // states and the words each failure shows.
 export * from "./meeting-draft";
@@ -144,6 +143,7 @@ export * from "./message-link";
 export * from "./message-text";
 // How both apps lay minutes out to read, and the words of its ⋯ menu (#5562).
 export * from "./minutes-read";
+export * from "./minutes-request-copy";
 export * from "./module-enablement";
 export * from "./module-refusal";
 // The native app's identifiers, store listings and invite hand-off (#4002),
