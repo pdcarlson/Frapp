@@ -148,6 +148,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When someone joins with your invite, you now get a notification instead of a message in your DMs.",
       "Personal invites now last 7 days, and a link that has run out lets you ask the sender for a new one in one tap.",
       "Each minutes on Meetings now says what happened, its first TL;DR line, under how many decisions and action items it holds.",
+      "Dates are written out, such as \"Friday, November 6\" and \"Due November 14\", instead of \"Fri, Nov 6\".",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
