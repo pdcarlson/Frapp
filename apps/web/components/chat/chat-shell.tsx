@@ -813,7 +813,7 @@ export function ChatShell({
     messageId: initialMessageId,
   });
   /**
-   * Which of the two columns is on screen below `lg`.
+   * Which of the two columns is on screen below `lg`, and beside a tool.
    *
    * The shell's responsive contract is two states switching once at `lg`
    * (`spec/ui/web-dashboard/README.md` § Responsive contract), and chat has to
@@ -825,7 +825,9 @@ export function ChatShell({
    * check is for.
    *
    * So below `lg` exactly one column renders, the way every chat client on a
-   * phone does it. At `lg` and up both are always visible and this is inert.
+   * phone does it. At `lg` and up both are visible and this is inert, except
+   * beside a tool page, where chat is a one-pane side panel (#5575) and this
+   * picks the pane there too.
    *
    * Defaults to the thread rather than the list: a channel is always resolved
    * (the rail falls back to #general), and a `?message=` deep link must land on
@@ -859,6 +861,18 @@ export function ChatShell({
   };
   // From `lg` up the channels and the thread are both on screen.
   const isDesktopShell = useIsDesktopShell();
+  /*
+    Beside a tool page chat is a side panel one pane wide (#5575): the list
+    and the conversation take turns, as they do below `lg`, with the same back
+    arrow. Only the layout follows: the pane history (#3824) stays a below-`lg`
+    affair, so Back still moves between pages, not within the panel.
+  */
+  const twoColumns = isDesktopShell && !toolBeside;
+  // The classes that show one pane at a time: below `lg`, or always beside a
+  // tool. The shell mounts chat beside a tool only once the client knows the
+  // width, so `toolBeside` never differs between server and client.
+  const oneOnly = toolBeside ? "hidden" : "max-lg:hidden";
+  const oneAtATimeOnly = toolBeside ? undefined : "lg:hidden";
 
   useEffect(() => {
     if (
@@ -920,8 +934,10 @@ export function ChatShell({
     `pushState` then passes straight through, and its `popstate` handler
     restores the same route for the same URL.
 
-    From `lg` up the list is on screen beside the thread, so a pick pushes
-    nothing and `Esc` does nothing. An entry pushed below `lg` can outlive a
+    From `lg` up a pick pushes nothing. The list is on screen beside the
+    thread there, except beside a tool, where the panel is one pane wide
+    (#5575): the arrow and `Esc` switch its pane without touching history, and
+    no `popstate` moves it, so Back keeps moving between pages. An entry pushed below `lg` can outlive a
     widening past it (a tablet turned to landscape, a resized window), and
     there the Back that pops it would change nothing on screen (#3836). So the
     pick also marks the entry it pushed over, and a `popstate` landing on that
@@ -946,8 +962,17 @@ export function ChatShell({
     pushThreadPaneEntry();
     onThreadEntry.current = true;
   }, [isDesktopShell]);
+  // Read by `backToChannels` and the `popstate` listener, which subscribes once.
+  const isDesktopShellRef = useRef(isDesktopShell);
+  useEffect(() => {
+    isDesktopShellRef.current = isDesktopShell;
+  }, [isDesktopShell]);
   const backToChannels = useCallback(() => {
     setNarrowPane("channels");
+    // From `lg` up (the one-pane side panel beside a tool, #5575) the arrow
+    // only switches panes: a Back here would leave the tool page, even when a
+    // below-`lg` pick's entry is still under it.
+    if (isDesktopShellRef.current) return;
     if (backPending.current) return;
     if (onThreadEntry.current || isThreadPaneEntry(window.history.state)) {
       backPending.current = true;
@@ -955,11 +980,6 @@ export function ChatShell({
       window.history.back();
     }
   }, []);
-  // Read by the `popstate` listener, which subscribes once.
-  const isDesktopShellRef = useRef(isDesktopShell);
-  useEffect(() => {
-    isDesktopShellRef.current = isDesktopShell;
-  }, [isDesktopShell]);
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       const ownBack = backPending.current;
@@ -968,8 +988,9 @@ export function ChatShell({
         if (!ownBack && !openAfterBack.current && isDesktopShellRef.current) {
           // The browser's Back left a below-`lg` pick's entry from `lg` up,
           // where the list was already on screen: finish the press (#3836).
+          // The pane stays as it is: beside a tool it is the member's
+          // choice, not the history's (#5575).
           onThreadEntry.current = false;
-          setNarrowPane("channels");
           window.history.back();
           return;
         }
@@ -984,6 +1005,11 @@ export function ChatShell({
       }
       const thread = isThreadPaneEntry(event.state);
       onThreadEntry.current = thread;
+      // From `lg` up the pane never follows history. With two columns it
+      // changes nothing; beside a tool (#5575) chat stays mounted across tool
+      // pages, and a Back between them must not swap the open conversation
+      // for the list.
+      if (isDesktopShellRef.current) return;
       setNarrowPane(thread ? "thread" : "channels");
     };
     window.addEventListener("popstate", onPopState);
@@ -1128,6 +1154,10 @@ export function ChatShell({
     if (selected && isDirectChannel(selected) !== directView) {
       setSelectedChannelId(null);
     }
+    // Beside a tool the panel is one pane wide (#5575): the nav row the
+    // member pressed asked for that list, so show it, unread counts and all,
+    // rather than one conversation from it.
+    if (toolBeside) setNarrowPane("channels");
   }
   const activeView: ChatView | null = activeChannel
     ? isDirectChannel(activeChannel)
@@ -2185,9 +2215,10 @@ export function ChatShell({
     nav's Chat row never lit and the channel came back read. Leaving the
     thread for the list runs the cleanup, which stamps it read on the way out as leaving
     a channel always has; coming back claims and stamps it again. From `lg`
-    up both are on screen and `narrowPane` changes nothing.
+    up both are on screen and `narrowPane` changes nothing, except beside a
+    tool, where the panel shows one at a time (#5575).
   */
-  const threadOnScreen = isDesktopShell || narrowPane === "thread";
+  const threadOnScreen = twoColumns || narrowPane === "thread";
   useEffect(() => {
     if (!activeChannelId || !threadOnScreen) return;
     markReadMutate(activeChannelId);
@@ -2723,6 +2754,34 @@ export function ChatShell({
   // The chat column, and the live composer's attach path, for the drop
   // target over the column (#4143).
   const chatColumnRef = useRef<HTMLElement | null>(null);
+  const channelsColumnRef = useRef<HTMLElement | null>(null);
+  /*
+    Beside a tool the panes take turns (#5575), and the control that switched
+    them (the back arrow, a row) goes with the pane it was in, which drops
+    keyboard focus to `<body>`. Focus follows into the pane that appeared,
+    but only on a switch, and only when focus was lost: a page load, or a
+    switch the member made from the tool page, leaves focus where it is.
+  */
+  const shownPaneRef = useRef(narrowPane);
+  useEffect(() => {
+    if (shownPaneRef.current === narrowPane) return;
+    shownPaneRef.current = narrowPane;
+    if (!toolBeside) return;
+    const active = document.activeElement;
+    if (
+      active &&
+      active !== document.body &&
+      active.getClientRects().length > 0
+    ) {
+      return;
+    }
+    // The thread's target is its timeline, the skip link's (`#chat-timeline`).
+    const target =
+      narrowPane === "channels"
+        ? channelsColumnRef.current
+        : chatColumnRef.current?.querySelector<HTMLElement>("#chat-timeline");
+    target?.focus({ preventScroll: true });
+  }, [narrowPane, toolBeside]);
   const dropAttachRef = useRef<((files: File[]) => void) | null>(null);
   const threadRootId =
     openThread && openThread.channelId === activeChannel?.id
@@ -3219,14 +3278,15 @@ export function ChatShell({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       if (escapeBelongsElsewhere(event.target)) return;
-      if (isDesktopShell) return;
+      // Beside a tool the panel is one pane wide, as below `lg` (#5575).
+      if (twoColumns) return;
       if (narrowPane === "thread" && channelsPaneState === "ready") {
         backToChannels();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isDesktopShell, narrowPane, channelsPaneState, backToChannels]);
+  }, [twoColumns, narrowPane, channelsPaneState, backToChannels]);
 
   // The rail's title is the nav row's label for the list it shows (#3774).
   const railTitle = directView ? "Direct messages" : "Channels";
@@ -3322,6 +3382,13 @@ export function ChatShell({
             reorderable={!directView && !!railReorder}
             onChange={sidebarControls.onSetFilters}
           />
+          {/*
+            Beside a tool the list is its own pane (#5575), so it carries the
+            panel's X too: chat closes from whichever pane is on screen (#4223).
+          */}
+          {toolBeside && onClose ? (
+            <PanelCloseButton label="Close chat" onClick={onClose} />
+          ) : null}
         </div>
       </header>
       {dmSearchShown ? (
@@ -3555,16 +3622,20 @@ export function ChatShell({
       {/*
         Channels: 240px, full height, its own scroll, no search field (`1b`
         pin 5), on `--surface-1`, the step the left column takes. Beside the
-        thread from `lg` up; below it the list and the thread are one screen
-        each (`narrowPane`).
+        thread from `lg` up; below it, and beside a tool page (#5575), the
+        list and the thread are one screen each (`narrowPane`).
       */}
       <section
+        ref={channelsColumnRef}
         aria-label={railTitle}
+        // A focus target for a pane switch beside a tool, never a Tab stop.
+        tabIndex={-1}
         className={cn(
-          "flex min-h-0 flex-col border-r border-border bg-surface-1",
+          "flex min-h-0 flex-col border-r border-border bg-surface-1 outline-none",
           // Full width below `lg`, where it is the only column on screen.
-          "w-full lg:w-60 lg:shrink-0",
-          narrowPane === "thread" && "max-lg:hidden",
+          // Beside a tool, the whole panel whenever it shows (#5575).
+          toolBeside ? "w-full" : "w-full lg:w-60 lg:shrink-0",
+          narrowPane === "thread" && oneOnly,
         )}
       >
         {channelsPaneBody}
@@ -3583,7 +3654,7 @@ export function ChatShell({
           // `isolate` + `relative`: the chat background (#3973) sits at
           // `-z-10` inside this column, and only this column (#3779).
           "relative isolate flex min-w-0 flex-1 flex-col bg-background",
-          narrowPane === "channels" && "max-lg:hidden",
+          narrowPane === "channels" && oneOnly,
         )}
       >
         <ChatBackground channelId={activeChannel?.id ?? null} />
@@ -3624,7 +3695,7 @@ export function ChatShell({
               size="icon"
               // 40px, never the 32px compact control (#3824): it is the one
               // way back below `lg`, so it gets a real target.
-              className="-ml-2 h-10 w-10 shrink-0 lg:hidden"
+              className={cn("-ml-2 h-10 w-10 shrink-0", oneAtATimeOnly)}
               onClick={backToChannels}
               aria-label="Back to channels"
             >
@@ -3998,12 +4069,14 @@ export function ChatShell({
               </InlineNote>
             ) : (
               <InlineNote>
-                <span className="max-lg:hidden">
-                  Choose one from the list to open it.
-                </span>
-                {/* Below `lg` the list is its own screen. */}
+                {toolBeside ? null : (
+                  <span className="max-lg:hidden">
+                    Choose one from the list to open it.
+                  </span>
+                )}
+                {/* Below `lg`, and beside a tool, the list is its own screen. */}
                 <InlineNoteAction
-                  className="lg:hidden"
+                  className={oneAtATimeOnly}
                   onClick={() => setNarrowPane("channels")}
                 >
                   Show your direct messages
@@ -4479,7 +4552,11 @@ export function ChatShell({
           initialCategoryId={createChannelIn ?? null}
           // Open the new channel, as Discord does, so the officer lands where
           // the next step (drag it into place, post the first message) is.
-          onCreated={(channelId) => setSelectedChannelId(channelId)}
+          onCreated={(channelId) => {
+            setSelectedChannelId(channelId);
+            // One pane at a time (below `lg`, or beside a tool): show it.
+            openThreadPane();
+          }}
         />
       ) : null}
       {unblockFlow.confirmDialog}

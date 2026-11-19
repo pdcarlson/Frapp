@@ -86,7 +86,7 @@ type Missing = {
  * The page's quick add (Paul, 2026-11-18): one line, as Todoist's is. Type a
  * title and press Enter; Who, Due and Points sit beside it as compact chips,
  * so the common task never opens a form. At rest it is one line even in the
- * Tasks column beside chat (~480px): the title, then short chips and More as
+ * Tasks column beside a widened chat (down to 375px): the title, then short chips and More as
  * an icon. Once the line is in use (focused, or something typed) the title
  * and Add (once there is a title to add) take the first line and the chips
  * sit under it, the way Linear's and Todoist's quick adds grow under the

@@ -2,16 +2,20 @@
 
 import { useMediaQuery } from "@/lib/use-media-query";
 
-export { useHydrated, useMediaQueryState } from "@/lib/use-media-query";
+export { useMediaQueryState } from "@/lib/use-media-query";
 
 /**
  * The desktop shell's layout state: chat as a panel beside the chapter tools
- * (#3779, approved by Paul 2026-11-10).
+ * (#3779, approved by Paul 2026-11-10; the tool first since #5575).
  *
  * The nav column always stays. Its Chat row opens and closes the chat panel;
  * a tool row opens that tool's page, and clicking the open tool's row closes
- * it. Chat and one tool can be open together, chat on the left, the tool page
- * on the right, with a draggable divider between them. With nothing open the
+ * it. Chat and one tool can be open together: the tool page takes the main
+ * column right of the nav, and chat is a side panel on the right with a
+ * draggable divider between them (#5575, Paul 2026-11-19: at 1440px the tool
+ * used to get the narrower share, beside chat's channels column, and clipped
+ * what it showed in full at 820px). Beside a tool the panel is one pane at a
+ * time, the list or the conversation, as on a phone. With nothing open the
  * shell draws the chapter's home view.
  *
  * - **The open tool is the URL** (`/events`), so links and Back work as they
@@ -20,64 +24,34 @@ export { useHydrated, useMediaQueryState } from "@/lib/use-media-query";
  * - **Which list chat shows is a cookie too** (#3774): the chapter's
  *   channels, or the member's direct messages. The nav's Chat and Direct
  *   messages rows switch the one panel between them.
- * - **Chat open or closed is a cookie**, and so is the split (the tool page's
- *   share of the width left after the channels column), both read by the
- *   dashboard layout on the server so the first paint is right. They live in
- *   `shell-prefs.ts`, which the server imports, so it holds no hooks.
+ * - **Chat open or closed is a cookie**, and so is the side panel's width,
+ *   both read by the dashboard layout on the server so the first paint is
+ *   right. They live in `shell-prefs.ts`, which the server imports, so it
+ *   holds no hooks.
  *
  * Side by side needs room for both 375px floors (the width the thread is
- * tested at), so it starts at `SPLIT_MIN_WIDTH`. Below it the shell is the
- * single page it was: `/chat` shows chat, a tool route shows the tool, and the
- * Chat row is a link. Between `SPLIT_MIN_WIDTH` and `FULL_NAV_SPLIT_WIDTH` the
- * nav drops to its 56px rail while chat and a tool are both open.
+ * tested at) beside the full nav, so it starts at `SPLIT_MIN_WIDTH`. Below it
+ * the shell is the single page it was: `/chat` shows chat, a tool route shows
+ * the tool, and the Chat row is a link.
  */
 
-/** The width every side-by-side column keeps, chat's messages and the tool page. */
+/** The width every side-by-side column keeps, chat's panel and the tool page. */
 export const PANE_FLOOR = 375;
-/** The channels column inside the chat panel. */
-export const CHANNELS_WIDTH = 240;
 const NAV_WIDTH = 240;
-const RAIL_WIDTH = 56;
-/** Hairlines: the nav's, the channels column's, and the divider's. */
-const HAIRLINES = 3;
+/** Hairlines: the nav's and the divider's. */
+const HAIRLINES = 2;
 
-/** Rail + channels + two floors + hairlines (1049), rounded up. */
+/** Full nav + two floors + hairlines (992), at the home view's 1056. */
 export const SPLIT_MIN_WIDTH = 1056;
-/** Full nav + channels + two floors + hairlines (1233), rounded up. */
-export const FULL_NAV_SPLIT_WIDTH = 1240;
 
 // Asserted here rather than left to arithmetic in a comment.
-if (
-  RAIL_WIDTH + CHANNELS_WIDTH + 2 * PANE_FLOOR + HAIRLINES > SPLIT_MIN_WIDTH ||
-  NAV_WIDTH + CHANNELS_WIDTH + 2 * PANE_FLOOR + HAIRLINES > FULL_NAV_SPLIT_WIDTH
-) {
-  throw new Error("shell-layout: split breakpoints are below the pane floors");
+if (NAV_WIDTH + 2 * PANE_FLOOR + HAIRLINES > SPLIT_MIN_WIDTH) {
+  throw new Error(
+    "shell-layout: the split breakpoint is below the pane floors",
+  );
 }
 
 export const SPLIT_QUERY = `(min-width: ${SPLIT_MIN_WIDTH}px)`;
-export const FULL_NAV_SPLIT_QUERY = `(min-width: ${FULL_NAV_SPLIT_WIDTH}px)`;
-
-/*
-  The band where chat beside a tool forces the rail, as Tailwind variants for
-  the server render (#4024). Tailwind reads class names from source, so these
-  are literals; the check below keeps them on the constants. Tailwind 4's
-  `max-[1240px]` is `width < 1240px`, the exact complement of
-  `FULL_NAV_SPLIT_QUERY`.
-*/
-/** Shown only in the forced-rail band. */
-export const RAIL_BAND_ONLY = "hidden min-[1056px]:max-[1240px]:flex";
-/** Hidden in the forced-rail band. */
-export const OUTSIDE_RAIL_BAND = "min-[1056px]:max-[1240px]:hidden";
-if (
-  !RAIL_BAND_ONLY.includes(
-    `min-[${SPLIT_MIN_WIDTH}px]:max-[${FULL_NAV_SPLIT_WIDTH}px]:`,
-  ) ||
-  !OUTSIDE_RAIL_BAND.includes(
-    `min-[${SPLIT_MIN_WIDTH}px]:max-[${FULL_NAV_SPLIT_WIDTH}px]:`,
-  )
-) {
-  throw new Error("shell-layout: rail band classes drifted from the widths");
-}
 
 /**
  * The shell's lg breakpoint (1024px), where the left column appears and the
@@ -109,23 +83,23 @@ export function isFullWidthToolRoute(pathname: string | null): boolean {
 }
 
 /**
- * The shares a row of `rowWidth` pixels allows: the tool page at least
- * `PANE_FLOOR`, and the messages (the chat panel less its channels column) at
- * least `PANE_FLOOR`. On a row too narrow for both, both bounds meet at 0.5.
+ * The chat panel's widths a row of `rowWidth` pixels allows: the panel at
+ * least `PANE_FLOOR`, and the tool page beside it (the divider's `w-2 -mx-1`
+ * takes no width of its own)
+ * at least `PANE_FLOOR`. On a row too narrow for both, both bounds are the
+ * floor.
  */
-export function toolShareBounds(rowWidth: number): {
+export function chatWidthBounds(rowWidth: number): {
   min: number;
   max: number;
 } {
-  const flexible = rowWidth - CHANNELS_WIDTH - 1;
-  if (flexible <= 2 * PANE_FLOOR) return { min: 0.5, max: 0.5 };
   return {
-    min: PANE_FLOOR / flexible,
-    max: 1 - PANE_FLOOR / flexible,
+    min: PANE_FLOOR,
+    max: Math.max(PANE_FLOOR, Math.floor(rowWidth - PANE_FLOOR)),
   };
 }
 
-export function clampToolShare(share: number, rowWidth: number): number {
-  const { min, max } = toolShareBounds(rowWidth);
-  return Math.min(max, Math.max(min, share));
+export function clampChatWidth(width: number, rowWidth: number): number {
+  const { min, max } = chatWidthBounds(rowWidth);
+  return Math.round(Math.min(max, Math.max(min, width)));
 }

@@ -21,9 +21,10 @@ export function ChapterHome() {
     chapterId: activeChapterId,
     enabled: !!activeChapterId,
   });
-  const mark = useMemo(() => (chapter ? chapterMarkFor(chapter) : null), [
-    chapter,
-  ]);
+  const mark = useMemo(
+    () => (chapter ? chapterMarkFor(chapter) : null),
+    [chapter],
+  );
 
   return (
     <section

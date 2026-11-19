@@ -43,9 +43,9 @@ const CLEAR_AFTER: { value: string; label: string; duration: LineDuration }[] =
     duration,
   }));
 
-const DEFAULT_CLEAR_AFTER =
-  CLEAR_AFTER.find((option) => option.duration === DEFAULT_LINE_DURATION)!
-    .value;
+const DEFAULT_CLEAR_AFTER = CLEAR_AFTER.find(
+  (option) => option.duration === DEFAULT_LINE_DURATION,
+)!.value;
 
 /**
  * Set, change or clear the member's custom status line (#3845): one line, at

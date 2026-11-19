@@ -161,7 +161,9 @@ describe("ChapterNavHeader", () => {
     // Unmarked on purpose: `/join?from=sign-in` would skip a member straight
     // back to /chat, so this link could never join a second chapter (#3850).
     expect(
-      screen.getByRole("menuitem", { name: "Join another chapter" }).getAttribute("href"),
+      screen
+        .getByRole("menuitem", { name: "Join another chapter" })
+        .getAttribute("href"),
     ).toBe("/join");
     expect(screen.getByText("Chapter settings")).toBeInTheDocument();
   });
@@ -307,7 +309,9 @@ describe("ChapterNavHeader", () => {
 
     openMenu();
     fireEvent.click(await screen.findByText("Beta Chapter"));
-    fireEvent.click(await screen.findByRole("button", { name: "Switch chapters" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Switch chapters" }),
+    );
     await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("chap-2"));
   });
 

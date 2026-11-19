@@ -181,8 +181,10 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
         </PopoverTrigger>
         <PopoverContent
           align={align}
-          // Kept on screen in the Tasks column beside chat, whose right edge
-          // is the viewport's: Radix shifts it in rather than clip it.
+          // Kept on screen in the Tasks column, whose right edge is the
+          // viewport's when chat is closed: Radix shifts it in rather than
+          // clip it. Beside chat (#5575) it may overlap chat's panel, as a
+          // popover does.
           collisionPadding={12}
           className="w-[min(22rem,calc(100vw-1.5rem))] p-0"
           onOpenAutoFocus={(event) => {

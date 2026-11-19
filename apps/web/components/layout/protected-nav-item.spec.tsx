@@ -126,7 +126,11 @@ describe("isNavItemVisible", () => {
     expect(isNavItemVisible(permissionItem, null)).toBe(true);
     // The module gate still applies.
     expect(
-      isNavItemVisible({ ...moduleItem, requirePermission: "x" }, null, () => false),
+      isNavItemVisible(
+        { ...moduleItem, requirePermission: "x" },
+        null,
+        () => false,
+      ),
     ).toBe(false);
   });
 
@@ -142,8 +146,14 @@ describe("isNavItemVisible", () => {
     for (const id of ["members", "settings", "backwork"]) {
       const row = DASHBOARD_NAV_ITEMS.find((item) => item.id === id);
       expect(row, id).toBeDefined();
-      expect(isNavItemVisible(row!, undefined, () => true), id).toBe(false);
-      expect(isNavItemVisible(row!, ["*"], () => true), id).toBe(true);
+      expect(
+        isNavItemVisible(row!, undefined, () => true),
+        id,
+      ).toBe(false);
+      expect(
+        isNavItemVisible(row!, ["*"], () => true),
+        id,
+      ).toBe(true);
     }
   });
 
@@ -195,9 +205,8 @@ describe("DASHBOARD_NAV structure", () => {
   it("has no officer-only section: officer setup and tools sit behind one Settings row", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     const { isNavItemVisible } = await import("./protected-nav-item");
-    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOLS } = await import(
-      "@/components/settings/settings-access"
-    );
+    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOLS } =
+      await import("@/components/settings/settings-access");
 
     // The six-row Admin group is what pushed a President's nav past a 768px
     // window (#2946). A section whose every row is officer-gated is that group
