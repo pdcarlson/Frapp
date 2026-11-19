@@ -119,10 +119,71 @@ export const MEETING_ENTRY_COPY = {
   startFailed: "Couldn't start the minutes",
 } as const;
 
+/** The longest the event card's gist runs before it is cut. */
+const MINUTES_GIST_MAX = 140;
+
+/**
+ * What the event's Minutes card says about minutes the reader can open
+ * (`spec/behavior/meetings.md` § Meetings, tied to their events; Paul,
+ * 2026-11-19: "Build all of it"): where they stand, posted on which day or
+ * still a draft, with how many decisions and action items they hold, and the
+ * TL;DR's first line as the gist. Web and the phone draw the same two lines.
+ */
+export function eventMinutesLines(
+  minutes: {
+    status: "draft" | "posted";
+    posted_at: string | null;
+    decision_count: number;
+    action_item_count: number;
+  },
+  tldr?: string | null,
+): { status: string; gist: string | null } {
+  const stand =
+    minutes.status === "posted"
+      ? minutes.posted_at
+        ? `${MEETING_ENTRY_COPY.posted} ${meetingDayLabel(minutes.posted_at)}`
+        : MEETING_ENTRY_COPY.posted
+      : MEETING_ENTRY_COPY.draft;
+  const status = [
+    stand,
+    minutes.decision_count
+      ? MEETING_LIST_COPY.decisions(minutes.decision_count)
+      : null,
+    minutes.action_item_count
+      ? MEETING_LIST_COPY.actionItems(minutes.action_item_count)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return { status, gist: minutesGist(tldr) };
+}
+
+/** The TL;DR's first line, its bullet taken off and cut to a line or two. */
+export function minutesGist(tldr: string | null | undefined): string | null {
+  const first = (tldr ?? "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*\u2022]\s+)?/, "").trim())
+    .find(Boolean);
+  if (!first) return null;
+  if (first.length <= MINUTES_GIST_MAX) return first;
+  const cut = first.slice(0, MINUTES_GIST_MAX);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > MINUTES_GIST_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
+}
+
 /** The list of a chapter's minutes. */
 export const MEETING_LIST_COPY = {
   title: "Minutes",
-  drafts: "Drafts",
+  /**
+   * Meetings, tied to their events (Paul, 2026-11-19): meetings on the
+   * calendar that ended with no minutes, drafts, then what was posted, with
+   * the next meeting at the foot.
+   */
+  needsMinutes: "Needs minutes",
+  startMinutes: "Start minutes",
+  nextUp: "Next up",
+  openEvent: "Open event",
+  drafts: "In progress",
   posted: "Minutes",
   none: "Minutes show here once a secretary posts them.",
   loadFailedTitle: "Couldn't load the minutes",
@@ -130,7 +191,6 @@ export const MEETING_LIST_COPY = {
   /** A draft that isn't the reader's own names whose it is. */
   draftOf: (name: string) => `${name}'s draft`,
   /** The list's grouping and finding (#5290). */
-  yourDrafts: "Your drafts",
   search: "Search minutes",
   allTypes: "All",
   types: "Meeting types",

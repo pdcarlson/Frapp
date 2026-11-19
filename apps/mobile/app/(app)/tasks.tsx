@@ -35,19 +35,12 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { SuggestedTasksEntry } from "@/components/tasks/suggested-tasks-entry";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_ACTIVITY } from "@/components/back-row";
-import {
-  SectionHeader,
-  SectionHeaderSkeleton,
-} from "@/components/list-section";
-import {
-  ErrorState,
-  NoChapterState,
-  SkeletonRegion,
-} from "@/components/state-block";
+import { SectionHeader } from "@/components/list-section";
+import { ErrorState, NoChapterState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import {
+  TaskListSkeleton,
   TaskRow,
-  TaskRowSkeleton,
   TaskTile,
 } from "@/components/tasks/task-row";
 import { GridLine, toGridChunks } from "@/components/grid-line";
@@ -538,19 +531,7 @@ export default function TasksScreen() {
     // "no tasks". Treating it as empty flashes "Nothing on your plate" on every cold
     // start, a beat before the real rows land.
     if (tasksQuery.isPending || viewerUserId === null) {
-      // A section caption over task-shaped rows, so the real board lands in
-      // place. The caption is a bar: which section comes first (TODAY, THIS
-      // WEEK or LATER) depends on the tasks.
-      return (
-        <SkeletonRegion label="Loading chapter tasks" style={styles.skeleton}>
-          <SectionHeaderSkeleton width="30%" />
-          <View>
-            {Array.from({ length: 3 }, (_, index) => (
-              <TaskRowSkeleton key={index} index={index} />
-            ))}
-          </View>
-        </SkeletonRegion>
-      );
+      return <TaskListSkeleton />;
     }
 
     if (tasksQuery.isError && tasksQuery.data === undefined) {
@@ -685,10 +666,6 @@ function createStyles(tokens: SignetTokens) {
     // A Grid section's lines, as Documents' (`document-tiles.tsx`).
     grid: {
       gap: tokens.spacing.sm,
-    },
-    // `ScreenShell`'s gap, between the caption and its rows.
-    skeleton: {
-      gap: tokens.spacing.md,
     },
     refusal: {
       ...typeRole(tokens.typography.role.caption),
