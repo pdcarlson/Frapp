@@ -29,6 +29,23 @@ export const DEFAULT_CHECK_IN_OPENS_MINUTES = 10;
  */
 export const MAX_CHECK_IN_OPENS_MINUTES = 120;
 
+/**
+ * The "Check-in opens" field as minutes, or `null` when it isn't a whole
+ * number in `0 … MAX_CHECK_IN_OPENS_MINUTES` (the `CreateEventDto` bound).
+ * Blank is the default, as a blank points field is 0. Both apps' event forms
+ * read it (#5561).
+ */
+export function parseCheckInOpens(input: string): number | null {
+  const text = input.trim();
+  if (text.length === 0) return DEFAULT_CHECK_IN_OPENS_MINUTES;
+  if (!/^\d+$/.test(text)) return null;
+  const minutes = Number(text);
+  return minutes <= MAX_CHECK_IN_OPENS_MINUTES ? minutes : null;
+}
+
+/** The error under the field when {@link parseCheckInOpens} refuses it. */
+export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPENS_MINUTES} minutes before the start.`;
+
 const MS_PER_MINUTE = 60 * 1000;
 
 /**

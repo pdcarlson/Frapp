@@ -12,7 +12,7 @@ import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
-import { formatWeekdayDay } from "@repo/formatting";
+import { formatEventWindow, formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import type { EventCardTrack } from "@repo/chat-core/dispatch";
 import {
@@ -30,6 +30,9 @@ import {
   deleteOffersSeriesChoice,
   describeAttendance,
   EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_FORM_MEMBER_NOTE,
+  EVENT_FORM_PLACEHOLDERS,
+  EVENT_FORM_ROW_LABELS,
   EVENT_LOCATION_MAX_LENGTH,
   EVENT_NAME_MAX_LENGTH,
   EVENT_NOTES_MAX_LENGTH,
@@ -39,6 +42,7 @@ import {
   repeatEditAnchor,
   repeatEditDraft,
   repeatEditSeriesOf,
+  repeatSummary,
   saveRequestFor,
   saveScopeFor,
   SERIES_SCOPE_COPY,
@@ -53,7 +57,6 @@ import {
   SheetBackToClose,
   SheetGrabber,
   SheetHeader,
-  SheetPrimaryButton,
   SheetScrim,
   sheetFieldStyles,
   useSheetBackgroundStyle,
@@ -61,9 +64,11 @@ import {
   useGuardedSheetRef,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import { FilterChips } from "@/components/filter-chips";
-import { MoreOptionsRow } from "@/components/more-options-row";
-import { ForwardGlyph } from "@/components/control-glyphs";
+import {
+  EventTypeSheet,
+  PropertyRow,
+  RowDivider,
+} from "@/components/events/event-form-rows";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { RepeatOptions } from "@/components/events/repeat-options";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
@@ -71,7 +76,6 @@ import {
   applyEventType,
   emptyEventDraft,
   MINUTE_INTERVAL,
-  moreOptionsSummary,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -230,7 +234,7 @@ function keptEventEditOver(
       ["start", "end"],
     ]),
     typeFilledName: fields.typeFilledName,
-    showMore: fields.showMore,
+    openRow: fields.openRow,
   };
 }
 
@@ -363,14 +367,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const setsRequirements = grants.edit;
     const attendanceRef = useRef<BottomSheetModal>(null);
     const rolesQuery = useRoles();
-    // The chapter's event types (#3730), as chips above the name. Managing
+    // The chapter's event types (#3730), in the Type row's sheet. Managing
     // them is on web; here they only fill the form.
     const typesQuery = useEventTypes();
     const eventTypes = useMemo(() => typesQuery.data ?? [], [typesQuery.data]);
-    const typeChips = useMemo(
-      () => eventTypes.map((type) => ({ value: type.id, label: type.name })),
-      [eventTypes],
-    );
+    const typeRef = useRef<BottomSheetModal>(null);
     const roleName = useMemo(() => {
       const byId = new Map(
         toRoleOptions(rolesQuery.data, "hide").map((role) => [
@@ -507,13 +508,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       );
       if (!result.ok) {
         setErrors(result.errors);
-        if (
-          result.errors.points ||
-          result.errors.checkInOpens ||
-          result.errors.attendance ||
-          result.errors.repeat
-        ) {
-          setDraft((previous) => ({ ...previous, showMore: true }));
+        // Every row shows at rest, so each error sits under its own row;
+        // Repeat's is inside its options, so they open.
+        if (result.errors.repeat) {
+          setDraft((previous) => ({ ...previous, openRow: "repeat" }));
         }
         return;
       }
@@ -632,14 +630,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       );
       if (!result.ok) {
         setErrors(result.errors);
-        // An error inside the closed options would otherwise say nothing.
-        if (
-          result.errors.points ||
-          result.errors.checkInOpens ||
-          result.errors.attendance ||
-          result.errors.repeat
-        ) {
-          setDraft((previous) => ({ ...previous, showMore: true }));
+        // Every row shows at rest, so each error sits under its own row;
+        // Repeat's is inside its options, so they open.
+        if (result.errors.repeat) {
+          setDraft((previous) => ({ ...previous, openRow: "repeat" }));
         }
         return;
       }
@@ -718,6 +712,27 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const showRepeatLength = !(editing && draft.repeat.pristine);
     const repeatUnknown =
       !!editing?.event.parent_event_id && editing.parent === null;
+    const repeatValue = repeatUnknown
+      ? "Part of a series"
+      : repeatSummary(draft.repeat, repeatStart, repeatSeries);
+    // The line both apps' event cards read, so the form says the time the
+    // way the card it posts will (#5561).
+    const whenValue =
+      formatEventWindow(start.toISOString(), end.toISOString(), at) ?? "";
+    const heldType =
+      eventTypes.find((type) => type.id === draft.eventTypeId) ?? null;
+    // Whether anything differs from how the sheet opened: Cancel then reads
+    // Discard, the word web's form uses for the same drop.
+    const touched =
+      JSON.stringify({ ...draft, openRow: null }) !==
+      JSON.stringify({ ...base, openRow: null });
+    const toggleRow = (row: "when" | "repeat") => {
+      Keyboard.dismiss();
+      setDraft((previous) => ({
+        ...previous,
+        openRow: previous.openRow === row ? null : row,
+      }));
+    };
 
     return (
       <>
@@ -741,208 +756,120 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             <SheetHeader
               title={editing ? "Edit event" : "New event"}
               onCancel={cancel}
+              cancelLabel={touched ? "Discard" : "Cancel"}
               cancelDisabled={pending}
+              action={{
+                label: editing
+                  ? updateEvent.isPending
+                    ? "Saving"
+                    : "Save"
+                  : pending
+                    ? "Creating"
+                    : "Create",
+                accessibilityLabel: editing ? "Save changes" : "Create event",
+                accessibilityHint: refusal ?? undefined,
+                onPress: submit,
+                disabled: !canSubmit,
+                accent: brand.accent,
+                onAccent: tokens.color.gold.onHouse,
+              }}
             />
 
-            {typeChips.length > 0 ? (
-              // One row that scrolls to the sheet's edge, as s12's chips do.
-              <FilterChips
-                chips={typeChips}
-                selected={draft.eventTypeId}
-                onSelect={(value) => {
-                  const type = eventTypes.find((t) => t.id === value);
-                  if (!type) return;
-                  update(applyEventType(draft, type, setsRequirements), [
-                    "name",
-                    "points",
-                    "attendance",
-                  ]);
-                }}
-                accessibilityLabel="Event type"
-                scroll
-              />
-            ) : null}
-
-            <View
+            {/* The name first and largest, borderless, as Calendar's and
+                web's titles are (#5561). */}
+            <BottomSheetTextInput
+              value={draft.name}
+              onChangeText={(name) => update({ name }, ["name"])}
+              onFocus={() => setFocused("name")}
+              onBlur={() => setFocused(null)}
+              editable={!pending}
+              placeholder={EVENT_FORM_PLACEHOLDERS.name}
+              placeholderTextColor={tokens.color.text.muted}
+              accessibilityLabel="Event name"
+              maxLength={EVENT_NAME_MAX_LENGTH}
               style={[
-                styles.ring,
-                focused === "name" ? styles.ringActive : null,
+                styles.title,
+                focused === "name" ? styles.titleFocused : null,
+                errors.name ? styles.fieldError : null,
               ]}
-            >
-              <BottomSheetTextInput
-                value={draft.name}
-                onChangeText={(name) => update({ name }, ["name"])}
-                onFocus={() => setFocused("name")}
-                onBlur={() => setFocused(null)}
-                editable={!pending}
-                placeholder="Event name"
-                placeholderTextColor={tokens.color.text.muted}
-                accessibilityLabel="Event name"
-                maxLength={EVENT_NAME_MAX_LENGTH}
-                style={[
-                  styles.field,
-                  focused === "name" ? styles.fieldFocused : null,
-                  errors.name ? styles.fieldError : null,
-                ]}
-              />
-            </View>
+            />
             {errors.name ? (
               <Text style={styles.error}>{errors.name}</Text>
             ) : null}
 
+            {/* One row per setting, in web's order (`EVENT_FORM_ROWS`), each
+                saying what it is set to (#5561, Paul 2026-11-19: "make sure
+                we keep the MOBILE AND WEB UIs in sync"). */}
             <View style={styles.group}>
-              <WhenRow
-                label="Starts"
-                value={start}
-                now={at}
-                minimumDate={startFloor}
-                disabled={pending}
-                onChange={setStart}
-              />
-              <View style={styles.groupDivider} />
-              <WhenRow
-                label="Ends"
-                value={end}
-                now={at}
-                minimumDate={start}
-                disabled={pending}
-                onChange={setEnd}
-              />
-            </View>
-            {errors.start ? (
-              <Text style={styles.error}>{errors.start}</Text>
-            ) : null}
-            {errors.end ? <Text style={styles.error}>{errors.end}</Text> : null}
-
-            <View
-              style={[
-                styles.ring,
-                focused === "location" ? styles.ringActive : null,
-              ]}
-            >
-              <BottomSheetTextInput
-                value={draft.location}
-                onChangeText={(location) => update({ location }, [])}
-                onFocus={() => setFocused("location")}
-                onBlur={() => setFocused(null)}
-                editable={!pending}
-                placeholder="Location (optional)"
-                maxLength={EVENT_LOCATION_MAX_LENGTH}
-                placeholderTextColor={tokens.color.text.muted}
-                accessibilityLabel="Location"
-                style={[
-                  styles.field,
-                  focused === "location" ? styles.fieldFocused : null,
-                ]}
-              />
-            </View>
-
-            <MoreOptionsRow
-              open={draft.showMore}
-              summary={moreOptionsSummary(
-                draft,
-                roleName,
-                repeatStart,
-                setsRequirements,
-                repeatSeries,
-              )}
-              onToggle={() => {
-                Keyboard.dismiss();
-                update({ showMore: !draft.showMore }, []);
-              }}
-            />
-
-            {draft.showMore ? (
-              <View style={styles.more}>
-                <View style={styles.group}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Who's coming: ${describeAttendance(draft.attendance, roleName)}`}
-                    accessibilityHint="Sets who must attend, by role."
-                    accessibilityState={{ disabled: pending }}
+              {eventTypes.length > 0 ? (
+                <>
+                  <PropertyRow
+                    glyph="type"
+                    label={EVENT_FORM_ROW_LABELS.type}
+                    value={heldType?.name ?? EVENT_FORM_PLACEHOLDERS.type}
+                    empty={!heldType}
                     disabled={pending}
+                    accessibilityHint="Picks a type, which fills in its points and who must come."
                     onPress={() => {
                       Keyboard.dismiss();
-                      attendanceRef.current?.present();
+                      typeRef.current?.present();
                     }}
-                    style={styles.optionRow}
-                  >
-                    <Text style={styles.optionLabel}>Who&apos;s coming</Text>
-                    <Text style={styles.optionValue} numberOfLines={1}>
-                      {describeAttendance(draft.attendance, roleName)}
-                    </Text>
-                    <ForwardGlyph color={tokens.color.text.mutedForeground} />
-                  </Pressable>
-                  {setsRequirements ? (
-                    <>
-                      <View style={styles.groupDivider} />
-                      <View style={styles.optionRow}>
-                        <Text style={styles.optionLabel}>
-                          Points for attending
-                        </Text>
-                        <BottomSheetTextInput
-                          value={draft.pointsInput}
-                          onChangeText={(pointsInput) =>
-                            update({ pointsInput }, ["points"])
-                          }
-                          onFocus={() => setFocused("points")}
-                          onBlur={() => setFocused(null)}
-                          editable={!pending}
-                          placeholder="0"
-                          placeholderTextColor={tokens.color.text.muted}
-                          accessibilityLabel="Points for attending"
-                          keyboardType="number-pad"
-                          selectTextOnFocus
-                          style={[
-                            styles.pointsInput,
-                            focused === "points" ? styles.fieldFocused : null,
-                            errors.points ? styles.fieldError : null,
-                          ]}
-                        />
-                      </View>
-                    </>
-                  ) : null}
-                  <View style={styles.groupDivider} />
-                  {/* #3703: members arrive early, so check-in opens ahead
-                      of the start; 10 minutes unless the officer says. */}
-                  <View style={styles.optionRow}>
-                    <Text style={styles.optionLabel}>
-                      Check-in opens (min early)
-                    </Text>
-                    <BottomSheetTextInput
-                      value={draft.checkInOpensInput}
-                      onChangeText={(checkInOpensInput) =>
-                        update({ checkInOpensInput }, ["checkInOpens"])
-                      }
-                      onFocus={() => setFocused("checkInOpens")}
-                      onBlur={() => setFocused(null)}
-                      editable={!pending}
-                      placeholder="10"
-                      placeholderTextColor={tokens.color.text.muted}
-                      accessibilityLabel="Minutes before the start that check-in opens"
-                      keyboardType="number-pad"
-                      selectTextOnFocus
-                      style={[
-                        styles.pointsInput,
-                        focused === "checkInOpens" ? styles.fieldFocused : null,
-                        errors.checkInOpens ? styles.fieldError : null,
-                      ]}
-                    />
-                  </View>
-                </View>
-                {errors.attendance ? (
-                  <Text style={styles.error}>{errors.attendance}</Text>
-                ) : null}
-                {errors.points ? (
-                  <Text style={styles.error}>{errors.points}</Text>
-                ) : null}
-                {errors.checkInOpens ? (
-                  <Text style={styles.error}>{errors.checkInOpens}</Text>
-                ) : null}
+                  />
+                  <RowDivider />
+                </>
+              ) : null}
 
-                {/* A generated occurrence whose series couldn't be read
-                    doesn't know its rule, so it doesn't offer to change it. */}
-                {repeatUnknown ? null : (
+              <PropertyRow
+                glyph="when"
+                label={EVENT_FORM_ROW_LABELS.when}
+                value={whenValue}
+                invalid={!!errors.start || !!errors.end}
+                disabled={pending}
+                accessibilityHint="Shows the start and end pickers."
+                onPress={() => toggleRow("when")}
+              />
+              {draft.openRow === "when" ? (
+                <View style={styles.opened}>
+                  <WhenRow
+                    label="Starts"
+                    value={start}
+                    now={at}
+                    minimumDate={startFloor}
+                    disabled={pending}
+                    onChange={setStart}
+                  />
+                  <WhenRow
+                    label="Ends"
+                    value={end}
+                    now={at}
+                    minimumDate={start}
+                    disabled={pending}
+                    onChange={setEnd}
+                  />
+                </View>
+              ) : null}
+              {errors.start ? (
+                <Text style={styles.error}>{errors.start}</Text>
+              ) : null}
+              {errors.end ? (
+                <Text style={styles.error}>{errors.end}</Text>
+              ) : null}
+              <RowDivider />
+
+              <PropertyRow
+                glyph="repeat"
+                label={EVENT_FORM_ROW_LABELS.repeat}
+                value={repeatValue}
+                empty={!repeatUnknown && draft.repeat.preset === "NONE"}
+                invalid={!!errors.repeat}
+                disabled={pending || repeatUnknown}
+                accessibilityHint="Shows how the event repeats."
+                onPress={() => toggleRow("repeat")}
+              />
+              {/* A generated occurrence whose series couldn't be read
+                  doesn't know its rule, so it doesn't offer to change it. */}
+              {draft.openRow === "repeat" && !repeatUnknown ? (
+                <View style={styles.opened}>
                   <RepeatOptions
                     draft={
                       repeatSeries
@@ -956,63 +883,145 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     showCaption={showRepeatLength}
                     series={repeatSeries}
                   />
-                )}
+                </View>
+              ) : null}
+              <RowDivider />
 
-                <View
-                  style={[
-                    styles.ring,
-                    focused === "description" ? styles.ringActive : null,
-                  ]}
-                >
+              <PropertyRow glyph="location" label={EVENT_FORM_ROW_LABELS.location}>
+                <BottomSheetTextInput
+                  value={draft.location}
+                  onChangeText={(location) => update({ location }, [])}
+                  onFocus={() => setFocused("location")}
+                  onBlur={() => setFocused(null)}
+                  editable={!pending}
+                  placeholder={EVENT_FORM_PLACEHOLDERS.location}
+                  maxLength={EVENT_LOCATION_MAX_LENGTH}
+                  placeholderTextColor={tokens.color.text.muted}
+                  accessibilityLabel="Location"
+                  style={styles.rowInput}
+                />
+              </PropertyRow>
+              <RowDivider />
+
+              <PropertyRow
+                glyph="attendance"
+                label={EVENT_FORM_ROW_LABELS.attendance}
+                value={describeAttendance(draft.attendance, roleName)}
+                invalid={!!errors.attendance}
+                disabled={pending}
+                accessibilityHint="Sets who must attend, by role."
+                onPress={() => {
+                  Keyboard.dismiss();
+                  attendanceRef.current?.present();
+                }}
+              />
+              {errors.attendance ? (
+                <Text style={styles.error}>{errors.attendance}</Text>
+              ) : null}
+
+              {setsRequirements ? (
+                <>
+                  <RowDivider />
+                  <PropertyRow glyph="points" label={EVENT_FORM_ROW_LABELS.points}>
+                    <BottomSheetTextInput
+                      value={draft.pointsInput}
+                      onChangeText={(pointsInput) =>
+                        update({ pointsInput }, ["points"])
+                      }
+                      onFocus={() => setFocused("points")}
+                      onBlur={() => setFocused(null)}
+                      editable={!pending}
+                      placeholder="0"
+                      placeholderTextColor={tokens.color.text.muted}
+                      accessibilityLabel="Points for attending"
+                      keyboardType="number-pad"
+                      selectTextOnFocus
+                      style={[
+                        styles.rowInput,
+                        errors.points ? styles.rowInputError : null,
+                      ]}
+                    />
+                  </PropertyRow>
+                  {errors.points ? (
+                    <Text style={styles.error}>{errors.points}</Text>
+                  ) : null}
+                </>
+              ) : null}
+              <RowDivider />
+
+              <PropertyRow
+                glyph="description"
+                label={EVENT_FORM_ROW_LABELS.description}
+              >
+                <BottomSheetTextInput
+                  value={draft.description}
+                  onChangeText={(description) => update({ description }, [])}
+                  onFocus={() => setFocused("description")}
+                  onBlur={() => setFocused(null)}
+                  editable={!pending}
+                  placeholder={EVENT_FORM_PLACEHOLDERS.description}
+                  maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
+                  placeholderTextColor={tokens.color.text.muted}
+                  accessibilityLabel="Description"
+                  multiline
+                  style={[styles.rowInput, styles.rowInputMultiline]}
+                />
+              </PropertyRow>
+              <RowDivider />
+
+              {/* Notes (#4934): every member the event invites reads them on
+                  Event details, named as that screen names them. */}
+              <PropertyRow glyph="notes" label={notesLabel}>
+                <BottomSheetTextInput
+                  value={draft.notes ?? ""}
+                  onChangeText={(notes) => update({ notes }, [])}
+                  onFocus={() => setFocused("notes")}
+                  onBlur={() => setFocused(null)}
+                  editable={!pending}
+                  placeholder={EVENT_FORM_PLACEHOLDERS.notes}
+                  maxLength={EVENT_NOTES_MAX_LENGTH}
+                  placeholderTextColor={tokens.color.text.muted}
+                  accessibilityLabel={notesLabel}
+                  multiline
+                  style={[styles.rowInput, styles.rowInputMultiline]}
+                />
+              </PropertyRow>
+              <RowDivider />
+
+              {/* #3703: members arrive early, so check-in opens ahead of the
+                  start; 10 minutes unless the officer says. The check-in zone
+                  is drawn on web, where a map belongs. */}
+              <PropertyRow glyph="checkIn" label={EVENT_FORM_ROW_LABELS.checkIn}>
+                <View style={styles.checkInValue}>
                   <BottomSheetTextInput
-                    value={draft.description}
-                    onChangeText={(description) => update({ description }, [])}
-                    onFocus={() => setFocused("description")}
+                    value={draft.checkInOpensInput}
+                    onChangeText={(checkInOpensInput) =>
+                      update({ checkInOpensInput }, ["checkInOpens"])
+                    }
+                    onFocus={() => setFocused("checkInOpens")}
                     onBlur={() => setFocused(null)}
                     editable={!pending}
-                    placeholder="Description (optional)"
-                    maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
+                    placeholder="10"
                     placeholderTextColor={tokens.color.text.muted}
-                    accessibilityLabel="Description"
-                    multiline
+                    accessibilityLabel="Minutes before the start that check-in opens"
+                    keyboardType="number-pad"
+                    selectTextOnFocus
                     style={[
-                      styles.field,
-                      styles.fieldMultiline,
-                      focused === "description" ? styles.fieldFocused : null,
+                      styles.minutesInput,
+                      errors.checkInOpens ? styles.rowInputError : null,
                     ]}
                   />
+                  <Text style={styles.rowSuffix}>min early</Text>
                 </View>
+              </PropertyRow>
+              {errors.checkInOpens ? (
+                <Text style={styles.error}>{errors.checkInOpens}</Text>
+              ) : null}
+            </View>
 
-                {/* Notes (#4934): every member the event invites reads them
-                    on Event details, named as that screen names them, and
-                    labeled so they read apart from a filled description. */}
-                <Text style={styles.notesLabel}>{notesLabel}</Text>
-                <View
-                  style={[
-                    styles.ring,
-                    focused === "notes" ? styles.ringActive : null,
-                  ]}
-                >
-                  <BottomSheetTextInput
-                    value={draft.notes ?? ""}
-                    onChangeText={(notes) => update({ notes }, [])}
-                    onFocus={() => setFocused("notes")}
-                    onBlur={() => setFocused(null)}
-                    editable={!pending}
-                    placeholder={`${notesLabel} (optional)`}
-                    maxLength={EVENT_NOTES_MAX_LENGTH}
-                    placeholderTextColor={tokens.color.text.muted}
-                    accessibilityLabel={notesLabel}
-                    multiline
-                    style={[
-                      styles.field,
-                      styles.fieldMultiline,
-                      focused === "notes" ? styles.fieldFocused : null,
-                    ]}
-                  />
-                </View>
-              </View>
-            ) : null}
+            {setsRequirements ? null : (
+              <Text style={styles.note}>{EVENT_FORM_MEMBER_NOTE}</Text>
+            )}
 
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
             {rejected ? <Text style={styles.error}>{rejected}</Text> : null}
@@ -1029,22 +1038,6 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               </Text>
             ) : null}
 
-            <SheetPrimaryButton
-              label={
-                editing
-                  ? updateEvent.isPending
-                    ? "Saving…"
-                    : "Save changes"
-                  : pending
-                    ? "Creating…"
-                    : "Create event"
-              }
-              onPress={submit}
-              disabled={!canSubmit}
-              accessibilityHint={refusal ?? undefined}
-              accent={brand.accent}
-              onAccent={tokens.color.gold.onHouse}
-            />
 
             {editing && grants.delete ? (
               // Quiet, and last: a couple of taps away and never next to Save.
@@ -1063,6 +1056,27 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             ) : null}
           </BottomSheetScrollView>
         </BottomSheetModal>
+
+        <EventTypeSheet
+          ref={typeRef}
+          types={eventTypes}
+          value={draft.eventTypeId}
+          showSets={setsRequirements}
+          onPick={(type) => {
+            if (!type) {
+              update({ eventTypeId: null }, []);
+              return;
+            }
+            // Picking the held one again keeps it: the list's No type is
+            // how it is let go.
+            if (type.id === draft.eventTypeId) return;
+            update(applyEventType(draft, type, setsRequirements), [
+              "name",
+              "points",
+              "attendance",
+            ]);
+          }}
+        />
 
         <AttendanceSheet
           ref={attendanceRef}
@@ -1203,30 +1217,24 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingBottom: tokens.spacing.xl,
       gap: tokens.spacing.sm,
     },
-    ring: fieldStyles.ring,
-    ringActive: fieldStyles.ringActive,
-    field: {
-      ...fieldStyles.field,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
+    // The name: the sheet's largest text, borderless until it holds the
+    // caret, as web's form draws it.
+    title: {
+      ...fieldTypeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+      minHeight: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.sm,
+      marginHorizontal: -tokens.spacing.sm,
+      paddingVertical: 0,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: "transparent",
     },
-    fieldMultiline: {
-      ...fieldStyles.fieldMultilineText,
-      minHeight: 88,
-    },
-    fieldFocused: fieldStyles.fieldFocused,
+    titleFocused: fieldStyles.fieldFocused,
     fieldError: {
       borderColor: tokens.color.semantic.destructive,
     },
-    // Repeat's heading, so filled-in notes read apart from the description.
-    notesLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-      marginTop: tokens.spacing.xs,
-    },
-    // Starts and Ends as one grouped field, the way Calendar sets them; the
-    // options under "More options" are rows of the same kind of group.
+    // The rows as one grouped list, the way Calendar and Settings set them.
     group: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
@@ -1234,9 +1242,49 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
     },
-    groupDivider: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: tokens.color.border.hairline,
+    // A row's pickers or options, opened in place under it.
+    opened: {
+      paddingBottom: tokens.spacing.sm,
+      gap: tokens.spacing.xs,
+    },
+    // A value typed in place: the row's own text, no box. Single-line, so no
+    // line height: iOS sits a field's text low inside a taller line box
+    // (`fieldTypeRole`).
+    rowInput: {
+      flex: 1,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
+      ...fieldTypeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    rowInputMultiline: {
+      paddingVertical: tokens.spacing.sm,
+    },
+    rowInputError: {
+      color: tokens.color.semantic.destructive,
+    },
+    checkInValue: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    minutesInput: {
+      minWidth: 36,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: 0,
+      paddingHorizontal: 0,
+      ...fieldTypeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    rowSuffix: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    note: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     whenRow: {
       flexDirection: "row",
@@ -1260,39 +1308,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       backgroundColor: tokens.color.surface.popover,
     },
     pillText: rowText,
-    more: {
-      gap: tokens.spacing.sm,
-    },
-    optionRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum + tokens.spacing.xs,
-    },
-    optionLabel: rowText,
-    optionValue: {
-      flex: 1,
-      textAlign: "right",
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    // The value sits right, the way Settings sets a number in a row, in a
-    // chip that shows it is editable. Single-line, so no line height: iOS
-    // sits a field's text low inside a taller line box (`fieldTypeRole`).
-    pointsInput: {
-      marginLeft: "auto",
-      minWidth: 64,
-      minHeight: 34,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: 0,
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: "transparent",
-      backgroundColor: tokens.color.surface.popover,
-      textAlign: "center",
-      ...fieldTypeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

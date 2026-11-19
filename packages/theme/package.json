@@ -11,7 +11,8 @@
     "./nav-glyphs": "./src/nav-glyphs.ts",
     "./signature": "./src/signature.ts",
     "./chat-backgrounds": "./src/chat-backgrounds.ts",
-    "./crest": "./src/crest.ts"
+    "./crest": "./src/crest.ts",
+    "./event-form-glyphs": "./src/event-form-glyphs.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

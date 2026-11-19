@@ -5,19 +5,23 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  ChevronDown,
-  Loader2,
   Plus,
-  Save,
   Trash2,
 } from "lucide-react";
-import {
-  RolesGlyph,
-  StudyZonesGlyph,
-} from "@/components/events/chapter-ops-glyphs";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
-import { EventTypePicker } from "@/components/events/event-type-picker";
-import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
+import { EventTypeRow } from "@/components/events/event-type-picker";
+import {
+  PropertyRow,
+  RowInput,
+  RowTextarea,
+  RowValueButton,
+} from "@/components/events/event-form-rows";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { FOCUS_RING } from "@/components/ui/focus";
 import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
@@ -34,6 +38,14 @@ import {
   attendanceInvitesNobody,
   attendanceToWire,
   can,
+  CHECK_IN_OPENS_ERROR,
+  checkInOpensMinutes,
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  describeCheckIn,
+  EVENT_FORM_MEMBER_NOTE,
+  EVENT_FORM_PLACEHOLDERS,
+  EVENT_FORM_ROW_LABELS,
+  parseCheckInOpens,
   othersInvitedForCreate,
   withEveryone,
   describeAttendance,
@@ -76,19 +88,16 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { editTargetOf } from "@/components/events/edit-target";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { pointsLabel } from "@/components/events/event-labels";
 import { RepeatOptions } from "@/components/shared/repeat-options";
 import {
   Panel,
   PanelBody,
   PanelContent,
-  PanelFooter,
   PanelHeader,
 } from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -100,7 +109,7 @@ import {
   guardIntDraft,
   parseGuardedInt,
 } from "@/lib/utils";
-import { parseInstant } from "@repo/formatting";
+import { formatEventWindow, parseInstant } from "@repo/formatting";
 import { isoToLocalInput } from "@/components/events/local-input";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
@@ -179,6 +188,9 @@ function ScheduleEnd({
  */
 type ZoneVertexDraft = { id: string; lat: string; lng: string };
 
+/** The rows that open a menu (#5561); one is open at a time. */
+type EventFormMenu = "when" | "repeat" | "attendance" | "checkIn";
+
 /**
  * What the form keeps when the officer leaves it unsaved (#4593): every field
  * as typed, and whether More options and the zone were open, so it comes back
@@ -197,11 +209,11 @@ type EventFields = {
   eventTypeId: string | null;
   checkInZone: ZoneVertexDraft[];
   checkInZoneName: string;
+  /** Minutes before the start that check-in opens, as typed (#5561). */
+  checkInOpens: string;
 };
 type EventFormDraft = EventFields & {
   typeFilledName: string | null;
-  showMore: boolean;
-  showZone: boolean;
   /**
    * An edit's record as the form opened on it. A kept edit is only the fields
    * the officer changed from this: the rest come from the record as it is
@@ -224,6 +236,7 @@ const EVENT_FIELD_KEYS = [
   "eventTypeId",
   "checkInZone",
   "checkInZoneName",
+  "checkInOpens",
 ] as const satisfies readonly (keyof EventFields)[];
 
 /** A kept edit over the record as it is now: only what the officer changed. */
@@ -244,8 +257,6 @@ function keepEditsOver(
     ...now,
     ...merged,
     typeFilledName: kept.typeFilledName,
-    showMore: kept.showMore,
-    showZone: kept.showZone,
     base: now.base,
   };
 }
@@ -298,15 +309,9 @@ function openingDraft({
         typeof event.event_type_id === "string" ? event.event_type_id : null,
       checkInZone: zone,
       checkInZoneName: text(event.check_in_zone_name),
+      checkInOpens: String(checkInOpensMinutes(event.check_in_opens_minutes)),
     };
-    return {
-      ...fields,
-      typeFilledName: null,
-      // Open on edit, where the officer came to change something.
-      showMore: true,
-      showZone: zone.length > 0,
-      base: fields,
-    };
+    return { ...fields, typeFilledName: null, base: fields };
   }
   if (template) {
     const zone = zoneToDrafts(template.check_in_zone);
@@ -326,10 +331,10 @@ function openingDraft({
           : null,
       checkInZone: zone,
       checkInZoneName: text(template.check_in_zone_name),
+      checkInOpens: String(
+        checkInOpensMinutes(template.check_in_opens_minutes),
+      ),
       typeFilledName: null,
-      // Open, so nothing copied from last year is saved unseen.
-      showMore: true,
-      showZone: zone.length > 0,
       base: null,
     };
   }
@@ -346,11 +351,8 @@ function openingDraft({
     eventTypeId: null,
     checkInZone: [],
     checkInZoneName: "",
+    checkInOpens: String(DEFAULT_CHECK_IN_OPENS_MINUTES),
     typeFilledName: null,
-    // Closed on create, so the form opens on the four fields every event
-    // needs.
-    showMore: false,
-    showZone: false,
     base: null,
   };
 }
@@ -628,10 +630,14 @@ export function EventEditorDialog({
   // The name the last picked type wrote into the name field, so picking a
   // different type replaces it but never a name the officer typed.
   const [typeFilledName, setTypeFilledName] = useState<string | null>(null);
-  // Closed on create, so the form opens on the four fields every event needs;
-  // open on edit, where the officer came to change something.
-  const [showMore, setShowMore] = useState(false);
-  const [showZone, setShowZone] = useState(false);
+  // The row whose menu is open (#5561): one at a time, and a check on
+  // Create that stops on a row opens that row's menu.
+  const [menu, setMenu] = useState<EventFormMenu | null>(null);
+  // The fields as the form opened, so Discard shows once something changes.
+  const [openedFields, setOpenedFields] = useState<EventFields | null>(null);
+  const [checkInOpens, setCheckInOpens] = useState(
+    String(DEFAULT_CHECK_IN_OPENS_MINUTES),
+  );
   const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
   const [checkInZoneName, setCheckInZoneName] = useState("");
   // Kept when left unsaved (#4593). The open sections are kept with it but
@@ -649,13 +655,14 @@ export function EventEditorDialog({
     eventTypeId,
     checkInZone,
     checkInZoneName,
+    checkInOpens,
   };
   // An edit's record as the form opened on it (`EventFormDraft.base`).
   const [openedBase, setOpenedBase] = useState<EventFields | null>(null);
   const kept = useKeptFormDraft<EventFormDraft>(
     keptDraft ?? null,
     open,
-    { ...fields, typeFilledName, showMore, showZone, base: openedBase },
+    { ...fields, typeFilledName, base: openedBase },
     { signature: JSON.stringify(fields) },
   );
   // Set where the form fills on open, for the effect after it in the same
@@ -780,8 +787,10 @@ export function EventEditorDialog({
     setTypeFilledName(fill.typeFilledName);
     setCheckInZone(fill.checkInZone);
     setCheckInZoneName(fill.checkInZoneName);
-    setShowMore(fill.showMore);
-    setShowZone(fill.showZone);
+    setCheckInOpens(fill.checkInOpens);
+    setMenu(null);
+    // What the form opened on, so Discard shows only once something is typed.
+    setOpenedFields(fill);
     setOpenedBase(opened.base);
   }, [
     template,
@@ -809,6 +818,12 @@ export function EventEditorDialog({
     const rule = repeatDraftFromRule(parentRule);
     // The record's Repeat, as the kept edit's base.
     setOpenedBase((base) => (base ? { ...base, repeat: rule } : base));
+    // The form filling itself is not a change to discard.
+    if (!keptRepeatEdited.current) {
+      setOpenedFields((opened) =>
+        opened ? { ...opened, repeat: rule } : opened,
+      );
+    }
     // A kept draft that changed Repeat keeps the officer's own.
     if (!keptRepeatEdited.current) setRepeat(rule);
     // The form filling itself, not an edit to keep.
@@ -944,9 +959,20 @@ export function EventEditorDialog({
       return;
     }
 
+    const opensMinutes = parseCheckInOpens(checkInOpens);
+    if (opensMinutes === null) {
+      setMenu("checkIn");
+      toast({
+        title: "Check when check-in opens",
+        description: CHECK_IN_OPENS_ERROR,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const wire = attendanceToWire(attendance);
     if (!canSetRequirements && eventRequiresAnyone(wire)) {
-      setShowMore(true);
+      setMenu("attendance");
       toast({
         title: "Only officers who manage events can make one required",
         description: "Set it to optional, or ask one of them to make it.",
@@ -955,7 +981,7 @@ export function EventEditorDialog({
       return;
     }
     if (attendanceInvitesNobody(wire)) {
-      setShowMore(true);
+      setMenu("attendance");
       toast({
         title: "Nobody is invited",
         description: "Add a role, or invite everyone.",
@@ -974,7 +1000,7 @@ export function EventEditorDialog({
         ? repeatRuleForEdit(repeat, editRepeatSeries)
         : repeatRuleOf(repeat, new Date(startIso));
     if (!repeatResult.ok) {
-      setShowMore(true);
+      setMenu("repeat");
       toast({
         title: "Check the repeat",
         description: repeatResult.error,
@@ -992,6 +1018,7 @@ export function EventEditorDialog({
       point_value: canSetRequirements ? pointValueNumber : 0,
       is_mandatory: wire.is_mandatory,
       notes: notes.trim() || undefined,
+      check_in_opens_minutes: opensMinutes,
     };
     // Out of the store while the save runs: an officer who leaves and comes
     // back before it lands mustn't be offered the same form to send twice.
@@ -1085,6 +1112,11 @@ export function EventEditorDialog({
             notes: textOf(event.notes),
             point_value:
               typeof event.point_value === "number" ? event.point_value : null,
+            // As the form read it, so an event that never set one doesn't
+            // send the default back as a change.
+            check_in_opens_minutes: checkInOpensMinutes(
+              event.check_in_opens_minutes,
+            ),
             attendance: attendanceFieldsOf(event),
             event_type_id: textOf(event.event_type_id),
             check_in_zone: event.check_in_zone,
@@ -1099,6 +1131,7 @@ export function EventEditorDialog({
             description: description,
             notes: notes,
             point_value: payload.point_value,
+            check_in_opens_minutes: opensMinutes,
             attendance: wire,
             event_type_id: eventTypeId,
             // Locked while a generated meeting's parent is unread, and then
@@ -1208,22 +1241,47 @@ export function EventEditorDialog({
   const repeatAnchorStart = repeatSeries
     ? repeatEditAnchor(repeatSeries)
     : repeatStart;
-  const moreSummary = [
-    ...(canSetRequirements
-      ? [
-          pointsLabel(Number(pointValue.trim() === "" ? 0 : pointValue)) ??
-            "No points",
-        ]
-      : []),
-    describeAttendance(attendance, roleName),
-    repeatLocked
-      ? "Part of a series"
-      : repeatStart
-        ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart, repeatSeries)
-        : repeat.preset === "NONE"
-          ? REPEAT_PRESET_LABELS.NONE
-          : "Repeats",
-  ].join(" · ");
+  const repeatValue = repeatLocked
+    ? parentLoading
+      ? "Loading the series…"
+      : "Part of a series"
+    : repeatStart
+      ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart, repeatSeries)
+      : repeat.preset === "NONE"
+        ? REPEAT_PRESET_LABELS.NONE
+        : "Repeats";
+  const startIso = localInputToIso(startAt);
+  const endIso = localInputToIso(endAt);
+  // The line both apps' event cards read (`formatEventWindow`), so the form
+  // says the time the way the card it posts will.
+  const whenValue =
+    startIso && endIso
+      ? formatEventWindow(startIso, endIso)
+      : startIso
+        ? formatEventWindow(startIso, null)
+        : null;
+  const endsBeforeStart =
+    !!startIso &&
+    !!endIso &&
+    new Date(endIso).getTime() <= new Date(startIso).getTime();
+  const lengthMinutes =
+    startIso && endIso && !endsBeforeStart
+      ? Math.round(
+          (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000,
+        )
+      : null;
+  const fieldSignature = (value: EventFields | null) =>
+    value ? JSON.stringify(EVENT_FIELD_KEYS.map((key) => value[key])) : "";
+  const touched = fieldSignature(fields) !== fieldSignature(openedFields);
+  const menuProps = (row: EventFormMenu) => ({
+    open: menu === row,
+    onOpenChange: (next: boolean) => setMenu(next ? row : null),
+  });
+  const notesLabel = meetingsOn ? "Notes" : "Meeting minutes";
+  const checkInValue = describeCheckIn(
+    parseCheckInOpens(checkInOpens),
+    checkInZone.some((row) => row.lat.trim() !== "" || row.lng.trim() !== ""),
+  );
 
   return (
     <Panel
@@ -1234,9 +1292,9 @@ export function EventEditorDialog({
     >
       {/*
         A panel, not a dialog (`components.md` § Surface size): this form runs
-        to a role list and a polygon of any length, so it scrolled inside a
-        672px dialog capped at 90vh. It opens at the event panel's own width,
-        so Edit event reads as that panel turning into its editor.
+        to a role list and a polygon of any length. It opens at the event
+        panel's own width, so Edit event reads as that panel turning into its
+        editor.
 
         No description: the one this had restated the form's own fields.
         `aria-describedby={undefined}` tells Radix the omission is deliberate.
@@ -1244,12 +1302,61 @@ export function EventEditorDialog({
       <PanelContent
         onCloseAutoFocus={onCloseAutoFocus}
         aria-describedby={undefined}
+        onKeyDown={(keyEvent) => {
+          // Ctrl/Cmd+Enter creates from anywhere in the form, as Linear's
+          // create does.
+          if (
+            keyEvent.key === "Enter" &&
+            (keyEvent.metaKey || keyEvent.ctrlKey) &&
+            gate.allowed &&
+            !usingPreviewData &&
+            !isSubmitting &&
+            !parentLoading
+          ) {
+            keyEvent.preventDefault();
+            void handleSubmit();
+          }
+        }}
       >
-        <PanelHeader>
-          {mode === "create" ? "Create event" : "Edit event"}
+        {/* Create sits in the header, opposite the way back, as Apple
+            Calendar's new event sheet puts Add (#5561): the action stays by
+            the fields however short the form is. Going back keeps what was
+            typed (#4593); Discard is the one way to drop it, shown once
+            something is typed, and Kept-draft's own line offers it when the
+            form opened on one. */}
+        <PanelHeader
+          actions={
+            <div className="flex items-center gap-1">
+              {touched && !kept.restored ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    kept.drop();
+                    onOpenChange(false);
+                  }}
+                >
+                  Discard
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                aria-label={mode === "create" ? "Create event" : "Save changes"}
+                onClick={handleSubmit}
+                {...gate.controlProps(
+                  usingPreviewData || isSubmitting || parentLoading,
+                )}
+                className="min-w-[5.5rem]"
+              >
+                {submitLabel}
+              </Button>
+            </div>
+          }
+        >
+          {mode === "create" ? "New event" : "Edit event"}
         </PanelHeader>
 
-        <PanelBody>
+        <PanelBody className="gap-3">
           {usingPreviewData ? (
             <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1268,76 +1375,150 @@ export function EventEditorDialog({
         */}
           <SubscriptionNotice gate={gate} feature="managing events" />
 
-          <div className="grid gap-3">
-            <EventTypePicker
+          {/* The name first and largest, borderless until it holds the
+              caret, as Linear's and Notion's titles are. */}
+          <input
+            id="event-name"
+            aria-label="Event name"
+            maxLength={EVENT_NAME_MAX_LENGTH}
+            value={name}
+            onChange={(eventValue) => setName(eventValue.target.value)}
+            placeholder={EVENT_FORM_PLACEHOLDERS.name}
+            autoFocus={mode === "create"}
+            className={cn(
+              "-mx-2 h-11 rounded-md bg-transparent px-2 text-xl font-semibold text-foreground caret-primary placeholder:text-muted-foreground",
+              "hover:bg-card-hover focus:bg-surface-1",
+              FOCUS_RING,
+            )}
+          />
+
+          {/*
+            One row per setting, each a click from changing (#5561, Paul
+            2026-11-19): points, who must come and repeat show what they are
+            at rest instead of waiting behind More options. The phone's sheet
+            draws the same rows in the same order (`EVENT_FORM_ROWS`).
+          */}
+          <div className="grid gap-0.5">
+            <EventTypeRow
               value={eventTypeId}
               onPick={handlePickType}
               canManage={canManageTypes && !usingPreviewData}
+              showSets={canSetRequirements}
               disabled={usingPreviewData}
             />
 
-            <div className="grid gap-1">
-              <Label htmlFor="event-name">Event name</Label>
-              <Input
-                id="event-name"
-                maxLength={EVENT_NAME_MAX_LENGTH}
-                value={name}
-                onChange={(eventValue) => setName(eventValue.target.value)}
-                placeholder="Chapter meeting"
-              />
-            </div>
+            <PropertyRow glyph="when" label={EVENT_FORM_ROW_LABELS.when}>
+              <Popover {...menuProps("when")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    empty={!whenValue}
+                    invalid={endsBeforeStart}
+                    aria-label={`When: ${whenValue ?? "not set"}`}
+                  >
+                    {whenValue ?? "Pick a day and time"}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="grid w-[22rem] gap-3">
+                  {/* A day and a time each, the way Google Calendar takes
+                      them: the day typed without a year (#3937), the time the
+                      browser's own. Moving the start keeps the length. */}
+                  <ScheduleEnd
+                    id="event-start"
+                    label="Starts"
+                    value={startAt}
+                    onChange={moveStart}
+                  />
+                  <ScheduleEnd
+                    id="event-end"
+                    label="Ends"
+                    value={endAt}
+                    onChange={setEndAt}
+                  />
+                  <p
+                    className={cn(
+                      "text-caption",
+                      endsBeforeStart
+                        ? "text-destructive-text"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {endsBeforeStart
+                      ? "Ends before it starts."
+                      : lengthMinutes !== null
+                        ? lengthLabel(lengthMinutes)
+                        : "Set a day and a time for both."}
+                  </p>
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
 
-            {/* Wraps by the panel's own width, not the window's: docked beside chat
-                the panel can be 375px wide on a wide screen. A day and a time
-                each, the way Google Calendar takes them: the day is typed
-                without a year (#3937), the time is the browser's own. */}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-3">
-              <ScheduleEnd
-                id="event-start"
-                label="Starts"
-                value={startAt}
-                onChange={moveStart}
-              />
-              <ScheduleEnd
-                id="event-end"
-                label="Ends"
-                value={endAt}
-                onChange={setEndAt}
-              />
-            </div>
+            <PropertyRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
+              <Popover {...menuProps("repeat")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    aria-label={`Repeat: ${repeatValue}`}
+                    empty={!repeatLocked && repeat.preset === "NONE"}
+                  >
+                    {repeatValue}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-[24rem]">
+                  {repeatLocked ? (
+                    <p className="text-caption text-muted-foreground">
+                      {parentLoading
+                        ? "Loading the series…"
+                        : "Part of a repeating series. Its first meeting couldn't be loaded, so how it repeats can't be changed here."}
+                    </p>
+                  ) : (
+                    <RepeatOptions
+                      draft={
+                        repeatSeries
+                          ? repeatEditDraft(repeat, repeatSeries)
+                          : repeat
+                      }
+                      start={repeatAnchorStart}
+                      onChange={setRepeat}
+                      disabled={usingPreviewData}
+                      // An existing series' length was set when it was made;
+                      // the line comes back once the officer changes Repeat.
+                      showLength={!(mode === "edit" && repeat.pristine)}
+                      series={repeatSeries}
+                    />
+                  )}
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
 
-            <div className="grid gap-1">
-              <Label htmlFor="event-location">Location</Label>
-              <Input
+            <PropertyRow
+              glyph="location"
+              label={EVENT_FORM_ROW_LABELS.location}
+              labelFor="event-location"
+            >
+              <RowInput
                 id="event-location"
                 maxLength={EVENT_LOCATION_MAX_LENGTH}
                 value={location}
                 onChange={(eventValue) => setLocation(eventValue.target.value)}
-                placeholder="Chapter house"
+                placeholder={EVENT_FORM_PLACEHOLDERS.location}
               />
-            </div>
+            </PropertyRow>
 
-            {/*
-              Everything past the four fields every event needs waits behind
-              one row, which says what it holds while closed (owner,
-              2026-11-06: nobody wants every option at once on create).
-            */}
-            <MoreOptionsToggle
-              open={showMore}
-              onToggle={() => setShowMore((open) => !open)}
-              summary={moreSummary}
-              controls="event-more-options"
-            />
-
-            {showMore ? (
-              <div id="event-more-options" className="grid gap-4">
-                <section className="grid gap-2" aria-label="Who's coming">
-                  <div className="flex items-center gap-2 text-sm">
-                    <RolesGlyph className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-muted-foreground">
-                      Who&apos;s coming
-                    </span>
-                  </div>
+            <PropertyRow
+              glyph="attendance"
+              label={EVENT_FORM_ROW_LABELS.attendance}
+            >
+              <Popover {...menuProps("attendance")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    aria-label={`Who's coming: ${describeAttendance(attendance, roleName)}`}
+                  >
+                    {describeAttendance(attendance, roleName)}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="max-h-[min(32rem,70vh)] w-[26rem] overflow-y-auto"
+                >
                   <AttendanceEditor
                     value={attendance}
                     onChange={setAttendance}
@@ -1352,275 +1533,265 @@ export function EventEditorDialog({
                     }
                     disabled={usingPreviewData}
                   />
-                </section>
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
 
-                {repeatLocked ? (
-                  <section className="grid gap-1" aria-label="Repeat">
-                    <span className="text-sm font-semibold leading-none">
-                      Repeat
-                    </span>
-                    <p className="text-caption text-muted-foreground">
-                      {parentLoading
-                        ? "Loading the series…"
-                        : "Part of a repeating series. Its first meeting couldn't be loaded, so how it repeats can't be changed here."}
-                    </p>
-                  </section>
-                ) : (
-                  <RepeatOptions
-                    draft={
-                      repeatSeries
-                        ? repeatEditDraft(repeat, repeatSeries)
-                        : repeat
-                    }
-                    start={repeatAnchorStart}
-                    onChange={setRepeat}
-                    disabled={usingPreviewData}
-                    // An existing series' length was set when it was made;
-                    // the line comes back once the officer changes Repeat.
-                    showLength={!(mode === "edit" && repeat.pristine)}
-                    series={repeatSeries}
+            {canSetRequirements ? (
+              <PropertyRow
+                glyph="points"
+                label={EVENT_FORM_ROW_LABELS.points}
+                labelFor="event-point-value"
+              >
+                <div className="flex items-center gap-1">
+                  <RowInput
+                    id="event-point-value"
+                    aria-label="Points for attending"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="w-20 tabular-nums"
+                    value={pointValue}
+                    onChange={handlePointValueChange}
                   />
-                )}
+                  <span className="text-sm text-muted-foreground">
+                    {pointValue.trim() === "1" ? "point" : "points"}
+                  </span>
+                </div>
+              </PropertyRow>
+            ) : null}
 
-                {canSetRequirements ? (
-                  <div className="grid content-start gap-1">
-                    <Label htmlFor="event-point-value">
-                      Points for attending
+            <PropertyRow
+              glyph="description"
+              label={EVENT_FORM_ROW_LABELS.description}
+              labelFor="event-description"
+              align="start"
+            >
+              <RowTextarea
+                id="event-description"
+                maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
+                value={description}
+                onChange={(eventValue) =>
+                  setDescription(eventValue.target.value)
+                }
+                placeholder={EVENT_FORM_PLACEHOLDERS.description}
+              />
+            </PropertyRow>
+
+            {/* Labeled as the sheet labels them: Notes while minutes are
+                their own record (#4934). Only on an edit: notes are written
+                after the meeting. */}
+            {mode === "edit" ? (
+              <PropertyRow
+                glyph="notes"
+                label={notesLabel}
+                labelFor="event-meeting-minutes"
+                align="start"
+              >
+                <RowTextarea
+                  id="event-meeting-minutes"
+                  maxLength={EVENT_NOTES_MAX_LENGTH}
+                  value={notes}
+                  onChange={(eventValue) => setNotes(eventValue.target.value)}
+                  placeholder={EVENT_FORM_PLACEHOLDERS.notes}
+                />
+              </PropertyRow>
+            ) : null}
+
+            <PropertyRow glyph="checkIn" label={EVENT_FORM_ROW_LABELS.checkIn}>
+              <Popover {...menuProps("checkIn")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    aria-label={`Check-in: ${checkInValue}`}
+                    invalid={parseCheckInOpens(checkInOpens) === null}
+                  >
+                    {checkInValue}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="grid max-h-[min(36rem,75vh)] w-[26rem] gap-4 overflow-y-auto"
+                >
+                  {/* #3703: members arrive early, so check-in opens ahead of
+                      the start; 10 minutes unless the officer says. The
+                      phone's sheet sets the same field. */}
+                  <div className="grid gap-1">
+                    <Label htmlFor="event-check-in-opens">
+                      Opens how many minutes early
                     </Label>
                     <Input
-                      id="event-point-value"
-                      type="number"
-                      min={0}
-                      className="max-w-[14rem]"
-                      value={pointValue}
-                      onChange={handlePointValueChange}
+                      id="event-check-in-opens"
+                      inputMode="numeric"
+                      className="max-w-[8rem]"
+                      value={checkInOpens}
+                      disabled={usingPreviewData}
+                      onChange={(eventValue) => {
+                        const next = guardIntDraft(eventValue.target.value);
+                        if (next !== undefined) setCheckInOpens(next);
+                      }}
+                      aria-invalid={parseCheckInOpens(checkInOpens) === null}
                     />
                   </div>
-                ) : null}
-
-                <div className="grid gap-1">
-                  <Label htmlFor="event-description">Description</Label>
-                  <Textarea
-                    id="event-description"
-                    maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
-                    value={description}
-                    onChange={(eventValue) =>
-                      setDescription(eventValue.target.value)
-                    }
-                    rows={3}
-                    className="min-h-[96px]"
-                    placeholder="What members should know before they come."
-                  />
-                </div>
-
-                <div className="grid gap-2 text-sm">
-                  <button
-                    type="button"
-                    aria-expanded={showZone}
-                    onClick={() => setShowZone((open) => !open)}
-                    className="flex min-h-9 items-center gap-2 text-left"
-                  >
-                    <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-muted-foreground">
-                      Check-in zone
-                    </span>
-                    <span className="text-caption text-muted-foreground">
-                      {checkInZone.length > 0
-                        ? `${checkInZone.length} points`
-                        : "None, members check in from anywhere"}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "ml-auto h-4 w-4 text-muted-foreground transition-transform",
-                        showZone && "rotate-180",
-                      )}
-                    />
-                  </button>
-                  {showZone ? (
-                    <div className="space-y-2">
-                      <p className="text-caption text-muted-foreground">
-                        Optional. Members must be inside it to check in. At
-                        least 3 points; don&apos;t repeat the first.
-                      </p>
-
-                      <div className="grid gap-1">
-                        <Label htmlFor="event-zone-name">Zone name</Label>
-                        <Input
-                          id="event-zone-name"
-                          value={checkInZoneName}
-                          maxLength={120}
-                          disabled={usingPreviewData}
-                          onChange={(eventValue) =>
-                            setCheckInZoneName(eventValue.target.value)
-                          }
-                          placeholder="Great Hall"
-                        />
-                      </div>
-
-                      {checkInZone.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
-                          No check-in zone. Members can check in from anywhere.
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {checkInZone.map((vertex, index) => (
-                            <div
-                              key={vertex.id}
-                              className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
-                            >
-                              <div className="grid min-w-[9rem] flex-1 gap-1">
-                                <Label htmlFor={`${vertex.id}-lat`}>
-                                  Point {index + 1} latitude
-                                </Label>
-                                <Input
-                                  id={`${vertex.id}-lat`}
-                                  value={vertex.lat}
-                                  inputMode="decimal"
-                                  disabled={usingPreviewData}
-                                  onChange={(eventValue) =>
-                                    handleVertexChange(
-                                      vertex.id,
-                                      "lat",
-                                      eventValue.target.value,
-                                    )
-                                  }
-                                  placeholder="42.7298"
-                                />
-                              </div>
-                              <div className="grid min-w-[9rem] flex-1 gap-1">
-                                <Label htmlFor={`${vertex.id}-lng`}>
-                                  Point {index + 1} longitude
-                                </Label>
-                                <Input
-                                  id={`${vertex.id}-lng`}
-                                  value={vertex.lng}
-                                  inputMode="decimal"
-                                  disabled={usingPreviewData}
-                                  onChange={(eventValue) =>
-                                    handleVertexChange(
-                                      vertex.id,
-                                      "lng",
-                                      eventValue.target.value,
-                                    )
-                                  }
-                                  placeholder="-73.6789"
-                                />
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Move point ${index + 1} up`}
-                                  disabled={usingPreviewData || index === 0}
-                                  onClick={() => handleMoveVertex(index, -1)}
-                                >
-                                  <ArrowUp className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Move point ${index + 1} down`}
-                                  disabled={
-                                    usingPreviewData ||
-                                    index === checkInZone.length - 1
-                                  }
-                                  onClick={() => handleMoveVertex(index, 1)}
-                                >
-                                  <ArrowDown className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Remove point ${index + 1}`}
-                                  disabled={usingPreviewData}
-                                  onClick={() => handleRemoveVertex(vertex.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <Button
-                        type="button"
-                        variant="secondary"
+                  <div className="grid gap-2">
+                    <span className="text-sm font-semibold">Check-in zone</span>
+                    <p className="text-caption text-muted-foreground">
+                      Optional. Members must be inside it to check in. At
+                      least 3 points; don&apos;t repeat the first.
+                    </p>
+                    <div className="grid gap-1">
+                      <Label htmlFor="event-zone-name">Zone name</Label>
+                      <Input
+                        id="event-zone-name"
+                        value={checkInZoneName}
+                        maxLength={120}
                         disabled={usingPreviewData}
-                        onClick={handleAddVertex}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add point
-                      </Button>
+                        onChange={(eventValue) =>
+                          setCheckInZoneName(eventValue.target.value)
+                        }
+                        placeholder="Great Hall"
+                      />
                     </div>
-                  ) : null}
-                </div>
+                  {checkInZone.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
+                      No check-in zone. Members can check in from anywhere.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {checkInZone.map((vertex, index) => (
+                        <div
+                          key={vertex.id}
+                          className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
+                        >
+                          <div className="grid min-w-[9rem] flex-1 gap-1">
+                            <Label htmlFor={`${vertex.id}-lat`}>
+                              Point {index + 1} latitude
+                            </Label>
+                            <Input
+                              id={`${vertex.id}-lat`}
+                              value={vertex.lat}
+                              inputMode="decimal"
+                              disabled={usingPreviewData}
+                              onChange={(eventValue) =>
+                                handleVertexChange(
+                                  vertex.id,
+                                  "lat",
+                                  eventValue.target.value,
+                                )
+                              }
+                              placeholder="42.7298"
+                            />
+                          </div>
+                          <div className="grid min-w-[9rem] flex-1 gap-1">
+                            <Label htmlFor={`${vertex.id}-lng`}>
+                              Point {index + 1} longitude
+                            </Label>
+                            <Input
+                              id={`${vertex.id}-lng`}
+                              value={vertex.lng}
+                              inputMode="decimal"
+                              disabled={usingPreviewData}
+                              onChange={(eventValue) =>
+                                handleVertexChange(
+                                  vertex.id,
+                                  "lng",
+                                  eventValue.target.value,
+                                )
+                              }
+                              placeholder="-73.6789"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Move point ${index + 1} up`}
+                              disabled={usingPreviewData || index === 0}
+                              onClick={() => handleMoveVertex(index, -1)}
+                            >
+                              <ArrowUp className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Move point ${index + 1} down`}
+                              disabled={
+                                usingPreviewData ||
+                                index === checkInZone.length - 1
+                              }
+                              onClick={() => handleMoveVertex(index, 1)}
+                            >
+                              <ArrowDown className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Remove point ${index + 1}`}
+                              disabled={usingPreviewData}
+                              onClick={() => handleRemoveVertex(vertex.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                {/* Labeled as the sheet labels them: Notes while minutes
-                    are their own record (#4934). */}
-                {mode === "edit" ? (
-                  <div className="grid gap-1">
-                    <Label htmlFor="event-meeting-minutes">
-                      {meetingsOn ? "Notes" : "Meeting minutes"}
-                    </Label>
-                    <Textarea
-                      id="event-meeting-minutes"
-                      maxLength={EVENT_NOTES_MAX_LENGTH}
-                      value={notes}
-                      onChange={(eventValue) =>
-                        setNotes(eventValue.target.value)
-                      }
-                      rows={2}
-                      placeholder="Visible to members who can see this event."
-                    />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={usingPreviewData}
+                    onClick={handleAddVertex}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add point
+                  </Button>
                   </div>
-                ) : null}
-              </div>
-            ) : null}
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
+          </div>
+
+          {canSetRequirements ? null : (
+            <p className="text-caption text-muted-foreground">
+              {EVENT_FORM_MEMBER_NOTE}
+            </p>
+          )}
+
+          <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-caption text-muted-foreground">
+            {kept.restored ? (
+              <KeptDraftNote
+                onDiscard={() => {
+                  kept.discard();
+                  setFillCount((count) => count + 1);
+                }}
+              />
+            ) : (
+              <span>Going back keeps your draft.</span>
+            )}
+            <span>
+              <kbd className="font-sans">Ctrl</kbd> +{" "}
+              <kbd className="font-sans">Enter</kbd> to{" "}
+              {mode === "create" ? "create" : "save"}
+            </span>
           </div>
         </PanelBody>
-
-        <PanelFooter>
-          {kept.restored ? (
-            <KeptDraftNote
-              onDiscard={() => {
-                kept.discard();
-                setFillCount((count) => count + 1);
-              }}
-            />
-          ) : null}
-          {/* Cancel isn't gated: gating the way out of a surface the gate just
-              blocked would be a trap. It closes the panel and drops what was
-              typed, the one explicit discard; going back, Escape and leaving
-              the page keep it (#4593). */}
-          <Button
-            variant="secondary"
-            onClick={() => {
-              kept.drop();
-              onOpenChange(false);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            {...gate.controlProps(
-              usingPreviewData || isSubmitting || parentLoading,
-            )}
-          >
-            {isSubmitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {submitLabel}
-          </Button>
-        </PanelFooter>
         {confirmDialog}
       </PanelContent>
     </Panel>
   );
+}
+
+/** `"2 hours"`, `"1 hour 30 minutes"`, `"45 minutes"`: the When menu's length. */
+function lengthLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  const part = (count: number, unit: string) =>
+    `${count} ${unit}${count === 1 ? "" : "s"}`;
+  if (hours === 0) return part(rest, "minute");
+  if (rest === 0) return part(hours, "hour");
+  return `${part(hours, "hour")} ${part(rest, "minute")}`;
 }

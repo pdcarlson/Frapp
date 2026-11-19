@@ -9,97 +9,150 @@ import {
   useUpdateEventType,
   type EventType,
 } from "@repo/hooks";
-import { EVENT_TYPE_NAME_MAX_LENGTH, EVENT_TYPES_MAX } from "@repo/validation";
+import {
+  describeEventTypeSets,
+  EVENT_FORM_PLACEHOLDERS,
+  EVENT_FORM_ROW_LABELS,
+  EVENT_TYPE_NAME_MAX_LENGTH,
+  EVENT_TYPES_MAX,
+} from "@repo/validation";
 import {
   TypeListEditor,
   TypeListForm,
   TypeNameField,
 } from "@/components/shared/type-list-editor";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  PropertyRow,
+  RowValueButton,
+} from "@/components/events/event-form-rows";
 import { Label } from "@/components/ui/label";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
 /**
- * The Type row at the top of the event form (`spec/behavior/events.md`
- * § Event types): the chapter's kinds of event as one row of chips, none held
- * until the officer picks. Picking one is a shortcut, not a lock: the form
- * fills in the type's points and attendance and the officer can still change
- * either. Picking the held chip again lets it go.
+ * The Type row of the event form (`spec/behavior/events.md` § Event types,
+ * #5561): the chapter's kinds of event in a menu that finds one as you type,
+ * none held until the officer picks. Picking one is a shortcut, not a lock:
+ * the form fills in the type's points and attendance and the officer can
+ * still change either. "No type" lets the held one go.
  *
- * The chips are the Chip step (`foundations.md` §9: 24px, 12.5/600), held in
- * the accent tint as the Segmented control holds its answer, so the row reads
- * as one choice among several rather than as filters. Comparable: Google
- * Calendar's Event / Task / Out of office tabs at the top of its create
- * dialog, and Linear's label chips, which are edited from the same menu that
- * applies them.
+ * A menu rather than the row of chips it replaced: seven seeded types
+ * already wrapped to two lines and a chapter may keep 30, pushing the name
+ * down the form. Comparable: Linear's label and status menus, which search,
+ * and Google Calendar's event-type tabs. Each type says what it sets ("10
+ * points · Required", `describeEventTypeSets`, the words the phone's Type
+ * sheet shows); a member, whose event carries neither, sees the names alone.
  *
- * `canManage` (`events:update`) adds "Edit types" at the end of the row, a
- * popover listing the types with inline edit, add and delete, so an officer
- * who finds the list wrong fixes it where they noticed rather than in a
- * settings page. It renders the shared `TypeListEditor` (#4723).
+ * `canManage` (`events:update`) adds "Edit types" at the row's end, the list
+ * with inline edit, add and delete, so an officer who finds the list wrong
+ * fixes it where they noticed rather than in a settings page. It renders the
+ * shared `TypeListEditor` (#4723).
  */
-export function EventTypePicker({
+export function EventTypeRow({
   value,
   onPick,
   canManage,
+  showSets,
   disabled = false,
 }: {
   value: string | null;
-  /** `null` when the held chip is let go. */
+  /** `null` when the officer picks No type. */
   onPick: (type: EventType | null) => void;
   canManage: boolean;
+  /** Whether each type says what it sets: not for a member (#3709). */
+  showSets: boolean;
   disabled?: boolean;
 }) {
   const typesQuery = useEventTypes();
   const types = typesQuery.data ?? [];
+  const [open, setOpen] = useState(false);
   // A chapter with no types and nobody to make them sees no row at all.
   if (!canManage && types.length === 0) return null;
+  const held = types.find((type) => type.id === value) ?? null;
 
   return (
-    <div className="grid gap-1.5">
-      <span id="event-type-label" className="text-sm font-semibold">
-        Type
-      </span>
-      <div
-        role="radiogroup"
-        aria-labelledby="event-type-label"
-        className="flex flex-wrap items-center gap-1.5"
-      >
-        {typesQuery.isLoading ? (
-          <span className="text-caption text-muted-foreground">
-            Loading types
-          </span>
-        ) : null}
-        {types.map((type) => {
-          const held = type.id === value;
-          return (
-            <button
-              key={type.id}
-              type="button"
-              role="radio"
-              aria-checked={held}
-              disabled={disabled}
-              title={describeEventType(type)}
-              onClick={() => onPick(held ? null : type)}
-              className={cn(
-                CHIP,
-                held
-                  ? "border-accent-border bg-accent-subtle text-accent-text"
-                  : "border-input bg-surface-1 text-muted-foreground hover:bg-card-hover hover:text-foreground",
-              )}
-            >
-              {held ? <Check className="h-3 w-3" aria-hidden /> : null}
-              {type.name}
-            </button>
-          );
-        })}
-        {canManage ? (
+    <PropertyRow
+      glyph="type"
+      label={EVENT_FORM_ROW_LABELS.type}
+      trailing={
+        canManage ? (
           <EventTypesEditor types={types} disabled={disabled} />
-        ) : null}
-      </div>
-    </div>
+        ) : undefined
+      }
+    >
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <RowValueButton
+            empty={!held}
+            disabled={disabled}
+            aria-label={`Type: ${held?.name ?? "none"}`}
+          >
+            {typesQuery.isLoading
+              ? "Loading types"
+              : (held?.name ?? EVENT_FORM_PLACEHOLDERS.type)}
+          </RowValueButton>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[22rem] p-0">
+          <Command label="Event type">
+            <CommandInput placeholder="Find a type" />
+            <CommandList className="max-h-72">
+              <CommandEmpty>No type by that name.</CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  value="No type"
+                  onSelect={() => {
+                    onPick(null);
+                    setOpen(false);
+                  }}
+                  className="min-h-9 text-sm text-muted-foreground pointer-coarse:min-h-11"
+                >
+                  <span className="w-4" aria-hidden="true">
+                    {held ? null : <Check className="h-4 w-4" />}
+                  </span>
+                  No type
+                </CommandItem>
+                {types.map((type) => (
+                  <CommandItem
+                    key={type.id}
+                    value={type.name}
+                    onSelect={() => {
+                      onPick(type);
+                      setOpen(false);
+                    }}
+                    className="min-h-9 text-sm pointer-coarse:min-h-11"
+                  >
+                    <span className="w-4 text-accent-text" aria-hidden="true">
+                      {type.id === value ? <Check className="h-4 w-4" /> : null}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{type.name}</span>
+                    {showSets ? (
+                      <span className="shrink-0 text-caption text-muted-foreground">
+                        {describeEventTypeSets(type)}
+                      </span>
+                    ) : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </PropertyRow>
   );
 }
 
@@ -113,11 +166,6 @@ function describeEventType(type: {
   return `${points}, ${type.is_mandatory ? "required" : "optional"} for everyone`;
 }
 
-const CHIP = cn(
-  "inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[9px] border px-2 text-caption font-semibold transition-colors pointer-coarse:h-8",
-  "disabled:pointer-events-none disabled:text-disabled",
-  FOCUS_RING,
-);
 
 type Draft = { name: string; points: string; required: boolean };
 
@@ -138,8 +186,9 @@ function EventTypesEditor({
       types={types}
       disabled={disabled}
       triggerClassName={cn(
-        CHIP,
-        "border-dashed border-input bg-transparent text-muted-foreground hover:bg-card-hover hover:text-foreground",
+        "inline-flex h-9 items-center gap-1 whitespace-nowrap rounded-md px-2 text-caption font-semibold text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:h-11",
+        "disabled:pointer-events-none disabled:text-disabled",
+        FOCUS_RING,
       )}
       widthClassName="w-[22rem]"
       title="Event types"
