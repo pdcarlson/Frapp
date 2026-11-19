@@ -105,12 +105,11 @@ export function EventMinutesRow({
       </>
     );
   }
+  // Someone else may have started them; the note-taking read decides, and
+  // its Take notes wins over Request minutes.
+  if (!minutes && canDraft && takingQuery.isPending) return null;
   const askable = minutes ? null : requestQuery.data;
   if (askable) return <RequestMinutesRow state={askable} />;
-  // Someone else may have started them; the note-taking read and the
-  // request read decide.
-  if (!minutes && canDraft && takingQuery.isPending) return null;
-  if (!minutes && requestQuery.isLoading) return null;
   if (!minutes && !canRecord) return null;
 
   const open = (id: string, record = false) =>

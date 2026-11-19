@@ -8,8 +8,6 @@ export interface MeetingMinutesRequest {
   chapter_id: string;
   user_id: string;
   created_at: string;
-  /** Set on the request that sent the ping; null on one the guard held. */
-  pinged_at: string | null;
-  /** Whether a ping has named this request yet. */
-  announced: boolean;
+  /** When a reminder first counted this ask; null while the guard holds it. */
+  announced_at: string | null;
 }

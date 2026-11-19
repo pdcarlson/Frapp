@@ -13,5 +13,7 @@ export const MINUTES_REQUEST_COPY = {
   requestedLabel: "Minutes requested",
   sentTitle: "Minutes requested",
   sentBody: "Whoever is writing them gets a reminder.",
+  /** The day's reminder had already gone, so this ask sent none. */
+  heldBody: "They were already reminded today.",
   failed: "Couldn't request the minutes",
 } as const;

@@ -34,4 +34,10 @@ export interface IMeetingMinutesRequestRepository {
     userId: string,
     cooldownSeconds: number,
   ): Promise<MinutesRequestOutcome>;
+  /**
+   * Undoes a reminder that could not be sent: takes back `userId`'s ask,
+   * un-counts the asks it spoke for, and clears the meeting's cooldown, so
+   * the member can ask again.
+   */
+  release(chapterId: string, meetingId: string, userId: string): Promise<void>;
 }

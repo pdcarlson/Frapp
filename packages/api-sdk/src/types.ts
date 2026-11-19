@@ -6480,7 +6480,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ask for unposted minutes, which pings whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over` */
+        /** Ask for unposted minutes, which reminds whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over`, 503 `meeting.request_not_sent` (nothing recorded; ask again) */
         post: operations["MeetingMinutesRequestController_request_v1"];
         delete?: never;
         options?: never;
@@ -12718,6 +12718,16 @@ export interface components {
             event_id: string;
             /** @description The caller has asked for these minutes. */
             requested: boolean;
+        };
+        MinutesRequestSentDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The caller has asked for these minutes. */
+            requested: boolean;
+            /** @description This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day. */
+            pinged: boolean;
         };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
@@ -27495,7 +27505,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MinutesRequestStateDto"];
+                    "application/json": components["schemas"]["MinutesRequestSentDto"];
                 };
             };
             /** @description Error */

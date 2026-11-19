@@ -97,7 +97,9 @@ export function EventMinutes({
       </MinutesRowFrame>
     );
   }
-  const askable = minutes ? null : requestQuery.data;
+  // Take notes wins: Request waits until the note-taking read has answered.
+  const askable =
+    minutes || takingQuery.isPending ? null : requestQuery.data;
   if (askable) {
     return (
       <MinutesRowFrame
@@ -112,9 +114,10 @@ export function EventMinutes({
     );
   }
   if (!minutes && !canRecord) return null;
-  // Someone else may have started them; the note-taking read and the
-  // request read decide.
-  if (!minutes && (takingQuery.isPending || requestQuery.isLoading)) {
+  // Someone else may have started them; the note-taking read decides. The
+  // request read doesn't hold the row: an officer's Write minutes shows at
+  // once, and an unposted draft they can't open turns it into Request.
+  if (!minutes && takingQuery.isPending) {
     return <MinutesRowFrame status={null} />;
   }
 

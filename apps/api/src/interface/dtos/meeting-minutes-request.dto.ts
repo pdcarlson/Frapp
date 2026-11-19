@@ -15,3 +15,11 @@ export class MinutesRequestStateDto {
   @ApiProperty({ description: 'The caller has asked for these minutes.' })
   requested: boolean;
 }
+
+export class MinutesRequestSentDto extends MinutesRequestStateDto {
+  @ApiProperty({
+    description:
+      'This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day.',
+  })
+  pinged: boolean;
+}

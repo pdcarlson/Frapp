@@ -1,13 +1,17 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { Event } from '#domain/entities/event.entity';
 import type { Meeting } from '#domain/entities/meeting.entity';
-import type { IMeetingRepository } from '#domain/repositories/meeting.repository.interface';
 import type {
   IMeetingMinutesRequestRepository,
   MinutesRequestOutcome,
 } from '#domain/repositories/meeting-minutes-request.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventService } from './event.service';
+import type { MeetingService } from './meeting.service';
 import type { NotificationService } from './notification.service';
 import type { RbacService } from './rbac.service';
 import {
@@ -57,6 +61,7 @@ function setup(
     editors?: string[];
     outcome?: MinutesRequestOutcome;
     requested?: boolean;
+    notifyFails?: boolean;
   } = {},
 ) {
   const row = options.meeting === undefined ? meeting() : options.meeting;
@@ -65,15 +70,14 @@ function setup(
   const editors = options.editors ?? [EDITOR];
   const members = options.members ?? [ASKER, AUTHOR, CREATOR, EDITOR];
 
-  const meetingRepo = {
-    findById: jest.fn().mockResolvedValue(row),
-    findByEvent: jest.fn().mockResolvedValue(row),
-  };
   const requests = {
     hasRequested: jest.fn().mockResolvedValue(options.requested ?? false),
-    request: jest.fn().mockResolvedValue(
-      options.outcome ?? { requested: true, ping: true, asked: 1 },
-    ),
+    request: jest
+      .fn()
+      .mockResolvedValue(
+        options.outcome ?? { requested: true, ping: true, asked: 1 },
+      ),
+    release: jest.fn().mockResolvedValue(undefined),
   };
   const memberRepo = {
     findChapterMemberIdentities: jest.fn().mockResolvedValue(
@@ -84,24 +88,43 @@ function setup(
       })),
     ),
   };
-  const events = {
-    findById: jest.fn((_id: string, _chapter: string, viewer?: string) =>
-      !viewer || seenBy(viewer)
-        ? Promise.resolve(ev)
-        : Promise.reject(new NotFoundException()),
+  // `MeetingService`'s read rule, as `readable` states it: an editor, or the
+  // author while the event shows itself to them, opens a draft.
+  const canOpen = (m: Meeting, userId: string) =>
+    editors.includes(userId) ||
+    (m.status === 'posted' && seenBy(userId)) ||
+    (m.created_by === userId && seenBy(userId));
+  const meetings = {
+    draftsVisibleTo: jest.fn((_c: string, userId: string) =>
+      Promise.resolve(
+        row && row.status === 'draft' && seenBy(userId) ? [row] : [],
+      ),
+    ),
+    noteTakingView: jest.fn(() =>
+      row
+        ? Promise.resolve({ meeting: row })
+        : Promise.reject(new NotFoundException('Minutes not found')),
+    ),
+    eventShowsTo: jest.fn((_c: string, _m: Meeting, userId: string) =>
+      Promise.resolve(seenBy(userId)),
+    ),
+    canRead: jest.fn((_c: string, _id: string, userId: string) =>
+      Promise.resolve(row ? canOpen(row, userId) : false),
     ),
   };
+  const events = { findById: jest.fn().mockResolvedValue(ev) };
   const rbac = {
-    getEffectivePermissions: jest.fn((_chapter: string, userId: string) =>
-      Promise.resolve(editors.includes(userId) ? ['meetings:edit'] : []),
-    ),
     findUserIdsWithPermissions: jest.fn().mockResolvedValue(editors),
   };
-  const notifications = { notifyMembers: jest.fn().mockResolvedValue(undefined) };
+  const notifications = {
+    notifyMembers: options.notifyFails
+      ? jest.fn().mockRejectedValue(new Error('push down'))
+      : jest.fn().mockResolvedValue(undefined),
+  };
   const service = new MeetingMinutesRequestService(
-    meetingRepo as unknown as IMeetingRepository,
-    requests as unknown as IMeetingMinutesRequestRepository,
+    requests,
     memberRepo as unknown as IMemberRepository,
+    meetings as unknown as MeetingService,
     events as unknown as EventService,
     rbac as unknown as RbacService,
     notifications as unknown as NotificationService,
@@ -120,13 +143,21 @@ describe('MeetingMinutesRequestService (#5471)', () => {
 
     it.each([
       ['the event has no minutes', { meeting: null }, ASKER],
-      ['the minutes are posted', { meeting: meeting({ status: 'posted' }) }, ASKER],
+      [
+        'the minutes are posted',
+        { meeting: meeting({ status: 'posted' }) },
+        ASKER,
+      ],
       ['the caller wrote them', {}, AUTHOR],
       ['the caller can edit any minutes', {}, EDITOR],
       ['the event leaves the caller out', {}, OUTSIDER],
       [
         'they are Standards minutes',
-        { meeting: meeting({ meeting_type: 'standards' as Meeting['meeting_type'] }) },
+        {
+          meeting: meeting({
+            meeting_type: 'standards' as Meeting['meeting_type'],
+          }),
+        },
         ASKER,
       ],
       [
@@ -135,7 +166,7 @@ describe('MeetingMinutesRequestService (#5471)', () => {
         ASKER,
       ],
     ])('offers nothing when %s', async (_why, options, caller) => {
-      const { service } = setup(options as Parameters<typeof setup>[0]);
+      const { service } = setup(options);
       await expect(service.state(CHAPTER, caller, 'event-1')).resolves.toEqual(
         [],
       );
@@ -143,7 +174,7 @@ describe('MeetingMinutesRequestService (#5471)', () => {
   });
 
   describe('request', () => {
-    it('records the ask under the daily guard and pings the minutes’ author, naming who asked', async () => {
+    it('records the ask under the daily guard and reminds the minutes’ author, naming who asked', async () => {
       const { service, requests, notifications } = setup();
       await expect(
         service.request(CHAPTER, 'meeting-1', ASKER),
@@ -151,6 +182,7 @@ describe('MeetingMinutesRequestService (#5471)', () => {
         meeting_id: 'meeting-1',
         event_id: 'event-1',
         requested: true,
+        pinged: true,
       });
       expect(requests.request).toHaveBeenCalledWith(
         CHAPTER,
@@ -165,7 +197,7 @@ describe('MeetingMinutesRequestService (#5471)', () => {
         [AUTHOR],
         expect.objectContaining({
           title: 'Minutes requested',
-          body: 'Shawn Klein asked for the minutes from Chapter meeting. Post them when they\'re ready.',
+          body: "Shawn Klein asked for the minutes from Chapter meeting. Post them when they're ready.",
           category: 'events',
           priority: 'NORMAL',
           data: {
@@ -179,35 +211,61 @@ describe('MeetingMinutesRequestService (#5471)', () => {
       );
     });
 
-    it('sends nothing when the guard holds the ask back, and still answers requested', async () => {
+    it('sends nothing when the guard holds the ask back, and says so', async () => {
       const { service, notifications } = setup({
         outcome: { requested: true, ping: false, asked: 0 },
       });
       await expect(
         service.request(CHAPTER, 'meeting-1', ASKER),
-      ).resolves.toMatchObject({ requested: true });
+      ).resolves.toMatchObject({ requested: true, pinged: false });
       expect(notifications.notifyMembers).not.toHaveBeenCalled();
     });
 
     it('sends nothing when the member had already asked', async () => {
       const { service, notifications } = setup({
         outcome: { requested: false, ping: false, asked: 0 },
+        requested: true,
       });
-      await service.request(CHAPTER, 'meeting-1', ASKER);
+      await expect(
+        service.request(CHAPTER, 'meeting-1', ASKER),
+      ).resolves.toMatchObject({ requested: true, pinged: false });
       expect(notifications.notifyMembers).not.toHaveBeenCalled();
     });
 
-    it('counts the asks the guard held back into the next ping', async () => {
+    it('answers 409 when the minutes were posted between the check and the guard', async () => {
+      const { service, notifications } = setup({
+        outcome: { requested: false, ping: false, asked: 0 },
+        requested: false,
+      });
+      await expect(
+        service.request(CHAPTER, 'meeting-1', ASKER),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(notifications.notifyMembers).not.toHaveBeenCalled();
+    });
+
+    it('undoes the guard when the reminder can’t be sent, so the member can ask again', async () => {
+      const { service, requests } = setup({ notifyFails: true });
+      await expect(
+        service.request(CHAPTER, 'meeting-1', ASKER),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(requests.release).toHaveBeenCalledWith(
+        CHAPTER,
+        'meeting-1',
+        ASKER,
+      );
+    });
+
+    it('counts the asks the guard held back into the next reminder', async () => {
       const { service, notifications } = setup({
         outcome: { requested: true, ping: true, asked: 3 },
       });
       await service.request(CHAPTER, 'meeting-1', ASKER);
       expect(notifications.notifyMembers.mock.calls[0][2].body).toBe(
-        'Shawn Klein and 2 others asked for the minutes from Chapter meeting. Post them when they\'re ready.',
+        "Shawn Klein and 2 others asked for the minutes from Chapter meeting. Post them when they're ready.",
       );
     });
 
-    it('pings the event’s creator when the author has left the chapter, without opening a draft they can’t read', async () => {
+    it('reminds the event’s creator when the author has left the chapter, without opening a draft they can’t read', async () => {
       const { service, notifications } = setup({
         members: [ASKER, CREATOR, EDITOR],
       });
@@ -221,7 +279,7 @@ describe('MeetingMinutesRequestService (#5471)', () => {
       );
     });
 
-    it('pings the editors when neither the author nor the creator can be reached, never the member asking', async () => {
+    it('reminds the editors when neither the author nor the creator can be reached, never the member asking', async () => {
       const { service, notifications } = setup({
         meeting: meeting({ created_by: null }),
         event: event({ created_by: ASKER }),
@@ -276,7 +334,7 @@ describe('MeetingMinutesRequestService (#5471)', () => {
 
   it('words one, two and several askers', () => {
     expect(minutesRequestedBody('Ann', 2, 'GM')).toBe(
-      'Ann and 1 other asked for the minutes from GM. Post them when they\'re ready.',
+      "Ann and 1 other asked for the minutes from GM. Post them when they're ready.",
     );
   });
 });

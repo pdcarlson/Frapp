@@ -1089,6 +1089,15 @@ export interface Database {
         }[];
       };
       /**
+       * `20261119162302` (#5471). Undoes a minutes reminder the API could not
+       * send: takes back the caller's ask, un-counts the asks it spoke for and
+       * clears the meeting's cooldown.
+       */
+      release_meeting_minutes_ping: {
+        Args: { p_meeting_id: string; p_chapter_id: string; p_user_id: string };
+        Returns: undefined;
+      };
+      /**
        * `20260928170000` (#1302). Atomically removes `p_user_id` from a
        * PRIVATE channel's `member_ids`. Empty result set means the row didn't
        * match (wrong id/chapter, not PRIVATE) or the removal would have left

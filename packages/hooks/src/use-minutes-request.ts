@@ -7,6 +7,8 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 /** An event's unposted minutes the caller may ask for (#5471). */
 export type MinutesRequestState =
   components["schemas"]["MinutesRequestStateDto"];
+/** What asking did: `pinged` false when today's reminder had already gone. */
+export type MinutesRequestSent = components["schemas"]["MinutesRequestSentDto"];
 
 const minutesRequestKey = (
   chapterId: string | null | undefined,
@@ -48,7 +50,7 @@ export function useRequestMinutes() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["meetings", "minutes-request"],
-    mutationFn: async (meetingId: string): Promise<MinutesRequestState> => {
+    mutationFn: async (meetingId: string): Promise<MinutesRequestSent> => {
       const { data, error } = await client.POST(
         "/v1/meetings/{id}/minutes-request",
         { params: { path: { id: meetingId } } },
@@ -56,17 +58,16 @@ export function useRequestMinutes() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (state) => {
+    onSuccess: ({ meeting_id, event_id, requested }) => {
       queryClient.setQueryData(
-        minutesRequestKey(chapterId, state.event_id),
-        state,
+        minutesRequestKey(chapterId, event_id),
+        { meeting_id, event_id, requested } satisfies MinutesRequestState,
       );
     },
     onError: () => {
-      // Posted in the meantime, or the meeting moved: read it again.
-      void queryClient.invalidateQueries({
-        queryKey: ["meetings", chapterId, "minutes-request"],
-      });
+      // Posted in the meantime, or not recorded: read the event's minutes and
+      // this read again, so a posted row shows Open minutes.
+      void queryClient.invalidateQueries({ queryKey: ["meetings", chapterId] });
     },
   });
 }

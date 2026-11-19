@@ -8,9 +8,7 @@ import type {
 import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
-export class SupabaseMeetingMinutesRequestRepository
-  implements IMeetingMinutesRequestRepository
-{
+export class SupabaseMeetingMinutesRequestRepository implements IMeetingMinutesRequestRepository {
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
@@ -42,15 +40,12 @@ export class SupabaseMeetingMinutesRequestRepository
     userId: string,
     cooldownSeconds: number,
   ): Promise<MinutesRequestOutcome> {
-    const { data, error } = await this.supabase.rpc(
-      'request_meeting_minutes',
-      {
-        p_meeting_id: meetingId,
-        p_chapter_id: chapterId,
-        p_user_id: userId,
-        p_cooldown_seconds: cooldownSeconds,
-      },
-    );
+    const { data, error } = await this.supabase.rpc('request_meeting_minutes', {
+      p_meeting_id: meetingId,
+      p_chapter_id: chapterId,
+      p_user_id: userId,
+      p_cooldown_seconds: cooldownSeconds,
+    });
     if (error) throw new SupabaseQueryError(error);
     const row = (data ?? [])[0];
     return {
@@ -58,5 +53,18 @@ export class SupabaseMeetingMinutesRequestRepository
       ping: row?.ping ?? false,
       asked: row?.asked ?? 0,
     };
+  }
+
+  async release(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase.rpc('release_meeting_minutes_ping', {
+      p_meeting_id: meetingId,
+      p_chapter_id: chapterId,
+      p_user_id: userId,
+    });
+    if (error) throw new SupabaseQueryError(error);
   }
 }

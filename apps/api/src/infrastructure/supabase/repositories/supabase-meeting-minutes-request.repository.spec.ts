@@ -23,8 +23,7 @@ const row = {
   meeting_id: MEETING,
   user_id: MEMBER,
   created_at: '2026-11-19T00:00:00.000Z',
-  pinged_at: null,
-  announced: false,
+  announced_at: null,
 };
 
 describe('SupabaseMeetingMinutesRequestRepository — tenant scope', () => {
@@ -43,6 +42,7 @@ describe('SupabaseMeetingMinutesRequestRepository — tenant scope', () => {
         request_meeting_minutes: {
           data: [{ requested: true, ping: true, asked: 2 }],
         },
+        release_meeting_minutes_ping: { data: null },
       },
     });
     repo = new SupabaseMeetingMinutesRequestRepository(harness.client);
@@ -65,6 +65,16 @@ describe('SupabaseMeetingMinutesRequestRepository — tenant scope', () => {
       p_meeting_id: MEETING,
       p_user_id: MEMBER,
       p_cooldown_seconds: 86_400,
+    });
+  });
+
+  it('release passes the caller chapter to the RPC', async () => {
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.release(CHAPTER_A, MEETING, MEMBER),
+    );
+    expect(harness.rpcCalls[0]).toMatchObject({
+      fn: 'release_meeting_minutes_ping',
+      args: { p_meeting_id: MEETING, p_user_id: MEMBER },
     });
   });
 });

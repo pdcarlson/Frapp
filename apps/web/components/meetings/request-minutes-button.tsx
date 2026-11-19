@@ -36,10 +36,12 @@ export function RequestMinutesButton({
 
   async function ask() {
     try {
-      await request.mutateAsync(state.meeting_id);
+      const sent = await request.mutateAsync(state.meeting_id);
       toast({
         title: MINUTES_REQUEST_COPY.sentTitle,
-        description: MINUTES_REQUEST_COPY.sentBody,
+        description: sent.pinged
+          ? MINUTES_REQUEST_COPY.sentBody
+          : MINUTES_REQUEST_COPY.heldBody,
       });
     } catch (error) {
       toastFailure({

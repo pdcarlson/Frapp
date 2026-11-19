@@ -21626,7 +21626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MinutesRequestStateDto"
+                  "$ref": "#/components/schemas/MinutesRequestSentDto"
                 }
               }
             }
@@ -21647,7 +21647,7 @@
             "bearer": []
           }
         ],
-        "summary": "Ask for unposted minutes, which pings whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over`",
+        "summary": "Ask for unposted minutes, which reminds whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over`, 503 `meeting.request_not_sent` (nothing recorded; ask again)",
         "tags": [
           "Meetings"
         ]
@@ -38967,6 +38967,33 @@
           "meeting_id",
           "event_id",
           "requested"
+        ]
+      },
+      "MinutesRequestSentDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requested": {
+            "type": "boolean",
+            "description": "The caller has asked for these minutes."
+          },
+          "pinged": {
+            "type": "boolean",
+            "description": "This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "event_id",
+          "requested",
+          "pinged"
         ]
       },
       "BootstrapDto": {

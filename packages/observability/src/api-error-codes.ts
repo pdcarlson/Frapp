@@ -170,9 +170,11 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "meeting.notes_too_long",
   "meeting.event_linked",
   // Asking for minutes (#5471): they were posted meanwhile, or the meeting
-  // hasn't ended yet.
+  // hasn't ended yet. The third is a 503 (the reminder couldn't be sent and
+  // nothing was recorded), so its status reports it as a server fault.
   "meeting.already_posted",
   "meeting.not_over",
+  "meeting.request_not_sent",
   // A recording Frapp doesn't take (#712): the wrong kind of file, too
   // large, too short or too long. The upload step checks first, but the
   // server's limits follow the provider it is set up with.
