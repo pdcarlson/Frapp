@@ -36,6 +36,11 @@ const state = vi.hoisted(() => ({
   dmOptions: [] as unknown[],
   permissions: [] as string[],
   roles: [] as unknown[],
+  // What `useMemberPhoneReach` answers; `null` until a test sets it.
+  phoneReach: null as null | {
+    scope: "chapter" | "self";
+    byUserId: Map<string, unknown>;
+  },
   // `GET /v1/groups` (#4076); `undefined` is a read not answered yet.
   groups: undefined as unknown[] | undefined,
   // `GET /v1/pledge-classes` and the options the sheet reads it with (#3939).
@@ -84,6 +89,7 @@ const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  useMemberPhoneReach: () => ({ reach: state.phoneReach }),
   useMemberByUserId: (id: string) => ({
     data: PROFILES[id] && {
       ...PROFILES[id],
@@ -786,6 +792,40 @@ describe("MemberProfile fact rows", () => {
         },
       ] as never[],
     };
+  });
+
+  it("says whether notifications reach the member's phone, only when the server sent it", () => {
+    state.phoneReach = null;
+    const before = render(CARA);
+    expect(
+      before.root
+        .findAllByType(ListRow)
+        .find((r) => r.props.label === "Phone app"),
+    ).toBeUndefined();
+    act(() => before.unmount());
+
+    state.phoneReach = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          CARA,
+          {
+            user_id: CARA,
+            state: "web_only",
+            platform: null,
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    const tree = render(CARA);
+    const row = tree.root
+      .findAllByType(ListRow)
+      .find((r) => r.props.label === "Phone app");
+    expect(row?.props.value).toBe("Web only");
+    expect(row?.props.description).toBe(null);
+    act(() => tree.unmount());
+    state.phoneReach = null;
   });
 
   it("draws Email, Member since and each custom field as detail rows", () => {

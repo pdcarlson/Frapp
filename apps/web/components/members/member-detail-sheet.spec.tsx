@@ -21,6 +21,7 @@ const {
   mockCurrentUserId,
   mockCurrentUserLoading,
   mockPermissions,
+  mockPhoneReach,
   mockRoles,
   refetchMember,
   removeMutateAsync,
@@ -45,6 +46,12 @@ const {
   mockCurrentUserLoading: { current: false },
   mockPermissions: { current: ["*"] as string[] },
   mockRoles: { current: [] as unknown[] | undefined },
+  mockPhoneReach: {
+    current: null as null | {
+      scope: "chapter" | "self";
+      byUserId: Map<string, unknown>;
+    },
+  },
   rolesState: { isError: false, refetch: vi.fn() },
 }));
 
@@ -54,6 +61,7 @@ vi.mock("@repo/hooks", async () => ({
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
   ).dmChannelIdOf,
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  useMemberPhoneReach: () => ({ reach: mockPhoneReach.current }),
   useMemberByUserId: (userId: string) => {
     memberByUserId(userId);
     return {
@@ -153,6 +161,7 @@ function openRoleEditor() {
 }
 
 beforeEach(() => {
+  mockPhoneReach.current = null;
   memberQueryState.data = undefined;
   memberQueryState.isPending = false;
   memberQueryState.isError = false;
@@ -342,6 +351,31 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
     unmount();
     renderProfile();
     expect(screen.queryByText("Onboarding")).not.toBeInTheDocument();
+  });
+
+  it("says whether notifications reach the member's phone, when the server sent it", () => {
+    const { unmount } = renderProfile();
+    expect(screen.queryByText("Phone app")).not.toBeInTheDocument();
+    unmount();
+
+    mockPhoneReach.current = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          "u1",
+          {
+            user_id: "u1",
+            state: "off",
+            platform: "ios",
+            last_opened_at: "2026-11-18T15:00:00.000Z",
+          },
+        ],
+      ]),
+    };
+    renderProfile();
+    expect(screen.getByText("Phone app")).toBeInTheDocument();
+    expect(screen.getByText("iPhone, notifications off")).toBeInTheDocument();
+    expect(screen.getByText(/^Last opened November 18/)).toBeInTheDocument();
   });
 });
 

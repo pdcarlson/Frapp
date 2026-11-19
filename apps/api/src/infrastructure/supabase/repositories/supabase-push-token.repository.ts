@@ -31,6 +31,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       user_id: data.user_id,
       token: data.token,
       device_name: data.device_name ?? null,
+      notifications_enabled: data.notifications_enabled ?? null,
     };
     const { data: created, error } = await this.supabase
       .from('push_tokens')
@@ -99,9 +100,13 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
     userId: string,
     now: string,
     deviceName?: string,
+    notificationsEnabled?: boolean,
   ): Promise<PushToken | null> {
     const patch: TablesUpdate<'push_tokens'> = { last_registered_at: now };
     if (deviceName) patch.device_name = deviceName;
+    if (notificationsEnabled !== undefined) {
+      patch.notifications_enabled = notificationsEnabled;
+    }
     // `maybeSingle`: the row can be deleted between the caller's read and
     // this write (a sign-out, a DeviceNotRegistered prune, another account
     // taking the token over), and that is not a server error.

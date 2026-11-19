@@ -10,6 +10,11 @@
  */
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import type { ChapterRole } from "@repo/hooks/chapter-roles";
+import {
+  matchesPhoneReachFilter,
+  type PhoneReach,
+  type PhoneReachFilter,
+} from "@repo/validation";
 import { num, str } from "../more/narrow";
 
 export type ActivesStatus = "active" | "pending";
@@ -19,6 +24,12 @@ export interface ActivesFilter {
   graduationYear: number | null;
   pledgeClassId: string | null;
   status: ActivesStatus | null;
+  /**
+   * Whether Frapp's notifications reach the member's phone (web's "Phone app"
+   * chip). Offered only to officers the server sends the whole chapter's
+   * reach to.
+   */
+  phoneReach: PhoneReachFilter | null;
 }
 
 export const NO_ACTIVES_FILTER: ActivesFilter = {
@@ -26,6 +37,7 @@ export const NO_ACTIVES_FILTER: ActivesFilter = {
   graduationYear: null,
   pledgeClassId: null,
   status: null,
+  phoneReach: null,
 };
 
 /** Web's Status options and words: onboarding finished, or not yet. */
@@ -98,6 +110,8 @@ export function effectiveActivesFilter(
     roleIds: ReadonlySet<string>;
     years: readonly number[];
     classIds: ReadonlySet<string>;
+    /** Whether the Phone app filter is offered (officers only). */
+    phoneReach?: boolean;
   },
 ): ActivesFilter {
   return {
@@ -115,6 +129,7 @@ export function effectiveActivesFilter(
         ? filter.pledgeClassId
         : null,
     status: filter.status,
+    phoneReach: known.phoneReach ? filter.phoneReach : null,
   };
 }
 
@@ -127,8 +142,15 @@ export function countActivesFilters(filter: ActivesFilter): number {
 export function filterActives(
   actives: readonly Record<string, unknown>[],
   filter: ActivesFilter,
+  /** Each member's phone reach by `user_id`, for the Phone app filter. */
+  reachByUserId?: ReadonlyMap<string, PhoneReach>,
 ): Record<string, unknown>[] {
   return actives.filter((row) => {
+    if (filter.phoneReach !== null) {
+      const userId = str(row, "user_id");
+      const reach = userId ? reachByUserId?.get(userId) : undefined;
+      if (!matchesPhoneReachFilter(reach, filter.phoneReach)) return false;
+    }
     if (filter.roleId !== null) {
       const roleIds = Array.isArray(row.role_ids) ? row.role_ids : [];
       if (!roleIds.includes(filter.roleId)) return false;

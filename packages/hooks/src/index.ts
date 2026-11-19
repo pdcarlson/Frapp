@@ -8,6 +8,7 @@ export * from "./activity-snooze";
 export * from "./activity-standing";
 export * from "./ask-starter";
 export * from "./calendar-birthdays";
+export * from "./member-phone-reach";
 export * from "./calendar-tasks";
 export * from "./calendar-time-grid";
 export * from "./channel-members";

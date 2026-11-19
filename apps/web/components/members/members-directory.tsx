@@ -9,6 +9,7 @@ import {
 import {
   useLeaderboard,
   useMemberDisplayNames,
+  useMemberPhoneReach,
   useMemberSearch,
   useMembers,
   usePledgeClasses,
@@ -71,7 +72,17 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
-import { directoryNoSearchMatches } from "@repo/validation";
+import {
+  directoryNoSearchMatches,
+  matchesPhoneReachFilter,
+  PHONE_REACH_FILTER_OPTIONS,
+  PHONE_REACH_LABEL,
+  phoneReachCountLine,
+  phoneReachStaleNote,
+  phoneReachStateLabel,
+  type PhoneReach,
+  type PhoneReachFilter,
+} from "@repo/validation";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -190,7 +201,21 @@ export function MembersDirectory() {
   const { isOffline } = useNetwork();
   // The roster's role-color resolution, so a row's initials match the color
   // that member's name takes in chat (#3860).
+  // The "Phone app" filter (whether Frapp's notifications reach a member's
+  // phone). Drawn only when the server serves the whole chapter's reach,
+  // which it does for officers who can invite members or manage roles.
+  const [phoneReachFilter, setPhoneReachFilter] =
+    useState<PhoneReachFilter | null>(null);
   const { avatarTintFor } = useMemberDisplayNames();
+  const { reach: phoneReach } = useMemberPhoneReach();
+  const showsPhoneReach = phoneReach?.scope === "chapter";
+  // A filter left set from before a role change that took the chapter view
+  // away reads as Any.
+  const effectivePhoneReachFilter = showsPhoneReach ? phoneReachFilter : null;
+  const phoneReachOfMember = (member: MemberProfile): PhoneReach | undefined =>
+    typeof member.user_id === "string"
+      ? phoneReach?.byUserId.get(member.user_id)
+      : undefined;
   const { toast } = useToast();
   // List or Grid (#4175), picked in the Directory's tab row.
   const [layout] = useListLayout("directory");
@@ -445,14 +470,25 @@ export function MembersDirectory() {
         return false;
       if (statusFilter === "pending" && member.has_completed_onboarding)
         return false;
+      if (
+        !matchesPhoneReachFilter(
+          phoneReachOfMember(member),
+          effectivePhoneReachFilter,
+        )
+      )
+        return false;
       return true;
     });
+    // `phoneReachOfMember` reads `phoneReach`, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     members,
     effectiveRoleFilter,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
+    effectivePhoneReachFilter,
+    phoneReach,
   ]);
 
   const sortedMembers = useMemo(() => {
@@ -522,6 +558,7 @@ export function MembersDirectory() {
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
+    effectivePhoneReachFilter,
   ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -567,7 +604,8 @@ export function MembersDirectory() {
     effectiveRoleFilter !== null ||
     effectiveCohortFilter !== null ||
     effectiveClassFilter !== null ||
-    statusFilter !== null;
+    statusFilter !== null ||
+    effectivePhoneReachFilter !== null;
 
   /**
    * What a member's row and tile both show, and the accessible name that
@@ -585,6 +623,14 @@ export function MembersDirectory() {
     const points = pointsOf(member);
     const status = presenceStatusOf(member);
     const customLine = customLineOf(member);
+    // The member's reach, shown on the row only while the Phone app filter is
+    // set, so the everyday Directory stays as it was.
+    const reach =
+      effectivePhoneReachFilter !== null
+        ? phoneReachOfMember(member)
+        : undefined;
+    const reachText = reach ? phoneReachStateLabel(reach.state) : null;
+    const reachNote = reach ? phoneReachStaleNote(reach) : null;
     const label = [
       name,
       roleName,
@@ -593,6 +639,8 @@ export function MembersDirectory() {
       joined ? `joined ${joined}` : null,
       member.email || null,
       customLine,
+      reachText,
+      reachNote,
       status ? presenceLabel(status) : null,
     ]
       .filter(Boolean)
@@ -605,6 +653,9 @@ export function MembersDirectory() {
       points,
       status,
       customLine,
+      reachText,
+      reachNote,
+      reach,
       label,
     };
   }
@@ -851,6 +902,17 @@ export function MembersDirectory() {
               setStatusFilter(value as "active" | "pending" | null)
             }
           />
+          {showsPhoneReach ? (
+            <FilterChip
+              label={PHONE_REACH_LABEL}
+              anyLabel="Any"
+              options={PHONE_REACH_FILTER_OPTIONS}
+              value={effectivePhoneReachFilter}
+              onChange={(value) =>
+                setPhoneReachFilter(value as PhoneReachFilter | null)
+              }
+            />
+          ) : null}
           <SortChip
             options={sortOptions}
             value={effectiveSort}
@@ -953,6 +1015,7 @@ export function MembersDirectory() {
                 setCohortFilter(null);
                 setClassFilter(null);
                 setStatusFilter(null);
+                setPhoneReachFilter(null);
               }}
             >
               Clear filters
@@ -984,6 +1047,17 @@ export function MembersDirectory() {
             emptied the selection, which unmounted the bar around the checkbox
             that had focus. Here it behaves exactly as the `<th>` checkbox did.
           */}
+          {effectivePhoneReachFilter !== null && phoneReach ? (
+            <p className="text-caption text-muted" aria-live="polite">
+              {phoneReachCountLine(
+                members.flatMap((member) => {
+                  const reach = phoneReachOfMember(member);
+                  return reach ? [reach] : [];
+                }),
+                members.length,
+              )}
+            </p>
+          ) : null}
           <label className="flex w-fit min-h-9 cursor-pointer items-center gap-2 text-caption text-muted pointer-coarse:min-h-11">
             <span className={dashboardCheckboxHitAreaClassName}>
               <input
@@ -1028,6 +1102,9 @@ export function MembersDirectory() {
                   points,
                   status,
                   customLine,
+                  reach,
+                  reachText,
+                  reachNote,
                   label,
                 } = factsOf(member);
                 const selected = selectedMemberIds.includes(id);
@@ -1146,11 +1223,35 @@ export function MembersDirectory() {
                         that can run long.
                       */}
                         <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
-                          {[roleName, className, joined, member.email]
+                          {[
+                            roleName,
+                            className,
+                            joined,
+                            reachNote,
+                            member.email,
+                          ]
                             .filter(Boolean)
                             .join(" · ")}
                         </span>
                       </span>
+                      {/*
+                        The Phone app filter's answer for this member, in
+                        words, only while that filter is set. "Off" takes the
+                        warning tone so the ones to chase stand out; the rest
+                        stay muted.
+                      */}
+                      {reach && reachText ? (
+                        <span
+                          className={cn(
+                            "shrink-0 text-caption",
+                            reach.state === "off"
+                              ? "text-warning"
+                              : "text-muted",
+                          )}
+                        >
+                          {reachText}
+                        </span>
+                      ) : null}
                       <span className="shrink-0 text-caption tabular-nums text-muted">
                         {formatPoints(points)}
                       </span>

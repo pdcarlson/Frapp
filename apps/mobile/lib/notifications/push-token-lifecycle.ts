@@ -30,7 +30,28 @@
 import { narrowPushTokenRow, type PushTokenRow } from "./push-registration";
 
 /** The `POST /v1/push-tokens` body. */
-export type RegisterPushTokenBody = { token: string; device_name?: string };
+export type RegisterPushTokenBody = {
+  token: string;
+  device_name?: string;
+  /**
+   * What the phone's push switch reads (`pushIsOn()`), so officers can see
+   * whose notifications are off (the Directory's "Phone app" filter).
+   * Omitted when the read failed, which leaves the stored value as it was.
+   */
+  notifications_enabled?: boolean;
+};
+
+/**
+ * The notifications answer the last successful register sent, so a return
+ * to the foreground re-registers only when it has changed (the member turned
+ * notifications on or off in the OS settings while away). `undefined` until
+ * a register with an answer succeeds; cleared on sign-out.
+ */
+let reportedNotificationsEnabled: boolean | undefined;
+
+export function lastReportedNotificationsEnabled(): boolean | undefined {
+  return reportedNotificationsEnabled;
+}
 
 /**
  * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
@@ -90,6 +111,8 @@ export async function registerCurrentPushToken(deps: {
    * every register so a row stored before the phone sent one gets it filled.
    */
   getDeviceName?: () => string | undefined;
+  /** What the phone's push switch reads; `undefined` when it can't tell. */
+  getNotificationsEnabled?: () => Promise<boolean | undefined>;
   register: (body: RegisterPushTokenBody) => Promise<unknown>;
   remove: (id: string) => Promise<unknown>;
   readStored: () => Promise<PushTokenRow | null>;
@@ -113,10 +136,21 @@ export async function registerCurrentPushToken(deps: {
         stored?.id && stored.token !== token ? stored.id : null;
 
       const deviceName = deps.getDeviceName?.();
-      const created = await deps.register(
-        deviceName ? { token, device_name: deviceName } : { token },
-      );
+      const notificationsEnabled = await deps
+        .getNotificationsEnabled?.()
+        .catch(() => undefined);
+      // The read awaited, so a sign-out may have landed meanwhile.
+      if (deps.getNotificationsEnabled && deps.isCancelled()) return;
+      const body: RegisterPushTokenBody = { token };
+      if (deviceName) body.device_name = deviceName;
+      if (notificationsEnabled !== undefined) {
+        body.notifications_enabled = notificationsEnabled;
+      }
+      const created = await deps.register(body);
       if (deps.isCancelled()) return;
+      if (notificationsEnabled !== undefined) {
+        reportedNotificationsEnabled = notificationsEnabled;
+      }
 
       const row = narrowPushTokenRow(created);
       await deps.writeStored(row ?? { id: null, token });
@@ -164,6 +198,7 @@ export async function deregisterStoredPushToken(deps: {
   remove: (id: string) => Promise<unknown>;
   warn?: (message: string, error?: unknown) => void;
 }): Promise<void> {
+  reportedNotificationsEnabled = undefined;
   const stored = await deps.readStored();
   if (deps.isCancelled()) return;
   if (!stored?.id) {

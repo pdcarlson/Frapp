@@ -999,6 +999,7 @@ export class NotificationService {
     userId: string,
     token: string,
     deviceName?: string,
+    notificationsEnabled?: boolean,
   ): Promise<PushToken> {
     const existing = await this.pushTokenRepo.findByToken(token);
     if (existing) {
@@ -1016,6 +1017,10 @@ export class NotificationService {
           deviceName && existing.device_name !== deviceName
             ? deviceName
             : undefined,
+          // What the phone's push switch reads now (officers' Directory
+          // "Phone app" filter). Absent from an older build, which leaves the
+          // stored value as it was.
+          notificationsEnabled,
         );
         return updated ?? existing;
       }
@@ -1036,6 +1041,7 @@ export class NotificationService {
       user_id: userId,
       token,
       device_name: deviceName ?? null,
+      notifications_enabled: notificationsEnabled ?? null,
     });
     try {
       await this.dropOldestPushTokens(userId);

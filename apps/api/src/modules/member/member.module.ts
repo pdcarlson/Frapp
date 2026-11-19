@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MemberService } from '../../application/services/member.service';
+import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
+import { PUSH_TOKEN_REPOSITORY } from '#domain/repositories/notification.repository.interface';
+import { SupabasePushTokenRepository } from '../../infrastructure/supabase/repositories/supabase-push-token.repository';
 import { MemberController } from '../../interface/controllers/member.controller';
 import { AlumniController } from '../../interface/controllers/alumni.controller';
 import { ChapterModule } from '../chapter/chapter.module';
@@ -26,6 +29,9 @@ import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
   controllers: [MemberController, AlumniController],
   providers: [
     MemberService,
+    // The Directory's "Phone app" filter reads each member's push tokens.
+    MemberPhoneReachService,
+    { provide: PUSH_TOKEN_REPOSITORY, useClass: SupabasePushTokenRepository },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     // `MemberService.remove` takes a departing member off the chapter's
     // PRIVATE channels (#1302).

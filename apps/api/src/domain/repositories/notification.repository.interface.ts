@@ -120,6 +120,8 @@ export interface IPushTokenRepository {
     userId: string,
     now: string,
     deviceName?: string,
+    /** Left as stored when `undefined` (an older phone build). */
+    notificationsEnabled?: boolean,
   ): Promise<PushToken | null>;
   delete(id: string, userId: string): Promise<void>;
   deleteByToken(token: string): Promise<void>;

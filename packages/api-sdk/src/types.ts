@@ -704,6 +704,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/members/phone-reach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether Frapp's notifications reach each member's phone
+         * @description Per member: notifications on, off, not reported yet, or web only (no phone signed in), with the platform and last-opened date. Officers who can invite members or manage roles get every member; anyone else gets only themselves.
+         */
+        get: operations["MemberController_phoneReach_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members/by-user/{userId}": {
         parameters: {
             query?: never;
@@ -7123,6 +7143,33 @@ export interface components {
             /** @description The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`). */
             birthday_day: number;
         };
+        MemberPhoneReachDto: {
+            /** Format: uuid */
+            user_id: string;
+            /**
+             * @description `on`: a phone shows Frapp notifications. `off`: every phone that has said has them off. `unknown`: a phone on a build that has not said yet. `web_only`: no phone signed in.
+             * @enum {string}
+             */
+            state: "on" | "off" | "unknown" | "web_only";
+            /**
+             * @description Platform of the phone opened last, when its label says.
+             * @enum {string|null}
+             */
+            platform: "ios" | "android" | null;
+            /**
+             * Format: date-time
+             * @description When the member last opened the app on any phone.
+             */
+            last_opened_at: string | null;
+        };
+        MemberPhoneReachListDto: {
+            /**
+             * @description `chapter` for officers who can invite members or manage roles; anyone else gets `self`, only their own entry.
+             * @enum {string}
+             */
+            scope: "chapter" | "self";
+            members: components["schemas"]["MemberPhoneReachDto"][];
+        };
         UpdateMemberRolesDto: {
             role_ids: string[];
             /**
@@ -7233,6 +7280,8 @@ export interface components {
             token: string;
             /** @description The device's platform, OS version and model, such as `ios 26.1 · iPhone 16`. Never the name the member gave the device. A re-register with a different value replaces the stored one. */
             device_name?: string;
+            /** @description Whether the phone lets Frapp's notifications show right now (the OS permission, and on Android the app's notification channel). Sent on every register so officers can see who a push reaches. Omitted by older builds, which leaves the stored value as it was. */
+            notifications_enabled?: boolean;
         };
         MarkNotificationsReadDto: {
             /**
@@ -14260,6 +14309,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberBirthdayDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_phoneReach_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPhoneReachListDto"];
                 };
             };
             /** @description Error */

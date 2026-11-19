@@ -18,11 +18,17 @@ import {
   useGroups,
   useMemberByUserId,
   useMemberDisplayNames,
+  useMemberPhoneReach,
   usePermissionList,
   useRemoveMember,
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
+import {
+  PHONE_REACH_LABEL,
+  phoneReachLastOpened,
+  phoneReachSummary,
+} from "@repo/validation";
 import {
   BIRTHDAY_COPY,
   can,
@@ -188,6 +194,12 @@ export function MemberProfile({
   const isShown = () => mountedRef.current && focusedRef.current;
 
   const memberQuery = useMemberByUserId(userId);
+  // Whether Frapp's notifications reach this member's phone, as web's member
+  // sheet shows it. The server sends every member's only to officers who can
+  // invite or manage roles, and anyone else only their own, so a missing
+  // entry draws no row.
+  const { reach: phoneReachMap } = useMemberPhoneReach();
+  const phoneReach = phoneReachMap?.byUserId.get(userId);
   // The same role-color resolution chat's name uses (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
   const { accent } = useChapterBranding();
@@ -509,6 +521,14 @@ export function MemberProfile({
               label="Member since"
               value={detail.joinedLabel ?? "—"}
             />
+            {phoneReach ? (
+              <ListRow
+                variant="detail"
+                label={PHONE_REACH_LABEL}
+                value={phoneReachSummary(phoneReach)}
+                description={phoneReachLastOpened(phoneReach)}
+              />
+            ) : null}
           </ListSection>
 
           <View style={styles.chipBlock}>

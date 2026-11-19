@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   deregisterStoredPushToken,
+  lastReportedNotificationsEnabled,
   notifyPushPermissionGranted,
   onPushPermissionGranted,
   registerCurrentPushToken,
@@ -63,6 +64,37 @@ describe("registerCurrentPushToken", () => {
       token: "ExponentPushToken[new]",
       device_name: "ios 26.1 · iPhone 16",
     });
+  });
+
+  it("sends whether notifications are on, and remembers the answer it sent", async () => {
+    const d = { ...deps(null), getNotificationsEnabled: async () => false };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+      notifications_enabled: false,
+    });
+    expect(lastReportedNotificationsEnabled()).toBe(false);
+  });
+
+  it("leaves the answer out when the phone can't read it, so the server keeps its own", async () => {
+    const d = {
+      ...deps(null),
+      getNotificationsEnabled: async () => {
+        throw new Error("module unavailable");
+      },
+    };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
+  });
+
+  it("forgets the answer on sign-out", async () => {
+    const d = { ...deps(null), getNotificationsEnabled: async () => true };
+    await registerCurrentPushToken(d);
+    expect(lastReportedNotificationsEnabled()).toBe(true);
+    await deregisterStoredPushToken(d);
+    expect(lastReportedNotificationsEnabled()).toBe(undefined);
   });
 
   it("sends the token alone when there is no device label", async () => {

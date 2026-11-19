@@ -152,6 +152,7 @@ describe('NotificationService', () => {
     device_name: 'iPhone',
     created_at: '2026-02-27T00:00:00.000Z',
     last_registered_at: '2026-02-27T00:00:00.000Z',
+    notifications_enabled: null,
   };
 
   const basePreference: NotificationPreference = {
@@ -1493,8 +1494,42 @@ describe('NotificationService', () => {
         user_id: 'u-1',
         token: 'ExponentPushToken[xxx]',
         device_name: 'iPhone',
+        notifications_enabled: null,
       });
       expect(result).toEqual(basePushToken);
+    });
+
+    it("stores whether the phone's notifications are on with a new token", async () => {
+      mockPushTokenRepo.findByToken.mockResolvedValue(null);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      mockPushTokenRepo.create.mockResolvedValue(basePushToken);
+
+      await service.registerPushToken(
+        'u-1',
+        'ExponentPushToken[xxx]',
+        'ios 26.1 · iPhone',
+        false,
+      );
+
+      expect(mockPushTokenRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ notifications_enabled: false }),
+      );
+    });
+
+    it("passes a re-register's notifications answer through, and leaves it alone when the phone sends none", async () => {
+      mockPushTokenRepo.findByToken.mockResolvedValue(basePushToken);
+      mockPushTokenRepo.markRegistered.mockResolvedValue(basePushToken);
+
+      await service.registerPushToken(
+        'u-1',
+        'ExponentPushToken[xxx]',
+        undefined,
+        true,
+      );
+      await service.registerPushToken('u-1', 'ExponentPushToken[xxx]');
+
+      expect(mockPushTokenRepo.markRegistered.mock.calls[0][4]).toBe(true);
+      expect(mockPushTokenRepo.markRegistered.mock.calls[1][4]).toBeUndefined();
     });
 
     it('moves a token another account registered to the caller, and logs the move without the token', async () => {
@@ -1585,6 +1620,7 @@ describe('NotificationService', () => {
         'u-1',
         expect.any(String),
         undefined,
+        undefined,
       );
       const now = mockPushTokenRepo.markRegistered.mock.calls[0][2];
       expect(Number.isNaN(Date.parse(now))).toBe(false);
@@ -1608,6 +1644,7 @@ describe('NotificationService', () => {
         'u-1',
         expect.any(String),
         'ios 26.1 · iPhone',
+        undefined,
       );
       expect(mockPushTokenRepo.create).not.toHaveBeenCalled();
       expect(result).toEqual(labelled);
@@ -1630,6 +1667,7 @@ describe('NotificationService', () => {
         'u-1',
         expect.any(String),
         'ios 26.2 · iPhone',
+        undefined,
       );
       expect(result).toEqual(after);
     });
@@ -1662,6 +1700,7 @@ describe('NotificationService', () => {
         basePushToken.id,
         'u-1',
         expect.any(String),
+        undefined,
         undefined,
       );
       expect(result).toEqual(basePushToken);

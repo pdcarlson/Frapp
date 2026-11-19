@@ -39,6 +39,7 @@ function render(
     classes?: { id: string; name: string }[];
     rolesStatus?: "loading" | "error" | "ready";
     onRetryRoles?: () => void;
+    showPhoneReach?: boolean;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -54,6 +55,7 @@ function render(
           classWord="Pledge class"
           rolesStatus={more.rolesStatus ?? "ready"}
           onRetryRoles={more.onRetryRoles ?? vi.fn()}
+          showPhoneReach={more.showPhoneReach}
         />
       </FrappThemeProvider>,
     );
@@ -176,6 +178,22 @@ describe("ActivesFilterSheet (#3971)", () => {
     };
   }
 
+  it("offers the Phone app section only when asked, with web's choices", () => {
+    expect(
+      inHeader(render(), (p) => p.accessibilityLabel === "Phone app"),
+    ).toBeNull();
+
+    const onChange = vi.fn();
+    const tree = render(NO_ACTIVES_FILTER, onChange, { showPhoneReach: true });
+    const phone = section(tree, "Phone app");
+    expect(phone.selected).toBe("__any");
+    act(() => phone.onSelect("unreachable"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...NO_ACTIVES_FILTER,
+      phoneReach: "unreachable",
+    });
+  });
+
   it("hands the screen each section's pick in the filter's own types", () => {
     const onChange = vi.fn();
     const tree = render(NO_ACTIVES_FILTER, onChange, {
@@ -207,6 +225,7 @@ describe("ActivesFilterSheet (#3971)", () => {
       graduationYear: 2028,
       pledgeClassId: "pc-a",
       status: "active" as const,
+      phoneReach: null,
     };
     const tree = render(set, onChange, {
       classes: [{ id: "pc-a", name: "Alpha" }],

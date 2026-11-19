@@ -181,6 +181,7 @@ export * from "./permission-registry";
 // Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
 export * from "./permissions";
+export * from "./phone-reach";
 export * from "./phone";
 export * from "./profile-copy";
 export * from "./profile-correction";
