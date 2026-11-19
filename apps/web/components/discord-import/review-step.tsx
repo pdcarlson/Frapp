@@ -64,11 +64,11 @@ export function discordCreatedAt(id: string | null | undefined): Date | null {
 }
 
 const MONTH_YEAR = new Intl.DateTimeFormat("en-US", {
-  month: "short",
+  month: "long",
   year: "numeric",
 });
 const DAY = new Intl.DateTimeFormat("en-US", {
-  month: "short",
+  month: "long",
   day: "numeric",
   year: "numeric",
 });

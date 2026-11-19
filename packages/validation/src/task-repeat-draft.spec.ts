@@ -19,7 +19,7 @@ import {
 } from "./repeat-draft";
 
 const NY = "America/New_York";
-// Monday Nov 16 2026, 9 PM in New York.
+// Monday November 16 2026, 9 PM in New York.
 const FIRST = new Date("2026-11-17T02:00:00.000Z");
 
 describe("a task's Repeat control (#5119)", () => {
@@ -70,7 +70,7 @@ describe("a task's Repeat control (#5119)", () => {
       { countInput: "4" },
     );
     expect(taskRepeatCaption(draft, FIRST)).toEqual({
-      text: "4 times, the last on Dec 7.",
+      text: "4 times, the last on December 7.",
       problem: false,
     });
   });
@@ -123,7 +123,7 @@ describe("taskSeriesLine (#5119)", () => {
   it("says the pattern, and the next copy's day when asked", () => {
     expect(taskSeriesLine(series, FIRST)).toBe("Every Monday");
     expect(taskSeriesLine(series, FIRST, { next: true })).toBe(
-      "Every Monday · next Nov 23",
+      "Every Monday · next November 23",
     );
   });
 
@@ -207,7 +207,7 @@ describe("taskRepeatCaption's end date (#5119)", () => {
       { until: "2028-12-31" },
     );
     expect(taskRepeatCaption(draft, FIRST)).toEqual({
-      text: "Repeats until Dec 31, 2028.",
+      text: "Repeats until December 31, 2028.",
       problem: false,
     });
   });

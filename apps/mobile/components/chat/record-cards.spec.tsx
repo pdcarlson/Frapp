@@ -205,7 +205,7 @@ describe("HoursCard", () => {
 
   it("says who logged how long, on which day, and what for", () => {
     const text = allText(render(OWNER));
-    expect(text).toContain("Casey Lin logged 1h 30m on Nov 4, 2026");
+    expect(text).toContain("Casey Lin logged 1h 30m on November 4, 2026");
     expect(text).toContain("“Food bank shift”");
   });
 

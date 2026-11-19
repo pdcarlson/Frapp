@@ -49,7 +49,7 @@ describe("TaskRepeatFact", () => {
       tree.root.findAll(
         (node) =>
           node.props.accessibilityLabel ===
-          "Repeats: Every Monday · next Nov 30",
+          "Repeats: Every Monday · next November 30",
       ).length,
     ).toBeGreaterThan(0);
     act(() => tree.unmount());

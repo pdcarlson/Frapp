@@ -602,11 +602,11 @@ describe("ServiceHoursPage review queue", () => {
     expect(cardFilledContainers(container)).toEqual([]);
     const queue = screen.getByRole("region", { name: /review queue/i });
     expect(within(queue).getByText("1 pending")).toBeInTheDocument();
-    // `date` is a bare column: "Aug 1", never the raw "2026-08-01".
-    expect(queue).toHaveTextContent(/Aug 1(, 2026)? · 2h/);
+    // `date` is a bare column: "August 1", never the raw "2026-08-01".
+    expect(queue).toHaveTextContent(/August 1(, 2026)? · 2h/);
     expect(queue).not.toHaveTextContent("2026-08-01");
     const history = screen.getByRole("region", { name: /history/i });
-    expect(history).toHaveTextContent(/Aug 1(, 2026)? · 2h/);
+    expect(history).toHaveTextContent(/August 1(, 2026)? · 2h/);
     // The status badge renders a word from the shared label map, never the
     // token (principles.md P2.1).
     expect(within(history).getByText("Approved")).toBeInTheDocument();
@@ -1001,7 +1001,7 @@ describe("ServiceHoursPage pre-filled date (#3167)", () => {
     vi.clearAllMocks();
     mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
     chapter.active();
-    // 20:00 on Sep 30 in Los Angeles, already Oct 1 in UTC. Only `Date` is
+    // 20:00 on September 30 in Los Angeles, already October 1 in UTC. Only `Date` is
     // faked, so user-event's own timers still run.
     process.env.TZ = "America/Los_Angeles";
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -1114,7 +1114,7 @@ describe("ServiceHoursPage your own hours and the leaderboard (#4669)", () => {
     render(<ServiceHoursPage />);
 
     const mine = screen.getByRole("region", { name: "Your service hours" });
-    // The approved entry is dated Aug 1, before the semester began.
+    // The approved entry is dated August 1, before the semester began.
     expect(
       within(mine).getByText("This semester").nextSibling,
     ).toHaveTextContent("0 h");

@@ -2119,7 +2119,7 @@ describe("TasksBoard repeating tasks (#5119)", () => {
 
   it("says on the tile how it repeats and when it comes next", () => {
     render(<TasksBoard />);
-    expect(screen.getByText("Every Monday · next Nov 23")).toBeInTheDocument();
+    expect(screen.getByText("Every Monday · next November 23")).toBeInTheDocument();
   });
 
   it("says nothing once the series has ended", () => {

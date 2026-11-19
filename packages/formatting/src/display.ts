@@ -1,9 +1,10 @@
 /**
  * The house date shapes: how a screen prints a day, a time or a span of them.
  *
- * Every helper here reads like mobile already reads: a short month and day
- * ("Nov 6"), a weekday where the day matters ("Fri, Nov 6"), the time after a
- * middle dot ("Fri, Nov 6 · 5:00 PM"), and an en-dashed range that says the
+ * Every helper here writes the date out, never abbreviated
+ * (`spec/ui/design-system/writing.md` § 5a): the month and day
+ * ("November 6"), a weekday where the day matters ("Friday, November 6"), the
+ * time after a middle dot ("Friday, November 6 · 5:00 PM"), and an en-dashed range that says the
  * day period once ("5:00 – 7:00 PM"). None prints seconds, and none prints a
  * numeric date ("11/6/2026"), which is what `formatLocaleDateTime` and
  * `formatLocaleDate` give. The year appears only when the date is outside the
@@ -38,9 +39,13 @@ function sameYear(at: Date, now: Date): boolean {
   return at.getFullYear() === now.getFullYear();
 }
 
-function monthDay(at: Date, now: Date): string {
+function monthDay(
+  at: Date,
+  now: Date,
+  month: "long" | "short" = "long",
+): string {
   return at.toLocaleDateString(undefined, {
-    month: "short",
+    month,
     day: "numeric",
     ...(sameYear(at, now) ? {} : { year: "numeric" }),
   });
@@ -48,8 +53,8 @@ function monthDay(at: Date, now: Date): string {
 
 function weekdayMonthDay(at: Date, now: Date): string {
   return at.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
+    weekday: "long",
+    month: "long",
     day: "numeric",
     ...(sameYear(at, now) ? {} : { year: "numeric" }),
   });
@@ -64,7 +69,7 @@ function weekdayName(at: Date): string {
   return at.toLocaleDateString(undefined, { weekday: "long" });
 }
 
-/** `"Nov 6"`, or `"Nov 6, 2025"` outside the current year. */
+/** `"November 6"`, or `"November 6, 2025"` outside the current year. */
 export function formatDay(
   value: unknown,
   now: Date = new Date(),
@@ -73,7 +78,7 @@ export function formatDay(
   return at ? monthDay(at, now) : null;
 }
 
-/** `"Fri, Nov 6"`, with the year outside the current one. */
+/** `"Friday, November 6"`, with the year outside the current one. */
 export function formatWeekdayDay(
   value: unknown,
   now: Date = new Date(),
@@ -82,7 +87,7 @@ export function formatWeekdayDay(
   return at ? weekdayMonthDay(at, now) : null;
 }
 
-/** `"Fri, Nov 6 · 5:00 PM"`, with the year outside the current one. */
+/** `"Friday, November 6 · 5:00 PM"`, with the year outside the current one. */
 export function formatDayTime(
   value: unknown,
   now: Date = new Date(),
@@ -92,9 +97,9 @@ export function formatDayTime(
 }
 
 /**
- * `"Fri, Nov 6 · 5:00 – 7:00 PM"`. The day period is said once when both ends
+ * `"Friday, November 6 · 5:00 – 7:00 PM"`. The day period is said once when both ends
  * share it, and an end on another day names that day:
- * `"Fri, Nov 6 · 10:00 PM – Sat, Nov 7 · 1:00 AM"`. Without a readable end it
+ * `"Friday, November 6 · 10:00 PM – Saturday, November 7 · 1:00 AM"`. Without a readable end it
  * is {@link formatDayTime}.
  */
 export function formatDayTimeRange(
@@ -110,7 +115,7 @@ export function formatDayTimeRange(
 /**
  * `"<day> · 5:00 – 7:00 PM"`: a day label followed by a time range. The day
  * period is said once when both ends share it; an end on another day names
- * that day (`"<day> · 10:00 PM – Sat, Nov 7 · 1:00 AM"`); without a readable
+ * that day (`"<day> · 10:00 PM – Saturday, November 7 · 1:00 AM"`); without a readable
  * end it is just the start time. Shared by {@link formatDayTimeRange} and
  * {@link formatEventWindow}, so the two can't word a range differently.
  */
@@ -131,7 +136,7 @@ function withTimes(
  * An event's when, worded for someone deciding whether to go:
  * `"Tonight · 6:00 – 7:00 PM"` (today from 5 PM on), `"Today · 9:00 –
  * 10:00 AM"`, `"Tomorrow · …"`, the weekday within the coming week
- * (`"Friday · …"`), otherwise `"Sat, Mar 14 · …"` with the year outside the
+ * (`"Friday · …"`), otherwise `"Saturday, March 14 · …"` with the year outside the
  * current one. An end on another day names that day, as
  * {@link formatDayTimeRange} does. Both apps' chat event cards and the phone's
  * event detail read this one (#4135), so a member reads the same line on each.
@@ -176,28 +181,28 @@ export function formatPointsChip(value: number): string {
 }
 
 /**
- * `"Nov 8 – Nov 14"`: a week's first and last day, month and day in the
- * reader's locale ("8 Nov – 14 Nov" in en-GB) and no year, for a week that
+ * `"November 8 – November 14"`: a week's first and last day, month and day in the
+ * reader's locale ("8 November – 14 November" in en-GB) and no year, for a week that
  * has just ended (Activity's recap, #4983).
  */
 export function formatWeekSpan(firstDay: Date, lastDay: Date): string {
   const day = (at: Date) =>
-    at.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    at.toLocaleDateString(undefined, { month: "long", day: "numeric" });
   return `${day(firstDay)} – ${day(lastDay)}`;
 }
 
 /**
- * `"Aug 24 – Dec 12, 2026"`: a span of days, the year said once at the end
+ * `"August 24 – December 12, 2026"`: a span of days, the year said once at the end
  * when both ends share it, and on each end when they don't.
  */
 export function formatDayRange(start: unknown, end: unknown): string | null {
   const from = toDate(start);
   const to = toDate(end);
   if (!from || !to) return null;
-  const short: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  const full: Intl.DateTimeFormatOptions = { ...short, year: "numeric" };
+  const day: Intl.DateTimeFormatOptions = { month: "long", day: "numeric" };
+  const full: Intl.DateTimeFormatOptions = { ...day, year: "numeric" };
   if (from.getFullYear() === to.getFullYear()) {
-    return `${from.toLocaleDateString(undefined, short)} – ${to.toLocaleDateString(undefined, full)}`;
+    return `${from.toLocaleDateString(undefined, day)} – ${to.toLocaleDateString(undefined, full)}`;
   }
   return `${from.toLocaleDateString(undefined, full)} – ${to.toLocaleDateString(undefined, full)}`;
 }
@@ -205,7 +210,7 @@ export function formatDayRange(start: unknown, end: unknown): string | null {
 /**
  * A list row's when: `"Today · 5:00 PM"`, `"Tomorrow · 5:00 PM"`, the weekday
  * within the coming week (`"Friday · 5:00 PM"`), otherwise
- * `"Nov 6 · 5:00 PM"`, and `"Yesterday · 5:00 PM"` for the day before.
+ * `"November 6 · 5:00 PM"`, and `"Yesterday · 5:00 PM"` for the day before.
  */
 export function formatRelativeDayTime(
   value: unknown,
@@ -242,7 +247,8 @@ export function formatConversationTime(
   if (days >= 0) return time(at);
   if (days === -1) return "Yesterday";
   if (days > -7) return weekdayName(at);
-  return monthDay(at, now);
+  // The inbox keeps the short date (#5519, writing.md § 5a).
+  return monthDay(at, now, "short");
 }
 
 /**
@@ -263,16 +269,12 @@ export function formatDayHeading(
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
   if (days > 1 && days < 7) return weekdayName(at);
-  return at.toLocaleDateString(undefined, {
-    month: "long",
-    day: "numeric",
-    ...(sameYear(at, now) ? {} : { year: "numeric" }),
-  });
+  return monthDay(at, now);
 }
 
 /**
  * When something was sent, in words: `"Sent today at 4:46 PM"`,
- * `"Sent yesterday at 9:00 AM"`, `"Sent Nov 3 at …"` (a past day reads as its
+ * `"Sent yesterday at 9:00 AM"`, `"Sent November 3 at …"` (a past day reads as its
  * date; only a time ahead of the device clock could read as a weekday).
  * Read by web's and mobile's invite lists.
  */
@@ -285,7 +287,7 @@ export function formatSentLabel(
 
 /**
  * When something was done, led by what was done: `"Submitted today at
- * 9:04 PM"`, `"Resubmitted yesterday at 8:00 AM"`, `"Submitted Nov 3 at …"`.
+ * 9:04 PM"`, `"Resubmitted yesterday at 8:00 AM"`, `"Submitted November 3 at …"`.
  * `formatSentLabel` is this with `"Sent"`; a task review says when the work
  * was handed in with it (#4693).
  */
@@ -305,13 +307,13 @@ export function formatActedLabel(
 
 /**
  * A due date as a countdown: `"Due today"`, `"Due tomorrow"`, `"Due Friday"`
- * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
+ * within the week, `"Due November 6"` beyond it, and `"Overdue by 2 days"` once it
  * has passed. Both apps' task due lines read this one (#4135), through
  * `@repo/hooks`' `taskDueLine` and mobile's `formatDueSubtitle`.
  *
  * A task due at a time of day passes its `due_at` instant instead of its
  * `due_date` (#4003), and the countdown names the time: `"Due today at
- * 5 PM"`, `"Due Friday at 11:59 PM"`, `"Due Nov 14 at 9 AM"`. Once that
+ * 5 PM"`, `"Due Friday at 11:59 PM"`, `"Due November 14 at 9 AM"`. Once that
  * minute has passed it is overdue by the minute or hour within the first
  * day (`"Overdue by 40 minutes"`, `"Overdue by 3 hours"`), then by the day.
  */
@@ -381,7 +383,7 @@ function timedDueLabel(due: Date, now: Date): string {
   return `Due ${dueDayWords(due, now)} at ${formatClockShort(due)}`;
 }
 
-/** "today", "tomorrow", "Friday" within the week, else "Nov 14". */
+/** "today", "tomorrow", "Friday" within the week, else "November 14". */
 function dueDayWords(due: Date, now: Date): string {
   const days = dayDelta(now, due);
   if (days === 0) return "today";
@@ -407,8 +409,8 @@ export function formatClockShort(value: Date | string): string {
 
 /**
  * A task's due without a countdown, for one whose countdown would not be
- * true (handed in, or read by someone who can't see its status): `"Due Nov
- * 14"`, or `"Due Nov 14 at 5 PM"` for a task due at a time (#4003). Takes the
+ * true (handed in, or read by someone who can't see its status): `"Due November
+ * 14"`, or `"Due November 14 at 5 PM"` for a task due at a time (#4003). Takes the
  * task's `due_at` when it has one, else its `due_date`.
  */
 export function formatDueOn(
@@ -424,7 +426,7 @@ export function formatDueOn(
 }
 
 /**
- * `"Nov 6, 2026, 5:00 PM"`: always the year, never seconds. For a tooltip or
+ * `"November 6, 2026 at 5:00 PM"`: always the year, never seconds. For a tooltip or
  * an accessible name, where the whole instant is wanted and space is not
  * scarce; a visible row takes one of the shorter forms above.
  */
@@ -433,7 +435,7 @@ export function formatTimestampFull(value: unknown): string | null {
   if (!at) return null;
   return at
     .toLocaleString(undefined, {
-      month: "short",
+      month: "long",
       day: "numeric",
       year: "numeric",
       hour: "numeric",

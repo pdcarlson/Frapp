@@ -170,6 +170,17 @@ The words above are still the only terms; only the casing changed.
 The mapping from state to badge kind is the design system's, so it stays in each app: on web, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts) for billing, and one module per domain vocabulary for the rest (attendance, service review, study-session close, study-zone enablement).
 `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
 
+## 5a. Dates and times
+
+Dates are written out, never abbreviated, on both apps (owner, 2026-11-07, for the chat home and Up next rows; extended to every screen 2026-11-19 after the full UI audit). Relative words first: `Today`, `Tomorrow`, `Yesterday`, the weekday within the week (`Friday`), otherwise the month and day (`November 14`), with the year only outside the current one (`January 3, 2027`). Where the weekday matters it leads the date: `Friday, November 6 · 5:00 PM`. Never `tmrw`, `Fri`, `Nov 6` or a numeric date. Format through `@repo/formatting`'s display helpers, never a screen's own `toLocaleDateString` options, so one change reaches every row.
+
+Short forms that stay, each for a reason:
+
+- The Messages list's last-sent time (`formatConversationTime`: `Nov 6`), at the end of a name line as a messaging inbox puts it (#5519).
+- Calendar grids' column headings (`Fri` over a column) and date tiles (`NOV` over `6`), which are a calendar's own drawing, not text a member reads as a sentence.
+
+Not yet converted (tracked in [#5696](https://github.com/frapplive/Frapp/issues/5696), not exceptions): the phone's Minutes list row time, push notification bodies, and a repeat pattern's weekdays (`Every Mon and Thu`).
+
 ## 6. Trust copy rules
 
 Billing, legal, and data-sensitive surfaces MUST:
@@ -478,7 +489,7 @@ It replaced the `You're all clear` card.
 | Loading | — | `Loading service entries...` |
 | Empty queue | — | `Nothing waiting for review.` (one line) |
 | Queue row, points preview | — | `Approving awards {N} service point(s), at the chapter's current rate of 1 per {rate}.`; under the rate, `Approving awards no points: {duration} is under the chapter's current rate of 1 point per {rate}.` `{rate}` reads `hour` at the default 60 minutes, otherwise a duration (`30m`, `1h 30m`). No line when the rate can't be read (#3862) |
-| History row, points | — | On an approved entry, the points its approval recorded: `{N} points` / `1 point`, or `No points` for a sub-rate approval; `Points awarded` only when the entry carries no number. Web shows it as an outline badge beside the status, mobile ends the row's meta line with it (`3h · Aug 12 · 3 points`). Never recomputed from the current rate (#3868) |
+| History row, points | — | On an approved entry, the points its approval recorded: `{N} points` / `1 point`, or `No points` for a sub-rate approval; `Points awarded` only when the entry carries no number. Web shows it as an outline badge beside the status, mobile ends the row's meta line with it (`3h · August 12 · 3 points`). Never recomputed from the current rate (#3868) |
 | Your service hours, stats | — | `This semester`, `All time` (each `{N} h` `approved`) and `Pending` (`{N} h` `{n} entry`/`entries`). A stat whose part isn't known yet reads `–`; This semester reads `–` `Couldn't load` when the semester's start didn't load (#4669) |
 | Empty log (Your log) | — | `You haven't logged any service yet.` then, for a viewer with `service:log`, a **Log your first hours** link that opens Log service (one line) |
 | Your log, error | `Couldn't load your service hours` | the load-failure line (§ copy rules) |

@@ -315,7 +315,7 @@ export function notificationPreview(
 /**
  * Where a row falls and what time it shows, on the viewer's own calendar day
  * (#1058): today's rows show a clock time ("4:00 PM"), a row from the last
- * week its weekday ("Mon"), and anything older its date ("Aug 12"). `null`
+ * week its weekday ("Monday"), and anything older its date ("August 12"). `null`
  * for a timestamp that doesn't parse, which drops the row on both surfaces.
  */
 export function notificationWhen(
@@ -340,8 +340,8 @@ export function notificationWhen(
     isToday: false,
     time:
       days < 7
-        ? at.toLocaleDateString(undefined, { weekday: "short" })
-        : at.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        ? at.toLocaleDateString(undefined, { weekday: "long" })
+        : at.toLocaleDateString(undefined, { month: "long", day: "numeric" }),
   };
 }
 

@@ -289,11 +289,11 @@ describe("FindBar", () => {
     await openAndType(user, "announce");
 
     const backwork = screen.getByRole("option", { name: /announcements 101/ });
-    expect(backwork).toHaveTextContent(/COGS 101 · Fall 2025 · added Sep 14/);
+    expect(backwork).toHaveTextContent(/COGS 101 · Fall 2025 · added September 14/);
     const message = screen.getByRole("option", { name: /announce the thing/ });
-    expect(message).toHaveTextContent(/#announcements · Oct 28/);
+    expect(message).toHaveTextContent(/#announcements · October 28/);
     const event = screen.getByRole("option", { name: /announce party/ });
-    expect(event).toHaveTextContent(/Nov 9/);
+    expect(event).toHaveTextContent(/November 9/);
   });
 
   it("hides a group whose module the chapter switched off", async () => {

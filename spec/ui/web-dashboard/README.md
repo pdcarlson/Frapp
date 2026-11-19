@@ -478,7 +478,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   A list that is empty because its read failed never says that; it says "Showing only tasks." over the line that names what couldn't load.
   This replaces the filter chips and the chip remembered per browser (#4402): Changed in #4766 by `pdcarlson`, 2026-11-13.
 - **"Last week" sits under the week card on Sunday to Tuesday** (`components/activity/recap-card.tsx`, [#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14).
-  What the member did in their last full week, from [`activity.md` § Recap](../../behavior/activity.md#recap): the eyebrow "Last week" with the week's days beside it ("Nov 8 – Nov 14", in the reader's locale), then one ruled card of figures in a wrapping row, each a number in the label role and its word in a muted caption ("2 events", "+30 points", "2h 30m service").
+  What the member did in their last full week, from [`activity.md` § Recap](../../behavior/activity.md#recap): the eyebrow "Last week" with the week's days beside it ("November 8 – November 14", in the reader's locale), then one ruled card of figures in a wrapping row, each a number in the label role and its word in a muted caption ("2 events", "+30 points", "2h 30m service").
   Slack's and Linear's weekly digests are the comparables: the week summed up once, then out of the way.
   Only what the member did is drawn: a module that is off, a part that couldn't be read, or a zero is left out, and a week with nothing to show draws no card.
   A close button (36px, 44px to a finger) hides it until next week's recap, remembered per browser, per chapter and week, and followed by other open tabs.
@@ -907,7 +907,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   Starting a session and the history are flush.
 - **Study zones are a flush list** with quiet row actions, and New study zone (a `NewButton`) sits on the Zones section's label row, since Study zones is a Settings section rather than a page with a header of its own.
 - **Denied copy names the role, never the permission key**: "Your role can't see every poll." was the shape, not `polls:view_all`.
-- **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Fri, Nov 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), never a numeric date with seconds.
+- **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Friday, November 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), written out as [`writing.md` § 5a](../design-system/writing.md#5a-dates-and-times) says, never a numeric date with seconds.
   Both apps' task due lines read the same helpers through `@repo/hooks`' `taskDueLine`, and both chat event cards read `formatEventWindow` ("Tonight · 6:00 – 7:00 PM"), since #4135 (2026-11-12).
   Mobile's event rows still format their times with their own copy until they read these ([#3420](https://github.com/pdcarlson/Frapp/issues/3420)).
 

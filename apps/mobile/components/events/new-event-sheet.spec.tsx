@@ -268,7 +268,7 @@ describe("New event", () => {
     // Read against the default start, Thursday the 5th at 7 PM, whose
     // weekday chip is on (#4488).
     expect(screenText(tree)).toContain(
-      "13 meetings, the last on Jan 28, 2027.",
+      "13 meetings, the last on January 28, 2027.",
     );
     expect(byLabel(tree, "Thursday").props.accessibilityState.checked).toBe(
       true,
@@ -341,7 +341,7 @@ describe("New event", () => {
     act(() => chip(tree, "Ends another day").props.onPress());
     pick(tree, "Ends day", local(7, 0));
     expect(byLabel(tree, "Ends day").props.accessibilityLabel).toContain(
-      "Nov 7",
+      "November 7",
     );
     act(() => tree.unmount());
   });
@@ -456,10 +456,10 @@ describe("New event", () => {
     act(() => chip(tree, "On date").props.onPress());
     // Offered the day the 13 meetings would end on.
     expect(screenText(tree)).toContain(
-      "13 meetings, the last on Jan 28, 2027.",
+      "13 meetings, the last on January 28, 2027.",
     );
     pick(tree, "Ends on", local(26, 12));
-    expect(screenText(tree)).toContain("4 meetings, the last on Nov 26.");
+    expect(screenText(tree)).toContain("4 meetings, the last on November 26.");
     act(() => createButton(tree).props.onPress());
     expect(
       (mutate.mock.calls[0]![0] as { recurrence_rule?: string })
@@ -722,8 +722,8 @@ describe("the When row on Android", () => {
         typeof node.props.onPress === "function",
     );
     // The pill says its day: it used to be blank, the label too.
-    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Sat, Nov 7");
-    expect(screenText(tree)).toContain("Sat, Nov 7");
+    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Saturday, November 7");
+    expect(screenText(tree)).toContain("Saturday, November 7");
     act(() => dayPill!.props.onPress());
 
     expect(open).toHaveBeenCalledTimes(1);

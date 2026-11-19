@@ -401,7 +401,7 @@ describe("activityAgenda (#4766)", () => {
       detail: "10:00 AM · Great Room",
       dateBlock: null,
     });
-    expect(byTitle.Banquet!.detail).toContain("Dec 20");
+    expect(byTitle.Banquet!.detail).toContain("December 20");
     // The card's row stands alone, so it names its day.
     const next = activityAgenda(
       activity({ coming_up: [event({ start_time: at(1, 10) })] }),

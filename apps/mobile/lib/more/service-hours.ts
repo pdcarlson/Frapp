@@ -24,8 +24,8 @@ export interface ServiceEntryRow {
   status: ServiceEntryStatus;
   durationMinutes: number;
   /**
-   * e.g. `"2h 30m · Aug 12"`, and on an approved entry what it awarded:
-   * `"3h · Aug 12 · 3 points"` (#3868, web's History badge).
+   * e.g. `"2h 30m · August 12"`, and on an approved entry what it awarded:
+   * `"3h · August 12 · 3 points"` (#3868, web's History badge).
    */
   meta: string | null;
   date: string;
@@ -74,7 +74,7 @@ export function serviceStatusHue(
 /** A single logged shift longer than a day is a typo, not a shift. */
 export const MAX_DURATION_MINUTES = 24 * 60;
 
-/** `"2026-08-12"` → `"Aug 12"`. Falls back to the raw value if unparseable. */
+/** `"2026-08-12"` → `"August 12"`. Falls back to the raw value if unparseable. */
 function formatDate(value: string): string {
   // Parsed at local noon: `new Date` reads a bare `YYYY-MM-DD` as UTC midnight,
   // which renders as the previous day for anyone west of Greenwich, and UTC
@@ -83,7 +83,7 @@ function formatDate(value: string): string {
   // fold into formatLocaleDate.
   const date = parseBareDateLocalNoon(value);
   if (!date) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
 function toRow(row: Record<string, unknown>): ServiceEntryRow | null {
@@ -184,11 +184,12 @@ const RELATIVE_PRESET_COUNT = 2;
 
 /**
  * The s20 date chips: Today, Yesterday, then the two days before by weekday
- * ("Tue", "Mon"), so a Saturday shift can still be logged on Monday.
+ * ("Tuesday", "Monday"), so a Saturday shift can still be logged on Monday.
  *
  * Backwards only, the mirror of s19's due presets, because a shift is logged
- * after it happens. Short weekday names keep all four chips on one row at
- * phone width, where "Wednesday" would wrap it. Counted in calendar days by
+ * after it happens. The weekday is written out (owner rule, never "Tue"), so
+ * on a narrow phone the four chips can take two rows; the sheet's field
+ * can't scroll sideways under its own pan. Counted in calendar days by
  * s19's `addDays`, so a daylight-saving change can't skip or repeat a day.
  */
 export function serviceDatePresets(now: Date): ServiceDatePreset[] {
@@ -199,7 +200,7 @@ export function serviceDatePresets(now: Date): ServiceDatePreset[] {
         ? "Today"
         : daysAgo === 1
           ? "Yesterday"
-          : day.toLocaleDateString(undefined, { weekday: "short" });
+          : day.toLocaleDateString(undefined, { weekday: "long" });
     return {
       daysAgo,
       label,
@@ -243,7 +244,7 @@ export interface ResolvedServiceDate {
  * A held date choice, read on the day `now` falls on.
  *
  * A relative chip is that chip's date today. A held date stays as picked, and
- * the chip shown selected is whichever of today's resolves to it: a "Mon"
+ * the chip shown selected is whichever of today's resolves to it: a "Monday"
  * picked on a Wednesday is still Monday on the Thursday, now the oldest chip.
  * A held date that has left the chip window falls back to Today. s19 can keep
  * a date no chip draws, because its date field shows the date it files; s20

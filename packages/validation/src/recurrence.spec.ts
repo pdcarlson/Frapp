@@ -135,7 +135,7 @@ describe("parseRepeatRule / formatRepeatRule", () => {
     "FREQ=MONTHLY;BYDAY=5TU;COUNT=3;TZID=UTC",
     "FREQ=MONTHLY;BYDAY=MO,TU;COUNT=3;TZID=UTC",
     "FREQ=DAILY;BYDAY=MO;COUNT=3;TZID=UTC",
-    "FREQ=DAILY;UNTIL=20270230;TZID=UTC", // no Feb 30
+    "FREQ=DAILY;UNTIL=20270230;TZID=UTC", // no February 30
     "FREQ=DAILY;COUNT=3;TZID=UTC;WKST=MO", // unknown key
     "FREQ=DAILY;FREQ=DAILY;COUNT=3;TZID=UTC",
     "FREQ=DAILY;COUNT=3;TZID= America/New_York", // untrimmed zone
@@ -168,7 +168,7 @@ describe("seriesChildStarts", () => {
   });
 
   it("keeps the wall-clock time across a DST change (#3662)", () => {
-    // Weekly Saturday 23:30 New York from Feb 6, 2027; DST starts Mar 14.
+    // Weekly Saturday 23:30 New York from February 6, 2027; DST starts March 14.
     const start = new Date("2027-02-07T04:30:00Z");
     const starts = seriesChildStarts(
       rule({ byDay: ["SA"], end: { kind: "count", count: 8 } }),
@@ -213,7 +213,7 @@ describe("seriesChildStarts", () => {
   });
 
   it("meets on the last weekday of each month", () => {
-    const start = new Date("2027-01-30T00:00:00Z"); // Fri Jan 29, 19:00
+    const start = new Date("2027-01-30T00:00:00Z"); // Fri January 29, 19:00
     const starts = seriesChildStarts(
       rule({
         freq: "MONTHLY",
@@ -234,8 +234,8 @@ describe("seriesChildStarts", () => {
     expect(starts.map(ny)).toEqual(["2027-02-28 10:00", "2027-03-31 10:00"]);
   });
 
-  it("keeps BYMONTHDAY=31 from a head clamped to Feb 28", () => {
-    // The head a promotion left on Feb 28; the series still meets on the 31st.
+  it("keeps BYMONTHDAY=31 from a head clamped to February 28", () => {
+    // The head a promotion left on February 28; the series still meets on the 31st.
     const start = new Date("2027-02-28T15:00:00Z");
     const starts = seriesChildStarts(
       rule({
@@ -306,7 +306,7 @@ describe("seriesChildStarts", () => {
     ).toBe("2027-02-28T10:00:00.000Z");
   });
 
-  // #4505: Thu Feb 25 2027, 7 PM in New York; DST starts Sun Mar 14.
+  // #4505: Thu February 25 2027, 7 PM in New York; DST starts Sun March 14.
   const thursdaySeven = "2027-02-26T00:00:00Z";
 
   it("keeps a legacy token's wall-clock time across DST in the zone it is given", () => {
@@ -351,8 +351,8 @@ describe("seriesChildStarts", () => {
   });
 
   it("steps a legacy monthly token on the zone's calendar day", () => {
-    // Jan 31, 9 PM New York is Feb 1 in UTC: stepped in UTC it would land on
-    // the 1st of each month; in New York it clamps to Feb 28 and keeps 9 PM.
+    // January 31, 9 PM New York is February 1 in UTC: stepped in UTC it would land on
+    // the 1st of each month; in New York it clamps to February 28 and keeps 9 PM.
     const starts = seriesChildStarts(
       "MONTHLY",
       "2027-02-01T02:00:00Z",
@@ -434,7 +434,7 @@ describe("checkSeriesLength", () => {
 });
 
 describe("describeRepeatPattern", () => {
-  const start = new Date("2027-01-13T00:00:00Z"); // Tue Jan 12, 19:00 NY
+  const start = new Date("2027-01-13T00:00:00Z"); // Tue January 12, 19:00 NY
 
   it.each([
     [rule({ byDay: ["MO", "TH"] }), "Every Mon and Thu"],
@@ -491,7 +491,7 @@ describe("describeRepeatPattern", () => {
   });
 
   it("names a monthly rule's first meeting as a reader in another zone sees it", () => {
-    // Jan 31, 11 PM in New York is Feb 1 in Berlin.
+    // January 31, 11 PM in New York is February 1 in Berlin.
     expect(
       describeRepeatPattern(
         rule({ freq: "MONTHLY", byDay: [], monthDay: 31 }),
@@ -499,7 +499,7 @@ describe("describeRepeatPattern", () => {
         { timeZone: BERLIN },
       ),
     ).toBe("Every month on the 1st");
-    // The second Tuesday of Sep 2027 (the 14th), 11 PM in New York, is
+    // The second Tuesday of September 2027 (the 14th), 11 PM in New York, is
     // Wednesday the 15th in Berlin: the third Wednesday, as Sep starts on one.
     expect(
       describeRepeatPattern(
@@ -523,7 +523,7 @@ describe("describeSeriesLength", () => {
         start,
         rule({ byDay: ["MO", "TH"], end: { kind: "count", count: 5 } }),
       ),
-    ).toBe("5 meetings, the last on Jan 18.");
+    ).toBe("5 meetings, the last on January 18.");
   });
 
   it("adds the year when the series crosses into the next", () => {
@@ -533,15 +533,15 @@ describe("describeSeriesLength", () => {
         start,
         rule({ end: { kind: "until", until: "2027-01-11" } }),
       ),
-    ).toBe("7 meetings, the last on Jan 11, 2027.");
+    ).toBe("7 meetings, the last on January 11, 2027.");
   });
 
   it("steps and reads a legacy token in the zone it is given", () => {
-    // Oct 30, 9 PM New York is Oct 31 in UTC. Stepped in UTC the last meeting
-    // is Apr 30 01:00Z, Apr 29 in New York; stepped in New York it is Apr 30.
+    // October 30, 9 PM New York is October 31 in UTC. Stepped in UTC the last meeting
+    // is April 30 01:00Z, April 29 in New York; stepped in New York it is April 30.
     const start = new Date("2026-10-31T01:00:00Z");
     expect(describeSeriesLength(start, "MONTHLY", { legacyTimeZone: NY })).toBe(
-      "7 meetings, the last on Apr 30, 2027.",
+      "7 meetings, the last on April 30, 2027.",
     );
     expect(ny(seriesChildStarts("MONTHLY", start)!.at(-1)!)).toBe(
       "2027-04-29 21:00",
@@ -566,7 +566,7 @@ describe("stepping across a DST change", () => {
     // 2027-03-14 2:00 EST jumps to 3:00 EDT; 2:30 AM doesn't exist.
     const starts = seriesChildStarts(
       rule({ freq: "DAILY", byDay: [], end: { kind: "count", count: 3 } }),
-      "2027-03-13T07:30:00Z", // Mar 13, 2:30 AM EST
+      "2027-03-13T07:30:00Z", // March 13, 2:30 AM EST
     );
     expect(starts?.map(ny)).toEqual(["2027-03-14 03:30", "2027-03-15 02:30"]);
   });
@@ -580,7 +580,7 @@ describe("stepping across a DST change", () => {
         end: { kind: "count", count: 3 },
         timeZone: BERLIN,
       }),
-      "2027-03-27T01:30:00Z", // Mar 27, 2:30 AM CET
+      "2027-03-27T01:30:00Z", // March 27, 2:30 AM CET
     );
     expect(starts?.map(berlin)).toEqual([
       "2027-03-28 03:30",
@@ -592,7 +592,7 @@ describe("stepping across a DST change", () => {
     // 2027-11-07 2:00 EDT falls back to 1:00 EST; 1:30 AM happens twice.
     const starts = seriesChildStarts(
       rule({ freq: "DAILY", byDay: [], end: { kind: "count", count: 2 } }),
-      "2027-11-06T05:30:00Z", // Nov 6, 1:30 AM EDT
+      "2027-11-06T05:30:00Z", // November 6, 1:30 AM EDT
     );
     expect(starts?.map((at) => at.toISOString())).toEqual([
       "2027-11-07T05:30:00.000Z", // 1:30 AM EDT, not 6:30Z (EST)
@@ -601,13 +601,13 @@ describe("stepping across a DST change", () => {
 });
 
 describe("advanceRepeatRule", () => {
-  // Mondays at 7 PM in New York: Jan 4, 11, 18, 25, ...
+  // Mondays at 7 PM in New York: January 4, 11, 18, 25, ...
   const head = "2027-01-05T00:00:00Z";
   const jan11 = "2027-01-12T00:00:00Z";
   const jan18 = "2027-01-19T00:00:00Z";
 
   it("drops a COUNT by the pattern's meetings before the new head", () => {
-    // Jan 4 and Jan 11 are used, whether or not Jan 11's row still exists
+    // January 4 and January 11 are used, whether or not January 11's row still exists
     // (a meeting canceled on its own still counts).
     expect(
       advanceRepeatRule(
@@ -641,7 +641,7 @@ describe("advanceRepeatRule", () => {
   });
 
   it("pins a by-date monthly rule to the old head's day", () => {
-    // Head on Jan 31 in New York; the successor on Feb 28 must not move the
+    // Head on January 31 in New York; the successor on February 28 must not move the
     // series to the 28th.
     const monthly = rule({
       freq: "MONTHLY",
@@ -666,7 +666,7 @@ describe("advanceRepeatRule", () => {
 });
 
 describe("shiftRepeatRule", () => {
-  const mon = "2027-01-05T00:00:00Z"; // Mon Jan 4, 7 PM New York
+  const mon = "2027-01-05T00:00:00Z"; // Mon January 4, 7 PM New York
   const tue = "2027-01-06T00:00:00Z";
 
   it("moves a weekly rule's days by the days the head moved", () => {

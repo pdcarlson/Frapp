@@ -1122,7 +1122,7 @@ export const MessageActionsSheet = forwardRef<
 });
 
 /**
- * "Today at 5:16 PM", "Sunday, Sep 28 at 9:41 PM": the day as the thread's
+ * "Today at 5:16 PM", "Sunday, September 28 at 9:41 PM": the day as the thread's
  * divider names it, then the time. The only place a phone shows a follow-on
  * row's time.
  */

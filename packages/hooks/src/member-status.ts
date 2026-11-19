@@ -214,7 +214,7 @@ const TIME = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 const DAY_TIME = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
+  weekday: "long",
   hour: "numeric",
   minute: "2-digit",
 });
@@ -224,7 +224,7 @@ export function clockTime(at: Date | number): string {
   return TIME.format(at);
 }
 
-/** "Until 3:45 PM" today, "Until Tue 8:00 AM" past today. */
+/** "Until 3:45 PM" today, "Until Tuesday 8:00 AM" past today. */
 export function untilLabel(endsAt: number, now: Date): string {
   const end = new Date(endsAt);
   const sameDay = end.toDateString() === now.toDateString();

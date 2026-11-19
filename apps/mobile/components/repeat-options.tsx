@@ -306,7 +306,7 @@ function UntilPicker({
   // iOS's pill reports only a change, and a stand-in day couldn't be picked.
   const date = parseBareDateLocalNoon(value) ?? minimum;
   const label = date.toLocaleDateString("en-US", {
-    month: "short",
+    month: "long",
     day: "numeric",
     year: "numeric",
   });
