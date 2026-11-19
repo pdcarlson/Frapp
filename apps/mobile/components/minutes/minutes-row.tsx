@@ -70,6 +70,7 @@ export function MinutesRow({
   decisions,
   actionItems,
   byline,
+  gist,
   showType = false,
   onPress,
 }: {
@@ -83,6 +84,8 @@ export function MinutesRow({
   actionItems: number;
   /** Someone else's draft says whose. */
   byline?: string | null;
+  /** The TL;DR's first line: what happened, at a glance. */
+  gist?: string | null;
   /** Say the type in words too (`showsTypeTag`). */
   showType?: boolean;
   onPress: () => void;
@@ -106,6 +109,7 @@ export function MinutesRow({
         `${typeLabel} meeting`,
         time,
         ...tags.filter((tag) => tag !== typeLabel),
+        gist ?? null,
       ]
         .filter(Boolean)
         .join(", ")}
@@ -143,6 +147,11 @@ export function MinutesRow({
             {byline ? <HairlineChip label={byline} /> : null}
           </View>
         ) : null}
+        {gist ? (
+          <Text numberOfLines={2} style={styles.gist}>
+            {gist}
+          </Text>
+        ) : null}
       </View>
       {time ? <Text style={styles.time}>{time}</Text> : null}
       <ForwardGlyph color={tokens.color.text.muted} size={16} />
@@ -172,6 +181,10 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: tokens.spacing.xs,
+    },
+    gist: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     time: {
       ...typeRole(tokens.typography.role.caption),

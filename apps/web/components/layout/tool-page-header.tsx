@@ -31,11 +31,14 @@ export function ToolPageHeader({
   pageTitle,
   titleIsHeading,
   onClose,
+  actionsRef,
 }: {
   pageTitle: PageTitle | null;
   /** Whether this copy is the route's `<h1>` (the shell knows it is wide). */
   titleIsHeading: boolean;
   onClose: () => void;
+  /** Where the page puts its main action, beside the X (`ToolHeaderActions`). */
+  actionsRef?: (element: HTMLDivElement | null) => void;
 }) {
   return (
     // A `div`, not a `<header>`: the top bar is the page's one banner.
@@ -48,6 +51,11 @@ export function ToolPageHeader({
           <PageTitleText pageTitle={pageTitle} asHeading={titleIsHeading} />
         ) : null}
       </div>
+      <div
+        ref={actionsRef}
+        data-tool-header-actions=""
+        className="flex shrink-0 items-center gap-2 empty:hidden"
+      />
       <PanelCloseButton
         label={pageTitle ? `Close ${pageTitle.title}` : "Close page"}
         onClick={onClose}

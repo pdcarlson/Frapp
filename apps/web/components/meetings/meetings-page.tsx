@@ -15,6 +15,7 @@ import {
   type MeetingSummary,
 } from "@repo/hooks";
 import {
+  MEETING_COPY,
   MEETING_ENTRY_COPY,
   MEETING_LIST_COPY,
   MEETING_NOTE_TAKERS_COPY,
@@ -27,10 +28,11 @@ import {
   type MeetingType,
 } from "@repo/validation";
 import { Can } from "@/components/shared/can";
-import { PageActions } from "@/components/layout/page-actions";
+import { ToolHeaderActions } from "@/components/layout/tool-header-actions";
 import { ErrorState } from "@/components/shared/async-states";
 import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -161,9 +163,11 @@ function ChapterMeetingsPage() {
   return (
     <div className="space-y-6">
       <Can permission="meetings:record">
-        <PageActions>
-          <Button onClick={() => setStarting(true)}>New minutes</Button>
-        </PageActions>
+        <ToolHeaderActions>
+          <Button size="sm" onClick={() => setStarting(true)}>
+            {MEETING_LIST_COPY.newMinutes}
+          </Button>
+        </ToolHeaderActions>
       </Can>
 
       {meetingsQuery.isPending ? (
@@ -344,12 +348,25 @@ function MeetingList({
     <ul role="list" className="divide-y divide-border">
       {rows.map((row) => {
         const author = authorOf?.(row);
+        // What the minutes hold, worked out from them, as the phone's row
+        // says it: Draft, Recorded, decisions and action items, whose draft.
+        const tags = [
+          row.status === "draft" ? MEETING_COPY.draftBadge : null,
+          row.recorded ? MEETING_LIST_COPY.recorded : null,
+          row.decision_count
+            ? MEETING_LIST_COPY.decisions(row.decision_count)
+            : null,
+          row.action_item_count
+            ? MEETING_LIST_COPY.actionItems(row.action_item_count)
+            : null,
+          author ? MEETING_LIST_COPY.draftOf(author) : null,
+        ].filter((tag): tag is string => !!tag);
         return (
           <li key={row.id}>
             <Link
               href={meetingHref(row.id)}
               className={cn(
-                "flex min-h-14 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-card-hover",
+                "flex min-h-14 items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-card-hover",
                 FOCUS_RING_OFFSET,
               )}
             >
@@ -364,11 +381,28 @@ function MeetingList({
                   )}
                   {" · "}
                   {meetingDayLabel(row.event_start_time)}
-                  {author ? ` · ${MEETING_LIST_COPY.draftOf(author)}` : null}
-                  {row.status === "posted" && row.action_item_count
-                    ? ` · ${MEETING_LIST_COPY.actionItems(row.action_item_count)}`
-                    : null}
                 </span>
+                {tags.length > 0 ? (
+                  <span className="mt-1.5 flex flex-wrap gap-1.5">
+                    {tags.map((tag) => (
+                      <Badge
+                        key={tag}
+                        variant={
+                          tag === MEETING_COPY.draftBadge
+                            ? "warning"
+                            : "outline"
+                        }
+                      >
+                        {tag}
+                      </Badge>
+                    ))}
+                  </span>
+                ) : null}
+                {row.gist ? (
+                  <span className="mt-1.5 line-clamp-2 block text-caption text-muted-foreground">
+                    {row.gist}
+                  </span>
+                ) : null}
               </span>
             </Link>
           </li>

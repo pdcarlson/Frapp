@@ -197,6 +197,7 @@ function MinutesScreenBody() {
         decisions={meeting.decision_count}
         actionItems={meeting.action_item_count}
         byline={author ? MEETING_LIST_COPY.draftOf(author) : null}
+        gist={meeting.gist}
         showType={showsTypeTag(meeting, type)}
         onPress={() => open(meeting.id)}
       />

@@ -145,6 +145,7 @@ function MinutesSeriesBody() {
                 recorded={row.recorded}
                 decisions={row.decision_count}
                 actionItems={row.action_item_count}
+                gist={row.gist}
                 onPress={() =>
                   router.push({
                     pathname: "/minutes-details",

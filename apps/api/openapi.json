@@ -28173,6 +28173,11 @@
           "recorded": {
             "type": "boolean",
             "description": "A recording was used for these minutes."
+          },
+          "gist": {
+            "type": "string",
+            "nullable": true,
+            "description": "The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR."
           }
         },
         "required": [
@@ -28190,7 +28195,8 @@
           "series_rule",
           "decision_count",
           "action_item_count",
-          "recorded"
+          "recorded",
+          "gist"
         ]
       },
       "MeetingTemplateDto": {
