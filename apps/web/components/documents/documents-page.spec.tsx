@@ -12,7 +12,6 @@ import { localIsoDate } from "@repo/formatting";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
 import { ConnectionPill } from "@/components/shared/connection-pill";
-import { cardFilledContainers } from "@/tests/card-surfaces";
 import { folderOpenStorageKey } from "@/components/documents/use-folder-open";
 
 const {
@@ -115,13 +114,6 @@ const BYLAWS = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
-const mockDocumentPreviews = vi.hoisted(() =>
-  vi.fn((ids: readonly string[]) => ({
-    data: new Map(ids.map((id) => [id, `https://signed/preview/${id}`])),
-    isError: false,
-    isPlaceholderData: false,
-  })),
-);
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -157,8 +149,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
   // The viewer's read of the signed links; never settles here, so an open
   // viewer shows its loading page. `document-viewer.spec.tsx` covers the rest.
-  // The grid's preview links (#4647); the tile's own spec covers drawing them.
-  useDocumentPreviews: (ids: readonly string[]) => mockDocumentPreviews(ids),
   useDocument: () => ({
     data: undefined,
     isError: false,
@@ -248,6 +238,20 @@ const uploadTrigger = () =>
 const deleteButton = () =>
   screen.getByRole("button", { name: /delete chapter bylaws/i });
 const downloadButton = () => screen.getByRole("button", { name: /download/i });
+
+/**
+ * A control in the Filters menu (#5576): opens the menu first when it is
+ * closed (a click elsewhere on the page closes it), then finds the control.
+ */
+async function filterButton(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+) {
+  if (!screen.queryByRole("button", { name })) {
+    await user.click(screen.getByRole("button", { name: /^Filters/ }));
+  }
+  return screen.findByRole("button", { name });
+}
 
 describe("DocumentsPage subscription gating", () => {
   beforeEach(() => {
@@ -410,7 +414,7 @@ describe("DocumentsPage subscription gating", () => {
     render(<DocumentsPage />);
 
     expect(downloadButton()).toBeEnabled();
-    expect(screen.getByRole("button", { name: /all files/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^all files/i })).toBeEnabled();
   });
 
   it("holds the gate shut while the chapter is still loading", () => {
@@ -1286,12 +1290,12 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
-    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await filterButton(user, "Uploaded by"));
     await user.click(await screen.findByRole("menuitem", { name: "Marcus Ellison" }));
 
     await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
     expect(
-      screen.getByRole("button", { name: "Uploaded by: Marcus Ellison" }),
+      await filterButton(user, "Uploaded by: Marcus Ellison"),
     ).toBeInTheDocument();
   });
 
@@ -1307,14 +1311,14 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
-    await user.click(screen.getByRole("button", { name: "File type" }));
+    await user.click(await filterButton(user, "File type"));
     expect(
       (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
     ).toEqual(["Any type", "PDF", "Spreadsheet"]);
     await user.click(screen.getByRole("menuitem", { name: "Spreadsheet" }));
     await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
 
-    await user.click(screen.getByRole("button", { name: "File type: Spreadsheet" }));
+    await user.click(await filterButton(user, "File type: Spreadsheet"));
     await user.click(await screen.findByRole("menuitem", { name: "Any type" }));
     await user.type(screen.getByLabelText("Search documents"), "pdf");
     await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
@@ -1325,7 +1329,7 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     render(<DocumentsPage />);
     expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
 
-    await user.click(screen.getByRole("button", { name: "Sort: Name A–Z" }));
+    await user.click(await filterButton(user, "Sort: Name A–Z"));
     await user.click(await screen.findByRole("menuitem", { name: "Newest first" }));
 
     await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule", "Chapter bylaws"]));
@@ -1341,11 +1345,11 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
-    await user.click(screen.getByRole("button", { name: "Date added" }));
+    await user.click(await filterButton(user, "Date added"));
     await user.click(await screen.findByRole("radio", { name: "Custom range" }));
     expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
     // Untinted too: the chip doesn't claim a filter that narrows nothing.
-    expect(screen.getByRole("button", { name: "Date added" })).toBeInTheDocument();
+    expect(await filterButton(user, "Date added")).toBeInTheDocument();
     expect(screen.getByText("2 documents")).toBeInTheDocument();
 
     await user.click(screen.getByRole("radio", { name: "This semester" }));
@@ -1356,7 +1360,7 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
   it("keeps a picked uploader whose last file went, and says nothing matches", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<DocumentsPage />);
-    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await filterButton(user, "Uploaded by"));
     await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
     await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
 
@@ -1365,14 +1369,14 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
 
     expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Uploaded by: Ryan Castellano" }),
+      await filterButton(user, "Uploaded by: Ryan Castellano"),
     ).toBeInTheDocument();
   });
 
   it("drops a picked uploader who has left the roster", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<DocumentsPage />);
-    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await filterButton(user, "Uploaded by"));
     await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
     await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
 
@@ -1380,7 +1384,7 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     rerender(<DocumentsPage />);
 
     expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
-    expect(screen.getByRole("button", { name: "Uploaded by" })).toBeInTheDocument();
+    expect(await filterButton(user, "Uploaded by")).toBeInTheDocument();
   });
 
   it("counts against the open folder, not the whole library", async () => {
@@ -1407,7 +1411,7 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
       documentsQuery.data = [{ ...RUSH, created_at: "2026-10-12T12:00:00Z" }];
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<DocumentsPage />);
-      await user.click(screen.getByRole("button", { name: "Date added" }));
+      await user.click(await filterButton(user, "Date added"));
       await user.click(await screen.findByRole("radio", { name: "Last 30 days" }));
       expect(rowTitles()).toEqual(["Rush schedule"]);
 
@@ -1430,9 +1434,9 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     ];
     const user = userEvent.setup();
     render(<DocumentsPage />);
-    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await filterButton(user, "Uploaded by"));
     await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
-    await user.click(screen.getByRole("button", { name: "Sort: Name A–Z" }));
+    await user.click(await filterButton(user, "Sort: Name A–Z"));
     await user.click(await screen.findByRole("menuitem", { name: "Newest first" }));
     await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule", "Rush budget"]));
 
@@ -1459,16 +1463,19 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     documentsQuery.data = [BYLAWS, { ...RUSH, created_at: "2026-03-01T00:00:00Z" }];
     const user = userEvent.setup();
     render(<DocumentsPage />);
-    await user.click(screen.getByRole("button", { name: "Date added" }));
+    await user.click(await filterButton(user, "Date added"));
     await user.click(await screen.findByRole("radio", { name: "Custom range" }));
     fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-07-01" } });
     await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
 
     fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-07-15" } });
-    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+    // Nothing matches, so the empty list offers one too; the menu's is used.
+    const clear = await screen.findAllByRole("button", { name: "Clear filters" });
+    expect(clear).toHaveLength(2);
+    await user.click(clear.at(-1)!);
 
     await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]));
-    expect(screen.getByRole("button", { name: "Date added" })).toBeInTheDocument();
+    expect(await filterButton(user, "Date added")).toBeInTheDocument();
   });
 
   it("matches a punctuation-only search literally", async () => {
@@ -1489,7 +1496,7 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
       documentsQuery.data = [{ ...RUSH, created_at: "2026-10-10T13:00:00Z" }];
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<DocumentsPage />);
-      await user.click(screen.getByRole("button", { name: "Date added" }));
+      await user.click(await filterButton(user, "Date added"));
       await user.click(await screen.findByRole("radio", { name: "Last 30 days" }));
       await user.keyboard("{Escape}");
       await user.click(screen.getByRole("button", { name: /^Rush schedule/ }));
@@ -1731,10 +1738,12 @@ describe("DocumentsPage folder management (#791)", () => {
     await user.click(screen.getByRole("button", { name: /^save folder$/i }));
 
     await waitFor(() => expect(mockUpdateFolder).toHaveBeenCalled());
-    // The heading tracks the active folder.
+    // The heading, and the narrow page's Folder control, track the active
+    // folder.
     await waitFor(() =>
-      expect(screen.getByText("Charter")).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { name: /^Charter/ })).toBeInTheDocument(),
     );
+    expect(screen.getByRole("button", { name: "Folder: Charter" })).toBeInTheDocument();
   });
 
   it("reorders by writing indices, so equal sort_order values still move", async () => {
@@ -2322,6 +2331,52 @@ describe("DocumentsPage wiring across its split components (#3273)", () => {
     canGate.granted = true;
   });
 
+  it("opens Import a folder from the Upload menu, with no button of its own (#5576)", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    expect(
+      screen.queryByRole("button", { name: "Import a folder" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "More ways to add documents" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Import a folder" }),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("keeps every filter in one Filters menu that counts what is on (#5576)", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    expect(
+      screen.queryByRole("button", { name: "Uploaded by" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(await filterButton(user, "Starred"));
+    expect(
+      screen.getByRole("button", { name: "Filters, 1 on" }),
+    ).toBeInTheDocument();
+  });
+
+  it("picks a folder from the narrow page's Folder menu and closes it (#5576)", async () => {
+    foldersQuery.data = [{ id: "f-1", name: "Governance", sort_order: 0 }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Folder: All files" }));
+    const menu = await screen.findByRole("dialog");
+    await user.click(within(menu).getByRole("button", { name: /^Governance/ }));
+
+    expect(
+      await screen.findByRole("button", { name: "Folder: Governance" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
   it("keeps an upload draft when the permission gate unmounts the sheet and comes back", async () => {
     // The reason `useDocumentUpload` is called by the page and not by the
     // sheet: state owned inside the `Can`-gated subtree goes with it.
@@ -2560,7 +2615,7 @@ describe("DocumentsPage pins and stars (#3934)", () => {
         .queryAllByRole("listitem")
         .map((row) => row.querySelector("span.font-semibold")?.textContent);
 
-    const starredChip = screen.getByRole("button", { name: "Starred" });
+    const starredChip = await filterButton(user, "Starred");
     expect(starredChip).toHaveAttribute("aria-pressed", "false");
     await user.click(starredChip);
     expect(starredChip).toHaveAttribute("aria-pressed", "true");
@@ -2570,22 +2625,20 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     );
     expect(shown()).toEqual(["Chapter agenda", "Chapter bylaws"]);
 
-    await user.click(screen.getByRole("button", { name: "Pinned" }));
+    await user.click(await filterButton(user, "Pinned"));
     // Both on: either, pinned leading.
     expect(shown()).toEqual(["Meeting minutes", "Chapter agenda", "Chapter bylaws"]);
 
-    await user.click(screen.getByRole("button", { name: "Pinned" }));
-    await user.click(screen.getByRole("button", { name: "File type" }));
+    await user.click(await filterButton(user, "Pinned"));
+    await user.click(await filterButton(user, "File type"));
     await user.click(await screen.findByRole("menuitem", { name: "Spreadsheet" }));
     await waitFor(() => expect(shown()).toEqual(["Chapter agenda"]));
 
     await user.type(screen.getByLabelText("Search documents"), "bylaws");
     await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+    const starredAfter = await filterButton(user, "Starred");
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Starred" })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      ),
+      expect(starredAfter).toHaveAttribute("aria-pressed", "false"),
     );
   });
 
@@ -2594,7 +2647,7 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     stars.value = { folder_ids: [], document_ids: ["doc-1"] };
     const user = userEvent.setup();
     const { rerender } = render(<DocumentsPage />);
-    await user.click(screen.getByRole("button", { name: "Starred" }));
+    await user.click(await filterButton(user, "Starred"));
     const unstar = screen.getByRole("button", { name: "Unstar Chapter bylaws" });
     await user.click(unstar);
     expect(mockSetStar).toHaveBeenCalled();
@@ -2606,8 +2659,8 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     expect(star).toHaveFocus();
     expect(screen.queryByRole("button", { name: /^Meeting minutes/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Starred" }));
-    await user.click(screen.getByRole("button", { name: "Starred" }));
+    await user.click(await filterButton(user, "Starred"));
+    await user.click(await filterButton(user, "Starred"));
     await waitFor(() =>
       expect(
         screen.queryByRole("button", { name: "Star Chapter bylaws" }),
@@ -2908,144 +2961,6 @@ describe("DocumentsPage pins and stars (#3934)", () => {
  * tile shows what the row shows and keeps the row's controls, so the layout
  * changes nothing a member can do with a file.
  */
-describe("DocumentsPage as a grid (#4175)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockOffline.value = false;
-    resolvedDocumentsQuery();
-    chapter.active();
-  });
-  afterEach(() => {
-    window.localStorage.clear();
-  });
-
-  it("switches to tiles from the toolbar, and remembers the pick", async () => {
-    const user = userEvent.setup();
-    const { container, unmount } = render(<DocumentsPage />);
-
-    const layout = screen.getByRole("radiogroup", { name: "Layout" });
-    expect(within(layout).getByRole("radio", { name: "List" })).toBeChecked();
-    await user.click(within(layout).getByRole("radio", { name: "Grid" }));
-
-    const list = screen
-      .getByRole("region", { name: /all documents/i })
-      .querySelector("ul");
-    expect(list?.className).toContain("grid");
-    expect(list?.className).not.toContain("divide-y");
-    // Hairline tiles on the page, not cards.
-    expect(cardFilledContainers(container)).toHaveLength(0);
-    expect(window.localStorage.getItem("frapp.documents.layout.viewer-1")).toBe(
-      "grid",
-    );
-
-    unmount();
-    render(<DocumentsPage />);
-    expect(screen.getByRole("radio", { name: "Grid" })).toBeChecked();
-  });
-
-  it("shows the row's facts and type on the tile, and keeps its controls", async () => {
-    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
-    const user = userEvent.setup();
-    render(<DocumentsPage />);
-
-    const tile = screen.getByRole("button", { name: /^Chapter bylaws/ });
-    expect(tile).toHaveTextContent("Chapter bylaws");
-    expect(tile).toHaveTextContent(/Uploaded/);
-    expect(tile).toHaveTextContent("Governance");
-    // The preview names the file's type, as the viewer and File type do.
-    expect(tile).toHaveTextContent("PDF");
-
-    for (const name of [
-      "Star Chapter bylaws",
-      "Download Chapter bylaws",
-      "Delete Chapter bylaws",
-    ]) {
-      expect(screen.getByRole("button", { name })).toBeEnabled();
-    }
-
-    await user.click(tile);
-    expect(
-      await screen.findByRole("dialog", { name: "Chapter bylaws" }),
-    ).toBeInTheDocument();
-  });
-
-  // #4647: a photo or a PDF previews itself; anything else, or a file too
-  // large to fetch for a tile, has no preview panel and its glyph sits beside
-  // the title instead.
-  it("previews photos and PDFs, and gives other files no empty panel", () => {
-    documentsQuery.data = [
-      // No recorded size (filed before sizes were): no preview.
-      BYLAWS,
-      {
-        ...BYLAWS,
-        id: "doc-budget",
-        title: "Budget",
-        storage_path: "chap-1/budget.pdf",
-        content_type: "application/pdf",
-        byte_size: 90_000,
-      },
-      {
-        ...BYLAWS,
-        id: "doc-photo",
-        title: "Formal photo",
-        storage_path: "chap-1/formal.jpg",
-        content_type: "image/jpeg",
-        byte_size: 2_000_000,
-      },
-      {
-        ...BYLAWS,
-        id: "doc-word",
-        title: "Minutes draft",
-        storage_path: "chap-1/minutes.docx",
-        content_type:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        byte_size: 40_000,
-      },
-      {
-        ...BYLAWS,
-        id: "doc-huge",
-        title: "Scanned archive",
-        storage_path: "chap-1/archive.pdf",
-        content_type: "application/pdf",
-        byte_size: 40 * 1024 * 1024,
-      },
-    ];
-    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
-    render(<DocumentsPage />);
-
-    const panel = (title: RegExp) =>
-      screen
-        .getByRole("button", { name: title })
-        .querySelector("[data-thumbnail]")
-        ?.getAttribute("data-thumbnail") ?? null;
-    expect(panel(/^Budget/)).toBe("pdf");
-    expect(panel(/^Formal photo/)).toBe("image");
-    expect(panel(/^Chapter bylaws/)).toBeNull();
-    expect(panel(/^Minutes draft/)).toBeNull();
-    expect(panel(/^Scanned archive/)).toBeNull();
-    // One batch of links, for the files that preview and no others.
-    expect(mockDocumentPreviews).toHaveBeenLastCalledWith([
-      "doc-budget",
-      "doc-photo",
-    ]);
-    // The compact tile still names its type, beside who uploaded it.
-    expect(
-      screen.getByRole("button", { name: /^Minutes draft/ }),
-    ).toHaveTextContent(/Word/);
-  });
-
-  it("lays tiles out at a capped width rather than a fixed column count", () => {
-    window.localStorage.setItem("frapp.documents.layout.viewer-1", "grid");
-    render(<DocumentsPage />);
-    const list = screen
-      .getByRole("region", { name: /all documents/i })
-      .querySelector("ul");
-    expect(list?.className).toContain(
-      "grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))]",
-    );
-  });
-});
-
 describe("DocumentsPage who can see (#3642 piece 1)", () => {
   const EXEC_TIER = {
     entry: "tier:t-exec",

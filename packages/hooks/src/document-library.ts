@@ -1,4 +1,11 @@
-import { contentTypeByExtension, fileExtension } from "@repo/validation";
+import {
+  contentTypeByExtension,
+  fileExtension,
+  ROLE_COLOR_PALETTE,
+  roleColor,
+  type RoleColorHex,
+} from "@repo/validation";
+import { fnv1a32 } from "./member-avatar-color";
 import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
 
 /**
@@ -187,6 +194,52 @@ const KIND_LABEL: Record<FileKind, string> = {
   image: "Photo",
   other: "File",
 };
+
+/**
+ * The hues a folder can wear, in this order: the role palette minus Slate,
+ * which stays for a file in no folder. The order is part of the hash, so
+ * reordering it recolours every folder.
+ */
+const FOLDER_HUES: readonly RoleColorHex[] = ROLE_COLOR_PALETTE.filter(
+  (swatch) => swatch.key !== "slate",
+).map((swatch) => swatch.hex);
+
+function topFolder(folder: string | null | undefined): string {
+  return folder?.split(" / ")[0]?.trim().toLowerCase() ?? "";
+}
+
+/**
+ * The hue a file's tile wears in the library list (#5576): its folder's, so
+ * a library reads by where things are filed before the titles do, as
+ * Dropbox's and Drive's coloured folders let it. Build it from the chapter's
+ * folders in the rail's order; the top folders take the palette in turn, so
+ * the first nine never share a hue (a hash put five ordinary folders on two),
+ * and every member of the chapter sees the same colours. Keyed on the top
+ * folder of a path ("Rush / 2024" wears Rush's), so a tree's files share one
+ * colour. A file in no folder is Slate; one in a folder the list doesn't
+ * hold (it failed to load) falls back to a hash of the name.
+ *
+ * Folder, not file type: a chapter library is nearly all PDFs, so a hue per
+ * type painted the seeded demo one colour top to bottom. A hue names a
+ * place, never a state (`foundations.md` § A place's hue); the role palette
+ * leaves out gold and red, so no tile reads as the accent, a mention or an
+ * error.
+ */
+export function documentFolderHues(
+  folders: readonly string[],
+): (folder: string | null | undefined) => RoleColorHex {
+  const order = new Map<string, number>();
+  for (const name of folders) {
+    const top = topFolder(name);
+    if (top !== "" && !order.has(top)) order.set(top, order.size);
+  }
+  return (folder) => {
+    const top = topFolder(folder);
+    if (top === "") return roleColor("slate");
+    const index = order.get(top) ?? fnv1a32(top);
+    return FOLDER_HUES[index % FOLDER_HUES.length]!;
+  };
+}
 
 /** What one file is, for every surface that groups, names or previews it. */
 export type ClassifiedFile = {

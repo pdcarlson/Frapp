@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { createContext, useContext, useId, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -17,6 +17,11 @@ import {
   type FolderTreeNode,
 } from "@repo/hooks/document-folder-tree";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { IconButton } from "@/components/ui/icon-button";
 import { Can } from "@/components/shared/can";
 import {
@@ -96,6 +101,14 @@ function openKey(folder: FolderRow): string {
 
 type FolderNode = FolderTreeNode<FolderRow>;
 
+/**
+ * Each folder's hue (#5576), so a folder's glyph in the rail wears the colour
+ * its files' tiles wear in the list: the rail is the key to the colours.
+ */
+const FolderHueContext = createContext<
+  ((folder: string | null) => string) | null
+>(null);
+
 export function FolderRail({
   railFolders,
   activeFolder,
@@ -105,6 +118,7 @@ export function FolderRail({
   marks,
   loadFailed,
   onRetryLoad,
+  folderHue = null,
 }: {
   railFolders: FolderRow[];
   activeFolder: string | null;
@@ -116,6 +130,8 @@ export function FolderRail({
   /** The folder endpoint failed, so `railFolders` is the derived fallback. */
   loadFailed: boolean;
   onRetryLoad: () => void;
+  /** The hue a folder wears, as its files' tiles do (#5576). */
+  folderHue?: ((folder: string | null) => string) | null;
 }) {
   const { folderBusy, openFolderDialog } = management;
   /*
@@ -129,6 +145,9 @@ export function FolderRail({
   const [editing, setEditing] = useState(false);
   const manageable = railFolders.some((folder) => folder.id);
   const { rootRef, remember } = useKeepFocus<HTMLElement>();
+  // Its own id per copy: a narrow page draws the rail again in its folder
+  // menu (#5576) while the hidden wide one stays mounted.
+  const labelId = useId();
 
   /*
     The tree (#5337, Shawn's pick of option C): a folder named by its path
@@ -217,104 +236,103 @@ export function FolderRail({
   };
 
   return (
-    <nav ref={rootRef} aria-labelledby="doc-folders-label">
-      <div className="flex min-h-9 items-center justify-between gap-2">
-        <h2
-          id="doc-folders-label"
-          className={`${EYEBROW} text-muted-foreground`}
-        >
-          Folders
-        </h2>
-        <Can permission="chapter_docs:manage">
-          <div className="flex items-center gap-0.5">
-            {manageable ? (
+    <FolderHueContext.Provider value={folderHue}>
+      <nav ref={rootRef} aria-labelledby={labelId}>
+        <div className="flex min-h-9 items-center justify-between gap-2">
+          <h2 id={labelId} className={`${EYEBROW} text-muted-foreground`}>
+            Folders
+          </h2>
+          <Can permission="chapter_docs:manage">
+            <div className="flex items-center gap-0.5">
+              {manageable ? (
+                <Button
+                  variant="ghost"
+                  size="toolbar"
+                  className="px-2 pointer-coarse:px-3"
+                  aria-pressed={editing}
+                  aria-label={editing ? "Done editing folders" : "Edit folders"}
+                  onClick={() => setEditing((current) => !current)}
+                >
+                  {editing ? "Done" : "Edit"}
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
-                size="toolbar"
-                className="px-2 pointer-coarse:px-3"
-                aria-pressed={editing}
-                aria-label={editing ? "Done editing folders" : "Edit folders"}
-                onClick={() => setEditing((current) => !current)}
+                size="icon"
+                className={compactControlClassName}
+                aria-label="New folder"
+                onClick={() => openFolderDialog(null)}
+                {...gate.controlProps(folderBusy)}
               >
-                {editing ? "Done" : "Edit"}
+                <FolderPlus className="h-4 w-4" />
               </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="New folder"
-              onClick={() => openFolderDialog(null)}
-              {...gate.controlProps(folderBusy)}
-            >
-              <FolderPlus className="h-4 w-4" />
-            </Button>
-          </div>
-        </Can>
-      </div>
-      {/*
+            </div>
+          </Can>
+        </div>
+        {/*
         The two filter rows stay ungated — they are client-side filters over
         the loaded list, not writes. The per-folder management controls
         beside each named row are gated, because those *are* the folder
         write routes (`chapter_docs:manage`, no `@FreeTier`). A star is a
         write too, the member's own, so it takes the same gate.
       */}
-      <div className="space-y-0.5 pt-1">
-        <button
-          type="button"
-          onClick={() => setActiveFolder(null)}
-          className={folderRowClassName(activeFolder === null)}
-        >
-          <FolderGlyph className="h-4 w-4" active={activeFolder === null} /> All
-          files
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveFolder("")}
-          className={folderRowClassName(activeFolder === "")}
-        >
-          <DocumentsGlyph className="h-4 w-4" active={activeFolder === ""} /> No
-          folder
-        </button>
-        {groups.map((group) => (
-          <div
-            key={group.label ?? "folders"}
-            role={group.label ? "group" : undefined}
-            aria-label={group.label ?? undefined}
+        <div className="space-y-0.5 pt-1">
+          <button
+            type="button"
+            onClick={() => setActiveFolder(null)}
+            className={folderRowClassName(activeFolder === null)}
           >
-            {group.label ? (
-              <p
-                aria-hidden
-                className={`${EYEBROW} px-2 pb-0.5 pt-3 text-muted-foreground`}
-              >
-                {group.label}
-              </p>
-            ) : null}
-            <FolderBranch nodes={group.nodes} depth={0} {...branch} />
-          </div>
-        ))}
-        {/*
+            <FolderGlyph className="h-4 w-4" active={activeFolder === null} />{" "}
+            All files
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFolder("")}
+            className={folderRowClassName(activeFolder === "")}
+          >
+            <DocumentsGlyph className="h-4 w-4" active={activeFolder === ""} />{" "}
+            No folder
+          </button>
+          {groups.map((group) => (
+            <div
+              key={group.label ?? "folders"}
+              role={group.label ? "group" : undefined}
+              aria-label={group.label ?? undefined}
+            >
+              {group.label ? (
+                <p
+                  aria-hidden
+                  className={`${EYEBROW} px-2 pb-0.5 pt-3 text-muted-foreground`}
+                >
+                  {group.label}
+                </p>
+              ) : null}
+              <FolderBranch nodes={group.nodes} depth={0} {...branch} />
+            </div>
+          ))}
+          {/*
           Said once, under the rail, rather than replacing it: the names
           above are the pre-#791 derived fallback and still filter correctly,
           so the honest report is that management is unavailable — not that
           the chapter has no folders.
         */}
-        {loadFailed ? (
-          <p className="px-2 pt-2 text-xs text-muted-foreground">
-            Couldn&apos;t load the folder list, so these are read from the
-            documents shown. Empty folders and folder management are unavailable
-            until it loads.{" "}
-            <button
-              type="button"
-              className={`underline ${FOCUS_RING_OFFSET}`}
-              onClick={onRetryLoad}
-            >
-              Retry
-            </button>
-          </p>
-        ) : null}
-      </div>
-    </nav>
+          {loadFailed ? (
+            <p className="px-2 pt-2 text-xs text-muted-foreground">
+              Couldn&apos;t load the folder list, so these are read from the
+              documents shown. Empty folders and folder management are
+              unavailable until it loads.{" "}
+              <button
+                type="button"
+                className={`underline ${FOCUS_RING_OFFSET}`}
+                onClick={onRetryLoad}
+              >
+                Retry
+              </button>
+            </p>
+          ) : null}
+        </div>
+      </nav>
+    </FolderHueContext.Provider>
   );
 }
 
@@ -447,6 +465,7 @@ function FolderItem({
 }) {
   const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
     management;
+  const hue = useContext(FolderHueContext)?.(node.folder.name) ?? null;
   /*
     Moves wait for a pin to settle: the move works out the pinned group from
     `pinned_at`, which a pin in flight hasn't changed yet, so moving then
@@ -500,7 +519,16 @@ function FolderItem({
           title={node.label === folder.name ? undefined : folder.name}
           className={`${folderRowClassName(active)} min-w-0 flex-1`}
         >
-          <FolderGlyph className="h-4 w-4 shrink-0" active={active} />
+          {/*
+            The folder's hue at rest, as its files' tiles wear it (#5576);
+            the open folder takes the accent with its row.
+          */}
+          <span
+            className="flex shrink-0"
+            style={active || !hue ? undefined : { color: hue }}
+          >
+            <FolderGlyph className="h-4 w-4" active={active} />
+          </span>
           <span className="min-w-0">
             <span className="block truncate">{node.label}</span>
             {where ? (
@@ -636,5 +664,56 @@ function FolderItem({
         </Can>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The folder rail where the page is too narrow to keep it beside the list
+ * (#5576): one control at the start of the list's toolbar naming the folder
+ * on screen, opening the same rail, with its tree, stars, pins and Edit, in
+ * a popover, as Dropbox's and Drive's narrow layouts fold their sidebars
+ * into a menu. Picking a folder closes it. The page hides it where the rail
+ * is drawn beside the list.
+ */
+export function FolderMenu({
+  className,
+  ...rail
+}: Parameters<typeof FolderRail>[0] & { className?: string }) {
+  const [open, setOpen] = useState(false);
+  const { activeFolder } = rail;
+  const label =
+    activeFolder === null
+      ? "All files"
+      : activeFolder === ""
+        ? "No folder"
+        : (activeFolder.split(" / ").at(-1) ?? activeFolder);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="toolbar"
+          className={`max-w-[10rem] shrink-0 gap-1.5 ${className ?? ""}`}
+          aria-label={`Folder: ${label}`}
+        >
+          <FolderGlyph className="h-4 w-4 shrink-0" />
+          <span className="truncate">{label}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="max-h-[min(70vh,32rem)] w-64 overflow-y-auto p-2"
+      >
+        <FolderRail
+          {...rail}
+          setActiveFolder={(folder) => {
+            rail.setActiveFolder(folder);
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -36,6 +36,7 @@ import {
   DELETE_DOCUMENT_LABEL,
   NO_DOCUMENT_FILTERS,
   deleteDocumentTitle,
+  documentFolderHues,
   limitedDocumentCheck,
   markedItems,
   tierRows,
@@ -53,18 +54,16 @@ import {
   FolderDialog,
   useFolderManagement,
 } from "@/components/documents/folder-management";
-import { FolderImportPanel } from "@/components/documents/folder-import-panel";
 import {
   DocumentAccessDialog,
   canSetDocumentAccess,
 } from "@/components/documents/document-access";
-import { DriveFolderPanel } from "@/components/documents/drive-folder-panel";
-import { FolderRail } from "@/components/documents/folder-rail";
+import { FolderMenu, FolderRail } from "@/components/documents/folder-rail";
+import { UploadMenu } from "@/components/documents/upload-menu";
 import { MarkedStrip } from "@/components/documents/marked-strip";
 import { useDocumentMarks } from "@/components/documents/use-document-marks";
 import {
   DocumentsPageDropTarget,
-  UploadDocumentPanel,
   useDocumentUpload,
 } from "@/components/documents/upload-document-panel";
 import { documentTypeOptions } from "@/lib/documents/upload-defaults";
@@ -162,6 +161,12 @@ function ChapterDocumentsPage() {
       .sort((a, b) => a.localeCompare(b))
       .map((name) => ({ id: null, name, sort_order: null }));
   }, [folders, foldersQuery.isError, documents]);
+
+  // Each file's tile wears its folder's hue, in the rail's order (#5576).
+  const folderHue = useMemo(
+    () => documentFolderHues(railFolders.map((folder) => folder.name)),
+    [railFolders],
+  );
 
   const railFolderNames = useMemo(
     () => new Set(railFolders.map((folder) => folder.name)),
@@ -344,6 +349,18 @@ function ChapterDocumentsPage() {
     refetchFolders: foldersQuery.refetch,
   });
 
+  const railProps = {
+    railFolders,
+    activeFolder,
+    setActiveFolder,
+    gate,
+    management: folderManagement,
+    marks,
+    loadFailed: foldersQuery.isError,
+    onRetryLoad: () => void foldersQuery.refetch(),
+    folderHue,
+  };
+
   async function handleDelete(doc: ChapterDocument) {
     // README §2 bans `window.confirm` on *every* surface, and §9 specs the
     // replacement. No comment is collected, so this is the truthiness form —
@@ -416,28 +433,25 @@ function ChapterDocumentsPage() {
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
     // window is wide, so the folder rail counts the page's own width.
-    <div className="@container space-y-6">
+    <div className="@container/docs space-y-6">
       <PageActions>
+        <UploadMenu
+          gate={gate}
+          upload={upload}
+          folders={folderNames}
+          typeOptions={typeOptions}
+          typeRows={typesQuery.isSuccess && canManageTypes ? typeRows : null}
+          importContext={importContext}
+          documents={documents}
+          folderRows={folders}
+          canUpload={canUpload}
+          canManage={canManageTypes}
+        />
         <Can permission="chapter_docs:upload">
-          <UploadDocumentPanel
-            gate={gate}
-            upload={upload}
-            folders={folderNames}
-            typeOptions={typeOptions}
-            typeRows={typesQuery.isSuccess && canManageTypes ? typeRows : null}
-          />
-          <FolderImportPanel gate={gate} context={importContext} />
           <DocumentsPageDropTarget
             gate={gate}
             upload={upload}
             activeFolder={activeFolder}
-          />
-        </Can>
-        <Can permission="chapter_docs:manage">
-          <DriveFolderPanel
-            gate={gate}
-            documents={documents}
-            folders={folders}
           />
         </Can>
       </PageActions>
@@ -495,17 +509,17 @@ function ChapterDocumentsPage() {
         200px rather than the old 240: the rail holds folder names and a four
         control management row, and the width it was giving up was the list's.
       */}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl:grid-cols-[200px_minmax(0,1fr)]">
-        <FolderRail
-          railFolders={railFolders}
-          activeFolder={activeFolder}
-          setActiveFolder={setActiveFolder}
-          gate={gate}
-          management={folderManagement}
-          marks={marks}
-          loadFailed={foldersQuery.isError}
-          onRetryLoad={() => void foldersQuery.refetch()}
-        />
+      {/*
+        Files first (#5576): where the page is wide enough the folders are a
+        rail beside the list, as Drive's and Dropbox's sidebars are, and cost
+        the list no height. Narrower (the tool panel beside chat, a small
+        window) the rail would stack seven rows over the first file, so it
+        folds into a Folder control at the start of the list's toolbar.
+      */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl/docs:grid-cols-[200px_minmax(0,1fr)]">
+        <div className="hidden @2xl/docs:block">
+          <FolderRail {...railProps} />
+        </div>
 
         <div className="min-w-0 space-y-6">
           {/*
@@ -563,6 +577,10 @@ function ChapterDocumentsPage() {
             isLimited={isLimited}
             canSetAccess={canSetAccess}
             onSetAccess={setAccessDoc}
+            folderHue={folderHue}
+            folderPicker={
+              <FolderMenu {...railProps} className="@2xl/docs:hidden" />
+            }
           />
         </div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useState, type RefObject } from "react";
 import { Copy, ExternalLink, FolderSync, Loader2 } from "lucide-react";
 import {
   useConnectGoogleDrive,
@@ -52,40 +52,51 @@ export function DriveFolderPanel({
   gate,
   documents = [],
   folders = [],
+  openerRef,
 }: {
   gate: SubscriptionGate;
   /** The documents the officer sees, for the copies sync is holding back. */
   documents?: readonly ChapterDocument[];
   /** The chapter's folders, to name where Drive put a held copy. */
   folders?: readonly FolderRow[];
+  /**
+   * Set, the panel draws no button of its own and puts its opener here, for
+   * a menu to call: Documents opens it from the Upload menu (#5576).
+   */
+  openerRef?: RefObject<(() => void) | null>;
 }) {
   const status = useGoogleDriveStatus();
   const dialog = useGatedDialog(gate);
+  useLayoutEffect(() => {
+    if (openerRef) openerRef.current = () => dialog.setOpen(true);
+  });
   const data = status.data;
   if (!data || (!data.available && !data.connection)) return null;
   const connected = data.connection;
 
   return (
     <>
-      <Button
-        variant="secondary"
-        size="toolbar"
-        className="gap-2"
-        onClick={() => dialog.setOpen(true)}
-        {...gate.controlProps()}
-      >
-        <FolderSync className="h-4 w-4" />
-        {connected ? "Google Drive" : "Connect Google Drive"}
-        {connected?.status === "no_access" ? (
-          <span className="sr-only">: needs attention</span>
-        ) : null}
-        {connected?.status === "no_access" ? (
-          <span
-            aria-hidden="true"
-            className="h-2 w-2 rounded-full bg-destructive"
-          />
-        ) : null}
-      </Button>
+      {openerRef ? null : (
+        <Button
+          variant="secondary"
+          size="toolbar"
+          className="gap-2"
+          onClick={() => dialog.setOpen(true)}
+          {...gate.controlProps()}
+        >
+          <FolderSync className="h-4 w-4" />
+          {connected ? "Google Drive" : "Connect Google Drive"}
+          {connected?.status === "no_access" ? (
+            <span className="sr-only">: needs attention</span>
+          ) : null}
+          {connected?.status === "no_access" ? (
+            <span
+              aria-hidden="true"
+              className="h-2 w-2 rounded-full bg-destructive"
+            />
+          ) : null}
+        </Button>
+      )}
       <Panel {...dialog.dialogProps} docked backLabel="Back to documents">
         <PanelContent {...dialog.contentProps} aria-describedby={undefined}>
           {connected ? (
