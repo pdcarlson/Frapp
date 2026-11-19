@@ -926,8 +926,11 @@ export class InviteService {
     if (!described) throw new NotFoundException('Invite not found');
     const state = linkState(invite, described, now);
     const live = state === 'live';
+    // A locked link still works once the chapter is restored, so it is not
+    // dead and keeps answering.
     if (
       !live &&
+      state !== 'locked' &&
       now.getTime() - new Date(invite.created_at).getTime() >
         DEAD_INVITE_DETAILS_DAYS * DAY_MS
     ) {
