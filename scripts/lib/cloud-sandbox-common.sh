@@ -374,14 +374,20 @@ cs_failure_hint() {
       printf 'the sandbox network policy blocked a container registry. Set Network = Full, or Custom + public.ecr.aws + *.cloudfront.net, in this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.'
       ;;
     ratelimit)
-      # Three different situations, three different fixes (CS_DOCKER_LOGIN is set by
-      # cs_docker_login_if_creds earlier in the same shell).
+      # The classifier matches a rate limit from any registry (Docker Hub's toomanyrequests,
+      # ECR Public's "Rate exceeded"), so the hint never claims which one refused. What it can
+      # say for sure is how the Docker Hub login went (CS_DOCKER_LOGIN, set by
+      # cs_docker_login_if_creds earlier in the same shell), and the remedy follows that.
       case "${CS_DOCKER_LOGIN:-absent}" in
         failed)
-          printf 'Docker Hub refused the pull (anonymous rate limit) because the Docker Hub login FAILED: %s. DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are set; the token is expired, revoked or wrong. Create a new read-only personal access token on Docker Hub (Account settings, Personal access tokens) and replace DOCKERHUB_TOKEN in this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.' "${CS_DOCKER_LOGIN_REASON:-no reason given}"
+          if grep -Eqi 'unauthorized|incorrect username or password|expired|revoked|denied' <<<"${CS_DOCKER_LOGIN_REASON:-}"; then
+            printf 'a registry refused the pulls with a rate limit, and the Docker Hub login FAILED, so the pulls ran anonymously: %s. DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are set, but Docker Hub rejected them: check DOCKERHUB_USERNAME is the account'\''s username (not its email), and create a new read-only personal access token on Docker Hub (Account settings, Personal access tokens) to replace DOCKERHUB_TOKEN, in this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.' "${CS_DOCKER_LOGIN_REASON:-no reason given}"
+          else
+            printf 'a registry refused the pulls with a rate limit, and the Docker Hub login FAILED, so the pulls ran anonymously: %s. That reason does not say the credentials are wrong, so do not rotate them for it: fix what it names (a network policy that blocks registry-1.docker.io or auth.docker.io, or a registry outage), and see %s.' "${CS_DOCKER_LOGIN_REASON:-no reason given}" "$where"
+          fi
           ;;
         ok)
-          printf 'Docker Hub refused the pull even though the Docker Hub login succeeded, so the account'\''s own pull limit was hit. The credentials are fine; retry in a new session later.'
+          printf 'a registry refused the pulls with a rate limit even though the Docker Hub login succeeded. The credentials are not the problem: the limit is the Docker Hub account'\''s own or public.ecr.aws'\''s anonymous one (see %s for which registry). Retry later.' "$where"
           ;;
         *)
           printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.'
