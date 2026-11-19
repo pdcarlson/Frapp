@@ -24,8 +24,6 @@ export {
 // Client-side analytics opt-out. Fourth shared client gate alongside `can`,
 // `isModuleEnabled`, and `subscriptionWriteState`.
 export * from "./analytics-opt-out";
-// The invite card funnel (#5663): steps, closed property sets, shapes.
-export * from "./invite-funnel";
 export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
@@ -116,6 +114,8 @@ export {
 // `apps/api/src/domain/constants/field-limits.ts` (#3268).
 export * from "./field-limits";
 export * from "./invite-emails";
+// The invite card funnel (#5663): steps, closed property sets, shapes.
+export * from "./invite-funnel";
 // Invite paste/URL extraction and https minting, shared so web `/join`,
 // mobile s02, the API email helper, and the landing `/join` redirect cannot
 // drift on what a copied join link is or whether a public http: origin is
