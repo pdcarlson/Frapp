@@ -16,12 +16,16 @@ import { FrappCrest } from "./frapp-crest";
  * field it opens rather than as a banner. A click opens the conversation
  * (`ask-card.tsx`) and focus comes back here when it closes.
  *
- * It floats at the bottom of the tool page (`dashboard-shell.tsx`), and with
- * chat alone at the foot of the Channels column (`chat-shell.tsx`), never
- * over a message box: the composer owns the bottom of a channel, and asks
- * there through `@Frapp` (#4713), as the phone's channel screen does. From
- * #4904 (2026-11-13) until this the top bar's search field asked too; Shawn
- * and Paul didn't want Ask in the search bar.
+ * From the nav column's width up (`lg`) it has one home on every layout: the
+ * foot of the sidebar (`app-nav.tsx`), above Collapse sidebar, and the crest
+ * alone in the rail (#5560, Paul's pick of 2026-11-19). It used to float in
+ * whichever column was open, so it moved as panes opened and closed (Shawn,
+ * 2026-11-18) and covered the last row of any page with its own scroll box.
+ * Below `lg` the shell is a single page with no sidebar, so it floats at the
+ * bottom of that page (`dashboard-shell.tsx`) or of chat's Channels list
+ * (`chat-shell.tsx`), never over a message box: the composer owns the bottom
+ * of a channel and asks there through `@Frapp` (#4713). Shawn and Paul
+ * didn't want Ask in the top bar's search field (#4904 until #5476).
  *
  * Its name is its words ("Ask Frapp anything", or "Ask Frapp" compact), so
  * what a voice-control user reads on it is what it answers to (WCAG 2.5.3).
@@ -54,8 +58,14 @@ const GLASS = [
 export function AskBar({
   className,
   compact = false,
+  rail = false,
 }: {
   className?: string;
+  /**
+   * For the collapsed sidebar's 56px rail: the crest alone in a 34px round
+   * button, as the rail's rows are, its name in the label and the tooltip.
+   */
+  rail?: boolean;
   /**
    * For the Channels column (240px from `lg` up), where the field's words
    * would be cut: the bar reads "Ask Frapp" instead.
@@ -64,6 +74,27 @@ export function AskBar({
 }) {
   const ask = useAskEntry();
   if (!ask) return null;
+  if (rail) {
+    return (
+      <button
+        type="button"
+        data-ask-entry=""
+        aria-haspopup="dialog"
+        aria-expanded={ask.open}
+        aria-label={ASK_COPY.name}
+        title={ASK_COPY.name}
+        onClick={(event) => ask.openWith(event.currentTarget)}
+        className={cn(
+          "grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border transition hover:brightness-125",
+          GLASS,
+          FOCUS_RING_SHELL,
+          className,
+        )}
+      >
+        <FrappCrest className="h-[18px] w-[15px] text-primary" />
+      </button>
+    );
+  }
   return (
     <button
       type="button"

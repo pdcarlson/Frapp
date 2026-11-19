@@ -13,6 +13,7 @@ import {
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { LiveMeetingCard } from "@/components/meetings/live-meeting-card";
+import { AskBar } from "@/components/ask/ask-bar";
 
 /**
  * The module nav: its rows, section headings and the collapse toggle.
@@ -295,6 +296,27 @@ export function AppNav({
       {/* The foot of the column is empty; a live meeting the viewer runs
           shows its Start minutes card there (#5219). No room in the rail. */}
       {isCollapsed ? null : <LiveMeetingCard />}
+      {isDrawer ? null : (
+        /*
+         * Ask Frapp's one home from `lg` up (#5560, Paul's pick of
+         * 2026-11-19): the foot of the column on every layout, so it never
+         * moves as panes open and close and covers no page. `mt-auto` pins
+         * it, and the toggle under it, to the bottom. Renders nothing for a
+         * member without Ask.
+         */
+        <div
+          className={cn(
+            "mt-auto flex shrink-0 flex-col pt-2",
+            isCollapsed ? "items-center" : "w-full",
+          )}
+        >
+          <AskBar
+            compact
+            rail={isCollapsed}
+            className={isCollapsed ? undefined : "h-10"}
+          />
+        </div>
+      )}
       {isDrawer || !onToggleCollapsed ? null : (
         /*
          * The collapse toggle (#4044). It stays pinned to the bottom of the
@@ -309,7 +331,7 @@ export function AppNav({
         <div
           data-nav-toggle=""
           className={cn(
-            "mt-auto flex shrink-0 flex-col pt-2",
+            "flex shrink-0 flex-col pt-2",
             isCollapsed ? "items-center" : "w-full",
           )}
         >
