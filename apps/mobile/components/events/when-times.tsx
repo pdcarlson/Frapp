@@ -22,8 +22,6 @@ import { MINUTE_INTERVAL, withDay } from "@/lib/events/create-event";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-const DAY_MS = 24 * 60 * 60_000;
-
 /** Minutes past midnight, on the device's clock. */
 function minuteOfDay(at: Date): number {
   return at.getHours() * 60 + at.getMinutes();
@@ -34,15 +32,27 @@ function sameDay(a: Date, b: Date): boolean {
 }
 
 /**
+ * The calendar day after `at`'s, at `at`'s wall-clock time: built from
+ * parts, not 24 hours on, so a night the clocks change keeps the time.
+ */
+function nextDay(at: Date): Date {
+  return new Date(
+    at.getFullYear(),
+    at.getMonth(),
+    at.getDate() + 1,
+    at.getHours(),
+    at.getMinutes(),
+  );
+}
+
+/**
  * Whether an event's end needs a day of its own: it ends on another day
  * than it starts, other than just past midnight (a 10 PM to 1 AM social).
  */
 export function endsAnotherDay(start: Date, end: Date): boolean {
   if (sameDay(start, end)) return false;
   const overnight =
-    end.getTime() - start.getTime() < DAY_MS &&
-    sameDay(new Date(start.getTime() + DAY_MS), end) &&
-    minuteOfDay(end) <= minuteOfDay(start);
+    sameDay(nextDay(start), end) && minuteOfDay(end) <= minuteOfDay(start);
   return !overnight;
 }
 
@@ -52,7 +62,7 @@ export function endsAnotherDay(start: Date, end: Date): boolean {
  */
 export function endAtTime(start: Date, time: Date): Date {
   const end = withDay(time, start);
-  return end <= start ? new Date(end.getTime() + DAY_MS) : end;
+  return end <= start ? nextDay(end) : end;
 }
 
 /**
@@ -222,6 +232,69 @@ function Line({
       <Text style={styles.lineLabel}>{label}</Text>
       <View style={styles.pickers}>{children}</View>
     </View>
+  );
+}
+
+/**
+ * One row of a When group elsewhere (a meeting's minutes, #5381): its label,
+ * then the day and the time, each the platform's own picker. A held value
+ * already under the minimum (a kept draft whose day has passed) lowers the
+ * floor to its own day: iOS draws a value under its minimum as the minimum,
+ * which would show a day the draft doesn't hold. The time is checked on
+ * save, since a minimum time would also stop a later day's early hours.
+ */
+export function WhenRow({
+  label,
+  value,
+  now,
+  minimumDate,
+  disabled,
+  onChange,
+  platform = Platform.OS,
+}: {
+  label: "Starts" | "Ends";
+  value: Date;
+  now: Date;
+  minimumDate: Date;
+  disabled: boolean;
+  onChange: (next: Date) => void;
+  platform?: string;
+}) {
+  const brand = useChapterBranding();
+  const floor = value < minimumDate ? value : minimumDate;
+  const minimumDay = new Date(
+    floor.getFullYear(),
+    floor.getMonth(),
+    floor.getDate(),
+  );
+  // An ISO string: `formatWeekdayDay` reads only strings, and a Date left
+  // the Android pill (and its label) blank.
+  const day = formatWeekdayDay(value.toISOString(), now) ?? "";
+  const time = formatEventClock(value);
+  return (
+    <Line label={label}>
+      <Picker
+        mode="date"
+        value={value}
+        text={day}
+        label={`${label} day, ${day}`}
+        minimumDate={minimumDay}
+        disabled={disabled}
+        platform={platform}
+        accent={brand.accent}
+        onPick={(picked) => onChange(withDay(value, picked))}
+      />
+      <Picker
+        mode="time"
+        value={value}
+        text={time}
+        label={`${label} time, ${time}`}
+        disabled={disabled}
+        platform={platform}
+        accent={brand.accent}
+        onPick={(picked) => onChange(withDay(picked, value))}
+      />
+    </Line>
   );
 }
 

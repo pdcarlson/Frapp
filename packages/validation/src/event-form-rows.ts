@@ -111,8 +111,9 @@ export function describeCheckIn(
 export const EVENT_LENGTH_CHOICES = [30, 60, 90, 120, 180] as const;
 
 /**
- * `"30 min"`, `"1 hr"`, `"1.5 hrs"`: an event's length, in the words web's
- * end-time list labels each time with (`durationLabel` in `time-field.tsx`).
+ * `"30 min"`, `"1 hr"`, `"1.5 hrs"`: an event's length. The length chips on
+ * both apps and web's end-time list (`durationLabel` in `time-field.tsx`)
+ * all say it this way.
  */
 export function eventLengthLabel(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;

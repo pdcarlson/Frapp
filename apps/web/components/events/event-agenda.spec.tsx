@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { EventAgendaItem, EventAttachment } from "@repo/validation";
 
@@ -163,6 +164,67 @@ describe("EventAgendaSection", () => {
     expect(at(runs, 3)).toEqual([at(agenda, 1)]);
   });
 
+  it("keeps focus on the moved row's grip, and says where it went", async () => {
+    const user = userEvent.setup();
+    function Held() {
+      const [items, setItems] = useState(agenda);
+      return (
+        <EventAgendaSection
+          agenda={items}
+          canEdit
+          onChange={(update) => setItems(update)}
+        />
+      );
+    }
+    render(<Held />);
+    screen.getByRole("button", { name: "Reorder Treasurer report" }).focus();
+    await user.keyboard("{ArrowDown}");
+    const grip = screen.getByRole("button", {
+      name: "Reorder Treasurer report",
+    });
+    expect(grip).toHaveFocus();
+    expect(screen.getByText("Treasurer report, 2 of 2")).toBeInTheDocument();
+    // A second press still reaches it: nothing further down to go.
+    await user.keyboard("{ArrowUp}");
+    expect(
+      screen.getByRole("button", { name: "Reorder Treasurer report" }),
+    ).toHaveFocus();
+  });
+
+  it("moves a row dragged by its grip past its neighbour's middle", () => {
+    // Each row 40px tall, stacked from the top: the second's middle is 60.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const index = this.parentElement
+          ? Array.from(this.parentElement.children).indexOf(this)
+          : 0;
+        const top = index * 40;
+        return {
+          top,
+          bottom: top + 40,
+          height: 40,
+          left: 0,
+          right: 300,
+          width: 300,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    const onChange = vi.fn();
+    render(<EventAgendaSection agenda={agenda} canEdit onChange={onChange} />);
+    const grip = screen.getByRole("button", {
+      name: "Reorder Treasurer report",
+    });
+    fireEvent.pointerDown(grip, { pointerId: 1, button: 0, clientY: 20 });
+    fireEvent.pointerMove(grip, { pointerId: 1, clientY: 70 });
+    fireEvent.pointerUp(grip, { pointerId: 1, clientY: 70 });
+    rect.mockRestore();
+    const runs = applied(onChange, agenda);
+    expect(at(runs, 0).map((item) => item.id)).toEqual(["a2", "a1"]);
+  });
+
   it("applies a move to the list as it stands when the update runs", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -215,7 +277,14 @@ describe("checking items off (Paul 2026-11-19)", () => {
   });
 
   it("draws the event form's list with no checkboxes", () => {
-    render(<AgendaDraftList agenda={agenda} onChange={vi.fn()} />);
+    render(
+      <AgendaDraftList
+        agenda={agenda}
+        onChange={vi.fn()}
+        draft=""
+        onDraftChange={vi.fn()}
+      />,
+    );
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(
       screen.getByRole("textbox", { name: "Add an agenda item" }),

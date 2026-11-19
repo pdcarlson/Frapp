@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agendaWithPending,
   agendaProblem,
   attachmentLinkTitle,
   EVENT_AGENDA_ITEM_MAX,
@@ -42,6 +43,17 @@ describe("event agenda helpers (#4934)", () => {
       { id: "1", kind: "link", url: "https://a.example", title: "A" },
       { id: "2", kind: "document", document_id: "d1", title: "Bylaws" },
     ]);
+  });
+
+  it("puts a line still in the add field on the end, when it would be taken", () => {
+    const items = [{ id: "a", text: "A", done: false }];
+    const id = () => "new";
+    expect(agendaWithPending(items, "  Budget  review ", id)).toEqual([
+      ...items,
+      { id: "new", text: "Budget review", done: false },
+    ]);
+    expect(agendaWithPending(items, "   ", id)).toEqual(items);
+    expect(agendaWithPending(items, "x".repeat(201), id)).toEqual(items);
   });
 
   it("toggles one item", () => {

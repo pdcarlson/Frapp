@@ -297,6 +297,14 @@ export default function EventDetailsScreen() {
           </View>
         ) : null}
 
+        {/* Details first, then the agenda, then attendance (Paul
+            2026-11-19: "details should come first, followed by the agenda
+            and the attendance"), web's event page in the same order. */}
+        <DetailsSection event={event} now={now} />
+
+        {/* The member's own part, checking in or saying they can't
+            come, reads right under the details, where web's sheet puts its
+            check-in row and excuse. */}
         <CheckInCard event={event} window={window} now={now} />
 
         <MyExcuse
@@ -308,11 +316,6 @@ export default function EventDetailsScreen() {
           now={now}
           startWriting={startExcuse}
         />
-
-        {/* Details first, then the agenda, then attendance (Paul
-            2026-11-19: "details should come first, followed by the agenda
-            and the attendance"), web's event page in the same order. */}
-        <DetailsSection event={event} now={now} />
 
         {/* Keyed by meeting: a half-typed item, or a change still waiting
             to save, must not carry over to another occurrence opened from

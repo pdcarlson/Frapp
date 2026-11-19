@@ -121,12 +121,19 @@ export function AttendancePanel({
 
   // An answer just clicked shows lit at once, before the roster reads it
   // back, so a run of clicks down the list doesn't flicker; a refused one
-  // goes back with its toast. Cleared when the roster is read again.
+  // goes back with its toast. Each new read of the roster replaces the
+  // answers whose writes have finished; one still being sent stays, since
+  // the read the first write asked for can land before the second is saved.
   const [marked, setMarked] = useState<Record<string, AttendanceStatus>>({});
+  const [sending, setSending] = useState<Record<string, number>>({});
   const [markedAt, setMarkedAt] = useState(attendanceQuery.dataUpdatedAt);
   if (markedAt !== attendanceQuery.dataUpdatedAt) {
     setMarkedAt(attendanceQuery.dataUpdatedAt);
-    setMarked({});
+    setMarked((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([userId]) => sending[userId]),
+      ),
+    );
   }
 
   type Row = {
@@ -212,6 +219,15 @@ export function AttendancePanel({
 
   async function changeStatus(userId: string, next: AttendanceStatus) {
     setMarked((current) => ({ ...current, [userId]: next }));
+    const sent = (by: number) =>
+      setSending((current) => {
+        const count = (current[userId] ?? 0) + by;
+        const rest = { ...current };
+        if (count > 0) rest[userId] = count;
+        else delete rest[userId];
+        return rest;
+      });
+    sent(1);
     try {
       await updateStatus.mutateAsync({
         eventId,
@@ -232,6 +248,8 @@ export function AttendancePanel({
         ),
         variant: "destructive",
       });
+    } finally {
+      sent(-1);
     }
   }
 

@@ -75,6 +75,7 @@ import {
   saveScopeFor,
   SERIES_SCOPE_COPY,
   EVENT_FORM_AGENDA_REPEAT_NOTE,
+  agendaWithPending,
   EVENT_LENGTH_CHOICES,
   eventLengthLabel,
   type EventAgendaItem,
@@ -758,10 +759,22 @@ export function EventEditorDialog({
     setStartAt(next);
     if (after) lastWholeStart.current = after;
     if (after && !end) {
-      // No end yet: an hour, as a new event in Google Calendar starts.
-      setEndAt(
-        isoToLocalInput(new Date(after.getTime() + 60 * 60_000).toISOString()),
-      );
+      const [startDay = "", startTime = ""] = next.split("T");
+      const endTime = endAt.split("T")[1] ?? "";
+      if (endTime) {
+        // An end time picked before the start was whole keeps that time, on
+        // the start's day, or the next when it runs past midnight.
+        setEndAt(
+          `${endTime <= startTime ? addDays(startDay, 1) : startDay}T${endTime}`,
+        );
+      } else {
+        // No end yet: an hour, as a new event in Google Calendar starts.
+        setEndAt(
+          isoToLocalInput(
+            new Date(after.getTime() + 60 * 60_000).toISOString(),
+          ),
+        );
+      }
     } else if (before && after && end) {
       setEndAt(
         isoToLocalInput(
@@ -801,6 +814,9 @@ export function EventEditorDialog({
   const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
   const [checkInZoneName, setCheckInZoneName] = useState("");
   const [agenda, setAgenda] = useState<EventAgendaItem[]>([]);
+  // The Agenda row's add field: a line typed but never entered still goes
+  // with Create.
+  const [agendaDraft, setAgendaDraft] = useState("");
   // Kept when left unsaved (#4593). The open sections are kept with it but
   // aren't an edit, so only the fields decide whether there is a draft.
   const fields = {
@@ -952,6 +968,7 @@ export function EventEditorDialog({
     setCheckInOpens(fill.checkInOpens);
     // A draft kept before the form had an agenda has none.
     setAgenda(fill.agenda ?? []);
+    setAgendaDraft("");
     setMenu(null);
     // What the form opened on, so Discard shows only once something is typed.
     setOpenedFields(fill);
@@ -1085,13 +1102,26 @@ export function EventEditorDialog({
     }
     const startIso = localInputToIso(startAt);
     const endIso = localInputToIso(endAt);
+    // The first of the When fields that is missing, or the end's time.
+    const focusScheduleProblem = () => {
+      const [startDay, startTime] = startAt.split("T");
+      document
+        .getElementById(
+          !startDay
+            ? "event-start"
+            : !startTime
+              ? "event-start-time"
+              : "event-end-time",
+        )
+        ?.focus();
+    };
     if (!startIso || !endIso) {
       toast({
         title: "Valid schedule required",
         description: "Provide both start and end times.",
         variant: "destructive",
       });
-      document.getElementById(startAt ? "event-end-time" : "event-start")?.focus();
+      focusScheduleProblem();
       return;
     }
     if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
@@ -1100,7 +1130,7 @@ export function EventEditorDialog({
         description: "End must be after start.",
         variant: "destructive",
       });
-      document.getElementById(startAt ? "event-end-time" : "event-start")?.focus();
+      focusScheduleProblem();
       return;
     }
 
@@ -1197,6 +1227,7 @@ export function EventEditorDialog({
     kept.hold();
     try {
       if (mode === "create") {
+        const sentAgenda = agendaWithPending(agenda, agendaDraft, randomClientId);
         // Role lists are omitted when empty on create; on update (below)
         // every list is sent, so an emptied one clears.
         //
@@ -1252,7 +1283,7 @@ export function EventEditorDialog({
               : {}),
             // The first meeting's own (a series' later meetings start with
             // none, `spec/behavior/events.md` § Agenda and attachments).
-            ...(agenda.length > 0 ? { agenda } : {}),
+            ...(sentAgenda.length > 0 ? { agenda: sentAgenda } : {}),
           });
         } catch (error) {
           card?.failed();
@@ -1433,7 +1464,9 @@ export function EventEditorDialog({
     new Date(endIso).getTime() <= new Date(startIso).getTime();
   const fieldSignature = (value: EventFields | null) =>
     value ? JSON.stringify(EVENT_FIELD_KEYS.map((key) => value[key])) : "";
-  const touched = fieldSignature(fields) !== fieldSignature(openedFields);
+  const touched =
+    fieldSignature(fields) !== fieldSignature(openedFields) ||
+    agendaDraft.trim() !== "";
   const menuProps = (row: EventFormMenu) => ({
     open: menu === row,
     onOpenChange: (next: boolean) => setMenu(next ? row : null),
@@ -1721,6 +1754,8 @@ export function EventEditorDialog({
                 <AgendaDraftList
                   agenda={agenda}
                   onChange={setAgenda}
+                  draft={agendaDraft}
+                  onDraftChange={setAgendaDraft}
                   disabled={usingPreviewData}
                 />
                 {repeat.preset !== "NONE" && agenda.length > 0 ? (

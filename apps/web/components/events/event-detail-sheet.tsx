@@ -480,12 +480,15 @@ export function EventDetailSheet({
                 <DetailRow glyph="when" label={EVENT_FORM_ROW_LABELS.when}>
                   {schedule ?? "Not set"}
                 </DetailRow>
-                {cadence ? (
+                {/* A meeting whose rule can't be read (its series head
+                    isn't loaded) still says it's in one, and still links on,
+                    as the phone's does. */}
+                {cadence || (series?.length ?? 0) > 1 ? (
                   <DetailRow
                     glyph="repeat"
                     label={EVENT_FORM_ROW_LABELS.repeat}
                   >
-                    <span>{cadence}</span>
+                    <span>{cadence ?? "Part of a series"}</span>
                     {/*
                       The series as one link to its next meeting, not a list
                       of every date (Paul 2026-11-19: "don't need to see all
@@ -644,17 +647,19 @@ export function EventDetailSheet({
               check-in belonged (#3855). `<Can>` holds it back while
               permissions load, so it never mounts and fires that read first.
             */}
-            {eventId &&
-            !usingPreviewData &&
-            !eventUnavailable &&
-            (createdByViewer || can("events:update", permissions)) ? (
-              <div className="grid gap-3">
-                <ExcuseReview
-                  key={`excuses-${eventId}`}
-                  eventId={eventId}
-                  viewerId={viewerId}
-                  canUpdateEvents={can("events:update", permissions)}
-                />
+            {eventId && !usingPreviewData ? (
+              <div className="grid gap-3 empty:hidden">
+                {/* The event's creator receives its excuses; an
+                    events:update holder may decide them too. */}
+                {!eventUnavailable &&
+                (createdByViewer || can("events:update", permissions)) ? (
+                  <ExcuseReview
+                    key={`excuses-${eventId}`}
+                    eventId={eventId}
+                    viewerId={viewerId}
+                    canUpdateEvents={can("events:update", permissions)}
+                  />
+                ) : null}
                 <Can
                   permission="events:update"
                   offlineFallback={(retry) => (

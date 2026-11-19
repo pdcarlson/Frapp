@@ -109,8 +109,8 @@ vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
 }));
 
-import { NewEventSheet, WhenRow } from "./new-event-sheet";
-import { WhenTimes } from "./when-times";
+import { NewEventSheet } from "./new-event-sheet";
+import { WhenRow, WhenTimes } from "./when-times";
 import { EventTypeSheet, PropertyRow } from "./event-form-rows";
 import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
 import { emptyEventDraft } from "@/lib/events/create-event";
@@ -359,6 +359,19 @@ describe("New event", () => {
       { id: expect.any(String), text: "Opening", done: false },
       { id: expect.any(String), text: "Budget", done: false },
     ]);
+    act(() => tree.unmount());
+  });
+
+  it("sends an agenda line typed but never entered", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    type(tree, "Add an agenda item", "Budget review");
+    act(() => createButton(tree).props.onPress());
+    expect(
+      (mutate.mock.calls[0]![0] as { agenda?: { text: string }[] }).agenda?.map(
+        (item) => item.text,
+      ),
+    ).toEqual(["Budget review"]);
     act(() => tree.unmount());
   });
 

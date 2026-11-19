@@ -158,10 +158,18 @@ export function EventAgendaSection({
   checkable = true,
   locked = false,
   bare = false,
+  draft: heldDraft,
+  onDraftChange,
   onChange,
 }: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  /**
+   * The add field's text, when the caller holds it: a form sends a line
+   * typed but never entered (`agendaWithPending`).
+   */
+  draft?: string;
+  onDraftChange?: (draft: string) => void;
   /** The meeting has started; before then the checkboxes wait. */
   checkOffOpen?: boolean;
   /** Draw checkboxes at all (not on the form's list). */
@@ -173,7 +181,9 @@ export function EventAgendaSection({
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
   const { toast } = useToast();
-  const [draft, setDraft] = useState("");
+  const [ownDraft, setOwnDraft] = useState("");
+  const draft = heldDraft ?? ownDraft;
+  const setDraft = onDraftChange ?? setOwnDraft;
   const inputId = useId();
   const lockNoteId = useId();
   const sortable = useSortableList({
@@ -317,6 +327,11 @@ export function EventAgendaSection({
           ))}
         </ol>
       ) : null}
+      {canEdit ? (
+        <p aria-live="polite" className="sr-only">
+          {sortable.announcement}
+        </p>
+      ) : null}
       {canEdit && !full ? (
         <form onSubmit={add} className="flex items-center gap-1.5">
           <label htmlFor={inputId} className="sr-only">
@@ -361,10 +376,15 @@ export function EventAgendaSection({
 export function AgendaDraftList({
   agenda,
   onChange,
+  draft,
+  onDraftChange,
   disabled = false,
 }: {
   agenda: EventAgendaItem[];
   onChange: (next: EventAgendaItem[]) => void;
+  /** The add field's text: Create sends it even if Enter wasn't pressed. */
+  draft: string;
+  onDraftChange: (draft: string) => void;
   disabled?: boolean;
 }) {
   return (
@@ -374,6 +394,8 @@ export function AgendaDraftList({
       checkable={false}
       locked={disabled}
       bare
+      draft={draft}
+      onDraftChange={onDraftChange}
       onChange={(update) => onChange(update(agenda))}
     />
   );

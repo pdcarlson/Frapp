@@ -378,6 +378,14 @@ describe("Event details layout", () => {
     myAttendancePaused = false;
   });
 
+  it("reads the details before the member's check-in, as web's sheet does (Paul 2026-11-19)", () => {
+    const text = screenText(render());
+    const details = text.indexOf("DETAILS");
+    const checkIn = text.indexOf("Scan code");
+    expect(details).toBeGreaterThan(-1);
+    expect(checkIn).toBeGreaterThan(details);
+  });
+
   it("offers no calendar export until calendar sync ships (#3708)", () => {
     expect(screenText(render())).not.toMatch(/add to calendar/i);
   });
@@ -782,8 +790,9 @@ describe("Event details editing", () => {
 });
 
 /**
- * #3707: the occurrence's page lists the series' other upcoming dates under
- * its cadence.
+ * A series on the occurrence's page: its cadence in the Repeat row and a
+ * link to the next meeting, not the list of every date #3707 drew (Paul
+ * 2026-11-19).
  */
 describe("Event details series (#3823)", () => {
   const weekly = (index: number) => {

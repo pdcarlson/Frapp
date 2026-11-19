@@ -1,3 +1,4 @@
+import { randomClientId } from "@repo/api-sdk";
 import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
@@ -11,6 +12,7 @@ import {
   noRepeatDraft,
   repeatRuleOf,
   withEveryone,
+  agendaWithPending,
   type EventAgendaItem,
   type EventAttendanceDraft,
   type RepeatDraft,
@@ -98,8 +100,13 @@ export interface NewEventDraft {
    */
   agenda?: EventAgendaItem[];
   /**
-   * The row open in place (#5561): When shows its pickers, Repeat its
-   * options. Kept with the draft, so a reopen comes back as it was left.
+   * The Agenda row's add field: a line typed but never entered still goes
+   * with Create (`agendaWithPending`).
+   */
+  agendaPending?: string;
+  /**
+   * The row open in place (#5561): Repeat its options, Check-in its field.
+   * Kept with the draft, so a reopen comes back as it was left.
    */
   openRow: EventFormOpenRow;
 }
@@ -125,6 +132,7 @@ export function emptyEventDraft(): NewEventDraft {
     description: "",
     notes: "",
     agenda: [],
+    agendaPending: "",
     openRow: null,
   };
 }
@@ -385,7 +393,11 @@ export function validateNewEvent(
   if (location.length > 0) body.location = location;
   if (description.length > 0) body.description = description;
   if (notes.length > 0) body.notes = notes;
-  const agenda = draft.agenda ?? [];
+  const agenda = agendaWithPending(
+    draft.agenda ?? [],
+    draft.agendaPending ?? "",
+    randomClientId,
+  );
   if (agenda.length > 0) body.agenda = agenda;
   if (wire.required_role_ids.length > 0) {
     body.required_role_ids = wire.required_role_ids;

@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -18,7 +19,10 @@ import {
  *
  * The grip is also the keyboard's way in: focused, the up and down arrows
  * move its row one place, so the list never needs arrow buttons on every row
- * to be reachable without a mouse.
+ * to be reachable without a mouse. Focus follows the moved row (React
+ * re-inserts a moved row's node on some moves, which blurs it, as
+ * `reorder-list.tsx` found), and each move is announced as "Alpha, 2 of 5"
+ * through `announcement`, which the caller puts in a polite live region.
  *
  * No library: a list this short (30 at most) measures its rows once when a
  * drag starts, and every move after that is arithmetic on those rects.
@@ -39,6 +43,7 @@ export function useSortableList({
     mids: number[];
     shift: number;
     pointerId: number;
+    label: string;
   } | null>(null);
   const [drag, setDrag] = useState<{
     from: number;
@@ -56,6 +61,22 @@ export function useSortableList({
 
   // The drop target as last drawn, read on release.
   const target = useRef<number | null>(null);
+  // The row whose grip takes focus back once the list has redrawn.
+  const refocus = useRef<number | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  useEffect(() => {
+    const index = refocus.current;
+    if (index === null) return;
+    refocus.current = null;
+    rows.current[index]
+      ?.querySelector<HTMLElement>("[data-sortable-grip]")
+      ?.focus();
+  });
+
+  const moveTo = (from: number, to: number, label: string) => {
+    onMove(from, to);
+    setAnnouncement(`${label}, ${to + 1} of ${count}`);
+  };
 
   const end = (commit: boolean) => {
     const current = session.current;
@@ -64,7 +85,7 @@ export function useSortableList({
     target.current = null;
     setDrag(null);
     if (commit && current && to !== null && to !== current.from) {
-      onMove(current.from, to);
+      moveTo(current.from, to, current.label);
     }
   };
 
@@ -73,6 +94,7 @@ export function useSortableList({
       "aria-label": `Reorder ${label}`,
       "aria-keyshortcuts": "ArrowUp ArrowDown",
       title: "Drag to reorder, or use the arrow keys",
+      "data-sortable-grip": "",
       disabled,
       onPointerDown: (event: PointerEvent<HTMLElement>) => {
         if (disabled || event.button !== 0) return;
@@ -96,6 +118,7 @@ export function useSortableList({
           mids: rects.map((rect) => (rect ? rect.top + rect.height / 2 : 0)),
           shift: own.height + Math.max(0, gap),
           pointerId: event.pointerId,
+          label,
         };
         target.current = index;
         setDrag({
@@ -127,10 +150,12 @@ export function useSortableList({
         if (disabled) return;
         if (event.key === "ArrowUp" && index > 0) {
           event.preventDefault();
-          onMove(index, index - 1);
+          refocus.current = index - 1;
+          moveTo(index, index - 1, label);
         } else if (event.key === "ArrowDown" && index < count - 1) {
           event.preventDefault();
-          onMove(index, index + 1);
+          refocus.current = index + 1;
+          moveTo(index, index + 1, label);
         } else if (event.key === "Escape" && session.current) {
           end(false);
         }
@@ -166,5 +191,7 @@ export function useSortableList({
     rowStyle,
     /** The index being dragged, or `null`. */
     dragging: drag?.from ?? null,
+    /** The last move, said for a screen reader ("Alpha, 2 of 5"). */
+    announcement,
   };
 }

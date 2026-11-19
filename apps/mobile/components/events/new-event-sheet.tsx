@@ -2,17 +2,12 @@ import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Keyboard,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
-import DateTimePicker, {
-  DateTimePickerAndroid,
-} from "@react-native-community/datetimepicker";
-import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import type { EventCardTrack } from "@repo/chat-core/dispatch";
 import {
@@ -80,11 +75,9 @@ import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   applyEventType,
   emptyEventDraft,
-  MINUTE_INTERVAL,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
-  withDay,
   type NewEventDraft,
   type NewEventErrors,
 } from "@/lib/events/create-event";
@@ -95,7 +88,6 @@ import {
   validateEventEdit,
   type EventEditTarget,
 } from "@/lib/events/edit-event";
-import { formatEventClock } from "@/lib/events/format";
 import { gateRefusalOf } from "@/lib/chat/gated-upload";
 import { successHaptic } from "@/lib/haptics";
 import {
@@ -424,6 +416,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
      */
     const [rejected, setRejected] = useState<string | null>(null);
     const sending = useRef(false);
+    const [draggingAgenda, setDraggingAgenda] = useState(false);
 
     const pending =
       createEvent.isPending || updateEvent.isPending || deleteEvent.isPending;
@@ -739,9 +732,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           backdropComponent={SheetScrim}
           onAnimate={onAnimate}
           onDismiss={closed}
+          // A held agenda row: the drag, not the sheet, follows the finger.
+          enableContentPanningGesture={!draggingAgenda}
         >
           <SheetBackToClose onClose={closeSheet} />
           <BottomSheetScrollView
+            scrollEnabled={!draggingAgenda}
             onAccessibilityEscape={closeSheet}
             contentContainerStyle={styles.body}
             keyboardShouldPersistTaps="handled"
@@ -946,8 +942,13 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                   <View style={styles.opened}>
                     <AgendaDraftList
                       agenda={draft.agenda ?? []}
+                      draft={draft.agendaPending ?? ""}
+                      onDraftChange={(agendaPending) =>
+                        update({ agendaPending }, [])
+                      }
                       disabled={pending}
                       input={BottomSheetTextInput}
+                      onDragging={setDraggingAgenda}
                       onChange={(agenda) => update({ agenda }, [])}
                     />
                     {draft.repeat.preset !== "NONE" &&
@@ -1115,128 +1116,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
   },
 );
 
-/**
- * One row of the When group: its label, then the day and the time. On iOS
- * each is the system's compact picker; elsewhere each is a pill that opens
- * the platform's dialog. `platform` is a prop so a spec can draw either.
- */
-export function WhenRow({
-  label,
-  value,
-  now,
-  minimumDate,
-  disabled,
-  onChange,
-  platform = Platform.OS,
-}: {
-  label: "Starts" | "Ends";
-  value: Date;
-  now: Date;
-  minimumDate: Date;
-  disabled: boolean;
-  onChange: (next: Date) => void;
-  platform?: string;
-}) {
-  const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
-  // The day may not go before the minimum's day; the time is checked on
-  // Create, since a minimum time would also stop a later day's early hours.
-  // A held value already below it (a kept draft whose day has passed) lowers
-  // the floor to its own day: iOS draws a value under its minimum as the
-  // minimum, which would show a day the draft doesn't hold.
-  const floor = value < minimumDate ? value : minimumDate;
-  const minimumDay = new Date(
-    floor.getFullYear(),
-    floor.getMonth(),
-    floor.getDate(),
-  );
-  // An ISO string: `formatWeekdayDay` reads only strings, and a Date left
-  // the Android pill (and its label) blank.
-  const day = formatWeekdayDay(value.toISOString(), now) ?? "";
-  const time = formatEventClock(value);
-
-  if (platform === "ios") {
-    const shared = {
-      value,
-      display: "compact" as const,
-      themeVariant: "dark" as const,
-      accentColor: brand.accent,
-      disabled,
-    };
-    return (
-      <View style={styles.whenRow}>
-        <Text style={styles.whenLabel}>{label}</Text>
-        <View style={styles.whenPickers}>
-          <DateTimePicker
-            {...shared}
-            mode="date"
-            minimumDate={minimumDay}
-            accessibilityLabel={`${label} day, ${day}`}
-            onValueChange={(_event, picked) => onChange(withDay(value, picked))}
-          />
-          <DateTimePicker
-            {...shared}
-            mode="time"
-            minuteInterval={MINUTE_INTERVAL}
-            accessibilityLabel={`${label} time, ${time}`}
-            onValueChange={(_event, picked) => onChange(withDay(picked, value))}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  function open(mode: "date" | "time") {
-    Keyboard.dismiss();
-    DateTimePickerAndroid.open({
-      value,
-      mode,
-      ...(mode === "date" ? { minimumDate: minimumDay } : {}),
-      onValueChange: (_event, picked) =>
-        onChange(
-          mode === "date" ? withDay(value, picked) : withDay(picked, value),
-        ),
-    });
-  }
-
-  return (
-    <View style={styles.whenRow}>
-      <Text style={styles.whenLabel}>{label}</Text>
-      <View style={styles.whenPickers}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${label} day, ${day}`}
-          accessibilityHint="Opens the date picker."
-          accessibilityState={{ disabled }}
-          disabled={disabled}
-          onPress={() => open("date")}
-          style={styles.pill}
-        >
-          <Text style={styles.pillText}>{day}</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${label} time, ${time}`}
-          accessibilityHint="Opens the time picker."
-          accessibilityState={{ disabled }}
-          disabled={disabled}
-          onPress={() => open("time")}
-          style={styles.pill}
-        >
-          <Text style={styles.pillText}>{time}</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const fieldStyles = sheetFieldStyles(tokens, brand.accent);
-  const rowText = {
-    ...typeRole(tokens.typography.role.body),
-    color: tokens.color.text.foreground,
-  };
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -1313,28 +1194,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    whenRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      minHeight: tokens.touch.minimum + tokens.spacing.xs,
-      gap: tokens.spacing.sm,
-    },
-    whenLabel: rowText,
-    whenPickers: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-    },
-    // The Android stand-in for iOS's compact pill: a quiet chip, tappable.
-    pill: {
-      minHeight: 34,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
-    },
-    pillText: rowText,
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

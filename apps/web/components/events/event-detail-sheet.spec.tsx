@@ -115,15 +115,18 @@ vi.mock("@/components/events/event-agenda", () => ({
   EventMeetingLists: ({
     lists,
     canEdit,
+    checkOffOpen,
     documentsOn,
   }: {
     lists: { agenda: { text: string }[]; attachments: { title: string }[] };
     canEdit: boolean;
+    checkOffOpen?: boolean;
     documentsOn: boolean | null;
   }) => (
     <div
       data-testid="event-lists"
       data-can-edit={String(canEdit)}
+      data-check-off={String(checkOffOpen)}
       data-documents={String(documentsOn)}
       data-agenda={lists.agenda.map((item) => item.text).join("|")}
       data-attachments={lists.attachments.map((item) => item.title).join("|")}
@@ -918,6 +921,39 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
+  });
+
+  it("reads details, then the agenda, then attendance (Paul 2026-11-19)", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    renderLive();
+    const details = screen.getByText("When");
+    const agenda = screen.getByTestId("event-lists");
+    const roster = screen.getByTestId("attendance-roster");
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(details, agenda)).toBe(true);
+    expect(follows(agenda, roster)).toBe(true);
+  });
+
+  it("lets the agenda be ticked off only once the meeting has started", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    const { unmount } = renderLive();
+    expect(screen.getByTestId("event-lists")).toHaveAttribute(
+      "data-check-off",
+      "true",
+    );
+    unmount();
+    const later = {
+      ...baseEvent,
+      start_time: "2099-07-01T18:00:00.000Z",
+      end_time: "2099-07-01T19:00:00.000Z",
+    };
+    eventQueryState.data = later;
+    renderLive(later);
+    expect(screen.getByTestId("event-lists")).toHaveAttribute(
+      "data-check-off",
+      "false",
+    );
   });
 
   it("hands the meeting's agenda and attachments to their sections, editable only by an officer with a real answer (#4934)", () => {

@@ -273,6 +273,21 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     ]);
   });
 
+  it("sends a line typed in the agenda but never entered", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Add an agenda item" }),
+      { target: { value: "Budget review" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const sent = createMutate.mock.calls[0]![0] as {
+      agenda: { text: string }[];
+    };
+    expect(sent.agenda.map((item) => item.text)).toEqual(["Budget review"]);
+  });
+
   it("sends no agenda when none was typed", async () => {
     renderCreate();
     fillRequiredFields();

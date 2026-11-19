@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -190,6 +191,8 @@ function EventAgendaSection({
   locked = false,
   bare = false,
   input: Input = TextInput,
+  draft: heldDraft,
+  onDraftChange,
   onDragging,
   onChange,
 }: {
@@ -205,6 +208,12 @@ function EventAgendaSection({
   bare?: boolean;
   /** A sheet passes `BottomSheetTextInput`, which its keyboard handling needs. */
   input?: ComponentType<TextInputProps>;
+  /**
+   * The add field's text, when the caller holds it: a form sends a line
+   * typed but never entered (`agendaWithPending`).
+   */
+  draft?: string;
+  onDraftChange?: (draft: string) => void;
   /** A row is held: a screen stops its own scroll so the drag isn't taken. */
   onDragging?: (dragging: boolean) => void;
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
@@ -212,7 +221,9 @@ function EventAgendaSection({
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
-  const [draft, setDraft] = useState("");
+  const [ownDraft, setOwnDraft] = useState("");
+  const draft = heldDraft ?? ownDraft;
+  const setDraft = onDraftChange ?? setOwnDraft;
   const [problem, setProblem] = useState<string | null>(null);
   // The field and its error line stay above the keyboard while it is up,
   // and each item added pushes the field down a row, so it scrolls with
@@ -251,12 +262,31 @@ function EventAgendaSection({
     },
     [agenda, onChange],
   );
+  // Whether a row is held, so a screen whose scroll the drag turned off gets
+  // it back if the list goes (offline, the event deleted) mid-drag.
+  const held = useRef(false);
+  useEffect(
+    () => () => {
+      if (held.current) onDragging?.(false);
+    },
+    [onDragging],
+  );
+  useEffect(() => {
+    // The grips went (offline, a lapsed chapter) under a held row.
+    if (canEdit || !held.current) return;
+    held.current = false;
+    heldIndex.set(-1);
+    dragY.set(0);
+    onDragging?.(false);
+  }, [canEdit, onDragging, heldIndex, dragY]);
   const onDragStart = useCallback(() => {
     pressHaptic();
+    held.current = true;
     onDragging?.(true);
   }, [onDragging]);
   const onDrop = useCallback(
     (from: number, to: number) => {
+      held.current = false;
       onDragging?.(false);
       if (move(from, to)) {
         selectionHaptic();
@@ -593,13 +623,21 @@ function AgendaRow({
 export function AgendaDraftList({
   agenda,
   onChange,
+  draft,
+  onDraftChange,
   disabled = false,
   input,
+  onDragging,
 }: {
   agenda: EventAgendaItem[];
   onChange: (next: EventAgendaItem[]) => void;
+  /** The add field's text: Create sends it even if Return wasn't pressed. */
+  draft: string;
+  onDraftChange: (draft: string) => void;
   disabled?: boolean;
   input?: ComponentType<TextInputProps>;
+  /** A row is held: the sheet stops its own pan and scroll. */
+  onDragging?: (dragging: boolean) => void;
 }) {
   return (
     <EventAgendaSection
@@ -609,6 +647,9 @@ export function AgendaDraftList({
       locked={disabled}
       bare
       input={input}
+      draft={draft}
+      onDraftChange={onDraftChange}
+      onDragging={onDragging}
       onChange={(update) => onChange(update(agenda))}
     />
   );

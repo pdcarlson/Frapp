@@ -257,6 +257,22 @@ export function reorderEventEntry<T>(
 }
 
 /**
+ * The agenda with the line still in its add field put on the end, when it
+ * would be taken: a form's Create sends what was typed even if Return was
+ * never pressed (both apps' New event Agenda row). A line the list would
+ * refuse (too long, or a full list) is left out, as the field leaves it.
+ */
+export function agendaWithPending(
+  agenda: readonly EventAgendaItem[],
+  pending: string,
+  newId: () => string,
+): EventAgendaItem[] {
+  const text = normalizeAgendaText(pending);
+  if (!text || agendaProblem([...agenda, { text }])) return [...agenda];
+  return [...agenda, { id: newId(), text, done: false }];
+}
+
+/**
  * An attachment's title as the API takes it: whitespace collapsed and cut to
  * `EVENT_ATTACHMENT_TITLE_MAX`. A Chapter Files name can run to 255
  * characters, so a document's title is cut as well as a link's.
