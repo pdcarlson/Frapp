@@ -32,7 +32,7 @@ export function SessionRow({ session, zoneName, isLast }: SessionRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  // When and how long in web's row's words (2026-11-19): "Tue, Nov 3 · 7:00
+  // When and how long in web's row's words (2026-11-19): "Tuesday, November 3 · 7:00
   // – 9:00 PM" and "1h 30m".
   const range = formatDayTimeRange(session.startTime, session.endTime);
   const note = ZERO_AWARD_NOTE[session.status] ?? null;

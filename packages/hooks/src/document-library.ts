@@ -431,7 +431,7 @@ export function uploadedLine(
 }
 
 /**
- * "Effective Sep 26", left out when it is the day the file was uploaded: the
+ * "Effective September 26", left out when it is the day the file was uploaded: the
  * upload panel starts the date on Today and the phone sends the upload day
  * (#5207), so a matching date says nothing the Uploaded line doesn't. Both
  * apps' rows say it after the folder and type (2026-11-19; the phone's row

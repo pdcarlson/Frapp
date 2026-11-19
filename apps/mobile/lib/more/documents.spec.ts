@@ -106,8 +106,8 @@ describe("documentMeta", () => {
         },
       ]),
     ).toEqual([
-      "Uploaded Aug 12 · Governance · Effective Sep 1",
-      "Uploaded Aug 12",
+      "Uploaded August 12 · Governance · Effective September 1",
+      "Uploaded August 12",
     ]);
   });
 

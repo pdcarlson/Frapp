@@ -96,7 +96,7 @@ export function selectDocuments(data: unknown): MobileDocument[] {
 
 /**
  * The row's second line, web's order without its free-text tail:
- * `"Uploaded Aug 12 by Jane Doe · Governance · Bylaws · Effective Sep 1"`,
+ * `"Uploaded August 12 by Jane Doe · Governance · Bylaws · Effective September 1"`,
  * dropping whatever is unknown (the effective day since 2026-11-19, as web's
  * row says it). An unparseable date is left off rather than drawn as "Invalid Date".
  * The description is searched but not drawn: a phone row has no room to

@@ -82,7 +82,7 @@ describe("house date shapes", () => {
       "5:00 – 7:00 PM",
     );
     expect(formatTimeRange(FRI_5PM, "2026-11-07T09:00:00.000Z", NOW)).toBe(
-      "5:00 PM – Sat, Nov 7 · 1:00 AM",
+      "5:00 PM – Saturday, November 7 · 1:00 AM",
     );
     expect(formatTimeRange(FRI_5PM, null, NOW)).toBe("5:00 PM");
     expect(formatTimeRange(undefined, FRI_5PM, NOW)).toBeNull();

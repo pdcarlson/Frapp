@@ -141,7 +141,7 @@ function timesOf(from: Date, to: Date | null, now: Date): string {
  * `"7:00 – 9:00 PM"`: a start and end with no day, for a row under a day
  * heading that already says it (both apps' event rows, 2026-11-19). The day
  * period is said once when both ends share it; an end on another day names
- * that day (`"10:00 PM – Sat, Nov 7 · 1:00 AM"`); without a readable end it is
+ * that day (`"10:00 PM – Saturday, November 7 · 1:00 AM"`); without a readable end it is
  * the start time alone, and without a start it is `null`.
  */
 export function formatTimeRange(
