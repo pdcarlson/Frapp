@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as WebBrowser from "expo-web-browser";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { AGENDA_CHECK_OFF_LOCKED_COPY } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
@@ -811,27 +812,43 @@ describe("Event details series (#3823)", () => {
     chapterEvents = [];
   });
 
-  it("lists the series' other dates under its cadence, each opening its occurrence", () => {
+  const nextLinks = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Next meeting, "),
+    );
+
+  it("says the cadence and links the next meeting, not every date (Paul 2026-11-19)", () => {
     chapterEvents = [0, 1, 2, 3].map(weekly);
     event = chapterEvents[0] as Record<string, unknown>;
     const tree = render();
     const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
     expect(screenText(tree)).toContain(`Every ${weekday}`);
 
-    const dates = tree.root.findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith(
-          "Open Chapter meeting, ",
-        ),
-    );
-    expect(dates).toHaveLength(3);
+    const links = nextLinks(tree);
+    expect(links).toHaveLength(1);
     vi.mocked(expoRouter.useRouter().push).mockClear();
-    act(() => dates[0]!.props.onPress());
+    act(() => links[0]!.props.onPress());
     expect(expoRouter.useRouter().push).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-2" },
     });
+  });
+
+  it("links the meeting after the one open, and none after the last", () => {
+    chapterEvents = [0, 1, 2].map(weekly);
+    event = chapterEvents[1] as Record<string, unknown>;
+    const middle = render();
+    vi.mocked(expoRouter.useRouter().push).mockClear();
+    act(() => nextLinks(middle)[0]!.props.onPress());
+    expect(expoRouter.useRouter().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-3" },
+    });
+
+    event = chapterEvents[2] as Record<string, unknown>;
+    expect(nextLinks(render())).toHaveLength(0);
   });
 
   it("reads a generated occurrence's cadence off its series head", () => {
@@ -849,39 +866,6 @@ describe("Event details series (#3823)", () => {
     const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
     expect(screenText(tree)).toContain(`Every ${weekday}`);
     expect(screenText(tree)).not.toContain("Also in this series");
-  });
-
-  it("names an occurrence renamed on its own, on screen and to a screen reader", () => {
-    chapterEvents = [0, 1, 2].map(weekly);
-    (chapterEvents[2] as Record<string, unknown>).name = "Chapter: Elections";
-    event = chapterEvents[0] as Record<string, unknown>;
-    const tree = render();
-    expect(screenText(tree)).toMatch(/^Chapter: Elections · /m);
-    const renamed = tree.root.findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith(
-          "Open Chapter: Elections, ",
-        ),
-    );
-    expect(renamed).toHaveLength(1);
-  });
-
-  it("doesn't name the ordinary dates when the renamed occurrence is open", () => {
-    chapterEvents = [0, 1, 2].map(weekly);
-    (chapterEvents[2] as Record<string, unknown>).name = "Chapter: Elections";
-    event = chapterEvents[2] as Record<string, unknown>;
-    const tree = render();
-    const rows = tree.root.findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith(
-          "Open Chapter meeting, ",
-        ),
-    );
-    // The two other dates carry the series' name, so neither says it.
-    expect(rows).toHaveLength(2);
-    expect(screenText(tree)).not.toMatch(/^Chapter meeting · /m);
   });
 
   it("draws no series section for a one-time event", () => {
@@ -1302,24 +1286,117 @@ describe("Event details agenda and attachments (#4934)", () => {
     expect(text).toContain("2.");
   });
 
-  it("moves an item up from its control", () => {
-    event = WITH_LISTS;
-    permissions = ["members:view", "events:update"];
-    const tree = render();
-    const up = tree.root.find(
+  /** The agenda's rows, each measured as a phone would lay them out. */
+  function agendaRows(tree: ReactTestRenderer) {
+    const rows = tree.root.findAll(
       (node) =>
-        node.props.accessibilityLabel === `Move "Formal date" up` &&
-        typeof node.props.onPress === "function",
+        (node.type as unknown) === "Animated.View" &&
+        Array.isArray(node.props.accessibilityActions),
     );
-    act(() => up.props.onPress());
-    const [, update] = listsChange.mock.calls[0] as [
+    act(() =>
+      rows.forEach((row, index) =>
+        row.props.onLayout({
+          nativeEvent: { layout: { x: 0, y: index * 48, width: 300, height: 44 } },
+        }),
+      ),
+    );
+    return rows;
+  }
+
+  function lastAgendaOrder() {
+    const [, update] = listsChange.mock.calls.at(-1) as [
       string,
       (current: unknown) => { id: string }[],
     ];
-    expect(update(WITH_LISTS.agenda).map((item) => item.id)).toEqual([
-      "a2",
-      "a1",
+    return update(WITH_LISTS.agenda).map((item) => item.id);
+  }
+
+  it("moves an item up by dragging its grip (Paul 2026-11-19)", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    agendaRows(tree);
+    // No arrows any more: the grip is the way.
+    expect(labelled(tree, `Move "Formal date" up`)).toHaveLength(0);
+    const grips = tree.root.findAll(
+      (node) => (node.type as unknown) === "GestureDetector",
+    );
+    const pan = grips[1]!.props.gesture as {
+      handlers: Record<string, (event?: unknown) => void>;
+    };
+    act(() => {
+      pan.handlers.onBegin!();
+      pan.handlers.onUpdate!({ translationY: -60 });
+      pan.handlers.onFinalize!();
+    });
+    expect(lastAgendaOrder()).toEqual(["a2", "a1"]);
+  });
+
+  it("leaves the order alone for a drag that doesn't pass a neighbour", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    agendaRows(tree);
+    const pan = tree.root.findAll(
+      (node) => (node.type as unknown) === "GestureDetector",
+    )[0]!.props.gesture as {
+      handlers: Record<string, (event?: unknown) => void>;
+    };
+    act(() => {
+      pan.handlers.onBegin!();
+      pan.handlers.onUpdate!({ translationY: 10 });
+      pan.handlers.onFinalize!();
+    });
+    expect(listsChange).not.toHaveBeenCalled();
+  });
+
+  it("moves an item with a screen reader's Move up", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    const [first, second] = agendaRows(tree);
+    // The first item can't go up, the last can't go down.
+    expect(first!.props.accessibilityActions).toEqual([
+      { name: "moveDown", label: "Move down" },
     ]);
+    act(() =>
+      second!.props.onAccessibilityAction({
+        nativeEvent: { actionName: "moveUp" },
+      }),
+    );
+    expect(lastAgendaOrder()).toEqual(["a2", "a1"]);
+  });
+
+  it("holds the checkboxes until the meeting starts, and says why once", () => {
+    const start = Date.now() + 2 * 86_400_000;
+    event = {
+      ...WITH_LISTS,
+      start_time: new Date(start).toISOString(),
+      end_time: new Date(start + 3_600_000).toISOString(),
+    };
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    const boxes = tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.accessibilityRole === "checkbox",
+    );
+    expect(boxes).toHaveLength(2);
+    for (const box of boxes) expect(box.props.disabled).toBe(true);
+    const text = screenText(tree);
+    expect(
+      text.split(AGENDA_CHECK_OFF_LOCKED_COPY).length - 1,
+    ).toBe(1);
+    // No "done" count before there is anything to count.
+    expect(text).not.toContain("of 2 done");
+  });
+
+  it("counts what's done once the meeting has started", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const text = screenText(render());
+    expect(text).toContain("1 of 2 done");
+    expect(text).not.toContain(AGENDA_CHECK_OFF_LOCKED_COPY);
   });
 
   it("offers no Chapter Files picker until the chapter says the module is on, and calls the notes Notes meanwhile", () => {

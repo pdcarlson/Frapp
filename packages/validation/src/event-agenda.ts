@@ -218,16 +218,37 @@ export function toggleAgendaItem(
 }
 
 /**
- * The list with the entry at `from` moved one place up (`-1`) or down
- * (`1`). A move past either end returns the list unchanged.
+ * Whether an agenda can be checked off yet (Paul 2026-11-19: "shouldn't be
+ * able to check off items unless the event has started?"): from the meeting's
+ * start on, and after it ends too, so a secretary can catch up. A start that
+ * can't be read doesn't lock it. Both apps hold the checkboxes to it; the
+ * list can still be written, reordered and cut down before.
  */
-export function moveEventEntry<T>(
+export function agendaCheckOffOpen(start: unknown, now: Date): boolean {
+  const at = typeof start === "string" ? Date.parse(start) : Number.NaN;
+  return Number.isNaN(at) || at <= now.getTime();
+}
+
+/** Why an agenda's checkboxes wait, said where they are. */
+export const AGENDA_CHECK_OFF_LOCKED_COPY =
+  "Items can be checked off once the meeting starts.";
+
+/**
+ * The list with the entry at `from` moved to `to`, as a drag drops it. An
+ * index off either end returns the list unchanged.
+ */
+export function reorderEventEntry<T>(
   items: readonly T[],
   from: number,
-  step: -1 | 1,
+  to: number,
 ): T[] {
-  const to = from + step;
-  if (from < 0 || from >= items.length || to < 0 || to >= items.length) {
+  if (
+    from < 0 ||
+    from >= items.length ||
+    to < 0 ||
+    to >= items.length ||
+    from === to
+  ) {
     return [...items];
   }
   const next = [...items];

@@ -1,10 +1,25 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
-import { can, checkInZoneLine, statusLabel } from "@repo/validation";
-import { formatPointsChip } from "@repo/formatting";
-import { useCallback, useMemo, useRef } from "react";
+import {
+  agendaCheckOffOpen,
+  attendanceFromEvent,
+  can,
+  checkInZoneLine,
+  describeAttendance,
+  EVENT_FORM_ROW_LABELS,
+  statusLabel,
+} from "@repo/validation";
+import type { EventFormGlyphName } from "@repo/theme/event-form-glyphs";
+import { formatDayTime, formatPointsChip } from "@repo/formatting";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { type ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  type ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
@@ -15,8 +30,10 @@ import {
   useNowDate,
   usePermissionList,
   useRequiredOfViewer,
+  useRoles,
   useViewerUserId,
 } from "@repo/hooks";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   ExcuseReviewSection,
   MyExcuse,
@@ -56,18 +73,16 @@ import {
   selectAllEventRows,
   selectEventDetail,
   selectMyAttendance,
-  selectSeriesName,
   selectSeriesOccurrences,
   type EventDetail,
 } from "@/lib/events/select";
-import { PressableRow } from "@/components/list-section";
-import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 import { EventMeetingLists } from "@/components/events/event-agenda";
+import { EventFormGlyph } from "@/components/events/event-form-rows";
 import { useMeetingsOn, useNotesLabel } from "@/lib/minutes/meetings-on";
 import {
   ScrollRevealProvider,
@@ -190,6 +205,7 @@ export default function EventDetailsScreen() {
   */
   const now = useNowDate();
   const meetingsOn = useMeetingsOn();
+  const [dragging, setDragging] = useState(false);
   const notesLabel = useNotesLabel();
   // The body's scroll view, which keeps a focused field above the keyboard.
   const scrollRef = useRef<ScrollView>(null);
@@ -245,6 +261,8 @@ export default function EventDetailsScreen() {
         scrollRef={scrollRef}
         avoidKeyboard
         keyboardShouldPersistTaps="handled"
+        // A held agenda row: the drag, not the page, follows the finger.
+        scrollEnabled={!dragging}
         backAction={
           grants.edit ? (
             // A pencil, as Profile's edit: the same back-row slot.
@@ -291,6 +309,28 @@ export default function EventDetailsScreen() {
           startWriting={startExcuse}
         />
 
+        {/* Details first, then the agenda, then attendance (Paul
+            2026-11-19: "details should come first, followed by the agenda
+            and the attendance"), web's event page in the same order. */}
+        <DetailsSection event={event} now={now} />
+
+        {/* Keyed by meeting: a half-typed item, or a change still waiting
+            to save, must not carry over to another occurrence opened from
+            the Repeat row's Next link (the old one's is sent as it goes). */}
+        <EventMeetingLists
+          key={`lists-${event.id}`}
+          eventId={event.id}
+          lists={{ agenda: event.agenda, attachments: event.attachments }}
+          // A real events:update answer, and an event still there: every
+          // write to one deleted since would 404.
+          canEdit={canDecideExcuses && !eventGone}
+          // Items are ticked off during the meeting, not before it.
+          checkOffOpen={agendaCheckOffOpen(event.start_time, now)}
+          // Suggested draws on minutes, so it waits for them to be on.
+          upcoming={meetingsOn && Date.parse(event.end_time) > now.getTime()}
+          onDragging={setDragging}
+        />
+
         {/* The event's creator receives its excuses; an events:update
             holder may decide them too (§ Excuses). */}
         {canDecideExcuses ||
@@ -302,27 +342,7 @@ export default function EventDetailsScreen() {
           />
         ) : null}
 
-        {event.description ? (
-          <DetailSection
-            label="DETAILS"
-            body={event.description}
-            styles={styles}
-          />
-        ) : null}
-
-        {/* Keyed by meeting: a half-typed item, or a change still waiting
-            to save, must not carry over to another occurrence opened from
-            the series list (the old one's is sent as it goes). */}
-        <EventMeetingLists
-          key={`lists-${event.id}`}
-          eventId={event.id}
-          lists={{ agenda: event.agenda, attachments: event.attachments }}
-          // A real events:update answer, and an event still there: every
-          // write to one deleted since would 404.
-          canEdit={canDecideExcuses && !eventGone}
-          // Suggested draws on minutes, so it waits for them to be on.
-          upcoming={meetingsOn && Date.parse(event.end_time) > now.getTime()}
-        />
+        <EventMinutesRow eventId={event.id} eventName={event.name} />
 
         {event.notes ? (
           // Every member the event invites reads these, so never "internal"
@@ -333,10 +353,6 @@ export default function EventDetailsScreen() {
             styles={styles}
           />
         ) : null}
-
-        <SeriesSection event={event} now={now} />
-
-        <EventMinutesRow eventId={event.id} eventName={event.name} />
       </ScreenShell>
       {grants.edit && editTarget ? (
         <NewEventSheet
@@ -607,82 +623,126 @@ export function EventDetailSkeleton() {
 }
 
 /**
- * The rest of a repeating series under the occurrence on screen (#3707), so
- * its other dates are a tap away without paging the month. Its caption is the
- * cadence ("EVERY SUNDAY"), read off the series head, and each date opens
- * that occurrence; one renamed on its own carries its name. Read from the
- * cached chapter events (`useEvents`), which already
- * holds every occurrence; nothing draws for a one-time event, or until the
- * list has loaded.
+ * DETAILS: the event form's rows read back (`EVENT_FORM_ROWS`, the same
+ * marks and words), as web's event page lists them, so the page reads as
+ * the form that made it. When and the place are the subtitle and the points
+ * a chip, so the rows here are how it repeats, who's coming and what it's
+ * about.
+ *
+ * A series is one row with a link to its next meeting, not a list of every
+ * date (Paul 2026-11-19: "don't need to see all the upcoming series events
+ * when I click on one"): the calendar holds the rest. Read from the cached
+ * chapter events (`useEvents`), which already hold every occurrence.
  */
-function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
+function DetailsSection({ event, now }: { event: EventDetail; now: Date }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const rowStyles = createEventRowStyles(tokens);
   const router = useRouter();
   const key = eventSeriesKey(event);
   const eventsQuery = useEvents({ enabled: !!key });
+  const rolesQuery = useRoles();
   // Parsed once per payload; only the upcoming filter follows the clock.
   const rows = useMemo(
     () => selectAllEventRows(eventsQuery.data),
     [eventsQuery.data],
   );
-  const occurrences = useMemo(
-    () => selectSeriesOccurrences(rows, event, now),
-    [rows, event, now],
-  );
-  // The series as a whole: its cadence, and the name most of its occurrences
-  // carry, which a renamed one is told apart from.
-  const series = useMemo(() => {
+  const cadence = useMemo(() => {
+    if (!key) return null;
     const all = rows.some((row) => row.id === event.id)
       ? rows
       : sortEventsByStart([event, ...rows]);
-    return {
-      cadence: seriesCadenceOf(all, event),
-      name: (key ? selectSeriesName(all, key) : null) ?? event.name,
-    };
+    return seriesCadenceOf(all, event);
   }, [rows, event, key]);
-  const { cadence } = series;
-  if (!key || occurrences.length === 0) return null;
+  // The series' next meeting after this one.
+  const next = useMemo(() => {
+    const start = Date.parse(event.start_time);
+    return (
+      selectSeriesOccurrences(rows, event, now).find(
+        (row) => Date.parse(row.start_time) > start,
+      ) ?? null
+    );
+  }, [rows, event, now]);
+  const roleName = useMemo(() => {
+    const byId = new Map(
+      toRoleOptions(rolesQuery.data, "keep").map((role) => [
+        role.id,
+        role.name,
+      ]),
+    );
+    return (id: string) =>
+      byId.get(id) ?? (rolesQuery.isSuccess ? "Removed role" : undefined);
+  }, [rolesQuery.data, rolesQuery.isSuccess]);
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionLabel}>
-        {cadence ?? "Also in this series"}
-      </Text>
-      <View>
-        {occurrences.map((occurrence, index) => {
-          const when = formatEventWindow(
-            occurrence.start_time,
-            occurrence.end_time,
-            now,
-          );
-          return (
-            <PressableRow
-              key={occurrence.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${occurrence.name}, ${when}`}
-              onPress={() =>
-                router.push({
-                  pathname: "/event-details",
-                  params: { id: occurrence.id },
-                })
-              }
-              style={[
-                rowStyles.flatRow,
-                index === 0 ? null : rowStyles.flatDivider,
-              ]}
-            >
-              <Text style={styles.sectionBody}>
-                {/* An occurrence renamed on its own says so. */}
-                {occurrence.name === series.name
-                  ? when
-                  : `${occurrence.name} · ${when}`}
-              </Text>
-            </PressableRow>
-          );
-        })}
+    <View style={styles.section} accessibilityLabel="Details">
+      <Text style={styles.sectionLabel}>DETAILS</Text>
+      {key ? (
+        <DetailRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
+          <View style={styles.detailInline}>
+            <Text style={styles.detailValue}>
+              {cadence ?? "Part of a series"}
+            </Text>
+            {next ? (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`Next meeting, ${formatDayTime(next.start_time, now) ?? ""}`}
+                hitSlop={8}
+                onPress={() =>
+                  router.push({
+                    pathname: "/event-details",
+                    params: { id: next.id },
+                  })
+                }
+                style={({ pressed }) => (pressed ? styles.pressed : null)}
+              >
+                <Text style={styles.detailLink}>
+                  Next {formatDayTime(next.start_time, now) ?? ""}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </DetailRow>
+      ) : null}
+      <DetailRow glyph="attendance" label={EVENT_FORM_ROW_LABELS.attendance}>
+        <Text style={styles.detailValue}>
+          {describeAttendance(attendanceFromEvent(event.attendance), roleName)}
+        </Text>
+      </DetailRow>
+      {event.description ? (
+        <DetailRow
+          glyph="description"
+          label={EVENT_FORM_ROW_LABELS.description}
+        >
+          <Text style={styles.detailValue}>{event.description}</Text>
+        </DetailRow>
+      ) : null}
+    </View>
+  );
+}
+
+/** One detail: the form row's mark and word, then its value. */
+function DetailRow({
+  glyph,
+  label,
+  children,
+}: {
+  glyph: EventFormGlyphName;
+  label: string;
+  children: ReactNode;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.detailRow} accessible={false}>
+      <View style={styles.detailMark}>
+        <EventFormGlyph
+          name={glyph}
+          color={tokens.color.text.mutedForeground}
+          size={16}
+        />
       </View>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <View style={styles.detailBody}>{children}</View>
     </View>
   );
 }
@@ -769,6 +829,42 @@ function createStyles(tokens: SignetTokens) {
     sectionBody: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
+    },
+    detailRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+    },
+    // The mark centred on the first line of text beside it.
+    detailMark: {
+      height: tokens.typography.role.body.lineHeight,
+      justifyContent: "center",
+    },
+    detailLabel: {
+      width: 104,
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    detailBody: {
+      flex: 1,
+    },
+    detailInline: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      columnGap: tokens.spacing.sm,
+    },
+    detailValue: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    detailLink: {
+      color: tokens.color.text.mutedForeground,
+      textDecorationLine: "underline",
+      ...typeRole(tokens.typography.role.body),
+    },
+    pressed: {
+      opacity: 0.7,
     },
   });
 }

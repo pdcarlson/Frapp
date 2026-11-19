@@ -68,6 +68,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 
 import {
+  AgendaDraftList,
   EventAgendaSection,
   EventAttachmentsSection,
   EventMeetingLists,
@@ -144,9 +145,9 @@ describe("EventAgendaSection", () => {
       screen.getByRole("textbox", { name: "Add an agenda item" }),
       "  New   business {Enter}",
     );
-    await user.click(
-      screen.getByRole("button", { name: 'Move "Rush recap" up' }),
-    );
+    // The grip moves its row: dragged, or its arrow keys.
+    screen.getByRole("button", { name: "Reorder Rush recap" }).focus();
+    await user.keyboard("{ArrowUp}");
     await user.click(
       screen.getByRole("button", { name: 'Remove "Treasurer report"' }),
     );
@@ -166,9 +167,8 @@ describe("EventAgendaSection", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<EventAgendaSection agenda={agenda} canEdit onChange={onChange} />);
-    await user.click(
-      screen.getByRole("button", { name: 'Move "Rush recap" up' }),
-    );
+    screen.getByRole("button", { name: "Reorder Rush recap" }).focus();
+    await user.keyboard("{ArrowUp}");
     // A newer item landed first in the meantime.
     const newer = [{ id: "n", text: "New", done: false }, ...agenda];
     expect(at(applied(onChange, newer), 0).map((item) => item.id)).toEqual([
@@ -176,6 +176,50 @@ describe("EventAgendaSection", () => {
       "a2",
       "a1",
     ]);
+  });
+});
+
+describe("checking items off (Paul 2026-11-19)", () => {
+  it("holds the checkboxes until the meeting starts, and says so once", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <EventAgendaSection
+        agenda={agenda}
+        canEdit
+        checkOffOpen={false}
+        onChange={onChange}
+      />,
+    );
+    const box = screen.getByRole("checkbox", { name: "Treasurer report" });
+    expect(box).toBeDisabled();
+    expect(
+      screen.getAllByText("Items can be checked off once the meeting starts."),
+    ).toHaveLength(1);
+    await user.click(box);
+    expect(onChange).not.toHaveBeenCalled();
+    // The list itself can still be written before the start.
+    expect(
+      screen.getByRole("textbox", { name: "Add an agenda item" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Reorder Rush recap" }),
+    ).toBeEnabled();
+  });
+
+  it("counts what is done once it has started", () => {
+    render(
+      <EventAgendaSection agenda={agenda} canEdit checkOffOpen onChange={vi.fn()} />,
+    );
+    expect(screen.getByText("1 of 2 done")).toBeInTheDocument();
+  });
+
+  it("draws the event form's list with no checkboxes", () => {
+    render(<AgendaDraftList agenda={agenda} onChange={vi.fn()} />);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Add an agenda item" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -359,6 +403,7 @@ describe("EventMeetingLists", () => {
         lists={{ agenda, attachments }}
         canEdit
         upcoming={false}
+        checkOffOpen
         documentsOn
       />,
     );
@@ -377,6 +422,7 @@ describe("EventMeetingLists", () => {
         lists={{ agenda, attachments }}
         canEdit
         upcoming={false}
+        checkOffOpen
         documentsOn
       />,
     );
@@ -424,6 +470,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming
+        checkOffOpen
         documentsOn
       />,
     );
@@ -443,6 +490,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming
+        checkOffOpen
         documentsOn
       />,
     );
@@ -463,6 +511,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming={false}
+        checkOffOpen
         documentsOn
       />,
     );
@@ -473,6 +522,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit={false}
         upcoming
+        checkOffOpen
         documentsOn
       />,
     );

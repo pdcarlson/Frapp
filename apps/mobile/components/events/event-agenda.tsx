@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -6,7 +13,17 @@ import {
   Text,
   TextInput,
   View,
+  type AccessibilityActionEvent,
+  type TextInputProps,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  type SharedValue,
+} from "react-native-reanimated";
 import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
 import { randomClientId, statusOf } from "@repo/api-sdk";
@@ -21,6 +38,7 @@ import {
   type EventLists,
 } from "@repo/hooks";
 import {
+  AGENDA_CHECK_OFF_LOCKED_COPY,
   AGENDA_SUGGESTION_COPY,
   agendaTabledFromLabel,
   agendaProblem,
@@ -32,10 +50,10 @@ import {
   EVENT_ATTACHMENT_TITLE_MAX,
   EVENT_ATTACHMENTS_MAX,
   isModuleEnabled,
-  moveEventEntry,
   normalizeAgendaText,
   normalizeAttachmentUrl,
   proofLinkDomain,
+  reorderEventEntry,
   toggleAgendaItem,
   type AgendaSuggestion,
   type EventAgendaItem,
@@ -47,14 +65,21 @@ import { IconButton } from "@/components/icon-button";
 import {
   CheckGlyph,
   CloseGlyph,
-  DisclosureGlyph,
+  DragHandleGlyph,
   LinkGlyph,
+  PlusGlyph,
 } from "@/components/control-glyphs";
 import { TextAction } from "@/components/events/event-excuses";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  agendaDropIndex,
+  agendaRowShift,
+  type AgendaRowBox,
+} from "@/lib/events/agenda-drag";
+import { pressHaptic, selectionHaptic } from "@/lib/haptics";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useKeepAboveKeyboard } from "@/lib/keep-above-keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -71,6 +96,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * out as one save of this meeting's whole lists, never the series'.
  */
 
+/** How fast the rows a held item passes slide out of its way. */
+const SHIFT_MS = 150;
+
 /** Whether Chapter Files is on: `null` while the chapter read can't say. */
 type DocumentsModule = boolean | null;
 
@@ -84,12 +112,18 @@ export function EventMeetingLists({
   eventId,
   lists,
   canEdit,
+  checkOffOpen,
   upcoming,
+  onDragging,
 }: {
   eventId: string;
   lists: EventLists;
   /** Holds `events:update` (a real answer), and the event is there. */
   canEdit: boolean;
+  /** The meeting has started (`agendaCheckOffOpen`): items can be ticked. */
+  checkOffOpen: boolean;
+  /** An agenda row is held: the screen stops scrolling under it. */
+  onDragging?: (dragging: boolean) => void;
   /**
    * The meeting hasn't ended and the chapter has minutes on: Suggested
    * shows only then.
@@ -119,7 +153,9 @@ export function EventMeetingLists({
       <EventAgendaSection
         agenda={editor.agenda}
         canEdit={editable}
+        checkOffOpen={checkOffOpen}
         locked={adding}
+        onDragging={onDragging}
         onChange={(update) => change("agenda", update)}
       />
       {editable && upcoming ? (
@@ -149,13 +185,28 @@ export function EventMeetingLists({
 function EventAgendaSection({
   agenda,
   canEdit,
+  checkOffOpen = true,
+  checkable = true,
   locked = false,
+  bare = false,
+  input: Input = TextInput,
+  onDragging,
   onChange,
 }: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  /** The meeting has started; before then the checkboxes wait. */
+  checkOffOpen?: boolean;
+  /** Draw checkboxes at all (not on the New event sheet's list). */
+  checkable?: boolean;
   /** The controls show but wait (a suggestion is being added). */
   locked?: boolean;
+  /** No eyebrow: the form's row names the list. */
+  bare?: boolean;
+  /** A sheet passes `BottomSheetTextInput`, which its keyboard handling needs. */
+  input?: ComponentType<TextInputProps>;
+  /** A row is held: a screen stops its own scroll so the drag isn't taken. */
+  onDragging?: (dragging: boolean) => void;
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -163,15 +214,76 @@ function EventAgendaSection({
   const styles = createStyles(tokens, accent);
   const [draft, setDraft] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const [focused, setFocused] = useState(false);
   // The field and its error line stay above the keyboard while it is up,
   // and each item added pushes the field down a row, so it scrolls with
   // them and the item just added shows above it (#5463).
   const { hold, ...keep } = useKeepAboveKeyboard();
+  // Each row's measured place (rows wrap, so they differ in height), the row
+  // held, and how far it has been dragged: read on the UI thread.
+  const boxes = useSharedValue<AgendaRowBox[]>([]);
+  const heldIndex = useSharedValue(-1);
+  const dragY = useSharedValue(0);
+  // The held row's offset goes back to zero only once the list has redrawn
+  // in its new order, so the row doesn't flash at its old place first.
+  const resetPending = useRef(false);
+  useLayoutEffect(() => {
+    if (!resetPending.current) return;
+    resetPending.current = false;
+    heldIndex.set(-1);
+    dragY.set(0);
+  }, [agenda, heldIndex, dragY]);
+
+  const move = useCallback(
+    (from: number, to: number) => {
+      // By id, against the list as it stands when the update runs: a save
+      // or a suggestion may have landed since this one was drawn.
+      const moved = agenda[from]?.id;
+      const onto = agenda[to]?.id;
+      if (!moved || !onto || moved === onto) return false;
+      onChange((current) =>
+        reorderEventEntry(
+          current,
+          current.findIndex((entry) => entry.id === moved),
+          current.findIndex((entry) => entry.id === onto),
+        ),
+      );
+      return true;
+    },
+    [agenda, onChange],
+  );
+  const onDragStart = useCallback(() => {
+    pressHaptic();
+    onDragging?.(true);
+  }, [onDragging]);
+  const onDrop = useCallback(
+    (from: number, to: number) => {
+      onDragging?.(false);
+      if (move(from, to)) {
+        selectionHaptic();
+        resetPending.current = true;
+        return;
+      }
+      heldIndex.set(-1);
+      dragY.set(0);
+    },
+    [move, onDragging, heldIndex, dragY],
+  );
+  const measure = useCallback(
+    (index: number, box: AgendaRowBox) => {
+      const next = boxes.get().slice(0, agenda.length);
+      next[index] = box;
+      boxes.set(next);
+    },
+    [boxes, agenda.length],
+  );
+
   if (agenda.length === 0 && !canEdit) return null;
 
-  const muted = tokens.color.text.mutedForeground;
   const full = agenda.length >= EVENT_AGENDA_MAX;
+  const done = agenda.filter((item) => item.done).length;
+  const showChecks = canEdit && checkable;
+  // Said once, not on every box: nothing to check off before the start.
+  const waiting = showChecks && !checkOffOpen && agenda.length > 0;
 
   function add() {
     const text = normalizeAgendaText(draft);
@@ -189,121 +301,68 @@ function EventAgendaSection({
     ]);
   }
 
-  const move = (id: string, by: -1 | 1) =>
-    onChange((current) =>
-      moveEventEntry(
-        current,
-        current.findIndex((entry) => entry.id === id),
-        by,
-      ),
-    );
-
   return (
     <View style={styles.section} accessibilityLabel="Agenda">
-      <Text style={styles.sectionLabel}>AGENDA</Text>
-      {agenda.map((item, index) => (
-        <View key={item.id} style={styles.line}>
-          {canEdit ? (
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: item.done, disabled: locked }}
-              disabled={locked}
-              accessibilityLabel={item.text}
-              onPress={() =>
-                onChange((current) => toggleAgendaItem(current, item.id))
-              }
-              style={styles.row}
-            >
-              <View style={[styles.box, item.done ? styles.boxDone : null]}>
-                {item.done ? <CheckGlyph color={muted} size={12} /> : null}
-              </View>
-              <View style={styles.textColumn}>
-                <Text style={[styles.text, item.done ? styles.textDone : null]}>
-                  {item.text}
-                </Text>
-                {item.tabled_from ? (
-                  <TabledFromLink from={item.tabled_from} />
-                ) : null}
-              </View>
-            </Pressable>
-          ) : (
-            <View
-              style={styles.row}
-              accessible
-              accessibilityLabel={
-                item.done ? `Done: ${item.text}` : `${index + 1}. ${item.text}`
-              }
-            >
-              <Text style={styles.number}>{index + 1}.</Text>
-              <View style={styles.textColumn}>
-                <Text style={[styles.text, item.done ? styles.textDone : null]}>
-                  {item.text}
-                </Text>
-                {item.tabled_from ? (
-                  <TabledFromLink from={item.tabled_from} />
-                ) : null}
-              </View>
-            </View>
-          )}
-          {canEdit ? (
-            <View style={styles.controls}>
-              <IconButton
-                label={`Move "${item.text}" up`}
-                disabled={locked || index === 0}
-                onPress={() => move(item.id, -1)}
-              >
-                <DisclosureGlyph
-                  color={index === 0 ? tokens.color.text.muted : muted}
-                  direction="up"
-                />
-              </IconButton>
-              <IconButton
-                label={`Move "${item.text}" down`}
-                disabled={locked || index === agenda.length - 1}
-                onPress={() => move(item.id, 1)}
-              >
-                <DisclosureGlyph
-                  color={
-                    index === agenda.length - 1
-                      ? tokens.color.text.muted
-                      : muted
-                  }
-                  direction="down"
-                />
-              </IconButton>
-              <IconButton
-                label={`Remove "${item.text}"`}
-                disabled={locked}
-                onPress={() =>
-                  onChange((current) =>
-                    current.filter((entry) => entry.id !== item.id),
-                  )
-                }
-              >
-                <CloseGlyph color={muted} />
-              </IconButton>
-            </View>
+      {bare ? null : (
+        <View style={styles.headerRow}>
+          <Text style={styles.sectionLabel}>AGENDA</Text>
+          {agenda.length > 0 && checkOffOpen && checkable ? (
+            <Text style={styles.caption}>
+              {done} of {agenda.length} done
+            </Text>
           ) : null}
         </View>
-      ))}
+      )}
+      {waiting ? (
+        <Text style={styles.caption}>{AGENDA_CHECK_OFF_LOCKED_COPY}</Text>
+      ) : null}
+      {agenda.length > 0 ? (
+        <View style={styles.list}>
+          {agenda.map((item, index) => (
+            <AgendaRow
+              key={item.id}
+              item={item}
+              index={index}
+              count={agenda.length}
+              canEdit={canEdit}
+              showCheck={showChecks}
+              checkOffOpen={checkOffOpen}
+              locked={locked}
+              boxes={boxes}
+              heldIndex={heldIndex}
+              dragY={dragY}
+              onMeasure={measure}
+              onDragStart={onDragStart}
+              onDrop={onDrop}
+              onMove={(to) => move(index, to)}
+              onToggle={() =>
+                onChange((current) => toggleAgendaItem(current, item.id))
+              }
+              onRemove={() =>
+                onChange((current) =>
+                  current.filter((entry) => entry.id !== item.id),
+                )
+              }
+            />
+          ))}
+        </View>
+      ) : null}
       {canEdit && !full ? (
         <View ref={hold} onLayout={keep.onLayout} style={styles.section}>
-          <View style={[styles.ring, focused ? styles.ringActive : null]}>
-            <TextInput
+          <View style={styles.addLine}>
+            <PlusGlyph color={tokens.color.text.mutedForeground} size={16} />
+            {/* Return adds the item and keeps the keyboard up for the next,
+                as a checklist in Reminders or Notion does: no Add button to
+                aim for between items. */}
+            <Input
               value={draft}
               onChangeText={(text) => {
                 setDraft(text);
                 setProblem(null);
                 keep.onType();
               }}
-              onFocus={() => {
-                setFocused(true);
-                keep.onFocus();
-              }}
-              onBlur={() => {
-                setFocused(false);
-                keep.onBlur();
-              }}
+              onFocus={keep.onFocus}
+              onBlur={keep.onBlur}
               placeholder={
                 agenda.length === 0 ? "Add the first item" : "Add an item"
               }
@@ -312,11 +371,9 @@ function EventAgendaSection({
               editable={!locked}
               maxLength={EVENT_AGENDA_ITEM_MAX}
               returnKeyType="done"
-              // Return adds the item and keeps the keyboard up for the next,
-              // as the subtask field does.
               submitBehavior="submit"
               onSubmitEditing={add}
-              style={[styles.field, focused ? styles.fieldFocused : null]}
+              style={styles.addField}
             />
           </View>
           {problem ? <Text style={styles.error}>{problem}</Text> : null}
@@ -330,6 +387,230 @@ function EventAgendaSection({
         </Text>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * One agenda item: a grip to drag it by (an editor's), its checkbox (or its
+ * number), its text, and a remove X. VoiceOver and TalkBack move it with
+ * the row's Move up and Move down actions, as Arrange channels' rows do.
+ */
+function AgendaRow({
+  item,
+  index,
+  count,
+  canEdit,
+  showCheck,
+  checkOffOpen,
+  locked,
+  boxes,
+  heldIndex,
+  dragY,
+  onMeasure,
+  onDragStart,
+  onDrop,
+  onMove,
+  onToggle,
+  onRemove,
+}: {
+  item: EventAgendaItem;
+  index: number;
+  count: number;
+  canEdit: boolean;
+  showCheck: boolean;
+  checkOffOpen: boolean;
+  locked: boolean;
+  boxes: SharedValue<AgendaRowBox[]>;
+  heldIndex: SharedValue<number>;
+  dragY: SharedValue<number>;
+  onMeasure: (index: number, box: AgendaRowBox) => void;
+  onDragStart: () => void;
+  onDrop: (from: number, to: number) => void;
+  onMove: (to: number) => void;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const muted = tokens.color.text.mutedForeground;
+  // A plain string for the worklet, not the whole token tree.
+  const liftedFill = tokens.color.surface.popover;
+
+  const animated = useAnimatedStyle(() => {
+    const held = heldIndex.get();
+    if (held === index) {
+      return {
+        transform: [{ translateY: dragY.get() }, { scale: 1.02 }],
+        zIndex: 10,
+        backgroundColor: liftedFill,
+      };
+    }
+    const shift =
+      held >= 0
+        ? agendaRowShift(
+            boxes.get(),
+            held,
+            agendaDropIndex(boxes.get(), held, dragY.get()),
+            index,
+          )
+        : 0;
+    return {
+      transform: [
+        {
+          translateY: held >= 0 ? withTiming(shift, { duration: SHIFT_MS }) : 0,
+        },
+        { scale: 1 },
+      ],
+      zIndex: 0,
+      backgroundColor: "transparent",
+    };
+  });
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .enabled(!locked)
+        .onBegin(() => {
+          heldIndex.set(index);
+          dragY.set(0);
+          runOnJS(onDragStart)();
+        })
+        .onUpdate((event) => {
+          dragY.set(event.translationY);
+        })
+        .onFinalize(() => {
+          const to = agendaDropIndex(boxes.get(), index, dragY.get());
+          runOnJS(onDrop)(index, to);
+        }),
+    [index, locked, boxes, heldIndex, dragY, onDragStart, onDrop],
+  );
+
+  const text = (
+    <View style={styles.textColumn}>
+      <Text style={[styles.text, item.done ? styles.textDone : null]}>
+        {item.text}
+      </Text>
+      {item.tabled_from ? <TabledFromLink from={item.tabled_from} /> : null}
+    </View>
+  );
+
+  return (
+    <Animated.View
+      onLayout={(event) =>
+        onMeasure(index, {
+          y: event.nativeEvent.layout.y,
+          h: event.nativeEvent.layout.height,
+        })
+      }
+      style={[styles.line, styles.agendaLine, animated]}
+      {...(canEdit
+        ? {
+            accessibilityActions: [
+              ...(index > 0 ? [{ name: "moveUp", label: "Move up" }] : []),
+              ...(index < count - 1
+                ? [{ name: "moveDown", label: "Move down" }]
+                : []),
+            ],
+            onAccessibilityAction: (event: AccessibilityActionEvent) => {
+              if (locked) return;
+              if (event.nativeEvent.actionName === "moveUp") onMove(index - 1);
+              if (event.nativeEvent.actionName === "moveDown")
+                onMove(index + 1);
+            },
+          }
+        : {})}
+    >
+      {canEdit ? (
+        <GestureDetector gesture={pan}>
+          <View
+            style={styles.grip}
+            hitSlop={8}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <DragHandleGlyph color={muted} size={18} />
+          </View>
+        </GestureDetector>
+      ) : null}
+      {showCheck ? (
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{
+            checked: item.done,
+            disabled: locked || !checkOffOpen,
+          }}
+          accessibilityHint={
+            checkOffOpen ? undefined : AGENDA_CHECK_OFF_LOCKED_COPY
+          }
+          disabled={locked || !checkOffOpen}
+          accessibilityLabel={item.text}
+          onPress={onToggle}
+          style={styles.row}
+        >
+          <View
+            style={[
+              styles.box,
+              item.done ? styles.boxDone : null,
+              checkOffOpen ? null : styles.boxWaiting,
+            ]}
+          >
+            {item.done ? <CheckGlyph color={muted} size={12} /> : null}
+          </View>
+          {text}
+        </Pressable>
+      ) : (
+        <View
+          style={styles.row}
+          accessible
+          accessibilityLabel={
+            item.done ? `Done: ${item.text}` : `${index + 1}. ${item.text}`
+          }
+        >
+          <Text style={styles.number}>{index + 1}.</Text>
+          {text}
+        </View>
+      )}
+      {canEdit ? (
+        <IconButton
+          label={`Remove "${item.text}"`}
+          disabled={locked}
+          onPress={onRemove}
+        >
+          <CloseGlyph color={muted} />
+        </IconButton>
+      ) : null}
+    </Animated.View>
+  );
+}
+
+/**
+ * The New event sheet's Agenda row (Paul 2026-11-19, "where is the ability
+ * to add agenda items"): the same list Event details draws, typed before the
+ * event exists and sent with Create. Nothing to check off yet. Web's
+ * `AgendaDraftList`.
+ */
+export function AgendaDraftList({
+  agenda,
+  onChange,
+  disabled = false,
+  input,
+}: {
+  agenda: EventAgendaItem[];
+  onChange: (next: EventAgendaItem[]) => void;
+  disabled?: boolean;
+  input?: ComponentType<TextInputProps>;
+}) {
+  return (
+    <EventAgendaSection
+      agenda={agenda}
+      canEdit
+      checkable={false}
+      locked={disabled}
+      bare
+      input={input}
+      onChange={(update) => onChange(update(agenda))}
+    />
   );
 }
 
@@ -890,6 +1171,34 @@ function createStyles(tokens: SignetTokens, accent?: string) {
       alignItems: "center",
       gap: tokens.spacing.sm,
     },
+    list: {
+      gap: 2,
+    },
+    agendaLine: {
+      gap: tokens.spacing.xs,
+      borderRadius: tokens.radius.control,
+    },
+    // The grip's column: narrow to look at, 44 points to hold with slop.
+    grip: {
+      width: 24,
+      minHeight: tokens.touch.minimum,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addLine: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      paddingLeft: 4,
+    },
+    // Borderless, as the next line of the list: web's add field.
+    addField: {
+      flex: 1,
+      minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      paddingVertical: 0,
+    },
     row: {
       flex: 1,
       minHeight: tokens.touch.minimum,
@@ -914,6 +1223,10 @@ function createStyles(tokens: SignetTokens, accent?: string) {
     boxDone: {
       borderColor: tokens.color.border.input,
       backgroundColor: tokens.color.surface.popover,
+    },
+    // Before the start: the box reads as not yet, not as broken.
+    boxWaiting: {
+      opacity: 0.4,
     },
     number: {
       minWidth: 18,

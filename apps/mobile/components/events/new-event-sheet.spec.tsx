@@ -110,6 +110,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewEventSheet, WhenRow } from "./new-event-sheet";
+import { WhenTimes } from "./when-times";
 import { EventTypeSheet, PropertyRow } from "./event-form-rows";
 import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
 import { emptyEventDraft } from "@/lib/events/create-event";
@@ -159,19 +160,16 @@ const drawn = (tree: ReactTestRenderer, prefix: string) =>
   ).length > 0;
 
 /**
- * Open a row that unfolds in place (#5561): When shows its pickers, Repeat
- * its options. Safe to call when it is already open.
+ * Open Repeat, which unfolds in place (#5561), for its options. Safe to
+ * call when it is already open. When is always open (Paul 2026-11-19).
  */
-function openRow(tree: ReactTestRenderer, row: "When" | "Repeat") {
+function openRow(tree: ReactTestRenderer, row: "Repeat") {
   const shown =
-    row === "When"
-      ? drawn(tree, "Starts day")
-      : tree.root.findAll(
-          (each) =>
-            typeof each.props.onPress === "function" &&
-            each.findAll((child) => child.props.children === "Weekly").length >
-              0,
-        ).length > 0;
+    tree.root.findAll(
+      (each) =>
+        typeof each.props.onPress === "function" &&
+        each.findAll((child) => child.props.children === "Weekly").length > 0,
+    ).length > 0;
   if (!shown) act(() => byLabel(tree, `${row}: `).props.onPress());
 }
 
@@ -209,7 +207,7 @@ function type(tree: ReactTestRenderer, label: string, text: string) {
  * Android dialogs have their own spec below.
  */
 function pick(tree: ReactTestRenderer, prefix: string, picked: Date) {
-  openRow(tree, prefix === "Ends on" ? "Repeat" : "When");
+  if (prefix === "Ends on") openRow(tree, "Repeat");
   const [picker] = tree.root.findAll(
     (node) =>
       node.type === ("DateTimePicker" as never) &&
@@ -285,8 +283,7 @@ describe("New event", () => {
       "10:30",
     );
 
-    // Ends 1:30 AM the next morning.
-    pick(tree, "Ends day", local(8, 0));
+    // Ends 1:30 AM: before the start, so the next morning, no day to pick.
     pick(tree, "Ends time", local(1, 1, 30));
 
     act(() => createButton(tree).props.onPress());
@@ -313,6 +310,63 @@ describe("New event", () => {
     expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
       "Repeat: Doesn't repeat",
     );
+    act(() => tree.unmount());
+  });
+
+  it("sets how long in one tap, the start staying put", () => {
+    const tree = render();
+    type(tree, "Event name", "Formal");
+    // The default hour is held.
+    expect(byLabel(tree, "Lasts 1 hr").props.accessibilityState.checked).toBe(
+      true,
+    );
+    act(() => byLabel(tree, "Lasts 2 hrs").props.onPress());
+    expect(byLabel(tree, "Ends time").props.accessibilityLabel).toContain(
+      "9:00",
+    );
+    expect(byLabel(tree, "Lasts 2 hrs").props.accessibilityState.checked).toBe(
+      true,
+    );
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      start_time: local(5, 19).toISOString(),
+      end_time: local(5, 21).toISOString(),
+    });
+    act(() => tree.unmount());
+  });
+
+  it("gives the end its own day only when asked", () => {
+    const tree = render();
+    expect(drawn(tree, "Ends day")).toBe(false);
+    act(() => chip(tree, "Ends another day").props.onPress());
+    pick(tree, "Ends day", local(7, 0));
+    expect(byLabel(tree, "Ends day").props.accessibilityLabel).toContain(
+      "Nov 7",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("sends the agenda typed while creating (Paul 2026-11-19)", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    for (const text of ["Opening", " Budget  "]) {
+      type(tree, "Add an agenda item", text);
+      act(() => byLabel(tree, "Add an agenda item").props.onSubmitEditing());
+    }
+    expect(screenText(tree)).toContain("Budget");
+    act(() => createButton(tree).props.onPress());
+    expect((mutate.mock.calls[0]![0] as { agenda?: unknown }).agenda).toEqual([
+      { id: expect.any(String), text: "Opening", done: false },
+      { id: expect.any(String), text: "Budget", done: false },
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("sends no agenda when none was typed", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).not.toHaveProperty("agenda");
     act(() => tree.unmount());
   });
 
@@ -895,12 +949,9 @@ describe("Edit event", () => {
 
     it("brings a moved end back with the start it was moved against", async () => {
       const first = open();
-      openRow(first, "When");
       // The end alone, pushed an hour later.
-      const ends = first.root
-        .findAllByType(WhenRow)
-        .find((row) => row.props.label === "Ends")!;
-      act(() => ends.props.onChange(local(9, 21, 15)));
+      const when = first.root.findByType(WhenTimes);
+      act(() => when.props.onEnd(local(9, 21, 15)));
       leave(first);
 
       // Moved a day earlier on web meanwhile.

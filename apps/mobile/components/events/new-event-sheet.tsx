@@ -12,7 +12,7 @@ import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
-import { formatEventWindow, formatWeekdayDay } from "@repo/formatting";
+import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import type { EventCardTrack } from "@repo/chat-core/dispatch";
 import {
@@ -31,6 +31,7 @@ import {
   describeAttendance,
   describeCheckIn,
   EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_FORM_AGENDA_REPEAT_NOTE,
   EVENT_FORM_MEMBER_NOTE,
   EVENT_FORM_PLACEHOLDERS,
   EVENT_FORM_ROW_LABELS,
@@ -72,6 +73,8 @@ import {
   RowDivider,
 } from "@/components/events/event-form-rows";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
+import { WhenTimes } from "@/components/events/when-times";
+import { AgendaDraftList } from "@/components/events/event-agenda";
 import { RepeatOptions } from "@/components/repeat-options";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
@@ -709,10 +712,6 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const repeatValue = repeatUnknown
       ? "Part of a series"
       : repeatSummary(draft.repeat, repeatStart, repeatSeries);
-    // The line both apps' event cards read, so the form says the time the
-    // way the card it posts will (#5561).
-    const whenValue =
-      formatEventWindow(start.toISOString(), end.toISOString(), at) ?? "";
     const heldType =
       eventTypes.find((type) => type.id === draft.eventTypeId) ?? null;
     // Whether anything differs from how the sheet opened: Cancel then reads
@@ -720,7 +719,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const touched =
       JSON.stringify({ ...draft, openRow: null }) !==
       JSON.stringify({ ...base, openRow: null });
-    const toggleRow = (row: "when" | "repeat" | "checkIn") => {
+    const toggleRow = (row: "repeat" | "checkIn") => {
       Keyboard.dismiss();
       setDraft((previous) => ({
         ...previous,
@@ -813,35 +812,22 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 </>
               ) : null}
 
-              <PropertyRow
-                glyph="when"
-                label={EVENT_FORM_ROW_LABELS.when}
-                value={whenValue}
-                invalid={!!errors.start || !!errors.end}
-                disabled={pending}
-                accessibilityHint="Shows the start and end pickers."
-                onPress={() => toggleRow("when")}
-              />
-              {draft.openRow === "when" ? (
-                <View style={styles.opened}>
-                  <WhenRow
-                    label="Starts"
-                    value={start}
-                    now={at}
-                    minimumDate={startFloor}
-                    disabled={pending}
-                    onChange={setStart}
-                  />
-                  <WhenRow
-                    label="Ends"
-                    value={end}
-                    now={at}
-                    minimumDate={start}
-                    disabled={pending}
-                    onChange={setEnd}
-                  />
-                </View>
-              ) : null}
+              {/* When, always open (Paul 2026-11-19): the day once, then the
+                  start and end as times, as web's form sets them out. */}
+              <PropertyRow glyph="when" label={EVENT_FORM_ROW_LABELS.when}>
+                {null}
+              </PropertyRow>
+              <View style={styles.opened}>
+                <WhenTimes
+                  start={start}
+                  end={end}
+                  now={at}
+                  minimumDate={startFloor}
+                  disabled={pending}
+                  onStart={setStart}
+                  onEnd={setEnd}
+                />
+              </View>
               {errors.start ? (
                 <Text style={styles.error}>{errors.start}</Text>
               ) : null}
@@ -943,6 +929,37 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 </>
               ) : null}
               <RowDivider />
+
+              {/* The agenda while the event is made (Paul 2026-11-19:
+                  "where is the ability to add agenda items"). Only on
+                  create: an event's agenda is edited on Event details and
+                  checked off there during the meeting, so an edit here would
+                  race that one. Web's form does the same. */}
+              {editing ? null : (
+                <>
+                  <PropertyRow
+                    glyph="agenda"
+                    label={EVENT_FORM_ROW_LABELS.agenda}
+                  >
+                    {null}
+                  </PropertyRow>
+                  <View style={styles.opened}>
+                    <AgendaDraftList
+                      agenda={draft.agenda ?? []}
+                      disabled={pending}
+                      input={BottomSheetTextInput}
+                      onChange={(agenda) => update({ agenda }, [])}
+                    />
+                    {draft.repeat.preset !== "NONE" &&
+                    (draft.agenda?.length ?? 0) > 0 ? (
+                      <Text style={styles.note}>
+                        {EVENT_FORM_AGENDA_REPEAT_NOTE}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <RowDivider />
+                </>
+              )}
 
               <PropertyRow
                 glyph="description"

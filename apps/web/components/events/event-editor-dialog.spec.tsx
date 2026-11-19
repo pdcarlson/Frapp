@@ -91,6 +91,8 @@ const chapter = chapterSubscription(mockCurrentChapter);
  * when it is already open.
  */
 function openRow(row: "When" | "Repeat" | "Who's coming" | "Check-in" | "Type") {
+  // When's fields sit in the row itself, Google Calendar's way: no menu.
+  if (row === "When") return;
   const trigger = screen.getByRole("button", {
     name: new RegExp(`^${row.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: `),
   });
@@ -112,14 +114,31 @@ function openZone() {
   openRow("Check-in");
 }
 
-/** One end of the schedule: a day typed into the date field, and a time. */
+/**
+ * One end of the schedule: the day typed into the date field, and a time.
+ * The end's day follows the start's unless the event spans days, so an end
+ * on the start's day is its time alone.
+ */
 function setSchedule(end: "Starts" | "Ends", day: string, time: string) {
-  openRow("When");
-  fireEvent.change(screen.getByLabelText(`${end}, day`), {
-    target: { value: day },
-  });
+  if (end === "Starts" || screen.queryByLabelText("Ends, day")) {
+    fireEvent.change(screen.getByLabelText(`${end}, day`), {
+      target: { value: day },
+    });
+  }
   fireEvent.change(screen.getByLabelText(`${end}, time`), {
     target: { value: time },
+  });
+}
+
+/** Name the event, create it, and check the end it was sent with. */
+async function expectCreatedEnd(end: Date) {
+  fireEvent.change(screen.getByLabelText("Event name"), {
+    target: { value: "Chapter Dinner" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+  await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+  expect(createMutate.mock.calls[0]![0]).toMatchObject({
+    end_time: end.toISOString(),
   });
 }
 
@@ -233,11 +252,41 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     });
   });
 
+  it("takes agenda items on create and sends them, in order (Paul 2026-11-19)", async () => {
+    renderCreate();
+    fillRequiredFields();
+    const field = screen.getByRole("textbox", { name: "Add an agenda item" });
+    fireEvent.change(field, { target: { value: "Treasurer report" } });
+    fireEvent.submit(field.closest("form")!);
+    fireEvent.change(field, { target: { value: "  Rush   recap " } });
+    fireEvent.submit(field.closest("form")!);
+    // A new event has nothing to check off.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const sent = createMutate.mock.calls[0]![0] as {
+      agenda: { text: string; done: boolean }[];
+    };
+    expect(sent.agenda.map((item) => [item.text, item.done])).toEqual([
+      ["Treasurer report", false],
+      ["Rush recap", false],
+    ]);
+  });
+
+  it("sends no agenda when none was typed", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).not.toHaveProperty("agenda");
+  });
+
   it("creates on Ctrl+Enter from a field, not from a menu over the form", async () => {
     renderCreate();
     fillRequiredFields();
-    // From the open When menu, a portal over the form: not a create.
-    fireEvent.keyDown(screen.getByLabelText("Starts, time"), {
+    // From the open Check-in menu, a portal over the form: not a create.
+    openRow("Check-in");
+    fireEvent.keyDown(screen.getByLabelText("Zone name"), {
       key: "Enter",
       ctrlKey: true,
     });
@@ -805,7 +854,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     ).toContain("December 5");
     expect(
       (screen.getByLabelText("Starts, time") as HTMLInputElement).value,
-    ).toBe("21:00");
+    ).toBe("9 PM");
     // Nothing is made until the officer saves.
     expect(createMutate).not.toHaveBeenCalled();
 
@@ -1374,19 +1423,19 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     });
     expect(screen.getByLabelText("Event name")).toHaveValue("Chapter Dinner");
     expect(screen.getByLabelText("Location")).toHaveValue("Main House");
-    // The day is written out (#3937); the time is the browser's own input.
+    // The day and the times are written out (#3937, Google Calendar's way).
     openRow("When");
     expect(screen.getByLabelText("Starts, day")).toHaveValue(
       formatDateEntry("2026-11-12", new Date()),
     );
     openRow("When");
-    expect(screen.getByLabelText("Starts, time")).toHaveValue("18:00");
+    expect(screen.getByLabelText("Starts, time")).toHaveValue("6 PM");
     openRow("When");
-    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
     expect(screen.getByLabelText("Points for attending")).toHaveValue(5);
   });
 
-  it("carries the end with a moved start, keeping the length (#3937)", () => {
+  it("carries the end with a moved start, keeping the length (#3937)", async () => {
     renderFromChat({
       initialStartAt: "2026-11-12T18:00",
       initialEndAt: "2026-11-12T20:00",
@@ -1395,15 +1444,13 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     fireEvent.change(screen.getByLabelText("Starts, day"), {
       target: { value: "2026-11-13" },
     });
-    openRow("When");
-    expect(screen.getByLabelText("Ends, day")).toHaveValue(
-      formatDateEntry("2026-11-13", new Date()),
-    );
-    openRow("When");
-    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
+    // The end's day follows the start's, so it has no field of its own.
+    expect(screen.queryByLabelText("Ends, day")).toBeNull();
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+    await expectCreatedEnd(new Date("2026-11-13T20:00"));
   });
 
-  it("carries the end through a start typed a key at a time", () => {
+  it("carries the end through a start typed a key at a time", async () => {
     renderFromChat({
       initialStartAt: "2026-11-12T18:00",
       initialEndAt: "2026-11-12T20:00",
@@ -1417,12 +1464,43 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
       });
     }
     const start = parseDateEntry("11/14", new Date())!;
-    openRow("When");
-    expect(screen.getByLabelText("Ends, day")).toHaveValue(
-      formatDateEntry(start, new Date()),
-    );
-    openRow("When");
-    expect(screen.getByLabelText("Ends, time")).toHaveValue("20:00");
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+    await expectCreatedEnd(new Date(`${start}T20:00`));
+  });
+
+  it("puts an end before the start on the next day, past midnight", async () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T22:00",
+      initialEndAt: "2026-11-12T23:00",
+    });
+    fireEvent.change(screen.getByLabelText("Ends, time"), {
+      target: { value: "1am" },
+    });
+    expect(screen.queryByLabelText("Ends, day")).toBeNull();
+    await expectCreatedEnd(new Date("2026-11-13T01:00"));
+  });
+
+  it("gives a new start an hour when there is no end yet", async () => {
+    renderFromChat();
+    fireEvent.change(screen.getByLabelText("Starts, day"), {
+      target: { value: "2026-11-12" },
+    });
+    fireEvent.change(screen.getByLabelText("Starts, time"), {
+      target: { value: "7pm" },
+    });
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+  });
+
+  it("asks for the end's own day only for an event that spans days", async () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ends another day" }));
+    fireEvent.change(screen.getByLabelText("Ends, day"), {
+      target: { value: "2026-11-14" },
+    });
+    await expectCreatedEnd(new Date("2026-11-14T20:00"));
   });
 
   it("posts the card in the channel it came from", async () => {

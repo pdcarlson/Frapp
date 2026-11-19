@@ -2,9 +2,8 @@
 
 import { useId, useMemo, useState, type FormEvent } from "react";
 import {
-  ArrowDown,
-  ArrowUp,
   FileText,
+  GripVertical,
   Link2,
   Loader2,
   Plus,
@@ -22,6 +21,7 @@ import {
   type EventLists,
 } from "@repo/hooks";
 import {
+  AGENDA_CHECK_OFF_LOCKED_COPY,
   AGENDA_SUGGESTION_COPY,
   agendaTabledFromLabel,
   agendaProblem,
@@ -32,10 +32,10 @@ import {
   EVENT_AGENDA_MAX,
   EVENT_ATTACHMENT_TITLE_MAX,
   EVENT_ATTACHMENTS_MAX,
-  moveEventEntry,
   normalizeAgendaText,
   normalizeAttachmentUrl,
   proofLinkDomain,
+  reorderEventEntry,
   toggleAgendaItem,
   type AgendaSuggestion,
   type EventAgendaItem,
@@ -46,7 +46,8 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { QUIET_LINK } from "@/components/ui/quiet-link";
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { useSortableList } from "@/components/shared/use-sortable-list";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
@@ -66,7 +67,8 @@ import { cn } from "@/lib/utils";
  * of this meeting's whole lists, never the series'.
  */
 
-const SECTION = "grid gap-2 rounded-lg border border-border p-3";
+const SECTION = "grid gap-2";
+const HEADING = "text-sm font-semibold text-foreground";
 const LABEL = "text-caption text-muted-foreground";
 
 /** Whether Chapter Files is on: `null` while the module read can't say. */
@@ -77,6 +79,7 @@ export function EventMeetingLists({
   lists,
   canEdit,
   upcoming,
+  checkOffOpen,
   documentsOn,
 }: {
   eventId: string;
@@ -88,6 +91,8 @@ export function EventMeetingLists({
    * shows only then.
    */
   upcoming: boolean;
+  /** The meeting has started, so its items can be checked off. */
+  checkOffOpen: boolean;
   documentsOn: DocumentsModule;
 }) {
   // A paid write, like the sheet's Edit: a lapsed chapter or an offline
@@ -105,21 +110,28 @@ export function EventMeetingLists({
   // While an Add is out the agenda's controls wait: the server is writing
   // the list, and an edit now would send the copy without the new item.
   const [adding, setAdding] = useState(false);
+  const showSuggestions = editable && upcoming;
   return (
     <>
-      <EventAgendaSection
-        agenda={editor.agenda}
-        canEdit={editable}
-        locked={adding}
-        onChange={(update) => editor.change("agenda", update)}
-      />
-      {editable && upcoming ? (
-        <AgendaSuggestions
-          eventId={eventId}
-          full={editor.agenda.length >= EVENT_AGENDA_MAX}
-          settleAgenda={editor.settle}
-          onAdding={setAdding}
-        />
+      {editor.agenda.length > 0 || editable ? (
+        // The agenda and what's suggested for it read as one section.
+        <div className="grid gap-3">
+          <EventAgendaSection
+            agenda={editor.agenda}
+            canEdit={editable}
+            checkOffOpen={checkOffOpen}
+            locked={adding}
+            onChange={(update) => editor.change("agenda", update)}
+          />
+          {showSuggestions ? (
+            <AgendaSuggestions
+              eventId={eventId}
+              full={editor.agenda.length >= EVENT_AGENDA_MAX}
+              settleAgenda={editor.settle}
+              onAdding={setAdding}
+            />
+          ) : null}
+        </div>
       ) : null}
       <EventAttachmentsSection
         attachments={editor.attachments}
@@ -131,21 +143,56 @@ export function EventMeetingLists({
   );
 }
 
+/**
+ * The agenda: a checklist for whoever can edit the event, numbered for
+ * everyone else. An editor drags a row by its grip to move it (the grip's
+ * arrow keys do the same), and removes it from the row's end; the checkboxes
+ * wait for the meeting to start (`agendaCheckOffOpen`). `checkable={false}`
+ * is the event form's list (`AgendaDraftList`): a new event has nothing to
+ * check off yet.
+ */
 export function EventAgendaSection({
   agenda,
   canEdit,
+  checkOffOpen = true,
+  checkable = true,
   locked = false,
+  bare = false,
   onChange,
 }: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  /** The meeting has started; before then the checkboxes wait. */
+  checkOffOpen?: boolean;
+  /** Draw checkboxes at all (not on the form's list). */
+  checkable?: boolean;
   /** The controls show but wait (a suggestion is being added). */
   locked?: boolean;
+  /** No heading: the form's row names the list. */
+  bare?: boolean;
   onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState("");
   const inputId = useId();
+  const lockNoteId = useId();
+  const sortable = useSortableList({
+    count: agenda.length,
+    disabled: locked || !canEdit,
+    // By id, against the list as it stands when the update runs: a save
+    // or a suggestion may have landed since this one was drawn.
+    onMove: (from, to) => {
+      const moved = agenda[from]?.id;
+      const onto = agenda[to]?.id;
+      onChange((current) =>
+        reorderEventEntry(
+          current,
+          current.findIndex((entry) => entry.id === moved),
+          current.findIndex((entry) => entry.id === onto),
+        ),
+      );
+    },
+  });
   if (agenda.length === 0 && !canEdit) return null;
 
   function add(event: FormEvent<HTMLFormElement>) {
@@ -165,28 +212,69 @@ export function EventAgendaSection({
   }
 
   const full = agenda.length >= EVENT_AGENDA_MAX;
+  const done = agenda.filter((item) => item.done).length;
+  const showChecks = canEdit && checkable;
+  // Said once, not on every box: nothing to check off before the start.
+  const waiting = showChecks && !checkOffOpen && agenda.length > 0;
 
   return (
     <section aria-label="Agenda" className={SECTION}>
-      <p className={LABEL}>Agenda</p>
+      {bare ? null : (
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className={HEADING}>Agenda</h3>
+          {agenda.length > 0 && checkOffOpen && checkable ? (
+            <span className={LABEL}>
+              {done} of {agenda.length} done
+            </span>
+          ) : null}
+        </div>
+      )}
+      {waiting ? (
+        <p id={lockNoteId} className={LABEL}>
+          {AGENDA_CHECK_OFF_LOCKED_COPY}
+        </p>
+      ) : null}
       {agenda.length > 0 ? (
-        <ol className="grid gap-1">
+        <ol className="grid">
           {agenda.map((item, index) => (
             <li
               key={item.id}
-              className="group flex min-h-9 items-center gap-2 pointer-coarse:min-h-11"
+              ref={sortable.rowRef(index)}
+              style={sortable.rowStyle(index)}
+              className={cn(
+                "group flex min-h-9 items-center gap-1.5 rounded-md bg-background pointer-coarse:min-h-11",
+                sortable.dragging === index &&
+                  "bg-surface-1 shadow-lg ring-1 ring-border",
+              )}
             >
               {canEdit ? (
+                <button
+                  type="button"
+                  {...sortable.handleProps(index, item.text)}
+                  className={cn(
+                    "-ml-1 flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity active:cursor-grabbing group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-default pointer-coarse:h-11 pointer-coarse:opacity-100",
+                    sortable.dragging === index && "opacity-100",
+                    FOCUS_RING_OFFSET,
+                  )}
+                >
+                  <GripVertical className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+              {showChecks ? (
                 <label className={dashboardCheckboxHitAreaClassName}>
                   <input
                     type="checkbox"
                     checked={item.done}
-                    disabled={locked}
+                    disabled={locked || !checkOffOpen}
                     aria-label={item.text}
+                    aria-describedby={waiting ? lockNoteId : undefined}
                     onChange={() =>
                       onChange((current) => toggleAgendaItem(current, item.id))
                     }
-                    className={dashboardTableCheckboxClassName}
+                    className={cn(
+                      dashboardTableCheckboxClassName,
+                      !checkOffOpen && "cursor-not-allowed opacity-50",
+                    )}
                   />
                 </label>
               ) : (
@@ -199,11 +287,11 @@ export function EventAgendaSection({
               )}
               <span
                 className={cn(
-                  "min-w-0 flex-1 break-words text-sm",
+                  "min-w-0 flex-1 break-words py-1.5 text-sm",
                   item.done && "text-muted-foreground line-through",
                 )}
               >
-                {!canEdit && item.done ? (
+                {!showChecks && item.done ? (
                   <span className="sr-only">Done: </span>
                 ) : null}
                 {item.text}
@@ -212,85 +300,82 @@ export function EventAgendaSection({
                 ) : null}
               </span>
               {canEdit ? (
-                <span className="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                  <IconButton
-                    label={`Move "${item.text}" up`}
-                    disabled={locked || index === 0}
-                    onClick={() =>
-                      onChange((current) =>
-                        moveEventEntry(
-                          current,
-                          current.findIndex((entry) => entry.id === item.id),
-                          -1,
-                        ),
-                      )
-                    }
-                  >
-                    <ArrowUp className="h-4 w-4" aria-hidden="true" />
-                  </IconButton>
-                  <IconButton
-                    label={`Move "${item.text}" down`}
-                    disabled={locked || index === agenda.length - 1}
-                    onClick={() =>
-                      onChange((current) =>
-                        moveEventEntry(
-                          current,
-                          current.findIndex((entry) => entry.id === item.id),
-                          1,
-                        ),
-                      )
-                    }
-                  >
-                    <ArrowDown className="h-4 w-4" aria-hidden="true" />
-                  </IconButton>
-                  <IconButton
-                    label={`Remove "${item.text}"`}
-                    disabled={locked}
-                    onClick={() =>
-                      onChange((current) =>
-                        current.filter((entry) => entry.id !== item.id),
-                      )
-                    }
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </IconButton>
-                </span>
+                <IconButton
+                  label={`Remove "${item.text}"`}
+                  disabled={locked}
+                  className="shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+                  onClick={() =>
+                    onChange((current) =>
+                      current.filter((entry) => entry.id !== item.id),
+                    )
+                  }
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </IconButton>
               ) : null}
             </li>
           ))}
         </ol>
       ) : null}
       {canEdit && !full ? (
-        <form onSubmit={add} className="flex items-center gap-2">
+        <form onSubmit={add} className="flex items-center gap-1.5">
           <label htmlFor={inputId} className="sr-only">
             Add an agenda item
           </label>
-          <Input
+          <Plus
+            className="ml-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          {/* Enter adds and keeps the caret here for the next one, as a
+              checklist in Notion or Reminders does: no Add button to aim
+              for between items. */}
+          <input
             id={inputId}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            disabled={locked}
             placeholder={
               agenda.length === 0 ? "Add the first item" : "Add an item"
             }
             maxLength={EVENT_AGENDA_ITEM_MAX}
+            enterKeyHint="done"
+            className={cn(
+              "flex min-h-9 w-full min-w-0 rounded-md bg-transparent px-2 text-sm caret-primary placeholder:text-muted-foreground hover:bg-card-hover focus:bg-surface-1 pointer-coarse:min-h-11",
+              FOCUS_RING,
+            )}
           />
-          <Button
-            type="submit"
-            size="sm"
-            variant="secondary"
-            disabled={locked || !normalizeAgendaText(draft)}
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Add
-          </Button>
         </form>
       ) : null}
       {canEdit && full ? (
-        <p className="text-caption text-muted-foreground">
-          An agenda holds {EVENT_AGENDA_MAX} items.
-        </p>
+        <p className={LABEL}>An agenda holds {EVENT_AGENDA_MAX} items.</p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The event form's Agenda row (Paul 2026-11-19, "where is the ability to add
+ * agenda items"): the same list the event's page draws, typed before the
+ * event exists, sent with the create. Nothing to check off yet.
+ */
+export function AgendaDraftList({
+  agenda,
+  onChange,
+  disabled = false,
+}: {
+  agenda: EventAgendaItem[];
+  onChange: (next: EventAgendaItem[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <EventAgendaSection
+      agenda={agenda}
+      canEdit
+      checkable={false}
+      locked={disabled}
+      bare
+      onChange={(update) => onChange(update(agenda))}
+    />
   );
 }
 
@@ -500,7 +585,7 @@ export function EventAttachmentsSection({
 
   return (
     <section aria-label="Attachments" className={SECTION}>
-      <p className={LABEL}>Attachments</p>
+      <h3 className={HEADING}>Attachments</h3>
       {attachments.length > 0 ? (
         <ul className="grid gap-1">
           {attachments.map((attachment) => (
