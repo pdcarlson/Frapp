@@ -1515,6 +1515,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/messages/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachments on several messages, with signed download URLs, keyed by message id */
+        get: operations["ChatController_listMessagesAttachments_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}/messages/{messageId}/attachments": {
         parameters: {
             query?: never;
@@ -1526,23 +1543,6 @@ export interface paths {
         get: operations["ChatController_listMessageAttachments_v1"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/{id}/messages/attachments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Attachments on several messages, with signed download URLs, keyed by message id */
-        post: operations["ChatController_listMessagesAttachments_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7888,10 +7888,6 @@ export interface components {
             /** @description Client annotations, at most 16384 characters as JSON. */
             metadata?: Record<string, never>;
             mention_picks?: components["schemas"]["MentionPickDto"][];
-        };
-        ListMessagesAttachmentsDto: {
-            /** @description IDs of messages in this channel whose attachments to list. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list. */
-            message_ids: string[];
         };
         ResolveAuthorAvatarsDto: {
             /** @description IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path. */
@@ -16170,13 +16166,15 @@ export interface operations {
             };
         };
     };
-    ChatController_listMessageAttachments_v1: {
+    ChatController_listMessagesAttachments_v1: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list. */
+                message_ids: string;
+            };
             header?: never;
             path: {
                 id: string;
-                messageId: string;
             };
             cookie?: never;
         };
@@ -16199,22 +16197,19 @@ export interface operations {
             };
         };
     };
-    ChatController_listMessagesAttachments_v1: {
+    ChatController_listMessageAttachments_v1: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: string;
+                messageId: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ListMessagesAttachmentsDto"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

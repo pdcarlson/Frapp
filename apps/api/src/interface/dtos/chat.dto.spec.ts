@@ -1,8 +1,13 @@
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import {
+  type ArgumentMetadata,
+  BadRequestException,
+  ValidationPipe,
+} from '@nestjs/common';
 
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
+  ListMessagesAttachmentsQueryDto,
   ChatMessageActionDto,
   CreateDmDto,
   CreateGroupDmDto,
@@ -282,5 +287,47 @@ describe('CreateDmDto', () => {
     await expect(transform({ member_id: 'NOT-AN-ID' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+/**
+ * The batched attachments read (#5667) takes its ids in the query string, so
+ * it stays a GET: the `read` rate limit, and readable while a chapter's
+ * subscription has lapsed. The 50-id cap keeps one answer under PostgREST's
+ * 1000-row read cap; clients chunk at the same size.
+ */
+describe('ListMessagesAttachmentsQueryDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'query',
+    metatype: ListMessagesAttachmentsQueryDto,
+    data: '',
+  };
+  const transform = (query: unknown) => pipe.transform(query, metadata);
+  const id = (n: number) =>
+    `3f0c1d9e-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+  it('splits a comma-separated list and drops repeats', async () => {
+    await expect(
+      transform({ message_ids: `${id(1)},${id(2)},${id(1).toUpperCase()}` }),
+    ).resolves.toMatchObject({ message_ids: [id(1), id(2)] });
+  });
+
+  it('accepts 50 ids and refuses 51', async () => {
+    const ids = (n: number) =>
+      Array.from({ length: n }, (_, i) => id(i + 1)).join(',');
+    await expect(transform({ message_ids: ids(50) })).resolves.toBeDefined();
+    await expect(transform({ message_ids: ids(51) })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('refuses an empty list and a non-uuid', async () => {
+    await expect(transform({ message_ids: '' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      transform({ message_ids: `${id(1)},not-an-id` }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

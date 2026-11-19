@@ -204,6 +204,11 @@ describe('SupabaseChatMessageAttachmentRepository — findByMessages', () => {
   const MESSAGE_B_DELETED = '0b000000-0000-4000-8000-000000000184';
   const ATTACHMENT_B2 = '0b000000-0000-4000-8000-000000000185';
   const ATTACHMENT_B_DELETED = '0b000000-0000-4000-8000-000000000186';
+  // A second channel in the same chapter: only the channel filters keep its
+  // files out of a read scoped to CHANNEL_B.
+  const CHANNEL_B_OTHER = '0b000000-0000-4000-8000-000000000187';
+  const MESSAGE_B_OTHER = '0b000000-0000-4000-8000-000000000188';
+  const ATTACHMENT_B_OTHER = '0b000000-0000-4000-8000-000000000189';
 
   const withMessage = (
     row: ReturnType<typeof attachment>,
@@ -224,7 +229,24 @@ describe('SupabaseChatMessageAttachmentRepository — findByMessages', () => {
     harness = createTenantHarness({
       tables: {
         ...seed(),
+        chat_channels: [
+          ...seed().chat_channels,
+          inA({
+            id: '0a000000-0000-4000-8000-000000000187',
+            name: 'officers',
+            type: 'PRIVATE',
+          }),
+          inB({ id: CHANNEL_B_OTHER, name: 'officers', type: 'PRIVATE' }),
+        ],
         chat_message_attachments: [
+          withMessage(
+            attachment(
+              ATTACHMENT_B_OTHER,
+              MESSAGE_B_OTHER,
+              CHANNEL_B_OTHER,
+              CHAPTER_B,
+            ),
+          ),
           withMessage(
             attachment(ATTACHMENT_A, MESSAGE_A, CHANNEL_A, CHAPTER_A),
           ),
@@ -278,6 +300,18 @@ describe('SupabaseChatMessageAttachmentRepository — findByMessages', () => {
     const rows = await repo.findByMessages(CHANNEL_B, [MESSAGE_A], CHAPTER_B);
 
     expect(rows).toEqual([]);
+  });
+
+  it('returns nothing for a message in another channel of the same chapter', async () => {
+    // The caller's access was checked on CHANNEL_B only; a message id from a
+    // channel they may not read must not answer here.
+    const rows = await repo.findByMessages(
+      CHANNEL_B,
+      [MESSAGE_B, MESSAGE_B_OTHER],
+      CHAPTER_B,
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([ATTACHMENT_B]);
   });
 
   it('leaves out the files of a deleted message', async () => {

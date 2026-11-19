@@ -470,7 +470,7 @@ describe("useMessageAttachments", () => {
   });
 
   it("sends one request for every row that mounts together (#5667)", async () => {
-    const mockPost = vi.fn().mockResolvedValue({
+    const mockGet = vi.fn().mockResolvedValue({
       data: { "m-1": [file("a-1", "m-1")], "m-2": [file("a-2", "m-2")] },
       error: null,
     });
@@ -481,18 +481,20 @@ describe("useMessageAttachments", () => {
         useMessageAttachments("chan-1", "m-2", true),
         useMessageAttachments("chan-1", "m-3", true),
       ],
-      { wrapper: createWrapper(queryClient, { POST: mockPost }) },
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
     );
 
     await waitFor(() =>
       expect(result.current.every((q) => q.isSuccess)).toBe(true),
     );
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    expect(mockPost).toHaveBeenCalledWith(
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(mockGet).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/attachments",
       {
-        params: { path: { id: "chan-1" } },
-        body: { message_ids: ["m-1", "m-2", "m-3"] },
+        params: {
+          path: { id: "chan-1" },
+          query: { message_ids: "m-1,m-2,m-3" },
+        },
       },
     );
     expect(result.current[0]!.data?.map((a) => a.id)).toEqual(["a-1"]);
@@ -512,7 +514,7 @@ describe("useMessageAttachments", () => {
   });
 
   it("splits a long list at the server's cap of 50 ids", async () => {
-    const mockPost = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const mockGet = vi.fn().mockResolvedValue({ data: {}, error: null });
     const ids = Array.from(
       { length: 60 },
       (_, i) => `m-${String(i).padStart(2, "0")}`,
@@ -520,22 +522,24 @@ describe("useMessageAttachments", () => {
 
     const { result } = renderHook(
       () => ids.map((id) => useMessageAttachments("chan-1", id, true)),
-      { wrapper: createWrapper(queryClient, { POST: mockPost }) },
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
     );
 
     await waitFor(() =>
       expect(result.current.every((q) => q.isSuccess)).toBe(true),
     );
-    expect(mockPost).toHaveBeenCalledTimes(2);
-    const sizes = mockPost.mock.calls.map(
+    expect(mockGet).toHaveBeenCalledTimes(2);
+    const sizes = mockGet.mock.calls.map(
       ([, init]) =>
-        (init as { body: { message_ids: string[] } }).body.message_ids.length,
+        (
+          init as { params: { query: { message_ids: string } } }
+        ).params.query.message_ids.split(",").length,
     );
     expect(sizes.sort()).toEqual([10, 50]);
   });
 
   it("fails every row of a request that fails, and sends nothing when disabled", async () => {
-    const mockPost = vi
+    const mockGet = vi
       .fn()
       .mockResolvedValue({ data: undefined, error: { message: "boom" } });
 
@@ -544,16 +548,47 @@ describe("useMessageAttachments", () => {
         useMessageAttachments("chan-1", "m-1", true),
         useMessageAttachments("chan-1", "m-2", false),
       ],
-      { wrapper: createWrapper(queryClient, { POST: mockPost }) },
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
     );
 
     await waitFor(() => expect(result.current[0]!.isError).toBe(true));
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockGet).toHaveBeenCalledTimes(1);
     expect(
-      (mockPost.mock.calls[0]![1] as { body: { message_ids: string[] } }).body
-        .message_ids,
-    ).toEqual(["m-1"]);
+      (
+        mockGet.mock.calls[0]![1] as {
+          params: { query: { message_ids: string } };
+        }
+      ).params.query.message_ids,
+    ).toEqual("m-1");
     expect(result.current[1]!.fetchStatus).toBe("idle");
+  });
+
+  it("sends each channel's messages under that channel", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: {}, error: null });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-2", "m-2", true),
+      ],
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.every((q) => q.isSuccess)).toBe(true),
+    );
+    const sent = mockGet.mock.calls.map(([, init]) => {
+      const { path, query } = (
+        init as {
+          params: { path: { id: string }; query: { message_ids: string } };
+        }
+      ).params;
+      return [path.id, query.message_ids];
+    });
+    expect(sent.sort()).toEqual([
+      ["chan-1", "m-1"],
+      ["chan-2", "m-2"],
+    ]);
   });
 });
 

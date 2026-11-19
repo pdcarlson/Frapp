@@ -4634,6 +4634,55 @@
         ]
       }
     },
+    "/v1/channels/{id}/messages/attachments": {
+      "get": {
+        "operationId": "ChatController_listMessagesAttachments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "message_ids",
+            "required": true,
+            "in": "query",
+            "description": "Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list.",
+            "schema": {
+              "example": "3f0c1d9e-0000-4000-8000-000000000001,3f0c1d9e-0000-4000-8000-000000000002",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attachments on several messages, with signed download URLs, keyed by message id",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}/messages/{messageId}/attachments": {
       "get": {
         "operationId": "ChatController_listMessageAttachments_v1",
@@ -4676,55 +4725,6 @@
           }
         ],
         "summary": "Attachments on a message, with signed download URLs",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
-    "/v1/channels/{id}/messages/attachments": {
-      "post": {
-        "operationId": "ChatController_listMessagesAttachments_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ListMessagesAttachmentsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Attachments on several messages, with signed download URLs, keyed by message id",
         "tags": [
           "Chat"
         ]
@@ -25484,22 +25484,6 @@
         "required": [
           "client_message_id",
           "content"
-        ]
-      },
-      "ListMessagesAttachmentsDto": {
-        "type": "object",
-        "properties": {
-          "message_ids": {
-            "description": "IDs of messages in this channel whose attachments to list. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list.",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        },
-        "required": [
-          "message_ids"
         ]
       },
       "ResolveAuthorAvatarsDto": {

@@ -65,7 +65,7 @@ App identifiers: iOS bundle and Android package are both `live.frapp.mobile`
 | Play crashes and ANRs | Expo `playstore_crashes` | Issues new or growing inside the window. |
 | Store reviews | Expo `appstore_reviews`, `playstore_reviews` | Reviews inside the window. Play only exposes about a week. |
 | Database health | Supabase `execute_sql`, same project | Slow statements and big-table scans since the last run, by the two queries [below](#database-health). |
-| Repeated requests | Sentry `search_traces` (spans), `frapp-api`, production and staging | Requests per trace and database calls per request over the last 24 hours ([below](#database-health), "Repeated requests"). |
+| Repeated requests | Sentry `search_traces` (spans), `frapp-api`, production and staging | Requests per trace and database calls per request over the run's window ([below](#database-health), "Repeated requests"). |
 | The team's Development channel | Supabase `execute_sql`, `project_id` `unttyvyfezddlyafcydh` (`frapp-prod`) | Messages posted or edited since the channel's own mark, by the one query [below](#the-teams-development-channel). |
 
 **The window** runs from your last `done` record on
@@ -199,7 +199,7 @@ A row absent from that line is new: judge it on its cumulative numbers this once
 2026-11-19: "average N+1 database query issue"). A chat list asked for each message's attachments
 in its own request, about seven database calls apiece, so one channel of photos queued every other
 screen behind it. Neither statistics view above sees this: each call is fast; there are just too
-many. Sentry does, because a page's API requests share its trace. Two reads of the last 24 hours on
+many. Sentry does, because a page's API requests share its trace. Two reads over the run's window on
 `frapp-api`, both environments (staging carries the team's real use until production has members):
 
 1. Spans with `span.op:http.server`, grouped by trace and transaction, `count()` per group, sorted
@@ -215,8 +215,9 @@ many. Sentry does, because a page's API requests share its trace. Two reads of t
 File each hit: title `[db] <list or route> asks once per <item>: <route>`, labels `triage`,
 `suggestion`, `area:api`, priority **P2** when a member-facing screen waits on it. Marker
 `fp=beta-watch/n+1/<transaction>`; search for it first. Name the client hook or the service loop
-that makes the calls, and the batched shape that would replace it (a `POST` taking up to 50 ids
-answered in one read, as `/v1/channels/{id}/messages/attachments` and `/messages/avatars` do).
+that makes the calls, and the batched shape that would replace it (a read taking up to 50 ids
+answered at once, as `GET /v1/channels/{id}/messages/attachments` does; keep a read a `GET`, since
+a `POST` falls under the 30-a-minute write limit and the lapsed-subscription write lock).
 Polling (one route once a minute from one long-lived tab) is not N+1: it shows as many traces of one
 request each, not many requests in one trace.
 

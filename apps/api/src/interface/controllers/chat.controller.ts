@@ -84,7 +84,7 @@ import {
   KindNotificationPreferenceDto,
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
-  ListMessagesAttachmentsDto,
+  ListMessagesAttachmentsQueryDto,
   GetChannelMessagesQueryDto,
   ChatMessageDto,
   ForwardMessageDto,
@@ -691,6 +691,34 @@ export class ChatController {
   }
 
   /**
+   * Attachments on up to 50 messages of this channel at once, keyed by message
+   * id (#5667): what a message list renders, in one request instead of one per
+   * message. Same rules as `listMessageAttachments`, applied per message. A
+   * GET so it stays a read everywhere a read is treated differently: the
+   * `read` rate limit (100 a minute, not `write`'s 30) and a chapter whose
+   * subscription lapsed, which keeps reading its chat. Three segments, so it
+   * cannot meet `:id/messages/:messageId/attachments`.
+   */
+  @Get(':id/messages/attachments')
+  @ApiOperation({
+    summary:
+      'Attachments on several messages, with signed download URLs, keyed by message id',
+  })
+  async listMessagesAttachments(
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Query() query: ListMessagesAttachmentsQueryDto,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.attachments.listAttachmentsForMessages(
+      channelId,
+      chapterId,
+      userId,
+      query.message_ids,
+    );
+  }
+
+  /**
    * Attachments on one message, each with a signed download URL.
    *
    * A route of its own rather than a field on the message read: the URLs expire,
@@ -714,32 +742,6 @@ export class ChatController {
       chapterId,
       userId,
       messageId,
-    );
-  }
-
-  /**
-   * Attachments on up to 50 messages of this channel at once, keyed by message
-   * id (#5667): what a message list renders, in one request instead of one per
-   * message. Same rules as `listMessageAttachments`, applied per message. A
-   * POST because the id list does not fit a query string comfortably, as with
-   * `resolveAuthorAvatars`; it changes nothing.
-   */
-  @Post(':id/messages/attachments')
-  @ApiOperation({
-    summary:
-      'Attachments on several messages, with signed download URLs, keyed by message id',
-  })
-  async listMessagesAttachments(
-    @Param('id', ParseUUIDPipe) channelId: string,
-    @Body() dto: ListMessagesAttachmentsDto,
-    @CurrentChapterId() chapterId: string,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.attachments.listAttachmentsForMessages(
-      channelId,
-      chapterId,
-      userId,
-      dto.message_ids,
     );
   }
 

@@ -940,7 +940,7 @@ interface AttachmentWaiter {
 
 /**
  * Collects the attachment reads that start in one tick and sends them as one
- * `POST /v1/channels/{id}/messages/attachments` per channel and 50 ids. Each
+ * `GET /v1/channels/{id}/messages/attachments` per channel and 50 ids. Each
  * message keeps its own query, so its cache entry, `staleTime` and the image
  * viewer's `refetchOnMount: false` join work exactly as before; only the
  * network call is shared.
@@ -960,11 +960,13 @@ function createAttachmentBatcher(client: FrappClient) {
     waiters: Map<string, AttachmentWaiter[]>,
   ) => {
     try {
-      const { data, error } = await client.POST(
+      const { data, error } = await client.GET(
         "/v1/channels/{id}/messages/attachments",
         {
-          params: { path: { id: channelId } },
-          body: { message_ids: messageIds },
+          params: {
+            path: { id: channelId },
+            query: { message_ids: messageIds.join(",") },
+          },
         },
       );
       if (error) throw error;
