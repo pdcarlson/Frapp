@@ -1231,14 +1231,23 @@ export class ScheduledJobsService {
       threshold: 'OVERDUE',
       dueDate: task.due_date,
       recipients: async () => {
-        if (task.created_by === task.assignee_id) return [task.assignee_id];
+        // The tier, role or group following it (#5473), read now; its
+        // members get the same line. Never fails the claim: a failed read
+        // reaches nobody and is reported.
+        const followers = await this.taskService.followerRecipients(
+          task,
+          task.chapter_id,
+        );
+        if (task.created_by === task.assignee_id) {
+          return [task.assignee_id, ...followers];
+        }
         const assigner = await this.memberRepo.findByUserAndChapter(
           task.created_by,
           task.chapter_id,
         );
         return assigner
-          ? [task.assignee_id, task.created_by]
-          : [task.assignee_id];
+          ? [task.assignee_id, task.created_by, ...followers]
+          : [task.assignee_id, ...followers];
       },
       resolveFailureLevel: 'warning',
       title: task.title,

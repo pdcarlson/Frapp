@@ -758,7 +758,9 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
   },
   'application/services/task.service.ts': {
     // +1 for a task for everyone (#4295 step 3): each copy's assignment push.
-    calls: 9,
+    // +3 for a following group (#5473): "finished" to its members, the
+    // review push to one who can confirm, as the creator's names the task.
+    calls: 12,
     entries: [MEMBER_TEXT],
   },
   'application/workers/scheduled-jobs.service.ts': {

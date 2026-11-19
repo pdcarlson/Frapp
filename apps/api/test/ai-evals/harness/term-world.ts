@@ -399,6 +399,7 @@ export function createTermWorld(
       occurrence_date: null,
       group_id: null,
       meeting_id: null,
+      followed_by: null,
       created_at: stamp,
     };
   };

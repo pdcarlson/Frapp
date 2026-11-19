@@ -42,6 +42,8 @@ import {
   taskNeedsSignOff,
   taskSignedOffAutomatically,
   TASK_AUDIENCE_COPY,
+  TASK_FOLLOWER_COPY,
+  parseTaskFollower,
   type TaskAudience,
   type TaskGroupAudience,
   type TaskProofKind,
@@ -73,6 +75,7 @@ import {
   formatTaskDue,
   joinFacts,
   TASK_REVIEW_PUSH_THREAD,
+  taskFollowedFinishedCopy,
   taskSubmittedCopy,
 } from './push-copy';
 import { displayNameFor, notifyQuietly } from './task-push';
@@ -217,6 +220,13 @@ export interface CreateTaskInput {
   audience_role_id?: string | null;
   /** With `audience`: only this chapter group's members (2026-11-18). */
   audience_group_id?: string | null;
+  /** With `audience`: only those holding a role in this tier (#5473). */
+  audience_tier_id?: string | null;
+  /**
+   * The tier, role or group the task is from (#5473), `tier:<id>`,
+   * `role:<id>` or `group:<id>`; the creator must be in it.
+   */
+  followed_by?: string | null;
   created_by: string;
   due_date: string;
   /** The moment it is due, when it has a time of day. */
@@ -265,6 +275,11 @@ export interface UpdateTaskInput {
    */
   reference_photo_paths?: string[];
   proof_kind?: TaskProofKind;
+  /**
+   * The tier, role or group the task is from (#5473), or null for nobody.
+   * A new one must name one the editor is in.
+   */
+  followed_by?: string | null;
 }
 
 /** Mark done's proof and reply (#4635). Only read with `COMPLETED`. */
@@ -560,13 +575,14 @@ export class TaskService {
   ): Promise<TaskView[]> {
     if (tasks.length === 0) return tasks;
     const ids = tasks.map((task) => task.id);
-    const [subtasks, withPhotos, series, groups, claimedFrom] =
+    const [subtasks, withPhotos, series, groups, claimedFrom, followers] =
       await Promise.all([
         this.taskRepo.findSubtasks(chapterId, ids),
         this.withPhotos(chapterId, tasks),
         this.seriesSummaries(chapterId, tasks),
         this.groupSummaries(chapterId, tasks),
         this.openTaskRepo.findClaimedFrom(chapterId, ids),
+        this.followerNames(chapterId, tasks),
       ]);
     const byTask = new Map<string, TaskSubtask[]>();
     for (const subtask of subtasks) {
@@ -580,7 +596,41 @@ export class TaskService {
       series: task.series_id ? (series.get(task.series_id) ?? null) : null,
       group: task.group_id ? (groups.get(task.group_id) ?? null) : null,
       open_task_id: claimedFrom.get(task.id) ?? null,
+      followed_by_name: task.followed_by
+        ? (followers.get(task.followed_by) ?? null)
+        : null,
     }));
+  }
+
+  /**
+   * The live name of each task's following tier, role or group, by entry
+   * (#5473); one since deleted is absent. No read when none follows.
+   */
+  private async followerNames(
+    chapterId: string,
+    tasks: Task[],
+  ): Promise<Map<string, string>> {
+    const ids = {
+      roleIds: [] as string[],
+      groupIds: [] as string[],
+      tierIds: [] as string[],
+    };
+    const entries = new Set<string>();
+    for (const task of tasks) {
+      const parsed = parseTaskFollower(task.followed_by);
+      if (!parsed || entries.has(task.followed_by ?? '')) continue;
+      entries.add(task.followed_by ?? '');
+      ids[`${parsed.kind}Ids`].push(parsed.id);
+    }
+    const byEntry = new Map<string, string>();
+    if (entries.size === 0) return byEntry;
+    const names = await this.audiences.liveNames(chapterId, ids);
+    for (const entry of entries) {
+      const parsed = parseTaskFollower(entry);
+      const name = parsed ? names.get(parsed.id) : undefined;
+      if (name) byEntry.set(entry, name);
+    }
+    return byEntry;
   }
 
   /**
@@ -628,9 +678,14 @@ export class TaskService {
     ];
     const roleIds = targetsOf('role');
     const groupIds = targetsOf('group');
+    const tierIds = targetsOf('tier');
     const names =
-      roleIds.length > 0 || groupIds.length > 0
-        ? await this.audiences.liveNames(chapterId, { roleIds, groupIds })
+      roleIds.length > 0 || groupIds.length > 0 || tierIds.length > 0
+        ? await this.audiences.liveNames(chapterId, {
+            roleIds,
+            groupIds,
+            tierIds,
+          })
         : new Map<string, string>();
     for (const group of groups) {
       summaries.set(group.id, {
@@ -802,16 +857,72 @@ export class TaskService {
     userId: string,
     isAdmin: boolean,
     options: TaskListOptions = {},
+    /**
+     * The follower entries the caller is in (#5473,
+     * `TaskAudienceService.followEntriesOf`): a member's list then also holds
+     * the tasks those follow, without their proof. Only the board's read
+     * passes them; Activity's "my tasks" reads don't.
+     */
+    follows: readonly string[] = [],
   ): Promise<TaskView[]> {
     // The regex on the DTO lets a calendar-invalid instant (2026-02-30)
     // through, and Postgres would answer it with a 500.
     instantOrThrow('before', options.after?.created_at);
     const tasks = await this.taskRepo.findByChapter(chapterId, {
       ...options,
-      // Last, so no option widens a member's read past their own tasks.
-      ...(isAdmin ? {} : { assigneeId: userId }),
+      // Last, so no option widens a member's read past their own tasks and
+      // the ones their groups follow.
+      ...(isAdmin
+        ? {}
+        : {
+            assigneeId: userId,
+            ...(follows.length > 0 ? { orFollowedBy: follows } : {}),
+          }),
     });
-    return this.withSubtasks(chapterId, toDisplayStatusList(tasks));
+    const views = await this.withSubtasks(
+      chapterId,
+      toDisplayStatusList(tasks),
+    );
+    return isAdmin
+      ? views
+      : views.map((view) => this.asReadBy(view, userId, false));
+  }
+
+  /**
+   * Whether a member may read a task (#5473): its assignee, a `tasks:manage`
+   * holder, or someone in the tier, role or group that follows it, read now.
+   */
+  async mayRead(
+    task: Pick<Task, 'assignee_id' | 'followed_by'>,
+    chapterId: string,
+    userId: string,
+    isAdmin: boolean,
+  ): Promise<boolean> {
+    if (isAdmin || task.assignee_id === userId) return true;
+    if (!task.followed_by) return false;
+    const follows = await this.audiences.followEntriesOf(chapterId, userId);
+    return follows.includes(task.followed_by);
+  }
+
+  /** The follower entries a member is in now (#5473). */
+  followEntriesOf(chapterId: string, userId: string): Promise<string[]> {
+    return this.audiences.followEntriesOf(chapterId, userId);
+  }
+
+  /**
+   * A task as one reader sees it (#5473): whole for its assignee and a
+   * `tasks:manage` holder; for a follower, without its proof (the proof
+   * photos and link), which stays between the assignee and the officers.
+   */
+  asReadBy<T extends TaskView>(view: T, userId: string, isAdmin: boolean): T {
+    if (isAdmin || view.assignee_id === userId) return view;
+    return {
+      ...view,
+      proof_link: null,
+      ...(view.photos
+        ? { photos: view.photos.filter((photo) => photo.kind === 'reference') }
+        : {}),
+    };
   }
 
   /** How many tasks {@link list} would return with no `limit`, counted in SQL. */
@@ -947,19 +1058,31 @@ export class TaskService {
         'Send one of assignee_id, assignee_ids or audience',
       );
     }
-    if (
-      (input.audience_role_id || input.audience_group_id) &&
-      !input.audience
-    ) {
+    const narrowed = [
+      input.audience_role_id,
+      input.audience_group_id,
+      input.audience_tier_id,
+    ].filter(Boolean).length;
+    if (narrowed > 0 && !input.audience) {
       throw new BadRequestException(
-        'audience_role_id and audience_group_id go with audience',
+        'audience_role_id, audience_group_id and audience_tier_id go with audience',
       );
     }
-    if (input.audience_role_id && input.audience_group_id) {
+    if (narrowed > 1) {
       throw new BadRequestException(
-        'Send audience_role_id or audience_group_id, not both',
+        'Send one of audience_role_id, audience_group_id and audience_tier_id',
       );
     }
+    if (input.followed_by && input.recurrence_rule != null) {
+      throw new BadRequestException(TASK_FOLLOWER_COPY.noRepeat);
+    }
+    const followedBy = input.followed_by
+      ? await this.audiences.checkedFollower(
+          input.chapter_id,
+          input.created_by,
+          input.followed_by,
+        )
+      : null;
     if (input.audience) {
       return this.createForGroup(
         input,
@@ -967,11 +1090,18 @@ export class TaskService {
           ? { kind: 'role', id: input.audience_role_id }
           : input.audience_group_id
             ? { kind: 'group', id: input.audience_group_id }
-            : { kind: 'chapter' },
+            : input.audience_tier_id
+              ? { kind: 'tier', id: input.audience_tier_id }
+              : { kind: 'chapter' },
+        followedBy,
       );
     }
     if (input.assignee_ids != null && people.length !== 1) {
-      return this.createForGroup(input, { kind: 'people', userIds: people });
+      return this.createForGroup(
+        input,
+        { kind: 'people', userIds: people },
+        followedBy,
+      );
     }
     const assigneeId = input.assignee_id ?? people[0];
     if (!assigneeId) {
@@ -1037,6 +1167,7 @@ export class TaskService {
           confirmed_at: null,
           proof_kind: input.proof_kind ?? 'none',
           ...(input.meeting_id ? { meeting_id: input.meeting_id } : {}),
+          ...(followedBy ? { followed_by: followedBy } : {}),
         });
 
     // Reference photos go in after their task, like the checklist below. A
@@ -1122,6 +1253,7 @@ export class TaskService {
   private async createForGroup(
     input: CreateTaskInput,
     target: TaskAudienceTarget,
+    followedBy: string | null,
   ): Promise<CreateTaskResult> {
     checkedDueDate(input.due_date);
     if (input.recurrence_rule != null) {
@@ -1157,6 +1289,7 @@ export class TaskService {
       proof_kind: input.proof_kind ?? 'none',
       subtask_titles: subtaskTitles,
       ...(input.meeting_id ? { meeting_id: input.meeting_id } : {}),
+      followed_by: followedBy,
     });
 
     // `notifyAssigned` reports its own failures, so one member's push can't
@@ -1212,7 +1345,7 @@ export class TaskService {
     actorId: string,
     input: UpdateTaskInput,
   ): Promise<TaskView> {
-    const { groupId } = await this.groupCopyOrThrow(id, chapterId);
+    const { task, groupId } = await this.groupCopyOrThrow(id, chapterId);
     if (input.assignee_id !== undefined) {
       throw new BadRequestException(
         "Hand one member's copy to someone else on that copy alone",
@@ -1221,6 +1354,23 @@ export class TaskService {
     if (input.reference_photo_paths !== undefined) {
       throw new BadRequestException(TASK_AUDIENCE_COPY.noPhotos);
     }
+    const { followed_by, ...rest } = input;
+    if (followed_by !== undefined) {
+      // Every copy, confirmed ones too: the group follows as one task.
+      const next = await this.checkedFollowerEdit(
+        task,
+        chapterId,
+        actorId,
+        followed_by,
+      );
+      if (next !== task.followed_by) {
+        await this.taskRepo.setGroupFollower(chapterId, groupId, next);
+      }
+      if (Object.values(rest).every((value) => value === undefined)) {
+        return this.findById(id, chapterId);
+      }
+    }
+    input = rest;
     const open = (
       await this.taskRepo.findGroupCopies(chapterId, [groupId])
     ).filter((copy) => !copy.points_awarded);
@@ -1430,6 +1580,25 @@ export class TaskService {
   }
 
   /**
+   * A follower an edit sends (#5473): null clears it, the task's own stays
+   * as it is whoever edits, and a new one must name a tier, role or group
+   * the editor is in.
+   */
+  private async checkedFollowerEdit(
+    task: Task,
+    chapterId: string,
+    actorId: string,
+    followedBy: string | null,
+  ): Promise<string | null> {
+    if (!followedBy) return null;
+    if (followedBy.toLowerCase() === task.followed_by) return task.followed_by;
+    if (task.series_id) {
+      throw new BadRequestException(TASK_FOLLOWER_COPY.noRepeat);
+    }
+    return this.audiences.checkedFollower(chapterId, actorId, followedBy);
+  }
+
+  /**
    * One task's edit, read from the row as given: the write and its side
    * effects, without the view. `update` reads the row first; a group edit
    * passes the copies it already read.
@@ -1485,6 +1654,16 @@ export class TaskService {
       input.proof_kind !== task.proof_kind
     ) {
       patch.proof_kind = input.proof_kind;
+    }
+
+    if (input.followed_by !== undefined) {
+      const next = await this.checkedFollowerEdit(
+        task,
+        chapterId,
+        actorId,
+        input.followed_by,
+      );
+      if (next !== task.followed_by) patch.followed_by = next;
     }
 
     // Photos live in their own rows (#4635): read them once for the
@@ -1910,6 +2089,108 @@ export class TaskService {
    * task, nothing to tell them) or has since left the chapter.
    */
   private async notifyTaskCompleted(
+    task: Task,
+    actorUserId: string,
+    chapterId: string,
+    submitted: { photoCount: number; resubmitted: boolean },
+  ): Promise<void> {
+    await Promise.all([
+      this.notifyCreatorCompleted(task, actorUserId, chapterId, submitted),
+      this.notifyFollowersCompleted(task, actorUserId, chapterId, submitted),
+    ]);
+  }
+
+  /**
+   * The members of a task's following tier, role or group (#5473), read now,
+   * leaving out its assignee and creator (each hears about it already) and
+   * whoever acted. A failed read is reported and reaches nobody: the push
+   * never fails the write it follows.
+   */
+  async followerRecipients(
+    task: Pick<Task, 'id' | 'assignee_id' | 'created_by'> & {
+      followed_by?: string | null;
+    },
+    chapterId: string,
+    exclude: readonly string[] = [],
+  ): Promise<string[]> {
+    if (!task.followed_by) return [];
+    try {
+      const skip = new Set([task.assignee_id, task.created_by, ...exclude]);
+      return (
+        await this.audiences.followerIds(chapterId, task.followed_by)
+      ).filter((id) => !skip.has(id));
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-followers-resolve',
+        message: `could not read who follows task ${task.id}`,
+        error,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * A followed task was marked done (#5473): its following group hears, a
+   * follower who can confirm it with the review push the creator gets, the
+   * rest with one that only tells them.
+   */
+  private async notifyFollowersCompleted(
+    task: Task,
+    actorUserId: string,
+    chapterId: string,
+    submitted: { photoCount: number; resubmitted: boolean },
+  ): Promise<void> {
+    const recipients = await this.followerRecipients(task, chapterId, [
+      actorUserId,
+    ]);
+    if (recipients.length === 0) return;
+    const [name, confirmers, names] = await Promise.all([
+      this.displayNameOf(task.assignee_id),
+      this.audiences
+        .canConfirm(chapterId, recipients)
+        .catch(() => new Set<string>()),
+      this.followerNames(chapterId, [task]).catch(
+        () => new Map<string, string>(),
+      ),
+    ]);
+    const who = name ?? 'A member';
+    const followerName = names.get(task.followed_by ?? '') ?? null;
+    for (let i = 0; i < recipients.length; i += GROUP_NOTIFY_CONCURRENCY) {
+      await Promise.all(
+        recipients.slice(i, i + GROUP_NOTIFY_CONCURRENCY).map((userId) =>
+          this.safeNotifyUser(
+            userId,
+            chapterId,
+            confirmers.has(userId)
+              ? {
+                  ...taskSubmittedCopy(who, task, submitted),
+                  priority: 'NORMAL',
+                  category: 'tasks',
+                  threadId: TASK_REVIEW_PUSH_THREAD,
+                  data: {
+                    target: {
+                      screen: 'tasks',
+                      taskId: task.id,
+                      view: 'review',
+                    },
+                  },
+                }
+              : {
+                  ...taskFollowedFinishedCopy(who, task, followerName),
+                  priority: 'NORMAL',
+                  category: 'tasks',
+                  data: { target: { screen: 'tasks', taskId: task.id } },
+                },
+            task.id,
+            'completion-follower',
+          ),
+        ),
+      );
+    }
+  }
+
+  private async notifyCreatorCompleted(
     task: Task,
     actorUserId: string,
     chapterId: string,

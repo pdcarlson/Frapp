@@ -50,6 +50,8 @@ export interface SweepTaskRow {
   due_date: string;
   /** Set only on a task due at a time of day (#4003). */
   due_at?: string | null;
+  /** The tier, role or group following it (#5473), told when it's overdue. */
+  followed_by?: string | null;
 }
 
 export interface SweepPollRow {

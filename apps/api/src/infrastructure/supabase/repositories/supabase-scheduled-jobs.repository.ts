@@ -291,7 +291,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
         this.supabase
           .from('tasks')
           .select(
-            'id, chapter_id, assignee_id, created_by, title, due_date, due_at',
+            'id, chapter_id, assignee_id, created_by, title, due_date, due_at, followed_by',
           )
           .in('status', [
             TaskStatus.TODO,
@@ -316,7 +316,9 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       (from, to) =>
         this.supabase
           .from('tasks')
-          .select('id, chapter_id, assignee_id, created_by, title, due_date')
+          .select(
+            'id, chapter_id, assignee_id, created_by, title, due_date, followed_by',
+          )
           .in('status', [
             TaskStatus.TODO,
             TaskStatus.IN_PROGRESS,

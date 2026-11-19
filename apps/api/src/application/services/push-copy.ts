@@ -229,6 +229,29 @@ const SUBMITTED_REPLY_MAX = 60;
  * and asks for nothing; a send-back's second try "resubmitted" and quotes the
  * reply, the thing that changed.
  */
+/**
+ * A task a member's group follows was marked done (#5473): what they hear
+ * when they can't confirm it. It tells them, and asks nothing: "Sam
+ * finished: Book the venue" / "From Exec board · An officer confirms it".
+ */
+export function taskFollowedFinishedCopy(
+  name: string,
+  task: {
+    title: string;
+    point_reward?: number | null;
+    proof_kind?: string | null;
+  },
+  followerName: string | null,
+): { title: string; body: string } {
+  return {
+    title: `${name} finished: ${task.title}`,
+    body: joinFacts(
+      followerName && `From ${followerName}`,
+      taskNeedsSignOff(task) ? 'An officer confirms it' : 'Done',
+    ),
+  };
+}
+
 export function taskSubmittedCopy(
   name: string,
   task: {

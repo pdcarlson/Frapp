@@ -425,3 +425,45 @@ describe("where the picker opens", () => {
     ]).toEqual(["t-a"]);
   });
 });
+
+describe("a tier as a pick (#5473)", () => {
+  const EXEC = directory.sets.get("t-exec")!;
+  const TIER: TaskWho = { kind: "each", target: { kind: "tier", id: "t-exec" } };
+
+  it("makes each tier with roles a set of everyone holding one of them", () => {
+    expect(EXEC).toMatchObject({ kind: "tier", name: "Executive Board" });
+    expect(EXEC.memberIds).toEqual(["u-viewer"]);
+    expect(directory.sets.get("t-comm")?.memberIds).toEqual(["u-alex", "u-sam"]);
+    // The roles in no tier have no set of their own.
+    expect(directory.tiers.at(-1)?.set).toBeNull();
+  });
+
+  it("reaches the chapter when the tier holds the Everyone role", () => {
+    const withEveryone = buildWhoDirectory({
+      viewerUserId: "u-a",
+      members: [
+        { user_id: "u-a", display_name: "A", role_ids: ["officer"] },
+        { user_id: "u-b", display_name: "B", role_ids: [] },
+      ],
+      roles: [
+        { id: "everyone", name: "Member", system_key: "MEMBER", tier_id: "t-all", display_order: 0 },
+        { id: "officer", name: "Officer", tier_id: "t-all", display_order: 1 },
+      ],
+      tiers: [{ id: "t-all", name: "Members", position: 1 }],
+    });
+    expect(withEveryone.sets.get("t-all")?.memberIds.sort()).toEqual(["u-a", "u-b"]);
+  });
+
+  it("ticks, labels, sends and opens a tier pick like a role's", () => {
+    expect(toggleSet(null, EXEC, "each", directory)).toEqual(TIER);
+    expect(toggleSet(TIER, EXEC, "each", directory)).toBeNull();
+    expect(whoLabel(TIER, directory)).toBe("Everyone in Executive Board");
+    expect(whoSummary(TIER, directory)).toBe("Executive Board · 1 member");
+    expect(taskWhoRequest(TIER)).toEqual({
+      endpoint: "/v1/tasks",
+      fields: { audience: "everyone", audience_tier_id: "t-exec" },
+    });
+    expect(initialWhoTab(TIER)).toBe("sets");
+    expect(initialOpenTiers(TIER, directory).has("t-exec")).toBe(true);
+  });
+});

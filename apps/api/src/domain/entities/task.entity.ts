@@ -73,6 +73,13 @@ export interface Task {
    * name; cleared if the minutes are deleted.
    */
   meeting_id: string | null;
+  /**
+   * The tier, role or group the task is from (#5473), as `tier:<id>`,
+   * `role:<id>` or `group:<id>`, or null. Its active members, read live, can
+   * read the task and its progress (not its proof) and hear when it is
+   * finished or overdue; it grants nothing else.
+   */
+  followed_by: string | null;
   created_at: string;
 }
 
@@ -86,10 +93,11 @@ export interface TaskGroup {
   created_by: string;
   /**
    * Who it went to (Paul, 2026-11-18): the chapter, several people picked one
-   * by one, a role's holders or a chapter group's members.
+   * by one, a role's holders, a chapter group's members, or a tier's role
+   * holders (#5473).
    */
   audience: TaskGroupAudience;
-  /** The role or chapter group it went to; null for everyone and people. */
+  /** The role, chapter group or tier it went to; null for everyone and people. */
   target_id: string | null;
   /**
    * That role's or group's name when the task was made, shown once the role
@@ -119,7 +127,7 @@ export type TaskGroupCopyState = Pick<
 export interface TaskGroupSummary extends TaskGroupProgress {
   id: string;
   audience: TaskGroupAudience;
-  /** The role or chapter group it went to; null for everyone and people. */
+  /** The role, chapter group or tier it went to; null for everyone and people. */
   target_id: string | null;
   /**
    * That role's or group's name: its name now while it exists, otherwise the
@@ -215,6 +223,12 @@ export interface TaskView extends Task {
    * detail reads.
    */
   open_task_id?: string | null;
+  /**
+   * The name of the tier, role or group in `followed_by` as it reads now
+   * (#5473), or null when there is none or it was deleted. Present on the
+   * list and detail reads.
+   */
+  followed_by_name?: string | null;
 }
 
 /** Which of a task's photos: the officer's reference or the assignee's proof. */
