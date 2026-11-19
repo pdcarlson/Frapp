@@ -46,7 +46,8 @@ try {
     ('${F.userDId}', '${F.userDAuth}', 'd@test.local'),
     ('${F.userEId}', '${F.userEAuth}', 'e@test.local'),
     ('${F.userFId}', '${F.userFAuth}', 'f@test.local'),
-    ('${F.userGId}', '${F.userGAuth}', 'g@test.local');
+    ('${F.userGId}', '${F.userGAuth}', 'g@test.local'),
+    ('${F.userHId}', '${F.userHAuth}', 'h@test.local');
   insert into roles (id, chapter_id, name, permissions) values
     ('${F.roleSecret}',       '${F.chapA}', 'Secret',   '{chat:secret,members:view}'),
     ('${F.roleBasic}',        '${F.chapA}', 'Basic',    '{members:view}'),
@@ -62,6 +63,7 @@ try {
     ('${F.userEId}', '${F.chapA}', '{${F.roleBasic},${F.roleSecretChapB}}'),
     ('${F.userFId}', '${F.chapA}', '{${F.roleSecret.toUpperCase()}}'),
     ('${F.userGId}', '${F.chapA}', '{${F.roleNoView}}'),
+    ('${F.userHId}', '${F.chapA}', '{${F.roleMemberChapB}}'),
     ('${F.userBId}', '${F.chapB}', '{${F.roleMemberChapB}}');
   -- A DM holds exactly two members (chat_channels_dm_two_members, #2788). Its
   -- other participant is userF, whom no scenario below reads the DM as.

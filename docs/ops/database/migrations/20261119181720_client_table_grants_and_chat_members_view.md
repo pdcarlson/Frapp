@@ -10,7 +10,7 @@ Narrows the table privileges the publishable key and signed-in clients hold, and
 ## Promotion
 
 - **Purpose**: `anon` holds no privilege on any `public` table, view or sequence. `authenticated` holds exactly `SELECT` on `chat_messages` and `SELECT`, `DELETE` on `chat_message_actions`. The default privileges for tables and sequences later migrations create are revoked for both roles. `can_read_chat_channel` (message and reaction reads, the `chat:channel:` Realtime topic) also requires a role in the chapter granting `members:view` or `*`. Function `EXECUTE` is unchanged.
-- **Checks**: after `db push`, these should return one row and zero rows:
+- **Checks**: after `db push`, the first query returns exactly two rows (the ones in its comment) and the second returns one row holding `0`:
 
   ```sql
   select table_name, string_agg(privilege_type, ',' order by privilege_type)
@@ -33,4 +33,10 @@ grant all on all tables in schema public to anon, authenticated;
 grant usage, select, update on all sequences in schema public to anon, authenticated;
 alter default privileges in schema public grant all on tables to anon, authenticated;
 alter default privileges in schema public grant usage, select, update on sequences to anon, authenticated;
+-- The two revokes earlier migrations made, which the blanket grant above undoes
+-- (20261112280000_chat_message_actions_client_writes, 20261113040007_chapter_groups):
+revoke insert, update on public.chat_message_actions from anon, authenticated;
+revoke all on public.chapter_group_memberships from anon, authenticated;
 ```
+
+That restores the state before this migration, which let both roles `TRUNCATE` every other table outside RLS; prefer the single forward grant above.

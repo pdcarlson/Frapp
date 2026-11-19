@@ -35,7 +35,9 @@ const TABLE_PRIVILEGES = [
 
 // Every (role, relation, privilege) a client role holds on a public table,
 // view or sequence, through any path (a direct grant, PUBLIC, or a role it
-// inherits), as `has_*_privilege` resolves it.
+// inherits), as `has_*_privilege` resolves it. A grant on some columns only
+// (`grant select (id, email) on users to anon`) opens those columns without a
+// table privilege, so it is listed too, as "<privilege> (columns)".
 const HELD_SQL = (role) => `
   select c.oid::regclass::text as rel, p.priv
     from pg_class c
@@ -44,6 +46,15 @@ const HELD_SQL = (role) => `
    where n.nspname = 'public'
      and c.relkind in ('r', 'p', 'v', 'm', 'f')
      and has_table_privilege('${role}', c.oid, p.priv)
+  union all
+  select c.oid::regclass::text, p.priv || ' (columns)'
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) as p(priv)
+   where n.nspname = 'public'
+     and c.relkind in ('r', 'p', 'v', 'm', 'f')
+     and has_any_column_privilege('${role}', c.oid, p.priv)
+     and not has_table_privilege('${role}', c.oid, p.priv)
   union all
   select c.oid::regclass::text, p.priv
     from pg_class c
@@ -106,9 +117,9 @@ await runAssertions("Client table grants (anon and authenticated)", [
     name: "a table created after the migrations starts with no anon or authenticated grant",
     sql: `
       select r.rolname,
-             has_table_privilege(r.oid, 'public.client_grants_default_probe', 'select')
-               or has_table_privilege(r.oid, 'public.client_grants_default_probe', 'insert')
-               or has_table_privilege(r.oid, 'public.client_grants_default_probe', 'update')
+             has_any_column_privilege(r.oid, 'public.client_grants_default_probe', 'select')
+               or has_any_column_privilege(r.oid, 'public.client_grants_default_probe', 'insert')
+               or has_any_column_privilege(r.oid, 'public.client_grants_default_probe', 'update')
                or has_table_privilege(r.oid, 'public.client_grants_default_probe', 'delete') as table_open,
              has_sequence_privilege(r.oid, 'public.client_grants_default_probe_seq', 'usage') as seq_open
         from pg_roles r
