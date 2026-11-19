@@ -19,6 +19,7 @@ import {
   type ActivityFace,
 } from "@repo/hooks";
 import { formatPoints } from "@repo/formatting";
+import { TASK_FOLLOWER_COPY } from "@repo/validation";
 import {
   CardTaskEdit,
   TASK_CONFIRM_FAILURE,
@@ -92,6 +93,13 @@ export function TaskReview({
   }, [taskId, refetch]);
 
   const live = readLiveTask(query.data);
+  // The group it is from (#5473), read as the task read carries it.
+  const followedRead = (query.data ?? null) as {
+    followed_by?: string | null;
+    followed_by_name?: string | null;
+  } | null;
+  const followedBy = followedRead?.followed_by ?? null;
+  const followedByName = followedRead?.followed_by_name ?? null;
   if (!live) {
     return query.isError ? (
       <InlineNote>
@@ -167,6 +175,10 @@ export function TaskReview({
           {review.submitted ? (
             <p className="text-caption text-muted-foreground">
               {review.submitted}
+              {/* "Submitted to Exec board" when a group follows it (#5473). */}
+              {followedBy
+                ? ` · ${TASK_FOLLOWER_COPY.submittedTo(followedByName)}`
+                : null}
             </p>
           ) : null}
         </div>

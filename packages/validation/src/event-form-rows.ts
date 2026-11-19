@@ -16,6 +16,7 @@ export const EVENT_FORM_ROWS = [
   "location",
   "attendance",
   "points",
+  "agenda",
   "description",
   "notes",
   "checkIn",
@@ -34,6 +35,7 @@ export const EVENT_FORM_ROW_LABELS: Record<
   location: "Location",
   attendance: "Who's coming",
   points: "Points",
+  agenda: "Agenda",
   description: "Description",
   checkIn: "Check-in",
 };
@@ -45,7 +47,17 @@ export const EVENT_FORM_PLACEHOLDERS = {
   location: "Add a place",
   description: "Add details",
   notes: "Add notes",
+  agenda: "Add an item",
 } as const;
+
+/**
+ * Under the form's Agenda row while the event repeats (Paul 2026-11-19, "where
+ * is the ability to add agenda items"): an agenda belongs to one meeting
+ * (`spec/behavior/events.md` § Agenda and attachments), so what is typed here
+ * goes on the first one, and each later meeting gets its own on its page.
+ */
+export const EVENT_FORM_AGENDA_REPEAT_NOTE =
+  "For the first meeting. Each meeting keeps its own agenda.";
 
 /**
  * The line under a member's rows: their event carries no points and requires
@@ -89,4 +101,25 @@ export function describeCheckIn(
         ? "Opens at the start"
         : `Opens ${opensMinutes} ${opensMinutes === 1 ? "minute" : "minutes"} early`;
   return zoneDrawn ? `${opens} · In a zone` : opens;
+}
+
+/**
+ * How long an event runs, one tap each under the When row on both apps
+ * (Paul 2026-11-19: "just adding an hour is really tedious"), in minutes.
+ * Picking one moves the end and keeps the start.
+ */
+export const EVENT_LENGTH_CHOICES = [30, 60, 90, 120, 180] as const;
+
+/**
+ * `"30 min"`, `"1 hr"`, `"1.5 hrs"`: an event's length. The length chips on
+ * both apps and web's end-time list (`durationLabel` in `time-field.tsx`)
+ * all say it this way.
+ */
+export function eventLengthLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  const shown = Number.isInteger(hours)
+    ? `${hours}`
+    : hours.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
+  return `${shown} ${hours === 1 ? "hr" : "hrs"}`;
 }

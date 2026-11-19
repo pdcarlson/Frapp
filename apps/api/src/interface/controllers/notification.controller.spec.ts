@@ -80,6 +80,7 @@ describe('NotificationController', () => {
         userId,
         dto.token,
         dto.device_name,
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });

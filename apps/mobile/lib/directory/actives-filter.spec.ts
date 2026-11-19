@@ -54,6 +54,59 @@ describe("filterActives (#3971)", () => {
   });
 });
 
+describe("the Phone app filter", () => {
+  const reach = new Map([
+    [
+      "u-1",
+      {
+        user_id: "u-1",
+        state: "on" as const,
+        platform: null,
+        last_opened_at: null,
+      },
+    ],
+    [
+      "u-2",
+      {
+        user_id: "u-2",
+        state: "off" as const,
+        platform: null,
+        last_opened_at: null,
+      },
+    ],
+    [
+      "u-3",
+      {
+        user_id: "u-3",
+        state: "web_only" as const,
+        platform: null,
+        last_opened_at: null,
+      },
+    ],
+  ]);
+  const by = (phoneReach: "on" | "unreachable" | "web_only") =>
+    ids(filterActives(ROWS, { ...NO_ACTIVES_FILTER, phoneReach }, reach));
+
+  it("matches web's choices: Not reachable is off plus web only", () => {
+    expect(by("on")).toEqual(["u-1"]);
+    expect(by("unreachable")).toEqual(["u-2", "u-3"]);
+    expect(by("web_only")).toEqual(["u-3"]);
+  });
+
+  it("is dropped for a viewer it isn't offered to", () => {
+    const known = {
+      roleIds: new Set<string>(),
+      years: [],
+      classIds: new Set<string>(),
+    };
+    const filter = { ...NO_ACTIVES_FILTER, phoneReach: "on" as const };
+    expect(effectiveActivesFilter(filter, known).phoneReach).toBe(null);
+    expect(
+      effectiveActivesFilter(filter, { ...known, phoneReach: true }).phoneReach,
+    ).toBe("on");
+  });
+});
+
 describe("the filter's options", () => {
   it("lists the actives' years newest first, once each", () => {
     expect(graduationYearOptions([...ROWS, ROWS[0]!])).toEqual([2028, 2027]);
@@ -114,6 +167,7 @@ describe("effectiveActivesFilter", () => {
       graduationYear: 2027,
       pledgeClassId: "pc-a",
       status: "active" as const,
+      phoneReach: null,
     };
     expect(effectiveActivesFilter(filter, known)).toEqual(filter);
     expect(countActivesFilters(filter)).toBe(4);
@@ -125,6 +179,7 @@ describe("effectiveActivesFilter", () => {
       graduationYear: 2030,
       pledgeClassId: "pc-gone",
       status: null,
+      phoneReach: "web_only" as const,
     };
     expect(effectiveActivesFilter(filter, known)).toEqual(NO_ACTIVES_FILTER);
     expect(countActivesFilters(NO_ACTIVES_FILTER)).toBe(0);

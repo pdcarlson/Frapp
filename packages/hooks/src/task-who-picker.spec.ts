@@ -452,6 +452,9 @@ describe("a tier as a pick (#5473)", () => {
       tiers: [{ id: "t-all", name: "Members", position: 1 }],
     });
     expect(withEveryone.sets.get("t-all")?.memberIds.sort()).toEqual(["u-a", "u-b"]);
+    // Which the API refuses as what a task is from.
+    expect(withEveryone.tiers[0]?.holdsEveryone).toBe(true);
+    expect(directory.tiers.every((tier) => !tier.holdsEveryone)).toBe(true);
   });
 
   it("ticks, labels, sends and opens a tier pick like a role's", () => {

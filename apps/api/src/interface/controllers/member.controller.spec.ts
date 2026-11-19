@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
 import { MemberService } from '../../application/services/member.service';
+import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -33,7 +34,13 @@ describe('MemberController', () => {
 
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [MemberController],
-      providers: [{ provide: MemberService, useValue: memberService }],
+      providers: [
+        { provide: MemberService, useValue: memberService },
+        {
+          provide: MemberPhoneReachService,
+          useValue: { findForViewer: jest.fn() },
+        },
+      ],
     }).compile();
 
     controller = module.get(MemberController);

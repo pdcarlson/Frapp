@@ -26,6 +26,7 @@ import {
 import {
   AI_SUGGESTION_COPY,
   TASK_AUDIENCE_COPY,
+  TASK_FOLLOWER_COPY,
   TASK_PHOTOS_MAX,
   TASK_PROOF_KINDS,
   TASK_PROOF_KIND_HINTS,
@@ -71,6 +72,10 @@ import {
 import { FOCUS_RING } from "@/components/ui/focus";
 import { useToast } from "@/lib/hooks/use-toast";
 import { toastFailure } from "@/lib/failure-toast";
+import {
+  FollowerSelect,
+  useFollowerChoices,
+} from "@/components/tasks/task-follower";
 import { cn, guardIntDraft, initials, parseGuardedInt } from "@/lib/utils";
 import type { BoardTask, GroupTileData } from "./board-task";
 import { DueDateField, dueEntryPassed } from "./due-date-field";
@@ -474,6 +479,12 @@ function TaskPanelBody({
         {task.meeting_id ? (
           <FromMinutesRow meetingId={task.meeting_id} />
         ) : null}
+        <FollowerRow
+          task={task}
+          editable={editable && !task.series}
+          disabled={saving || !!gate.controlProps().disabled}
+          onSave={(followed_by) => save({ followed_by })}
+        />
         {isGroup ? null : (
           <FieldRow label="Steps" alignTop>
             <div className="px-2 py-1">
@@ -578,6 +589,57 @@ export function FromMinutesRow({ meetingId }: { meetingId: string }) {
       >
         {name}
       </Link>
+    </FieldRow>
+  );
+}
+
+/**
+ * From (#5473): the tier, role or group the task is from, whose members can
+ * see it and how it's going. An officer picks one they're in; everyone else
+ * reads it. Hidden for a member when it is from nobody. Not on a repeating
+ * task yet, which the API refuses.
+ */
+function FollowerRow({
+  task,
+  editable,
+  disabled,
+  onSave,
+}: {
+  task: BoardTask;
+  editable: boolean;
+  disabled: boolean;
+  onSave: (entry: string | null) => Promise<boolean>;
+}) {
+  const choices = useFollowerChoices({ enabled: editable });
+  const value = task.followed_by ?? null;
+  if (!editable && !value) return null;
+  return (
+    <FieldRow label={TASK_FOLLOWER_COPY.field}>
+      {editable ? (
+        <div className="grid gap-1 px-2 py-1">
+          <FollowerSelect
+            value={value}
+            currentName={task.followed_by_name}
+            choices={choices}
+            onChange={(next) => {
+              if (next !== value) void onSave(next);
+            }}
+            disabled={disabled}
+            className="h-8 w-fit min-w-[10rem]"
+          />
+          {value ? (
+            <span className="text-caption text-muted-foreground">
+              {task.followed_by_name
+                ? TASK_FOLLOWER_COPY.hint(task.followed_by_name)
+                : TASK_FOLLOWER_COPY.deletedHint}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <StaticValue>
+          {task.followed_by_name ?? TASK_FOLLOWER_COPY.deleted}
+        </StaticValue>
+      )}
     </FieldRow>
   );
 }

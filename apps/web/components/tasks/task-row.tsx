@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FOCUS_RING } from "@/components/ui/focus";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
+import { FollowerChip } from "@/components/tasks/task-follower";
 import { cn, initials } from "@/lib/utils";
 import { useToast } from "@/lib/hooks/use-toast";
 import type { MemberAvatarTint } from "@repo/hooks";
@@ -171,6 +172,12 @@ export function TaskRow({
           </Badge>
         ) : null}
       </button>
+      {task.followed_by ? (
+        <FollowerChip
+          name={task.followed_by_name}
+          className="hidden max-w-[10rem] shrink @lg:inline-flex"
+        />
+      ) : null}
       <PersonChip person={person} />
       <DueText task={task} due={due} />
       <PointsTag points={task.point_reward} />
@@ -236,6 +243,12 @@ export function GroupTaskRow({
         <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span className="truncate">{label}</span>
       </span>
+      {task.followed_by ? (
+        <FollowerChip
+          name={task.followed_by_name}
+          className="hidden max-w-[10rem] shrink @xl:inline-flex"
+        />
+      ) : null}
       <MiniProgress done={tile.done} total={tile.total} title={task.title} />
       <DueText task={task} due={due} />
       <PointsTag points={task.point_reward} />

@@ -18,6 +18,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
+import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -36,6 +37,7 @@ import {
 } from '../dtos/member.dto';
 import {
   MemberBirthdayDto,
+  MemberPhoneReachListDto,
   MemberProfileDto,
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
@@ -52,7 +54,10 @@ import {
 @FreeTier()
 @Controller('members')
 export class MemberController {
-  constructor(private readonly memberService: MemberService) {}
+  constructor(
+    private readonly memberService: MemberService,
+    private readonly phoneReachService: MemberPhoneReachService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List chapter members' })
@@ -105,6 +110,21 @@ export class MemberController {
   @ApiOkResponse({ type: MemberBirthdayDto, isArray: true })
   async birthdays(@CurrentChapterId() chapterId: string) {
     return this.memberService.findBirthdaysByChapter(chapterId);
+  }
+
+  // MUST stay above `@Get(':id')`, like `search` and `roster` (#990).
+  @Get('phone-reach')
+  @ApiOperation({
+    summary: "Whether Frapp's notifications reach each member's phone",
+    description:
+      'Per member: notifications on, off, not reported yet, or web only (no phone signed in), with the platform and last-opened date. Officers who can invite members or manage roles get every member; anyone else gets only themselves.',
+  })
+  @ApiOkResponse({ type: MemberPhoneReachListDto })
+  async phoneReach(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') viewerUserId: string,
+  ) {
+    return this.phoneReachService.findForViewer(chapterId, viewerUserId);
   }
 
   // Two segments, so `:id` never swallows it. Chat knows a person by their

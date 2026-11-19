@@ -27,6 +27,13 @@ export interface PushToken {
    * tokens with the oldest value.
    */
   last_registered_at: string;
+  /**
+   * Whether the phone lets Frapp's notifications show, as its own push switch
+   * reads it, sent with every register. `null` when the phone has not said (a
+   * build from before the field). A token alone doesn't mean a push is seen:
+   * iOS and Android 13+ issue one with notifications off.
+   */
+  notifications_enabled: boolean | null;
 }
 
 export interface NotificationPreference {

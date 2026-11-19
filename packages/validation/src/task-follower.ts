@@ -46,6 +46,8 @@ export const TASK_FOLLOWER_COPY = {
     `Submitted to ${name?.trim() || TASK_FOLLOWER_COPY.deleted}`,
   /** A following tier, role or group since deleted. */
   deleted: "a deleted group",
+  /** Under From once its tier, role or group is deleted: nobody follows. */
+  deletedHint: "That group was deleted, so nobody follows this task now.",
   /** A follower without `tasks:manage` sees the task read-only. */
   readOnly: "You're following this task. An officer confirms it.",
   /** The switch's word for every task the reader can see. */

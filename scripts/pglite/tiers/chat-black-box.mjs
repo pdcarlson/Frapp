@@ -65,10 +65,12 @@ if (readSeeded) {
       -- The anon key's reader (ANON_KEY). A member of anon and NOT of
       -- authenticated, as on hosted, so a policy bound to anon or public
       -- applies to it and one bound to authenticated does not. It gets the same
-      -- table grants: hosted's default grant all on tables to anon is never
-      -- revoked at table level, so RLS is what stands between the anon key and
-      -- these rows there too. It gets no EXECUTE on can_read_chat_message,
-      -- which is revoked from anon on hosted.
+      -- table grants on purpose, although hosted anon holds none since
+      -- 20261119210325 (tiers/client-table-grants.mjs): with the grant in
+      -- place, the read reaches RLS, so these assertions prove the policies
+      -- alone also deny the anon key, the layer under the missing grant. It
+      -- gets no EXECUTE on can_read_chat_message, which is revoked from anon
+      -- on hosted.
       drop role if exists rls_probe_anon;
       create role rls_probe_anon nologin;
       grant anon to rls_probe_anon;
@@ -175,9 +177,10 @@ if (readSeeded) {
       const rowLabel = (id) => ROW_LABEL[id] ?? id;
 
       await db.exec(`
-        insert into members (user_id, chapter_id) values
-          ('${F.userAId}', '${F.chapB}'),
-          ('${F.userCId}', '${F.chapB}');
+        -- With chapter B's member role: the read rule requires members:view.
+        insert into members (user_id, chapter_id, role_ids) values
+          ('${F.userAId}', '${F.chapB}', '{${F.roleMemberChapB}}'),
+          ('${F.userCId}', '${F.chapB}', '{${F.roleMemberChapB}}');
         insert into chat_messages (id, channel_id, sender_id) values
           ('${K.blockerMsg}', '${F.chPublic}', '${F.userCId}');
         insert into chat_message_actions (id, message_id, user_id, action_type) values
@@ -798,11 +801,12 @@ if (readSeeded) {
       // The read probe below is `select`-only, so it is structurally blind to
       // the WRITE half of default-deny: `for insert with check (true)` or
       // `for update using (true)` leaves every read assertion green. That
-      // matters more than it sounds — Supabase's default
-      // `grant all on all tables in schema public to anon, authenticated`
-      // stands (no table-level revoke exists in supabase/migrations/), so on a
-      // permissive UPDATE policy any signed-in client could rewrite
-      // `members.role_ids` and grant itself permissions.
+      // matters even though 20261119210325 revoked the client roles' table
+      // grants (held there by tiers/client-table-grants.mjs): a later
+      // migration that grants a write back, together with a permissive UPDATE
+      // policy, would let any signed-in client rewrite `members.role_ids` and
+      // grant itself permissions. The grant and the policy are two layers, and
+      // this checks the policy one.
       //
       // These tables are supposed to carry NO policy a client role can reach,
       // in any command shape, so assert exactly that from the catalog — it

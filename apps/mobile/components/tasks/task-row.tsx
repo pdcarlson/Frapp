@@ -9,8 +9,16 @@ import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { gutterBleed, PressableRow } from "@/components/list-section";
-import { SkeletonBlock, SkeletonText } from "@/components/state-block";
+import {
+  gutterBleed,
+  PressableRow,
+  SectionHeaderSkeleton,
+} from "@/components/list-section";
+import {
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
+} from "@/components/state-block";
 import {
   itemMenuAccessibility,
   longPressOf,
@@ -448,9 +456,35 @@ export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
   );
 }
 
+/**
+ * The Tasks tab while the board loads: a section caption over task-shaped
+ * rows, so the real board lands in place. The caption is a bar, since which
+ * section comes first (TODAY, THIS WEEK or LATER) depends on the tasks. The
+ * rows sit flush on the page, so the region is `flush` and its bars take
+ * `--surface-1`, one step up (#5606).
+ */
+export function TaskListSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <SkeletonRegion label="Loading chapter tasks" flush style={styles.skeleton}>
+      <SectionHeaderSkeleton width="30%" />
+      <View>
+        {Array.from({ length: 3 }, (_, index) => (
+          <TaskRowSkeleton key={index} index={index} />
+        ))}
+      </View>
+    </SkeletonRegion>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
+    // `ScreenShell`'s gap, between the caption and its rows.
+    skeleton: {
+      gap: tokens.spacing.md,
+    },
     row: {
       flexDirection: "row",
       alignItems: "center",

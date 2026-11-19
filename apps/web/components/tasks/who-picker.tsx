@@ -19,7 +19,7 @@ import {
   useRoleTiers,
   useRoles,
 } from "@repo/hooks";
-import type { TaskWho } from "@repo/validation";
+import { TASK_AUDIENCE_COPY, type TaskWho } from "@repo/validation";
 import {
   Popover,
   PopoverContent,
@@ -124,6 +124,11 @@ export interface WhoPickerProps {
   chip?: boolean;
   guessed?: boolean;
   "aria-describedby"?: string;
+  /**
+   * Offer a tier whole (#5473). Off for a suggested task, whose payload has
+   * no tier field yet, so a tier pick there would send nobody.
+   */
+  tiers?: boolean;
 }
 
 /**
@@ -154,6 +159,7 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
       chip = false,
       guessed = false,
       "aria-describedby": describedBy,
+      tiers = true,
     },
     ref,
   ) {
@@ -235,6 +241,7 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
               if (allow !== "any") setOpen(false);
             }}
             allow={allow}
+            tiers={tiers}
             directory={directory}
             loading={loading}
             failed={failed}
@@ -272,6 +279,7 @@ export function WhoPickerBody({
   value,
   onChange,
   allow,
+  tiers = true,
   directory,
   loading,
   failed,
@@ -281,6 +289,8 @@ export function WhoPickerBody({
   value: TaskWho | null;
   onChange: (next: TaskWho | null) => void;
   allow: WhoPickerAllow;
+  /** Offer a tier whole (#5473); see {@link WhoPickerProps.tiers}. */
+  tiers?: boolean;
   directory: WhoDirectory;
   loading: boolean;
   failed: boolean;
@@ -339,7 +349,24 @@ export function WhoPickerBody({
   const people = directory.people.filter((person) =>
     whoMatches(person.name, query),
   );
-  const allSets = [...allRoles(directory), ...directory.groups];
+  const allSets = [
+    // A tier whole, as its tab row reads it: only one of two roles or more
+    // (one of one role is that role), named "Everyone in Exec board".
+    ...(tiers
+      ? directory.tiers.flatMap((tier) =>
+          tier.set && tier.roles.length > 1
+            ? [
+                {
+                  ...tier.set,
+                  name: TASK_AUDIENCE_COPY.everyoneIn(tier.set.name),
+                },
+              ]
+            : [],
+        )
+      : []),
+    ...allRoles(directory),
+    ...directory.groups,
+  ];
   const sets = many ? allSets.filter((set) => whoMatches(set.name, query)) : [];
 
   const personRow = (person: WhoPerson, from: WhoSet | null = null) => (
@@ -497,7 +524,12 @@ export function WhoPickerBody({
       </ul>
     );
   } else {
-    const section = (key: string, title: string, rows: WhoSet[]) => {
+    const section = (
+      key: string,
+      title: string,
+      rows: WhoSet[],
+      whole: WhoSet | null = null,
+    ) => {
       if (rows.length === 0) return null;
       const isOpen = opened.has(key);
       return (
@@ -518,7 +550,19 @@ export function WhoPickerBody({
             {title}
             <span className="ml-auto font-normal">{rows.length}</span>
           </button>
-          {isOpen ? <ul aria-label={title}>{rows.map(setRow)}</ul> : null}
+          {isOpen ? (
+            <ul aria-label={title}>
+              {/* The tier as a whole first (#5473): everyone holding a role
+                  in it, as Slack's user groups sit above their members. */}
+              {whole
+                ? setRow({
+                    ...whole,
+                    name: TASK_AUDIENCE_COPY.everyoneIn(whole.name),
+                  })
+                : null}
+              {rows.map(setRow)}
+            </ul>
+          ) : null}
         </li>
       );
     };
@@ -526,7 +570,13 @@ export function WhoPickerBody({
       <ul aria-label="Roles and groups">
         {chapterRow ? <li>{chapterRow}</li> : null}
         {directory.tiers.map((tier) =>
-          section(tierKey(tier), tier.name, tier.roles),
+          section(
+            tierKey(tier),
+            tier.name,
+            tier.roles,
+            // A tier of one role is that role: no second row for it.
+            tiers && tier.roles.length > 1 ? tier.set : null,
+          ),
         )}
         {section(GROUPS_KEY, GROUPS_HEADING, directory.groups)}
       </ul>

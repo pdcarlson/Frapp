@@ -8,6 +8,7 @@ import {
   layoutDay,
   MIN_BLOCK_MINUTES,
   spanWithinDay,
+  taskSpan,
   timeGridColumns,
   type TimedSpan,
 } from "./calendar-time-grid";
@@ -200,6 +201,54 @@ describe("timeGridColumns (#4825)", () => {
     expect(fri!.tasks).toEqual([]);
     expect(sat!.tasks).toEqual(["dues"]);
     expect(sat!.day).toEqual(new Date(2026, 10, 14));
+  });
+
+  it("places a task due at a time in the grid beside an event then, and leaves an untimed one in the strip (#5116)", () => {
+    const meeting = { id: "m", start_time: at(13, 17), end_time: at(13, 18) };
+    const tasks = new Map([
+      [
+        "2026-11-13",
+        [
+          { title: "dues", minute: 17 * 60 },
+          { title: "flyers", minute: null },
+        ],
+      ],
+    ]);
+    const [fri] = timeGridColumns(
+      days,
+      [meeting],
+      tasks,
+      (task) => task.minute,
+    );
+    expect(fri!.tasks.map((task) => task.title)).toEqual(["flyers"]);
+    expect(
+      fri!.placedTasks.map((p) => [
+        p.item.title,
+        p.startMinute,
+        p.lane,
+        p.lanes,
+      ]),
+    ).toEqual([["dues", 17 * 60, 1, 2]]);
+    expect(fri!.placed.map((p) => [p.item.id, p.lane, p.lanes])).toEqual([
+      ["m", 0, 2],
+    ]);
+  });
+});
+
+describe("taskSpan (#5116)", () => {
+  it("starts a task's marker at its time", () => {
+    expect(taskSpan(17 * 60)).toEqual({
+      startMinute: 17 * 60,
+      endMinute: 17 * 60,
+    });
+    expect(blockGeometry(taskSpan(17 * 60)).height).toBe(
+      (MIN_BLOCK_MINUTES / 60) * HOUR_HEIGHT,
+    );
+  });
+
+  it("keeps a task due at 11:59 PM inside its day", () => {
+    const { top, height } = blockGeometry(taskSpan(23 * 60 + 59));
+    expect(top + height).toBe(24 * HOUR_HEIGHT);
   });
 });
 

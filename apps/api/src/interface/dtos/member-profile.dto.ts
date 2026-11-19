@@ -201,3 +201,43 @@ export class MemberBirthdayDto {
   })
   birthday_day: number;
 }
+
+export class MemberPhoneReachDto {
+  @ApiProperty({ format: 'uuid' })
+  user_id: string;
+
+  @ApiProperty({
+    enum: ['on', 'off', 'unknown', 'web_only'],
+    description:
+      "From the member's current phones (the one opened last, and any opened within 30 days of it). `on`: a current phone shows Frapp notifications. `off`: none does, and the phone opened last says off. `unknown`: none does, and the phone opened last is on a build that has not said yet. `web_only`: no phone signed in.",
+  })
+  state: 'on' | 'off' | 'unknown' | 'web_only';
+
+  @ApiProperty({
+    enum: ['ios', 'android'],
+    nullable: true,
+    type: String,
+    description: 'Platform of the phone opened last, when its label says.',
+  })
+  platform: 'ios' | 'android' | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description: 'When the member last opened the app on any phone.',
+  })
+  last_opened_at: string | null;
+}
+
+export class MemberPhoneReachListDto {
+  @ApiProperty({
+    enum: ['chapter', 'self'],
+    description:
+      '`chapter` for officers who can invite members or manage roles; anyone else gets `self`, only their own entry.',
+  })
+  scope: 'chapter' | 'self';
+
+  @ApiProperty({ type: MemberPhoneReachDto, isArray: true })
+  members: MemberPhoneReachDto[];
+}

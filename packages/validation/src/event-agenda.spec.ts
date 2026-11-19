@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  agendaWithPending,
   agendaProblem,
   attachmentLinkTitle,
   EVENT_AGENDA_ITEM_MAX,
-  moveEventEntry,
+  agendaCheckOffOpen,
+  reorderEventEntry,
   attachmentLinkProblem,
   attachmentTitle,
   readEventAgenda,
@@ -43,14 +45,23 @@ describe("event agenda helpers (#4934)", () => {
     ]);
   });
 
-  it("toggles one item and moves entries within bounds", () => {
+  it("puts a line still in the add field on the end, when it would be taken", () => {
+    const items = [{ id: "a", text: "A", done: false }];
+    const id = () => "new";
+    expect(agendaWithPending(items, "  Budget  review ", id)).toEqual([
+      ...items,
+      { id: "new", text: "Budget review", done: false },
+    ]);
+    expect(agendaWithPending(items, "   ", id)).toEqual(items);
+    expect(agendaWithPending(items, "x".repeat(201), id)).toEqual(items);
+  });
+
+  it("toggles one item", () => {
     const items = [
       { id: "a", text: "A", done: false },
       { id: "b", text: "B", done: false },
     ];
     expect(toggleAgendaItem(items, "b")[1].done).toBe(true);
-    expect(moveEventEntry(items, 1, -1).map((i) => i.id)).toEqual(["b", "a"]);
-    expect(moveEventEntry(items, 0, -1).map((i) => i.id)).toEqual(["a", "b"]);
   });
 
   it("titles an untitled link by its domain", () => {
@@ -79,5 +90,37 @@ describe("event agenda helpers (#4934)", () => {
     expect(
       attachmentLinkProblem(`https://a.example/${"x".repeat(2100)}`),
     ).toMatch(/too long/);
+  });
+});
+
+describe("agendaCheckOffOpen (Paul 2026-11-19)", () => {
+  const start = "2026-11-19T20:00:00.000Z";
+  it("waits for the meeting to start", () => {
+    expect(agendaCheckOffOpen(start, new Date("2026-11-19T19:59:00Z"))).toBe(
+      false,
+    );
+  });
+  it("opens at the start and stays open after the end", () => {
+    expect(agendaCheckOffOpen(start, new Date(start))).toBe(true);
+    expect(agendaCheckOffOpen(start, new Date("2026-11-20T09:00:00Z"))).toBe(
+      true,
+    );
+  });
+  it("never locks on a start it can't read", () => {
+    expect(agendaCheckOffOpen(null, new Date())).toBe(true);
+    expect(agendaCheckOffOpen("soon", new Date())).toBe(true);
+  });
+});
+
+describe("reorderEventEntry", () => {
+  const ids = (items: { id: string }[]) => items.map((item) => item.id);
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  it("moves an entry to where it is dropped", () => {
+    expect(ids(reorderEventEntry(items, 0, 2))).toEqual(["b", "c", "a", "d"]);
+    expect(ids(reorderEventEntry(items, 3, 0))).toEqual(["d", "a", "b", "c"]);
+  });
+  it("leaves the list as it is for an index off either end", () => {
+    expect(ids(reorderEventEntry(items, 1, 9))).toEqual(["a", "b", "c", "d"]);
+    expect(ids(reorderEventEntry(items, -1, 0))).toEqual(["a", "b", "c", "d"]);
   });
 });

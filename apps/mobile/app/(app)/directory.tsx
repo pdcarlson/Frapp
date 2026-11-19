@@ -8,6 +8,7 @@ import {
   useActiveChapterId,
   useAlumni,
   useMemberDisplayNames,
+  useMemberPhoneReach,
   useMemberSearch,
   useMembers,
   usePermissionList,
@@ -56,6 +57,12 @@ import {
   useRefetchAll,
 } from "@/components/pull-to-refresh";
 import { ActivesFilterSheet } from "@/components/directory/actives-filter-sheet";
+import {
+  phoneReachCountLineFor,
+  phoneReachStaleNote,
+  phoneReachStateLabel,
+  type PhoneReach,
+} from "@repo/validation";
 import { PickRolesSheet } from "@/components/roles/pick-roles-sheet";
 import { usePickableRoles } from "@repo/hooks";
 import {
@@ -252,6 +259,11 @@ export default function DirectoryScreen() {
     [membersQuery.data],
   );
   const yearOptions = useMemo(() => graduationYearOptions(actives), [actives]);
+  // Whether Frapp's notifications reach each member's phone (web's "Phone
+  // app" chip). The server sends the whole chapter's only to officers who
+  // can invite members or manage roles, and the filter is offered only then.
+  const { reach: phoneReach } = useMemberPhoneReach();
+  const showsPhoneReach = phoneReach?.scope === "chapter";
   // A pick that no longer exists reads as unpicked (see `effectiveActivesFilter`).
   const activesFilter = useMemo(
     () =>
@@ -259,14 +271,33 @@ export default function DirectoryScreen() {
         roleIds: new Set(filterRoles.map((role) => role.id)),
         years: yearOptions,
         classIds: new Set(classNames.keys()),
+        phoneReach: showsPhoneReach,
       }),
-    [activesFilterPicks, filterRoles, yearOptions, classNames],
+    [activesFilterPicks, filterRoles, yearOptions, classNames, showsPhoneReach],
   );
   const activesFilterCount = countActivesFilters(activesFilter);
   const filteredActives = useMemo(
-    () => filterActives(actives, activesFilter),
-    [actives, activesFilter],
+    () => filterActives(actives, activesFilter, phoneReach?.byUserId),
+    [actives, activesFilter, phoneReach],
   );
+  // The member's reach on their row, only while the Phone app filter is set
+  // on the Actives tab, so the everyday list stays as it was.
+  const rowReach = (userId: string): PhoneReach | undefined =>
+    !isSearching && tab === "actives" && activesFilter.phoneReach !== null
+      ? phoneReach?.byUserId.get(userId)
+      : undefined;
+  const phoneReachLine =
+    !isSearching &&
+    tab === "actives" &&
+    activesFilter.phoneReach !== null &&
+    phoneReach
+      ? phoneReachCountLineFor(
+          actives.map((row) =>
+            typeof row.user_id === "string" ? row.user_id : null,
+          ),
+          phoneReach.byUserId,
+        )
+      : null;
   const listData =
     !isSearching && tab === "actives" ? filteredActives : activeQuery.data;
   // Asked of the actives, the list the chip sorts: a chapter whose only
@@ -380,7 +411,11 @@ export default function DirectoryScreen() {
                       ? `Filters, ${activesFilterCount} set`
                       : "Filters"
                   }
-                  accessibilityHint="Narrows actives by status, graduation year, class or role."
+                  accessibilityHint={
+                    showsPhoneReach
+                      ? "Narrows actives by status, phone app, graduation year, class or role."
+                      : "Narrows actives by status, graduation year, class or role."
+                  }
                   label={
                     activesFilterCount > 0
                       ? `Filters · ${activesFilterCount}`
@@ -445,6 +480,11 @@ export default function DirectoryScreen() {
           />
         </View>
       )}
+      {phoneReachLine ? (
+        <Text accessibilityLiveRegion="polite" style={styles.reachLine}>
+          {phoneReachLine}
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -555,6 +595,7 @@ export default function DirectoryScreen() {
             renderItem={({ item }) => (
               <MemberRow
                 row={item}
+                reach={rowReach(item.userId)}
                 avatarTint={avatarTintFor(item.userId)}
                 onPress={() =>
                   router.push({
@@ -597,6 +638,7 @@ export default function DirectoryScreen() {
                 : "loading"
           }
           onRetryRoles={() => void rolesQuery.refetch()}
+          showPhoneReach={showsPhoneReach}
         />
       </SafeAreaView>
     </View>
@@ -610,12 +652,15 @@ export default function DirectoryScreen() {
 export function memberPressLabel(
   row: DirectoryRow,
   presence: MemberPresence = NO_PRESENCE,
+  reach?: PhoneReach,
 ): string {
   return [
     `View ${row.displayName}'s profile`,
     presence.status ? presenceLabel(presence.status) : null,
     presence.line,
     row.meta,
+    reach ? phoneReachStateLabel(reach.state) : null,
+    reach ? phoneReachStaleNote(reach) : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -629,8 +674,14 @@ export function MemberRow({
   row,
   avatarTint,
   onPress,
+  reach,
 }: {
   row: DirectoryRow;
+  /**
+   * The Phone app filter's answer for this member, drawn at the row's end
+   * only while that filter is set (web draws it the same way).
+   */
+  reach?: PhoneReach;
   /** The member's initials paint (#3860); omit for the neutral circle. */
   avatarTint?: MemberAvatarTint | null;
   onPress?: () => void;
@@ -650,7 +701,9 @@ export function MemberRow({
       // label has to carry it explicitly rather than relying on the nested
       // `Text` nodes.
       accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? memberPressLabel(row, presence) : undefined}
+      accessibilityLabel={
+        onPress ? memberPressLabel(row, presence, reach) : undefined
+      }
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
       style={({ pressed }) => [
@@ -682,7 +735,22 @@ export function MemberRow({
           </Text>
         ) : null}
         {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
+        {reach && phoneReachStaleNote(reach) ? (
+          <Text style={styles.rowMeta}>{phoneReachStaleNote(reach)}</Text>
+        ) : null}
       </View>
+      {reach ? (
+        <Text
+          style={[
+            styles.rowReach,
+            reach.state === "off"
+              ? { color: tokens.color.semantic.warning }
+              : null,
+          ]}
+        >
+          {phoneReachStateLabel(reach.state)}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -812,6 +880,15 @@ function createStyles(tokens: SignetTokens) {
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    reachLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    rowReach: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      flexShrink: 0,
     },
     // The status line reads before the meta line: mutedForeground, one
     // step up the ladder, as the member profile and web draw it.

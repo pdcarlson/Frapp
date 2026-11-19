@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { Path } from "react-native-svg";
 import {
   calendarBirthdayLabel,
@@ -199,12 +205,14 @@ function TaskRow({
   const styles = createStyles(tokens);
   const [expanded, setExpanded] = useState(false);
   const done = item.state === "waiting" || item.state === "confirmed";
-  const meta =
+  const status =
     item.kind === "mine"
       ? item.label
       : item.assignees.length === 1
         ? `${nameOf(item.assignees[0]!.userId)} · ${item.progress}`
         : `Assigned by you · ${item.progress}`;
+  // A task due at a time leads with it, as an event's row does (#5116).
+  const meta = item.timeLabel ? `${item.timeLabel} · ${status}` : status;
   const canExpand = item.kind === "assigned" && item.assignees.length > 1;
   const opens = openedTaskId(item);
 
@@ -342,14 +350,43 @@ function BirthdayChip({ item }: { item: CalendarBirthday }) {
   );
 }
 
+/**
+ * A task due at a time on the Day screen's hour grid (#5116): a slim marker
+ * at that time, as Google Calendar draws a timed task: its mark, its time,
+ * then as much of its title as fits. The grid places it (`timeGridColumns`) through `placement`.
+ */
+export function CalendarTaskBlock({
+  item,
+  onOpenTask,
+  menuFor,
+  placement,
+}: {
+  item: CalendarTask;
+  onOpenTask: (taskId: string) => void;
+  menuFor?: CalendarTaskMenuFor;
+  placement: ViewStyle;
+}) {
+  return (
+    <TaskChip
+      item={item}
+      onOpenTask={onOpenTask}
+      menu={menuFor?.(item) ?? null}
+      placement={placement}
+    />
+  );
+}
+
 function TaskChip({
   item,
   onOpenTask,
   menu,
+  placement,
 }: {
   item: CalendarTask;
   onOpenTask: (taskId: string) => void;
   menu: ItemMenuHandle | null;
+  /** Where the hour grid draws a timed task; absent in the All day strip. */
+  placement?: ViewStyle;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -366,12 +403,17 @@ function TaskChip({
       }}
       onLongPress={longPressOf(menu)}
       {...itemMenuAccessibility(menu)}
+      testID={placement ? `time-grid-task-${item.key}` : undefined}
       style={({ pressed }) => [
         styles.chip,
+        placement ? [styles.block, placement] : null,
         pressed ? { backgroundColor: tokens.color.surface.card } : null,
       ]}
     >
       <TaskMark state={item.state} size={12} />
+      {placement && item.timeLabel ? (
+        <Text style={styles.chipTime}>{item.timeLabel}</Text>
+      ) : null}
       <Text
         numberOfLines={1}
         style={[
@@ -430,6 +472,17 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.foreground,
+    },
+    chipTime: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    block: {
+      position: "absolute",
+      paddingVertical: 0,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      overflow: "hidden",
     },
   });
 }

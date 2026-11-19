@@ -150,11 +150,11 @@ describe("WhoPicker", () => {
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("button", { name: /Exec board/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /^Exec board/ })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    expect(screen.getByRole("button", { name: /Chairs/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /^Chairs/ })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
@@ -164,6 +164,57 @@ describe("WhoPicker", () => {
     // The chapter row heads this tab too.
     expect(screen.getByRole("checkbox", { name: /Everyone in the chapter/ })).toBeInTheDocument();
     expect(screen.getByText("Recruitment Committee · 2 members")).toBeInTheDocument();
+  });
+
+  it("picks a whole tier from its own row, first under its heading (#5473)", async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    await openPicker();
+    await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
+
+    const list = screen.getByRole("list", { name: "Exec board" });
+    const first = within(list).getAllByRole("checkbox")[0]!;
+    expect(first).toHaveAccessibleName(/^Everyone in Exec board/);
+    await userEvent.click(first);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({ kind: "tier" }),
+      }),
+    );
+  });
+
+  it("adds no whole-tier row for a tier of one role, in the tree or in search", async () => {
+    render(<Harness />);
+    await openPicker();
+    await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
+    // Chairs holds one role, Recruitment Committee: picking it is the role.
+    const chairs = screen.getByRole("list", { name: "Chairs" });
+    expect(
+      within(chairs).queryByRole("checkbox", { name: /Everyone in Chairs/ }),
+    ).toBeNull();
+
+    await userEvent.type(screen.getByRole("textbox"), "ch");
+    expect(
+      screen.queryByRole("checkbox", { name: /Everyone in Chairs/ }),
+    ).toBeNull();
+  });
+
+  it("finds a tier whole in search, named as its row is", async () => {
+    render(<Harness />);
+    await openPicker();
+    await userEvent.type(screen.getByRole("textbox"), "exec");
+    expect(
+      screen.getByRole("checkbox", { name: /^Everyone in Exec board/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no tier whole where the caller can't send one (a suggested task)", async () => {
+    render(<WhoPicker value={null} onChange={() => undefined} tiers={false} />);
+    await openPicker();
+    await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
+    expect(
+      screen.queryByRole("checkbox", { name: /Everyone in Exec board/ }),
+    ).toBeNull();
   });
 
   it("shows an empty role greyed, as Nobody yet, and won't pick it", async () => {

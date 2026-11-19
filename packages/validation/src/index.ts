@@ -148,6 +148,8 @@ export * from "./minutes-flow";
 // How both apps lay minutes out to read, and the words of its ⋯ menu (#5562).
 export * from "./minutes-read";
 export * from "./minutes-request-copy";
+// Which meetings on the calendar need minutes, and the next one coming.
+export * from "./minutes-to-write";
 export * from "./module-enablement";
 export * from "./module-refusal";
 // The native app's identifiers, store listings and invite hand-off (#4002),
@@ -187,6 +189,7 @@ export * from "./permission-registry";
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
 export * from "./permissions";
 export * from "./phone";
+export * from "./phone-reach";
 export * from "./profile-copy";
 export * from "./profile-correction";
 export * from "./push-action-categories";

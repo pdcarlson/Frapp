@@ -2140,6 +2140,44 @@
         ]
       }
     },
+    "/v1/members/phone-reach": {
+      "get": {
+        "description": "Per member: notifications on, off, not reported yet, or web only (no phone signed in), with the platform and last-opened date. Officers who can invite members or manage roles get every member; anyone else gets only themselves.",
+        "operationId": "MemberController_phoneReach_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberPhoneReachListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether Frapp's notifications reach each member's phone",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/by-user/{userId}": {
       "get": {
         "operationId": "MemberController_getByUser_v1",
@@ -23692,6 +23730,69 @@
           "birthday_day"
         ]
       },
+      "MemberPhoneReachDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "unknown",
+              "web_only"
+            ],
+            "description": "From the member's current phones (the one opened last, and any opened within 30 days of it). `on`: a current phone shows Frapp notifications. `off`: none does, and the phone opened last says off. `unknown`: none does, and the phone opened last is on a build that has not said yet. `web_only`: no phone signed in."
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "android"
+            ],
+            "nullable": true,
+            "description": "Platform of the phone opened last, when its label says."
+          },
+          "last_opened_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the member last opened the app on any phone."
+          }
+        },
+        "required": [
+          "user_id",
+          "state",
+          "platform",
+          "last_opened_at"
+        ]
+      },
+      "MemberPhoneReachListDto": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "self"
+            ],
+            "description": "`chapter` for officers who can invite members or manage roles; anyone else gets `self`, only their own entry."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemberPhoneReachDto"
+            }
+          }
+        },
+        "required": [
+          "scope",
+          "members"
+        ]
+      },
       "UpdateMemberRolesDto": {
         "type": "object",
         "properties": {
@@ -24195,6 +24296,10 @@
           "device_name": {
             "type": "string",
             "description": "The device's platform, OS version and model, such as `ios 26.1 · iPhone 16`. Never the name the member gave the device. A re-register with a different value replaces the stored one."
+          },
+          "notifications_enabled": {
+            "type": "boolean",
+            "description": "Whether the phone lets Frapp's notifications show right now (the OS permission, and on Android the app's notification channel). Sent on every register so officers can see who a push reaches. Omitted by older builds, which leaves the stored value as it was."
           }
         },
         "required": [

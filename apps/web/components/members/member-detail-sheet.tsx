@@ -57,6 +57,12 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage, initials } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
+import { useMemberPhoneReach } from "@repo/hooks";
+import {
+  PHONE_REACH_LABEL,
+  phoneReachLastOpened,
+  phoneReachSummary,
+} from "@repo/validation";
 import {
   memberMenuButtonLabel,
   REMOVE_CONFIRM_BODY,
@@ -286,6 +292,12 @@ export function MemberDetailSheet({
   backLabel,
 }: MemberDetailSheetProps) {
   const memberQuery = useMemberByUserId(userId ?? "");
+  // Whether Frapp's notifications reach this member's phone. The server sends
+  // every member's only to officers who can invite or manage roles, and
+  // anyone else only their own, so a missing entry draws no row.
+  const { reach: phoneReachMap } = useMemberPhoneReach();
+  const phoneReach = userId ? phoneReachMap?.byUserId.get(userId) : undefined;
+  const phoneLastOpened = phoneReach ? phoneReachLastOpened(phoneReach) : null;
   const rolesQuery = useRoles();
   // The same role-color resolution chat's name uses (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
@@ -693,6 +705,18 @@ export function MemberDetailSheet({
                 </DetailRow>
                 {typeof points === "number" ? (
                   <DetailRow label="Points">{points}</DetailRow>
+                ) : null}
+                {phoneReach ? (
+                  <DetailRow label={PHONE_REACH_LABEL}>
+                    <span className="flex flex-col">
+                      <span>{phoneReachSummary(phoneReach)}</span>
+                      {phoneLastOpened ? (
+                        <span className="text-caption text-muted">
+                          {phoneLastOpened}
+                        </span>
+                      ) : null}
+                    </span>
+                  </DetailRow>
                 ) : null}
                 {onboardingPending ? (
                   <DetailRow label="Onboarding">

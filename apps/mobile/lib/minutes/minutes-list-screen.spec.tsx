@@ -17,6 +17,9 @@ const state = vi.hoisted(() => ({
   permissions: ["meetings:record"] as string[],
   createAction: null as null | { label: string; onPress: () => void },
   newMinutes: vi.fn(),
+  events: [] as Record<string, unknown>[],
+  taking: [] as Record<string, unknown>[],
+  start: vi.fn(),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -24,12 +27,33 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: state.rows,
     isPending: false,
     isError: false,
+    isSuccess: true,
     isFetching: false,
     refetch: vi.fn(),
   }),
   useViewerUserId: () => "me",
   useMemberDisplayNames: () => ({ nameFor: () => "Sam" }),
   usePermissionList: () => state.permissions,
+  useEvents: (options?: { enabled?: boolean }) =>
+    options?.enabled === false
+      ? { data: undefined, isSuccess: false }
+      : { data: state.events, isSuccess: true },
+  useMeetingNoteTaking: () => ({
+    data: state.taking,
+    isSuccess: true,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/lib/minutes/start-minutes", () => ({
+  MinutesStartError: class MinutesStartError extends Error {
+    constructor(
+      message: string,
+      readonly alreadyStarted = false,
+    ) {
+      super(message);
+    }
+  },
+  useStartMinutesFor: () => ({ start: state.start, isPending: false }),
 }));
 vi.mock("@/components/screen-shell", () => ({
   ScreenShell: ({
@@ -106,6 +130,117 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.permissions = ["meetings:record"];
   state.createAction = null;
+  state.events = [];
+  state.taking = [];
+});
+
+describe("Minutes, tied to the calendar", () => {
+  const hoursFromNow = (hours: number) =>
+    new Date(Date.now() + hours * 3_600_000).toISOString();
+  beforeEach(() => {
+    state.rows = [row({ event_id: "e-posted" })];
+    state.events = [
+      {
+        id: "e-needs",
+        name: "Exec Meeting",
+        start_time: hoursFromNow(-26),
+        end_time: hoursFromNow(-25),
+      },
+      {
+        id: "e-posted",
+        name: "Chapter Meeting",
+        start_time: hoursFromNow(-48),
+      },
+      { id: "e-social", name: "Date party", start_time: hoursFromNow(-30) },
+      { id: "e-next", name: "Officers Meeting", start_time: hoursFromNow(30) },
+    ];
+  });
+
+  it("lists a meeting that ended with no minutes, and starts them in one tap", async () => {
+    state.start.mockResolvedValue({
+      id: "m-new",
+      eventName: "Exec Meeting",
+      existing: false,
+    });
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(text).toContain("Exec Meeting");
+    expect(text).not.toContain("Date party");
+    // Posted minutes aren't asked again: their row is the only Chapter one.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          typeof node.props.onPress === "function" &&
+          node.props.label === "Chapter Meeting",
+      ),
+    ).toHaveLength(0);
+    const needs = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.props.label === "Exec Meeting",
+    )[0]!;
+    await act(async () => needs.props.onPress());
+    expect(state.start).toHaveBeenCalledWith({
+      kind: "event",
+      event: { id: "e-needs", name: "Exec Meeting" },
+    });
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/minutes-details",
+      params: { id: "m-new" },
+    });
+  });
+
+  it("ends on the next meeting, opening its event", () => {
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_LIST_COPY.nextUp);
+    const next = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.props.label === "Officers Meeting",
+    )[0]!;
+    act(() => next.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "e-next" },
+    });
+  });
+
+  it("leaves out a meeting the viewer takes notes on", () => {
+    state.taking = [{ meeting_id: "m-other", event_id: "e-needs" }];
+    expect(screenText(render())).not.toContain(MEETING_LIST_COPY.needsMinutes);
+  });
+
+  it("drops a row someone else already started, saying so", async () => {
+    const { MinutesStartError } = await import("@/lib/minutes/start-minutes");
+    state.start.mockRejectedValue(
+      new MinutesStartError("Already started", true),
+    );
+    const tree = render();
+    const needs = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.props.label === "Exec Meeting",
+    )[0]!;
+    await act(async () => needs.props.onPress());
+    const text = screenText(tree);
+    expect(text).toContain("Already started");
+    expect(text).not.toContain(MEETING_LIST_COPY.needsMinutes);
+  });
+
+  it("still says where posted minutes go when there are none yet", () => {
+    state.rows = [];
+    const text = screenText(render());
+    expect(text).toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(text).toContain(MEETING_LIST_COPY.none);
+  });
+
+  it("asks nothing of a member who doesn't record minutes", () => {
+    state.permissions = [];
+    const text = screenText(render());
+    expect(text).not.toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(text).not.toContain(MEETING_LIST_COPY.nextUp);
+  });
 });
 
 describe("Minutes list", () => {
@@ -116,7 +251,7 @@ describe("Minutes list", () => {
     ];
     const tree = render();
     const text = screenText(tree);
-    expect(text).toContain(MEETING_LIST_COPY.yourDrafts);
+    expect(text).toContain(MEETING_LIST_COPY.drafts);
     expect(text).toContain("This week");
     expect(text).toContain(MEETING_LIST_COPY.recorded);
     expect(text).toContain(MEETING_LIST_COPY.decisions(2));

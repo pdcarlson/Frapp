@@ -55,6 +55,15 @@ const tasks = selectCalendarTasks(
       due_date: "2026-11-11",
       status: "TODO",
     },
+    {
+      id: "task-2",
+      title: "Book the bus",
+      assignee_id: "me",
+      created_by: "officer",
+      due_date: "2026-11-12",
+      due_at: at(12, 18),
+      status: "TODO",
+    },
   ],
   "me",
 );
@@ -134,6 +143,25 @@ describe("EventsTimeGrid", () => {
     }
     expect(screen.getByText("Dues form")).toBeInTheDocument();
     expect(screen.getByTitle("Dana Lowe's birthday")).toBeInTheDocument();
+  });
+
+  it("puts a task due at a time in the hour grid at that time, beside the event then (#5116)", () => {
+    renderGrid();
+    const thursday = screen.getByTestId("time-grid-day-2026-11-12");
+    const marker = within(thursday).getByRole("button", {
+      name: "Book the bus, due 6 PM, your task, to do",
+    });
+    expect(marker).toHaveTextContent("6 PM");
+    // At 6 PM, half an hour tall, beside the meeting; the 7 PM dinner
+    // takes its lane once it has passed.
+    expect(marker.style.top).toBe(`${18 * 48}px`);
+    expect(marker.style.height).toBe(`${24 - 1}px`);
+    expect(marker.style.left).toBe("calc(50% + 2px)");
+    expect(marker.style.width).toBe("calc(50% - 4px)");
+    const meeting = within(thursday).getByRole("button", {
+      name: /View Chapter Meeting/,
+    });
+    expect(meeting.style.width).toBe("calc(50% - 4px)");
   });
 
   it("shows a multi-day event on every day it covers", () => {

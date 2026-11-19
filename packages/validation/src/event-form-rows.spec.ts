@@ -4,6 +4,7 @@ import {
   EVENT_FORM_ROW_LABELS,
   describeCheckIn,
   describeEventTypeSets,
+  eventLengthLabel,
   type EventFormRow,
 } from "./event-form-rows";
 
@@ -27,6 +28,7 @@ describe("the event form's rows (#5561)", () => {
       "Location",
       "Who's coming",
       "Points",
+      "Agenda",
       "Description",
       "Check-in",
     ]);
@@ -56,5 +58,15 @@ describe("describeCheckIn", () => {
 
   it("asks for a fix when the field holds what it refuses", () => {
     expect(describeCheckIn(null)).toBe("Opening time needs a fix");
+  });
+});
+
+describe("eventLengthLabel", () => {
+  it("says a length the way the end-time list does", () => {
+    expect(eventLengthLabel(30)).toBe("30 min");
+    expect(eventLengthLabel(60)).toBe("1 hr");
+    expect(eventLengthLabel(90)).toBe("1.5 hrs");
+    expect(eventLengthLabel(120)).toBe("2 hrs");
+    expect(eventLengthLabel(105)).toBe("1.75 hrs");
   });
 });
