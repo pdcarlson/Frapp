@@ -28,7 +28,7 @@ import {
   type MeetingType,
 } from "@repo/validation";
 import { Can } from "@/components/shared/can";
-import { ToolHeaderActions } from "@/components/layout/tool-header-actions";
+import { PageActions } from "@/components/layout/page-actions";
 import { ErrorState } from "@/components/shared/async-states";
 import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -163,11 +163,9 @@ function ChapterMeetingsPage() {
   return (
     <div className="space-y-6">
       <Can permission="meetings:record">
-        <ToolHeaderActions>
-          <Button size="sm" onClick={() => setStarting(true)}>
-            {MEETING_LIST_COPY.newMinutes}
-          </Button>
-        </ToolHeaderActions>
+        <PageActions>
+          <Button onClick={() => setStarting(true)}>New minutes</Button>
+        </PageActions>
       </Can>
 
       {meetingsQuery.isPending ? (

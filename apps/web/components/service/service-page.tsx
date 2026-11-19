@@ -28,7 +28,7 @@ import {
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { ToolHeaderActions } from "@/components/layout/tool-header-actions";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -299,7 +299,7 @@ export function ServiceHoursPage() {
     // A container (#4033): beside chat (#3779) the page is narrow while the
     // window is wide, so the hour rows count the page's own width.
     <div className="@container space-y-6">
-      <ToolHeaderActions>
+      <PageActions>
         <Can permission="service:log">
           <LogHoursDialog
             open={logDialog.open}
@@ -307,13 +307,13 @@ export function ServiceHoursPage() {
             onCloseAutoFocus={logDialog.contentProps.onCloseAutoFocus}
             gate={gate}
             trigger={
-              <Button size="sm" className="gap-2" {...gate.controlProps()}>
+              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
                 <Plus className="h-4 w-4" /> Log service
               </Button>
             }
           />
         </Can>
-      </ToolHeaderActions>
+      </PageActions>
       {/*
         Disable, don't hide (§5 rule 4): the review queue, history, and proof
         links stay readable for a lapsed chapter — only logging and reviewing

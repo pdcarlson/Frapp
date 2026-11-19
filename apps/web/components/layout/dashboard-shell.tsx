@@ -35,7 +35,6 @@ import {
   type SplitSide,
 } from "@/components/layout/split-divider";
 import { ToolPageHeader } from "@/components/layout/tool-page-header";
-import { ToolHeaderSlot } from "@/components/layout/tool-header-actions";
 import { ChapterHome } from "@/components/layout/chapter-home";
 import { ChatPanelBoundary } from "@/components/layout/chat-panel-boundary";
 import { ChatPage } from "@/components/chat/chat-page";
@@ -177,10 +176,6 @@ export function DashboardShell({
   useChatRealtimeBinding();
 
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
-  // The tool page header's action slot, for `ToolHeaderActions`.
-  const [toolHeaderSlot, setToolHeaderSlot] = useState<HTMLElement | null>(
-    null,
-  );
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -635,7 +630,6 @@ export function DashboardShell({
                 pageTitle={pageTitle}
                 titleIsHeading={split === true}
                 onClose={closeTool}
-                actionsRef={setToolHeaderSlot}
               />
               <div
                 data-tool-page=""
@@ -650,9 +644,7 @@ export function DashboardShell({
                   askBar && "max-lg:pb-24 max-lg:[--ask-bar-room:4.5rem]",
                 )}
               >
-                <ToolHeaderSlot.Provider value={toolHeaderSlot}>
-                  {children}
-                </ToolHeaderSlot.Provider>
+                {children}
               </div>
               {askBar ? <FloatingAskBar /> : null}
             </div>
