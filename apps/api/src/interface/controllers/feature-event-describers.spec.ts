@@ -515,6 +515,11 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'InviteController.createChapterLink': {
+    'invite-created': [
+      ['a chapter link', {}, { invite_method: 'chapter-link', count: 1 }],
+    ],
+  },
   'InviteController.createWithEmails': {
     'invite-created': [
       [
