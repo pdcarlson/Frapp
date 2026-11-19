@@ -175,9 +175,10 @@ if (readSeeded) {
       const rowLabel = (id) => ROW_LABEL[id] ?? id;
 
       await db.exec(`
-        insert into members (user_id, chapter_id) values
-          ('${F.userAId}', '${F.chapB}'),
-          ('${F.userCId}', '${F.chapB}');
+        -- With chapter B's member role: the read rule requires members:view.
+        insert into members (user_id, chapter_id, role_ids) values
+          ('${F.userAId}', '${F.chapB}', '{${F.roleMemberChapB}}'),
+          ('${F.userCId}', '${F.chapB}', '{${F.roleMemberChapB}}');
         insert into chat_messages (id, channel_id, sender_id) values
           ('${K.blockerMsg}', '${F.chPublic}', '${F.userCId}');
         insert into chat_message_actions (id, message_id, user_id, action_type) values
