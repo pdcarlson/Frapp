@@ -1090,7 +1090,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20261119162302` (#5471). Undoes a minutes reminder the API could not
+       * `20261119181810` (#5471). Undoes a minutes reminder the API could not
        * send: takes back the caller's ask, un-counts the asks it spoke for and
        * clears the meeting's cooldown.
        */
@@ -1197,7 +1197,7 @@ export interface Database {
         Returns: RoleTier[];
       };
       /**
-       * `20261119162302` (#5471). Records a member's ask for unposted minutes
+       * `20261119181810` (#5471). Records a member's ask for unposted minutes
        * and decides, under a lock on the meeting, whether it pings: one ask
        * per member per meeting, one ping per meeting per cooldown.
        */

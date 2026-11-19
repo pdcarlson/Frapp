@@ -66,7 +66,7 @@ create index if not exists idx_meeting_minutes_requests_chapter
   on public.meeting_minutes_requests (chapter_id);
 
 comment on table public.meeting_minutes_requests is
-  'Members who asked for a meeting''s unposted minutes. Gone once they are posted. See 20261119162302_meeting_minutes_requests.sql.';
+  'Members who asked for a meeting''s unposted minutes. Gone once they are posted. See 20261119181810_meeting_minutes_requests.sql.';
 
 -- 2. ------------------------------------------------------------------------
 
@@ -82,7 +82,7 @@ create index if not exists idx_meeting_minutes_request_pings_chapter
   on public.meeting_minutes_request_pings (chapter_id);
 
 comment on table public.meeting_minutes_request_pings is
-  'When each meeting''s unposted minutes were last asked for with a reminder; at most one a day. See 20261119162302_meeting_minutes_requests.sql.';
+  'When each meeting''s unposted minutes were last asked for with a reminder; at most one a day. See 20261119181810_meeting_minutes_requests.sql.';
 
 -- 3. ------------------------------------------------------------------------
 
