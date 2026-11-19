@@ -65,7 +65,7 @@ export function ReportAiButton({
   className?: string;
   /**
    * The flag alone, for a row that already carries its own icon actions
-   * (a suggested task's Dismiss and Change), so the row stays one line.
+   * (a last-year event's, or an Ask answer's), so the row stays one line.
    */
   iconOnly?: boolean;
   /** What is reported, for the icon's label: "Report Book the venue". */

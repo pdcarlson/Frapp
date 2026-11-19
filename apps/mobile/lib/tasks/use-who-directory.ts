@@ -8,6 +8,10 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import {
+  followerChoices,
+  type FollowerChoice,
+} from "@repo/hooks/task-follower-choices";
+import {
   buildWhoDirectory,
   type WhoDirectory,
 } from "@repo/hooks/task-who-picker";
@@ -21,6 +25,11 @@ export interface WhoDirectoryRead {
   people: WhoReadState;
   /** The roles and groups tab. */
   sets: WhoReadState;
+  /**
+   * The tiers, roles and groups the viewer is in, which a task they make
+   * or edit can be from (#5473, `followerChoices`); empty without `groups`.
+   */
+  followers: FollowerChoice[];
 }
 
 /**
@@ -66,6 +75,17 @@ export function useWhoDirectory(
     ],
   );
 
+  const followers = useMemo(
+    () =>
+      withSets
+        ? followerChoices(directory, {
+            roles: rolesQuery.data,
+            groups: groupsQuery.data ?? null,
+          })
+        : [],
+    [withSets, directory, rolesQuery.data, groupsQuery.data],
+  );
+
   const people: WhoReadState =
     membersQuery.data || rosterQuery.data
       ? "ready"
@@ -79,5 +99,5 @@ export function useWhoDirectory(
         ? "error"
         : "loading";
 
-  return { directory, people, sets };
+  return { directory, people, sets, followers };
 }

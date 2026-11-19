@@ -24,6 +24,7 @@ import { EventModule } from './modules/event/event.module';
 import { MeetingModule } from './modules/meeting/meeting.module';
 import { MeetingDraftModule } from './modules/meeting/meeting-draft.module';
 import { MeetingRecordingModule } from './modules/meeting/meeting-recording.module';
+import { MeetingMinutesRequestModule } from './modules/meeting/meeting-minutes-request.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -160,6 +161,7 @@ import { validateEnv } from './config/env.validation';
     // the exported contract.
     MeetingDraftModule,
     MeetingRecordingModule,
+    MeetingMinutesRequestModule,
     BootstrapModule,
   ],
   providers: [

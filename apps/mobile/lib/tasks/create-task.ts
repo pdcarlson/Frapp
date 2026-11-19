@@ -273,6 +273,13 @@ export interface ValidatedNewTask {
    * person's task only; the API refuses it on a group or up for grabs.
    */
   recurrence_rule?: string;
+  /**
+   * The tier, role or group it is from (#5473): added by the sheet from its
+   * From field, never by {@link validateNewTask}. Not on a task up for grabs
+   * (once claimed it is the claimer's own) nor a repeating one, which the
+   * API refuses.
+   */
+  followed_by?: string;
 }
 
 /**
@@ -334,11 +341,13 @@ export interface TaskPrefill {
   /** Its own day while that is still ahead, else New task's default. */
   due: DueChoice;
   dueTime: string | null;
+  /** The tier, role or group it is from (#5473), or `null`. */
+  followedBy: string | null;
 }
 
 /**
  * Who a Duplicate goes to: the same person, or the group a copy was one of,
- * named as its read names it (the chapter, a role, a chapter group); people
+ * named as its read names it (the chapter, a tier, a role, a chapter group); people
  * picked one by one are its copies' assignees. `null`, for the officer to
  * pick, when a group's members can't be read off `copies`.
  */
@@ -354,7 +363,9 @@ export function duplicateWho(
     return { kind: "each", target: { kind: "chapter" } };
   }
   if (
-    (group.audience === "role" || group.audience === "group") &&
+    (group.audience === "role" ||
+      group.audience === "group" ||
+      group.audience === "tier") &&
     group.targetId
   ) {
     return {
@@ -397,6 +408,7 @@ export function taskDuplicateOf(
     subtasks: row.subtasks.map((subtask) => subtask.title),
     due: ahead ? { kind: "date", date: dueDate } : DEFAULT_DUE_CHOICE,
     dueTime: time,
+    followedBy: row.followedBy,
   };
 }
 
@@ -425,14 +437,15 @@ export type CreateTaskBody = Parameters<
 /**
  * The create a validated form makes (`taskWhoRequest`): `POST /v1/tasks` for
  * one person or a copy each, `POST /v1/open-tasks` for one task up for grabs,
- * which carries no photos.
+ * which carries no photos and no From.
  */
 export type TaskCreateRequest =
   | { route: "task"; body: CreateTaskBody }
   | { route: "open"; body: CreateOpenTaskBody };
 
 export function createRequestOf(task: ValidatedNewTask): TaskCreateRequest {
-  const { who, reference_photo_paths, recurrence_rule, ...fields } = task;
+  const { who, reference_photo_paths, recurrence_rule, followed_by, ...fields } =
+    task;
   const request = taskWhoRequest(who);
   if (!request) {
     // `validateNewTask` never lets nobody through.
@@ -448,6 +461,7 @@ export function createRequestOf(task: ValidatedNewTask): TaskCreateRequest {
       ...request.fields,
       ...(reference_photo_paths ? { reference_photo_paths } : {}),
       ...(recurrence_rule ? { recurrence_rule } : {}),
+      ...(followed_by && !recurrence_rule ? { followed_by } : {}),
     },
   };
 }
