@@ -4824,7 +4824,9 @@ describe("ChatShell narrow viewports (#2142)", () => {
     });
 
     async function pickBelowLg() {
-      window.history.replaceState(null, "");
+      // A fresh entry under the pick's: jsdom's history outlives each test,
+      // and an entry an earlier test left marked would chain one more Back.
+      window.history.pushState(null, "");
       render(<ChatShell />);
       fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
       await waitFor(() => {
@@ -5026,6 +5028,102 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     } finally {
       push.mockRestore();
     }
+  });
+
+  describe("the one-pane side panel beside a tool (#5575)", () => {
+    const panes = () => {
+      const channels = screen.getByRole("region", { name: "Channels" });
+      return { channels, thread: channels.nextElementSibling as HTMLElement };
+    };
+
+    it("keeps its pane through Back and Forward between tool pages", () => {
+      stubWidth(1440);
+      render(<ChatShell toolBeside />);
+      expect(panes().thread).not.toHaveClass("hidden");
+      // Next's own entry for the previous tool page: no thread-pane marker.
+      act(() => {
+        window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+      });
+      expect(panes().thread).not.toHaveClass("hidden");
+      expect(panes().channels).toHaveClass("hidden");
+    });
+
+    it("shows the list from the back arrow without going back a page", async () => {
+      // A pick below `lg` pushed its entry (#3824), then the window widened
+      // and a tool opened: Back from here would leave the tool page.
+      stubWidth(800);
+      window.history.replaceState(null, "");
+      const back = vi.spyOn(window.history, "back");
+      try {
+        const { rerender } = render(<ChatShell />);
+        fireEvent.click(
+          screen.getByRole("button", { name: "Back to channels" }),
+        );
+        fireEvent.click(screen.getByTestId("pick-random"));
+        back.mockClear();
+        stubWidth(1440);
+        rerender(<ChatShell toolBeside />);
+        fireEvent.click(
+          screen.getByRole("button", { name: "Back to channels" }),
+        );
+        await waitFor(() => expect(panes().channels).not.toHaveClass("hidden"));
+        expect(back).not.toHaveBeenCalled();
+      } finally {
+        back.mockRestore();
+      }
+    });
+
+    it("goes back to the list on Esc, as below lg", async () => {
+      stubWidth(1440);
+      render(<ChatShell toolBeside />);
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(panes().channels).not.toHaveClass("hidden"));
+    });
+
+    it("can be closed from the list pane too (#4223)", async () => {
+      stubWidth(1440);
+      const onClose = vi.fn();
+      render(<ChatShell toolBeside onClose={onClose} />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      await waitFor(() => expect(panes().channels).not.toHaveClass("hidden"));
+      const closes = within(panes().channels).getAllByRole("button", {
+        name: "Close chat",
+      });
+      expect(closes).toHaveLength(1);
+      fireEvent.click(closes[0]!);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the list the nav's row switched to", () => {
+      stubWidth(1440);
+      const { rerender } = render(<ChatShell toolBeside view="channels" />);
+      expect(panes().channels).toHaveClass("hidden");
+      rerender(<ChatShell toolBeside view="direct" />);
+      expect(
+        screen.getByRole("region", { name: "Direct messages" }),
+      ).not.toHaveClass("hidden");
+    });
+
+    it("stops claiming the channel while the list shows (#3824)", async () => {
+      stubWidth(1440);
+      const { viewedChannelId } =
+        await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+      render(<ChatShell toolBeside initialChannelId="chan-general" />);
+      expect(viewedChannelId()).toBe("chan-general");
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      await waitFor(() => expect(viewedChannelId()).toBeNull());
+      fireEvent.click(screen.getByTestId("pick-general"));
+      await waitFor(() => expect(viewedChannelId()).toBe("chan-general"));
+    });
+
+    it("moves focus into the pane that appears when its control went with the old one", async () => {
+      stubWidth(1440);
+      render(<ChatShell toolBeside />);
+      const back = screen.getByRole("button", { name: "Back to channels" });
+      back.focus();
+      fireEvent.click(back);
+      await waitFor(() => expect(panes().channels).toHaveFocus());
+    });
   });
 
   it("draws a Close chat X at the end of the channel header only when handed a close (#4223)", () => {

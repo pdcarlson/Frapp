@@ -70,6 +70,13 @@ describe("SplitDivider (#3779, chat on the right since #5575)", () => {
     expect(row - 1 - max).toBeGreaterThanOrEqual(PANE_FLOOR);
   });
 
+  it("moves from the width on screen when the saved one is wider than the row allows", () => {
+    // Saved at 800 on a wide window; this row leaves chat at most 624.
+    const { divider, onChange } = setup(800, 1000);
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(onChange.mock.calls[0]![0]).toBe(1000 - 1 - PANE_FLOOR - 24);
+  });
+
   it("resets to the default width on a double-click", () => {
     const { divider, onCommit } = setup(600);
     fireEvent.doubleClick(divider);
@@ -173,6 +180,8 @@ describe("shell layout constants and cookies (#3779, #5575)", () => {
     expect(parseChatWidth(undefined)).toBe(DEFAULT_CHAT_WIDTH);
     expect(parseChatWidth("480")).toBe(480);
     expect(parseChatWidth("-3")).toBe(DEFAULT_CHAT_WIDTH);
+    // An ultrawide window's choice reads back (CSS holds the floors).
+    expect(parseChatWidth("4100")).toBe(4100);
     expect(parseChatWidth("abc")).toBe(DEFAULT_CHAT_WIDTH);
   });
 });

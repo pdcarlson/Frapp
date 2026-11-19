@@ -39,7 +39,9 @@ export const DEFAULT_CHAT_WIDTH = 375;
 export function parseChatWidth(value: string | undefined): number {
   if (value === undefined) return DEFAULT_CHAT_WIDTH;
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0 || n > 4000) return DEFAULT_CHAT_WIDTH;
+  // No upper bound: the divider allows any width a row leaves the page its
+  // floor beside, so an ultrawide window's choice must read back too.
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_CHAT_WIDTH;
   return Math.round(n);
 }
 

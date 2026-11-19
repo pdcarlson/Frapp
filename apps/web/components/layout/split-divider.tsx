@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import {
   chatWidthBounds,
   clampChatWidth,
@@ -76,8 +82,28 @@ export function SplitDivider({
   const rowWidth = () => rowRef.current?.getBoundingClientRect().width ?? 0;
   // The range announced to assistive tech, measured when the divider is
   // focused or grabbed (layout is not readable during render).
-  const [bounds, setBounds] = useState({ min: PANE_FLOOR, max: PANE_FLOOR });
+  // `null` until first measured (the server can't): the saved width stands.
+  const [measured, setBounds] = useState<{ min: number; max: number } | null>(
+    null,
+  );
+  const bounds = measured ?? {
+    min: PANE_FLOOR,
+    max: Math.max(PANE_FLOOR, Math.round(width)),
+  };
   const measure = () => setBounds(chatWidthBounds(rowWidth()));
+  // And whenever the row resizes, so the announced value is the width CSS
+  // drew: a width saved at a wider window lays out clamped at this one.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() =>
+      setBounds(chatWidthBounds(row.getBoundingClientRect().width)),
+    );
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [rowRef]);
+  // The width on screen: the saved one, held inside what this row allows.
+  const shown = Math.min(bounds.max, Math.max(bounds.min, width));
 
   /** The side the pointer is close enough to an edge to close, if any. */
   const collapseAt = (clientX: number): SplitSide | null => {
@@ -138,10 +164,13 @@ export function SplitDivider({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const row = rowWidth();
     const { min, max } = chatWidthBounds(row);
+    // From the width on screen, so the first press moves the divider even
+    // when the saved width is wider than this row allows.
+    const current = clampChatWidth(width, row);
     let next: number | null = null;
     // Left widens chat (the divider moves left), right narrows it.
-    if (event.key === "ArrowLeft") next = width + KEY_STEP_PX;
-    else if (event.key === "ArrowRight") next = width - KEY_STEP_PX;
+    if (event.key === "ArrowLeft") next = current + KEY_STEP_PX;
+    else if (event.key === "ArrowRight") next = current - KEY_STEP_PX;
     // The window-splitter pattern: Home to the minimum value, End to the
     // maximum, the value being chat's width.
     else if (event.key === "Home") next = min;
@@ -167,10 +196,10 @@ export function SplitDivider({
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize page and chat"
-      aria-valuenow={Math.round(width)}
+      aria-valuenow={shown}
       aria-valuemin={min}
       aria-valuemax={max}
-      aria-valuetext={`Chat ${Math.round(width)} pixels wide`}
+      aria-valuetext={`Chat ${shown} pixels wide`}
       tabIndex={0}
       title={
         onCollapse

@@ -106,7 +106,7 @@ const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_VISIBLE_EVENTS_PER_DAY = 3;
 /**
  * Below this calendar width the month goes compact (#4022): a day cell is
- * about 80px, too narrow for an event's name ("Cha…" beside chat at 480px).
+ * about 80px, too narrow for an event's name ("Cha…" beside a widened chat).
  * The days then carry a dot per event, and the picked day's events are
  * listed under the grid with their full names.
  */

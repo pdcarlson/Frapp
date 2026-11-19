@@ -592,8 +592,8 @@ export function DashboardShell({
             sits over chat and every tool page alike. */}
         <GetTheAppCard />
         {/*
-          `<main>` is the whole row right of the nav: chat, the divider and
-          the tool page (#3779). One landmark for everything the member came
+          `<main>` is the whole row right of the nav: the tool page, the
+          divider and chat (#3779; that order since #5575). One landmark for everything the member came
           for, so the skip link, the confirm dialog's focus fallback
           (`confirm-dialog.tsx`) and the 375px floor suite, which measures
           inside `<main>`, all reach chat as well as the page.

@@ -2,7 +2,7 @@
 
 import { useMediaQuery } from "@/lib/use-media-query";
 
-export { useHydrated, useMediaQueryState } from "@/lib/use-media-query";
+export { useMediaQueryState } from "@/lib/use-media-query";
 
 /**
  * The desktop shell's layout state: chat as a panel beside the chapter tools

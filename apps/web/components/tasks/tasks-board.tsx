@@ -1093,7 +1093,7 @@ export function TasksBoard() {
         <>
           {/*
             At most two toolbar rows over the groups, even in the Tasks
-            column beside chat (~480px). The first: an officer's view switch
+            column beside a widened chat (down to 375px). The first: an officer's view switch
             (Asana's My tasks beside a project, Linear's My issues beside the
             team's), then View and New task at the trailing edge, where
             Linear's and Asana's sit. View is one menu holding the grouping and
