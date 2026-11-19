@@ -3468,412 +3468,6 @@
         ]
       }
     },
-    "/v1/events": {
-      "get": {
-        "operationId": "EventController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/EventResponseDto"
-                  }
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter events",
-        "tags": [
-          "Events"
-        ]
-      },
-      "post": {
-        "operationId": "EventController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateEventDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateEventResponseDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create an event",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
-    "/v1/events/{id}": {
-      "get": {
-        "operationId": "EventController_getOne_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EventDetailResponseDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get event by id",
-        "tags": [
-          "Events"
-        ]
-      },
-      "patch": {
-        "operationId": "EventController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateEventDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update an event",
-        "tags": [
-          "Events"
-        ]
-      },
-      "delete": {
-        "operationId": "EventController_delete_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "scope",
-            "required": false,
-            "in": "query",
-            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "instance",
-                "series"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete an event, or cancel a recurring series from now forward",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
-    "/v1/event-types": {
-      "get": {
-        "operationId": "EventTypeController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/EventTypeDto"
-                  }
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List the chapter's event types, in its order",
-        "tags": [
-          "Event types"
-        ]
-      },
-      "post": {
-        "operationId": "EventTypeController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateEventTypeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EventTypeDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Add an event type at the end of the list",
-        "tags": [
-          "Event types"
-        ]
-      }
-    },
-    "/v1/event-types/{id}": {
-      "patch": {
-        "operationId": "EventTypeController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateEventTypeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EventTypeDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Change an event type's name, points or attendance; events already made keep theirs",
-        "tags": [
-          "Event types"
-        ]
-      },
-      "delete": {
-        "operationId": "EventTypeController_remove_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete an event type; its events keep their points and attendance and lose the type",
-        "tags": [
-          "Event types"
-        ]
-      }
-    },
     "/v1/channels": {
       "get": {
         "operationId": "ChatController_listChannels_v1",
@@ -8085,6 +7679,412 @@
         "summary": "Post a scheduled message now",
         "tags": [
           "Chat"
+        ]
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "operationId": "EventController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventResponseDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter events",
+        "tags": [
+          "Events"
+        ]
+      },
+      "post": {
+        "operationId": "EventController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateEventResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}": {
+      "get": {
+        "operationId": "EventController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get event by id",
+        "tags": [
+          "Events"
+        ]
+      },
+      "patch": {
+        "operationId": "EventController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update an event",
+        "tags": [
+          "Events"
+        ]
+      },
+      "delete": {
+        "operationId": "EventController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "instance",
+                "series"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an event, or cancel a recurring series from now forward",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/event-types": {
+      "get": {
+        "operationId": "EventTypeController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventTypeDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's event types, in its order",
+        "tags": [
+          "Event types"
+        ]
+      },
+      "post": {
+        "operationId": "EventTypeController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add an event type at the end of the list",
+        "tags": [
+          "Event types"
+        ]
+      }
+    },
+    "/v1/event-types/{id}": {
+      "patch": {
+        "operationId": "EventTypeController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change an event type's name, points or attendance; events already made keep theirs",
+        "tags": [
+          "Event types"
+        ]
+      },
+      "delete": {
+        "operationId": "EventTypeController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an event type; its events keep their points and attendance and lose the type",
+        "tags": [
+          "Event types"
         ]
       }
     },
@@ -24357,895 +24357,6 @@
           }
         }
       },
-      "EventAgendaTabledFromDto": {
-        "type": "object",
-        "properties": {
-          "meeting_id": {
-            "type": "string",
-            "description": "The posted minutes that first tabled this matter."
-          },
-          "start_time": {
-            "type": "string",
-            "description": "That meeting’s start (ISO 8601)."
-          },
-          "times": {
-            "type": "number",
-            "minimum": 1,
-            "description": "How many meetings have tabled it so far."
-          }
-        },
-        "required": [
-          "meeting_id",
-          "start_time",
-          "times"
-        ]
-      },
-      "EventAgendaItemDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event."
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "done": {
-            "type": "boolean",
-            "description": "Checked off during the meeting."
-          },
-          "tabled_from": {
-            "nullable": true,
-            "description": "Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows \"Tabled from {day}\". Read-only: a save keeps the stored value for the same item id and ignores this field.",
-            "type": "object",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/EventAgendaTabledFromDto"
-              }
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "text",
-          "done"
-        ]
-      },
-      "EventAttachmentDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "The client's id for the attachment. Unique within the event."
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "link",
-              "document"
-            ]
-          },
-          "url": {
-            "type": "string",
-            "maxLength": 2048,
-            "description": "A `link` attachment's address: http or https only."
-          },
-          "document_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400."
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 120,
-            "description": "What the list shows. For a document, its name when it was attached."
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title"
-        ]
-      },
-      "GeofenceCoordinateDto": {
-        "type": "object",
-        "properties": {
-          "lat": {
-            "type": "number"
-          },
-          "lng": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "lat",
-          "lng"
-        ]
-      },
-      "EventResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "chapter_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string",
-            "nullable": true
-          },
-          "location": {
-            "type": "string",
-            "nullable": true
-          },
-          "start_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "end_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "point_value": {
-            "type": "number"
-          },
-          "is_mandatory": {
-            "type": "boolean"
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "nullable": true
-          },
-          "parent_event_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "required_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "optional_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "excluded_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "others_invited": {
-            "type": "boolean",
-            "nullable": true,
-            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
-          },
-          "notes": {
-            "type": "string",
-            "nullable": true
-          },
-          "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAgendaItemDto"
-            }
-          },
-          "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAttachmentDto"
-            }
-          },
-          "check_in_zone": {
-            "nullable": true,
-            "description": "Optional check-in geofence. `null` means the event has no zone.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "nullable": true
-          },
-          "check_in_opens_minutes": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 120,
-            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
-          },
-          "event_type_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
-          },
-          "created_by": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "Who made the event. Null for events made before it was recorded."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "chapter_id",
-          "name",
-          "description",
-          "location",
-          "start_time",
-          "end_time",
-          "point_value",
-          "is_mandatory",
-          "recurrence_rule",
-          "parent_event_id",
-          "required_role_ids",
-          "optional_role_ids",
-          "excluded_role_ids",
-          "others_invited",
-          "notes",
-          "agenda",
-          "attachments",
-          "check_in_zone",
-          "check_in_zone_name",
-          "check_in_opens_minutes",
-          "event_type_id",
-          "created_by",
-          "created_at"
-        ]
-      },
-      "EventDetailResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "chapter_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string",
-            "nullable": true
-          },
-          "location": {
-            "type": "string",
-            "nullable": true
-          },
-          "start_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "end_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "point_value": {
-            "type": "number"
-          },
-          "is_mandatory": {
-            "type": "boolean"
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "nullable": true
-          },
-          "parent_event_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "required_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "optional_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "excluded_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "others_invited": {
-            "type": "boolean",
-            "nullable": true,
-            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
-          },
-          "notes": {
-            "type": "string",
-            "nullable": true
-          },
-          "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAgendaItemDto"
-            }
-          },
-          "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAttachmentDto"
-            }
-          },
-          "check_in_zone": {
-            "nullable": true,
-            "description": "Optional check-in geofence. `null` means the event has no zone.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "nullable": true
-          },
-          "check_in_opens_minutes": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 120,
-            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
-          },
-          "event_type_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
-          },
-          "created_by": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "Who made the event. Null for events made before it was recorded."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "check_in_needs_code": {
-            "type": "boolean",
-            "description": "Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority."
-          }
-        },
-        "required": [
-          "id",
-          "chapter_id",
-          "name",
-          "description",
-          "location",
-          "start_time",
-          "end_time",
-          "point_value",
-          "is_mandatory",
-          "recurrence_rule",
-          "parent_event_id",
-          "required_role_ids",
-          "optional_role_ids",
-          "excluded_role_ids",
-          "others_invited",
-          "notes",
-          "agenda",
-          "attachments",
-          "check_in_zone",
-          "check_in_zone_name",
-          "check_in_opens_minutes",
-          "event_type_id",
-          "created_by",
-          "created_at",
-          "check_in_needs_code"
-        ]
-      },
-      "CreateEventDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "description": {
-            "type": "string",
-            "maxLength": 5000
-          },
-          "location": {
-            "type": "string",
-            "maxLength": 500
-          },
-          "start_time": {
-            "type": "string"
-          },
-          "end_time": {
-            "type": "string"
-          },
-          "point_value": {
-            "type": "number",
-            "default": 10,
-            "description": "Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709)."
-          },
-          "is_mandatory": {
-            "type": "boolean",
-            "default": false,
-            "description": "Whether everyone the event invites must attend. On create, kept only when the caller holds `events:update`; anyone else's event is stored as optional, with each role in `required_role_ids` moved to `optional_role_ids` (#3709)."
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "description": "Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps).",
-            "maxLength": 200
-          },
-          "required_role_ids": {
-            "maxItems": 200,
-            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "optional_role_ids": {
-            "maxItems": 200,
-            "description": "Roles invited but not required.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "excluded_role_ids": {
-            "maxItems": 200,
-            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "others_invited": {
-            "type": "boolean",
-            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older \"only these roles\" meaning, for a caller that predates this field. Omitted on update, it is left as stored."
-          },
-          "notes": {
-            "type": "string",
-            "maxLength": 20000
-          },
-          "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAgendaItemDto"
-            }
-          },
-          "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAttachmentDto"
-            }
-          },
-          "check_in_zone": {
-            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
-          },
-          "check_in_opens_minutes": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 120,
-            "description": "Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time."
-          },
-          "event_type_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400."
-          },
-          "channel_id": {
-            "type": "string",
-            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
-          },
-          "client_message_id": {
-            "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field."
-          }
-        },
-        "required": [
-          "name",
-          "start_time",
-          "end_time"
-        ]
-      },
-      "CreateEventResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "chapter_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string",
-            "nullable": true
-          },
-          "location": {
-            "type": "string",
-            "nullable": true
-          },
-          "start_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "end_time": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "point_value": {
-            "type": "number"
-          },
-          "is_mandatory": {
-            "type": "boolean"
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "nullable": true
-          },
-          "parent_event_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "required_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "optional_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "excluded_role_ids": {
-            "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "others_invited": {
-            "type": "boolean",
-            "nullable": true,
-            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
-          },
-          "notes": {
-            "type": "string",
-            "nullable": true
-          },
-          "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAgendaItemDto"
-            }
-          },
-          "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAttachmentDto"
-            }
-          },
-          "check_in_zone": {
-            "nullable": true,
-            "description": "Optional check-in geofence. `null` means the event has no zone.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "nullable": true
-          },
-          "check_in_opens_minutes": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 120,
-            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
-          },
-          "event_type_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
-          },
-          "created_by": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "Who made the event. Null for events made before it was recorded."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "card_posted": {
-            "type": "boolean",
-            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
-          }
-        },
-        "required": [
-          "id",
-          "chapter_id",
-          "name",
-          "description",
-          "location",
-          "start_time",
-          "end_time",
-          "point_value",
-          "is_mandatory",
-          "recurrence_rule",
-          "parent_event_id",
-          "required_role_ids",
-          "optional_role_ids",
-          "excluded_role_ids",
-          "others_invited",
-          "notes",
-          "agenda",
-          "attachments",
-          "check_in_zone",
-          "check_in_zone_name",
-          "check_in_opens_minutes",
-          "event_type_id",
-          "created_by",
-          "created_at"
-        ]
-      },
-      "UpdateEventDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "description": {
-            "type": "string",
-            "maxLength": 5000
-          },
-          "location": {
-            "type": "string",
-            "maxLength": 500
-          },
-          "start_time": {
-            "type": "string"
-          },
-          "end_time": {
-            "type": "string"
-          },
-          "point_value": {
-            "type": "number"
-          },
-          "is_mandatory": {
-            "type": "boolean"
-          },
-          "recurrence_rule": {
-            "type": "string",
-            "description": "Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps).",
-            "maxLength": 200
-          },
-          "required_role_ids": {
-            "maxItems": 200,
-            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "optional_role_ids": {
-            "maxItems": 200,
-            "description": "Roles invited but not required.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "excluded_role_ids": {
-            "maxItems": 200,
-            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "others_invited": {
-            "type": "boolean",
-            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older \"only these roles\" meaning."
-          },
-          "notes": {
-            "type": "string",
-            "maxLength": 20000
-          },
-          "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAgendaItemDto"
-            }
-          },
-          "attachments": {
-            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventAttachmentDto"
-            }
-          },
-          "check_in_zone": {
-            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/GeofenceCoordinateDto"
-            }
-          },
-          "check_in_zone_name": {
-            "type": "string",
-            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
-          },
-          "check_in_opens_minutes": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 120,
-            "description": "Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused."
-          },
-          "event_type_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400."
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "instance",
-              "series"
-            ],
-            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved."
-          }
-        }
-      },
-      "EventTypeDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "chapter_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "point_value": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100000,
-            "description": "Points for attending, copied onto an event made as this type."
-          },
-          "is_mandatory": {
-            "type": "boolean",
-            "description": "Whether everyone must attend, copied onto an event made as this type."
-          },
-          "position": {
-            "type": "number",
-            "description": "The type's place in the chapter's list, lowest first."
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "chapter_id",
-          "name",
-          "point_value",
-          "is_mandatory",
-          "position",
-          "created_at",
-          "updated_at"
-        ]
-      },
-      "CreateEventTypeDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 60,
-            "description": "The type as the chapter calls it (\"Chapter meeting\", \"Work party\"). Stored trimmed; unique within the chapter, ignoring case."
-          },
-          "point_value": {
-            "type": "number",
-            "default": 0,
-            "minimum": 0,
-            "maximum": 100000
-          },
-          "is_mandatory": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        "required": [
-          "name"
-        ]
-      },
-      "UpdateEventTypeDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 60
-          },
-          "point_value": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100000
-          },
-          "is_mandatory": {
-            "type": "boolean"
-          }
-        }
-      },
       "ChannelUnreadCountDto": {
         "type": "object",
         "properties": {
@@ -28148,6 +27259,895 @@
             "items": {
               "$ref": "#/components/schemas/MentionPickDto"
             }
+          }
+        }
+      },
+      "EventAgendaTabledFromDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "description": "The posted minutes that first tabled this matter."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "That meeting’s start (ISO 8601)."
+          },
+          "times": {
+            "type": "number",
+            "minimum": 1,
+            "description": "How many meetings have tabled it so far."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "start_time",
+          "times"
+        ]
+      },
+      "EventAgendaItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "done": {
+            "type": "boolean",
+            "description": "Checked off during the meeting."
+          },
+          "tabled_from": {
+            "nullable": true,
+            "description": "Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows \"Tabled from {day}\". Read-only: a save keeps the stored value for the same item id and ignores this field.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventAgendaTabledFromDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "done"
+        ]
+      },
+      "EventAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The client's id for the attachment. Unique within the event."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "link",
+              "document"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "A `link` attachment's address: http or https only."
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "What the list shows. For a document, its name when it was attached."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ]
+      },
+      "GeofenceCoordinateDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "EventResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "required_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "nullable": true,
+            "description": "Optional check-in geofence. `null` means the event has no zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory",
+          "recurrence_rule",
+          "parent_event_id",
+          "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
+          "notes",
+          "agenda",
+          "attachments",
+          "check_in_zone",
+          "check_in_zone_name",
+          "check_in_opens_minutes",
+          "event_type_id",
+          "created_by",
+          "created_at"
+        ]
+      },
+      "EventDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "required_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "nullable": true,
+            "description": "Optional check-in geofence. `null` means the event has no zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "check_in_needs_code": {
+            "type": "boolean",
+            "description": "Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory",
+          "recurrence_rule",
+          "parent_event_id",
+          "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
+          "notes",
+          "agenda",
+          "attachments",
+          "check_in_zone",
+          "check_in_zone_name",
+          "check_in_opens_minutes",
+          "event_type_id",
+          "created_by",
+          "created_at",
+          "check_in_needs_code"
+        ]
+      },
+      "CreateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number",
+            "default": 10,
+            "description": "Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709)."
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether everyone the event invites must attend. On create, kept only when the caller holds `events:update`; anyone else's event is stored as optional, with each role in `required_role_ids` moved to `optional_role_ids` (#3709)."
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps).",
+            "maxLength": 200
+          },
+          "required_role_ids": {
+            "maxItems": 200,
+            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "maxItems": 200,
+            "description": "Roles invited but not required.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "maxItems": 200,
+            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older \"only these roles\" meaning, for a caller that predates this field. Omitted on update, it is left as stored."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field."
+          }
+        },
+        "required": [
+          "name",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "CreateEventResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "required_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "nullable": true,
+            "description": "Optional check-in geofence. `null` means the event has no zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory",
+          "recurrence_rule",
+          "parent_event_id",
+          "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
+          "notes",
+          "agenda",
+          "attachments",
+          "check_in_zone",
+          "check_in_zone_name",
+          "check_in_opens_minutes",
+          "event_type_id",
+          "created_by",
+          "created_at"
+        ]
+      },
+      "UpdateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps).",
+            "maxLength": 200
+          },
+          "required_role_ids": {
+            "maxItems": 200,
+            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "maxItems": 200,
+            "description": "Roles invited but not required.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "maxItems": 200,
+            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older \"only these roles\" meaning."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "series"
+            ],
+            "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved."
+          }
+        }
+      },
+      "EventTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Points for attending, copied onto an event made as this type."
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "description": "Whether everyone must attend, copied onto an event made as this type."
+          },
+          "position": {
+            "type": "number",
+            "description": "The type's place in the chapter's list, lowest first."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "point_value",
+          "is_mandatory",
+          "position",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateEventTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "The type as the chapter calls it (\"Chapter meeting\", \"Work party\"). Stored trimmed; unique within the chapter, ignoring case."
+          },
+          "point_value": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateEventTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "point_value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "is_mandatory": {
+            "type": "boolean"
           }
         }
       },
