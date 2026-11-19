@@ -170,6 +170,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useSetSubtaskDone: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSubtask: () => ({ mutate: addSubtask, isPending: false }),
   useDeleteSubtask: () => ({ mutate: deleteSubtask, isPending: false }),
+  useMeeting: (id: string) => ({
+    data: id === "m-1" ? { event_name: "Leadership Meeting" } : undefined,
+  }),
   useTaskPhotoUrl: (_taskId: string, photoId: string | null) => ({
     data: photoId ? `https://signed/${photoId}` : undefined,
   }),
@@ -386,6 +389,20 @@ describe("A member's own plain task: a little", () => {
       "Couldn't mark that task not done. An officer may have confirmed it already.",
     );
     act(() => tree.unmount());
+  });
+
+  it("names the minutes it came from as the meeting is called now, and opens them (#5562)", () => {
+    task = { ...PLAIN, meeting_id: "m-1" };
+    const tree = render();
+    expect(screenText(tree)).toContain("Leadership Meeting");
+    press(tree, "Minutes: Leadership Meeting");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/minutes-details",
+      params: { id: "m-1" },
+    });
+    // Nothing for minutes the reader can't open.
+    task = { ...PLAIN, meeting_id: "m-hidden" };
+    expect(screenText(render())).not.toContain("Minutes");
   });
 
   it("goes back to Tasks", () => {

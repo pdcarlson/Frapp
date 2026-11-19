@@ -12,6 +12,14 @@ export const AI_SUGGESTION_COPY = {
   fromActionItems:
     "From the action items. Nothing is a task until you create it.",
   fromMinutesOf: "From the minutes of",
+  /**
+   * A task made from minutes names them by the meeting's id (#5562), so the
+   * task screens read its name as it is now: "Minutes" over the meeting's
+   * name, a link to them, on the web's panel and the phone's task screen
+   * alike ("From" already names who assigned it). Shown only to someone who
+   * may read those minutes.
+   */
+  taskMinutes: "Minutes",
   aMeeting: "a meeting",
   meetingFallback: "Meeting minutes",
   /**

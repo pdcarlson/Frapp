@@ -42,6 +42,8 @@ export type BoardTask = {
   series?: TaskSeriesLine | null;
   /** The group task this is one member's copy of (#4295 step 3). */
   group_id?: string | null;
+  /** The minutes it was suggested from (#5562): read for their name now. */
+  meeting_id?: string | null;
   /** The group's who and progress over all its copies, as the API counts it. */
   group?: {
     audience?: string;

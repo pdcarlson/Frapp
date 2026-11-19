@@ -5,6 +5,7 @@ import {
   AccessibilityInfo,
   Alert,
   Keyboard,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -14,6 +15,7 @@ import {
   TASK_ACTION_LABELS,
   taskStatusLabel,
   useDeleteTask,
+  useMeeting,
   useMemberDisplayNames,
   usePermissionList,
   useReleaseTask,
@@ -23,7 +25,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { can, TASK_AUDIENCE_COPY } from "@repo/validation";
+import { AI_SUGGESTION_COPY, can, TASK_AUDIENCE_COPY } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_TASKS } from "@/components/back-row";
@@ -683,6 +685,8 @@ function TaskScreen({
           </Text>
         ) : null}
 
+        {row.meetingId ? <FromMinutes meetingId={row.meetingId} /> : null}
+
         {row.subtasks.length > 0 || (controls.edit && !row.pointsAwarded) ? (
           <SubtaskChecklist
             taskId={row.id}
@@ -883,6 +887,37 @@ function Fact({
         {value}
       </Text>
     </View>
+  );
+}
+
+/**
+ * The minutes the task was suggested from (#5562), named as the meeting is
+ * called now, opening them; the web's panel has the same row. Nothing shows
+ * to someone who can't read those minutes, or once they're deleted.
+ */
+function FromMinutes({ meetingId }: { meetingId: string }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const router = useRouter();
+  const meeting = useMeeting(meetingId);
+  const name = meeting.data?.event_name;
+  if (!name) return null;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${AI_SUGGESTION_COPY.taskMinutes}: ${name}`}
+      onPress={() =>
+        router.push({
+          pathname: "/minutes-details",
+          params: { id: meetingId },
+        })
+      }
+      style={({ pressed }) => [styles.forFact, pressed && { opacity: 0.6 }]}
+    >
+      <Text style={styles.factLabel}>{AI_SUGGESTION_COPY.taskMinutes}</Text>
+      <Text style={[styles.factValue, { color: accent }]}>{name}</Text>
+    </Pressable>
   );
 }
 

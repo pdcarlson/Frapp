@@ -60,6 +60,7 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     photos: [],
     createdAt: null,
     groupId: null,
+    meetingId: null,
     group: null,
     openTaskId: null,
     ...overrides,
