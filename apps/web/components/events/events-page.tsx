@@ -1319,7 +1319,13 @@ export function EventsPage() {
 
       <div
         ref={layoutRef}
-        className={cn("flex gap-6", narrow ? "flex-col gap-3" : "items-start")}
+        // Until the pane is measured it draws the wide layout, which wraps:
+        // the agenda keeps at least 320px and drops under the navigator
+        // rather than squeezing past a 375px pane (beside-chat floor).
+        className={cn(
+          "flex gap-6",
+          narrow ? "flex-col gap-3" : "flex-wrap items-start",
+        )}
       >
         {narrow ? (
           <div className="space-y-1">
@@ -1357,7 +1363,7 @@ export function EventsPage() {
           </aside>
         )}
 
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", !narrow && "basis-80")}>
           {hoursDay ? (
             /*
               The hour grid (#4818), reached from a day heading's Hours: that
