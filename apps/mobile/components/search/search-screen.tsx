@@ -7,6 +7,7 @@ import type { SignetTokens } from "@repo/theme/signet";
 import {
   buildFindResults,
   isSearchRunnable,
+  settingEntryById,
   SEARCH_MIN_QUERY_LENGTH,
   useActiveChapterId,
   useChannels,
@@ -32,6 +33,10 @@ import {
   type NotificationTarget,
 } from "@/lib/notifications/targets";
 import { findTargetRoute } from "@/lib/search/find-route";
+import {
+  openSetting,
+  usePhoneSettingsSearch,
+} from "@/lib/settings/settings-search";
 import {
   readRecentSearches,
   withRecentSearch,
@@ -61,6 +66,10 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * For a member who has Ask, the list ends in one "Ask Frapp about …" row,
  * which opens the Ask sheet with the words in its field to send or change:
  * search may hand a question to Ask, but Ask no longer searches.
+ *
+ * **Settings** (2026-11-19) are the settings search's matches
+ * (`lib/settings/settings-search.ts`), listed after Channels as on web; one
+ * only web changes opens the dashboard in the browser.
  *
  * Backwork has no screen on the phone, so its group is never listed; Events
  * is listed only while the chapter has the module on, as on web.
@@ -92,7 +101,8 @@ const GROUP_FOR_SOURCE: Record<string, FindGroup> = {
   messages: "Messages",
 };
 
-type SearchRow = FindResult & { route: NotificationTarget };
+/** `route` is null only for a setting that opens on the web dashboard. */
+type SearchRow = FindResult & { route: NotificationTarget | null };
 
 /** What the Search screen draws inside its shell. */
 export function SearchScreen() {
@@ -153,6 +163,8 @@ export function SearchScreen() {
   const search = useSearch(debounced);
   const channels = useChannels();
   const modules = useCurrentChapter().data?.enabled_modules;
+  // Settings the member can change, by name or synonym (2026-11-19).
+  const findSettings = usePhoneSettingsSearch();
 
   // A DM's stored name is not what its row shows, so only channels match.
   const named = useMemo(
@@ -169,7 +181,16 @@ export function SearchScreen() {
   }, [modules]);
   const chips = useMemo(
     () =>
-      (["All", "Channels", "Members", "Messages", "Events"] as const)
+      (
+        [
+          "All",
+          "Channels",
+          "Settings",
+          "Members",
+          "Messages",
+          "Events",
+        ] as const
+      )
         .filter((group) => group === "All" || !hiddenGroups.has(group))
         .map((group) => ({ value: group, label: group })),
     [hiddenGroups],
@@ -193,11 +214,24 @@ export function SearchScreen() {
       channels: named,
       payload: search.data?.payload,
       hiddenGroups,
-    }).flatMap((result) => {
+      settings: findSettings(debounced),
+    }).flatMap((result): SearchRow[] => {
       const route = findTargetRoute(result.target);
-      return route ? [{ ...result, route }] : [];
+      if (route) return [{ ...result, route }];
+      // A setting only web changes is still listed, and opens the dashboard.
+      return result.target.type === "setting"
+        ? [{ ...result, route: null }]
+        : [];
     });
-  }, [runnable, debounced, shownFilter, named, search.data, hiddenGroups]);
+  }, [
+    runnable,
+    debounced,
+    shownFilter,
+    named,
+    search.data,
+    hiddenGroups,
+    findSettings,
+  ]);
 
   // Web's rule (`find-dialog.tsx`): only a timeout in a group the member is
   // looking at counts, and one that cut a list short is said under the rows,
@@ -234,7 +268,14 @@ export function SearchScreen() {
     selectionHaptic();
     // The rows are the settled search's, so its words are what led here.
     remember(debounced);
-    openNotificationTarget(router, row.route);
+    if (row.route) {
+      openNotificationTarget(router, row.route);
+      return;
+    }
+    if (row.target.type === "setting") {
+      const entry = settingEntryById(row.target.settingId);
+      if (entry) openSetting(router, entry);
+    }
   };
 
   // ---- Handing the words to Ask ---------------------------------------
@@ -320,7 +361,9 @@ export function SearchScreen() {
                   accessibilityLabel={
                     row.hint ? `${row.label}, ${row.hint}` : row.label
                   }
-                  accessibilityHint="Opens it."
+                  accessibilityHint={
+                    row.route ? "Opens it." : "Opens the web dashboard."
+                  }
                   onPress={() => open(row)}
                   style={styles.row}
                 >

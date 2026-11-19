@@ -58,6 +58,8 @@ vi.mock("@repo/hooks", () => ({
     return departmentsQuery.current;
   },
   usePermissionList: () => permissionList.current,
+  useAiConsent: () => ({ data: null }),
+  aiAvailableFrom: () => false,
   SEARCH_MIN_QUERY_LENGTH: 3,
   SEARCH_COMPLETED_EVENT: "search-completed",
 }));
@@ -465,6 +467,19 @@ describe("FindBar", () => {
         classes.filter((c) => /^pointer-coarse:p[xytrbl]?-/.test(c)),
       ).toEqual([]);
     }
+  });
+
+  it("lists the settings the member can change, after Channels", async () => {
+    channelsQuery.current = { data: [] };
+    searchQuery.current = searchState({ data: searchPayload() });
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "quiet hours");
+    const option = await screen.findByRole("option", { name: /Quiet hours/ });
+    expect(option).toHaveTextContent("Settings · Notifications");
+    expect(
+      screen.getByRole("button", { name: "Settings", pressed: false }),
+    ).toBeInTheDocument();
   });
 
   it("lists nothing under the minimum query length", async () => {

@@ -44,6 +44,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => ({ data: { enabled_modules: hooks.modules } }),
   useViewerUserId: () => "u-me",
   useActiveChapterId: () => hooks.chapterId,
+  usePermissionList: () => [],
+  useAiConsent: () => ({ data: null }),
 }));
 vi.mock("@repo/hooks/use-debounced-value", () => ({
   useDebouncedValue: <T,>(value: T) => value,
@@ -185,6 +187,21 @@ describe("SearchScreen", () => {
     );
   });
 
+  it("lists a setting the member can change, and opens it lit", async () => {
+    const tree = await render();
+    await type(tree, "quiet hours");
+    expect(drawnText(results(tree))).toContain("Settings · Notifications");
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel ?? "").startsWith("Quiet hours"),
+    );
+    await act(async () => row.props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+      "/preferences?setting=quiet-hours",
+    );
+  });
+
   it("shows recent searches before typing, and a tap searches them again", async () => {
     vi.mocked(AsyncStorage.getItem).mockResolvedValue(
       JSON.stringify(["rush", "formal"]),
@@ -227,6 +244,7 @@ describe("SearchScreen", () => {
     expect(chips.filter((c, i) => chips.indexOf(c) === i)).toEqual([
       "All",
       "Channels",
+      "Settings",
       "Members",
       "Messages",
     ]);

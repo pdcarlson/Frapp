@@ -69,6 +69,7 @@ import {
   SETTINGS_SUBPAGE_PARAMS,
   settingsSubpageFor,
 } from "@/components/settings/settings-paths";
+import { useSettingJump } from "@/lib/settings/use-setting-jump";
 import { MeetingSectionsRules } from "@/components/meetings/meeting-sections-rules";
 import {
   DuesGraceRule,
@@ -250,6 +251,9 @@ function SettingsPageContent() {
     (key: string) => setConsumedModuleKey(key),
     [],
   );
+
+  // `?setting=` from settings search: scroll to the setting and light it.
+  useSettingJump();
 
   const accentDraft = useAccentDraft(chapterQuery.data);
   const rolloverForm = useRolloverForm();

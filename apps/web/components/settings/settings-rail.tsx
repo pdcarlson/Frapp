@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { MODULE_SETTINGS } from "@/components/settings/settings-modules";
 import { InlineNote } from "@/components/shared/inline-note";
+import { SettingsSearch } from "@/components/settings/settings-search";
 
 // Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
 // inactive `#A9A399`, active a filled gold chip (`background:#2A2410;
@@ -163,6 +164,8 @@ export function SettingsRail({
     .filter((entry) => entry.tabs.length > 0);
   return (
     <div className="flex w-full flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[200px] lg:shrink-0 lg:self-start lg:overflow-y-auto lg:py-1">
+      {/* Settings search (2026-11-19): every setting by name and synonym. */}
+      <SettingsSearch />
       {groups.map((entry) => (
         <div key={entry.group} className="flex flex-col gap-0.5">
           <p
