@@ -163,8 +163,9 @@ export function DashboardShell({
   defaultToolShare = 0.5,
   defaultMembersHidden = false,
 }: DashboardShellProps) {
-  // Ask Frapp's floating bar (#5476) sits at the bottom of the page, so a
-  // page with it reserves room under its last row.
+  // Ask Frapp's bar (#5476) floats at the bottom of the page below `lg`,
+  // where there is no sidebar to hold it (#5560), so a page there reserves
+  // room under its last row.
   const askBar = useAskEntry() !== null;
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -732,11 +733,13 @@ export function DashboardShell({
                 data-tool-page=""
                 className={cn(
                   "flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
-                  // The bar's 48, its 24 off the bottom, and 24 more, so the
-                  // last row scrolls clear of it. A control the page pins to
-                  // its own bottom (`sticky bottom-*`) adds `--ask-bar-room`,
-                  // the bar's 72, so it sits above the bar rather than under.
-                  askBar && "pb-24 [--ask-bar-room:4.5rem]",
+                  // Below `lg` only, where the bar floats here: its 48, its
+                  // 24 off the bottom, and 24 more, so the last row scrolls
+                  // clear of it. A control the page pins to its own bottom
+                  // (`sticky bottom-*`) adds `--ask-bar-room`, the bar's 72,
+                  // so it sits above the bar rather than under. From `lg` up
+                  // the bar is in the sidebar and covers nothing.
+                  askBar && "max-lg:pb-24 max-lg:[--ask-bar-room:4.5rem]",
                 )}
               >
                 {children}
@@ -748,7 +751,6 @@ export function DashboardShell({
             // width up (below it `/chat` is the chat page).
             <div className="relative hidden min-h-0 min-w-0 flex-1 min-[1056px]:flex">
               <ChapterHome />
-              {askBar ? <FloatingAskBar /> : null}
             </div>
           )}
         </main>
@@ -758,14 +760,16 @@ export function DashboardShell({
 }
 
 /**
- * Ask Frapp's bar (#5476, Paul's pick of 2026-11-18), floating 24px above the
- * bottom of the page column and centred in it, at most 520px wide, as the
- * phone's bar floats above its tab bar. The strip around it lets clicks
- * through to the page; only the bar takes them.
+ * Ask Frapp's bar (#5476, Paul's pick of 2026-11-18) below `lg`, where the
+ * shell is one page and has no sidebar: floating 24px above the bottom of the
+ * page and centred in it, at most 520px wide, as the phone's bar floats above
+ * its tab bar. From `lg` up it lives in the sidebar's foot (`app-nav.tsx`,
+ * #5560). The strip around it lets clicks through to the page; only the bar
+ * takes them.
  */
 function FloatingAskBar() {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
+    <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-4 lg:hidden">
       <AskBar className="pointer-events-auto max-w-[520px]" />
     </div>
   );

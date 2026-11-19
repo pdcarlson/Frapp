@@ -56,7 +56,7 @@ import {
  *
  * **It only finds** (#5476, Paul, 2026-11-18). From #4904 (2026-11-13) its
  * first row asked Frapp what was typed, for a member with Ask; Shawn and Paul
- * didn't want Ask in the search bar, so Ask has its own floating bar now
+ * didn't want Ask in the search bar, so Ask has its own bar now
  * (`ask/ask-bar.tsx`) and this dialog lists places to go, from everything the
  * member can read. Per foundations §6 the highlighted row is a neutral
  * `--card-hover` fill, like every menu highlight; only the active filter chip
