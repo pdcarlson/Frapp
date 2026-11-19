@@ -94,10 +94,10 @@ import {
 } from "./push-registration";
 import {
   deregisterStoredPushToken,
-  lastReportedNotificationsEnabled,
   onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
+  shouldReportOnForeground,
   type RegisterPushTokenBody,
 } from "./push-token-lifecycle";
 import { readPushDeviceName } from "./push-device-name";
@@ -431,9 +431,7 @@ export function usePushRuntime(): void {
     const appState = AppState.addEventListener("change", (next) => {
       if (next !== "active") return;
       void readNotificationsEnabled().then((enabled) => {
-        if (enabled === undefined) return;
-        if (enabled === lastReportedNotificationsEnabled()) return;
-        reregister();
+        if (shouldReportOnForeground(enabled)) reregister();
       });
     });
     return () => {

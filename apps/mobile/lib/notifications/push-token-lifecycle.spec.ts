@@ -6,6 +6,7 @@ import {
   onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
+  shouldReportOnForeground,
 } from "./push-token-lifecycle";
 import type { PushTokenRow } from "./push-registration";
 
@@ -33,6 +34,19 @@ function deps(initial: PushTokenRow | null = null) {
     },
   };
 }
+
+describe("shouldReportOnForeground", () => {
+  it("re-registers only when the phone now reads differently from the answer sent", () => {
+    expect(shouldReportOnForeground(false, true)).toBe(true);
+    expect(shouldReportOnForeground(true, false)).toBe(true);
+    expect(shouldReportOnForeground(true, true)).toBe(false);
+  });
+
+  it("does nothing before any answer was sent, or when the phone can't tell", () => {
+    expect(shouldReportOnForeground(true, undefined)).toBe(false);
+    expect(shouldReportOnForeground(undefined, true)).toBe(false);
+  });
+});
 
 describe("sessionOwnsPushRegistration", () => {
   it("is true only on the authenticated edge the sign-out race documents", () => {

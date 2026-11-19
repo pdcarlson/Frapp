@@ -10,12 +10,20 @@
  * state is worked out from every phone the member has signed in.
  */
 
+import { BIRTHDAY_MONTH_NAMES } from "./birthday";
 import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
 
 /**
- * - `on`: at least one phone lets Frapp's notifications show.
- * - `off`: has the app, and every phone that has said has them off.
- * - `unknown`: has the app on a build that hasn't said yet, and no phone is on.
+ * Worked out from the member's **current** phones: the one opened most
+ * recently, and any other opened within `PHONE_REACH_STALE_DAYS` of it. An
+ * older row is usually a phone left behind (a reinstall's old token lingers
+ * until a push to it bounces), so it neither keeps a member "on" nor makes
+ * them "unknown".
+ *
+ * - `on`: a current phone lets Frapp's notifications show.
+ * - `off`: no current phone is on, and the one opened last says off.
+ * - `unknown`: no current phone is on, and the one opened last is on a build
+ *   that hasn't said yet.
  * - `web_only`: no phone signed in.
  */
 export type PhoneReachState = "on" | "off" | "unknown" | "web_only";
@@ -25,7 +33,10 @@ export type PhonePlatform = "ios" | "android";
 export interface PhoneReach {
   user_id: string;
   state: PhoneReachState;
-  /** The most recently opened phone's platform, when its label says. */
+  /**
+   * The platform of the phone the state comes from (for `on`, the most
+   * recently opened phone that is on), when its label says.
+   */
   platform: PhonePlatform | null;
   /** When the member last opened the app on any phone; `null` when web only. */
   last_opened_at: string | null;
@@ -38,6 +49,14 @@ export interface PhoneReachDevice {
   last_registered_at: string;
   notifications_enabled: boolean | null;
 }
+
+/**
+ * How long unopened before a phone stops counting as current (see
+ * `PhoneReachState`) and a row says when it was last opened.
+ */
+export const PHONE_REACH_STALE_DAYS = 30;
+
+const DAY_MS = 86_400_000;
 
 /**
  * Who sees every member's reach: the officers told when someone joins
@@ -76,18 +95,27 @@ export function phoneReachOf(
       last_opened_at: null,
     };
   }
-  const latest = devices.reduce((a, b) =>
-    b.last_registered_at > a.last_registered_at ? b : a,
+  const newestFirst = [...devices].sort((a, b) =>
+    b.last_registered_at.localeCompare(a.last_registered_at),
   );
-  let state: PhoneReachState;
-  if (devices.some((d) => d.notifications_enabled === true)) state = "on";
-  else if (devices.every((d) => d.notifications_enabled === false))
-    state = "off";
-  else state = "unknown";
+  const latest = newestFirst[0]!;
+  const latestAt = Date.parse(latest.last_registered_at);
+  const current = newestFirst.filter(
+    (d) =>
+      Number.isNaN(latestAt) ||
+      latestAt - Date.parse(d.last_registered_at) <
+        PHONE_REACH_STALE_DAYS * DAY_MS,
+  );
+  const onPhone = current.find((d) => d.notifications_enabled === true);
+  const state: PhoneReachState = onPhone
+    ? "on"
+    : latest.notifications_enabled === false
+      ? "off"
+      : "unknown";
   return {
     user_id: userId,
     state,
-    platform: phonePlatformOf(latest.device_name),
+    platform: phonePlatformOf((onPhone ?? latest).device_name),
     last_opened_at: latest.last_registered_at,
   };
 }
@@ -120,6 +148,11 @@ export function matchesPhoneReachFilter(
   if (!reach) return false;
   if (filter === "on") return reach.state === "on";
   if (filter === "web_only") return reach.state === "web_only";
+  return isUnreachable(reach);
+}
+
+/** Notifications off, or no phone at all: who a push can't reach. */
+function isUnreachable(reach: PhoneReach): boolean {
   return reach.state === "off" || reach.state === "web_only";
 }
 
@@ -137,30 +170,12 @@ export function phoneReachStateLabel(state: PhoneReachState): string {
   }
 }
 
-/** How long unopened before the row says when they last opened it. */
-export const PHONE_REACH_STALE_DAYS = 30;
-
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
 /**
  * "November 18", with the year only when it isn't this year ("December 10,
- * 2025"), the written-out form the member profile's "Member since" uses.
+ * 2025"): written out, month first, as the app writes dates.
  */
 function writtenDate(date: Date, now: Date): string {
-  const day = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  const day = `${BIRTHDAY_MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
   return date.getFullYear() === now.getFullYear()
     ? day
     : `${day}, ${date.getFullYear()}`;
@@ -209,10 +224,26 @@ export function phoneReachStaleNote(
   if (!reach.last_opened_at) return null;
   const at = new Date(reach.last_opened_at);
   if (Number.isNaN(at.getTime())) return null;
-  const days = (now.getTime() - at.getTime()) / 86_400_000;
+  const days = (now.getTime() - at.getTime()) / DAY_MS;
   return days >= PHONE_REACH_STALE_DAYS
     ? phoneReachLastOpened(reach, now)
     : null;
+}
+
+/**
+ * The count line for a list of members by `users.id`, from the reach map the
+ * Directory holds (web and the phone both call this). A member with no entry
+ * isn't counted as unreachable but still counts toward the total.
+ */
+export function phoneReachCountLineFor(
+  userIds: readonly (string | null | undefined)[],
+  byUserId: ReadonlyMap<string, PhoneReach>,
+): string {
+  const reaches = userIds.flatMap((id) => {
+    const reach = id ? byUserId.get(id) : undefined;
+    return reach ? [reach] : [];
+  });
+  return phoneReachCountLine(reaches, userIds.length);
 }
 
 /** "8 of 42 members can't get notifications", for the filtered list. */
@@ -220,8 +251,6 @@ export function phoneReachCountLine(
   reaches: readonly PhoneReach[],
   memberCount: number,
 ): string {
-  const unreachable = reaches.filter(
-    (r) => r.state === "off" || r.state === "web_only",
-  ).length;
+  const unreachable = reaches.filter(isUnreachable).length;
   return `${unreachable} of ${memberCount} ${memberCount === 1 ? "member" : "members"} can't get notifications`;
 }

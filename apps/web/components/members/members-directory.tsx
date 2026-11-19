@@ -77,7 +77,7 @@ import {
   matchesPhoneReachFilter,
   PHONE_REACH_FILTER_OPTIONS,
   PHONE_REACH_LABEL,
-  phoneReachCountLine,
+  phoneReachCountLineFor,
   phoneReachStaleNote,
   phoneReachStateLabel,
   type PhoneReach,
@@ -655,6 +655,7 @@ export function MembersDirectory() {
       customLine,
       reachText,
       reachNote,
+      reachOff: reach?.state === "off",
       reach,
       label,
     };
@@ -1036,6 +1037,20 @@ export function MembersDirectory() {
           would be a real regression rather than a nit.
         */}
           {/*
+            The Phone app filter's count, over the actives only: hidden while
+            a search spans both lists, as on the phone.
+          */}
+          {effectivePhoneReachFilter !== null && phoneReach && !usingSearch ? (
+            <p className="text-caption text-muted" aria-live="polite">
+              {phoneReachCountLineFor(
+                members.map((member) =>
+                  typeof member.user_id === "string" ? member.user_id : null,
+                ),
+                phoneReach.byUserId,
+              )}
+            </p>
+          ) : null}
+          {/*
             The list header, which is all that survives of the deleted
             `<thead>`: no column labels (a flush list has no columns to label)
             and no sort buttons (one sort chip in the toolbar replaced four),
@@ -1047,17 +1062,6 @@ export function MembersDirectory() {
             emptied the selection, which unmounted the bar around the checkbox
             that had focus. Here it behaves exactly as the `<th>` checkbox did.
           */}
-          {effectivePhoneReachFilter !== null && phoneReach ? (
-            <p className="text-caption text-muted" aria-live="polite">
-              {phoneReachCountLine(
-                members.flatMap((member) => {
-                  const reach = phoneReachOfMember(member);
-                  return reach ? [reach] : [];
-                }),
-                members.length,
-              )}
-            </p>
-          ) : null}
           <label className="flex w-fit min-h-9 cursor-pointer items-center gap-2 text-caption text-muted pointer-coarse:min-h-11">
             <span className={dashboardCheckboxHitAreaClassName}>
               <input

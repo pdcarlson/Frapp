@@ -25,9 +25,9 @@ export function useMemberPhoneReach() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const query = useQuery({
-    // Under `["members", …]`, so a profile save refreshes it with the
-    // directory.
-    queryKey: ["members", chapterId, "phone-reach"],
+    // Not under `["members", …]`: role, class and invite edits invalidate
+    // that prefix, and none of them can change whose phone a push reaches.
+    queryKey: ["phone-reach", chapterId],
     queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/members/phone-reach", {
         signal,

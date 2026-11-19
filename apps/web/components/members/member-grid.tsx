@@ -26,6 +26,14 @@ export interface MemberFacts {
   points: number;
   status: PresenceStatus | null;
   customLine: string | null;
+  /**
+   * The Phone app filter's answer ("Web only", "Notifications off") and a
+   * stale phone's "Last opened" note, set only while that filter is.
+   */
+  reachText?: string | null;
+  reachNote?: string | null;
+  /** Whether the answer is "Notifications off", drawn in the warning tone. */
+  reachOff?: boolean;
   /** The tile's accessible name: every fact it shows, in a fixed order. */
   label: string;
 }
@@ -132,6 +140,21 @@ export function MemberGrid({
                 {member.email ? (
                   <span className="w-full truncate text-caption text-muted">
                     {member.email}
+                  </span>
+                ) : null}
+                {facts.reachText ? (
+                  <span
+                    className={cn(
+                      "w-full truncate text-caption",
+                      facts.reachOff ? "text-warning" : "text-muted",
+                    )}
+                  >
+                    {facts.reachText}
+                  </span>
+                ) : null}
+                {facts.reachNote ? (
+                  <span className="w-full truncate text-caption text-muted">
+                    {facts.reachNote}
                   </span>
                 ) : null}
               </span>

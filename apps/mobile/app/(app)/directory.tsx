@@ -58,7 +58,7 @@ import {
 } from "@/components/pull-to-refresh";
 import { ActivesFilterSheet } from "@/components/directory/actives-filter-sheet";
 import {
-  phoneReachCountLine,
+  phoneReachCountLineFor,
   phoneReachStaleNote,
   phoneReachStateLabel,
   type PhoneReach,
@@ -291,13 +291,11 @@ export default function DirectoryScreen() {
     tab === "actives" &&
     activesFilter.phoneReach !== null &&
     phoneReach
-      ? phoneReachCountLine(
-          actives.flatMap((row) => {
-            const id = typeof row.user_id === "string" ? row.user_id : null;
-            const reach = id ? phoneReach.byUserId.get(id) : undefined;
-            return reach ? [reach] : [];
-          }),
-          actives.length,
+      ? phoneReachCountLineFor(
+          actives.map((row) =>
+            typeof row.user_id === "string" ? row.user_id : null,
+          ),
+          phoneReach.byUserId,
         )
       : null;
   const listData =

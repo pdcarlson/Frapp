@@ -209,7 +209,7 @@ export class MemberPhoneReachDto {
   @ApiProperty({
     enum: ['on', 'off', 'unknown', 'web_only'],
     description:
-      '`on`: a phone shows Frapp notifications. `off`: every phone that has said has them off. `unknown`: a phone on a build that has not said yet. `web_only`: no phone signed in.',
+      "From the member's current phones (the one opened last, and any opened within 30 days of it). `on`: a current phone shows Frapp notifications. `off`: none does, and the phone opened last says off. `unknown`: none does, and the phone opened last is on a build that has not said yet. `web_only`: no phone signed in.",
   })
   state: 'on' | 'off' | 'unknown' | 'web_only';
 

@@ -54,6 +54,21 @@ export function lastReportedNotificationsEnabled(): boolean | undefined {
 }
 
 /**
+ * Whether a return to the foreground should re-register: only once a register
+ * has reported an answer, and only when the phone now reads differently. So
+ * an ordinary app switch posts nothing, and a build that can't get a token
+ * doesn't retry on every switch.
+ */
+export function shouldReportOnForeground(
+  enabled: boolean | undefined,
+  reported: boolean | undefined = reportedNotificationsEnabled,
+): boolean {
+  return (
+    enabled !== undefined && reported !== undefined && enabled !== reported
+  );
+}
+
+/**
  * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
  * The listener would then re-enter this function, `getToken` again, and
  * recurse, so a call that finds one in flight returns at once (and asks for
@@ -172,7 +187,7 @@ export async function registerCurrentPushToken(deps: {
       }
     } catch (error) {
       deps.warn?.(
-        "Push token registration failed; will retry on the next sign-in or token rotation.",
+        "Push token registration failed; will retry on the next launch, sign-in, token rotation or permission change.",
         error,
       );
     }

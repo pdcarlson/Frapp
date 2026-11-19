@@ -3,6 +3,7 @@ import {
   canSeeChapterPhoneReach,
   matchesPhoneReachFilter,
   phoneReachCountLine,
+  phoneReachCountLineFor,
   phoneReachLastOpened,
   phoneReachOf,
   phoneReachStaleNote,
@@ -36,16 +37,57 @@ describe("phoneReachOf", () => {
     expect(reach.state).toBe("on");
   });
 
-  it("is off only when every phone says off", () => {
+  it("is off when no current phone is on and the one opened last says off", () => {
     expect(
       phoneReachOf("u-1", [device({ notifications_enabled: false })]).state,
     ).toBe("off");
+    // An older phone on an old build doesn't hide a current "off".
     expect(
       phoneReachOf("u-1", [
         device({ notifications_enabled: false }),
+        device({
+          notifications_enabled: null,
+          last_registered_at: "2026-11-10T15:00:00.000Z",
+        }),
+      ]).state,
+    ).toBe("off");
+  });
+
+  it("is unknown when the phone opened last hasn't said and none is on", () => {
+    expect(
+      phoneReachOf("u-1", [
         device({ notifications_enabled: null }),
+        device({
+          notifications_enabled: false,
+          last_registered_at: "2026-11-10T15:00:00.000Z",
+        }),
       ]).state,
     ).toBe("unknown");
+  });
+
+  it("ignores a phone left unopened for 30 days, and names the phone that is on", () => {
+    // A reinstall's old token still says on, months stale.
+    const reach = phoneReachOf("u-1", [
+      device({ notifications_enabled: false }),
+      device({
+        device_name: "android 14 · Pixel 7",
+        notifications_enabled: true,
+        last_registered_at: "2026-06-01T15:00:00.000Z",
+      }),
+    ]);
+    expect(reach.state).toBe("off");
+    expect(reach.platform).toBe("ios");
+
+    const twoCurrent = phoneReachOf("u-1", [
+      device({ notifications_enabled: false }),
+      device({
+        device_name: "android 15 · Pixel 9",
+        notifications_enabled: true,
+        last_registered_at: "2026-11-15T15:00:00.000Z",
+      }),
+    ]);
+    expect(twoCurrent.state).toBe("on");
+    expect(twoCurrent.platform).toBe("android");
   });
 
   it("takes the platform and date from the phone opened last", () => {
@@ -157,5 +199,14 @@ describe("wording", () => {
         3,
       ),
     ).toBe("2 of 3 members can't get notifications");
+    expect(
+      phoneReachCountLineFor(
+        ["a", "b", null],
+        new Map([
+          ["a", phoneReachOf("a", [])],
+          ["b", phoneReachOf("b", [device()])],
+        ]),
+      ),
+    ).toBe("1 of 3 members can't get notifications");
   });
 });
