@@ -33,7 +33,13 @@ describe("appInstallUrl", () => {
   });
 
   it("ignores a value that isn't an https URL", () => {
-    for (const ios of ["", "testflight.apple.com/join/x", "http://x.test/a"]) {
+    for (const ios of [
+      "",
+      "testflight.apple.com/join/x",
+      "http://x.test/a",
+      // The API's boot check refuses it too (`isHttpsUrl`).
+      "https:testflight.apple.com/join/x",
+    ]) {
       expect(
         appInstallUrl("ios", STAGING_NATIVE_APP, { ios, android: undefined }),
       ).toBeNull();

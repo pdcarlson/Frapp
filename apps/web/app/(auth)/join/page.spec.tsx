@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fireEvent,
   render,
@@ -178,6 +178,9 @@ beforeEach(() => {
   device.phone = null;
   device.app = STORE_APP;
 });
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("web join — an invite link opened on a phone (#4002)", () => {
   function renderPage() {
@@ -295,7 +298,44 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
         .getByRole("link", { name: "Open in Frapp Staging" })
         .getAttribute("href"),
     ).toBe("frapp-staging://join?token=abc");
-    vi.unstubAllEnvs();
+  });
+
+  it("walks an Android tester through Play's tester page, then the intent link", async () => {
+    device.phone = "android";
+    device.app = STAGING_APP;
+    vi.stubEnv(
+      "NEXT_PUBLIC_ANDROID_INSTALL_URL",
+      "https://play.google.com/apps/internaltest/4701234567890",
+    );
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    const getLink = await screen.findByRole("link", {
+      name: "Get Frapp Staging",
+    });
+    expect(getLink.getAttribute("href")).toBe(
+      "https://play.google.com/apps/internaltest/4701234567890",
+    );
+    expect(screen.getByText(/Opens Google Play's tester page/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Open in Frapp Staging" })
+        .getAttribute("href"),
+    ).toBe(
+      "intent://join?token=abc#Intent;scheme=frapp-staging;package=live.frapp.mobile.staging;end",
+    );
+  });
+
+  it("tells a non-tester to use the browser when the store listing is the fallback", async () => {
+    device.phone = "ios";
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    expect(
+      await screen.findByText(/if the store says it isn't available yet/),
+    ).toBeTruthy();
   });
 
   it("offers only Open in the app for Frapp Staging before its install link is set", async () => {
@@ -313,7 +353,6 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     ).toBe("frapp-staging://join?token=abc");
     expect(screen.queryByRole("link", { name: /^Get / })).toBeNull();
     expect(screen.queryByRole("listitem")).toBeNull();
-    vi.unstubAllEnvs();
   });
 
   it("offers the app to a signed-in account with no chapter", async () => {

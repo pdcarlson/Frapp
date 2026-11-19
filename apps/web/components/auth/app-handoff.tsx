@@ -9,8 +9,10 @@ const INSTALL_HINT = {
   testflight:
     "Opens TestFlight, Apple's app for betas. Tap Accept, then Install. If you don't have TestFlight, Apple's page offers it first.",
   "play-testing":
-    "Opens Google Play's tester page. Join the test, then tap Install.",
-  store: null,
+    "Opens Google Play's tester page. Join the test, then tap Install. If Play says you aren't a tester, ask the officer who sent your invite to add you.",
+  // During the beta the store listings open for testers only.
+  store:
+    "The app is in beta, so if the store says it isn't available yet, continue in the browser.",
 } as const;
 
 /**

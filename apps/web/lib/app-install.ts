@@ -17,8 +17,10 @@ import { useNativeApp } from "@/lib/use-phone-platform";
  * page. Those links are made in App Store Connect and Play Console, one per
  * app, so they come from the environment like the app-link values beside them
  * (`lib/app-links.ts`): `NEXT_PUBLIC_IOS_INSTALL_URL` and
- * `NEXT_PUBLIC_ANDROID_INSTALL_URL`, set in Infisical `staging` for Frapp
- * Staging and in `prod` for the store app (`ENV_REFERENCE.md`). Both are
+ * `NEXT_PUBLIC_ANDROID_INSTALL_URL`. In Infisical each is a reference to the
+ * API's `MOBILE_UPDATE_URL_IOS` / `_ANDROID`, the link the app's own update
+ * screen opens, so one value per environment feeds both (`ENV_REFERENCE.md`):
+ * Frapp Staging's in `staging`, the store app's in `prod`. Both are
  * public, inlined at build, so a changed value reaches the page at the next
  * web deploy.
  *
@@ -37,10 +39,14 @@ export function appInstallUrl(
     : null;
 }
 
-/** An https URL, or null: a malformed value draws no button rather than a dead one. */
+/**
+ * An https URL, or null: a malformed value draws no button rather than a dead
+ * one. The same test as the API's `isHttpsUrl` (`client-policy.service.ts`),
+ * since both read one Infisical value (`MOBILE_UPDATE_URL_*`).
+ */
 function validInstallUrl(raw: string | undefined): string | null {
   const value = raw?.trim();
-  if (!value) return null;
+  if (!value || !/^https:\/\//i.test(value)) return null;
   try {
     const url = new URL(value);
     return url.protocol === "https:" ? url.toString() : null;

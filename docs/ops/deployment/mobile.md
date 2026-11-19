@@ -851,11 +851,14 @@ is collected, and the link takes up to 10,000 people. Apple's Beta App Review ch
 of each new version (the group's test information needs a staging sign-in for the reviewer); later
 builds of that version usually go straight out, and OTA updates never need review. A new binary
 reaches the external group only once it is added there in App Store Connect (TestFlight → the
-group → Builds → +), because `eas submit`'s `--groups` takes internal groups only. On Android,
-Play's internal track takes up to 100 testers from an email list or a Google Group. Each link goes in
-Infisical `staging` (`NEXT_PUBLIC_IOS_INSTALL_URL`, `NEXT_PUBLIC_ANDROID_INSTALL_URL`,
-[`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)), and an invite link opened on a
-phone then walks the tester from getting the app to opening the invite in it
+group → Builds → +), because `eas submit`'s `--groups` takes internal groups only (Expo's
+[TestFlight guide](https://docs.expo.dev/submit/testflight/), read 2026-11-19). On Android, Play's
+internal track takes up to 100 testers, and only accounts on its email list or Google Group can open
+its link, so a tester has to be on the list first. Each link goes in Infisical `staging` as
+`MOBILE_UPDATE_URL_IOS` / `_ANDROID`, which the web's install links reference
+([`ENV_REFERENCE.md` § References](../../internal/environment/ENV_REFERENCE.md#references--framework-specific-names)),
+and an invite link opened on a phone then walks the tester from getting the app to opening the
+invite in it
 ([`spec/behavior/onboarding.md` § Invite Token Rules](../../../spec/behavior/onboarding.md#invite-token-rules)).
 
 Known limits: a staging binary's native crashes are not symbolicated in Sentry, because a local

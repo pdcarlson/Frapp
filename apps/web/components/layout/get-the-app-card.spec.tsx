@@ -1,17 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
+const STORE_APP = { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" };
 const device = vi.hoisted(() => ({
   phone: null as "ios" | "android" | null,
+  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+  app: null as { id: string; scheme: string; name: string } | null,
 }));
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
-  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
-  useNativeApp: () => ({
-    id: "live.frapp.mobile",
-    scheme: "frapp",
-    name: "Frapp",
-  }),
+  useNativeApp: () => device.app,
 }));
 
 import { GET_THE_APP_TITLE, GetTheAppCard } from "./get-the-app-card";
@@ -24,8 +22,12 @@ beforeEach(() => {
   window.localStorage.clear();
   resetGetTheAppForTests();
   device.phone = null;
+  device.app = STORE_APP;
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe("Get the app card (#4002)", () => {
   it("offers the App Store and the app on an iPhone", () => {
@@ -63,7 +65,30 @@ describe("Get the app card (#4002)", () => {
     expect(
       screen.getByRole("link", { name: "Get the app" }).getAttribute("href"),
     ).toBe("https://testflight.apple.com/join/AbCd1234");
-    vi.unstubAllEnvs();
+  });
+
+  it("offers Frapp Staging's install link on staging only once one is set", () => {
+    device.phone = "ios";
+    device.app = {
+      id: "live.frapp.mobile.staging",
+      scheme: "frapp-staging",
+      name: "Frapp Staging",
+    };
+    const unset = render(<GetTheAppCard />);
+    expect(screen.queryByRole("link", { name: "Get the app" })).toBeNull();
+    unset.unmount();
+
+    vi.stubEnv(
+      "NEXT_PUBLIC_IOS_INSTALL_URL",
+      "https://testflight.apple.com/join/AbCd1234",
+    );
+    render(<GetTheAppCard />);
+    expect(
+      screen.getByRole("link", { name: "Get the app" }).getAttribute("href"),
+    ).toBe("https://testflight.apple.com/join/AbCd1234");
+    expect(
+      screen.getByRole("link", { name: "Open the app" }).getAttribute("href"),
+    ).toBe("frapp-staging://");
   });
 
   it("shows nothing on a desktop or tablet", () => {

@@ -309,7 +309,7 @@ function AppButtons({
   // staging app until its TestFlight or Play tester link is set.
   const { app, installUrl } = useAppInstall(platform);
   return (
-    <div className={lead ? "flex flex-col gap-3" : "flex gap-3"}>
+    <div className={lead ? "flex flex-col gap-3" : "flex flex-wrap gap-3"}>
       <Button
         asChild
         variant={lead ? "default" : "secondary"}
