@@ -607,6 +607,23 @@ export interface IChatMessageAttachmentRepository {
   ): Promise<ChatMessageAttachment[]>;
 
   /**
+   * Attachments for several messages of one channel in one read, each row
+   * carrying its message's `sender_id` so the caller can apply the block mask
+   * (`ChatAttachmentService.listAttachmentsForMessages`, #5667). Oldest first
+   * within each message, as {@link findByMessage}.
+   *
+   * Rows of a deleted message, of a message in another channel, or of a
+   * channel in another chapter are left out by the same statement, not by the
+   * caller: a soft-deleted message keeps its attachment rows, so the filter on
+   * the message is what keeps its files from being signed again.
+   */
+  findByMessages(
+    channelId: string,
+    messageIds: readonly string[],
+    chapterId: string,
+  ): Promise<(ChatMessageAttachment & { sender_id: string | null })[]>;
+
+  /**
    * Which of `candidates` some message *other than* `excludingMessageId` still
    * references — or, with `null`, any message at all. `null` is the release of
    * a resolved report's evidence (#2481), where the reported message itself

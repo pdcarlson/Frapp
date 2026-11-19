@@ -26,6 +26,7 @@ import {
   MeetingActionItemTaskDto,
   SeriesOpenActionItemsDto,
 } from '../dtos/meeting-action-item-task.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * The tasks posted minutes' action items became, for the minutes' checkboxes
@@ -44,6 +45,7 @@ export class MeetingActionItemTasksController {
   constructor(private readonly suggestions: MeetingTaskSuggestionsService) {}
 
   @Get(':id/action-item-tasks')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'Which action items of posted minutes became tasks, and whether each is done. Empty for a draft',

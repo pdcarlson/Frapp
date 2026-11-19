@@ -584,6 +584,10 @@ Both renderers apply it, from `packages/chat-core/src/markdown-parse-budget.ts`.
   An empty body with at least one attachment is a valid send.
 - **Attachments are fetched, not embedded in the message.**
   `GET /v1/channels/{id}/messages/{messageId}/attachments` returns the rows with a one-hour signed download URL each, batched into as few `getSignedDownloadUrls` calls as the attachments' buckets require (#1231) rather than one per row.
+  A message list asks for many messages at once: `GET /v1/channels/{id}/messages/attachments?message_ids=<id>,<id>,…` takes up to 50 message ids and answers each one's attachments keyed by its id, in one access check, one read and one signing call (#5667).
+  Clients batch every row that mounts together into it and keep each message's own cache entry.
+  Its rules are the single route's, applied per message: a message that is deleted, outside this channel or chapter, or from a sender the caller has blocked maps to an empty list rather than a 404.
+  It is a `GET` so it counts as a read for the rate limit and stays readable when a chapter's subscription lapses, as the single route does.
   They are a separate read for two reasons that point the same way: every bucket is private so a URL has to be minted per request and cannot be cached with the message, and the message cache is fed partly by Realtime rows, which cannot carry a join.
   `chat_messages.metadata.attachment_count` — a count, never a copy of the data — rides on the row so a client knows whether the call is worth making; without it a file-only message would render as an empty bubble for everyone except its sender.
 - **An image opens in a viewer, not as a download** (#2874).
@@ -832,7 +836,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   - **Rows deleted before #1575 still hold their `payload`** until the cleanup migration `20261112060000_clear_deleted_message_payloads.sql` runs, which waits on Paul's approval as a data deletion.
     The API never serves it, but a member who can read the channel can still read it straight from `chat_messages` under its read policy (`chat_messages_select`, which does not filter `is_deleted`), and an unpin of such a row sends it in the Realtime UPDATE echo.
     Remove this bullet once the migration has run on production.
-  - The purge runs **after** the row is flagged, and is best-effort: flagging the message stops the API minting _new_ download URLs (`GET /v1/channels/:id/messages/:messageId/attachments` 404s a deleted message).
+  - The purge runs **after** the row is flagged, and is best-effort: flagging the message stops the API minting _new_ download URLs (`GET /v1/channels/:id/messages/:messageId/attachments` 404s a deleted message, and the batched `GET /v1/channels/:id/messages/attachments` answers it with no files).
     A signed URL issued **before** the delete stays valid for the rest of its hour-long TTL regardless — deletion of the bytes is what ends that, and the purge is best-effort, so a Storage failure leaves the object readable to anyone already holding a URL.
     Failures are logged per bucket and never roll back the delete or fail the request.
   - **An object still referenced by an undeleted message is kept.**

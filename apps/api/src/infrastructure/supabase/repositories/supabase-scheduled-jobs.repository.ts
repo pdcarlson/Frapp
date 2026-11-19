@@ -505,13 +505,21 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       threshold,
       due_date: dueDate,
     };
-    const { error } = await this.supabase
+    // `on conflict do nothing`: a sweep re-offers every candidate still in
+    // its window each tick, so most claims lose to an earlier sweep. As a
+    // plain insert each loss was a unique-violation ERROR in the Postgres log
+    // (about 330 a day on staging, 2026-11-19), which buried real errors.
+    // The returned row tells the winner apart: a lost claim returns none.
+    const { data, error } = await this.supabase
       .from('scheduled_notification_dispatches')
-      .insert(row);
+      .upsert(row, {
+        onConflict: 'entity_type,entity_id,threshold,due_date',
+        ignoreDuplicates: true,
+      })
+      .select('entity_id');
 
-    if (!error) return true;
-    // A losing claim, not an error: the unique constraint is the dedup
-    // mechanism, so another worker got there first.
+    if (!error) return (data ?? []).length > 0;
+    // Still a losing claim if it ever surfaces as a violation.
     if (error.code === PG_UNIQUE_VIOLATION) return false;
 
     reportCaughtFailure(this.logger, {

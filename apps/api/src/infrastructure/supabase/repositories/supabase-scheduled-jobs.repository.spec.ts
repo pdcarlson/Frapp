@@ -66,6 +66,13 @@ function makeSupabase(pages: Page[]) {
     return Promise.resolve(pages[pageIndex++] ?? { error: null });
   });
 
+  // `claimDispatch` is insert-or-ignore: `upsert(..., { ignoreDuplicates })`
+  // then `select`, resolved through `then` below.
+  builder.upsert = jest.fn((payload: Record<string, unknown>) => {
+    insertPayload = payload;
+    return builder;
+  });
+
   builder.delete = jest.fn(() => {
     deleting = true;
     return builder;
@@ -546,7 +553,9 @@ describe('SupabaseScheduledJobsRepository', () => {
 
   describe('claimDispatch', () => {
     it('claims the reminder and records the due date in the key', async () => {
-      const { repo, supabase } = await buildRepo([{ data: null, error: null }]);
+      const { repo, supabase } = await buildRepo([
+        { data: [{ entity_id: 'inv-1' }], error: null },
+      ]);
 
       const claimed = await repo.claimDispatch(
         'chap-1',
@@ -564,6 +573,21 @@ describe('SupabaseScheduledJobsRepository', () => {
         threshold: 'DUE_SOON',
         due_date: '2026-08-06',
       });
+      expect(supabase.builder.upsert).toHaveBeenCalledWith(expect.anything(), {
+        onConflict: 'entity_type,entity_id,threshold,due_date',
+        ignoreDuplicates: true,
+      });
+    });
+
+    // The ordinary case on every sweep after the first: `on conflict do
+    // nothing` returns no row, so Postgres logs no unique-violation error.
+    it('loses the claim when the insert returns no row', async () => {
+      const { repo } = await buildRepo([{ data: [], error: null }]);
+
+      await expect(
+        repo.claimDispatch('chap-1', 'TASK', 'task-1', 'OVERDUE', '2026-08-04'),
+      ).resolves.toBe(false);
+      expect(reportedFingerprints()).toEqual([]);
     });
 
     it('loses the claim on a unique violation without treating it as an error', async () => {

@@ -250,6 +250,14 @@ const HTTP_LEDGER: Record<string, Entry> = {
       test: 'refuses to hand out URLs for a message whose sender the caller has blocked',
     },
   },
+  // #5667: the batch form of the route above, one request per message list.
+  ChatController_listMessagesAttachments_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_ATTACHMENT_SERVICE_SPEC,
+      test: 'withholds the files of a sender the caller has blocked, and signs nothing for them',
+    },
+  },
   ChatController_resolveAuthorAvatars_v1: {
     status: 'not-hidden',
     why: 'Imported archive authors only (`sender_id: null`). Blocks are keyed on `users.id`, so there is nobody to have blocked.',

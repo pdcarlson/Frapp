@@ -1,4 +1,4 @@
-# 20261119210432_chat_messages_signup_form_cards_index.sql
+# 20261119222241_chat_messages_signup_form_cards_index.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
