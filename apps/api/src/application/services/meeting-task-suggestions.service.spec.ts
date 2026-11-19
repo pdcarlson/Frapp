@@ -95,7 +95,7 @@ describe('MeetingTaskSuggestionsService (#4313)', () => {
           dedupeKey: actionItemKey('Book the bus'),
           payload: {
             title: 'Book the bus',
-            description: 'From the minutes of Chapter meeting.',
+            description: null,
             assignee_id: JAKE,
             due_date: '2026-11-14',
           },
@@ -105,7 +105,7 @@ describe('MeetingTaskSuggestionsService (#4313)', () => {
           dedupeKey: actionItemKey('Order shirts'),
           payload: {
             title: 'Order shirts',
-            description: 'From the minutes of Chapter meeting.',
+            description: null,
             assignee_id: null,
             due_date: null,
           },

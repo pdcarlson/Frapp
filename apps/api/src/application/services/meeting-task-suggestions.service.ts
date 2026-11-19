@@ -231,7 +231,7 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
       },
       kind: 'task',
       proposals: on
-        ? taskProposalsFromMinutes(meeting.content, meeting.event_name)
+        ? taskProposalsFromMinutes(meeting.content)
         : [],
       notify: on && change.reason === 'posted' ? [change.actorId] : [],
     });

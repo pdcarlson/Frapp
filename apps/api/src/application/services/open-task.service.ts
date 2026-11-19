@@ -56,6 +56,8 @@ export interface CreateOpenTaskInput extends OpenTaskFields {
   created_by: string;
   /** Who may claim it. */
   target: TaskAudienceTarget;
+  /** The minutes it was suggested from (#5562); set only by that accept. */
+  meeting_id?: string | null;
 }
 
 /** An officer's edit of an open posting. Omitted fields stay as they are. */
@@ -178,6 +180,7 @@ export class OpenTaskService {
       scope_id: resolved.targetId,
       scope_name: resolved.targetName,
       scope_user_ids: scope === 'people' ? resolved.userIds : null,
+      meeting_id: input.meeting_id ?? null,
     });
 
     await this.notifyPosted(

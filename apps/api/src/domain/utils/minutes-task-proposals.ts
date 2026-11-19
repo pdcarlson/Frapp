@@ -58,10 +58,14 @@ function titleFrom(text: string): string {
   return `${(atWord.length > TASK_TITLE_MAX_LENGTH / 2 ? atWord : cut).trimEnd()}…`;
 }
 
-function descriptionFrom(text: string, title: string, meetingName: string) {
-  const from = `From the minutes of ${meetingName}.`;
-  // A title that had to be cut keeps its whole line in the description.
-  return title === text ? from : `${text}\n\n${from}`;
+/**
+ * A title that had to be cut keeps its whole line in the description;
+ * otherwise there is none. The minutes it came from are the task's
+ * `meeting_id` (#5562), named on screen as the meeting is called now, never
+ * written into the text, where a renamed meeting would leave its old name.
+ */
+function descriptionFrom(text: string, title: string): string | null {
+  return title === text ? null : text;
 }
 
 /**
@@ -70,7 +74,6 @@ function descriptionFrom(text: string, title: string, meetingName: string) {
  */
 export function taskProposalsFromMinutes(
   content: unknown,
-  meetingName: string,
 ): MinutesTaskProposal[] {
   const seen = new Set<string>();
   const proposals: MinutesTaskProposal[] = [];
@@ -87,7 +90,7 @@ export function taskProposalsFromMinutes(
       dedupeKey,
       payload: {
         title,
-        description: descriptionFrom(text, title, meetingName),
+        description: descriptionFrom(text, title),
         assignee_id: item.owner_user_id,
         due_date: item.due_date,
       },

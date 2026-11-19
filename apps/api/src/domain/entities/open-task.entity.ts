@@ -37,6 +37,8 @@ export interface OpenTask {
   claimed_task_id: string | null;
   claimed_by: string | null;
   claimed_at: string | null;
+  /** The minutes it was suggested from (#5562), or null; the claimed task keeps it. */
+  meeting_id: string | null;
   created_at: string;
   updated_at: string;
 }

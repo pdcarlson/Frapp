@@ -33,6 +33,7 @@ const posting = (over: Partial<OpenTask> = {}): OpenTask => ({
   claimed_task_id: null,
   claimed_by: null,
   claimed_at: null,
+  meeting_id: null,
   created_at: '2026-11-18T00:00:00.000Z',
   updated_at: '2026-11-18T00:00:00.000Z',
   ...over,
@@ -60,6 +61,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   series_id: null,
   occurrence_date: null,
   group_id: null,
+  meeting_id: null,
   created_at: '2026-11-18T00:00:00.000Z',
   ...over,
 });

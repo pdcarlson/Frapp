@@ -334,6 +334,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
     chapterId: string;
     userId: string;
     payload: AiSuggestionPayload;
+    source?: { type: string; id: string };
   }): Promise<{ resultId: string }> {
     const task = readTaskPayload(input.payload);
     // `assertAcceptable` ran before the claim; these narrow the types.
@@ -343,6 +344,10 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
         message: 'Pick who this task is for and when it is due.',
       });
     }
+    // A task from minutes names them by id (#5562), so its screens read the
+    // meeting's name as it is now.
+    const meetingId =
+      input.source?.type === 'meeting' ? input.source.id : null;
     // "Someone in…" posts one task up for grabs (2026-11-18); the result is
     // the posting's id.
     if (task.audience === TASK_AUDIENCE_SOMEONE) {
@@ -356,6 +361,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
         subtasks: task.subtasks,
         point_reward: null,
         target: targetOf(task),
+        ...(meetingId ? { meeting_id: meetingId } : {}),
       });
       return { resultId: posting.id };
     }
@@ -386,6 +392,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
       subtasks: task.subtasks,
       // Never points, and never a chat card (no `channel_id`).
       point_reward: null,
+      ...(meetingId ? { meeting_id: meetingId } : {}),
     });
     return { resultId: created.id };
   }

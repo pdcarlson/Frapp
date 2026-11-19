@@ -367,7 +367,20 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (copies.length === 0) {
       throw new Error('create_task_group returned no task');
     }
-    return copies;
+    const meetingId = input.meeting_id ?? null;
+    const groupId = copies[0]?.group_id;
+    if (!meetingId || !groupId) return copies;
+    // The minutes it came from (#5562), on every copy. The function predates
+    // the column, so it is set here rather than in its signature.
+    const { data: linked, error: linkError } = await this.supabase
+      .from('tasks')
+      .update({ meeting_id: meetingId })
+      .eq('chapter_id', input.chapter_id)
+      .eq('group_id', groupId)
+      .select();
+    if (linkError) throw new SupabaseQueryError(linkError);
+    const byId = new Map((linked ?? []).map((task) => [task.id, task]));
+    return copies.map((copy) => byId.get(copy.id) ?? copy);
   }
 
   async findGroups(chapterId: string, ids: string[]): Promise<TaskGroup[]> {

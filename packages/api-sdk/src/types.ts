@@ -9485,6 +9485,11 @@ export interface components {
              * @description The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person.
              */
             group_id: string | null;
+            /**
+             * Format: uuid
+             * @description The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to.
+             */
+            meeting_id: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -9581,6 +9586,11 @@ export interface components {
             claimed_by: string | null;
             /** Format: date-time */
             claimed_at: string | null;
+            /**
+             * Format: uuid
+             * @description The minutes it was suggested from (#5562), or null. Read the meeting for its name, which the reader may not be allowed to.
+             */
+            meeting_id: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
