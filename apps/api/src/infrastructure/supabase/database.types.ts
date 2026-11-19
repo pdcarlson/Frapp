@@ -549,7 +549,7 @@ export interface Database {
       /**
        * `20261117172708` (#4295 step 3) — a task for everyone: its group, a
        * copy per member and each copy's checklist in one transaction.
-       * Returns the copies.
+       * Returns the copies. `p_followed_by` since `20261119162318` (#5473).
        */
       create_task_group: {
         Args: {
@@ -566,6 +566,7 @@ export interface Database {
           p_point_reward: number | null;
           p_proof_kind: string;
           p_subtask_titles: string[];
+          p_followed_by: string | null;
         };
         Returns: Task[];
       };

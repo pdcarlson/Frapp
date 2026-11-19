@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { ROLE_COLOR_HEXES, roleColor } from "@repo/validation";
 import {
+  documentFolderHues,
   tierByMarks,
   markedItems,
   tierRows,
@@ -694,5 +696,48 @@ describe("limitedDocumentCheck (#5216)", () => {
     const isLimited = limitedDocumentCheck(null);
     expect(isLimited({ folder: "Treasury" })).toBe(false);
     expect(isLimited({ folder: "Exec", who_can_see: ["role:a"] })).toBe(true);
+  });
+});
+
+describe("documentFolderHues (#5576)", () => {
+  const folders = [
+    "Meeting Minutes",
+    "Bylaws & Governance",
+    "Finance",
+    "Rush",
+    "Rush / 2024",
+  ];
+  const hue = documentFolderHues(folders);
+
+  it("gives a file in no folder Slate, and a folder a palette hue other than Slate", () => {
+    const slate = roleColor("slate");
+    expect(hue(null)).toBe(slate);
+    expect(hue("")).toBe(slate);
+    expect(hue("Finance")).not.toBe(slate);
+    expect(ROLE_COLOR_HEXES).toContain(hue("Finance"));
+  });
+
+  it("gives the top folders the palette in turn, so none share a hue", () => {
+    const hues = [
+      "Meeting Minutes",
+      "Bylaws & Governance",
+      "Finance",
+      "Rush",
+    ].map(hue);
+    expect(new Set(hues).size).toBe(4);
+  });
+
+  it("colours a subfolder as the folder the rail draws it under", () => {
+    expect(hue("Rush / 2024")).toBe(hue("Rush"));
+  });
+
+  it("keeps two path-named folders with no parent folder apart, as the rail does", () => {
+    const paths = documentFolderHues(["Rush / Socials", "Rush / Budget"]);
+    expect(paths("Rush / Socials")).not.toBe(paths("Rush / Budget"));
+  });
+
+  it("still colours a folder the list doesn't hold", () => {
+    expect(ROLE_COLOR_HEXES).toContain(hue("Archive"));
+    expect(hue("Archive")).not.toBe(roleColor("slate"));
   });
 });

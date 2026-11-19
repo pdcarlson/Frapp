@@ -144,7 +144,17 @@ export class SupabaseTaskRepository implements ITaskRepository {
     },
   >(q: Q, chapterId: string, query: TaskListFilter & TaskListQuery): Q {
     q = q.eq('chapter_id', chapterId);
-    if (query.assigneeId) q = q.eq('assignee_id', query.assigneeId);
+    if (query.assigneeId && query.orFollowedBy?.length) {
+      // Their own tasks, or one a tier, role or group they're in follows
+      // (#5473). Entries hold a colon, so each is quoted.
+      q = q.or(
+        `assignee_id.eq.${escapeFilterValue(query.assigneeId)},followed_by.in.(${query.orFollowedBy
+          .map(escapeFilterValue)
+          .join(',')})`,
+      );
+    } else if (query.assigneeId) {
+      q = q.eq('assignee_id', query.assigneeId);
+    }
     if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
     if (query.createdBy) q = q.eq('created_by', query.createdBy);
     if (query.groupless) q = q.is('group_id', null);
@@ -191,6 +201,19 @@ export class SupabaseTaskRepository implements ITaskRepository {
 
     if (error) throw new SupabaseQueryError(error);
     return updated;
+  }
+
+  async setGroupFollower(
+    chapterId: string,
+    groupId: string,
+    followedBy: string | null,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('tasks')
+      .update({ followed_by: followedBy })
+      .eq('chapter_id', chapterId)
+      .eq('group_id', groupId);
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async updateIfMatches(
@@ -364,6 +387,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       p_point_reward: input.point_reward,
       p_proof_kind: input.proof_kind,
       p_subtask_titles: input.subtask_titles,
+      p_followed_by: input.followed_by ?? null,
     });
     if (error) throw new SupabaseQueryError(error);
     const copies = data ?? [];

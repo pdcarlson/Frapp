@@ -81,13 +81,19 @@ export function meetingVoteLine(vote: MeetingVote | null): string {
 
 /**
  * The type an event's name suggests, so "Exec meeting" opens on Exec. Only a
- * starting point; the officer picks.
+ * starting point; the officer picks. A name that says no type is Other with
+ * no label, never Chapter: Chapter minutes read the last chapter meeting's
+ * action items, so "Ben Cunningham Meeting" filed as Chapter carried fifteen
+ * of them in (Paul, 2026-11-19).
  */
 export function guessMeetingType(eventName: string): MeetingType {
   const name = eventName.toLowerCase();
   if (/\bexec|executive|e-board|eboard|officer/.test(name)) return "exec";
   if (/committee|\bchair/.test(name)) return "committee";
-  return "chapter";
+  if (/\bchapters?\b|\bgeneral (body )?meeting\b|\bgb?m\b/.test(name)) {
+    return "chapter";
+  }
+  return "other";
 }
 
 /** `2026-11-09` for the calendar day `value` falls on where the reader is. */
@@ -234,7 +240,6 @@ export const MEETING_ATTENDANCE_COPY = {
 /** Drafting minutes from an officer's notes (`meetings.md` § Drafting from notes). */
 export const MEETING_NOTES_COPY = {
   heading: "Your notes",
-  hint: "Rough is fine. The draft keeps only what your notes say, and lists what they leave out.",
   placeholder: "Paste or type what you wrote down during the meeting.",
   draft: "Draft minutes",
   draftAgain: "Draft again",
@@ -264,7 +269,6 @@ export const MEETING_NOTES_COPY = {
   drafting: "Drafting minutes from your notes",
   waiting:
     "The minutes changed while the draft was being written, so it wasn't put in.",
-  applied: "Drafted from your notes. Read it through before you post.",
   idle: "Your notes go to an AI provider to write the draft. Nothing is posted until you post it.",
   toFillIn: "To fill in",
   /** Under the questions: what answering them does. */
@@ -275,13 +279,6 @@ export const MEETING_NOTES_COPY = {
   /** The block a set of answers adds to the officer's notes. */
   answersHeading:
     "Answers from the minutes author to the draft's open questions (these correct anything above):",
-  /** The notes once a draft has filled the minutes, folded under them. */
-  foldedHeading: "Notes and transcript",
-  foldedSummary: (words: number) =>
-    words === 0
-      ? "Nothing typed in your notes."
-      : `${words.toLocaleString("en-US")} ${words === 1 ? "word" : "words"} in your notes.`,
-  show: "Show",
   hide: "Hide",
   leftOut: (count: number) =>
     count === 1
@@ -298,8 +295,6 @@ export const MEETING_NOTE_TAKERS_COPY = {
   /** The author's draft button once anyone else's notes or a transcript are in. */
   draftAll: "Draft from all notes",
   draftingAll: "Drafting minutes from everyone's notes",
-  appliedAll:
-    "Drafted from everyone's notes. Read it through, and check Notes disagreed, before you post.",
   saved: "Saved",
   saving: "Saving…",
   saveFailed: "Couldn't save your notes. Keep this page open and try again.",

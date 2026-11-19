@@ -377,7 +377,7 @@ export function EventsCalendarSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <SkeletonRegion label="Loading the calendar" style={styles.root}>
+    <SkeletonRegion label="Loading the calendar" style={styles.root} flush>
       <View style={styles.monthRow}>
         <SkeletonBlock width={tokens.spacing.xl} height={tokens.spacing.xl} />
         <SkeletonBlock width="40%" height={tokens.spacing.xl} />

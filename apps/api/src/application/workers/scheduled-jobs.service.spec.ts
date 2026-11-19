@@ -74,6 +74,7 @@ describe('ScheduledJobsService', () => {
   let materializeTaskSeriesCopy: jest.Mock;
   let endTaskSeries: jest.Mock;
   let notifyAssigned: jest.Mock;
+  let followerRecipients: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -145,6 +146,7 @@ describe('ScheduledJobsService', () => {
     materializeTaskSeriesCopy = jest.fn().mockResolvedValue(null);
     endTaskSeries = jest.fn().mockResolvedValue(true);
     notifyAssigned = jest.fn().mockResolvedValue(undefined);
+    followerRecipients = jest.fn().mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -185,7 +187,10 @@ describe('ScheduledJobsService', () => {
           useValue: { sweepPendingEvidenceReleases },
         },
         { provide: EventExcuseService, useValue: { remindPending } },
-        { provide: TaskService, useValue: { notifyAssigned } },
+        {
+          provide: TaskService,
+          useValue: { notifyAssigned, followerRecipients },
+        },
       ],
     }).compile();
 
@@ -1250,6 +1255,66 @@ describe('ScheduledJobsService', () => {
         'chap-1',
         expect.objectContaining({ title: 'Book the venue' }),
       );
+    });
+
+    it('tells the group following an overdue task too, once each (#5473)', async () => {
+      const followed = {
+        ...TASK,
+        due_date: '2026-08-04',
+        followed_by: 'role:0f000000-0000-4000-8000-000000000001',
+      };
+      findIncompleteTasksDueBetween.mockResolvedValue([followed]);
+      followerRecipients.mockResolvedValue(['exec-2', 'exec-3']);
+
+      const result = await service.sweepTaskReminders(MORNING);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(followerRecipients).toHaveBeenCalledWith(followed, 'chap-1');
+      expect(notifyUser.mock.calls.map(([id]) => id).sort()).toEqual([
+        'admin-1',
+        'exec-2',
+        'exec-3',
+        'user-1',
+      ]);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'exec-2',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Book the venue',
+          body: 'Overdue · was due Tue, Aug 4',
+        }),
+      );
+    });
+
+    it("tells a group task's followers once for the group, not once per copy (#5473)", async () => {
+      const copy = (id: string, assignee: string) => ({
+        ...TASK,
+        id,
+        assignee_id: assignee,
+        due_date: '2026-08-04',
+        group_id: 'group-9',
+        followed_by: 'tier:0f000000-0000-4000-8000-000000000001',
+      });
+      findIncompleteTasksDueBetween.mockResolvedValue([
+        copy('copy-1', 'user-1'),
+        copy('copy-2', 'user-2'),
+      ]);
+      followerRecipients.mockResolvedValue(['exec-2']);
+      // The dispatch table's unique key, as claimDispatch meets it.
+      const claimed = new Set<string>();
+      claimDispatch.mockImplementation((_c, _t, id, threshold, due) => {
+        const key = `${id}:${threshold}:${due}`;
+        if (claimed.has(key)) return Promise.resolve(false);
+        claimed.add(key);
+        return Promise.resolve(true);
+      });
+
+      await service.sweepTaskReminders(MORNING);
+
+      const to = notifyUser.mock.calls.map(([id]) => id);
+      expect(to.filter((id) => id === 'exec-2')).toHaveLength(1);
+      expect(claimed.has('group-9:OVERDUE:2026-08-04')).toBe(true);
+      expect(to).toEqual(expect.arrayContaining(['user-1', 'user-2']));
     });
 
     // Removing a member leaves tasks.created_by pointing at them; they must

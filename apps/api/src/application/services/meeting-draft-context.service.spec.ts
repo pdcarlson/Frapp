@@ -369,6 +369,79 @@ describe('MeetingDraftContextService (#5477)', () => {
     ]);
   });
 
+  it('reads an unlabeled Other meeting\u2019s earlier minutes only from its own series', async () => {
+    const unlabeled = { meeting_type: 'other' as const, other_label: null };
+    const { service } = setup({
+      earlier: [
+        minutes('elsewhere', 'evt-e', '2026-11-06', unlabeled),
+        minutes('series', 'evt-s', '2026-11-03', unlabeled),
+      ],
+      events: [event('evt-e', { parent_event_id: 'series-2' }), event('evt-s')],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...unlabeled },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(context.background?.meetings).toHaveLength(1);
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from series',
+    ]);
+  });
+
+  it('keeps a series\u2019 history when it is now filed as unlabeled Other', async () => {
+    const unlabeled = { meeting_type: 'other' as const, other_label: null };
+    const { service, meetings } = setup({
+      // Filed as Chapter before names stopped guessing Chapter.
+      earlier: [minutes('chapter-filed', 'evt-c', '2026-11-03')],
+      events: [event('evt-c')],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...unlabeled },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(meetings.listPostedBefore.mock.calls[0][3]).toBeNull();
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from chapter-filed',
+    ]);
+  });
+
+  it('reads a labeled Other meeting\u2019s earlier minutes from any series', async () => {
+    const housing = { meeting_type: 'other' as const, other_label: 'Housing' };
+    const { service } = setup({
+      earlier: [minutes('housing', 'evt-h', '2026-11-04', housing)],
+      events: [event('evt-h', { parent_event_id: 'series-2' })],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...housing },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from housing',
+    ]);
+  });
+
+  it('reads nothing for a one-off unlabeled Other meeting', async () => {
+    const unlabeled = { meeting_type: 'other' as const, other_label: null };
+    const { service } = setup({
+      earlier: [minutes('elsewhere', 'evt-e', '2026-11-06', unlabeled)],
+      events: [event('evt-e', { parent_event_id: null })],
+      tonight: event('evt-tonight', { parent_event_id: null }),
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...unlabeled },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(context.background).toBeUndefined();
+  });
+
   it('carries again what last meeting carried over and left open', async () => {
     const { service } = setup({
       earlier: [

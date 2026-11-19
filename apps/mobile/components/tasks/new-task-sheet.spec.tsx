@@ -1308,3 +1308,88 @@ describe("Duplicate, from a row's long press (#5492)", () => {
     act(() => again.unmount());
   });
 });
+
+describe("New task's Repeat (#5119)", () => {
+  it("makes a weekly task that never ends from the Repeat row", () => {
+    const tree = render();
+    const row = () =>
+      tree.root.find(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Repeat") &&
+          node.props.accessibilityRole === "button",
+      );
+    // Quiet until opened: no rule goes with a task that doesn't repeat.
+    expect(row().props.accessibilityLabel).toBe("Repeat");
+    act(() => row().props.onPress());
+    const presets = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Repeat" &&
+        typeof node.props.onSelect === "function",
+    );
+    act(() => presets.props.onSelect("WEEKLY"));
+    // Ends offers Never for a task, and starts there.
+    const ends = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Ends" &&
+        typeof node.props.onSelect === "function",
+    );
+    expect(ends.props.selected).toBe("never");
+    expect(
+      ends.props.chips.map((chip: { label: string }) => chip.label),
+    ).toEqual(["Never", "After", "On date"]);
+    submitTask(tree);
+    const body = mutate.mock.calls.at(-1)![0] as { recurrence_rule?: string };
+    expect(body.recurrence_rule).toMatch(
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;TZID=/,
+    );
+    expect(body.recurrence_rule).not.toMatch(/COUNT|UNTIL/);
+    act(() => tree.unmount());
+  });
+
+  it("sends no rule once a group is picked, and says why", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
+        </FrappThemeProvider>,
+      );
+    });
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            node.props.accessibilityRole === "button",
+        )
+        .props.onPress(),
+    );
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "chapter" },
+      }),
+    );
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.noRepeat);
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("recurrence_rule");
+    act(() => tree.unmount());
+  });
+
+  it("sends no rule while it doesn't repeat", () => {
+    const tree = render();
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("recurrence_rule");
+    act(() => tree.unmount());
+  });
+});

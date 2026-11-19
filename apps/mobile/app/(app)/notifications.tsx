@@ -525,7 +525,7 @@ export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
   const { label } = tokens.typography.role;
 
   return (
-    <SkeletonRegion label="Loading notifications" style={styles.group}>
+    <SkeletonRegion label="Loading notifications" style={styles.group} flush>
       <SectionHeaderSkeleton width="16%" />
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>

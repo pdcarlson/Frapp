@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import {
   Keyboard,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
+  type TextInputProps,
 } from "react-native";
-import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
@@ -26,6 +27,7 @@ import {
   pickRepeatPreset,
   repeatCaption,
   repeatDays,
+  taskRepeatCaption,
   toggleRepeatDay,
   type RepeatDraft,
   type RepeatEditSeries,
@@ -36,12 +38,19 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { Chip, FilterChips } from "@/components/filter-chips";
 
 /**
- * The New event sheet's Repeat section (#4488, #3662): the preset chips, and
- * under a cadence its options, open rather than behind Google Calendar's
- * "Custom…" step (Shawn, 2026-11-12): the weekday chips and "Every N weeks"
- * for Weekly, "Every N months" and what day for Monthly, and Ends (after N
- * meetings, or on a date) for every cadence. The state and the rule it makes
- * are `@repo/validation`'s `repeat-draft.ts`, which the web editor shares.
+ * The Repeat section of the New event sheet (#4488, #3662) and of the task
+ * forms (#5119): the preset chips, and under a cadence its options, open
+ * rather than behind Google Calendar's "Custom…" step (Shawn, 2026-11-12):
+ * the weekday chips and "Every N weeks" for Weekly, "Every N months" and what
+ * day for Monthly, and Ends (after N, or on a date) for every cadence. A
+ * task's adds "Never" to Ends (`forTasks`), which an event series can't
+ * take, as web's does (`apps/web/components/shared/repeat-options.tsx`). The
+ * state and the rule it makes are `@repo/validation`'s `repeat-draft.ts`,
+ * which the web shares.
+ *
+ * A sheet passes `BottomSheetTextInput` as `input`, which a sheet's keyboard
+ * handling needs; a screen (the task screen's edit) takes the plain
+ * `TextInput`, as `PointsField` does.
  */
 export function RepeatOptions({
   draft,
@@ -51,6 +60,8 @@ export function RepeatOptions({
   error,
   showCaption,
   series,
+  forTasks = false,
+  input: Input = TextInput,
   platform = Platform.OS,
 }: {
   draft: RepeatDraft;
@@ -64,6 +75,9 @@ export function RepeatOptions({
   showCaption: boolean;
   /** On an edit, the series the change applies to (`repeatCaption`). */
   series?: RepeatEditSeries;
+  /** A task's control: "Never" ends it, and it counts tasks (#5119). */
+  forTasks?: boolean;
+  input?: ComponentType<TextInputProps>;
   platform?: string;
 }) {
   const { tokens } = useFrappTheme();
@@ -74,7 +88,12 @@ export function RepeatOptions({
   // An untouched draft can't be wrong, and its length isn't shown: the
   // caption steps the whole series, so it isn't worked out on every keystroke.
   const caption =
-    showCaption || !draft.pristine ? repeatCaption(draft, start, series) : null;
+    showCaption || !draft.pristine
+      ? forTasks
+        ? taskRepeatCaption(draft, start)
+        : repeatCaption(draft, start, series)
+      : null;
+  const counted = forTasks ? "times" : "meetings";
   const choices =
     draft.preset === "MONTHLY" ? monthlyChoices(draft, start) : [];
   // A problem the officer can see as they type is said at once; the length
@@ -141,7 +160,7 @@ export function RepeatOptions({
 
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Every</Text>
-            <BottomSheetTextInput
+            <Input
               value={draft.intervalInput}
               onChangeText={(intervalInput) =>
                 onChange(editRepeatDraft(draft, { intervalInput }))
@@ -195,6 +214,7 @@ export function RepeatOptions({
             <View style={styles.chips}>
               <FilterChips
                 chips={[
+                  ...(forTasks ? [{ value: "never", label: "Never" }] : []),
                   { value: "count", label: "After" },
                   { value: "until", label: "On date" },
                 ]}
@@ -213,39 +233,41 @@ export function RepeatOptions({
               />
             </View>
           </View>
-          <View style={styles.row}>
-            {draft.endKind === "count" ? (
-              <>
-                <BottomSheetTextInput
-                  value={draft.countInput}
-                  onChangeText={(countInput) =>
-                    onChange(editRepeatDraft(draft, { countInput }))
+          {draft.endKind === "never" ? null : (
+            <View style={styles.row}>
+              {draft.endKind === "count" ? (
+                <>
+                  <Input
+                    value={draft.countInput}
+                    onChangeText={(countInput) =>
+                      onChange(editRepeatDraft(draft, { countInput }))
+                    }
+                    onFocus={() => setFocused("count")}
+                    onBlur={() => setFocused(null)}
+                    editable={!disabled}
+                    keyboardType="number-pad"
+                    selectTextOnFocus
+                    accessibilityLabel={`Ends after how many ${counted}`}
+                    style={[
+                      styles.number,
+                      focused === "count" ? styles.numberFocused : null,
+                    ]}
+                  />
+                  <Text style={styles.rowLabel}>{counted}</Text>
+                </>
+              ) : (
+                <UntilPicker
+                  value={draft.until}
+                  minimum={start}
+                  disabled={disabled}
+                  platform={platform}
+                  onChange={(until) =>
+                    onChange(editRepeatDraft(draft, { until }))
                   }
-                  onFocus={() => setFocused("count")}
-                  onBlur={() => setFocused(null)}
-                  editable={!disabled}
-                  keyboardType="number-pad"
-                  selectTextOnFocus
-                  accessibilityLabel="Ends after how many meetings"
-                  style={[
-                    styles.number,
-                    focused === "count" ? styles.numberFocused : null,
-                  ]}
                 />
-                <Text style={styles.rowLabel}>meetings</Text>
-              </>
-            ) : (
-              <UntilPicker
-                value={draft.until}
-                minimum={start}
-                disabled={disabled}
-                platform={platform}
-                onChange={(until) =>
-                  onChange(editRepeatDraft(draft, { until }))
-                }
-              />
-            )}
-          </View>
+              )}
+            </View>
+          )}
         </View>
       )}
 

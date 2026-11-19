@@ -178,6 +178,15 @@ export class TaskSuggestionEditsDto {
   @IsString({ each: true })
   @MaxLength(TASK_SUBTASK_TITLE_MAX_LENGTH, { each: true })
   subtasks?: string[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'A task the chapter already has that this suggestion is (#5562, "Already a task"). When set, nothing is made and every other field is ignored: the accept records that task as the suggestion\'s, so the action item it came from follows that task. It must be a task in the chapter.',
+  })
+  @IsOptional()
+  @IsUUID()
+  existing_task_id?: string;
 }
 
 /**

@@ -71,6 +71,13 @@ describe('SupabaseTaskRepository — tenant scope', () => {
 
   it.each([
     ['assignee', { assigneeId: USER_SHARED }],
+    [
+      'assignee-or-followed',
+      {
+        assigneeId: USER_SHARED,
+        orFollowedBy: ['role:0c000000-0000-4000-8000-000000000062'],
+      },
+    ],
     ['not-assignee', { notAssigneeId: '0c000000-0000-4000-8000-000000000060' }],
     ['creator', { createdBy: USER_SHARED }],
     ['one-person', { groupless: true }],
@@ -101,6 +108,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
   describe('findByChapter filters narrow in SQL (#4037)', () => {
     const OTHER = '0c000000-0000-4000-8000-000000000060';
     const GROUP = '0c000000-0000-4000-8000-000000000061';
+    const FOLLOWER = 'role:0c000000-0000-4000-8000-000000000062';
     /** Four tasks per chapter, each failing a different filter. */
     const rows = (scope: typeof inA, prefix: string) =>
       [
@@ -115,6 +123,8 @@ describe('SupabaseTaskRepository — tenant scope', () => {
             assignee_id: OTHER,
             created_by: USER_SHARED,
             completed_at: '2026-01-03T00:00:00Z',
+            // Followed by a role (#5473).
+            followed_by: FOLLOWER,
           },
         ],
         [
@@ -163,6 +173,12 @@ describe('SupabaseTaskRepository — tenant scope', () => {
 
     it.each([
       ['assignee', { assigneeId: USER_SHARED }, [3, 1]],
+      // Their own, or one a group they're in follows (#5473).
+      [
+        'assignee-or-followed',
+        { assigneeId: USER_SHARED, orFollowedBy: [FOLLOWER, 'tier:x'] },
+        [3, 2, 1],
+      ],
       ['not-assignee', { notAssigneeId: USER_SHARED }, [4, 2]],
       ['creator', { createdBy: USER_SHARED }, [2, 1]],
       ['one-person', { groupless: true }, [4, 2, 1]],

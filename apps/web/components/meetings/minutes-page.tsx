@@ -16,6 +16,7 @@ import {
   FileText,
   Link2,
   MoreHorizontal,
+  NotebookPen,
   Pencil,
   Plus,
   SlidersHorizontal,
@@ -29,6 +30,7 @@ import {
   useCurrentUser,
   useDeleteMeeting,
   useEvent,
+  useCachedMeetingRow,
   useMeeting,
   useMeetingActionItemTasks,
   useMeetingDraft,
@@ -54,8 +56,11 @@ import {
   MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_VOTE_MAX,
+  MINUTES_FLOW_COPY,
   MINUTES_PREVIEW,
   MINUTES_READ_COPY,
+  minutesAddableSections,
+  minutesEditorSections,
   can,
   isMeetingContentEmpty,
   meetingDraftQuoteFor,
@@ -65,7 +70,6 @@ import {
   minutesJumps,
   minutesReadSections,
   readMeetingContent,
-  shownMeetingSections,
   type MeetingActionItem,
   type MeetingContent,
   type MeetingDateItem,
@@ -216,6 +220,7 @@ const AUTOSAVE_MS = 1200;
  */
 export function MinutesPage({ id }: { id: string }) {
   const query = useMeeting(id);
+  const cached = useCachedMeetingRow(id);
   // Whether drafting from notes is here is known before the editor shows, so
   // the notes box never arrives late and pushes the sections down.
   const drafts =
@@ -232,7 +237,7 @@ export function MinutesPage({ id }: { id: string }) {
         recordingQuery.isPending ||
         notesQuery.isPending))
   ) {
-    return <MinutesPageSkeleton />;
+    return <MinutesPageSkeleton row={cached} />;
   }
   if (!query.data) {
     const missing = statusOf(query.error) === 404;
@@ -371,17 +376,45 @@ function Minutes({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  // The editor's sections: the template's, and any with words in it.
+  // Written by hand, the template's sections are laid out to fill in.
+  // Otherwise only the sections with something in them show, with Add a
+  // section for the rest (Paul, 2026-11-19: no "12 buttons and sections").
+  // Without drafting the editor is the only way in, so it is by hand.
+  const [byHand, setByHand] = useState(false);
+  const handWritten = byHand || !showNotes;
+  // A section the officer added or typed in stays while they work, even
+  // emptied, so it never vanishes from under the cursor. A new draft starts
+  // afresh. Attendance has no words to fill: it shows once anyone is
+  // marked.
+  const [kept, setKept] = useState<MeetingSectionKey[]>([]);
+  const [keptFor, setKeptFor] = useState(draftState?.requested_at ?? null);
+  if ((draftState?.requested_at ?? null) !== keptFor) {
+    setKeptFor(draftState?.requested_at ?? null);
+    setKept([]);
+  }
+  const marked = hasAttendees(meeting);
   const shown = useMemo(
     () =>
-      shownMeetingSections(
+      minutesEditorSections(
         meeting.sections as MeetingSectionKey[],
         draft.content,
+        {
+          byHand: handWritten,
+          added: marked ? [...kept, "attendees"] : kept,
+        },
       ),
-    [draft.content, meeting.sections],
+    [draft.content, meeting.sections, handWritten, kept, marked],
   );
+  const addable = minutesAddableSections(shown);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   function editContent(patch: Partial<MeetingContent>) {
+    const touched = Object.keys(patch) as MeetingSectionKey[];
+    setKept((current) =>
+      touched.every((key) => current.includes(key))
+        ? current
+        : [...current, ...touched.filter((key) => !current.includes(key))],
+    );
     setDraft((current) => ({
       ...current,
       content: { ...current.content, ...patch },
@@ -635,10 +668,11 @@ function Minutes({
     (hasAttendees(meeting) ||
       (meeting.sections as MeetingSectionKey[]).includes("attendees"));
   const hasContent = !isMeetingContentEmpty(cleanContent(draft.content));
-  // Once a draft has filled the minutes, they lead and the notes the draft
-  // read fold away underneath; before that, the notes are the first step.
-  // A redraft keeps them where they are while it is written.
-  const notesFirst = !hasContent || (!review && !drafting);
+  // Nothing written, nothing drafting and no section the officer is working
+  // in: the start box is the page. Once a draft has filled the minutes,
+  // they lead and the notes it read fold into a banner above them.
+  const starting =
+    showNotes && !hasContent && !drafting && !handWritten && kept.length === 0;
   // Where the notes panel puts its "To fill in" questions: above the
   // minutes, the first thing to do after a draft (Paul, 2026-11-16).
   const [fillInSlot, setFillInSlot] = useState<HTMLDivElement | null>(null);
@@ -661,7 +695,14 @@ function Minutes({
         notesState={notesState}
         recording={recordingState}
         hasContent={hasContent}
-        folded={!notesFirst}
+        // A section the officer is working in counts as minutes begun, even
+        // emptied, so the start box never comes back under them.
+        folded={hasContent || kept.length > 0}
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        onWriteByHand={
+          !hasContent && !handWritten ? () => setByHand(true) : undefined
+        }
         fillInSlot={fillInSlot}
         disabled={posting || stale}
         prepare={async () => {
@@ -716,7 +757,17 @@ function Minutes({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {saveLine ? (
+            {drafting ? (
+              // In place of Saved while the draft is written (Paul,
+              // 2026-11-19: "Nothing indicates it's processing").
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-caption font-semibold">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary motion-reduce:animate-none"
+                />
+                {MINUTES_FLOW_COPY.drafting.badge}
+              </span>
+            ) : saveLine && !starting ? (
               <span
                 role="status"
                 className={
@@ -758,7 +809,8 @@ function Minutes({
                     Save
                   </Button>
                 ) : null}
-                {isDraft ? (
+                {/* Nothing to post until there is something written. */}
+                {isDraft && !starting && !drafting ? (
                   <Button disabled={busy} onClick={() => void handlePost()}>
                     {MEETING_COPY.post}
                   </Button>
@@ -795,6 +847,22 @@ function Minutes({
                   <DropdownMenuItem onSelect={() => setEditing(true)}>
                     <Pencil className="h-4 w-4" aria-hidden="true" />
                     {menu.editMinutes}
+                  </DropdownMenuItem>
+                ) : null}
+                {showNotes && hasContent && !drafting ? (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setNotesOpen(true);
+                      document
+                        .getElementById(`${ids}-notes-panel`)
+                        ?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                    }}
+                  >
+                    <NotebookPen className="h-4 w-4" aria-hidden="true" />
+                    {MINUTES_FLOW_COPY.review.notes}
                   </DropdownMenuItem>
                 ) : null}
                 {canBackfill ? (
@@ -895,9 +963,7 @@ function Minutes({
         />
       ) : null}
 
-      {notesPanel ? (
-        <div className={notesFirst ? undefined : "order-1"}>{notesPanel}</div>
-      ) : null}
+      {notesPanel ? <div id={`${ids}-notes-panel`}>{notesPanel}</div> : null}
       {/* The draft's open questions land here, above the minutes. */}
       {showNotes ? <div ref={setFillInSlot} className="empty:hidden" /> : null}
 
@@ -906,64 +972,87 @@ function Minutes({
         aria-busy={drafting || undefined}
         className="m-0 min-w-0 space-y-8 border-0 p-0"
       >
-        {editing ? (
-          shown.map((key) => (
-            <section
-              key={key}
-              aria-labelledby={`${ids}-${key}`}
-              className="space-y-3"
-            >
-              <h3 id={`${ids}-${key}`} className="text-base font-semibold">
-                {sectionLabel(key)}
-              </h3>
-              {key === "attendees" ? (
-                <Attendees meeting={meeting} nameFor={names.nameFor} />
-              ) : key === "decisions" ? (
-                <DecisionsEditor
-                  decisions={draft.content.decisions}
-                  onChange={(decisions) => editContent({ decisions })}
-                  quoteFor={(text) => quoteOf(review, "decision", text, myName)}
-                />
-              ) : key === "action_items" ? (
-                <ActionItemsEditor
-                  disabled={drafting}
-                  items={draft.content.action_items}
-                  onChange={(action_items) => editContent({ action_items })}
-                  quoteFor={(text) =>
-                    quoteOf(review, "action_item", text, myName)
-                  }
-                />
-              ) : key === "tabled" ? (
-                <TabledEditor
-                  items={draft.content.tabled}
-                  eventId={meeting.event_id}
-                  onChange={(tabled) => editContent({ tabled })}
-                />
-              ) : key === "dates" ? (
-                <DatesEditor
-                  items={draft.content.dates}
-                  onChange={(dates) => editContent({ dates })}
-                />
-              ) : (
-                <GrowingTextarea
-                  aria-labelledby={`${ids}-${key}`}
-                  value={draft.content[key as MeetingTextSection]}
-                  maxLength={MEETING_TEXT_MAX_LENGTH}
-                  // Grows with the text, so a long summary reads whole.
-                  className="min-h-28"
-                  rows={key === "summary" ? 6 : 4}
-                  placeholder={
-                    key === "tldr" ? MEETING_COPY.tldrPlaceholder : undefined
-                  }
-                  onChange={(event) =>
-                    editContent({
-                      [key]: event.target.value,
-                    } as Partial<MeetingContent>)
-                  }
-                />
-              )}
-            </section>
-          ))
+        {editing && drafting ? (
+          <DraftingPlaceholders />
+        ) : editing && starting ? null : editing ? (
+          <>
+            {shown.map((key) => (
+              <section
+                key={key}
+                aria-labelledby={`${ids}-${key}`}
+                className="space-y-3"
+              >
+                <h3 id={`${ids}-${key}`} className="text-base font-semibold">
+                  {sectionLabel(key)}
+                </h3>
+                {key === "attendees" ? (
+                  <Attendees meeting={meeting} nameFor={names.nameFor} />
+                ) : key === "decisions" ? (
+                  <DecisionsEditor
+                    decisions={draft.content.decisions}
+                    onChange={(decisions) => editContent({ decisions })}
+                    quoteFor={(text) =>
+                      quoteOf(review, "decision", text, myName)
+                    }
+                  />
+                ) : key === "action_items" ? (
+                  <ActionItemsEditor
+                    disabled={drafting}
+                    items={draft.content.action_items}
+                    onChange={(action_items) => editContent({ action_items })}
+                    quoteFor={(text) =>
+                      quoteOf(review, "action_item", text, myName)
+                    }
+                  />
+                ) : key === "tabled" ? (
+                  <TabledEditor
+                    items={draft.content.tabled}
+                    eventId={meeting.event_id}
+                    onChange={(tabled) => editContent({ tabled })}
+                  />
+                ) : key === "dates" ? (
+                  <DatesEditor
+                    items={draft.content.dates}
+                    onChange={(dates) => editContent({ dates })}
+                  />
+                ) : (
+                  <GrowingTextarea
+                    aria-labelledby={`${ids}-${key}`}
+                    value={draft.content[key as MeetingTextSection]}
+                    maxLength={MEETING_TEXT_MAX_LENGTH}
+                    // Grows with the text, so a long summary reads whole.
+                    className="min-h-28"
+                    rows={key === "summary" ? 6 : 4}
+                    placeholder={
+                      key === "tldr" ? MEETING_COPY.tldrPlaceholder : undefined
+                    }
+                    onChange={(event) =>
+                      editContent({
+                        [key]: event.target.value,
+                      } as Partial<MeetingContent>)
+                    }
+                  />
+                )}
+              </section>
+            ))}
+            {addable.length > 0 ? (
+              <AddSectionMenu
+                key="add-section"
+                sections={addable}
+                onAdd={(key) => {
+                  setKept((current) => [...current, key]);
+                  // The new section's box takes the cursor once it is drawn.
+                  requestAnimationFrame(() =>
+                    document
+                      .getElementById(`${ids}-${key}`)
+                      ?.closest("section")
+                      ?.querySelector<HTMLElement>("textarea, input, button")
+                      ?.focus(),
+                  );
+                }}
+              />
+            ) : null}
+          </>
         ) : (
           <>
             {readKeys.length === 0 ? (
@@ -1091,6 +1180,70 @@ function Minutes({
         />
       ) : null}
       {confirmDialog}
+    </div>
+  );
+}
+
+/**
+ * Under the drafted sections: the ones the draft left empty, to add by hand,
+ * the way Notion's "+" adds a block (Paul, 2026-11-19: no wall of empty
+ * sections).
+ */
+function AddSectionMenu({
+  sections,
+  onAdd,
+}: {
+  sections: readonly MeetingSectionKey[];
+  onAdd: (key: MeetingSectionKey) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="-ml-2 text-muted-foreground">
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          {MINUTES_FLOW_COPY.review.addSection}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {sections.map((key) => (
+          <DropdownMenuItem key={key} onSelect={() => onAdd(key)}>
+            {sectionLabel(key)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Where the minutes will land while the draft is written: the sections most
+ * drafts fill, as quiet bars, so the page has its shape before the words
+ * arrive and nothing jumps when they do.
+ */
+function DraftingPlaceholders() {
+  const rows: { key: MeetingSectionKey; widths: string[] }[] = [
+    { key: "tldr", widths: ["w-11/12", "w-4/5", "w-2/3"] },
+    { key: "decisions", widths: ["w-5/6", "w-3/4"] },
+    { key: "action_items", widths: ["w-4/5", "w-2/3", "w-3/4"] },
+  ];
+  return (
+    <div aria-hidden="true" className="space-y-8">
+      {rows.map((row) => (
+        <section key={row.key} className="space-y-3">
+          <h3 className={`${EYEBROW} text-muted-foreground`}>
+            {sectionLabel(row.key)}
+          </h3>
+          {row.widths.map((width, at) => (
+            <div
+              key={at}
+              className={cn(
+                "h-3.5 animate-pulse rounded bg-surface-1 motion-reduce:animate-none",
+                width,
+              )}
+            />
+          ))}
+        </section>
+      ))}
     </div>
   );
 }

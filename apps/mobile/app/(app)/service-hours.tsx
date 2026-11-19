@@ -109,7 +109,7 @@ export default function ServiceHoursScreen() {
     // the id lands, so `isPending` alone would not cover it.
     if (viewerUserId === null || entriesQuery.isPending)
       return (
-        <SkeletonRegion label="Loading service entries">
+        <SkeletonRegion label="Loading service entries" flush>
           {/* About an "Approved" chip's width, where each status lands. */}
           <HistoryRowsSkeleton
             rows={3}

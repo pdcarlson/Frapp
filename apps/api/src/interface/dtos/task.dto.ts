@@ -18,6 +18,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  CHANNEL_ACCESS_ENTRY_PATTERN,
   MAX_REPEAT_RULE_LENGTH,
   POINTS_ADJUSTMENT_MAX,
   TASK_COMPLETION_NOTE_MAX,
@@ -67,6 +68,15 @@ import {
   LIST_QUERY_LIMIT_MIN,
 } from '#domain/constants/list-query-limits';
 import type { AssertNever } from './drift-guard';
+
+/** `followed_by` on task writes and reads (#5473). */
+const TASK_FOLLOWED_BY_DESCRIPTION =
+  'The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task.';
+
+const TASK_FOLLOWED_BY_MESSAGE =
+  'followed_by is a tier, role or group: "tier:<id>", "role:<id>" or "group:<id>"';
+
+const TASK_FOLLOWER_PATTERN_SOURCE = CHANNEL_ACCESS_ENTRY_PATTERN.source;
 
 /**
  * `GET /v1/tasks` (#4037). Every parameter is optional, and a request with
@@ -170,6 +180,25 @@ export class CreateTaskDto {
   @IsUUID()
   audience_group_id?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'With `audience: "everyone"` only (#5473): just the active members holding a role in this tier get a copy ("Exec board"). A tier holding the chapter’s Everyone role means everyone; a tier nobody holds a role in is a 400. Not with `audience_role_id` or `audience_group_id`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  audience_tier_id?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    pattern: TASK_FOLLOWER_PATTERN_SOURCE,
+    description: TASK_FOLLOWED_BY_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { message: TASK_FOLLOWED_BY_MESSAGE })
+  followed_by?: string;
+
   @ApiProperty({ description: 'Due date (YYYY-MM-DD)' })
   @IsDateString()
   due_date: string;
@@ -260,7 +289,7 @@ export class TaskGroupSummaryDto implements TaskGroupSummary {
   @ApiProperty({
     enum: TASK_GROUP_AUDIENCES,
     description:
-      'Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy.',
+      'Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy.',
   })
   audience: TaskGroupAudience;
 
@@ -269,7 +298,7 @@ export class TaskGroupSummaryDto implements TaskGroupSummary {
     format: 'uuid',
     nullable: true,
     description:
-      'The role or chapter group it went to, for `role` and `group`; null otherwise.',
+      'The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise.',
   })
   target_id: string | null;
 
@@ -277,7 +306,7 @@ export class TaskGroupSummaryDto implements TaskGroupSummary {
     type: String,
     nullable: true,
     description:
-      'That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee".',
+      'That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee".',
   })
   target_name: string | null;
 
@@ -424,6 +453,13 @@ export class CreateTaskResponseDto implements Task {
       'The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to.',
   })
   meeting_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: TASK_FOLLOWED_BY_DESCRIPTION,
+  })
+  followed_by: string | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -601,6 +637,17 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsIn(TASK_PROOF_KINDS)
   proof_kind?: TaskProofKind;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    pattern: TASK_FOLLOWER_PATTERN_SOURCE,
+    description: `${TASK_FOLLOWED_BY_DESCRIPTION} Null takes it off. A new one must name a tier, role or group the editor is in; the one the task has stays whoever edits. With \`scope: group\` it changes every copy, confirmed ones too. Not with \`scope: series\`.`,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { message: TASK_FOLLOWED_BY_MESSAGE })
+  followed_by?: string | null;
 
   @ApiPropertyOptional({
     enum: TASK_EDIT_SCOPES,

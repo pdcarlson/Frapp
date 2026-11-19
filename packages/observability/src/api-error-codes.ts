@@ -92,6 +92,10 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // President invite minted before the rule, or a sender demoted since
   // (#1830).
   "invite.role_out_of_reach",
+  // An officer replacing a chapter link made by an officer above them
+  // (#3353), or two officers making one at the same moment.
+  "invite.chapter_link_out_of_reach",
+  "invite.chapter_link_conflict",
   // An officer named a role so it reads as @everyone (#4191) or @here.
   "role.everyone_name",
   // A tier reorder that would lift New members or Alumni above Everyone

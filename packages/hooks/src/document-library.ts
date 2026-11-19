@@ -1,4 +1,12 @@
-import { contentTypeByExtension, fileExtension } from "@repo/validation";
+import {
+  contentTypeByExtension,
+  fileExtension,
+  ROLE_COLOR_PALETTE,
+  roleColor,
+  type RoleColorHex,
+} from "@repo/validation";
+import { folderPlace } from "./document-folder-tree";
+import { fnv1a32 } from "./member-avatar-color";
 import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
 
 /**
@@ -176,6 +184,66 @@ const KIND_LABEL: Record<FileKind, string> = {
   image: "Photo",
   other: "File",
 };
+
+/**
+ * The hues a folder can wear, in this order: the role palette minus Slate,
+ * which stays for a file in no folder. The order is part of the hash, so
+ * reordering it recolours every folder.
+ */
+const FOLDER_HUES: readonly RoleColorHex[] = ROLE_COLOR_PALETTE.filter(
+  (swatch) => swatch.key !== "slate",
+).map((swatch) => swatch.hex);
+
+/**
+ * The hue a file's tile wears in the library list (#5576): its folder's, so
+ * a library reads by where things are filed before the titles do, as
+ * Dropbox's and Drive's coloured folders let it. Build it from the folders
+ * the member has, in the rail's order: each folder the rail draws at the top
+ * takes the palette in turn, so the first nine never share a hue (a hash put
+ * five ordinary folders on two), and a folder drawn under another wears its
+ * top folder's hue. "The top" is the rail's own tree rule (`folderPlace`):
+ * "Rush / 2024" sits under Rush only when a folder named Rush exists. A file
+ * in no folder is Slate; one whose folder isn't in the list (the folders
+ * failed to load) falls back to a hash of its name.
+ *
+ * Because the order is the member's own list, a folder hidden from a member
+ * (`chapter-docs.md` § Who can see), or one added or moved ahead of the
+ * others, shifts the colours after it: two members who see different
+ * folders can see different colours. Distinct colours on one screen won
+ * over the same colour for everyone, which a hash can only promise by
+ * letting folders collide.
+ *
+ * Folder, not file type: a chapter library is nearly all PDFs, so a hue per
+ * type painted the seeded demo one colour top to bottom. A hue names a
+ * place, never a state (`foundations.md` § A place's hue); the role palette
+ * leaves out gold and red, so no tile reads as the accent, a mention or an
+ * error.
+ */
+export function documentFolderHues(
+  folders: readonly string[],
+): (folder: string | null | undefined) => RoleColorHex {
+  const names = new Set(folders);
+  const topOf = (name: string): string => {
+    let top = name;
+    for (;;) {
+      const { parentName } = folderPlace(top, names);
+      if (!parentName) return top;
+      top = parentName;
+    }
+  };
+  const order = new Map<string, number>();
+  for (const name of folders) {
+    const top = topOf(name);
+    if (!order.has(top)) order.set(top, order.size);
+  }
+  return (folder) => {
+    if (!folder) return roleColor("slate");
+    const index = names.has(folder)
+      ? order.get(topOf(folder))!
+      : fnv1a32(folder.toLowerCase());
+    return FOLDER_HUES[index % FOLDER_HUES.length]!;
+  };
+}
 
 /** What one file is, for every surface that groups, names or previews it. */
 export type ClassifiedFile = {

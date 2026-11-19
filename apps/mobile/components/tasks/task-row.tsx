@@ -4,6 +4,7 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   taskStatusLabel,
 } from "@repo/hooks";
+import { taskRepeatCadence } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -127,10 +128,22 @@ function taskFacts(row: TaskRowModel, now: Date) {
     !row.isDone && references > 0
       ? `${references} ${references === 1 ? "photo" : "photos"}`
       : null;
-  const subtitle =
-    [sentBack ? TASK_NEEDS_CHANGES_LABEL : null, statusLine, progress, photos]
+  // How a copy of a repeating task repeats, after its due (#5119): "Due
+  // Monday · ↻ Weekly". The glyph is for the eye; a screen reader hears
+  // "repeats weekly".
+  const cadence = row.isDone ? null : taskRepeatCadence(row.series);
+  const lineOf = (repeat: string | null) =>
+    [
+      sentBack ? TASK_NEEDS_CHANGES_LABEL : null,
+      statusLine,
+      repeat,
+      progress,
+      photos,
+    ]
       .filter(Boolean)
       .join(" · ") || null;
+  const subtitle = lineOf(cadence ? `↻ ${cadence}` : null);
+  const spoken = lineOf(cadence ? `repeats ${cadence.toLowerCase()}` : null);
 
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not
@@ -144,7 +157,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
   const toggleLabel = row.isDone
     ? TASK_ACTION_LABELS.reopen
     : markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind);
-  const label = `${row.title}${subtitle ? `, ${subtitle}` : ""}`;
+  const label = `${row.title}${spoken ? `, ${spoken}` : ""}`;
 
   return { chip, started, confirmed, subtitle, urgent, toggleLabel, label };
 }

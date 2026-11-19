@@ -107,6 +107,17 @@ describe("who a task is for (2026-11-18)", () => {
         { kind: "someone", target: { kind: "people", userIds: ["a", "b"] } },
         { endpoint: "/v1/open-tasks", fields: { user_ids: ["a", "b"] } },
       ],
+      [
+        { kind: "each", target: { kind: "tier", id: "t-1" } },
+        {
+          endpoint: "/v1/tasks",
+          fields: { audience: "everyone", audience_tier_id: "t-1" },
+        },
+      ],
+      [
+        { kind: "someone", target: { kind: "tier", id: "t-1" } },
+        { endpoint: "/v1/open-tasks", fields: { tier_id: "t-1" } },
+      ],
     ];
     for (const [who, request] of cases) {
       expect(taskWhoRequest(who)).toEqual(request);
@@ -256,5 +267,40 @@ describe("who a task is for (2026-11-18)", () => {
       "One of 6 members takes it. It goes on Up for grabs.",
     );
     expect(TASK_AUDIENCE_COPY.people(1)).toBe("1 person");
+  });
+});
+
+describe("a task for a tier (#5473)", () => {
+  it("reads a tier group and a tier posting back, and names them", () => {
+    expect(
+      taskWhoOf({
+        assignee_id: "u-1",
+        group: { audience: "tier", target_id: "t-1" },
+      }),
+    ).toEqual({ kind: "each", target: { kind: "tier", id: "t-1" } });
+    expect(
+      taskWhoOf({ scope: "tier", scope_id: "t-1", scope_user_ids: null }),
+    ).toEqual({ kind: "someone", target: { kind: "tier", id: "t-1" } });
+    expect(
+      taskGroupLabel({ audience: "tier", target_name: "Exec board", total: 4 }),
+    ).toBe("Everyone in Exec board");
+    expect(
+      openTaskScopeLabel({ scope: "tier", scope_name: "Exec board" }),
+    ).toBe("Someone in Exec board");
+  });
+
+  it("never widens a tier pick on a suggestion to the chapter", () => {
+    expect(
+      taskWhoSuggestionFields({
+        kind: "each",
+        target: { kind: "tier", id: "t-1" },
+      }),
+    ).toEqual({
+      assignee_id: null,
+      assignee_ids: null,
+      audience: null,
+      audience_role_id: null,
+      audience_group_id: null,
+    });
   });
 });

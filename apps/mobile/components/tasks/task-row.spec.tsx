@@ -63,6 +63,7 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     meetingId: null,
     group: null,
     openTaskId: null,
+    series: null,
     ...overrides,
   };
 }
@@ -492,5 +493,39 @@ describe("TaskRow — status words and photos (#4635)", () => {
     expect(rowPress.props.accessibilityActions).toEqual([
       { name: "toggle", label: "Mark done with a photo" },
     ]);
+  });
+});
+
+describe("TaskRow — a repeating task (#5119)", () => {
+  const series = {
+    recurrence_rule: "FREQ=WEEKLY;BYDAY=TU;TZID=America/New_York",
+    next_due_date: "2026-08-25",
+    ended: false,
+  };
+
+  it("says how often it comes after its due, and a screen reader hears it in words", () => {
+    const tree = render(
+      <TaskRow row={row({ series })} now={NOW} onToggle={() => {}} />,
+    );
+    const line = texts(tree).find((text) => text.includes("↻"));
+    expect(line).toMatch(/ · ↻ Weekly$/);
+    const labelled = tree.root.findAll(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.includes("repeats weekly"),
+    );
+    expect(labelled.length).toBeGreaterThan(0);
+    act(() => tree.unmount());
+  });
+
+  it("says nothing of a series that ended, or once the copy is done", () => {
+    for (const each of [
+      row({ series: { ...series, ended: true } }),
+      row({ series, isDone: true, storedStatus: "COMPLETED" }),
+    ]) {
+      const tree = render(<TaskRow row={each} now={NOW} onToggle={() => {}} />);
+      expect(texts(tree).some((text) => text.includes("↻"))).toBe(false);
+      act(() => tree.unmount());
+    }
   });
 });

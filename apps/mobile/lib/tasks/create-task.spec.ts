@@ -125,6 +125,27 @@ describe("validateNewTask", () => {
     });
   });
 
+  it("sends a repeating task's rule with it, never to Up for grabs (#5119)", () => {
+    const rule = "FREQ=WEEKLY;BYDAY=FR;TZID=America/New_York";
+    const body = { ...validateNewTask(draft)!, recurrence_rule: rule };
+    expect(createRequestOf(body)).toEqual({
+      route: "task",
+      body: {
+        title: "Collect ride-share forms",
+        assignee_id: "member-1",
+        due_date: "2026-08-21",
+        point_reward: 5,
+        recurrence_rule: rule,
+      },
+    });
+    const open = createRequestOf({
+      ...body,
+      who: { kind: "someone", target: { kind: "chapter" } },
+    });
+    expect(open.route).toBe("open");
+    expect(open.body).not.toHaveProperty("recurrence_rule");
+  });
+
   it("sends a task for everyone as an audience, with no member (#4295 step 3)", () => {
     const body = validateNewTask({
       ...draft,

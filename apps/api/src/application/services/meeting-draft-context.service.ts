@@ -56,8 +56,8 @@ export interface MeetingDraftContext {
  *
  * - only minutes that officer may read now (`MeetingService` read rule), and
  *   whose event they can still see;
- * - only posted minutes of the same type (and, for "other", the same label),
- *   never Standards;
+ * - only posted minutes of the same type (and, for "other", the same label;
+ *   with no label, only tonight's own series, of any type), never Standards;
  * - only meetings with the same audience as tonight's (the same roles
  *   required, invited and left out, and the same rule for everyone else), so
  *   nothing from an officers-only meeting reaches minutes the whole chapter
@@ -164,8 +164,12 @@ export class MeetingDraftContextService {
  * they can still see that invite the same people by the same rule
  * (`sameAudience`), newest first, with each one's event. At most
  * `EARLIER_MINUTES_READ` are read. Of one type (and, for "other", the same
- * label), or of every type but Standards when `meetingType` is null. Shared
- * by the draft's background (#5477) and the agenda's suggestions (#5534).
+ * label), or of every type but Standards when `meetingType` is null. Other
+ * with no label says nothing about what kind of meeting it is, so it reads
+ * only tonight's own series, of any type: a one-off "Ben Cunningham
+ * Meeting" reads nothing, and a weekly "Sunday meeting" filed as Chapter
+ * before keeps its history (Paul, 2026-11-19). Shared by the draft's
+ * background (#5477) and the agenda's suggestions (#5534).
  */
 export async function sameAudienceMinutes(
   meetings: Pick<MeetingService, 'listPostedBefore'>,
@@ -179,7 +183,10 @@ export async function sameAudienceMinutes(
     excludeMeetingId?: string;
   },
 ): Promise<{ row: Meeting; event: Event }[]> {
-  const { chapterId, userId, tonight, meetingType } = options;
+  const { chapterId, userId, tonight } = options;
+  const seriesOnly =
+    options.meetingType === 'other' && !(options.otherLabel ?? '').trim();
+  const meetingType = seriesOnly ? null : options.meetingType;
   const rows = (
     await meetings.listPostedBefore(
       chapterId,
@@ -212,7 +219,11 @@ export async function sameAudienceMinutes(
   );
   return rows.flatMap((row) => {
     const event = visible.get(row.event_id as string);
-    return event && sameAudience(event, tonight) ? [{ row, event }] : [];
+    return event &&
+      sameAudience(event, tonight) &&
+      (!seriesOnly || seriesOf(event) === seriesOf(tonight))
+      ? [{ row, event }]
+      : [];
   });
 }
 

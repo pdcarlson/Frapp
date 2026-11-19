@@ -59,6 +59,7 @@ const copy = (over: Partial<Task> = {}): Task => ({
   occurrence_date: '2026-11-16',
   group_id: null,
   meeting_id: null,
+  followed_by: null,
   created_at: '2026-11-10T00:00:00.000Z',
   ...over,
 });
