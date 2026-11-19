@@ -15,6 +15,7 @@ import {
   TASK_AUDIENCE_COPY,
   taskGroupLabel,
   taskNeedsSignOff,
+  taskRowFacts,
 } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -171,6 +172,7 @@ export function TaskRow({
             {TASK_DONE_LABEL}
           </Badge>
         ) : null}
+        <TaskFacts task={task} done={status === "COMPLETED"} />
       </button>
       {task.followed_by ? (
         <FollowerChip
@@ -253,6 +255,39 @@ export function GroupTaskRow({
       <DueText task={task} due={due} />
       <PointsTag points={task.point_reward} />
     </li>
+  );
+}
+
+/**
+ * How it repeats, how far through its checklist it is and its reference
+ * photos, after the title: "↻ Weekly · 2 of 5 · 1 photo", the facts the
+ * phone's row says past its due (`taskRowFacts`, 2026-11-19). Muted and
+ * after the title, so the row stays one line; the narrowest pane drops it
+ * before the title, the person or the due.
+ */
+function TaskFacts({ task, done }: { task: BoardTask; done: boolean }) {
+  const { cadence, progress, photos } = taskRowFacts({
+    done,
+    subtasksDone: (task.subtasks ?? []).filter((subtask) => subtask.done_at)
+      .length,
+    subtasksTotal: task.subtasks?.length ?? 0,
+    photos: task.photos,
+    series: task.series,
+  });
+  const seen = [cadence ? `↻ ${cadence}` : null, progress, photos].filter(Boolean);
+  if (seen.length === 0) return null;
+  const spoken = [
+    cadence ? `repeats ${cadence.toLowerCase()}` : null,
+    progress,
+    photos,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <span className="hidden min-w-0 shrink truncate text-caption text-muted-foreground @xl:inline">
+      <span aria-hidden="true">{seen.join(" · ")}</span>
+      <span className="sr-only">{spoken}</span>
+    </span>
   );
 }
 

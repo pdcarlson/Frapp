@@ -3,7 +3,11 @@
 import { Download, Loader2, MoreHorizontal, Trash2, Users } from "lucide-react";
 import { formatDay } from "@repo/formatting";
 import { memberAvatarTint } from "@repo/hooks";
-import { isDriveCopy, uploadedLine } from "@repo/hooks/document-library";
+import {
+  effectiveLine,
+  isDriveCopy,
+  uploadedLine,
+} from "@repo/hooks/document-library";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   DropdownMenu,
@@ -24,7 +28,7 @@ import { LimitedMark } from "@/components/documents/document-access";
 import { useDocumentDownload } from "@/components/documents/use-document-download";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
-import { cn, labelled } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /**
  * What a file row says about a file, in the row's order: when and by whom,
@@ -47,15 +51,11 @@ export function documentFacts(
   };
 }
 
-/**
- * "Effective <day>", left out when it is the day the file was uploaded: the
- * upload panel starts the date on Today and the phone sends the upload day
- * (#5207), so a matching date says nothing the Uploaded line doesn't.
- */
 function effectiveFact(doc: ChapterDocument): string | null {
-  const effective = formatDay(doc.effective_date);
-  if (effective && effective === formatDay(doc.created_at)) return null;
-  return labelled("Effective", effective);
+  return effectiveLine(
+    formatDay(doc.effective_date),
+    formatDay(doc.created_at),
+  );
 }
 
 function DownloadButton({ id, title }: { id: string; title: string }) {

@@ -120,11 +120,33 @@ function withTimes(
   to: Date | null,
   now: Date,
 ): string {
-  if (!to) return `${day} · ${time(from)}`;
+  return `${day} · ${timesOf(from, to, now)}`;
+}
+
+/** The time half of {@link withTimes}, which {@link formatTimeRange} reads too. */
+function timesOf(from: Date, to: Date | null, now: Date): string {
+  if (!to) return time(from);
   if (dayDelta(from, to) !== 0) {
-    return `${day} · ${time(from)} – ${weekdayMonthDay(to, now)} · ${time(to)}`;
+    return `${time(from)} – ${weekdayMonthDay(to, now)} · ${time(to)}`;
   }
-  return `${day} · ${formatTimeOfDayShort(from, to)} – ${time(to)}`;
+  return `${formatTimeOfDayShort(from, to)} – ${time(to)}`;
+}
+
+/**
+ * `"7:00 – 9:00 PM"`: a start and end with no day, for a row under a day
+ * heading that already says it (both apps' event rows, 2026-11-19). The day
+ * period is said once when both ends share it; an end on another day names
+ * that day (`"10:00 PM – Sat, Nov 7 · 1:00 AM"`); without a readable end it is
+ * the start time alone, and without a start it is `null`.
+ */
+export function formatTimeRange(
+  start: unknown,
+  end: unknown,
+  now: Date = new Date(),
+): string | null {
+  const from = toDate(start);
+  if (!from) return null;
+  return timesOf(from, toDate(end), now);
 }
 
 /**

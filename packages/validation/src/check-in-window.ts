@@ -12,6 +12,12 @@
  * (`apps/web/components/events/check-in-close.ts`).
  */
 
+/**
+ * What an event's row says while check-in is open, on both apps (web's
+ * agenda row since 2026-11-19, the phone's before it).
+ */
+export const CHECK_IN_OPEN_LABEL = "Check-in is open";
+
 /** Minutes after `end_time` during which check-in stays open. */
 export const CHECK_IN_GRACE_MINUTES = 15;
 

@@ -4,7 +4,7 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   taskStatusLabel,
 } from "@repo/hooks";
-import { TASK_FOLLOWER_COPY, taskRepeatCadence } from "@repo/validation";
+import { TASK_FOLLOWER_COPY, taskRowFacts } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -122,24 +122,17 @@ function taskFacts(row: TaskRowModel, now: Date) {
         proof_kind: row.proofKind,
       })
     : formatDueSubtitle(row.dueDate, now);
-  // How far through its checklist it is, beside the due: "Due today · 2 of
-  // 5" (#4003). A finished task drops it; its status says enough.
-  const progress =
-    !row.isDone && row.subtasks.length > 0
-      ? `${row.subtasks.filter((subtask) => subtask.done).length} of ${row.subtasks.length}`
-      : null;
-  // Its reference photos, counted (#4635); they open from the task's screen.
-  const references = row.photos.filter(
-    (photo) => photo.kind === "reference",
-  ).length;
-  const photos =
-    !row.isDone && references > 0
-      ? `${references} ${references === 1 ? "photo" : "photos"}`
-      : null;
-  // How a copy of a repeating task repeats, after its due (#5119): "Due
-  // Monday · ↻ Weekly". The glyph is for the eye; a screen reader hears
-  // "repeats weekly".
-  const cadence = row.isDone ? null : taskRepeatCadence(row.series);
+  // How it repeats, how far through its checklist it is and its reference
+  // photos (#4003, #4635, #5119), read once with web's row (`taskRowFacts`):
+  // "Due Monday · ↻ Weekly · 2 of 5 · 1 photo". The glyph is for the eye; a
+  // screen reader hears "repeats weekly". A finished task drops them.
+  const { cadence, progress, photos } = taskRowFacts({
+    done: row.isDone,
+    subtasksDone: row.subtasks.filter((subtask) => subtask.done).length,
+    subtasksTotal: row.subtasks.length,
+    photos: row.photos,
+    series: row.series,
+  });
   // The tier, role or group it is from, last (#5473): "Due Friday · From
   // Exec board".
   const from = row.followedBy

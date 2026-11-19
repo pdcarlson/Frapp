@@ -18,3 +18,21 @@ export function checkInClosesAt(eventEnd: unknown, now: number): Date | null {
   const { closesAt } = checkInWindowBounds(end, end, undefined);
   return now < closesAt.getTime() ? closesAt : null;
 }
+
+/**
+ * Whether the event takes check-ins right now, by the same
+ * `checkInWindowBounds` rule the API enforces: what the agenda row's "Check-in
+ * is open" reads, as the phone's event row says it (2026-11-19).
+ */
+export function checkInOpenNow(
+  eventStart: unknown,
+  eventEnd: unknown,
+  opensMinutes: unknown,
+  now: number,
+): boolean {
+  const start = parseInstant(eventStart);
+  const end = parseInstant(eventEnd);
+  if (!start || !end) return false;
+  const { opensAt, closesAt } = checkInWindowBounds(start, end, opensMinutes);
+  return now >= opensAt.getTime() && now <= closesAt.getTime();
+}

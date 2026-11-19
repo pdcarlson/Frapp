@@ -71,6 +71,7 @@ import {
   attendanceFieldsOf,
   can,
   canAll,
+  CHECK_IN_OPEN_LABEL,
   EVENT_CREATE_PERMISSIONS,
   eventSetsRolesApart,
   eventsCount,
@@ -127,7 +128,7 @@ import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import {
   formatDayHeading,
   formatRelativeDayTime,
-  formatTimeOfDay,
+  formatTimeRange,
   localIsoDate,
   parseInstant,
 } from "@repo/formatting";
@@ -140,7 +141,10 @@ import {
   type AgendaRow,
 } from "@/lib/events/agenda";
 import { useIsNarrow } from "@/lib/use-is-narrow";
-import { checkInClosesAt } from "@/components/events/check-in-close";
+import {
+  checkInClosesAt,
+  checkInOpenNow,
+} from "@/components/events/check-in-close";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import {
@@ -943,7 +947,17 @@ export function EventsPage() {
     // A series row says how it repeats where a one-time row says only its
     // time: the day heading above already says which day.
     const cadence = series ? seriesCadenceOf(events, event) : null;
-    const time = formatTimeOfDay(event.start_time) || null;
+    // Start to end, "7:00 – 9:00 PM", as the phone's row says it: a member
+    // deciding whether to go wants to know when it lets out (2026-11-19).
+    const time = formatTimeRange(event.start_time, event.end_time, nowDate);
+    // Said on the row while it lasts, as the phone's row says it, so a member
+    // walking in sees where to check in without opening the event.
+    const checkInOpen = checkInOpenNow(
+      event.start_time,
+      event.end_time,
+      event.check_in_opens_minutes,
+      nowTick,
+    );
     // One derived value: the row fill and the checkbox must never disagree
     // about whether the row is selected.
     const isSelected = selecting && selectedIdSet.has(eventId);
@@ -1010,6 +1024,11 @@ export function EventsPage() {
             {meta ? (
               <span className="truncate text-caption text-muted-foreground">
                 {meta}
+              </span>
+            ) : null}
+            {checkInOpen ? (
+              <span className="text-caption font-semibold text-success">
+                {CHECK_IN_OPEN_LABEL}
               </span>
             ) : null}
           </span>

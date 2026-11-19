@@ -33,6 +33,7 @@ export {
   formatDayRange,
   formatDayTime,
   formatDayTimeRange,
+  formatTimeRange,
   formatClockShort,
   formatConversationTime,
   formatDueLabel,

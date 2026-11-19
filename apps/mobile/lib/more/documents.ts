@@ -8,6 +8,7 @@
  */
 import { formatDay } from "@repo/formatting";
 import {
+  effectiveLine,
   isDriveCopy,
   uploadedLine,
   type LibraryDocument,
@@ -24,6 +25,8 @@ export interface MobileDocument {
   description: string | null;
   folder: string | null;
   document_type: string | null;
+  /** The day it takes effect, when an officer set one (#5207). */
+  effective_date: string | null;
   uploaded_by: string | null;
   created_at: string;
   /** For the File type filter (`fileKind`); null on older rows. */
@@ -78,6 +81,7 @@ export function selectDocuments(data: unknown): MobileDocument[] {
         description: str(row, "description"),
         folder: str(row, "folder"),
         document_type: str(row, "document_type"),
+        effective_date: str(row, "effective_date"),
         uploaded_by: str(row, "uploaded_by"),
         created_at: str(row, "created_at") ?? "",
         content_type: str(row, "content_type"),
@@ -92,8 +96,9 @@ export function selectDocuments(data: unknown): MobileDocument[] {
 
 /**
  * The row's second line, web's order without its free-text tail:
- * `"Uploaded Aug 12 by Jane Doe · Governance · Bylaws"`, dropping whatever is
- * unknown. An unparseable date is left off rather than drawn as "Invalid Date".
+ * `"Uploaded Aug 12 by Jane Doe · Governance · Bylaws · Effective Sep 1"`,
+ * dropping whatever is unknown (the effective day since 2026-11-19, as web's
+ * row says it). An unparseable date is left off rather than drawn as "Invalid Date".
  * The description is searched but not drawn: a phone row has no room to
  * truncate it the way web's single line does.
  */
@@ -101,14 +106,12 @@ export function documentMeta(
   row: LibraryDocument<MobileDocument>,
   now: Date = new Date(),
 ): string | null {
+  const uploadedDay = formatDay(row.doc.created_at || null, now);
   return metaLine([
-    uploadedLine(
-      formatDay(row.doc.created_at || null, now),
-      row.uploader,
-      isDriveCopy(row.doc),
-    ),
+    uploadedLine(uploadedDay, row.uploader, isDriveCopy(row.doc)),
     row.doc.folder,
     row.doc.document_type,
+    effectiveLine(formatDay(row.doc.effective_date, now), uploadedDay),
   ]);
 }
 

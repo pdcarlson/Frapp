@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatPoints, parseInstant } from "@repo/formatting";
+import { formatPoints, formatTimeRange } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
+import { CHECK_IN_OPEN_LABEL } from "@repo/validation";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { ForwardGlyph } from "@/components/control-glyphs";
@@ -17,7 +18,7 @@ import {
 } from "@/components/item-actions-menu";
 import { NavGlyph } from "@/components/nav-glyph";
 import { HairlineChip } from "@/components/status-chip";
-import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
+import { resolveCheckInWindow } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -33,8 +34,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * "Chapter · Every Sunday".
  */
 
-function clockOf(event: EventRow): string {
-  return formatEventClock(parseInstant(event.start_time));
+/**
+ * Start to end, "7:00 – 9:00 PM", as web's agenda row says it: a member
+ * deciding whether to go wants to know when it lets out (2026-11-19).
+ */
+function clockOf(event: EventRow, now: Date): string | null {
+  return formatTimeRange(event.start_time, event.end_time, now);
 }
 
 function accessibilityLabelOf(event: EventRow, cadence: string | null) {
@@ -113,7 +118,7 @@ export function EventRowFlat({
   const styles = createEventRowStyles(tokens);
   const required = useRequiredOfViewer()(event.attendance);
   const meta = [
-    clockOf(event),
+    clockOf(event, now),
     event.location,
     event.point_value ? formatPoints(event.point_value) : null,
   ]
@@ -144,7 +149,9 @@ export function EventRowFlat({
             {meta}
           </Text>
         ) : null}
-        {isOpen ? <Text style={styles.openNow}>Check-in is open</Text> : null}
+        {isOpen ? (
+          <Text style={styles.openNow}>{CHECK_IN_OPEN_LABEL}</Text>
+        ) : null}
       </View>
       {/* Hairline, as web's row draws it (#3822, #4132): required of this
           viewer, by default or by a role of theirs (`useRequiredOfViewer`). */}
