@@ -125,6 +125,20 @@ export interface AiRunHandler {
    * the run id, for example).
    */
   run(context: AiRunContext): Promise<AiRunRef | void>;
+  /**
+   * The run has ended failed in the queue: its tries ran out (a timeout, an
+   * error the handler threw, an answer that never fit) or a try ended on a
+   * failure it can't retry. Called once, after the run is marked failed, so
+   * a feature can record the end and tell whoever is waiting (a minutes
+   * draft tells its officer, #5562). Best-effort: the worker reports what it
+   * throws and carries on. A failure the handler already recorded itself
+   * should make this a no-op.
+   */
+  onFailed?(
+    run: AiRunHandlerRun,
+    input: AiRunRef,
+    reason: AiRunFailureReason,
+  ): Promise<void>;
 }
 
 /**

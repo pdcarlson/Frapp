@@ -1,15 +1,12 @@
 "use client";
 
 import { X } from "lucide-react";
-import {
-  PRODUCTION_NATIVE_APP,
-  STORE_LISTING_URLS,
-  openAppUrl,
-} from "@repo/validation";
+import { openAppUrl } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { dismissGetTheApp, useGetTheAppDismissed } from "@/lib/get-the-app";
-import { useNativeApp, usePhonePlatform } from "@/lib/use-phone-platform";
+import { useAppInstall } from "@/lib/app-install";
+import { usePhonePlatform } from "@/lib/use-phone-platform";
 
 export const GET_THE_APP_TITLE = "Frapp works best in the app";
 
@@ -36,7 +33,7 @@ export const GET_THE_APP_TITLE = "Frapp works best in the app";
  */
 export function GetTheAppCard() {
   const phone = usePhonePlatform();
-  const app = useNativeApp();
+  const { app, installUrl } = useAppInstall(phone);
   const dismissed = useGetTheAppDismissed();
   if (phone === null || dismissed) return null;
 
@@ -59,10 +56,12 @@ export function GetTheAppCard() {
           using Frapp here.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {/* The staging app has no store listing (TestFlight, internal track). */}
-          {app.id === PRODUCTION_NATIVE_APP.id ? (
+          {/* This environment's install link (`lib/app-install.ts`): the
+              TestFlight or Play tester link in the beta, none for the staging
+              app until one is set. */}
+          {installUrl ? (
             <Button asChild variant="tinted" size="sm">
-              <a href={STORE_LISTING_URLS[phone]}>Get the app</a>
+              <a href={installUrl}>Get the app</a>
             </Button>
           ) : null}
           <Button asChild variant="ghost" size="sm">

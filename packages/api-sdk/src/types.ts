@@ -848,6 +848,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/chapter-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The chapter's shareable invite link, if it has one (#3353)
+         * @description One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.
+         */
+        get: operations["InviteController_getChapterLink_v1"];
+        put?: never;
+        /**
+         * Make the chapter's shareable invite link, turning off the one before it (#3353)
+         * @description 403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.
+         */
+        post: operations["InviteController_createChapterLink_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/batch": {
         parameters: {
             query?: never;
@@ -3436,7 +3460,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A short-lived link to one of a task's photos (assignee or tasks:manage, #4635) */
+        /** A short-lived link to one of a task's photos (assignee or tasks:manage, #4635; a following group's member gets reference photos only, #5473) */
         get: operations["TaskController_getPhotoUrl_v1"];
         put?: never;
         post?: never;
@@ -7171,6 +7195,12 @@ export interface components {
             used_at: string | null;
             revoked_at: string | null;
             created_at: string;
+            /** @description True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined. */
+            reusable: boolean;
+        };
+        ChapterLinkResponseDto: {
+            /** @description The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into. */
+            link: components["schemas"]["InviteListItemDto"] | null;
         };
         BatchCreateInvitesDto: {
             /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
@@ -9348,16 +9378,16 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy.
+             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy.
              * @enum {string}
              */
-            audience: "everyone" | "people" | "role" | "group";
+            audience: "everyone" | "people" | "role" | "group" | "tier";
             /**
              * Format: uuid
-             * @description The role or chapter group it went to, for `role` and `group`; null otherwise.
+             * @description The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise.
              */
             target_id: string | null;
-            /** @description That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
+            /** @description That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
             target_name: string | null;
             /** @description How many copies the group has. */
             total: number;
@@ -9406,6 +9436,13 @@ export interface components {
              * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.
              */
             audience_group_id?: string;
+            /**
+             * Format: uuid
+             * @description With `audience: "everyone"` only (#5473): just the active members holding a role in this tier get a copy ("Exec board"). A tier holding the chapter’s Everyone role means everyone; a tier nobody holds a role in is a 400. Not with `audience_role_id` or `audience_group_id`.
+             */
+            audience_tier_id?: string;
+            /** @description The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. */
+            followed_by?: string;
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
             /**
@@ -9508,6 +9545,8 @@ export interface components {
              * @description The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to.
              */
             meeting_id: string | null;
+            /** @description The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. */
+            followed_by: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -9537,6 +9576,8 @@ export interface components {
              * @enum {string}
              */
             proof_kind?: "none" | "photo" | "link";
+            /** @description The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. Null takes it off. A new one must name a tier, role or group the editor is in; the one the task has stays whoever edits. With `scope: group` it changes every copy, confirmed ones too. Not with `scope: series`. */
+            followed_by?: string | null;
             /**
              * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` ("Everyone’s copy") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it.
              * @enum {string}
@@ -9583,10 +9624,10 @@ export interface components {
             /** @description The checklist the claimed task starts with, in order. */
             subtask_titles: string[];
             /**
-             * @description Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members) or `people` (`scope_user_ids`). Alumni never may.
+             * @description Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members), `tier` (everyone holding a role in it, #5473) or `people` (`scope_user_ids`). Alumni never may.
              * @enum {string}
              */
-            scope: "chapter" | "role" | "group" | "people";
+            scope: "chapter" | "role" | "group" | "people" | "tier";
             /**
              * Format: uuid
              * @description The role or group, for `role` and `group`.
@@ -9681,6 +9722,11 @@ export interface components {
              * @description Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.
              */
             group_id?: string;
+            /**
+             * Format: uuid
+             * @description Only the active members holding a role in this tier may claim it (#5473). A tier holding the chapter’s Everyone role means anyone; a tier nobody holds a role in is a 400.
+             */
+            tier_id?: string;
             /** @description Only these people may claim it. Each must be an active member of the chapter (alumni refused). */
             user_ids?: string[];
         };
@@ -10842,16 +10888,16 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy.
+             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy.
              * @enum {string}
              */
-            audience: "everyone" | "people" | "role" | "group";
+            audience: "everyone" | "people" | "role" | "group" | "tier";
             /**
              * Format: uuid
-             * @description The role or chapter group it went to, for `role` and `group`; null otherwise.
+             * @description The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise.
              */
             target_id: string | null;
-            /** @description That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
+            /** @description That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
             target_name: string | null;
             /** @description How many copies the group has. */
             total: number;
@@ -14560,6 +14606,62 @@ export interface operations {
                 "application/json": components["schemas"]["CreateInviteDto"];
             };
         };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_getChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterLinkResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_createChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             201: {
                 headers: {

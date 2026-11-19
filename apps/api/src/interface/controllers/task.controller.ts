@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   InternalServerErrorException,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -63,6 +64,7 @@ import {
 import { OpenTaskDto } from '../dtos/open-task.dto';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { TASK_FOLLOWER_COPY } from '@repo/validation';
 import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Tasks')
@@ -100,12 +102,23 @@ export class TaskController {
       [SystemPermissions.TASKS_MANAGE],
     );
     const paged = query.limit !== undefined || query.before !== undefined;
-    return this.taskService.list(chapterId, userId, isAdmin, {
-      ...(query.before && query.before_id
-        ? { after: { created_at: query.before, id: query.before_id } }
-        : {}),
-      ...(paged ? { limit: clampListLimit(query.limit) } : {}),
-    });
+    // A member's board also holds the tasks a tier, role or group they're in
+    // follows (#5473), read now, without their proof.
+    const follows = isAdmin
+      ? []
+      : await this.taskService.followEntriesOf(chapterId, userId);
+    return this.taskService.list(
+      chapterId,
+      userId,
+      isAdmin,
+      {
+        ...(query.before && query.before_id
+          ? { after: { created_at: query.before, id: query.before_id } }
+          : {}),
+        ...(paged ? { limit: clampListLimit(query.limit) } : {}),
+      },
+      follows,
+    );
   }
 
   @Get(':id')
@@ -118,7 +131,11 @@ export class TaskController {
     return this.readableTask(chapterId, userId, id);
   }
 
-  /** The task, for its assignee or a `tasks:manage` holder; 403 otherwise. */
+  /**
+   * The task, for its assignee, a `tasks:manage` holder, or a member of the
+   * tier, role or group that follows it (#5473, without its proof); 403
+   * otherwise.
+   */
   private async readableTask(chapterId: string, userId: string, id: string) {
     const task = await this.taskService.findById(id, chapterId);
     const isAdmin = await this.rbacService.memberHasAnyPermission(
@@ -126,10 +143,10 @@ export class TaskController {
       userId,
       [SystemPermissions.TASKS_MANAGE],
     );
-    if (task.assignee_id !== userId && !isAdmin) {
+    if (!(await this.taskService.mayRead(task, chapterId, userId, isAdmin))) {
       throw new ForbiddenException('Access denied to this task');
     }
-    return task;
+    return this.taskService.asReadBy(task, userId, isAdmin);
   }
 
   @Post('photo-upload-url')
@@ -162,7 +179,7 @@ export class TaskController {
   @Get(':id/photos/:photoId/url')
   @ApiOperation({
     summary:
-      "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635)",
+      "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635; a following group's member gets reference photos only, #5473)",
   })
   @ApiOkResponse({ type: TaskPhotoUrlResponseDto })
   async getPhotoUrl(
@@ -172,6 +189,11 @@ export class TaskController {
     @Param('photoId', new ParseUUIDPipe()) photoId: string,
   ): Promise<TaskPhotoUrlResponseDto> {
     const task = await this.readableTask(chapterId, userId, id);
+    // A follower's read carries only the reference photos (#5473): a proof
+    // photo's id is one it can't link to.
+    if (!task.photos?.some((photo) => photo.id === photoId)) {
+      throw new NotFoundException('This task has no such photo');
+    }
     return this.taskService.getPhotoDownloadUrl(task.id, chapterId, photoId);
   }
 
@@ -190,6 +212,7 @@ export class TaskController {
       assigned_to_self:
         !result.group && result.assignee_id === result.created_by,
       audience: result.group?.audience ?? 'person',
+      followed: !!result.followed_by,
       group_size: result.group?.total ?? 1,
       has_due_time: !!result.due_at,
       has_subtasks: (body?.subtasks?.length ?? 0) > 0,
@@ -214,6 +237,10 @@ export class TaskController {
       audience: dto.audience ?? null,
       audience_role_id: dto.audience_role_id ?? null,
       audience_group_id: dto.audience_group_id ?? null,
+      // Left out when not sent, so a suggestion's accept (whose payload has
+      // neither yet) makes the very task the form would (#4313).
+      audience_tier_id: dto.audience_tier_id,
+      followed_by: dto.followed_by,
       created_by: createdBy,
       due_date: dto.due_date,
       due_at: dto.due_at ?? null,
@@ -249,6 +276,9 @@ export class TaskController {
       return this.taskService.updateGroup(id, chapterId, userId, edit);
     }
     if (scope === 'series') {
+      if (edit.followed_by !== undefined) {
+        throw new BadRequestException(TASK_FOLLOWER_COPY.noRepeat);
+      }
       return this.taskSeriesService.update(id, chapterId, userId, {
         ...edit,
         recurrence_rule,

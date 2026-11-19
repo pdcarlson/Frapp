@@ -54,6 +54,7 @@ import {
 import {
   TASK_AUDIENCE_COPY,
   TASK_SERIES_SCOPE_COPY,
+  taskSeriesLive,
   can,
   taskGroupLabel,
   taskNeedsSignOff,
@@ -805,7 +806,7 @@ export function TasksBoard() {
   async function removeTask(task: Task) {
     // A copy of a live series asks which, as the event editors do (#5119):
     // this copy, or stop the repeat (its open copy goes only if untouched).
-    if (task.series && !task.series.ended) {
+    if (taskSeriesLive(task.series)) {
       const picked = await confirm({
         title: TASK_SERIES_SCOPE_COPY.deleteTitle,
         description: TASK_SERIES_SCOPE_COPY.deleteMessage,
@@ -1566,7 +1567,7 @@ function TaskCard({
         <span className="min-w-0 truncate">{assigneeName}</span>
         {/* No `·` before it either: its ↻ separates it, as the checklist's
             icon does (#5119). */}
-        {task.series && !task.series.ended ? (
+        {taskSeriesLive(task.series) ? (
           <TaskRepeatLine task={task} next />
         ) : null}
         {/* No `·` before it: its checklist icon separates it, the way

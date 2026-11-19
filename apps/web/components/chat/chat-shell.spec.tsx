@@ -6,7 +6,6 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import {
   describe,
   it,
@@ -574,13 +573,19 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
     open,
     userId,
     onOpenChange,
+    docked,
   }: {
     open: boolean;
     userId: string | null;
     onOpenChange: (open: boolean) => void;
+    docked?: boolean | "here";
   }) =>
     open ? (
-      <div data-testid="member-profile" data-user-id={userId ?? ""}>
+      <div
+        data-testid="member-profile"
+        data-user-id={userId ?? ""}
+        data-docked={String(docked ?? false)}
+      >
         {/* Takes focus as it opens, as the real modal sheet does. */}
         <button autoFocus onClick={() => onOpenChange(false)}>
           close-profile
@@ -621,6 +626,9 @@ vi.mock("@repo/hooks", async () => ({
     .then(
       ({
         canSetChannelBackground,
+        catchUpFirstRange,
+        catchUpRangesFor,
+        catchUpTargetFor,
         claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
         IMPORTANT_STRIP_DISMISS_LABEL,
@@ -640,6 +648,9 @@ vi.mock("@repo/hooks", async () => ({
       }) => ({
         deleteChannelTypeLabel,
         canSetChannelBackground,
+        catchUpFirstRange,
+        catchUpRangesFor,
+        catchUpTargetFor,
         claimViewedChannel,
         deleteChannelConfirmTitle,
         DELETE_CHANNEL_CONFIRM_BODY,
@@ -2269,10 +2280,10 @@ describe("ChatShell catch me up (#3946)", () => {
         unread: { count: 140, as_of: expect.any(String) },
       }),
     );
-    // The panel is up and the strip has made way for it.
-    expect(
-      screen.getByRole("complementary", { name: "Catch me up" }),
-    ).toBeInTheDocument();
+    // The summary is up in the channel, above the timeline, and the strip
+    // has made way for it.
+    const summary = screen.getByRole("region", { name: "Catch me up" });
+    expect(summary.closest("[data-chat-column]")).not.toBeNull();
     expect(
       screen.queryByText("140 new messages since you were last here."),
     ).toBeNull();
@@ -6003,6 +6014,11 @@ describe("ChatShell member list", () => {
       "data-user-id",
       "u-author",
     );
+    // In the chat itself, not a card over the page beside it (#5616).
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-docked",
+      "here",
+    );
     fireEvent.click(screen.getByRole("button", { name: "close-profile" }));
     expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
 
@@ -6071,8 +6087,9 @@ describe("ChatShell member list", () => {
     );
     expect(document.cookie).not.toContain("frapp_chat_members_hidden");
 
-    // A row opens its popout over the list; clicking in the popout, and the
-    // full profile behind its View profile taking focus, leave the list open.
+    // A row opens its popout over the list, and clicking in the popout leaves
+    // the list open. View profile opens the full profile in the chat itself,
+    // so the list over it closes.
     fireEvent.click(
       within(list).getByRole("button", { name: "open-row-profile" }),
     );
@@ -6090,13 +6107,8 @@ describe("ChatShell member list", () => {
       "u-row",
     );
     expect(screen.getByRole("button", { name: "close-profile" })).toHaveFocus();
-    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "close-profile" }));
-    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
-
-    // The button closes it again: its own pointerdown is not an outside
-    // press that would close the list for its click to reopen.
-    await userEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   });

@@ -515,6 +515,11 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'InviteController.createChapterLink': {
+    'invite-created': [
+      ['a chapter link', {}, { invite_method: 'chapter-link', count: 1 }],
+    ],
+  },
   'InviteController.createWithEmails': {
     'invite-created': [
       [
@@ -679,6 +684,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         {
           assigned_to_self: true,
           audience: 'person',
+          followed: false,
           group_size: 1,
           has_due_time: false,
           has_point_reward: false,
@@ -706,6 +712,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         {
           assigned_to_self: false,
           audience: 'person',
+          followed: false,
           group_size: 1,
           has_due_time: true,
           has_point_reward: true,
@@ -738,6 +745,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         {
           assigned_to_self: false,
           audience: 'everyone',
+          followed: false,
           group_size: 20,
           has_due_time: false,
           has_point_reward: false,

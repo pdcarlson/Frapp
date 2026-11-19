@@ -178,10 +178,11 @@ export function DatesView({ dates }: { dates: readonly MeetingDateItem[] }) {
               <span className="block break-words text-sm font-medium">
                 {item.text}
               </span>
+              {/* The tile says the month and day; the line, the weekday. */}
               <span className="block text-caption text-muted-foreground">
-                {tile.weekday ? `${tile.weekday}, ` : ""}
-                {meetingDueLabel(item.date)}
+                {tile.line}
               </span>
+              <span className="sr-only">, {meetingDueLabel(item.date)}</span>
             </span>
           </li>
         );

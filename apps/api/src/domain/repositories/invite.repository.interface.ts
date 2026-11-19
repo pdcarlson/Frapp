@@ -21,6 +21,11 @@ export interface IInviteRepository {
   findByToken(token: string): Promise<Invite | null>;
   findByChapter(chapterId: string): Promise<Invite[]>;
   /**
+   * The chapter's link (#3353) that no officer has turned off, expired or
+   * not, or null. At most one: `invites_one_chapter_link`.
+   */
+  findChapterLink(chapterId: string): Promise<Invite | null>;
+  /**
    * Invites emailed to `email` (matched case-insensitively, exactly) that are
    * still joinable at `now`: not used, not revoked, not expired. Newest first.
    * Every chapter's, so only ever called with the caller's own verified

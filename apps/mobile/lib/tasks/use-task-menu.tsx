@@ -46,6 +46,8 @@ import {
 } from "@/lib/tasks/create-task";
 import {
   confirmTaskDelete,
+  taskDeleteTarget,
+  type TaskDeleteScope,
   groupCopies,
   taskMenuKeys,
   taskScreenControls,
@@ -81,7 +83,8 @@ import {
  * - Remove people opens the task's screen in its select mode (`select=1`).
  * - Duplicate opens New task filled in from the task (`taskDuplicateOf`).
  * - Delete asks the task screen's question (`confirmTaskDelete`) and sends
- *   one copy's delete, or every copy's for Delete for everyone.
+ *   one copy's delete, or every copy's for Delete for everyone, or on a
+ *   repeating copy stops the repeat for All upcoming tasks (#5119).
  *
  * Render `host` once in the screen.
  */
@@ -126,11 +129,12 @@ export function useTaskMenu({
   }, [duplicating]);
 
   const runDelete = useCallback(
-    (row: TaskRowModel, everyone: boolean) => {
+    (row: TaskRowModel, scope: TaskDeleteScope) => {
       // One copy's Delete never names the group: only Delete for everyone
-      // sends `scope=group`.
+      // sends `scope=group`; All upcoming tasks on a repeating copy sends
+      // `scope=series` (#5119).
       deleteTask
-        .mutateAsync(everyone ? { id: row.id, scope: "group" } : row.id)
+        .mutateAsync(taskDeleteTarget(row.id, scope))
         .catch((error: unknown) =>
           alertFailure({
             title: "Couldn't delete the task",
@@ -250,8 +254,8 @@ export function useTaskMenu({
             destructive: true,
             glyph: (color) => <TrashGlyph color={color} />,
             run: () =>
-              confirmTaskDelete(row.title, everyone, () =>
-                runDelete(row, everyone),
+              confirmTaskDelete(row, everyone, (scope) =>
+                runDelete(row, scope),
               ),
           };
         }

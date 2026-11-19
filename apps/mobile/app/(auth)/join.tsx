@@ -699,8 +699,7 @@ export default function JoinChapter() {
               >
                 <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
                 <Text style={styles.subtitle}>
-                  Paste the invite link or code your officer sent. Invites work
-                  once and expire after 24 hours.
+                  Paste the invite link or code your officer sent.
                 </Text>
 
                 <OnboardingFieldLabel>Invite</OnboardingFieldLabel>

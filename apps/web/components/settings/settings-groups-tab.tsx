@@ -24,7 +24,6 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
@@ -37,6 +36,7 @@ import {
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote } from "@/components/shared/inline-note";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelFooter,
@@ -183,11 +183,17 @@ export function SettingsGroupsTab({ canManage }: { canManage: boolean }) {
     <div className="space-y-10">
       {confirmDialog}
       {body}
-      <Sheet
+      {/*
+        In place inside Settings, like the pledge class editor, rather than a
+        card sliding over the window (Paul, 2026-11-19: no side cards).
+      */}
+      <Panel
         open={editing !== null && members !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditingId(null);
         }}
+        docked
+        backLabel="Back to groups"
       >
         {editing && members ? (
           <GroupEditor
@@ -198,7 +204,7 @@ export function SettingsGroupsTab({ canManage }: { canManage: boolean }) {
             onDone={() => setEditingId(null)}
           />
         ) : null}
-      </Sheet>
+      </Panel>
     </div>
   );
 }

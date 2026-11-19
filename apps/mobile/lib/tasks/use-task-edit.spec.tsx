@@ -10,6 +10,7 @@ import {
 } from "@repo/hooks/kept-drafts";
 import type { LiveTaskPhoto } from "@repo/hooks";
 import { toTaskRow, type TaskRowModel } from "./board";
+import { taskRepeatDraftFromRule } from "@repo/validation";
 import { TASK_EDIT_COPY } from "./task-edit";
 import { useTaskEdit, type TaskEditing } from "./use-task-edit";
 
@@ -330,6 +331,171 @@ describe("proof, photos and who", () => {
   });
 });
 
+describe("a copy of a repeating task (#5119)", () => {
+  const RULE = "FREQ=WEEKLY;BYDAY=WE;TZID=America/New_York";
+  const live = () =>
+    row({
+      series_id: "s1",
+      series: {
+        recurrence_rule: RULE,
+        next_due_date: "2099-10-07",
+        ended: false,
+      },
+    });
+  /** The scope alert's buttons, from its last showing. */
+  const answer = (label: string) => {
+    const call = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+    const buttons = call[2] as { text: string; onPress?: () => void }[];
+    buttons.find((button) => button.text === label)!.onPress!();
+  };
+
+  it("asks first, and All upcoming tasks sends the series scope", async () => {
+    const tree = mount(live());
+    act(() => hook.edit!.type("title", "Mop"));
+    let saved!: Promise<boolean>;
+    act(() => {
+      saved = hook.edit!.commit("title");
+    });
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[0]).toBe(
+      "This is a repeating task",
+    );
+    await act(async () => {
+      answer("All upcoming tasks");
+      await saved;
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { title: "Mop", scope: "series" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("This task only sends no scope; Cancel sends nothing and keeps the draft", async () => {
+    const tree = mount(live());
+    act(() => hook.edit!.type("points", "3"));
+    let saved!: Promise<boolean>;
+    act(() => {
+      saved = hook.edit!.commit("points");
+    });
+    await act(async () => {
+      answer("Cancel");
+      expect(await saved).toBe(false);
+    });
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(hook.edit!.drafts.points).toBe("3");
+    expect(hook.edit!.failure).toBeNull();
+    act(() => {
+      saved = hook.edit!.commit("points");
+    });
+    await act(async () => {
+      answer("This task only");
+      await saved;
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { point_reward: 3 },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("asks once for the fields Done saves together", async () => {
+    const tree = mount(live());
+    act(() => {
+      hook.edit!.type("title", "Mop");
+      hook.edit!.type("points", "3");
+    });
+    let saved!: Promise<boolean>;
+    act(() => {
+      saved = hook.edit!.commitAll();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer("All upcoming tasks");
+      expect(await saved).toBe(true);
+    });
+    expect(updateTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { title: "Mop", scope: "series" },
+    });
+    expect(updateTask).toHaveBeenCalledWith({
+      id: "t1",
+      body: { point_reward: 3, scope: "series" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("saves the Repeat after the other fields Done saves with it", async () => {
+    const tree = mount(live());
+    act(() => {
+      hook.edit!.type("title", "Mop");
+      hook.edit!.pickRepeat({
+        ...taskRepeatDraftFromRule(RULE),
+        preset: "NONE",
+        pristine: false,
+      });
+    });
+    let saved!: Promise<boolean>;
+    act(() => {
+      saved = hook.edit!.commitAll();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Stopping the repeat waits on the title's question.
+    expect(updateTask).not.toHaveBeenCalled();
+    await act(async () => {
+      answer("All upcoming tasks");
+      expect(await saved).toBe(true);
+    });
+    expect(updateTask.mock.calls.map(([call]) => call.body)).toEqual([
+      { title: "Mop", scope: "series" },
+      { recurrence_rule: null, scope: "series" },
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("saves what is left as the screen goes to this copy, without asking", async () => {
+    const tree = mount(live());
+    act(() => hook.edit!.type("title", "Mop"));
+    await act(async () => {
+      tree.unmount();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { title: "Mop" },
+    });
+  });
+
+  it("saves a Repeat change to the series without asking", async () => {
+    const tree = mount(live());
+    const stored = hook.edit!.drafts.repeat;
+    expect(stored).toBeNull();
+    act(() =>
+      hook.edit!.pickRepeat({
+        ...taskRepeatDraftFromRule(RULE),
+        preset: "NONE",
+        pristine: false,
+      }),
+    );
+    await act(async () => {
+      await hook.edit!.commit("repeat");
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { recurrence_rule: null, scope: "series" },
+    });
+    act(() => tree.unmount());
+  });
+});
+
 describe("leaving the screen", () => {
   it("saves a draft still typed as the screen goes", async () => {
     const tree = mount();
@@ -375,6 +541,7 @@ describe("leaving the screen", () => {
       description: null,
       points: null,
       due: null,
+      repeat: null,
     });
     act(() => tree.unmount());
   });

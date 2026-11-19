@@ -220,6 +220,29 @@ export const TASK_REVIEW_PUSH_THREAD = 'tasks:review';
 const SUBMITTED_REPLY_MAX = 60;
 
 /**
+ * A task a member's group follows was marked done (#5473): what they hear
+ * when they can't confirm it. It tells them, and asks nothing: "Sam
+ * finished: Book the venue" / "From Exec board · An officer confirms it".
+ */
+export function taskFollowedFinishedCopy(
+  name: string,
+  task: {
+    title: string;
+    point_reward?: number | null;
+    proof_kind?: string | null;
+  },
+  followerName: string | null,
+): { title: string; body: string } {
+  return {
+    title: `${name} finished: ${task.title}`,
+    body: joinFacts(
+      followerName && `From ${followerName}`,
+      taskNeedsSignOff(task) ? 'An officer confirms it' : 'Done',
+    ),
+  };
+}
+
+/**
  * What the officer who assigned a task reads when it is marked done (#4635
  * proof): the person and the action lead, because their action is the news,
  * then what came with it and what is asked. "Shawn Klein submitted: Clean his

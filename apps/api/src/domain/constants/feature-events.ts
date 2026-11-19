@@ -92,8 +92,11 @@ export const FEATURE_EVENTS = {
     properties: [
       'assigned_to_self',
       // `person`, or the group it went to: `everyone` (#4295 step 3),
-      // `people`, `role` or `group` (2026-11-18); and how many copies it made.
+      // `people`, `role` or `group` (2026-11-18), or `tier` (#5473); and how
+      // many copies it made.
       'audience',
+      // Whether a tier, role or group follows it (#5473).
+      'followed',
       'group_size',
       'has_due_time',
       'has_point_reward',

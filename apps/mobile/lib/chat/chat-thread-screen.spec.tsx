@@ -583,7 +583,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   };
 });
 
-/** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
+/** Catch me up (#3946): the gate, and the summary's hook, both stood in. */
 const catchUp = vi.hoisted(() => ({
   surface: false,
   waiting: false,
@@ -604,9 +604,9 @@ vi.mock("@/lib/ai/availability", () => ({
     askAccess: askAccess.value,
   }),
 }));
-vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
+vi.mock("@/components/chat/catch-up", async (importOriginal) => ({
   ...(await importOriginal<
-    typeof import("@/components/chat/catch-up-sheet")
+    typeof import("@/components/chat/catch-up")
   >()),
   useCatchUp: (options: {
     onOpenPoint: (point: Record<string, unknown>) => void;
@@ -618,6 +618,11 @@ vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
       active: catchUp.active,
       resume: catchUp.resume,
       drop: catchUp.drop,
+      // The open summary, drawn by the screen under its header.
+      block:
+        catchUp.active && !catchUp.waiting
+          ? React.createElement("Text", null, "Open summary block")
+          : null,
       sheets: null,
     };
   },
@@ -3326,7 +3331,6 @@ describe("Catch me up in a channel (#3946)", () => {
     expect(catchUp.start).toHaveBeenCalledWith({
       kind: "channel",
       channelId: CHANNEL,
-      channelName: "general",
       unread: { count: 60, as_of: expect.any(String) },
     });
     // Asked once: the strip does not come back over the summary.
@@ -3433,6 +3437,19 @@ describe("Catch me up in a channel (#3946)", () => {
     expect(scrollToIndex).toHaveBeenCalledTimes(1);
     rerender(tree);
     expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("draws the open summary in the channel, under the header", () => {
+    catchUp.surface = true;
+    catchUp.active = true;
+    arriveWith(60);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Open summary block");
+    // The summary stands in for the offer while it is open.
+    expect(text).not.toContain(chatCatchUpOfferLine(60));
+    catchUp.active = false;
     act(() => tree.unmount());
   });
 

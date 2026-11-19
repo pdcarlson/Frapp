@@ -47,6 +47,7 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   occurrence_date: null,
   group_id: null,
   meeting_id: null,
+  followed_by: null,
   created_at: iso(-48 * HOUR),
   ...overrides,
 });

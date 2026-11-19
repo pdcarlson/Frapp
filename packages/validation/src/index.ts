@@ -141,6 +141,8 @@ export * from "./member-nudge";
 export * from "./mentions";
 export * from "./message-link";
 export * from "./message-text";
+// Minutes drafted first: start, drafting and review, in both apps' words.
+export * from "./minutes-flow";
 // How both apps lay minutes out to read, and the words of its ⋯ menu (#5562).
 export * from "./minutes-read";
 export * from "./module-enablement";
@@ -234,6 +236,7 @@ export * from "./study-zone-shape";
 export * from "./subscription";
 // Tasks for everyone: one group task, a copy each (#4295 step 3).
 export * from "./task-audience";
+export * from "./task-follower";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
 // Who a suggested task names, guessed from its own words (Paul, 2026-11-18).

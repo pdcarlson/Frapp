@@ -1,3 +1,4 @@
+import { MINUTES_FLOW_COPY, minutesDraftElapsed } from "@repo/validation";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingMinutes } from "@repo/hooks";
@@ -60,6 +61,10 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
   }),
   useMeeting: () => mocks.meeting.current,
+  useCachedMeetingRow: () => null,
+  // The real clock's arithmetic, read once: the spec has no timers to tick.
+  useMinutesDraftClock: (at: string | null) =>
+    minutesDraftElapsed(at ?? null, Date.now()),
   useMeetingActionItemTasks: () => ({ data: mocks.actionItemTasks.current }),
   useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
   usePostMeeting: () => ({ mutateAsync: mocks.post, isPending: false }),
@@ -402,7 +407,8 @@ describe("MinutesPage", () => {
     expect(screen.getByText("NOV")).toBeTruthy();
     expect(screen.getByText("28")).toBeTruthy();
     expect(screen.getByText("Officer installation")).toBeTruthy();
-    expect(screen.getByText(/^Saturday, /)).toBeTruthy();
+    // The weekday alone beside the tile, which already says the day.
+    expect(screen.getByText(/^Saturday(, \d{4})?$/)).toBeTruthy();
     expect(screen.getByText("Formal deposit approved").className).toContain(
       "font-semibold",
     );
@@ -1030,10 +1036,18 @@ describe("MinutesPage", () => {
       mocks.refetch.mockResolvedValue({ data: ownDraft() });
       mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
       render(<MinutesPage id="m-1" />);
-      // Empty notes are caught on the ask, not while typing.
-      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
-      expect(screen.getByText("Paste or type your notes first.")).toBeTruthy();
-      expect(mocks.requestDraft).not.toHaveBeenCalled();
+      // The start box: one box, and Draft minutes lights up once there is
+      // something to draft from. No sections and no Post yet (#5562).
+      expect(screen.getByText("How did the meeting go?")).toBeTruthy();
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Draft minutes",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Post minutes" })).toBeNull();
 
       fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
         target: { value: "voted yes on formal budget 30-2" },
@@ -1066,9 +1080,17 @@ describe("MinutesPage", () => {
       });
       mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
       render(<MinutesPage id="m-1" />);
+      // Started by hand: the template's sections are laid out to type in.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Write the minutes by hand" }),
+      );
       fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
         target: { value: "We met." },
       });
+      // With minutes written, the notes fold behind a banner.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Notes and transcript" }),
+      );
       fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
         target: { value: "notes" },
       });
@@ -1083,27 +1105,87 @@ describe("MinutesPage", () => {
       ).toBe("2026-11-10T02:00:00.000Z");
     });
 
-    it("holds the sections still while a draft is written, and offers Stop", () => {
-      mocks.draft.current = { ...NO_DRAFT, status: "drafting", notes: "notes" };
+    it("shows the steps and a clock while a draft is written, and offers Stop", () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "drafting",
+        notes: "notes",
+        requested_at: new Date(Date.now() - 42_000).toISOString(),
+      };
       loaded(ownDraft());
       render(<MinutesPage id="m-1" />);
-      expect(screen.getByText("Drafting minutes from your notes")).toBeTruthy();
-      // The sections sit in a disabled fieldset, so every field in it waits.
-      expect(
-        screen.getByRole("textbox", { name: "Summary" }).matches(":disabled"),
-      ).toBe(true);
-      expect(
-        screen.getByRole("button", { name: "Post minutes" }),
-      ).toHaveProperty("disabled", true);
-      fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+      // What is done, what is under way and for how long, and that the
+      // officer may leave (Paul, 2026-11-19: "Nothing indicates it's
+      // processing").
+      expect(screen.getByText("Saved your notes")).toBeTruthy();
+      expect(screen.getByText("Writing the minutes")).toBeTruthy();
+      expect(screen.getByText(/^0:4\d$/)).toBeTruthy();
+      expect(screen.getByText("Ready for you to read")).toBeTruthy();
+      expect(screen.getByText(/We'll send you a notification/)).toBeTruthy();
+      // Where the minutes will land, not empty boxes, and nothing to post.
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Post minutes" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Stop drafting" }));
       // Stopping keeps the notes, stored and in the box.
       expect(mocks.discardDraft).toHaveBeenCalledWith({
         id: "m-1",
         keepNotes: true,
       });
       expect(
+        screen.getByRole("textbox", { name: "Your notes", hidden: true }),
+      ).toHaveProperty("value", "notes");
+    });
+
+    it("reviews a draft with only the sections it filled, and adds another from the menu", async () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(
+        ownDraft({
+          content: {
+            ...EMPTY,
+            tldr: "- Formal is on.",
+            decisions: [
+              { text: "Approved the DJ.", headline: null, vote: null },
+            ],
+          },
+        }),
+      );
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByText(
+          "Drafted from your notes. Read it over and fix anything, then post.",
+        ),
+      ).toBeTruthy();
+      expect(screen.getByRole("textbox", { name: "TL;DR" })).toBeTruthy();
+      // No empty boxes for what the draft didn't fill (Paul, 2026-11-19).
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Post minutes" })).toBeTruthy();
+      fireEvent.keyDown(screen.getByRole("button", { name: "Add a section" }), {
+        key: "Enter",
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Summary" }));
+      await waitFor(() =>
+        expect(screen.getByRole("textbox", { name: "Summary" })).toBeTruthy(),
+      );
+      // The notes stay behind the banner, and the ⋯ menu opens them too.
+      expect(screen.queryByRole("textbox", { name: "Your notes" })).toBeNull();
+      openMenuItem("Notes and transcript");
+      expect(
         screen.getByRole("textbox", { name: "Your notes" }),
       ).toHaveProperty("value", "notes");
+    });
+
+    it("keeps a section the officer empties, even the only one the draft filled", () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(ownDraft({ content: { ...EMPTY, tldr: "- Formal is on." } }));
+      render(<MinutesPage id="m-1" />);
+      const tldr = screen.getByRole("textbox", { name: "TL;DR" });
+      fireEvent.change(tldr, { target: { value: "" } });
+      // Not swept away from under the cursor, and no start box in its place.
+      expect(screen.getByRole("textbox", { name: "TL;DR" })).toHaveProperty(
+        "value",
+        "",
+      );
+      expect(screen.queryByText(MINUTES_FLOW_COPY.start.heading)).toBeNull();
     });
 
     it("folds a pasted transcript into a card with View and Remove, like the phone (#5562)", async () => {

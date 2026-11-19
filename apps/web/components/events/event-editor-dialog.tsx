@@ -94,6 +94,7 @@ import {
   PanelBody,
   PanelContent,
   PanelHeader,
+  type PanelDocking,
 } from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
@@ -490,9 +491,10 @@ type EventEditorDialogProps = {
   onLeftEvent?: () => void;
   /**
    * Open inside the Events page instead of over the app (`shared/panel.tsx`
-   * § Docked). `/event` in chat has no page to open in and keeps the sheet.
+   * § Docked). Opened from chat's + card or an Ask answer, it docks `"here"`:
+   * over the chat column or Ask's card it came from.
    */
-  docked?: boolean;
+  docked?: PanelDocking;
   /** The docked back arrow's name: where it returns to. */
   backLabel?: string;
   /**

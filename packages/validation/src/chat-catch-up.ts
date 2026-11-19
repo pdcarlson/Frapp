@@ -174,6 +174,8 @@ export type ChatCatchUpRange = (typeof CHAT_CATCH_UP_RANGES)[number];
 export const CHAT_CATCH_UP_COPY = {
   name: "Catch me up",
   close: "Close the summary",
+  /** Folds the open summary to one line above the conversation. */
+  hide: "Hide",
   /** Under the title: who sees it and what becomes of it. */
   private: "Only you can see this. It isn't saved.",
   thread_title: "Catch me up on this thread",
@@ -218,8 +220,8 @@ export const CHAT_CATCH_UP_COPY = {
   offer_action: "Catch me up",
   offer_dismiss: "Dismiss",
   /**
-   * On the phone the summary is a sheet, and opening a line closes it to
-   * show the message. The strip above the channel then leads back to the
+   * The summary folded to one line above the conversation: by Hide, or on
+   * the phone by pressing a line to show its message. It leads back to the
    * same summary, so the next line doesn't cost another request.
    */
   resume_line: "Your summary is still here.",

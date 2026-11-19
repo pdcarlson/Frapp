@@ -29,6 +29,11 @@ export interface TaskListCursor {
 export interface TaskListFilter {
   /** Only this assignee's tasks. */
   assigneeId?: string;
+  /**
+   * With `assigneeId`: also the tasks any of these follower entries follows
+   * (#5473), so a member's board holds what their groups follow.
+   */
+  orFollowedBy?: readonly string[];
   /** Leave out this assignee's tasks. */
   notAssigneeId?: string;
   /** Only tasks this member created. */
@@ -86,6 +91,15 @@ export interface ITaskRepository {
   ): Promise<Task[]>;
   create(data: Partial<Task>): Promise<Task>;
   update(id: string, chapterId: string, data: Partial<Task>): Promise<Task>;
+  /**
+   * Set who follows every copy of a group task (#5473), confirmed ones too,
+   * so a group reads as one task to its followers.
+   */
+  setGroupFollower(
+    chapterId: string,
+    groupId: string,
+    followedBy: string | null,
+  ): Promise<void>;
   /**
    * Write `data` only while the row still holds every value in `match`
    * (compare-and-set; a `null` in `match` means the column is null). Returns
@@ -324,4 +338,6 @@ export interface CreateTaskGroupInput {
   subtask_titles: string[];
   /** The minutes the task was suggested from (#5562), on every copy. */
   meeting_id?: string | null;
+  /** The tier, role or group every copy is from (#5473), or null. */
+  followed_by?: string | null;
 }
