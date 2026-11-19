@@ -43,11 +43,11 @@ describe('SupabasePushTokenRepository notifications answer', () => {
     );
     await repo.markRegistered('pt-1', 'u-1', '2026-11-19T00:00:00.000Z');
 
-    expect(writes[0]!.row).toEqual({
+    expect(writes[0].row).toEqual({
       last_registered_at: '2026-11-19T00:00:00.000Z',
       notifications_enabled: false,
     });
-    expect(writes[1]!.row).not.toHaveProperty('notifications_enabled');
+    expect(writes[1].row).not.toHaveProperty('notifications_enabled');
   });
 
   it('stores null on a new row when the phone sent no answer', async () => {
@@ -56,6 +56,6 @@ describe('SupabasePushTokenRepository notifications answer', () => {
 
     await repo.create({ user_id: 'u-1', token: 'ExponentPushToken[x]' });
 
-    expect(writes[0]!.row.notifications_enabled).toBeNull();
+    expect(writes[0].row.notifications_enabled).toBeNull();
   });
 });
