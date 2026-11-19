@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import * as Sentry from "@sentry/react-native";
 import { Pressable } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MessageGif } from "@repo/chat-core/types";
@@ -20,7 +21,11 @@ const GIF: MessageGif = {
 };
 
 let tree: ReactTestRenderer | null = null;
-const animation = { start: vi.fn(), stop: vi.fn() };
+// expo-image's handle calls are async native calls that return promises.
+const animation = {
+  start: vi.fn(() => Promise.resolve()),
+  stop: vi.fn(() => Promise.resolve()),
+};
 const ui = (onLongPress?: () => void) => (
   <FrappThemeProvider>
     <MessageGifImage gif={GIF} onLongPress={onLongPress} />
@@ -43,8 +48,8 @@ afterEach(() => {
   act(() => tree?.unmount());
   tree = null;
   reduceMotion = false;
-  animation.start.mockClear();
-  animation.stop.mockClear();
+  animation.start.mockReset().mockImplementation(() => Promise.resolve());
+  animation.stop.mockReset().mockImplementation(() => Promise.resolve());
 });
 
 const image = (t: ReactTestRenderer) => t.root.findByType("ExpoImage" as never);
@@ -86,7 +91,6 @@ describe("MessageGifImage (#4657)", () => {
     reduceMotion = true;
     const t = render();
     const frame = () => t.root.findByType(Pressable);
-    expect(animation.stop).toHaveBeenCalled();
     act(() => frame().props.onPress());
     expect(animation.start).toHaveBeenCalled();
 
@@ -100,5 +104,77 @@ describe("MessageGifImage (#4657)", () => {
     expect(image(t).props.autoplay).toBe(false);
     expect(paused(t).length).toBeGreaterThan(0);
     expect(animation.stop).toHaveBeenCalled();
+  });
+
+  // FRAPP-MOBILE-14: the first render's state comes from `autoplay`, so a
+  // GIF mounting in a thread makes no native call that could race the view.
+  it("makes no native call when it mounts, playing or still", () => {
+    render();
+    act(() => tree?.unmount());
+    reduceMotion = true;
+    render();
+    expect(animation.start).not.toHaveBeenCalled();
+    expect(animation.stop).not.toHaveBeenCalled();
+  });
+
+  // FRAPP-MOBILE-14: a row the list unmounted before the native call landed
+  // rejects with ViewNotFound; that must not surface as an unhandled rejection.
+  it("handles a play or pause that rejects because the view is gone", () => {
+    reduceMotion = true;
+    const t = render();
+    const gone = Promise.reject(
+      new Error(
+        "ViewNotFound<UIView>: Unable to find the 'ImageView' view with tag '4032'",
+      ),
+    );
+    // `catch` goes through `then`, so either way of handling it shows here.
+    const then = vi.spyOn(gone, "then");
+    animation.start.mockImplementationOnce(() => gone);
+    act(() => t.root.findByType(Pressable).props.onPress());
+    expect(animation.start).toHaveBeenCalledTimes(1);
+    expect(then).toHaveBeenCalledWith(undefined, expect.any(Function));
+  });
+
+  it("handles a pause that rejects when Reduce Motion goes on", () => {
+    const t = render();
+    const gone = Promise.reject(
+      new Error(
+        "ViewNotFound<UIView>: Unable to find the 'ImageView' view with tag '4468'",
+      ),
+    );
+    const then = vi.spyOn(gone, "then");
+    animation.stop.mockImplementationOnce(() => gone);
+    reduceMotion = true;
+    act(() => t.update(ui()));
+    expect(animation.stop).toHaveBeenCalledTimes(1);
+    expect(then).toHaveBeenCalledWith(undefined, expect.any(Function));
+  });
+
+  it("reports a play that fails for any other reason", async () => {
+    reduceMotion = true;
+    const t = render();
+    const failure = new Error("Argument type mismatch");
+    animation.start.mockImplementationOnce(() => Promise.reject(failure));
+    vi.mocked(Sentry.captureException).mockClear();
+    await act(async () => t.root.findByType(Pressable).props.onPress());
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ level: "warning" }),
+    );
+  });
+
+  it("does not report a view that is gone", async () => {
+    reduceMotion = true;
+    const t = render();
+    animation.start.mockImplementationOnce(() =>
+      Promise.reject(
+        new Error(
+          "ViewNotFound<UIView>: Unable to find the 'ImageView' view with tag '4032'",
+        ),
+      ),
+    );
+    vi.mocked(Sentry.captureException).mockClear();
+    await act(async () => t.root.findByType(Pressable).props.onPress());
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 });
