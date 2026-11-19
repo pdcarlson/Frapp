@@ -170,6 +170,25 @@ export class InviteDetailsResponseDto
       'Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role). Only `live` can be joined.',
   })
   state: InviteLinkState;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join.",
+  })
+  chapter_id: string;
+
+  @ApiProperty({
+    description: 'How many members the chapter has now.',
+    example: 41,
+  })
+  member_count: number;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'When the invite was made, for a dead card ("sent it on Friday, November 14").',
+  })
+  sent_at: string;
 }
 
 /** One row of `GET /v1/invites/mine` (`PendingInvite`, #3776). */

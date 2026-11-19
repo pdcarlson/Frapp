@@ -142,6 +142,7 @@ describe('InviteService', () => {
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
       setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -1026,6 +1027,7 @@ describe('InviteService', () => {
 
     describe('details, the card before sign-in (#5625)', () => {
       it('answers a live invite with the card and state live', async () => {
+        mockMemberRepo.countByChapter.mockResolvedValue(41);
         await expect(service.details('preview-token')).resolves.toEqual({
           chapter_name: 'FIJI Tau Nu',
           university: 'Rensselaer Polytechnic Institute',
@@ -1035,7 +1037,11 @@ describe('InviteService', () => {
           role: null,
           expires_at: LIVE_UNTIL,
           state: 'live',
+          chapter_id: 'ch-1',
+          member_count: 41,
+          sent_at: '2024-01-01',
         });
+        expect(mockMemberRepo.countByChapter).toHaveBeenCalledWith('ch-1');
         expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
       });
 

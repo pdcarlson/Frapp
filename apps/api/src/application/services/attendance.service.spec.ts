@@ -143,6 +143,7 @@ describe('AttendanceService', () => {
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
       setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
 
     // Default: nobody holds an excuse.

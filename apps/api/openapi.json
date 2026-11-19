@@ -23952,6 +23952,21 @@
               "off"
             ],
             "description": "Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role). Only `live` can be joined."
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join."
+          },
+          "member_count": {
+            "type": "number",
+            "description": "How many members the chapter has now.",
+            "example": 41
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the invite was made, for a dead card (\"sent it on Friday, November 14\")."
           }
         },
         "required": [
@@ -23962,7 +23977,10 @@
           "invited_by",
           "role",
           "expires_at",
-          "state"
+          "state",
+          "chapter_id",
+          "member_count",
+          "sent_at"
         ]
       },
       "RegisterPushTokenDto": {

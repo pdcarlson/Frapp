@@ -212,6 +212,12 @@ export type InviteLinkState = 'live' | 'expired' | 'used' | 'off';
 /** What the invite screen shows for a link, dead or alive (#5625). */
 export interface InviteDetails extends InvitePreview {
   state: InviteLinkState;
+  /** The chapter, so a signed-in visitor already in it is told so before Join. */
+  chapter_id: string;
+  /** How many members the chapter has: "41 members" on the card. */
+  member_count: number;
+  /** When the invite was made: "sent it on Friday, November 14" on a dead card. */
+  sent_at: string;
 }
 
 export interface BulkEmailInviteResult {
@@ -890,9 +896,18 @@ export class InviteService {
   async details(token: string, now = new Date()): Promise<InviteDetails> {
     const invite = await this.inviteRepo.findByToken(token);
     if (!invite) throw new NotFoundException('Invite not found');
-    const described = await this.describe(invite);
+    const [described, memberCount] = await Promise.all([
+      this.describe(invite),
+      this.memberRepo.countByChapter(invite.chapter_id),
+    ]);
     if (!described) throw new NotFoundException('Invite not found');
-    return { ...described.preview, state: linkState(invite, described, now) };
+    return {
+      ...described.preview,
+      state: linkState(invite, described, now),
+      chapter_id: invite.chapter_id,
+      member_count: memberCount,
+      sent_at: invite.created_at,
+    };
   }
 
   /**

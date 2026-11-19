@@ -7311,6 +7311,21 @@ export interface components {
              * @enum {string}
              */
             state: "live" | "expired" | "used" | "off";
+            /**
+             * Format: uuid
+             * @description The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join.
+             */
+            chapter_id: string;
+            /**
+             * @description How many members the chapter has now.
+             * @example 41
+             */
+            member_count: number;
+            /**
+             * Format: date-time
+             * @description When the invite was made, for a dead card ("sent it on Friday, November 14").
+             */
+            sent_at: string;
         };
         RegisterPushTokenDto: {
             /** @description Expo push token */

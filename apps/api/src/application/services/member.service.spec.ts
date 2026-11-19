@@ -75,6 +75,7 @@ describe('MemberService', () => {
       update: jest.fn(),
       setRoleIds: jest.fn(),
       setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
       delete: jest.fn(),
       // One chapter each unless a test says otherwise (#4367).
       findByUser: jest.fn().mockResolvedValue([]),

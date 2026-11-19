@@ -10,6 +10,8 @@ export interface IMemberRepository {
     chapterId: string,
   ): Promise<Member | null>;
   findByChapter(chapterId: string): Promise<Member[]>;
+  /** How many members a chapter has, counted in the database (#5625). */
+  countByChapter(chapterId: string): Promise<number>;
   /**
    * Every member of a chapter as `user_id` + `display_name` + `role_ids`, in
    * one query (`role_ids` since 2026-11-06, for role mentions).
