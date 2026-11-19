@@ -1,0 +1,1 @@
+Drafting minutes starts from one box now: paste your notes or a transcript, watch each step with a clock while it writes, and get a notification when the draft is ready, with only the sections it filled in to read over.
