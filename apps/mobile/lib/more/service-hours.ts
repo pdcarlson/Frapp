@@ -24,8 +24,8 @@ export interface ServiceEntryRow {
   status: ServiceEntryStatus;
   durationMinutes: number;
   /**
-   * e.g. `"2h 30m · Aug 12"`, and on an approved entry what it awarded:
-   * `"3h · Aug 12 · 3 points"` (#3868, web's History badge).
+   * e.g. `"2h 30m · August 12"`, and on an approved entry what it awarded:
+   * `"3h · August 12 · 3 points"` (#3868, web's History badge).
    */
   meta: string | null;
   date: string;
@@ -74,7 +74,7 @@ export function serviceStatusHue(
 /** A single logged shift longer than a day is a typo, not a shift. */
 export const MAX_DURATION_MINUTES = 24 * 60;
 
-/** `"2026-08-12"` → `"Aug 12"`. Falls back to the raw value if unparseable. */
+/** `"2026-08-12"` → `"August 12"`. Falls back to the raw value if unparseable. */
 function formatDate(value: string): string {
   // Parsed at local noon: `new Date` reads a bare `YYYY-MM-DD` as UTC midnight,
   // which renders as the previous day for anyone west of Greenwich, and UTC
@@ -83,7 +83,7 @@ function formatDate(value: string): string {
   // fold into formatLocaleDate.
   const date = parseBareDateLocalNoon(value);
   if (!date) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
 function toRow(row: Record<string, unknown>): ServiceEntryRow | null {
@@ -199,7 +199,7 @@ export function serviceDatePresets(now: Date): ServiceDatePreset[] {
         ? "Today"
         : daysAgo === 1
           ? "Yesterday"
-          : day.toLocaleDateString(undefined, { weekday: "short" });
+          : day.toLocaleDateString(undefined, { weekday: "long" });
     return {
       daysAgo,
       label,

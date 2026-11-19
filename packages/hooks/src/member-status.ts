@@ -214,7 +214,7 @@ const TIME = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 const DAY_TIME = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
+  weekday: "long",
   hour: "numeric",
   minute: "2-digit",
 });

@@ -31,7 +31,7 @@ const recap = (overrides: Partial<ActivityRecap>): ActivityRecap => ({
 describe("activityRecapCard", () => {
   it("draws a figure per part, in order, with the week's range", () => {
     const card = activityRecapCard(recap({}), MONDAY);
-    expect(card?.range).toBe("Nov 8 – Nov 14");
+    expect(card?.range).toBe("November 8 – November 14");
     expect(card?.dismissKey).toBe(END.toISOString());
     expect(card?.figures).toEqual([
       {
@@ -120,9 +120,9 @@ describe("activityRecapCard", () => {
 
 describe("weekRange", () => {
   it("names the week's first and last day", () => {
-    expect(weekRange(START, END)).toBe("Nov 8 – Nov 14");
+    expect(weekRange(START, END)).toBe("November 8 – November 14");
     expect(weekRange(new Date(2026, 10, 29), new Date(2026, 11, 6))).toBe(
-      "Nov 29 – Dec 5",
+      "November 29 – December 5",
     );
   });
 });

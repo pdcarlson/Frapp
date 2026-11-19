@@ -33,7 +33,7 @@
  *   zone of their own, so the zone is the creating officer's, which is
  *   the chapter's in practice. A monthly rule without `BYDAY` meets on its
  *   `BYMONTHDAY` (1-31; the 31st falls back to a short month's last day), so
- *   a head clamped to Feb 28 still hands on the 31st; without either, on the
+ *   a head clamped to February 28 still hands on the 31st; without either, on the
  *   first meeting's day of the month. A weekly rule must name its days.
  *
  * Both Repeat controls send a structured rule, except where a token makes
@@ -149,7 +149,7 @@ export interface RepeatRule {
   /**
    * Monthly by date only: the day of the month it meets on (1-31), written as
    * `BYMONTHDAY`. `null` reads the first meeting's day, which a clamped head
-   * (Feb 28 for a series on the 31st) gets wrong, so writers set it.
+   * (February 28 for a series on the 31st) gets wrong, so writers set it.
    */
   monthDay: number | null;
   end: RepeatEnd;
@@ -710,7 +710,7 @@ export function seriesExtent(
 
 /**
  * How long a new series runs, for the line under a Repeat control: "13
- * meetings, the last on Feb 5." (the year added when it differs). Dates read
+ * meetings, the last on February 5." (the year added when it differs). Dates read
  * in the rule's zone. A legacy token is stepped and read in
  * `options.legacyTimeZone`, or the device's zone without one: the zone the
  * API steps it in is the saving officer's, this device's (#4505). `null` for a value that is not a rule.
@@ -731,7 +731,7 @@ export function describeSeriesLength(
     new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(at);
   const day = extent.last.toLocaleDateString("en-US", {
     timeZone,
-    month: "short",
+    month: "long",
     day: "numeric",
     ...(year(extent.last) !== year(start) ? { year: "numeric" } : {}),
   });
@@ -964,7 +964,7 @@ export function describeRepeatPattern(
  *   it ends by `COUNT` or `UNTIL`, so the new head stands alone rather than
  *   carrying a rule it can't satisfy.
  * - A by-date monthly rule without `BYMONTHDAY` gains the old head's day, so
- *   a new head clamped to a short month (Feb 28 for the 31st) doesn't move
+ *   a new head clamped to a short month (February 28 for the 31st) doesn't move
  *   the series to its own day.
  * - A legacy token, or a rule this module can't read, is returned as it was.
  */

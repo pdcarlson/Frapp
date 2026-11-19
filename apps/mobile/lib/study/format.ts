@@ -31,11 +31,11 @@ function timeOfDay(value: string): string | null {
 function weekday(value: string): string | null {
   const date = parseInstant(value);
   if (!date) return null;
-  return date.toLocaleDateString(undefined, { weekday: "short" });
+  return date.toLocaleDateString(undefined, { weekday: "long" });
 }
 
 /**
- * A history row's meta line: `Tue · 7:02 – 9:10 PM`.
+ * A history row's meta line: `Tuesday · 7:02 – 9:10 PM`.
  *
  * The range separator is an en dash, as drawn. An open-ended session (no
  * `end_time`, which a terminal row should never have but the API does not

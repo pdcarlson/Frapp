@@ -22,9 +22,9 @@ import {
   isDueOverdue,
 } from "./display";
 
-// Wed Nov 4, 2026, 9:00 AM Pacific.
+// Wed November 4, 2026, 9:00 AM Pacific.
 const NOW = new Date("2026-11-04T09:00:00-08:00");
-// Fri Nov 6, 2026, 5:00 PM Pacific.
+// Fri November 6, 2026, 5:00 PM Pacific.
 const FRI_5PM = "2026-11-07T01:00:00.000Z";
 
 describe("house date shapes", () => {
@@ -46,42 +46,42 @@ describe("house date shapes", () => {
   });
 
   it("prints a day as a short month and day, adding the year only outside this one", () => {
-    expect(formatDay(FRI_5PM, NOW)).toBe("Nov 6");
-    expect(formatDay("2025-11-06T20:00:00Z", NOW)).toBe("Nov 6, 2025");
-    expect(formatWeekdayDay(FRI_5PM, NOW)).toBe("Fri, Nov 6");
+    expect(formatDay(FRI_5PM, NOW)).toBe("November 6");
+    expect(formatDay("2025-11-06T20:00:00Z", NOW)).toBe("November 6, 2025");
+    expect(formatWeekdayDay(FRI_5PM, NOW)).toBe("Friday, November 6");
   });
 
   it("keeps a bare date on its calendar day, west of Greenwich", () => {
-    // `new Date("2026-11-04")` is UTC midnight: Nov 3 in Los Angeles.
-    expect(formatDay("2026-11-04", NOW)).toBe("Nov 4");
+    // `new Date("2026-11-04")` is UTC midnight: November 3 in Los Angeles.
+    expect(formatDay("2026-11-04", NOW)).toBe("November 4");
     expect(formatDueLabel("2026-11-04", NOW)).toBe("Due today");
   });
 
   it("prints a time after a middle dot, never with seconds", () => {
-    expect(formatDayTime(FRI_5PM, NOW)).toBe("Fri, Nov 6 · 5:00 PM");
+    expect(formatDayTime(FRI_5PM, NOW)).toBe("Friday, November 6 · 5:00 PM");
     expect(formatDayTime("2026-11-07T01:00:42.000Z", NOW)).not.toMatch(/:42/);
-    expect(formatTimestampFull(FRI_5PM)).toBe("Nov 6, 2026, 5:00 PM");
+    expect(formatTimestampFull(FRI_5PM)).toBe("November 6, 2026 at 5:00 PM");
   });
 
   it("says a shared day period once in a range", () => {
     expect(formatDayTimeRange(FRI_5PM, "2026-11-07T03:00:00.000Z", NOW)).toBe(
-      "Fri, Nov 6 · 5:00 – 7:00 PM",
+      "Friday, November 6 · 5:00 – 7:00 PM",
     );
     expect(formatDayTimeRange("2026-11-06T19:00:00.000Z", FRI_5PM, NOW)).toBe(
-      "Fri, Nov 6 · 11:00 AM – 5:00 PM",
+      "Friday, November 6 · 11:00 AM – 5:00 PM",
     );
     expect(formatDayTimeRange(FRI_5PM, "2026-11-07T09:00:00.000Z", NOW)).toBe(
-      "Fri, Nov 6 · 5:00 PM – Sat, Nov 7 · 1:00 AM",
+      "Friday, November 6 · 5:00 PM – Saturday, November 7 · 1:00 AM",
     );
-    expect(formatDayTimeRange(FRI_5PM, null, NOW)).toBe("Fri, Nov 6 · 5:00 PM");
+    expect(formatDayTimeRange(FRI_5PM, null, NOW)).toBe("Friday, November 6 · 5:00 PM");
   });
 
   it("spans days with the year said once", () => {
     expect(formatDayRange("2026-08-24", "2026-12-12")).toBe(
-      "Aug 24 – Dec 12, 2026",
+      "August 24 – December 12, 2026",
     );
     expect(formatDayRange("2026-12-01", "2027-01-15")).toBe(
-      "Dec 1, 2026 – Jan 15, 2027",
+      "December 1, 2026 – January 15, 2027",
     );
   });
 
@@ -97,7 +97,7 @@ describe("house date shapes", () => {
     );
     expect(formatRelativeDayTime(FRI_5PM, NOW)).toBe("Friday · 5:00 PM");
     expect(formatRelativeDayTime("2026-11-20T17:00:00-08:00", NOW)).toBe(
-      "Nov 20 · 5:00 PM",
+      "November 20 · 5:00 PM",
     );
   });
 
@@ -124,7 +124,7 @@ describe("house date shapes", () => {
   it("counts a due date down, as mobile's task subtitle does", () => {
     expect(formatDueLabel("2026-11-05", NOW)).toBe("Due tomorrow");
     expect(formatDueLabel("2026-11-06", NOW)).toBe("Due Friday");
-    expect(formatDueLabel("2026-11-20", NOW)).toBe("Due Nov 20");
+    expect(formatDueLabel("2026-11-20", NOW)).toBe("Due November 20");
     expect(formatDueLabel("2026-11-03", NOW)).toBe("Overdue by 1 day");
     expect(formatDueLabel("2026-11-01", NOW)).toBe("Overdue by 3 days");
   });
@@ -166,7 +166,7 @@ describe("formatSentLabel", () => {
       "Sent yesterday at 9:00 AM",
     );
     expect(formatSentLabel("2026-10-20T09:00:00-07:00", NOW)).toMatch(
-      /^Sent Oct 20 at 9:00/,
+      /^Sent October 20 at 9:00/,
     );
   });
 
@@ -187,7 +187,7 @@ describe("a due time (#4003)", () => {
     );
     expect(formatDueLabel(FRI_5PM, NOW)).toBe("Due Friday at 5 PM");
     expect(formatDueLabel("2026-11-20T23:59:00-08:00", NOW)).toBe(
-      "Due Nov 20 at 11:59 PM",
+      "Due November 20 at 11:59 PM",
     );
   });
 
@@ -208,8 +208,8 @@ describe("a due time (#4003)", () => {
   });
 
   it("states a due without a countdown", () => {
-    expect(formatDueOn(FRI_5PM, NOW)).toBe("Due Nov 6 at 5 PM");
-    expect(formatDueOn("2026-11-06", NOW)).toBe("Due Nov 6");
+    expect(formatDueOn(FRI_5PM, NOW)).toBe("Due November 6 at 5 PM");
+    expect(formatDueOn("2026-11-06", NOW)).toBe("Due November 6");
     expect(formatDueOn(undefined, NOW)).toBeNull();
   });
 });
@@ -252,9 +252,9 @@ describe("formatEventWindow (#4135)", () => {
         pt("2026-11-20T19:00:00-08:00"),
         NOW,
       ),
-    ).toBe("Fri, Nov 20 · 6:00 – 7:00 PM");
+    ).toBe("Friday, November 20 · 6:00 – 7:00 PM");
     expect(formatEventWindow(pt("2027-01-08T18:00:00-08:00"), "", NOW)).toBe(
-      "Fri, Jan 8, 2027 · 6:00 PM",
+      "Friday, January 8, 2027 · 6:00 PM",
     );
   });
 
@@ -275,7 +275,7 @@ describe("formatEventWindow (#4135)", () => {
         pt("2026-11-06T01:00:00-08:00"),
         NOW,
       ),
-    ).toBe("Tomorrow · 10:00 PM – Fri, Nov 6 · 1:00 AM");
+    ).toBe("Tomorrow · 10:00 PM – Friday, November 6 · 1:00 AM");
   });
 
   it("leaves an unreadable start out", () => {
@@ -336,10 +336,10 @@ describe("formatEndsLabel", () => {
 describe("formatWeekSpan", () => {
   it("names both days, month and day, without a year", () => {
     expect(formatWeekSpan(new Date(2026, 10, 8), new Date(2026, 10, 14))).toBe(
-      "Nov 8 – Nov 14",
+      "November 8 – November 14",
     );
     expect(formatWeekSpan(new Date(2026, 10, 29), new Date(2026, 11, 5))).toBe(
-      "Nov 29 – Dec 5",
+      "November 29 – December 5",
     );
   });
 });
@@ -390,7 +390,7 @@ describe("a Date reads as the instant it is (#4976)", () => {
 // #5519: a Messages row's time, as WhatsApp's and iMessage's inbox rows put it.
 describe("formatConversationTime", () => {
   it("says the time today, then Yesterday, the weekday within the week, then the date", () => {
-    // NOW is Wed Nov 4, 2026, 9:00 AM Pacific.
+    // NOW is Wed November 4, 2026, 9:00 AM Pacific.
     expect(formatConversationTime("2026-11-04T08:15:00-08:00", NOW)).toBe(
       "8:15 AM",
     );

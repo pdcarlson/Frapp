@@ -180,13 +180,13 @@ describe("notificationWhen", () => {
     expect(week).toEqual({
       isToday: false,
       time: new Date(2026, 7, 15).toLocaleDateString(undefined, {
-        weekday: "short",
+        weekday: "long",
       }),
     });
     const older = notificationWhen(new Date(2026, 6, 1, 9).toISOString(), NOW);
     expect(older?.time).toBe(
       new Date(2026, 6, 1).toLocaleDateString(undefined, {
-        month: "short",
+        month: "long",
         day: "numeric",
       }),
     );

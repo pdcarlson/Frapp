@@ -295,7 +295,7 @@ function weekOfMonth(day: ZonedCalendarDay): { n: number; isLast: boolean } {
 
 /**
  * The day of the month a by-date series meets on: a stored day that the
- * first meeting is that day of, or clamped to (the 31st, on Feb 28), else
+ * first meeting is that day of, or clamped to (the 31st, on February 28), else
  * the first meeting's own day.
  */
 function monthDayFor(draft: RepeatDraft, day: ZonedCalendarDay): number {
@@ -543,7 +543,7 @@ function repeatPatternOf(
 
 /**
  * The line under the control: how long the series runs ("13 meetings, the
- * last on Feb 5."), or why it can't be saved as set. `null` for a one-time
+ * last on February 5."), or why it can't be saved as set. `null` for a one-time
  * event.
  */
 export function repeatCaption(
@@ -862,7 +862,7 @@ export function taskRepeatSummary(draft: RepeatDraft, first: Date): string {
 
 /**
  * The line under a task's Repeat control: a problem to fix, or how long it
- * runs ("Repeats until you stop it." / "4 times, the last on Dec 7.").
+ * runs ("Repeats until you stop it." / "4 times, the last on December 7.").
  * `null` for a task that doesn't repeat.
  */
 export function taskRepeatCaption(
@@ -898,13 +898,13 @@ export function taskRepeatCaption(
   };
 }
 
-/** `YYYY-MM-DD` as "Dec 7", with the year when it isn't `ref`'s. */
+/** `YYYY-MM-DD` as "December 7", with the year when it isn't `ref`'s. */
 function shortDay(day: string, ref: Date, timeZone: string): string {
   const at = new Date(`${day}T12:00:00Z`);
   const sameYear = day.slice(0, 4) === dayString(ref, timeZone).slice(0, 4);
   return at.toLocaleDateString("en-US", {
     timeZone: "UTC",
-    month: "short",
+    month: "long",
     day: "numeric",
     ...(sameYear ? {} : { year: "numeric" }),
   });
@@ -982,7 +982,7 @@ export function taskSeriesLive(
 /**
  * How a copy of a repeating task says it repeats (#5119): the pattern
  * ("Every Monday"), and with `next`, the next copy's day ("Every Monday ·
- * next Nov 24"). `first` is the copy's own due, which a by-date monthly
+ * next November 24"). `first` is the copy's own due, which a by-date monthly
  * rule's day falls back to. `null` for a task with no live series.
  */
 export function taskSeriesLine(

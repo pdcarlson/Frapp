@@ -59,7 +59,7 @@ export function formatClock(value: unknown): string {
   return parsed.toLocaleString(undefined, {
     hour: "numeric",
     minute: "2-digit",
-    month: "short",
+    month: "long",
     day: "numeric",
   });
 }

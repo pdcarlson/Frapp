@@ -26,7 +26,7 @@ import type { GuardedSheetHandle } from "@/components/sheet-scaffold";
 import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 import { MESSAGE_REMINDER_PRESETS } from "@repo/hooks/use-message-reminders";
 
-/** Saturday, Nov 14 2026, 2:00 PM local. */
+/** Saturday, November 14 2026, 2:00 PM local. */
 const NOW = new Date(2026, 10, 14, 14, 0, 0, 0);
 
 const modal = { present: vi.fn(), dismiss: vi.fn() };
@@ -100,7 +100,7 @@ describe("RemindSheet (#4957)", () => {
     expect(text).toContain(REMINDER_CUSTOM_LABEL);
     // In 20 minutes is today's clock; Tomorrow names its day.
     expect(text).toContain("2:20 PM");
-    expect(text).toMatch(/Sun 9:00 AM/);
+    expect(text).toMatch(/Sunday 9:00 AM/);
   });
 
   it("sets a preset's time on the message and closes", () => {

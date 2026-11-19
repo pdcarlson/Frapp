@@ -340,8 +340,8 @@ export function notificationWhen(
     isToday: false,
     time:
       days < 7
-        ? at.toLocaleDateString(undefined, { weekday: "short" })
-        : at.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        ? at.toLocaleDateString(undefined, { weekday: "long" })
+        : at.toLocaleDateString(undefined, { month: "long", day: "numeric" }),
   };
 }
 

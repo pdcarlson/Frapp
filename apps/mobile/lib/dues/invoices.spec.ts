@@ -173,7 +173,7 @@ describe("dueChip", () => {
 
   it("names the due date itself, and agrees with the boundary, from UTC−11 to UTC+14 (#3026)", () => {
     // The UTC-noon render parse was already the 16th at +13 and +14, so the
-    // chip read "Due Sep 16" before the due day ended and "Past due Sep 16"
+    // chip read "Due September 16" before the due day ended and "Past due September 16"
     // after it. Each `Date` below is built inside the zone, so it is that
     // zone's own wall clock.
     for (const zone of [
@@ -185,12 +185,12 @@ describe("dueChip", () => {
         const lateOnDueDate = dueChip(row(), new Date(2026, 8, 15, 23, 30, 0));
         expect(lateOnDueDate, zone).toEqual({
           state: "upcoming",
-          label: "Due Sep 15",
+          label: "Due September 15",
         });
         const nextMorning = dueChip(row(), new Date(2026, 8, 16, 0, 30, 0));
         expect(nextMorning, zone).toEqual({
           state: "past-due",
-          label: "Past due Sep 15",
+          label: "Past due September 15",
         });
       });
     }
@@ -218,17 +218,17 @@ describe("dueChip", () => {
 
 describe("historyMeta", () => {
   it("dates a settled invoice", () => {
-    // Local 18:00 on Feb 3 — not `T18:00:00.000Z`, which is Feb 4 03:00 in
+    // Local 18:00 on February 3 — not `T18:00:00.000Z`, which is February 4 03:00 in
     // Tokyo and made this assertion UTC-only (#1058). Match the evening-payment
     // case: derive the expected day from the runtime locale, not a US-only
-    // `"Feb 3"` substring.
+    // `"February 3"` substring.
     const paidAt = new Date(2026, 1, 3, 18, 0, 0).toISOString();
     const [row] = selectInvoiceRows(
       [invoice({ status: "PAID", paid_at: paidAt })],
       VIEWER,
     );
     const localDay = new Date(paidAt).toLocaleDateString(undefined, {
-      month: "short",
+      month: "long",
       day: "numeric",
     });
     expect(historyMeta(row!)).toBe(`Paid ${localDay}`);
@@ -241,8 +241,8 @@ describe("historyMeta", () => {
 
   it("dates an evening payment in the member's own day, not UTC's", () => {
     // `paid_at` is an instant. Slicing its UTC calendar day and re-anchoring at
-    // noon UTC told a member in New York who paid at 9:15pm on Feb 2 that they
-    // paid on Feb 3 — contradicting their own card statement.
+    // noon UTC told a member in New York who paid at 9:15pm on February 2 that they
+    // paid on February 3 — contradicting their own card statement.
     const [row] = selectInvoiceRows(
       [invoice({ status: "PAID", paid_at: "2026-02-03T02:15:00.000Z" })],
       VIEWER,
@@ -250,7 +250,7 @@ describe("historyMeta", () => {
     const rendered = historyMeta(row!);
     const localDay = new Date("2026-02-03T02:15:00.000Z").toLocaleDateString(
       undefined,
-      { month: "short", day: "numeric" },
+      { month: "long", day: "numeric" },
     );
     expect(rendered).toBe(`Paid ${localDay}`);
   });

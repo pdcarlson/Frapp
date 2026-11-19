@@ -72,7 +72,7 @@ describe("HoursCard", () => {
     expect(
       screen.getByText(
         new Date(2026, 1, 26, 12).toLocaleDateString(undefined, {
-          month: "short",
+          month: "long",
           day: "numeric",
           year: "numeric",
         }),

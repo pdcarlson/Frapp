@@ -257,8 +257,8 @@ export function ScheduleWhenField({
   );
   maximumDate.setDate(maximumDate.getDate() + SCHEDULE_MAX_DAYS);
   const day = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
+    weekday: "long",
+    month: "long",
     day: "numeric",
   }).format(value);
   const time = formatScheduleTime(value);

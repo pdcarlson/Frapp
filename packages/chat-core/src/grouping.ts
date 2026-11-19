@@ -102,7 +102,7 @@ export function dayDividerLabel(iso: string, now: Date = new Date()): string {
   if (delta === 1) return "Yesterday";
   return at.toLocaleDateString(undefined, {
     weekday: "long",
-    month: "short",
+    month: "long",
     day: "numeric",
     ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });

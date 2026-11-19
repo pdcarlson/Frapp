@@ -217,12 +217,12 @@ describe("You tab clock (#2101)", () => {
       },
     ];
     const tree = render();
-    expect(screenText(tree)).toMatch(/(^|\n)Due Sep 30(\n|$)/);
+    expect(screenText(tree)).toMatch(/(^|\n)Due September 30(\n|$)/);
     expect(screenText(tree)).not.toContain("Past due");
 
     tick();
 
-    expect(screenText(tree)).toMatch(/(^|\n)Past due Sep 30(\n|$)/);
+    expect(screenText(tree)).toMatch(/(^|\n)Past due September 30(\n|$)/);
   });
 
   it("moves Host check-in to the next event when a check-in window closes while the screen is up", () => {

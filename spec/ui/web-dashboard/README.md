@@ -905,7 +905,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   Starting a session and the history are flush.
 - **Study zones are a flush list** with quiet row actions, and New study zone sits in `PageActions` beside the settings gear.
 - **Denied copy names the role, never the permission key**: "Your role can't see every poll." was the shape, not `polls:view_all`.
-- **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Fri, Nov 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), never a numeric date with seconds.
+- **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Friday, November 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), written out and never abbreviated (owner, 2026-11-07; every helper since #XXXX, 2026-11-19), never a numeric date with seconds. The one short form left is the Messages list's last-sent time (#5519).
   Both apps' task due lines read the same helpers through `@repo/hooks`' `taskDueLine`, and both chat event cards read `formatEventWindow` ("Tonight · 6:00 – 7:00 PM"), since #4135 (2026-11-12).
   Mobile's event rows still format their times with their own copy until they read these ([#3420](https://github.com/pdcarlson/Frapp/issues/3420)).
 

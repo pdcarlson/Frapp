@@ -457,7 +457,7 @@ describe("taskDueLine (#4133, #4135)", () => {
 
   it("never charges a finished task with lateness", () => {
     expect(taskDueLine("2026-11-10", "COMPLETED", NOW)).toEqual({
-      text: "Due Nov 10",
+      text: "Due November 10",
       overdue: false,
     });
     expect(taskDueLine("2026-11-13", "COMPLETED", NOW)?.text).toBe(
@@ -467,7 +467,7 @@ describe("taskDueLine (#4133, #4135)", () => {
 
   it("gives the plain date when the status is unknown, and null for no date", () => {
     expect(taskDueLine("2026-11-10", null, NOW)).toEqual({
-      text: "Due Nov 10",
+      text: "Due November 10",
       overdue: false,
     });
     expect(taskDueLine(null, "TODO", NOW)).toBeNull();

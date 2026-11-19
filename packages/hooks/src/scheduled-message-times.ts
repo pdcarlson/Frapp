@@ -70,7 +70,7 @@ function sameDay(a: Date, b: Date): boolean {
 
 /**
  * When a scheduled message goes, as a list row or a toast says it:
- * "Today at 8:00 AM", "Tomorrow at 9:00 AM", "Mon, Nov 16 at 9:00 AM", with
+ * "Today at 8:00 AM", "Tomorrow at 9:00 AM", "Monday, November 16 at 9:00 AM", with
  * the year only when it isn't this one.
  */
 export function formatScheduledFor(at: Date, now: Date): string {
@@ -78,8 +78,8 @@ export function formatScheduledFor(at: Date, now: Date): string {
   if (sameDay(at, now)) return `Today at ${time}`;
   if (sameDay(at, addDays(now, 1))) return `Tomorrow at ${time}`;
   const day = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
+    weekday: "long",
+    month: "long",
     day: "numeric",
     ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   }).format(at);

@@ -29,7 +29,7 @@ export function reminderPresetValue(at: Date, now: Date): string {
     at.getMonth() === now.getMonth() &&
     at.getDate() === now.getDate();
   if (sameDay) return time;
-  return `${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
+  return `${at.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
 }
 
 /** What the member hears once a reminder is set: "Reminder set for …". */
