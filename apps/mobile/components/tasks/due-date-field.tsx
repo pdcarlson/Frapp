@@ -30,6 +30,7 @@ export function DueDateField({
   disabled,
   onChange,
   label = "Due",
+  format = formatDueFieldLabel,
   platform = Platform.OS,
 }: {
   /** `YYYY-MM-DD`, device-local. */
@@ -43,6 +44,12 @@ export function DueDateField({
    * minutes' Coming up row (#4412).
    */
   label?: string;
+  /**
+   * How the day reads where the field draws it (Android, and every screen
+   * reader): "Fri, Aug 21" on a task; written out on the minutes' editor,
+   * as the minutes read (#4412).
+   */
+  format?: (isoDate: string) => string;
   platform?: string;
 }) {
   const { tokens } = useFrappTheme();
@@ -50,7 +57,7 @@ export function DueDateField({
   const styles = createStyles(tokens);
   const date = parseBareDateLocalNoon(value) ?? new Date();
   const minimumDate = parseBareDateLocalNoon(today) ?? undefined;
-  const shown = formatDueFieldLabel(value);
+  const shown = format(value);
   const pick = (picked: Date | undefined) => {
     if (picked) onChange(localIsoDate(picked));
   };

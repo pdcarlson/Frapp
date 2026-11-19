@@ -389,6 +389,30 @@ export function meetingDraftQuoteFor(
   );
 }
 
+/** The line a drafted item came from, whose it is, and whether it's the viewer's (#4935). */
+export type MeetingDraftQuote = {
+  quote: string;
+  from: string | null;
+  mine: boolean;
+};
+
+/**
+ * What the section editor shows under a drafted decision or action item, on
+ * the web and the phone alike: the notes' line, and whose it was ("From your
+ * notes" when the viewer's own). Null once the officer rewrote the item.
+ */
+export function meetingDraftQuote(
+  review: Pick<MeetingDraftReview, "sources"> | null | undefined,
+  kind: MeetingDraftSource["kind"],
+  text: string,
+  myName: string | null,
+): MeetingDraftQuote | null {
+  const quote = meetingDraftQuoteFor(review, kind, text);
+  if (!quote) return null;
+  const from = meetingDraftSourceFor(review, kind, text);
+  return { quote, from, mine: !!from && from === myName };
+}
+
 /**
  * Whose line a drafted item came from ("Sam Abernathy", "Recording"), while
  * its text is still the drafted text; null on a draft from before several

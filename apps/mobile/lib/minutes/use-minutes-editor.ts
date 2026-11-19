@@ -8,6 +8,7 @@ import {
 import { codeOf } from "@repo/api-sdk";
 import { useUpdateMeeting, type MeetingMinutes } from "@repo/hooks";
 import {
+  MINUTES_AUTOSAVE_MS,
   MINUTES_EDITOR_COPY,
   cleanMeetingContent,
   minutesEditDraftOf,
@@ -16,12 +17,6 @@ import {
   type MeetingSectionKey,
   type MinutesEditDraft,
 } from "@repo/validation";
-
-/**
- * How long a draft's typing rests before it saves on its own: the web
- * editor's own wait (`minutes-page.tsx`), and the Summary note's.
- */
-export const MINUTES_EDITOR_AUTOSAVE_MS = 1200;
 
 export interface MinutesEditing {
   /** What is on screen, untrimmed and with rows still being filled in. */
@@ -34,6 +29,8 @@ export interface MinutesEditing {
   stale: boolean;
   /** The last save didn't land for another reason (offline, a 500). */
   failed: boolean;
+  /** Load their version couldn't read the minutes; what is typed stays. */
+  loadFailed: boolean;
   /**
    * The draft's save state for its header ("Saving…", "Saved", "Not saved"),
    * or null where nothing saves on its own (posted minutes, a stale draft).
@@ -71,7 +68,9 @@ export interface MinutesEditing {
  * time, and a stale refusal that keeps every word typed and offers their
  * version. A draft saves itself once typing rests and as the screen goes;
  * posted minutes wait for Save, since members already read them (Paul,
- * 2026-11-16).
+ * 2026-11-16). While a draft is being written nothing saves and no newer
+ * version is taken, as on the web: a save then would move the version the
+ * draft builds on and strand it.
  *
  * Only the words are sent: the type is Edit details' (#5562), which saves it
  * on its own.
@@ -80,6 +79,7 @@ export function useMinutesEditor({
   meeting,
   active,
   autosave,
+  paused = false,
   reload,
 }: {
   meeting: MeetingMinutes;
@@ -87,6 +87,8 @@ export function useMinutesEditor({
   active: boolean;
   /** A draft: saves as typing rests, with no Save button. */
   autosave: boolean;
+  /** A draft is being written, or the minutes posted: hold every save. */
+  paused?: boolean;
   /** Reads the minutes again, for Load their version. */
   reload: () => Promise<MeetingMinutes | null>;
 }): MinutesEditing {
@@ -103,6 +105,7 @@ export function useMinutesEditor({
     setStaleState(next);
   }, []);
   const [failed, setFailed] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [kept, setKept] = useState<MeetingSectionKey[]>([]);
   const dirty = !sameMinutesDraft(draft, base);
 
@@ -143,6 +146,7 @@ export function useMinutesEditor({
   if (
     Date.parse(meeting.updated_at) > Date.parse(loadedAt) &&
     !dirty &&
+    !paused &&
     !update.isPending
   ) {
     show(meeting);
@@ -190,17 +194,19 @@ export function useMinutesEditor({
 
   // A draft saves itself once typing rests. A failed save waits for the next
   // keystroke, which clears it.
-  const pending = active && autosave && dirty && !stale && !failed;
+  const pending = active && autosave && dirty && !stale && !failed && !paused;
   useEffect(() => {
     if (!pending) return;
-    const timer = setTimeout(() => void save(), MINUTES_EDITOR_AUTOSAVE_MS);
+    const timer = setTimeout(() => void save(), MINUTES_AUTOSAVE_MS);
     return () => clearTimeout(timer);
     // `save` reads the latest draft through refs; `draft` restarts the wait.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, draft]);
 
   // Leaving the screen sends what a draft still has waiting, as the web's
-  // in-app navigation does.
+  // in-app navigation does. A draft refused as stale, or whose save failed,
+  // isn't sent: the screen asks before it goes (`usePreventRemove`), and
+  // Discard means discard.
   const flushOnLeave = useRef(() => {});
   useEffect(() => {
     flushOnLeave.current = () => {
@@ -208,6 +214,8 @@ export function useMinutesEditor({
         active &&
         autosave &&
         !stale &&
+        !failed &&
+        !paused &&
         !sameMinutesDraft(draftRef.current, baseRef.current)
       )
         void save();
@@ -241,6 +249,7 @@ export function useMinutesEditor({
       setKept([]);
       setStale(false);
       setFailed(false);
+      setLoadFailed(false);
     },
     [adopt, setStale],
   );
@@ -252,10 +261,12 @@ export function useMinutesEditor({
     setFailed(false);
   }, []);
 
+  // A read that fails keeps every word typed and says so on the banner.
   const loadTheirs = useCallback(async () => {
+    setLoadFailed(false);
     const fresh = await reload();
     if (!fresh) {
-      setFailed(true);
+      setLoadFailed(true);
       return;
     }
     adopt(fresh);
@@ -280,6 +291,7 @@ export function useMinutesEditor({
     saving: update.isPending,
     stale,
     failed,
+    loadFailed,
     saveLine,
     kept,
     edit,

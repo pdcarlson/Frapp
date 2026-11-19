@@ -227,7 +227,7 @@ describe("MinutesEditor", () => {
     expect(seen.content.action_items).toEqual([]);
   }
 
-  it("says a Coming up line without a day isn't kept", () => {
+  it("says a Coming up line without a day isn't kept, once the officer moves on", () => {
     const tree = render(meeting({}, ["dates"]), true);
     act(() => button(tree, MEETING_COPY.addDate).props.onPress());
     act(() =>
@@ -235,6 +235,9 @@ describe("MinutesEditor", () => {
         "Installation",
       ),
     );
+    // Not on the first letter: nothing moves under the cursor.
+    expect(screenText(tree)).not.toContain(MEETING_COPY.dateNeedsDay);
+    act(() => field(tree, `${MEETING_COPY.dateWhat} 1`)!.props.onBlur());
     expect(screenText(tree)).toContain(MEETING_COPY.dateNeedsDay);
     act(() => button(tree, MINUTES_EDITOR_COPY.date.pick).props.onPress());
     expect(seen.content.dates[0]).toEqual({

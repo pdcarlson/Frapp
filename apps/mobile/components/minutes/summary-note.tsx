@@ -13,6 +13,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   MEETING_COPY,
   MEETING_TEXT_MAX_LENGTH,
+  MINUTES_AUTOSAVE_MS,
   readMeetingContent,
 } from "@repo/validation";
 import { TextAction } from "@/components/minutes/recorder-controls";
@@ -24,8 +25,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 const summaryOf = (meeting: MeetingMinutes) =>
   readMeetingContent(meeting.content).summary;
 
-/** How long typing rests before it saves: the web draft's own wait. */
-export const SUMMARY_AUTOSAVE_MS = 1200;
+/** How long typing rests before it saves: the section editor's own wait. */
+export const SUMMARY_AUTOSAVE_MS = MINUTES_AUTOSAVE_MS;
 
 export interface SummaryNoteHandle {
   /**
@@ -33,6 +34,8 @@ export interface SummaryNoteHandle {
    * post, or null when the save didn't land (stale, offline).
    */
   flush: () => Promise<string | null>;
+  /** Someone saved since: the note offers their version, and flush waits. */
+  isStale: () => boolean;
 }
 
 /**
@@ -140,6 +143,7 @@ export const SummaryNote = forwardRef<
 
   useImperativeHandle(ref, () => ({
     flush: () => (stale ? Promise.resolve(null) : save()),
+    isStale: () => stale,
   }));
 
   // Saves once typing rests. A failed save waits for the next keystroke.
@@ -210,7 +214,9 @@ export const SummaryNote = forwardRef<
           {MEETING_COPY.saveFailed}
         </Text>
       ) : null}
-      {onEditAll ? (
+      {/* Stale, the note's own Load their version comes first: the editor
+          would open on their version over what is typed here. */}
+      {onEditAll && !stale ? (
         <TextAction
           label={MEETING_COPY.editAllSections}
           color={accent}

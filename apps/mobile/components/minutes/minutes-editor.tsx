@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Keyboard,
   Platform,
@@ -11,6 +11,7 @@ import {
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import {
+  formatDateEntry,
   localIsoDate,
   parseBareDateLocalNoon,
   suggestTaskDue,
@@ -30,12 +31,10 @@ import {
   MEETING_LIST_MAX_ITEMS,
   MEETING_NOTE_TAKERS_COPY,
   MEETING_TABLED_MAX_ITEMS,
-  MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MINUTES_EDITOR_COPY,
   MINUTES_FLOW_COPY,
   MINUTES_READ_COPY,
-  agendaMatterKey,
   clampMeetingVote,
   meetingSectionLabel,
   meetingTabledFromLabel,
@@ -43,7 +42,10 @@ import {
   minutesAttendanceDetail,
   minutesEditorSections,
   minutesHaveAttendees,
+  minutesTablingOffers,
   readEventAgenda,
+  tabledRowFromAgenda,
+  type MeetingDraftQuote,
   type MeetingActionItem,
   type MeetingContent,
   type MeetingDateItem,
@@ -70,13 +72,6 @@ import { initialsFor } from "@/lib/more/narrow";
 import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
-/** The line of the officer's notes a drafted item came from (#4935). */
-export type MinutesDraftQuote = {
-  quote: string;
-  from: string | null;
-  mine: boolean;
-};
-
 /**
  * The minutes' section editor on the phone (#4412), the web's
  * (`apps/web/components/meetings/minutes-page.tsx`) section for section: the
@@ -99,6 +94,7 @@ export function MinutesEditor({
   editing,
   byHand,
   disabled,
+  showProblems = false,
   quoteFor,
   menuFor,
   onMarkAttendance,
@@ -109,10 +105,12 @@ export function MinutesEditor({
   byHand: boolean;
   /** A draft is being written into these sections: they wait. */
   disabled: boolean;
+  /** Done or Post was pressed: every row that wouldn't be kept says so. */
+  showProblems?: boolean;
   quoteFor: (
     kind: "decision" | "action_item",
     text: string,
-  ) => MinutesDraftQuote | null;
+  ) => MeetingDraftQuote | null;
   /** The screen's action menu, for Add a section. */
   menuFor: (menu: ItemMenu) => ItemMenuHandle | null;
   /** Mark who was there, where the viewer may and the meeting has ended. */
@@ -133,6 +131,11 @@ export function MinutesEditor({
     [meeting.sections, content, byHand, kept, marked],
   );
   const addable = minutesAddableSections(shown);
+  // A draft starting closes the keyboard: the sections wait for it, and a
+  // field still focused would keep taking words the draft would write over.
+  useEffect(() => {
+    if (disabled) Keyboard.dismiss();
+  }, [disabled]);
   // The meeting's own day: the earliest an action item or a date offers.
   const meetingDay = localIsoDate(new Date(meeting.event_start_time));
 
@@ -155,7 +158,11 @@ export function MinutesEditor({
     >
       {editing.stale ? (
         <View accessibilityRole="alert" style={styles.stale}>
-          <Text style={styles.staleText}>{MEETING_COPY.stale}</Text>
+          <Text style={styles.staleText}>
+            {editing.loadFailed
+              ? `${MINUTES_EDITOR_COPY.loadFailed}. ${MINUTES_EDITOR_COPY.loadFailedBody}`
+              : MEETING_COPY.stale}
+          </Text>
           <TextAction
             label={MEETING_COPY.loadTheirs}
             color={accent}
@@ -192,6 +199,7 @@ export function MinutesEditor({
             <DatesEditor
               items={content.dates}
               meetingDay={meetingDay}
+              showProblems={showProblems}
               onChange={(dates) => edit({ dates })}
             />
           ) : key === "tabled" ? (
@@ -236,10 +244,12 @@ function GrowingField({
   maxLength,
   placeholder,
   minLines = 1,
+  onBlur,
 }: {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
+  onBlur?: () => void;
   maxLength: number;
   placeholder?: string;
   /** How tall it starts, in lines of body text. */
@@ -260,7 +270,10 @@ function GrowingField({
         maxLength={maxLength}
         onChangeText={onChangeText}
         onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          setFocused(false);
+          onBlur?.();
+        }}
         accessibilityLabel={label}
         placeholder={placeholder}
         placeholderTextColor={tokens.color.text.muted}
@@ -387,7 +400,7 @@ function ItemCard({
 }
 
 /** Where a drafted item came from, while it still reads as drafted. */
-function NotesQuote({ quote }: { quote: MinutesDraftQuote | null }) {
+function NotesQuote({ quote }: { quote: MeetingDraftQuote | null }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
@@ -409,7 +422,7 @@ function DecisionsEditor({
 }: {
   decisions: MeetingDecision[];
   onChange: (next: MeetingDecision[]) => void;
-  quoteFor: (text: string) => MinutesDraftQuote | null;
+  quoteFor: (text: string) => MeetingDraftQuote | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -505,7 +518,7 @@ function ActionItemsEditor({
   meetingStart: string;
   meetingDay: string;
   onChange: (next: MeetingActionItem[]) => void;
-  quoteFor: (text: string) => MinutesDraftQuote | null;
+  quoteFor: (text: string) => MeetingDraftQuote | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -683,6 +696,8 @@ function DayField({
           today={value < earliest ? value : earliest}
           disabled={false}
           label={label}
+          // Written out, as the read view and the web's field write it.
+          format={(day) => formatDateEntry(day, new Date())}
           onChange={onChange}
         />
       </View>
@@ -726,15 +741,32 @@ function DayField({
 function DatesEditor({
   items,
   meetingDay,
+  showProblems,
   onChange,
 }: {
   items: MeetingDateItem[];
   meetingDay: string;
+  showProblems: boolean;
   onChange: (next: MeetingDateItem[]) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
+  // The rows whose words were left (blurred), by index: a row says it needs
+  // a day once the officer moves on from it or presses Done, never on the
+  // first letter, so nothing moves under the cursor.
+  const [left, setLeft] = useState<ReadonlySet<number>>(() => new Set());
+  const remove = (index: number) => {
+    setLeft(
+      (current) =>
+        new Set(
+          [...current]
+            .filter((at) => at !== index)
+            .map((at) => (at > index ? at - 1 : at)),
+        ),
+    );
+    onChange(items.filter((_, at) => at !== index));
+  };
   const set = (index: number, patch: Partial<MeetingDateItem>) =>
     onChange(
       items.map((item, at) => (at === index ? { ...item, ...patch } : item)),
@@ -744,12 +776,15 @@ function DatesEditor({
       {items.map((item, index) => {
         // A row with words and no day isn't kept on save (Coming up is
         // days), so it says so instead of vanishing.
-        const needsDay = item.text.trim() !== "" && item.date === "";
+        const needsDay =
+          item.text.trim() !== "" &&
+          item.date === "" &&
+          (showProblems || left.has(index));
         return (
           <ItemCard
             key={index}
             removeLabel={`${MEETING_COPY.removeDate} ${index + 1}`}
-            onRemove={() => onChange(items.filter((_, at) => at !== index))}
+            onRemove={() => remove(index)}
             main={
               <View style={styles.dayRow}>
                 <DayField
@@ -770,6 +805,11 @@ function DatesEditor({
               value={item.text}
               maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
               onChangeText={(text) => set(index, { text })}
+              onBlur={() =>
+                setLeft((current) =>
+                  current.has(index) ? current : new Set([...current, index]),
+                )
+              }
             />
             {needsDay ? (
               <Text accessibilityLiveRegion="polite" style={styles.problem}>
@@ -808,11 +848,9 @@ function TabledEditor({
   const styles = createStyles(tokens, accent);
   const copy = MINUTES_EDITOR_COPY.tabled;
   const event = useEvent(eventId ?? "");
-  const tabledWords = new Set(items.map((item) => agendaMatterKey(item.text)));
-  const offered = readEventAgenda(event.data?.agenda).filter(
-    (item) =>
-      item.text.trim().length > 0 &&
-      !tabledWords.has(agendaMatterKey(item.text)),
+  const offered = minutesTablingOffers(
+    readEventAgenda(event.data?.agenda),
+    items,
   );
   const full = items.length >= MEETING_TABLED_MAX_ITEMS;
   return (
@@ -825,22 +863,7 @@ function TabledEditor({
               key={item.id}
               accessibilityRole="button"
               accessibilityLabel={copy.tableItem(item.text)}
-              onPress={() =>
-                onChange([
-                  ...items,
-                  {
-                    text: item.text,
-                    first_meeting_id: item.tabled_from?.meeting_id ?? null,
-                    first_start_time: item.tabled_from?.start_time ?? null,
-                    times: item.tabled_from
-                      ? Math.min(
-                          item.tabled_from.times + 1,
-                          MEETING_TABLED_MAX_TIMES,
-                        )
-                      : 1,
-                  },
-                ])
-              }
+              onPress={() => onChange([...items, tabledRowFromAgenda(item)])}
               style={({ pressed }) => [
                 styles.chip,
                 pressed ? styles.pressed : null,

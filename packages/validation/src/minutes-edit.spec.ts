@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_MEETING_CONTENT, MEETING_VOTE_MAX } from "./meetings";
+import { meetingDraftQuote } from "./meeting-draft";
+import {
+  EMPTY_MEETING_CONTENT,
+  MEETING_TABLED_MAX_TIMES,
+  MEETING_VOTE_MAX,
+} from "./meetings";
 import {
   BLANK_MINUTES_ROW,
+  minutesDatesMissingDay,
+  minutesTablingOffers,
+  tabledRowFromAgenda,
   clampMeetingVote,
   cleanMeetingContent,
   minutesEditDraftOf,
@@ -114,5 +122,95 @@ describe("clampMeetingVote", () => {
     expect(clampMeetingVote("-3")).toBe(0);
     expect(clampMeetingVote("4.7")).toBe(4);
     expect(clampMeetingVote("99999999")).toBe(MEETING_VOTE_MAX);
+  });
+});
+
+describe("minutesDatesMissingDay", () => {
+  it("finds a Coming up row with words and no day, ignoring blank ones", () => {
+    const content = (dates: { date: string; text: string }[]) => ({
+      ...EMPTY_MEETING_CONTENT,
+      dates,
+    });
+    expect(minutesDatesMissingDay(content([{ date: "", text: "  " }]))).toBe(
+      false,
+    );
+    expect(
+      minutesDatesMissingDay(content([{ date: "2026-12-01", text: "Formal" }])),
+    ).toBe(false);
+    expect(
+      minutesDatesMissingDay(content([{ date: "", text: "Formal" }])),
+    ).toBe(true);
+  });
+});
+
+describe("Tabling from the agenda", () => {
+  const agenda = [
+    { id: "a1", text: "Budget", done: false },
+    { id: "a2", text: "  ", done: false },
+    {
+      id: "a3",
+      text: "Formal",
+      done: false,
+      tabled_from: {
+        meeting_id: "m0",
+        start_time: "2026-11-02T23:00:00Z",
+        times: 2,
+      },
+    },
+  ];
+
+  it("offers each agenda item with words that isn't tabled yet", () => {
+    const tabled = [{ ...BLANK_MINUTES_ROW.tabled(), text: "budget" }];
+    expect(minutesTablingOffers(agenda, tabled).map((item) => item.id)).toEqual(
+      ["a3"],
+    );
+  });
+
+  it("starts a new item at once, and carries one tabled before", () => {
+    expect(tabledRowFromAgenda(agenda[0]!)).toEqual({
+      text: "Budget",
+      first_meeting_id: null,
+      first_start_time: null,
+      times: 1,
+    });
+    expect(tabledRowFromAgenda(agenda[2]!)).toEqual({
+      text: "Formal",
+      first_meeting_id: "m0",
+      first_start_time: "2026-11-02T23:00:00Z",
+      times: 3,
+    });
+    expect(
+      tabledRowFromAgenda({
+        ...agenda[2]!,
+        tabled_from: {
+          ...agenda[2]!.tabled_from,
+          times: MEETING_TABLED_MAX_TIMES,
+        },
+      }).times,
+    ).toBe(MEETING_TABLED_MAX_TIMES);
+  });
+});
+
+describe("meetingDraftQuote", () => {
+  const review = {
+    sources: [
+      {
+        kind: "decision" as const,
+        text: "Dues rise",
+        quote: "dues up",
+        from: "Sam",
+      },
+    ],
+  };
+  it("names the line and whose it was, while the text is the drafted text", () => {
+    expect(
+      meetingDraftQuote(review as never, "decision", "Dues rise", "Sam"),
+    ).toEqual({ quote: "dues up", from: "Sam", mine: true });
+    expect(
+      meetingDraftQuote(review as never, "decision", "Dues rise", "Alex")?.mine,
+    ).toBe(false);
+    expect(
+      meetingDraftQuote(review as never, "decision", "Rewritten", "Sam"),
+    ).toBeNull();
   });
 });

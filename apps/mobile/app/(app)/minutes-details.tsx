@@ -51,8 +51,8 @@ import {
   can,
   cleanMeetingContent,
   isMeetingContentEmpty,
-  meetingDraftQuoteFor,
-  meetingDraftSourceFor,
+  meetingDraftQuote,
+  minutesDatesMissingDay,
   meetingDayLabel,
   meetingTypeLabel,
   meetingWhenLabel,
@@ -90,10 +90,7 @@ import {
 import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
-import {
-  MinutesEditor,
-  type MinutesDraftQuote,
-} from "@/components/minutes/minutes-editor";
+import { MinutesEditor } from "@/components/minutes/minutes-editor";
 import {
   NotesPanel,
   type NotesPanelHandle,
@@ -157,7 +154,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * while recording, Post once there is something to post, Draft minutes for
  * typed notes, Record the meeting to begin. After Stop a card ticks off the
  * upload and the transcript, and a finished transcript drafts by itself.
- * Decisions and action items are still written on the web (#4412).
+ * Edit minutes in the ⋯ menu turns the screen into the web's section editor
+ * in place (#4412): every section, decisions with their vote count, action
+ * items with who and a due day.
  *
  * Posting asks nothing first, as on the web (Paul, 2026-11-16), though it
  * tells every invited member once.
@@ -229,7 +228,12 @@ function MinutesDetailsScreenBody() {
     <LoadedMinutes
       meeting={meetingQuery.data}
       autoRecord={record}
-      refetch={async () => (await meetingQuery.refetch()).data ?? null}
+      // A read that fails answers null, not the copy already held: a version
+      // read for a save, a post or Load their version must be the server's.
+      refetch={async () => {
+        const read = await meetingQuery.refetch();
+        return read.isError ? null : (read.data ?? null);
+      }}
     />
   );
 }
@@ -361,7 +365,7 @@ function LoadedMinutes({
     [actionTasksQuery.data],
   );
   // Without drafting the note is the minutes' Summary, typed and posted here
-  // (#5288); the other sections still come from the web. Only once the AI
+  // (#5288); Edit minutes writes the other sections. Only once the AI
   // reads have answered that drafting is off: while they load, or when one
   // failed, an officer's notes must not land in the Summary members read.
   const summaryShown =
@@ -380,8 +384,22 @@ function LoadedMinutes({
     meeting,
     active: editing,
     autosave: isDraft,
+    // As on the web: nothing saves while a draft is written over these
+    // sections or the minutes are posting.
+    paused: drafting || post.isPending,
     reload: refetch,
   });
+  // Done or Post found a Coming up row with words and no day.
+  const [showProblems, setShowProblems] = useState(false);
+  /**
+   * A row a save would drop stops Done, Save and Post, and every such row
+   * says so, rather than the words vanishing as the editor closes.
+   */
+  const keepsEveryRow = () => {
+    if (!minutesDatesMissingDay(editor.draft.content)) return true;
+    setShowProblems(true);
+    return false;
+  };
   const editingPosted = editing && !isDraft;
   // The note is set aside while the section editor has the Summary.
   const summaryOnPage = summaryShown && !editing;
@@ -402,15 +420,8 @@ function LoadedMinutes({
     (draftState.status === "applied" || draftState.status === "ready")
       ? draftState.review
       : null;
-  const quoteFor = (
-    kind: "decision" | "action_item",
-    text: string,
-  ): MinutesDraftQuote | null => {
-    const quote = meetingDraftQuoteFor(review, kind, text);
-    if (!quote) return null;
-    const from = meetingDraftSourceFor(review, kind, text);
-    return { quote, from, mine: !!from && from === myName };
-  };
+  const quoteFor = (kind: "decision" | "action_item", text: string) =>
+    meetingDraftQuote(review, kind, text, myName);
 
   /**
    * Opens the editor on the newest version: the Summary typed on the note
@@ -421,12 +432,15 @@ function LoadedMinutes({
     if (summaryOnPage && summaryRef.current) {
       const saved = await summaryRef.current.flush();
       if (!saved) {
-        setProblem(MEETING_COPY.saveFailed);
+        // Stale, the note already offers their version; otherwise the save
+        // failed and the note keeps every word.
+        if (!summaryRef.current.isStale()) setProblem(MEETING_COPY.saveFailed);
         return;
       }
     }
     const fresh = (await refetch()) ?? meeting;
     editor.begin(fresh);
+    setShowProblems(false);
     setByHand(!!options.byHand);
     setEditing(true);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -437,6 +451,7 @@ function LoadedMinutes({
   async function finishEdit() {
     if (finishingEdit) return;
     Keyboard.dismiss();
+    if (!keepsEveryRow()) return;
     setFinishingEdit(true);
     const saved = editor.isStale() ? null : await editor.save();
     setFinishingEdit(false);
@@ -451,6 +466,7 @@ function LoadedMinutes({
   async function saveEdit() {
     Keyboard.dismiss();
     setProblem(null);
+    if (!keepsEveryRow()) return;
     const saved = await editor.save();
     if (!saved) {
       if (!editor.isStale()) setProblem(MINUTES_EDITOR_COPY.saveFailedTitle);
@@ -469,10 +485,15 @@ function LoadedMinutes({
 
   // Leaving posted minutes with changes not saved asks first, by the back
   // row, the edge swipe or Android's back, as Apple Notes' shared notes
-  // and Google Docs do; a draft has nothing to ask, since it saves as it
-  // goes.
+  // and Google Docs do. A draft saves as it goes and asks only when its
+  // words can't be sent on the way out: refused as stale, a save that
+  // failed, or a draft being written over it.
   const navigation = useContext(NavigationContext);
-  usePreventRemove(editingPosted && editor.dirty, ({ data }) => {
+  const leaveLoses =
+    editing &&
+    editor.dirty &&
+    (editingPosted || editor.stale || editor.failed || drafting);
+  usePreventRemove(leaveLoses, ({ data }) => {
     void confirmAlert({
       title: MINUTES_EDITOR_COPY.discardTitle,
       body: MINUTES_EDITOR_COPY.discardBody,
@@ -508,6 +529,7 @@ function LoadedMinutes({
     // keeps the editor and offers their version.
     if (editing) {
       Keyboard.dismiss();
+      if (!keepsEveryRow()) return;
       const saved = await editor.save();
       if (!saved) {
         if (!editor.isStale()) setProblem(MEETING_COPY.postFailed);
@@ -793,7 +815,13 @@ function LoadedMinutes({
         state={draftState}
         hasContent={!empty}
         recording={recorderOffered ? recordingState : null}
-        getVersion={async () => (await refetch())?.updated_at ?? null}
+        // Asking for a draft from under the editor sends what is typed
+        // first, so the draft builds on it rather than strand it; a save
+        // that doesn't land stops the ask, with every word kept.
+        getVersion={async () => {
+          if (editing && !(await editor.save())) return null;
+          return (await refetch())?.updated_at ?? null;
+        }}
         onSettled={() => void refetch()}
         autoDraft={!!transcript && empty}
         onDraftable={setDraftable}
@@ -1001,6 +1029,7 @@ function LoadedMinutes({
             editing={editor}
             byHand={editorByHand}
             disabled={drafting}
+            showProblems={showProblems}
             quoteFor={quoteFor}
             menuFor={menu.handleFor}
             onMarkAttendance={

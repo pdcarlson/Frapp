@@ -53,7 +53,6 @@ import {
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_TABLED_MAX_ITEMS,
-  MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_VOTE_MAX,
   MINUTES_EDITOR_COPY,
@@ -69,8 +68,11 @@ import {
   cleanMeetingContent,
   sameMinutesDraft,
   isMeetingContentEmpty,
-  meetingDraftQuoteFor,
-  meetingDraftSourceFor,
+  meetingDraftQuote,
+  MINUTES_AUTOSAVE_MS,
+  minutesTablingOffers,
+  tabledRowFromAgenda,
+  type MeetingDraftQuote,
   MEETING_NOTE_TAKERS_COPY,
   meetingTypeLabel,
   minutesJumps,
@@ -83,7 +85,6 @@ import {
   type MeetingTabledItem,
   type MeetingTextSection,
   type MeetingType,
-  agendaMatterKey,
   meetingTabledFromLabel,
   readEventAgenda,
 } from "@repo/validation";
@@ -153,12 +154,6 @@ const NO_OWNER = "none";
 const draftOf = minutesEditDraftOf;
 const cleanContent = cleanMeetingContent;
 const sameDraft = sameMinutesDraft;
-
-/**
- * How long a draft's typing rests before it saves on its own, the way Google
- * Docs and Notion save (Paul, 2026-11-16: no Save button to chase).
- */
-const AUTOSAVE_MS = 1200;
 
 /**
  * `/meetings/:id`: one meeting's minutes (`spec/behavior/meetings.md`). Read
@@ -433,7 +428,7 @@ function Minutes({
   const pendingAutosave = autosaves && dirty && !stale && !drafting;
   useEffect(() => {
     if (!pendingAutosave || saveFailed) return;
-    const timer = window.setTimeout(() => void save(), AUTOSAVE_MS);
+    const timer = window.setTimeout(() => void save(), MINUTES_AUTOSAVE_MS);
     return () => window.clearTimeout(timer);
     // `save` reads the latest draft through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -523,8 +518,8 @@ function Minutes({
     const fresh = await onReload();
     if (!fresh) {
       toast({
-        title: "Couldn't load their version",
-        description: "Check your connection and try again.",
+        title: MINUTES_EDITOR_COPY.loadFailed,
+        description: MINUTES_EDITOR_COPY.loadFailedBody,
         variant: "destructive",
       });
       return;
@@ -942,7 +937,7 @@ function Minutes({
                     decisions={draft.content.decisions}
                     onChange={(decisions) => editContent({ decisions })}
                     quoteFor={(text) =>
-                      quoteOf(review, "decision", text, myName)
+                      meetingDraftQuote(review, "decision", text, myName)
                     }
                   />
                 ) : key === "action_items" ? (
@@ -951,7 +946,7 @@ function Minutes({
                     items={draft.content.action_items}
                     onChange={(action_items) => editContent({ action_items })}
                     quoteFor={(text) =>
-                      quoteOf(review, "action_item", text, myName)
+                      meetingDraftQuote(review, "action_item", text, myName)
                     }
                   />
                 ) : key === "tabled" ? (
@@ -1227,7 +1222,7 @@ function meetingHasEnded(meeting: MeetingMinutes): boolean {
  * The line of the officer's notes a drafted item came from, shown while the
  * item still reads as drafted, so each one can be checked at a glance.
  */
-function NotesQuote({ quote }: { quote: DraftQuote | null }) {
+function NotesQuote({ quote }: { quote: MeetingDraftQuote | null }) {
   if (!quote) return null;
   return (
     <p className="break-words text-caption text-muted-foreground">
@@ -1239,21 +1234,6 @@ function NotesQuote({ quote }: { quote: DraftQuote | null }) {
   );
 }
 
-/** The line a drafted item came from, and whose it is (#4935). */
-type DraftQuote = { quote: string; from: string | null; mine: boolean };
-
-function quoteOf(
-  review: MeetingDraftState["review"] | null,
-  kind: "decision" | "action_item",
-  text: string,
-  myName: string | null,
-): DraftQuote | null {
-  const quote = meetingDraftQuoteFor(review, kind, text);
-  if (!quote) return null;
-  const from = meetingDraftSourceFor(review, kind, text);
-  return { quote, from, mine: !!from && from === myName };
-}
-
 function DecisionsEditor({
   decisions,
   onChange,
@@ -1261,7 +1241,7 @@ function DecisionsEditor({
 }: {
   decisions: MeetingDecision[];
   onChange: (next: MeetingDecision[]) => void;
-  quoteFor: (text: string) => DraftQuote | null;
+  quoteFor: (text: string) => MeetingDraftQuote | null;
 }) {
   const ids = useId();
   const copy = MINUTES_EDITOR_COPY.decision;
@@ -1459,14 +1439,12 @@ function TabledEditor({
   onChange: (next: MeetingTabledItem[]) => void;
 }) {
   const event = useEvent(eventId ?? "");
-  const tabledWords = new Set(items.map((item) => agendaMatterKey(item.text)));
   // Each agenda item not tabled yet, as a chip (#5534): one tap tables it,
   // and one carried from an earlier Tabled list keeps its first date and
   // counts once more.
-  const offered = readEventAgenda(event.data?.agenda).filter(
-    (item) =>
-      item.text.trim().length > 0 &&
-      !tabledWords.has(agendaMatterKey(item.text)),
+  const offered = minutesTablingOffers(
+    readEventAgenda(event.data?.agenda),
+    items,
   );
   const full = items.length >= MEETING_TABLED_MAX_ITEMS;
   return (
@@ -1483,22 +1461,7 @@ function TabledEditor({
               aria-label={MINUTES_EDITOR_COPY.tabled.tableItem(
                 `"${item.text}"`,
               )}
-              onClick={() =>
-                onChange([
-                  ...items,
-                  {
-                    text: item.text,
-                    first_meeting_id: item.tabled_from?.meeting_id ?? null,
-                    first_start_time: item.tabled_from?.start_time ?? null,
-                    times: item.tabled_from
-                      ? Math.min(
-                          item.tabled_from.times + 1,
-                          MEETING_TABLED_MAX_TIMES,
-                        )
-                      : 1,
-                  },
-                ])
-              }
+              onClick={() => onChange([...items, tabledRowFromAgenda(item)])}
               className={cn(
                 "inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border border-border px-2.5 text-caption hover:bg-card-hover pointer-coarse:min-h-11",
                 FOCUS_RING_OFFSET,
@@ -1570,7 +1533,7 @@ function ActionItemsEditor({
   disabled: boolean;
   items: MeetingActionItem[];
   onChange: (next: MeetingActionItem[]) => void;
-  quoteFor: (text: string) => DraftQuote | null;
+  quoteFor: (text: string) => MeetingDraftQuote | null;
 }) {
   const ids = useId();
   const copy = MINUTES_EDITOR_COPY.actionItem;

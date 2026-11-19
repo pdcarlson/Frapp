@@ -80,9 +80,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * itself (`autoDraft`), so after Stop the minutes simply arrive. The AI
  * question is asked where a draft is first asked for.
  *
- * The phone has no section editor, so nothing typed elsewhere can be lost:
- * the version a draft builds on is read fresh from the server (`getVersion`)
- * each time one is asked for.
+ * The version a draft builds on is read fresh from the server (`getVersion`)
+ * each time one is asked for. With Edit minutes open above the notes
+ * (#4412), the screen's `getVersion` saves the section editor's typing first
+ * and answers null when that save doesn't land, so a draft never builds on a
+ * version that leaves the officer's words behind.
  *
  * A recording's transcript is a source of its own (§ Recording in the app,
  * #4935): the draft reads it beside the notes, so it never goes into the box.

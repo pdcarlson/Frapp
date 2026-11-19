@@ -52,6 +52,9 @@ const state = vi.hoisted(() => ({
   controls: 0,
   summaryProps: null as Record<string, unknown> | null,
   summaryFlush: vi.fn(),
+  summaryStale: false,
+  // What the screen last told the navigator about leaving (#4412).
+  preventRemove: false,
   event: undefined as Record<string, unknown> | undefined,
   permissions: [] as string[],
   menu: null as {
@@ -197,14 +200,30 @@ vi.mock("@/components/minutes/notes-panel", async () => {
     }),
   };
 });
+vi.mock("expo-router/react-navigation", async () => {
+  const { createContext } = await import("react");
+  return {
+    NavigationContext: createContext(undefined),
+    NavigationRouteContext: createContext(undefined),
+    usePreventRemove: (prevent: boolean) => {
+      state.preventRemove = prevent;
+    },
+  };
+});
 vi.mock("@/components/minutes/summary-note", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   return {
     SummaryNote: forwardRef(function SummaryNote(
       props: Record<string, unknown>,
-      ref: React.Ref<{ flush: () => Promise<string | null> }>,
+      ref: React.Ref<{
+        flush: () => Promise<string | null>;
+        isStale: () => boolean;
+      }>,
     ) {
-      useImperativeHandle(ref, () => ({ flush: state.summaryFlush }));
+      useImperativeHandle(ref, () => ({
+        flush: state.summaryFlush,
+        isStale: () => state.summaryStale,
+      }));
       state.summaryProps = props;
       return React.createElement("SummaryNote");
     }),
@@ -319,6 +338,8 @@ beforeEach(() => {
   state.notesProps = null;
   state.othersWrote = false;
   state.summaryProps = null;
+  state.summaryStale = false;
+  state.preventRemove = false;
   state.event = undefined;
   state.draftPending = false;
   state.refetch.mockImplementation(async () => ({ data: state.meeting }));
@@ -1013,5 +1034,164 @@ describe("Edit minutes on the phone (#4412)", () => {
     expect(
       tree.root.findAll((node) => (node.type as unknown) === "SummaryNote"),
     ).toHaveLength(0);
+  });
+
+  it("doesn't open the editor over a stale Summary note, nor say the save failed", async () => {
+    state.surfaces = { available: true, meetingNotes: false, ready: true };
+    state.summaryFlush.mockResolvedValue(null);
+    state.summaryStale = true;
+    const tree = render();
+    await act(async () => (state.summaryProps!.onEditAll as () => void)());
+    expect(field(tree, "Summary")).toBeUndefined();
+    expect(screenText(tree)).not.toContain(MEETING_COPY.saveFailed);
+  });
+
+  it("Done keeps the editor while a Coming up line has no day, and says so", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    state.meeting = meeting({ sections: ["summary", "dates"] });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() =>
+      button(tree, MINUTES_FLOW_COPY.review.addSection).props.onPress(),
+    );
+    await act(async () =>
+      (
+        state.menu!.actions.find(
+          (item) => item.label === "Coming up",
+        ) as unknown as {
+          run: () => void;
+        }
+      ).run(),
+    );
+    act(() => button(tree, MEETING_COPY.addDate).props.onPress());
+    act(() =>
+      field(tree, `${MEETING_COPY.dateWhat} 1`)!.props.onChangeText(
+        "Formal at the lodge",
+      ),
+    );
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.done).props.onPress(),
+    );
+    expect(hasBody(tree)).toBe(false);
+    expect(field(tree, `${MEETING_COPY.dateWhat} 1`)?.props.value).toBe(
+      "Formal at the lodge",
+    );
+    expect(screenText(tree)).toContain(MEETING_COPY.dateNeedsDay);
+    expect(state.update).not.toHaveBeenCalled();
+  });
+
+  it("holds a draft's autosave while a draft from notes is being written", async () => {
+    vi.useFakeTimers();
+    try {
+      state.draft = { status: "applied", notes: "budget passed" };
+      const tree = render();
+      await fromMenu(tree, "Edit minutes");
+      act(() => field(tree, "Summary")!.props.onChangeText("Budget passed."));
+      state.draft = { status: "drafting", requested_at: "t1" };
+      act(() => field(tree, "Summary")!.props.onChangeText("Budget passed!"));
+      await act(async () => vi.advanceTimersByTime(1200));
+      expect(state.update).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves the editor's typing before a draft is asked for, and stops the ask when it can't", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Typed, not saved"));
+    const getVersion = state.notesProps!.getVersion as () => Promise<
+      string | null
+    >;
+    await act(async () => {
+      await getVersion();
+    });
+    expect(state.update).toHaveBeenCalledTimes(1);
+    expect(state.update.mock.invocationCallOrder[0]).toBeLessThan(
+      state.refetch.mock.invocationCallOrder.at(-1)!,
+    );
+
+    act(() => field(tree, "Summary")!.props.onChangeText("More, not saved"));
+    state.update.mockRejectedValue(new Error("offline"));
+    let version: string | null = "unset";
+    await act(async () => {
+      version = await getVersion();
+    });
+    expect(version).toBeNull();
+  });
+
+  it("asks before leaving a draft whose words can't be sent, and not otherwise", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Saves as it goes"));
+    // A draft that can still send its words on the way out leaves freely.
+    expect(state.preventRemove).toBe(false);
+    state.update.mockRejectedValue({ code: "meeting.stale" });
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.done).props.onPress(),
+    );
+    expect(screenText(tree)).toContain(MEETING_COPY.stale);
+    expect(state.preventRemove).toBe(true);
+  });
+
+  it("sends a draft's waiting words as the screen goes", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Typed, then left"));
+    expect(state.update).not.toHaveBeenCalled();
+    await act(async () => tree.unmount());
+    expect(state.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content: expect.objectContaining({ summary: "Typed, then left" }),
+        }),
+      }),
+    );
+  });
+
+  it("keeps the typing and says so when their version can't be loaded", async () => {
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T01:00:00.000Z",
+    });
+    state.update.mockRejectedValue({ code: "meeting.stale" });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Mine, typed here"));
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.save).props.onPress(),
+    );
+    // Offline: the read fails and TanStack hands back the copy it held.
+    state.refetch.mockImplementation(async () => ({
+      data: state.meeting,
+      isError: true,
+    }));
+    await act(async () =>
+      button(tree, MEETING_COPY.loadTheirs).props.onPress(),
+    );
+    expect(field(tree, "Summary")?.props.value).toBe("Mine, typed here");
+    expect(screenText(tree)).toContain(MINUTES_EDITOR_COPY.loadFailed);
+  });
+
+  it("takes a newer version that arrives while nothing is typed", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    state.meeting = meeting({ updated_at: "2026-11-10T08:00:00.000Z" });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    state.meeting = meeting({
+      updated_at: "2026-11-10T09:00:00.000Z",
+      content: { ...WRITTEN, summary: "Their newer summary." },
+    });
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <MinutesDetailsScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(field(tree, "Summary")?.props.value).toBe("Their newer summary.");
   });
 });

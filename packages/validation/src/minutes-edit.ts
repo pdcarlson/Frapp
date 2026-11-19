@@ -1,4 +1,6 @@
+import { agendaMatterKey, type EventAgendaItem } from "./event-agenda";
 import {
+  MEETING_TABLED_MAX_TIMES,
   MEETING_VOTE_MAX,
   readMeetingContent,
   type MeetingActionItem,
@@ -16,6 +18,13 @@ import {
  * clean, compare and word a save the same way and never feel like two
  * systems (Paul, 2026-11-19).
  */
+
+/**
+ * How long typing rests before a draft saves itself, the way Google Docs and
+ * Notion save (Paul, 2026-11-16: no Save button to chase): the section
+ * editor's wait on both apps, and the phone's Summary note's.
+ */
+export const MINUTES_AUTOSAVE_MS = 1200;
 
 /** What the editor holds: the minutes' type and their words. */
 export type MinutesEditDraft = {
@@ -88,6 +97,46 @@ export function sameMinutesDraft(
   return minutesStoredForm(a) === minutesStoredForm(b);
 }
 
+/**
+ * Whether a Coming up row has words and no day. A save drops it (Coming up
+ * is days), so Done and Post stop and say so rather than lose it.
+ */
+export function minutesDatesMissingDay(content: MeetingContent): boolean {
+  return content.dates.some(
+    (item) => item.text.trim().length > 0 && item.date.length === 0,
+  );
+}
+
+/**
+ * The agenda items the Tabled section offers as one-tap chips (#5534): each
+ * with words that isn't tabled already.
+ */
+export function minutesTablingOffers(
+  agenda: readonly EventAgendaItem[],
+  tabled: readonly MeetingTabledItem[],
+): EventAgendaItem[] {
+  const tabledWords = new Set(tabled.map((item) => agendaMatterKey(item.text)));
+  return agenda.filter(
+    (item) =>
+      item.text.trim().length > 0 &&
+      !tabledWords.has(agendaMatterKey(item.text)),
+  );
+}
+
+/**
+ * The Tabled row a chip adds. One carried from an earlier Tabled list keeps
+ * its first meeting and counts once more.
+ */
+export function tabledRowFromAgenda(item: EventAgendaItem): MeetingTabledItem {
+  const from = item.tabled_from;
+  return {
+    text: item.text,
+    first_meeting_id: from?.meeting_id ?? null,
+    first_start_time: from?.start_time ?? null,
+    times: from ? Math.min(from.times + 1, MEETING_TABLED_MAX_TIMES) : 1,
+  };
+}
+
 /** A vote count as typed: a whole number from 0 to the most a chapter seats. */
 export function clampMeetingVote(value: string): number {
   const parsed = Number.parseInt(value, 10);
@@ -121,6 +170,8 @@ export const MINUTES_EDITOR_COPY = {
   cancel: "Cancel",
   done: "Done",
   saveFailedTitle: "Couldn't save the minutes",
+  loadFailed: "Couldn't load their version",
+  loadFailedBody: "Check your connection and try again.",
   savedToast: "Minutes saved",
   discardTitle: "Discard your changes?",
   discardBody: "What you changed in these minutes isn't saved.",
