@@ -130,6 +130,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A task made from minutes now names its meeting as it's called today, with a link to the minutes, and a long task title wraps so you can read all of it.",
       "Minutes for a meeting whose name doesn't suggest a type are filed as Other, and no longer pull in the last chapter meeting's action items.",
       "A suggested task that looks like one you already have now shows the two side by side, so you can mark it as that task, and its action item follows it, or create it anyway.",
+      "Catch me up now opens right at the top of the channel or thread you are reading, so it no longer covers part of the screen.",
+      "Officers can make one chapter link from Invite members that anyone can join with for 7 days, to post in your group chat or Discord, and turn it off anytime.",
+      "Drafting minutes starts from one box now: paste your notes or a transcript, watch each step with a clock while it writes, and get a notification when the draft is ready, with only the sections it filled in to read over.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
@@ -137,12 +140,16 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "With a page open on a wide window, the page now gets the main space and chat sits in a narrower panel on the right that you can drag wider, so lists and names no longer get cut off.",
       "Events is now one list of events, tasks and birthdays by day, each in its own colour, with a small month beside it to jump to any day.",
       "Documents shows your files sooner: search and one Filters menu sit above the list, each file is tinted by its folder, and a file's actions appear when you point at it.",
+      "An invite link opened on a phone now walks you through getting the app first, then opens your invite in it, so you sign in once.",
+      "New members whose chapter has no default channel or #general now open on a channel they can post in, not the audit log.",
+      "A profile, a new channel or an event form opened from chat now opens in the chat itself, so the page beside it stays in view.",
     ],
     phone: [
       "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",
       "Tapping someone in the Directory or in a chat now opens their profile as its own page, and the Directory keeps one simple list with calmer filter chips.",
       "Tasks puts your tasks first: your points sit in one quiet line, a task up for grabs opens on its own page, and New event on the Calendar now sits at the bottom like New task.",
       "While minutes are drafted from your notes, Drafting and Stop stay at the bottom of the screen.",
+      "Tasks can repeat every day, week or month: pick Repeat when you make one, and a new one appears each time the last one comes due.",
     ],
   },
   {
