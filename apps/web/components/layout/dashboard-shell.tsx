@@ -484,9 +484,7 @@ export function DashboardShell({
     */
     <div
       data-dashboard-shell=""
-      // From `lg` a channel's open summary sits beside the shell, not over
-      // it (`catch-up-panel.tsx` sets the attribute on `<html>`).
-      className="relative flex h-dvh overflow-clip bg-background lg:[[data-catch-up-open]_&]:pr-[440px]"
+      className="relative flex h-dvh overflow-clip bg-background"
     >
       <ChapterWizardGate />
       {/* A member whose roles grant nothing (#3236). */}

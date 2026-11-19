@@ -51,6 +51,7 @@ import {
   PanelFooter,
   PanelHeader,
   PanelTitle,
+  type PanelDocking,
 } from "@/components/shared/panel";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
@@ -158,9 +159,10 @@ type MemberDetailSheetProps = {
   /**
    * Open inside the page that lists the member (Directory, Alumni) rather
    * than over everything (`Panel`'s `docked`, components.md § Surface size).
-   * Chat, which has no page of its own for a member, leaves it off.
+   * Chat, which has no page of its own for a member, docks it `"here"`: over
+   * the chat column, with a way back to the channel.
    */
-  docked?: boolean;
+  docked?: PanelDocking;
   /** The docked back arrow's name: where it goes ("Back to directory"). */
   backLabel?: string;
 };

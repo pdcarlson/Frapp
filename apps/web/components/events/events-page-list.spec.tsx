@@ -364,9 +364,12 @@ describe("EventsPage list", () => {
     const user = userEvent.setup();
     // The head has already happened: only generated meetings are upcoming,
     // and they carry no rule of their own.
+    // Whole days from now, never today: a meeting at 18:00 today is upcoming
+    // or past by the hour the suite runs.
     const series = weeklySeries("Chapter", 3).map((event, i) => ({
       ...event,
-      start_time: daysOut(-7 + i * 7, 18),
+      start_time: daysOut(-6 + i * 7, 18),
+      end_time: daysOut(-6 + i * 7, 19),
     }));
     eventsQuery.data = series;
     render(<EventsPage />);

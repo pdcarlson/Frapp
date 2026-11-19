@@ -179,7 +179,7 @@ import { ChatBackground, useChapterLetters } from "./chat-background";
 import { ChatDropTarget } from "./chat-drop-target";
 import {
   CatchUpOffer,
-  useCatchUpPanel,
+  useCatchUp,
   type CatchUpScope,
 } from "./catch-up-panel";
 import {
@@ -1511,13 +1511,15 @@ export function ChatShell({
   } | null>(null);
   const [popoutOpen, setPopoutOpen] = useState(false);
   // Read by the Members popover's outside-click and focus guards, which run
-  // between renders: a popout or profile stacked over the list must not
-  // close the list. A layout effect, because the popout and the sheet move
-  // focus in their own (passive) mount effects, which must already see it.
+  // between renders: a popout stacked over the list must not close the list.
+  // A layout effect, because the popout moves focus in its own (passive)
+  // mount effect, which must already see it. The profile is not stacked: it
+  // docks over the chat column, under the list, so opening it closes the
+  // list (`openProfileSheet`).
   const stackedOverMembersRef = useRef(false);
   useLayoutEffect(() => {
-    stackedOverMembersRef.current = profileOpen || popoutOpen;
-  }, [profileOpen, popoutOpen]);
+    stackedOverMembersRef.current = popoutOpen;
+  }, [popoutOpen]);
   // The dialogs and forms above load on first open; fetch them once the
   // page is idle so that first open rarely waits (#3716).
   // The composer's editor is wanted sooner, as soon as there is a channel,
@@ -1529,6 +1531,9 @@ export function ChatShell({
   const openProfileSheet = useCallback((memberUserId: string) => {
     setProfileUserId(memberUserId);
     setProfileOpen(true);
+    // The profile docks over the chat column (Paul, 2026-11-19: no side
+    // cards); the Members list it may have come from would float over it.
+    setMembersSheetOpen(false);
   }, []);
   // The popout beside the clicked element; the sheet only when a caller has
   // no element to anchor to.
@@ -2917,8 +2922,18 @@ export function ChatShell({
       : null;
   }, [activeChannelId]);
   const openCatchUpPoint = useCallback(
-    (point: ChatCatchUpPoint) => {
+    (point: ChatCatchUpPoint, scope: CatchUpScope) => {
       if (!activeChannelId) return;
+      if (scope.kind === "thread") {
+        // A thread's summary is drawn in its thread, so every line, the
+        // thread's first message too, opens there and the summary stays.
+        setThreadJump((previous) => ({
+          messageId: point.message_id,
+          nonce: (previous?.nonce ?? 0) + 1,
+        }));
+        setNarrowPane("thread");
+        return;
+      }
       if (point.thread_root_id) {
         // A reply lives in its thread, not on the timeline.
         setOpenThread({
@@ -2937,8 +2952,9 @@ export function ChatShell({
     },
     [activeChannelId, jumpToChannelMessage],
   );
-  const catchUp = useCatchUpPanel({
+  const catchUp = useCatchUp({
     activeChannelId,
+    activeThreadRootId: threadRootId,
     nameFor,
     onOpenPoint: openCatchUpPoint,
   });
@@ -2954,7 +2970,6 @@ export function ChatShell({
     const scope: CatchUpScope = {
       kind: "channel",
       channelId: activeChannel.id,
-      channelName: activeChannel.name ?? null,
       unread,
     };
     startCatchUp(scope);
@@ -2964,7 +2979,6 @@ export function ChatShell({
     startCatchUp({
       kind: "thread",
       channelId: activeChannel.id,
-      channelName: activeChannel.name ?? null,
       rootId: threadRootId,
     });
   }, [activeChannel, threadRootId, startCatchUp]);
@@ -3542,6 +3556,9 @@ export function ChatShell({
           canPost={activeChannel.can_post !== false}
           onClose={closeThread}
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
+          catchUpBlock={
+            catchUp.openKind === "thread" ? catchUp.element : null
+          }
           jumpTo={threadJump}
           askRefusal={replyAskRefusalFor}
           // A reply scheduled into this thread (#5005): the API checks it as
@@ -3574,7 +3591,13 @@ export function ChatShell({
       or `md:sticky` rail positioning. They are flush columns divided by
       hairlines, and each owns its own scroll because the page has none.
     */
-    <div className="flex h-full min-h-0">
+    <div
+      // A form or a profile opened from chat docks over this column
+      // (`Panel`'s `docked="here"`) rather than sliding over the window.
+      data-panel-host=""
+      data-chat-column=""
+      className="relative flex h-full min-h-0"
+    >
       {/*
         The shell's skip link lands the keyboard user at the top of the chat
         panel, which holds the channel list this link exists to skip past.
@@ -4177,6 +4200,8 @@ export function ChatShell({
                 }))
               }
             />
+            {/* The summary itself, in the channel above its messages. */}
+            {catchUp.openKind === "channel" ? catchUp.element : null}
             {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
@@ -4533,6 +4558,10 @@ export function ChatShell({
         <MemberDetailSheet
           open={profileOpen}
           onOpenChange={setProfileOpen}
+          // Over the chat column, never over the page beside it (Paul,
+          // 2026-11-19: no side cards).
+          docked="here"
+          backLabel="Back to chat"
           userId={profileUserId}
           identity={{
             name: nameFor(profileUserId),
@@ -4541,11 +4570,13 @@ export function ChatShell({
         />
       ) : null}
 
-      {catchUp.element}
+      {catchUp.dialogs}
       {confirmDialog}
       {canManageChannel ? (
         <CreateChannelSheet
           open={createChannelIn !== undefined}
+          docked="here"
+          backLabel="Back to chat"
           onOpenChange={(open) => {
             if (!open) setCreateChannelIn(undefined);
           }}
@@ -4568,6 +4599,8 @@ export function ChatShell({
       {eventEditor ? (
         <EventEditorDialog
           open={eventEditor.open}
+          docked="here"
+          backLabel="Back to chat"
           onOpenChange={(open) =>
             setEventEditor((previous) =>
               previous ? { ...previous, open } : previous,
