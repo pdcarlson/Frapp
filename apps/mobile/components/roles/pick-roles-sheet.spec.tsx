@@ -95,12 +95,10 @@ describe("PickRolesSheet (#4958)", () => {
     );
   });
 
-  it("captions a held role that can't be joined again, and still leaves it", async () => {
-    const tree = render([
-      { ...ROLES[0]!, selfAssignable: false, joinable: false },
-    ]);
+  it("captions an alum's held role, which they can't join again, and still leaves it", async () => {
+    const tree = render([{ ...ROLES[0]!, joinable: false }]);
     expect(screenText(tree)).toContain(
-      "No longer open to join. You can leave it.",
+      "Alumni don't join roles. You can leave this one.",
     );
     await act(async () => {
       toggle(tree, "Leave Intramurals").props.onValueChange(false);

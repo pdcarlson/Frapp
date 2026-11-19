@@ -388,7 +388,7 @@ function Dates({ dates }: { dates: MeetingContent["dates"] }) {
           <View
             key={`${item.date}-${index}`}
             accessible
-            accessibilityLabel={`${item.text}, ${tile.weekday}, ${meetingDueLabel(item.date)}`}
+            accessibilityLabel={`${item.text}, ${meetingDueLabel(item.date)}`}
             style={styles.dateRow}
           >
             <View
@@ -403,10 +403,8 @@ function Dates({ dates }: { dates: MeetingContent["dates"] }) {
             </View>
             <View style={styles.flex}>
               <Text style={styles.strong}>{item.text}</Text>
-              <Text style={styles.meta}>
-                {tile.weekday ? `${tile.weekday}, ` : ""}
-                {meetingDueLabel(item.date)}
-              </Text>
+              {/* The tile says the month and day; the line, the weekday. */}
+              <Text style={styles.meta}>{tile.line}</Text>
             </View>
           </View>
         );

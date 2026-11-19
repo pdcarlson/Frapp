@@ -126,6 +126,85 @@ describe("whoRows", () => {
   });
 });
 
+describe("whoRows: a tier picked whole (#5473)", () => {
+  const tiered = buildWhoDirectory({
+    members: [
+      { user_id: "u-viewer", display_name: "Paul Carlson", role_ids: ["pres"] },
+      { user_id: "u-sam", display_name: "Sam Lee", role_ids: ["vp", "recruit"] },
+    ],
+    roles: [
+      { id: "pres", name: "President", tier_id: "t-exec", display_order: 1 },
+      { id: "vp", name: "Vice President", tier_id: "t-exec", display_order: 2 },
+      { id: "recruit", name: "Recruitment Chair", tier_id: "t-comm", display_order: 3 },
+    ],
+    tiers: [
+      { id: "t-exec", name: "Exec board", position: 1 },
+      { id: "t-comm", name: "Committees", position: 2 },
+    ],
+    viewerUserId: "u-viewer",
+  });
+  const base = {
+    search: "",
+    single: false,
+    expanded: new Set<string>(),
+    openTiers: new Set(["t-exec", "t-comm"]),
+  };
+  const labels = (rows: WhoRow[]) =>
+    rows.map((row) =>
+      row.kind === "heading"
+        ? `# ${row.label}`
+        : row.kind === "set"
+          ? `${row.set.name} (${row.set.kind})`
+          : row.kind,
+    );
+
+  it("lists the tier whole first under its heading, only with two roles or more", () => {
+    expect(labels(whoRows(tiered, { ...base, tab: "sets" }))).toEqual([
+      "everyone",
+      "# Exec board",
+      "Everyone in Exec board (tier)",
+      "President (role)",
+      "Vice President (role)",
+      "# Committees",
+      "Recruitment Chair (role)",
+    ]);
+  });
+
+  it("finds a tier by its name in a search", () => {
+    expect(
+      labels(whoRows(tiered, { ...base, tab: "people", search: "exec" })),
+    ).toEqual([
+      `# ${WHO_PICKER_COPY.rolesAndGroups}`,
+      "Everyone in Exec board (tier)",
+    ]);
+  });
+
+  it("finds no tier of one role, nor every tier for \"every\"", () => {
+    // Committees holds one role: its role row stands for it.
+    expect(
+      labels(whoRows(tiered, { ...base, tab: "people", search: "committees" })),
+    ).toEqual([]);
+    expect(
+      labels(whoRows(tiered, { ...base, tab: "people", search: "every" })),
+    ).toEqual([]);
+  });
+
+  it("offers no tier where the payload can't carry one (a suggestion)", () => {
+    const rows = whoRows(tiered, { ...base, tab: "sets", tiers: false });
+    expect(rows.some((row) => row.kind === "set" && row.set.kind === "tier")).toBe(
+      false,
+    );
+    expect(
+      whoRows(tiered, { ...base, tab: "people", search: "exec", tiers: false }),
+    ).toEqual([]);
+  });
+
+  it("keys the tier's row apart from its heading", () => {
+    const keys = whoRows(tiered, { ...base, tab: "sets" }).map((row) => row.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
 describe("whoOfLegacyAssignee", () => {
   it("reads a kept draft's old assignee", () => {
     expect(whoOfLegacyAssignee(null)).toBeNull();

@@ -146,6 +146,45 @@ describe("validateNewTask", () => {
     expect(open.body).not.toHaveProperty("recurrence_rule");
   });
 
+  it("sends From with a task or a copy each, never to Up for grabs or with a repeat (#5473)", () => {
+    const body = { ...validateNewTask(draft)!, followed_by: "tier:t-exec" };
+    expect(createRequestOf(body).body).toMatchObject({
+      assignee_id: "member-1",
+      followed_by: "tier:t-exec",
+    });
+    const group = createRequestOf({
+      ...body,
+      who: { kind: "each", target: { kind: "role", id: "r1" } },
+    });
+    expect(group.body).toMatchObject({
+      audience: "everyone",
+      audience_role_id: "r1",
+      followed_by: "tier:t-exec",
+    });
+    const open = createRequestOf({
+      ...body,
+      who: { kind: "someone", target: { kind: "chapter" } },
+    });
+    expect(open.route).toBe("open");
+    expect(open.body).not.toHaveProperty("followed_by");
+    const repeating = createRequestOf({
+      ...body,
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=FR;TZID=America/New_York",
+    });
+    expect(repeating.body).not.toHaveProperty("followed_by");
+  });
+
+  it("sends a copy each for everyone in a tier (#5473)", () => {
+    const tier = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "tier", id: "t-exec" } },
+    });
+    expect(createRequestOf(tier!).body).toMatchObject({
+      audience: "everyone",
+      audience_tier_id: "t-exec",
+    });
+  });
+
   it("sends a task for everyone as an audience, with no member (#4295 step 3)", () => {
     const body = validateNewTask({
       ...draft,

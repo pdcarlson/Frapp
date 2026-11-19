@@ -91,11 +91,18 @@ describe("minutesJumps", () => {
 
 describe("minutesDateTile", () => {
   it("reads the day as a calendar day", () => {
-    expect(minutesDateTile("2026-11-28")).toEqual({
+    expect(minutesDateTile("2026-11-28", new Date(2026, 10, 19))).toEqual({
       month: "NOV",
       day: "28",
       weekday: "Saturday",
+      line: "Saturday",
     });
+  });
+
+  it("never says the month and day again beside the tile, only another year", () => {
+    const now = new Date(2026, 10, 19);
+    expect(minutesDateTile("2026-12-15", now).line).toBe("Tuesday");
+    expect(minutesDateTile("2027-01-15", now).line).toBe("Friday, 2027");
   });
 
   it("is blank for a value that isn't a day", () => {
@@ -103,6 +110,7 @@ describe("minutesDateTile", () => {
       month: "",
       day: "",
       weekday: "",
+      line: "",
     });
   });
 });

@@ -1,8 +1,6 @@
-import {
-  parseAiTextKeyRing,
-  type AiTextKeyRing,
-} from '#domain/utils/ai-text-cipher';
+import type { AiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { envSetting } from './ai-config';
+import { keyRingProblems, keyRingSetting } from './key-ring-config';
 
 type Env = Record<string, unknown>;
 
@@ -19,7 +17,7 @@ const UUID =
 export function aiStoredTextKeyRing(
   env: Env = process.env,
 ): AiTextKeyRing | null {
-  return parseAiTextKeyRing(envSetting(env, 'AI_STORED_TEXT_KEY'));
+  return keyRingSetting(env, 'AI_STORED_TEXT_KEY');
 }
 
 /**
@@ -35,14 +33,7 @@ export function askDiagnosticsChapterId(env: Env = process.env): string | null {
 
 /** Boot-time checks, called from `validateEnv`. Never echoes a value. */
 export function validateAiStoredTextEnv(env: Env): string[] {
-  const problems: string[] = [];
-  try {
-    aiStoredTextKeyRing(env);
-  } catch (error) {
-    problems.push(
-      error instanceof Error ? error.message : 'AI_STORED_TEXT_KEY is invalid.',
-    );
-  }
+  const problems = keyRingProblems(env, 'AI_STORED_TEXT_KEY');
   const chapter = envSetting(env, 'AI_DIAGNOSTICS_CHAPTER_ID');
   if (chapter && !UUID.test(chapter)) {
     problems.push('AI_DIAGNOSTICS_CHAPTER_ID must be a chapter id (a UUID).');

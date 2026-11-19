@@ -722,9 +722,22 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [MEMBER_TEXT],
   },
+  // "Minutes drafted" / "Minutes not drafted" to the officer who asked for
+  // the draft (#5562): names the meeting's event, never the notes or the
+  // draft.
+  'application/services/meeting-draft.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   // "Take notes" to a member added as a note-taker (#4935): names the
   // meeting's event, never anyone's notes.
   'application/services/meeting-notes.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // "Minutes requested" to whoever is writing them (#5471): names the
+  // meeting's event and the members who asked, never the minutes.
+  'application/services/meeting-minutes-request.service.ts': {
     calls: 1,
     entries: [MEMBER_TEXT],
   },

@@ -315,7 +315,8 @@ export class AiRunWorkerService implements OnApplicationShutdown {
     try {
       result = await this.runHandler(handler, run, token);
     } catch (error) {
-      await this.afterFailure(run, token, error);
+      const ended = await this.afterFailure(run, token, error);
+      if (ended) await this.tellFailed(handler, run, ended);
       return;
     }
 
@@ -453,24 +454,45 @@ export class AiRunWorkerService implements OnApplicationShutdown {
     }
   }
 
+  /** The handler's `onFailed`, best-effort: the run has already ended. */
+  private async tellFailed(
+    handler: AiRunHandler,
+    run: AiRun,
+    reason: AiRunFailureReason,
+  ): Promise<void> {
+    if (!handler.onFailed) return;
+    try {
+      await handler.onFailed(handlerView(run), run.input_ref, reason);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'ai-run-on-failed',
+        message: `AI run ${run.id} (${run.kind}) failed, and its handler's onFailed threw`,
+        error: withoutMessage(error),
+        tags: { kind: run.kind },
+      });
+    }
+  }
+
+  /** Retries the try, or ends the run; answers why it ended, when it did. */
   private async afterFailure(
     run: AiRun,
     token: string,
     error: unknown,
-  ): Promise<void> {
+  ): Promise<AiRunFailureReason | null> {
     const now = this.now();
     if (error instanceof TryStopped && error.stop === 'lease_lost') {
       this.logger.warn(
         `AI run ${run.id} was cancelled or taken over during try ${run.attempt_count}; stopping`,
       );
-      return;
+      return null;
     }
     if (error instanceof TryStopped && error.stop === 'shutdown') {
       this.logger.log(
         `AI run ${run.id} given back on shutdown, try ${run.attempt_count} not counted`,
       );
       await this.runs.release(run.id, token, run.attempt_count - 1, null, now);
-      return;
+      return null;
     }
 
     const failure = error instanceof AiRunFailure ? error : null;
@@ -502,11 +524,12 @@ export class AiRunWorkerService implements OnApplicationShutdown {
         new Date(now.getTime() + aiRunRetryDelayMs(run.attempt_count)),
         now,
       );
-      return;
+      return null;
     }
     const reason: AiRunFailureReason =
       retryable || !failure ? 'attempts_exhausted' : failure.reason;
     await this.runs.fail(run.id, token, reason, now);
+    return reason;
   }
 }
 

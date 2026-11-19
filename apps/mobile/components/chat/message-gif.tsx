@@ -1,9 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import * as Sentry from "@sentry/react-native";
 import { gifBoxSize, type MessageGif } from "@repo/chat-core/types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
+
+/**
+ * A play or pause the native side refused. The call looks the view up by tag
+ * on the main thread, so a row the list unmounted or recycled since then
+ * rejects with "ViewNotFound: Unable to find the 'ImageView' view": there is
+ * nothing left to play or pause, and that one is dropped. Anything else is
+ * reported, since the GIF may now disagree with its badge.
+ */
+function reportAnimationError(error: unknown) {
+  if (error instanceof Error && error.message.includes("ViewNotFound")) return;
+  Sentry.captureException(error, {
+    level: "warning",
+    fingerprint: ["expo-image", "gif-animation"],
+  });
+}
 
 /** A GIF's box in the thread: at most 240pt wide or 180pt tall. */
 const GIF_MAX = { width: 240, height: 180 };
@@ -39,9 +55,18 @@ export function MessageGifImage({
   }
   const playing = !reduceMotion || played;
   const image = useRef<Image>(null);
+  // The first render's state needs no call: expo-image applies `autoplay`
+  // when the image loads. Only a later change (a tap, or Reduce Motion
+  // switching) goes through the handle (FRAPP-MOBILE-14).
+  const applied = useRef(playing);
   useEffect(() => {
-    if (playing) void image.current?.startAnimating();
-    else void image.current?.stopAnimating();
+    if (applied.current === playing) return;
+    applied.current = playing;
+    const handle = image.current;
+    if (!handle) return;
+    (playing ? handle.startAnimating() : handle.stopAnimating()).catch(
+      reportAnimationError,
+    );
   }, [playing]);
 
   const label = gif.title ? `GIF: ${gif.title}` : "GIF";

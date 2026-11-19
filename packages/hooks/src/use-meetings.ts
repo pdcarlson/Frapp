@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
+import { minutesDraftElapsed } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { aiSuggestionKeys } from "./use-ai-suggestions";
 
@@ -56,6 +58,48 @@ export function useMeetings(options?: { enabled?: boolean; eventId?: string }) {
     },
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
+}
+
+/**
+ * A meeting's row from a Minutes list already loaded, or null: what the
+ * minutes page names itself with while the minutes load, so a tap from the
+ * list never opens on a blank page (Paul, 2026-11-19: "slow and poor
+ * loading states"). Read once on render; the minutes replace it.
+ */
+export function useCachedMeetingRow(
+  id: string | null | undefined,
+): MeetingSummary | null {
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  if (!id) return null;
+  const lists = queryClient.getQueriesData<MeetingSummary[]>({
+    queryKey: meetingsKey(chapterId),
+    predicate: isMeetingsList,
+  });
+  for (const [, rows] of lists) {
+    const row = Array.isArray(rows)
+      ? rows.find((candidate) => candidate.id === id)
+      : undefined;
+    if (row) return row;
+  }
+  return null;
+}
+
+/**
+ * How long a draft has been written, "0:42", ticking each second while it
+ * is: the clock beside "Writing the minutes" on web and phone alike. Null
+ * when the request time is unknown.
+ */
+export function useMinutesDraftClock(
+  requestedAt: string | null | undefined,
+): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!requestedAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [requestedAt]);
+  return minutesDraftElapsed(requestedAt ?? null, now);
 }
 
 /** One meeting's minutes. A 404 means they are not there for this viewer. */

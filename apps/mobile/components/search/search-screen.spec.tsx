@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 
@@ -21,6 +22,7 @@ const hooks = vi.hoisted(() => ({
   error: false,
   channels: [] as unknown[],
   modules: {} as Record<string, boolean>,
+  permissions: [] as string[],
   ask: false,
   chapterId: "ch-1" as string | null,
   timedOutSources: [] as string[],
@@ -44,11 +46,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => ({ data: { enabled_modules: hooks.modules } }),
   useViewerUserId: () => "u-me",
   useActiveChapterId: () => hooks.chapterId,
+  usePermissionList: () => hooks.permissions,
+  useAiConsent: () => ({ data: null }),
 }));
 vi.mock("@repo/hooks/use-debounced-value", () => ({
   useDebouncedValue: <T,>(value: T) => value,
 }));
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
+vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => ({ ask: hooks.ask, ready: true }),
 }));
@@ -185,6 +190,50 @@ describe("SearchScreen", () => {
     );
   });
 
+  it("lists a setting the member can change, and opens it lit", async () => {
+    const tree = await render();
+    await type(tree, "quiet hours");
+    expect(drawnText(results(tree))).toContain("Settings · Notifications");
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel ?? "").startsWith("Quiet hours"),
+    );
+    await act(async () => row.props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+      "/preferences?setting=quiet-hours",
+    );
+  });
+
+  it("lists a setting only web changes, says so, and opens the dashboard", async () => {
+    hooks.permissions = ["*"];
+    try {
+      const tree = await render();
+      await type(tree, "points goal");
+      expect(drawnText(results(tree))).toContain(
+        "Chapter settings · Points. Changed on the web dashboard.",
+      );
+      const row = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.accessibilityLabel ?? "").startsWith("Points goal"),
+      );
+      expect(row.props.accessibilityHint).toBe("Opens the web dashboard.");
+      vi.mocked(WebBrowser.openBrowserAsync).mockRejectedValueOnce(
+        new Error("busy"),
+      );
+      await act(async () => row.props.onPress());
+      expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+        expect.stringContaining("/settings?tab=points&setting=points-goal"),
+      );
+      expect(drawnText(tree.root)).toContain(
+        "The web dashboard couldn't be opened.",
+      );
+    } finally {
+      hooks.permissions = [];
+    }
+  });
+
   it("shows recent searches before typing, and a tap searches them again", async () => {
     vi.mocked(AsyncStorage.getItem).mockResolvedValue(
       JSON.stringify(["rush", "formal"]),
@@ -227,6 +276,7 @@ describe("SearchScreen", () => {
     expect(chips.filter((c, i) => chips.indexOf(c) === i)).toEqual([
       "All",
       "Channels",
+      "Settings",
       "Members",
       "Messages",
     ]);

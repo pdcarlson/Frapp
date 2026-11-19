@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: self-assignable roles (20261114171856) ──────────────────────
+// ─── Functional: self-assignable roles (20261114171856, 20261119183931) ──────
 //
 // #4958: officers mark a role members may join and leave themselves. A marked
 // role must stay safe (`role_self_assignable_safe`: no system key, outside the
@@ -12,8 +12,9 @@ import { db, miss } from "../harness.mjs";
 //     unsafe, whoever writes it, and lets the same write through when it also
 //     unmarks the role;
 //   - `self_assign_role` joins only a marked role of the member's own chapter,
-//     never for an alum; leaves any unkeyed role outside the tiers, marked or
-//     not; keeps every other id where it was; and writes nothing for a no-op;
+//     never for an alum; leaves only a marked one (#5650: a role an officer
+//     gave, or stopped offering, stays until an officer takes it off); keeps
+//     every other id where it was; and writes nothing for a no-op;
 //   - it takes the role's lock before the member's, the order `delete_role`
 //     and `set_member_role_ids` take them. PGlite is one connection, so the
 //     lock itself can't be waited on here; the tier checks the function
@@ -21,7 +22,9 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back; each write that
 // is expected to fail runs in its own savepoint.
-console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
+console.log(
+  "\n=== Functional: self-assignable roles (20261114171856, 20261119183931) ===",
+);
 {
   const A = "a4958000-0000-4000-8000-00000000000a";
   const B = "b4958000-0000-4000-8000-00000000000b";
@@ -172,14 +175,27 @@ console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
       { left, after: await ids(U[0]) },
     );
 
-    // An unmarked role: no joining, but a member who holds it may leave it,
-    // even once it carries a permission.
+    // An unmarked role: no joining, and no leaving either (#5650). An officer
+    // gave it, or stopped offering it, so an officer takes it off.
     const closedJoin = await assign(m, R.closed, true);
     check(
       "an unmarked role, however safe, can't be joined",
       closedJoin.outcome === "not_assignable" &&
         same(await ids(U[0]), [R.everyone]),
       { closedJoin },
+    );
+    await db.exec(
+      `update members set role_ids = array['${R.everyone}', '${R.closed}'] where user_id = '${U[0]}'`,
+    );
+    const closedLeave = await assign(m, R.closed, false);
+    check(
+      "a role an officer gave, unmarked, can't be left",
+      closedLeave.outcome === "not_assignable" &&
+        same(await ids(U[0]), [R.everyone, R.closed]),
+      { closedLeave, after: await ids(U[0]) },
+    );
+    await db.exec(
+      `update members set role_ids = array['${R.everyone}'] where user_id = '${U[0]}'`,
     );
     await assign(m, R.intramurals, true);
     await rows(
@@ -188,9 +204,13 @@ console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
     );
     const leftUnmarked = await assign(m, R.intramurals, false);
     check(
-      "a member leaves a role they picked after an officer unmarks it and gives it a permission",
-      leftUnmarked.outcome === "ok" && same(await ids(U[0]), [R.everyone]),
+      "a member can't leave a role they picked once an officer stops offering it",
+      leftUnmarked.outcome === "not_assignable" &&
+        same(await ids(U[0]), [R.everyone, R.intramurals]),
       { leftUnmarked, after: await ids(U[0]) },
+    );
+    await db.exec(
+      `update members set role_ids = array['${R.everyone}'] where user_id = '${U[0]}'`,
     );
 
     // Refusals both ways.
@@ -228,6 +248,15 @@ console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
       "an alum can't join a role, so an event's role invite can't skip the alumni check-in rule",
       alumJoin.outcome === "alumni" && same(await ids(U[1]), [R.alumni]),
       { alumJoin, after: await ids(U[1]) },
+    );
+    await db.exec(
+      `update members set role_ids = array['${R.alumni}', '${R.intramurals}'] where user_id = '${U[1]}'`,
+    );
+    const alumLeave = await assign(alum, R.intramurals, false);
+    check(
+      "an alum can still leave a marked role they picked before",
+      alumLeave.outcome === "ok" && same(await ids(U[1]), [R.alumni]),
+      { alumLeave, after: await ids(U[1]) },
     );
 
     const noMember = await assign(m, R.other, true, B);

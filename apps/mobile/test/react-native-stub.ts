@@ -106,6 +106,21 @@ export const reactNativeStub = {
   // menu's spec checks that it never does (#5517).
   Modal: "Modal",
   KeyboardAvoidingView: "KeyboardAvoidingView",
+  // Settings search lights the row it lands on with a fading wash
+  // (`components/settings/setting-anchor.tsx`). Enough of `Animated` to draw
+  // it: the wash's view, a value, and animations that never run.
+  Animated: {
+    View: "Animated.View",
+    Value: class {
+      constructor(public value: number) {}
+      setValue(next: number) {
+        this.value = next;
+      }
+    },
+    timing: vi.fn(() => ({ start: vi.fn() })),
+    delay: vi.fn(() => ({ start: vi.fn() })),
+    sequence: vi.fn(() => ({ start: vi.fn() })),
+  },
   Share: {
     share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
   },

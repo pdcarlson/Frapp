@@ -229,6 +229,19 @@ export function proofSave(
 }
 
 /**
+ * From as picked (#5473): the tier, role or group the task is from, or
+ * `null` for its creator alone. On a group task's copy it goes with
+ * `scope: "group"` (`scopedEdit`), since a group follows every copy.
+ */
+export function followerSave(
+  row: TaskRowModel,
+  next: string | null,
+): TaskFieldSave {
+  if (next === row.followedBy) return NONE;
+  return { kind: "save", body: { followed_by: next } };
+}
+
+/**
  * The reference photos as they should stand, in order, against the set as
  * it stands (`stored`): sent whole, and only when it changed.
  */
@@ -289,6 +302,9 @@ export function rowAfter(row: TaskRowModel, body: TaskEdit): TaskRowModel {
     ...(body.due_at !== undefined ? { dueAt: body.due_at } : {}),
     ...(body.proof_kind !== undefined ? { proofKind: body.proof_kind } : {}),
     ...(body.assignee_id !== undefined ? { assigneeId: body.assignee_id } : {}),
+    ...(body.followed_by !== undefined
+      ? { followedBy: body.followed_by ?? null }
+      : {}),
     ...(body.recurrence_rule !== undefined && row.series
       ? {
           series:

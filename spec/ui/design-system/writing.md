@@ -912,8 +912,8 @@ Copy in `PICK_ROLES_COPY` (`packages/validation/src/self-assignable-roles.ts`), 
 | Where | Copy |
 |---|---|
 | Onboarding title | `Pick your roles` |
-| Onboarding line, and the pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave any time.` |
-| Under a held role that can't be joined again | `No longer open to join. You can leave it.` |
+| Onboarding line, and the pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave it here while it's offered.` (Was `…and you can leave any time.` until #5650: a role an officer stopped offering stays until an officer takes it off.) |
+| Under a marked role an alum holds, which they can leave but not join again | `Alumni don't join roles. You can leave this one.` |
 
 ### Always formal
 
