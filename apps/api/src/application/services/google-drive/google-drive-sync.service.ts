@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DOCUMENT_FOLDER_PATH_SEPARATOR,
@@ -33,10 +32,10 @@ import type {
   ChapterDocumentFolder,
 } from '#domain/entities/chapter-document.entity';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
-import { safeObjectFilename } from '#domain/constants/storage';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { listNoWiderThan } from '#domain/utils/document-access';
 import { DOCUMENTS_BUCKET } from '../chapter-document.service';
+import { chapterUploadKey } from '../chapter-upload';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
 /**
@@ -800,7 +799,8 @@ function shuffled<T>(items: T[]): T[] {
 
 /** Where a new copy of a Drive file is stored. */
 export function driveCopyPath(chapterId: string, filename: string): string {
-  return `chapters/${chapterId}/documents/${randomUUID()}/${safeObjectFilename(filename)}`;
+  return chapterUploadKey(`chapters/${chapterId}/documents/`, filename)
+    .storagePath;
 }
 
 /** Postgres hands back `+00:00` where Drive wrote `.000Z`: compare instants. */

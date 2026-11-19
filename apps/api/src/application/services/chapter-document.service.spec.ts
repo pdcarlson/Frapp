@@ -262,7 +262,9 @@ describe('ChapterDocumentService', () => {
           filename: 'script.sh',
           contentType: 'text/plain',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException('File extension is not allowed'),
+      );
     });
 
     it('should throw BadRequestException if content type is not allowed', async () => {
@@ -272,7 +274,9 @@ describe('ChapterDocumentService', () => {
           filename: 'video.mp4',
           contentType: 'video/mp4',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException('File extension is not allowed'),
+      );
     });
 
     it('accepts a declared size at exactly the upload ceiling', async () => {

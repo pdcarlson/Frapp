@@ -8,10 +8,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import {
-  isAllowedUploadExtension,
   isAllowedUploadMime,
-  isWithinUploadSizeLimit,
-  MAX_UPLOAD_LABEL,
   normalizeChannelAccessList,
 } from '@repo/validation';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -53,11 +50,7 @@ import {
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { SystemPermissions } from '#domain/constants/permissions';
-import {
-  isObjectKeySegment,
-  safeObjectFilename,
-  storedFilename,
-} from '#domain/constants/storage';
+import { isObjectKeySegment, storedFilename } from '#domain/constants/storage';
 
 import { ChapterDocumentTypeService } from './chapter-document-type.service';
 import {
@@ -65,6 +58,10 @@ import {
   type ChannelAccessOption,
 } from './channel-access-list.service';
 import { RbacService } from './rbac.service';
+import {
+  assertUploadRequestAllowed,
+  mintChapterUpload,
+} from './chapter-upload';
 
 export const DOCUMENTS_BUCKET = 'documents';
 
@@ -372,39 +369,14 @@ export class ChapterDocumentService {
   }
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
-    const ext = input.filename.includes('.')
-      ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
-      : '';
-
-    if (!isAllowedUploadExtension('document', ext)) {
-      throw new BadRequestException('File extension is not allowed');
-    }
-
-    if (!isAllowedUploadMime('document', input.contentType)) {
-      throw new BadRequestException(
-        `Content type "${input.contentType}" is not allowed`,
-      );
-    }
-
-    if (
-      input.sizeBytes !== undefined &&
-      !isWithinUploadSizeLimit(input.sizeBytes)
-    ) {
-      throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
-      );
-    }
-
-    const documentId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/documents/${documentId}/${safeObjectFilename(input.filename)}`;
-
-    const signedUrl = await this.storageProvider.getSignedUploadUrl(
+    assertUploadRequestAllowed('document', input);
+    const { signedUrl, storagePath, uploadId } = await mintChapterUpload(
+      this.storageProvider,
       DOCUMENTS_BUCKET,
-      storagePath,
-      input.contentType,
+      `chapters/${input.chapterId}/documents/`,
+      input,
     );
-
-    return { signedUrl, storagePath, documentId };
+    return { signedUrl, storagePath, documentId: uploadId };
   }
 
   /**

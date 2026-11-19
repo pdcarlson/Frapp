@@ -8,11 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   ACCOUNT_DELETED_MESSAGE,
-  MAX_UPLOAD_LABEL,
   fileExtension,
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-  isWithinUploadSizeLimit,
   isLaterReleaseNoteVersion,
   isValidBirthday,
 } from '@repo/validation';
@@ -32,6 +28,7 @@ import {
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { assertUploadRequestAllowed } from './chapter-upload';
 
 /**
  * How old an unconfirmed upload in a member's folder must be before a photo
@@ -124,23 +121,8 @@ export class UserService {
     contentType: string,
     sizeBytes?: number,
   ): Promise<{ signedUrl: string; storagePath: string }> {
+    assertUploadRequestAllowed('image', { filename, contentType, sizeBytes });
     const ext = fileExtension(filename);
-
-    if (!isAllowedUploadExtension('image', ext)) {
-      throw new BadRequestException('File extension is not allowed');
-    }
-
-    if (!isAllowedUploadMime('image', contentType)) {
-      throw new BadRequestException(
-        `Content type "${contentType}" is not allowed`,
-      );
-    }
-
-    if (sizeBytes !== undefined && !isWithinUploadSizeLimit(sizeBytes)) {
-      throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
-      );
-    }
 
     const storagePath = `${profileFolderPrefix(chapterId, userId)}/${crypto.randomUUID()}.${ext}`;
     const signedUrl = await this.storageProvider.getSignedUploadUrl(

@@ -237,7 +237,10 @@ describe('BackworkService', () => {
           filename: 'malicious.exe',
           contentType: 'application/pdf', // Even with a valid content type
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        // Backwork has always named the refused extension (#4645 kept it).
+        new BadRequestException('File extension ".exe" is not allowed'),
+      );
     });
 
     it('should throw BadRequestException for disallowed content types', async () => {
@@ -247,7 +250,11 @@ describe('BackworkService', () => {
           filename: 'valid.pdf',
           contentType: 'application/x-msdownload',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Content type "application/x-msdownload" is not allowed',
+        ),
+      );
     });
 
     it('accepts image/gif (same document kind as chapter files and chat)', async () => {

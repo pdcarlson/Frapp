@@ -5,13 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-  isWithinUploadSizeLimit,
-  MAX_UPLOAD_LABEL,
-  isDecodableThumbhash,
-} from '@repo/validation';
+import { isAllowedUploadMime, isDecodableThumbhash } from '@repo/validation';
 import {
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -43,7 +37,6 @@ import {
   CHAT_ARCHIVE_BUCKET,
   CHAT_PREVIEW_CONTENT_TYPE,
   chatPreviewPathFor,
-  safeObjectFilename,
 } from '#domain/constants/storage';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
@@ -52,6 +45,10 @@ import { ChatBlockService } from './chat-block.service';
 import { isFromBlockedSender } from './chat-block-mask';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import {
+  assertUploadRequestAllowed,
+  mintChapterUpload,
+} from './chapter-upload';
 
 const CHAT_BUCKET = 'chat';
 
@@ -220,33 +217,20 @@ export class ChatAttachmentService {
       throw new BadRequestException('This channel does not take threads');
     }
 
-    const ext = filename.includes('.')
-      ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
-      : '';
-
-    if (!isAllowedUploadExtension('document', ext)) {
-      throw new BadRequestException('File extension is not allowed');
-    }
-
-    if (!isAllowedUploadMime('document', contentType)) {
-      throw new BadRequestException(
-        `Content type "${contentType}" is not allowed`,
-      );
-    }
-
-    if (sizeBytes !== undefined && !isWithinUploadSizeLimit(sizeBytes)) {
-      throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
-      );
-    }
-
-    const messageId = crypto.randomUUID();
-    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${safeObjectFilename(filename)}`;
-
-    const signedUrl = await this.storageProvider.getSignedUploadUrl(
-      CHAT_BUCKET,
-      storagePath,
+    assertUploadRequestAllowed('document', {
+      filename,
       contentType,
+      sizeBytes,
+    });
+    const {
+      signedUrl,
+      storagePath,
+      uploadId: messageId,
+    } = await mintChapterUpload(
+      this.storageProvider,
+      CHAT_BUCKET,
+      `chapters/${chapterId}/chat/${channelId}/`,
+      { filename, contentType },
     );
 
     // A photo's smaller copy, for the timeline (2026-11-07). Minted here, with
