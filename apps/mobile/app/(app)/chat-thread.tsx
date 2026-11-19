@@ -193,7 +193,6 @@ import {
   ChannelMemberSheet,
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
-import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { confirmCloseCard } from "@/lib/chat/confirm-close-card";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
@@ -1362,8 +1361,7 @@ function ChannelThreadScreen() {
     [reloadMaskedCopies],
   );
 
-  // One sheet for the thread, retargeted per long-press — the same shape the
-  // directory uses for its member sheet.
+  // One sheet for the thread, retargeted per long-press.
   const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
   // Who can read the channel (#3536). A 1:1 DM has no list: its two members
   // are already the header.
@@ -1382,23 +1380,21 @@ function ChannelThreadScreen() {
   useEffect(() => {
     if (!showMemberList) memberSheetRef.current?.dismiss();
   }, [showMemberList]);
-  // A member's profile, opened by tapping their name, photo or an `@` chip:
-  // the directory's sheet, so a profile reads the same from every door. It
-  // closes on blur for the same reason the member list does.
-  const profileSheetRef = useRef<BottomSheetModal>(null);
-  const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
-    null,
-  );
-  const openProfile = useCallback((userId: string) => {
-    Keyboard.dismiss();
-    setProfileTarget({ userId });
-    profileSheetRef.current?.present();
-  }, []);
-  useFocusEffect(
-    useCallback(() => {
-      if (!channelId) return;
-      return () => profileSheetRef.current?.dismiss();
-    }, [channelId]),
+  // A member's profile, opened by tapping their name, photo or an `@` chip,
+  // or a row of the member list: the Directory's profile screen, pushed over
+  // the thread (#5568), so a profile reads the same from every door. The
+  // thread passes itself, so Message to this DM's own member goes back to it
+  // rather than stacking a second copy. The push blurs the thread, which
+  // closes the member list (above).
+  const openProfile = useCallback(
+    (userId: string) => {
+      Keyboard.dismiss();
+      router.push({
+        pathname: "/member",
+        params: channelId ? { userId, channelId } : { userId },
+      });
+    },
+    [router, channelId],
   );
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
@@ -2280,14 +2276,6 @@ function ChannelThreadScreen() {
         ref={memberSheetRef}
         channelId={channelId ?? null}
         onOpenProfile={openProfile}
-      />
-      <MemberDetailSheet
-        ref={profileSheetRef}
-        member={profileTarget}
-        // Cleared on close, which is what tells a DM request still in flight
-        // that the member backed out (the sheet's stale-DM guard).
-        onDismiss={() => setProfileTarget(null)}
-        openChannelId={channelId ?? null}
       />
       {composerPlus.sheets}
       {scheduleSend.sheets}

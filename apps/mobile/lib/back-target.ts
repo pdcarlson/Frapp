@@ -52,6 +52,8 @@ export const SCREEN_TITLES = {
   dues: "Dues",
   documents: "Documents",
   directory: "Directory",
+  // A member's profile, pushed from the Directory or chat (#5568).
+  member: "Profile",
   invite: "Invite members",
   "check-in": "Check in",
   "host-check-in": "Host check-in",

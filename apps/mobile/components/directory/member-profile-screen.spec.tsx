@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { ActionSheetIOS, Alert } from "react-native";
+import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SYSTEM_SENDER_ID, type BlockListStatus } from "@repo/validation";
@@ -14,9 +15,10 @@ import {
 } from "@/lib/directory/start-dm";
 
 /**
- * The member sheet's Message action (#2773), rendered: when the row shows,
- * that it opens the DM's thread, and that a request resolving after the sheet
- * moved to another member neither navigates nor alerts.
+ * The member profile screen (#5568), rendered: its header, the Message action
+ * (#2773), the ⋯ menu, the fact rows, roles, class and presence, and that a
+ * request landing after the member has gone back neither navigates nor
+ * alerts.
  */
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -69,7 +71,7 @@ function profile(userId: string, name: string) {
 }
 
 // Keyed by user id, the id `GET /v1/members/by-user/{userId}` takes: chat
-// opens the sheet with a sender or mention id, which is never a member row id.
+// pushes the screen with a sender or mention id, which is never a member row id.
 const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
   [
     profile(ADA, "Ada"),
@@ -140,8 +142,8 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 }));
 
 import { ListRow } from "@/components/list-section";
-import { SheetHeader } from "@/components/sheet-scaffold";
-import { MemberDetailSheet } from "./member-detail-sheet";
+import { ScreenShell } from "@/components/screen-shell";
+import { MemberProfile, MemberProfileScreen } from "./member-profile-screen";
 import { MemberClassSheet } from "./member-class-sheet";
 import { MemberCorrectionSheet } from "./member-correction-sheet";
 import { MemberRolesSheet } from "./member-roles-sheet";
@@ -149,42 +151,37 @@ import {
   PRESENCE_NOT_READY,
   setChapterPresence,
 } from "@/lib/presence/presence-store";
-import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
-const dismiss = vi.fn();
 const present = vi.fn();
+const router = vi.mocked(useRouter)();
+const nav = expoRouter as unknown as {
+  __blur: () => void;
+  __refocus: () => void;
+};
 
-// The directory hands the sheet a ref, and the sheet dismisses itself through
-// it; one ref across re-renders, as the directory's `useRef` is.
-const sheetRef =
-  React.createRef<React.ComponentRef<typeof MemberDetailSheet>>();
-
-function sheet(userId: string | null) {
+function screen(userId: string, openChannelId: string | null = null) {
   return (
     <FrappThemeProvider>
-      <MemberDetailSheet ref={sheetRef} member={userId ? { userId } : null} />
+      <MemberProfile userId={userId} openChannelId={openChannelId} />
     </FrappThemeProvider>
   );
 }
 
-function render(userId: string | null): ReactTestRenderer {
+function render(
+  userId: string,
+  openChannelId: string | null = null,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(sheet(userId), {
-      // The sheet dismisses itself through its ref; the stand-in modal is a
-      // host string, so hand it an instance that records the call.
+    tree = create(screen(userId, openChannelId), {
+      // The editors are sheets presented through their refs; the stand-in
+      // modal is a host string, so hand it an instance that records the call.
       createNodeMock: (element) =>
-        element.type === "BottomSheetModal" ? { dismiss, present } : null,
+        element.type === "BottomSheetModal" ? { present } : null,
     });
   });
-  // What gorhom reports as `present()` starts bringing the sheet up.
-  act(() => modalOf(tree).props.onAnimate(-1, 0));
   return tree;
 }
-
-// The first modal is the profile; the role editor stacks after it.
-const modalOf = (tree: ReactTestRenderer) =>
-  tree.root.findAllByType("BottomSheetModal" as never)[0]!;
 
 function messageRows(tree: ReactTestRenderer) {
   return tree.root.findAll(
@@ -202,44 +199,63 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-// components.md § Surface size: a tall sheet, closed with an icon X, headed by
-// the member's own name rather than a "Member" title and a Done button.
-describe("MemberDetailSheet as a tall sheet", () => {
+// #5568: a pushed screen, not a sheet. The shell's own header carries the
+// member: their face on the title row, their name as the title, and the meta
+// line as the subtitle; the ⋯ sits at the back row's far end.
+describe("MemberProfile as a screen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
+    state.removable = new Set();
   });
 
-  it("opens full height, with no Member title or Done, and closes from its X", () => {
+  it("titles the screen with the member's name, under a back row to the Directory", () => {
     const tree = render(ADA);
-    // The first modal is the profile; the role editor stacks after it.
-    const modal = tree.root.findAllByType("BottomSheetModal" as never)[0];
-    expect(modal.props.snapPoints).toEqual(["100%"]);
-    expect(modal.props.enableDynamicSizing).toBe(false);
-    // Stops under the status bar, so the X is never in the unsafe area.
-    expect(modal.props.topInset).toBeGreaterThan(0);
-    // The header (and its X) stays put while the profile scrolls under it.
-    const scroll = modal.findByType("BottomSheetScrollView" as never);
-    expect(scroll.props.stickyHeaderIndices).toEqual([0]);
+    const shell = tree.root.findByType(ScreenShell);
+    expect(shell.props.title).toBe("Ada");
+    expect(shell.props.back).toEqual({
+      label: "Directory",
+      href: "/directory",
+    });
+    expect(shell.props.titleMark).toBeTruthy();
+    // No sheet holds the profile itself; only the editors are sheets.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Close" &&
+          typeof node.props.onPress === "function",
+      ),
+    ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
 
-    const texts = tree.root
-      .findAll((node) => (node.type as unknown) === "Text")
-      .map((node) => node.props.children);
-    expect(texts).not.toContain("Member");
-    expect(texts).not.toContain("Done");
+  it("puts the ⋯ at the back row's far end", () => {
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const shell = tree.root.findByType(ScreenShell);
+    expect(shell.props.backAction).toBeTruthy();
+    act(() => tree.unmount());
+  });
 
-    const close = tree.root.find(
-      (node) =>
-        node.props.accessibilityLabel === "Close" &&
-        typeof node.props.onPress === "function",
+  it("says where to open a member from when the route has no user", () => {
+    vi.spyOn(expoRouter, "useLocalSearchParams").mockReturnValueOnce({});
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberProfileScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain(
+      "Open a member from the Directory.",
     );
-    act(() => close.props.onPress());
-    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(tree.root.findAllByType(MemberProfile)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });
 
-describe("MemberDetailSheet groups (#4076)", () => {
+describe("MemberProfile groups (#4076)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
@@ -274,7 +290,7 @@ describe("MemberDetailSheet groups (#4076)", () => {
   });
 });
 
-describe("MemberDetailSheet Message action (#2773)", () => {
+describe("MemberProfile Message action (#2773)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
@@ -288,24 +304,6 @@ describe("MemberDetailSheet Message action (#2773)", () => {
   it("offers Message on another member's profile", () => {
     const tree = render(ADA);
     expect(messageRows(tree)).toHaveLength(1);
-    act(() => tree.unmount());
-  });
-
-  it("draws no title row or Done over the name", () => {
-    const tree = render(ADA);
-    // The member's name heads the sheet (components.md § Chrome weight). The
-    // first modal is the profile; the editors stacked after it have their own.
-    const profileModal = tree.root.findAllByType(
-      "BottomSheetModal" as never,
-    )[0];
-    expect(profileModal.findAllByType(SheetHeader)).toHaveLength(0);
-    // The role editor's list header is a React element prop, which links
-    // back to its fiber; skip those links.
-    expect(
-      JSON.stringify(tree.toJSON(), (key, value) =>
-        key === "_owner" || key === "_store" ? undefined : value,
-      ),
-    ).not.toContain('"Done"');
     act(() => tree.unmount());
   });
 
@@ -394,7 +392,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
-  it("opens the DM's thread and dismisses the sheet", async () => {
+  it("pushes the DM's thread over the profile", async () => {
     state.mutateAsync.mockResolvedValueOnce({ id: "dm-ada" });
     const tree = render(ADA);
 
@@ -403,11 +401,25 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     });
 
     expect(state.mutateAsync).toHaveBeenCalledWith({ member_id: ADA });
-    expect(dismiss).toHaveBeenCalled();
-    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+    expect(router.push).toHaveBeenCalledWith({
       pathname: "/chat-thread",
       params: { channelId: "dm-ada" },
     });
+    expect(router.back).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("goes back to the thread it was pushed from when that is the DM", async () => {
+    state.mutateAsync.mockResolvedValueOnce({ id: "dm-ada" });
+    vi.mocked(router.canGoBack).mockReturnValueOnce(true);
+    const tree = render(ADA, "dm-ada");
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+
+    expect(router.back).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 
@@ -434,50 +446,30 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
-  it("drops a result that lands after the sheet moved to another member, and keeps that member's Message enabled", async () => {
+  // #3405: the member went back, or on to another screen, while the
+  // request was out; a thread opening over whatever is shown now would
+  // surprise. Message again finds the same DM.
+  it("opens no thread for a result that lands after the screen lost focus", async () => {
     const pending = deferred<unknown>();
     state.mutateAsync.mockReturnValueOnce(pending.promise);
     const tree = render(ADA);
-
     await act(async () => {
       messageRows(tree)[0].props.onPress();
     });
-    act(() => tree.update(sheet(BOB)));
-    expect(messageRows(tree)[0].props.busy).toBe(false);
+    act(() => nav.__blur());
 
     await act(async () => {
       pending.resolve({ id: "dm-ada" });
     });
-    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
-    expect(dismiss).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.back).not.toHaveBeenCalled();
+    act(() => nav.__refocus());
+    // Free again once it settled, for the visit that comes back.
+    expect(messageRows(tree)[0].props.busy).toBe(false);
     act(() => tree.unmount());
   });
 
-  it.each([
-    ["swiped away", false],
-    ["swiped away and reopened", true],
-  ])(
-    "neither dismisses nor opens the thread for a sheet %s mid-request (#3405)",
-    async (_, reopened) => {
-      const pending = deferred<unknown>();
-      state.mutateAsync.mockReturnValueOnce(pending.promise);
-      const tree = render(ADA);
-      await act(async () => {
-        messageRows(tree)[0].props.onPress();
-      });
-      act(() => modalOf(tree).props.onDismiss());
-      if (reopened) act(() => modalOf(tree).props.onAnimate(-1, 0));
-
-      await act(async () => {
-        pending.resolve({ id: "dm-ada" });
-      });
-      expect(dismiss).not.toHaveBeenCalled();
-      expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
-      act(() => tree.unmount());
-    },
-  );
-
-  it("drops a failure that lands after the sheet moved on", async () => {
+  it("drops a failure that lands after the screen has gone", async () => {
     const pending = deferred<unknown>();
     state.mutateAsync.mockReturnValueOnce(pending.promise);
     const tree = render(ADA);
@@ -485,12 +477,11 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     await act(async () => {
       messageRows(tree)[0].props.onPress();
     });
-    act(() => tree.update(sheet(BOB)));
+    act(() => tree.unmount());
     await act(async () => {
       pending.reject(new Error("offline"));
     });
     expect(Alert.alert).not.toHaveBeenCalled();
-    act(() => tree.unmount());
   });
 
   it("says the conversation couldn't be opened when the request fails", async () => {
@@ -522,50 +513,11 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
-
-  it("keeps each member's own request in flight when two overlap", async () => {
-    const ada = deferred<unknown>();
-    const bob = deferred<unknown>();
-    state.mutateAsync
-      .mockReturnValueOnce(ada.promise)
-      .mockReturnValueOnce(bob.promise);
-    const tree = render(ADA);
-
-    await act(async () => {
-      messageRows(tree)[0].props.onPress();
-    });
-    act(() => tree.update(sheet(BOB)));
-    await act(async () => {
-      messageRows(tree)[0].props.onPress();
-    });
-
-    // Back on Ada while both are out: her row is still busy, and a tap
-    // sends nothing.
-    act(() => tree.update(sheet(ADA)));
-    expect(messageRows(tree)[0].props.busy).toBe(true);
-    await act(async () => {
-      messageRows(tree)[0].props.onPress();
-    });
-    expect(state.mutateAsync).toHaveBeenCalledTimes(2);
-
-    // Ada's request settling must not release Bob's.
-    act(() => tree.update(sheet(BOB)));
-    await act(async () => {
-      ada.resolve({ id: "dm-ada" });
-    });
-    expect(messageRows(tree)[0].props.busy).toBe(true);
-
-    await act(async () => {
-      bob.resolve({ id: "dm-bob" });
-    });
-    expect(messageRows(tree)[0].props.busy).toBe(false);
-    act(() => tree.unmount());
-  });
 });
 
-// Block and Remove from chapter sit behind the header's ⋯, never on the
+// Block and Remove from chapter sit behind the back row's ⋯, never on the
 // profile's face (Paul, 2026-11-11), and neither is offered on your own.
-describe("MemberDetailSheet ⋯ menu", () => {
+describe("MemberProfile ⋯ menu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
@@ -678,7 +630,7 @@ describe("MemberDetailSheet ⋯ menu", () => {
     act(() => tree.unmount());
   });
 
-  it("removes only after confirming, then closes the sheet", () => {
+  it("removes only after confirming, then goes back", () => {
     state.removable = new Set([ADA]);
     state.removeMutate.mockImplementation(
       (_id: string, handlers: { onSuccess: () => void }) =>
@@ -695,13 +647,14 @@ describe("MemberDetailSheet ⋯ menu", () => {
       `m-${ADA}`,
       expect.anything(),
     );
-    expect(dismiss).toHaveBeenCalled();
+    // Nothing under it on a cold open: back to the Directory.
+    expect(router.dismissTo).toHaveBeenCalledWith("/directory");
     act(() => tree.unmount());
   });
 
-  // gorhom 5.2's `dismiss()` on a dismissed modal leaves it stuck, so the
-  // next open draws nothing; a sheet reopened since is a new visit (#3405).
-  it("doesn't dismiss a sheet swiped away mid-removal when it lands", () => {
+  // #3405: a removal that lands once the member has moved on leaves the
+  // screen they are on alone.
+  it("doesn't go back when a removal lands after the screen lost focus", () => {
     state.removable = new Set([ADA]);
     let land = () => {};
     state.removeMutate.mockImplementation(
@@ -712,27 +665,11 @@ describe("MemberDetailSheet ⋯ menu", () => {
     const tree = render(ADA);
     openMenu(tree).pick("Remove from chapter");
     pressAlert("Remove from chapter");
-    act(() => modalOf(tree).props.onDismiss());
+    act(() => nav.__blur());
     act(() => land());
-    expect(dismiss).not.toHaveBeenCalled();
-    act(() => tree.unmount());
-  });
-
-  it("leaves a sheet reopened mid-removal open when it lands", () => {
-    state.removable = new Set([ADA]);
-    let land = () => {};
-    state.removeMutate.mockImplementation(
-      (_id: string, handlers: { onSuccess: () => void }) => {
-        land = handlers.onSuccess;
-      },
-    );
-    const tree = render(ADA);
-    openMenu(tree).pick("Remove from chapter");
-    pressAlert("Remove from chapter");
-    act(() => modalOf(tree).props.onDismiss());
-    act(() => modalOf(tree).props.onAnimate(-1, 0)); // reopened
-    act(() => land());
-    expect(dismiss).not.toHaveBeenCalled();
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    act(() => nav.__refocus());
     act(() => tree.unmount());
   });
 
@@ -748,7 +685,8 @@ describe("MemberDetailSheet ⋯ menu", () => {
     expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
       "Couldn't remove Ada",
     );
-    expect(dismiss).not.toHaveBeenCalled();
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.dismissTo).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 
@@ -775,7 +713,7 @@ describe("MemberDetailSheet ⋯ menu", () => {
  * quiet half and the value the one a member reads (the owner's design review,
  * 2026-11-04). A chapter's custom field, whose label can run long, too.
  */
-describe("MemberDetailSheet fact rows", () => {
+describe("MemberProfile fact rows", () => {
   const CARA = "44444444-4444-4444-8444-444444444444";
   const LONG_LABEL = "Emergency contact name and phone number";
 
@@ -817,12 +755,15 @@ describe("MemberDetailSheet fact rows", () => {
     expect(rowOf("More details")?.props.value).toBe("Hide");
     expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
     expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
-    // Closed and reopened on the same member: folded again.
-    act(() => tree.update(sheet(null)));
-    act(() => tree.update(sheet(CARA)));
-    expect(rowOf("More details")?.props.value).toBe("Show");
-    expect(rowOf(LONG_LABEL)).toBeUndefined();
     act(() => tree.unmount());
+    // A new visit to the same member: folded again.
+    const again = render(CARA);
+    expect(
+      again.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "More details")?.props.value,
+    ).toBe("Show");
+    act(() => again.unmount());
   });
 
   // #3711: a contact card, the phone first.
@@ -925,7 +866,7 @@ describe("MemberDetailSheet fact rows", () => {
 });
 
 // #3991: an officer holding `roles:manage` sets the class and number here.
-describe("MemberDetailSheet pledge class editing (#3991)", () => {
+describe("MemberProfile pledge class editing (#3991)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
@@ -1040,7 +981,7 @@ describe("MemberDetailSheet pledge class editing (#3991)", () => {
   });
 });
 
-describe("MemberDetailSheet roles", () => {
+describe("MemberProfile roles", () => {
   beforeEach(() => {
     state.viewer = VIEWER;
     state.blockStatus = "ready";
@@ -1129,7 +1070,7 @@ describe("MemberDetailSheet roles", () => {
 
 // #3917: the member's presence dot on their avatar, their custom line under
 // the name, and the status in the name heading's accessible name.
-describe("MemberDetailSheet presence (#3917)", () => {
+describe("MemberProfile presence (#3917)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.viewer = VIEWER;
@@ -1139,15 +1080,14 @@ describe("MemberDetailSheet presence (#3917)", () => {
     setChapterPresence(PRESENCE_NOT_READY);
   });
 
-  // The name heading: the header whose text is the member's name (the sheet
-  // has other headers, such as Roles).
-  const heading = (tree: ReactTestRenderer) =>
-    tree.root.find(
-      (node) =>
-        node.type === ("Text" as never) &&
-        node.props.accessibilityRole === "header" &&
-        node.props.children === "Ada",
-    );
+  // The face on the title row, which names their status (the title itself
+  // is the shell's, and reads the name).
+  const faceLabel = (tree: ReactTestRenderer) =>
+    (
+      tree.root.findByType(ScreenShell).props.titleMark as React.ReactElement<{
+        accessibilityLabel?: string;
+      }>
+    ).props.accessibilityLabel;
   const dots = (tree: ReactTestRenderer) =>
     tree.root.findAll(
       (node) =>
@@ -1159,7 +1099,7 @@ describe("MemberDetailSheet presence (#3917)", () => {
   it("draws no dot and names no status before presence has synced", () => {
     const tree = render(ADA);
     expect(dots(tree)).toHaveLength(0);
-    expect(heading(tree).props.accessibilityLabel).toBeUndefined();
+    expect(faceLabel(tree)).toBeUndefined();
   });
 
   it("draws the member's dot, names the status and shows their line", () => {
@@ -1172,7 +1112,7 @@ describe("MemberDetailSheet presence (#3917)", () => {
     expect(dots(tree).map((dot) => dot.props.testID)).toEqual([
       "member-presence-dnd",
     ]);
-    expect(heading(tree).props.accessibilityLabel).toBe("Ada, Do Not Disturb");
+    expect(faceLabel(tree)).toBe("Do Not Disturb");
     expect(
       tree.root.findAll(
         (node) =>
@@ -1180,15 +1120,5 @@ describe("MemberDetailSheet presence (#3917)", () => {
           node.props.children === "In lab until 6",
       ),
     ).toHaveLength(1);
-  });
-});
-
-describe("MemberDetailSheet — dismissed by the thread while closed (#4229)", () => {
-  it("never reaches the modal unless it is up, so a profile still opens", () => {
-    expectHostDismissGuarded((ref) => (
-      <FrappThemeProvider>
-        <MemberDetailSheet ref={ref} member={null} />
-      </FrappThemeProvider>
-    ));
   });
 });

@@ -150,24 +150,6 @@ vi.mock("@/components/chat/message-thread-screen", async () => {
   };
 });
 
-const presentProfileSheet = vi.fn();
-vi.mock("@/components/directory/member-detail-sheet", async () => {
-  const { createElement, forwardRef, useImperativeHandle } =
-    await import("react");
-  return {
-    MemberDetailSheet: forwardRef(function MemberDetailSheet(
-      props: Record<string, unknown>,
-      ref,
-    ) {
-      useImperativeHandle(ref, () => ({
-        present: presentProfileSheet,
-        dismiss: vi.fn(),
-      }));
-      return createElement("MemberDetailSheet", props);
-    }),
-  };
-});
-
 const presentPollSheet = vi.fn();
 const dismissPollSheet = vi.fn();
 vi.mock("@/components/chat/new-poll-sheet", async () => {
@@ -2282,15 +2264,19 @@ describe("chat thread channel start", () => {
 });
 
 describe("chat thread member profile", () => {
-  it("opens the profile sheet for whoever a row names, from a name, photo or @ chip", () => {
+  // #5568: the Directory's profile screen, pushed over the thread, which
+  // names itself so Message to this DM's member goes back to it.
+  it("pushes the profile screen for whoever a row names, from a name, photo or @ chip", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
     const tree = render();
     const row = rows(tree)[0]!;
     act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
-    expect(presentProfileSheet).toHaveBeenCalled();
-    const sheet = tree.root.findByType("MemberDetailSheet" as never);
-    expect(sheet.props.member).toEqual({ userId: "user-42" });
-    expect(sheet.props.openChannelId).toBe(CHANNEL);
-    // The member list opens the same sheet.
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: "user-42", channelId: CHANNEL },
+    });
+    // The member list opens the same screen.
     expect(
       tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
     ).toBe(row.props.onOpenProfile);

@@ -1147,7 +1147,7 @@ Web's member sheet has its own Message button with older failure copy; bringing 
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-detail-sheet.tsx` |
+| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-profile-screen.tsx` |
 | Start failed | `Couldn't message <name>` | `The conversation couldn't be opened. Check your connection and try again.` (an alert) | mobile `lib/directory/start-dm.ts` (`startDmFailedTitle`, `START_DM_FAILED_BODY`) |
 | Block list loading, or a read in flight (a retry included) | — | `Message` · `Checking your block list first.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_CHECKING_BLOCK_LIST`) |
 | Block list read failed, waiting for the network | — | `Message` · `Couldn't check your block list first. Retries when you're back online.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_BLOCK_LIST_UNCHECKED`), with `BLOCK_LIST_WAITING_FOR_NETWORK` from `block-copy` |

@@ -21,12 +21,10 @@ describe("list-layout (#4175)", () => {
   });
 
   it("keeps one stored preference per screen, under the screen's own key", () => {
-    expect(listLayoutPreference("directory")).toBe(
-      listLayoutPreference("directory"),
-    );
-    setListLayout("directory", "grid");
+    expect(listLayoutPreference("tasks")).toBe(listLayoutPreference("tasks"));
+    setListLayout("tasks", "grid");
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      "frapp.directory.layout",
+      "frapp.tasks.layout",
       "grid",
     );
   });

@@ -191,7 +191,7 @@ export function MemberRows({
   // A read fails the sheet only when it has nothing to draw: TanStack keeps
   // the last good data through a failed refetch, and a list the member just
   // saw shouldn't turn into an error on a background blip (the rule
-  // `member-detail-sheet.tsx` follows). Retry reruns only what failed, and is
+  // `member-profile-screen.tsx` follows). Retry reruns only what failed, and is
   // busy while that read is in flight.
   const membersFailed = membersQuery.isError && membersQuery.data === undefined;
   const rosterFailed = roster.isError && !roster.hasData;

@@ -216,6 +216,8 @@ A toggle that can't change now (a permission the member's role may not give, a p
 
 The Chip step ([foundations.md](foundations.md) §9): height 24px on every pointer (26–28 until 2026-11-05), radius 8–10, padding-x 8, text 12.5px / 600. On touch a chip that is a control carries the 44px hit area through padding or `hitSlop`, not a taller fill. Mobile's filter chips draw 32 (s13 draws 34).
 
+**A list's filter chip lights quietly on the phone** (#5568, Paul 2026-11-19, from the Directory critique: the filled Actives chip outshone every member row). On a screen's filter row, the selected chip takes the card fill, the control edge and foreground text, not the chapter's solid accent, as iOS Mail's and Slack's filter pills light without colour; the colour stays on the content (avatars, role dots). `Chip` and `FilterChips` take `quiet` for it (`apps/mobile/components/filter-chips.tsx`); the Directory is the first screen on it. A chip that picks a value in a form (a sheet's audience, a repeat rule) keeps the accent, the segmented control's reasoning.
+
 | Kind | Fill | Border | Text | Use |
 | ---- | ---- | ------ | ---- | --- |
 | Accent | `accent-3` | 1px `accent-7` | `accent-11` | accent-worthy stats: points, active filters |

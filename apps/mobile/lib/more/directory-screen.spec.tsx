@@ -185,10 +185,6 @@ vi.mock("@/components/filter-chips", () => ({
   SearchField: () => null,
 }));
 
-vi.mock("@/components/directory/member-detail-sheet", () => ({
-  MemberDetailSheet: () => null,
-}));
-
 vi.mock("@/components/roles/pick-roles-sheet", () => ({
   PickRolesSheet: () => null,
 }));
@@ -198,14 +194,8 @@ vi.mock("@/components/directory/actives-filter-sheet", () => ({
   ActivesFilterSheet: () => null,
 }));
 
-import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 import DirectoryScreen, {
-  GridLineView,
-  isGridLine,
   memberPressLabel,
-  MemberTile,
-  toGridLines,
-  type GridLine,
   MemberListSkeleton,
   MemberRow,
 } from "@/app/(app)/directory";
@@ -349,7 +339,6 @@ function countOf(tree: ReactTestRenderer, value: string) {
 }
 
 beforeEach(() => {
-  resetListLayoutsForTests();
   state.pickable = [];
   state.chapterId = "c-1";
   state.search = [];
@@ -1149,10 +1138,12 @@ describe("s13's Invite members button", () => {
 });
 
 /**
- * #4175: the List/Grid toggle in the title row. Grid hands the same rows to the
- * list two to a line; the pick is kept on this phone (`lib/list-layout.ts`).
+ * #5568 (Paul, 2026-11-19): one layout, rows, as iOS Contacts and Slack's
+ * member directory list people; the List | Grid round of #4175 came out under
+ * the ban on view switchers. A row pushes the member's profile screen, and
+ * the chips above the list light quietly, so the rows read louder.
  */
-describe("s13 as a grid (#4175)", () => {
+describe("s13's rows, profile and quiet chips (#5568)", () => {
   const row = (n: number): DirectoryRow => ({
     memberId: `m-${n}`,
     userId: `u-${n}`,
@@ -1175,70 +1166,50 @@ describe("s13 as a grid (#4175)", () => {
   const pressables = (tree: ReactTestRenderer) =>
     tree.root.findAll((node) => (node.type as unknown) === "Pressable");
 
-  it("offers List and Grid in the title row, on List until picked", () => {
+  it("draws no List | Grid control, and hands the list rows, not lines", () => {
     const tree = render();
-    expect(
+    expect(() =>
       inHeader(tree, (element) => element.props.screen === "directory"),
-    ).toBeTruthy();
+    ).toThrow("not in the list header");
     expect(list(tree).props.numColumns).toBeUndefined();
     expect(listed(tree).length).toBeGreaterThan(0);
   });
 
-  it("switches on the mounted list without changing its column count", () => {
-    const tree = render();
-    const names = listed(tree);
-    act(() => setListLayout("directory", "grid"));
-    // Same list, never re-keyed: `numColumns` stays unset (a real FlatList
-    // throws when it changes), and the data becomes lines of members.
-    expect(list(tree).props.numColumns).toBeUndefined();
-    const lines = list(tree).props.data as GridLine[];
-    expect(lines.every(isGridLine)).toBe(true);
-    expect(
-      lines.flatMap((line) => line.rows.map((r) => r.displayName)),
-    ).toEqual(names);
-  });
-
-  it("renders a line as tiles, padding a short last line to keep its width", () => {
-    act(() => setListLayout("directory", "grid"));
+  it("pushes the member's profile screen when a row is tapped", () => {
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
     const tree = render();
     const renderItem = list(tree).props.renderItem as (info: {
-      item: GridLine;
+      item: DirectoryRow;
       index: number;
     }) => React.ReactElement;
-    const line = renderNode(
-      renderItem({ item: { key: "u-1", rows: [row(1)] }, index: 0 }),
-    );
-    expect(line.root.findAllByType(MemberTile)).toHaveLength(1);
-    expect(line.root.findAllByType(MemberRow)).toHaveLength(0);
-    // One tile and one empty cell, so the lone tile is half a line wide.
-    const gridLine = line.root.findByType(GridLineView);
-    expect(gridLine.props.line.rows).toHaveLength(1);
-    expect(
-      line.root.findAll(
-        (node) =>
-          (node.type as unknown) === "View" &&
-          node.props.style?.flex === 1 &&
-          node.children.length === 0,
-      ),
-    ).toHaveLength(1);
+    const first = (list(tree).props.data as DirectoryRow[])[0]!;
+    const item = renderNode(renderItem({ item: first, index: 0 }));
+    act(() => pressables(item)[0]!.props.onPress());
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: first.userId },
+    });
   });
 
-  it("splits rows into lines of two", () => {
-    const lines = toGridLines([row(1), row(2), row(3)]);
-    expect(lines.map((line) => line.rows.length)).toEqual([2, 1]);
+  it("lights the chips quietly, the tabs and the chips beside them", () => {
+    const tree = render();
+    expect(chips(tree)).toMatchObject({ quiet: true });
+    const trailing = chips(tree).trailing as React.ReactElement<{
+      children?: React.ReactElement<{ quiet?: boolean }>[];
+      quiet?: boolean;
+    }>;
+    const beside = trailing.props.children ?? [trailing];
+    for (const chip of [beside].flat().filter(Boolean)) {
+      expect(chip.props.quiet).toBe(true);
+    }
   });
 
-  it("names a tile with the row's own words, and shows them", () => {
-    const tile = renderNode(<MemberTile row={row(1)} onPress={vi.fn()} />);
+  it("names a row with its member's words", () => {
     const rowTree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
-    expect(pressables(tile)[0]!.props.accessibilityLabel).toBe(
-      pressables(rowTree)[0]!.props.accessibilityLabel,
-    );
-    expect(pressables(tile)[0]!.props.accessibilityLabel).toBe(
+    expect(pressables(rowTree)[0]!.props.accessibilityLabel).toBe(
       memberPressLabel(row(1)),
     );
-    expect(screenText(tile)).toContain("Member 1");
-    expect(screenText(tile)).toContain("Treasurer · CS '27");
   });
   /**
    * #4137: the row carries the member's custom status line under the name and
@@ -1331,21 +1302,6 @@ describe("s13 as a grid (#4175)", () => {
       }
 
       it("hands each row its member's dot and status line once synced", () => {
-        act(() => setListLayout("directory", "list"));
-        act(() =>
-          setChapterPresence({
-            statusOf: () => "idle",
-            lineOf: () => "At practice till 6",
-            isReady: true,
-          }),
-        );
-        const item = renderedItem(render());
-        expect(screenText(item)).toContain("At practice till 6");
-        expect(presenceDots(item)).not.toHaveLength(0);
-      });
-
-      it("hands each tile the same in the Grid layout", () => {
-        act(() => setListLayout("directory", "grid"));
         act(() =>
           setChapterPresence({
             statusOf: () => "idle",
@@ -1359,7 +1315,6 @@ describe("s13 as a grid (#4175)", () => {
       });
 
       it("draws no Offline dot before the first sync", () => {
-        act(() => setListLayout("directory", "list"));
         // Unsynced, the store answers "offline" for everyone; the screen must
         // not pass that on as a fact.
         act(() => setChapterPresence(PRESENCE_NOT_READY));
@@ -1432,17 +1387,6 @@ describe("s13 as a grid (#4175)", () => {
         );
       }
       expect(commits).toHaveBeenCalledTimes(mounted);
-    });
-
-    it("gives a tile the same line and dot", () => {
-      syncAway();
-      const tile = renderNode(<MemberTile row={row(1)} onPress={vi.fn()} />);
-      expect(screenText(tile)).toContain("At practice till 6");
-      expect(
-        tile.root.findAll(
-          (node) => node.props.testID === "member-presence-idle",
-        ),
-      ).not.toHaveLength(0);
     });
   });
 });
