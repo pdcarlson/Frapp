@@ -2,6 +2,8 @@ import {
   MEETING_DRAFT_GAPS_MAX,
   MEETING_DRAFT_GAP_MAX_LENGTH,
   MEETING_DRAFT_PROMPT_VERSION,
+  MEETING_DATES_MAX_ITEMS,
+  MEETING_DECISION_HEADLINE_MAX_LENGTH,
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_SECTIONS,
@@ -16,6 +18,7 @@ import {
   meetingTypeLabel,
   type MeetingActionItem,
   type MeetingContent,
+  type MeetingDateItem,
   type MeetingTabledItem,
   type EventAgendaTabledFrom,
   type MeetingDecision,
@@ -203,7 +206,7 @@ export const MINUTES_NOTES_FORMAT = [
  * its only goal"). Shared with the review pass, which writes it for the
  * whole meeting.
  */
-export const TLDR_GUIDE = `tldr: the TL;DR, for a member who reads nothing else; write it last, from the decisions, action items and announcements. At most ${TLDR_MAX_BULLETS} short bullets, fewer for a short meeting, one per line, each starting with "- ", in plain everyday words: what was decided, what members need to do and by when (with the day), and what is coming up (with the date). Only what applies to the members reading it: leave out procedure, who moved or seconded what, and detail only officers need. A day or date only as the sources give it.`;
+export const TLDR_GUIDE = `tldr: the TL;DR, for a member who reads nothing else; write it last. At most ${TLDR_MAX_BULLETS} short bullets, fewer for a short meeting, one per line, each starting with "- ", each under 20 words, in plain everyday words: what an ordinary member most needs to know or do. The minutes show the dates, the decisions and the action items in their own lists right under it, so never restate a date, a decision or an action item those lists hold; a bullet points past them only when the gist needs it. Only what applies to the members reading it: leave out procedure, who moved or seconded what, and detail only officers need.`;
 
 /**
  * How the prompt marks an agenda item added from an earlier meeting's
@@ -216,9 +219,11 @@ const SECTION_GUIDE: Readonly<Record<string, string>> = {
   summary:
     'summary: the opening paragraph of the notes, two to four sentences: who met, what the meeting was about, and what it settled. The detail goes in discussion_log, not here.',
   announcements:
-    'announcements: dates, reminders and news that were announced, one per line.',
+    'announcements: reminders and news that were announced, one per line. Leave out anything the dates, decisions or action items already say.',
+  dates:
+    'dates: one entry per day the sources name for something still ahead of the meeting (an event, a deadline, the next meeting, a break), each once: date is YYYY-MM-DD, worked out from the meeting date when the sources give a weekday or a day of the month; text says what happens then in a few words, as a calendar would ("Officer installation at chapter", "Next leadership meeting, 8:30 PM"); quote is the line that names it, copied as a decision\u2019s quote is. Leave out a day already past, and a vague time ("after break") with no day.',
   decisions:
-    'decisions: one entry per outcome the meeting settled: what was approved, rejected, chosen, elected, set or agreed, with the substance (the amount, the conditions, the person, the date). Never a procedural step (see the rules).',
+    'decisions: one entry per outcome the meeting settled: what was approved, rejected, chosen, elected, set or agreed, with the substance (the amount, the conditions, the person, the date). Never a procedural step (see the rules). headline: the outcome in at most ten plain words, read before text ("Officer installation on Saturday, November 28"); text then gives the full outcome with its conditions.',
   action_items:
     'action_items: one entry per thing someone agreed to do, every one of them, small ones included.',
   tabled: `tabled: one entry per matter the meeting tabled, postponed or pushed to a later meeting ("let\u2019s table this", "push it to next week", "come back to it next cabinet"): text names the matter in a few words, as it would be written on the next agenda ("Formal budget"), and quote is the line where it was put off, copied as a decision\u2019s quote is. A matter the meeting settled is not tabled, even if it was put off earlier in the meeting. When the matter is one of tonight\u2019s agenda items marked ${TABLED_BEFORE_MARK}, agenda_item is that item\u2019s number; otherwise leave agenda_item out.`,
@@ -417,6 +422,7 @@ export function verifyMinutesDraft(
   /** A decision, checked against the source its quote is in; null if none holds it. */
   const checkDecision = (drafted: {
     text: string;
+    headline?: string;
     quote: string;
     source?: string;
     vote: DraftedDecision['vote'];
@@ -428,6 +434,7 @@ export function verifyMinutesDraft(
     const vote = voteInQuote(drafted.vote, drafted.quote);
     return {
       text,
+      headline: decisionHeadline(drafted.headline, text),
       quote: drafted.quote,
       source,
       vote,
@@ -465,12 +472,18 @@ export function verifyMinutesDraft(
   };
 
   const pushDecision = (
-    kept: Exclude<ReturnType<typeof checkDecision>, string>,
+    kept: Omit<Exclude<ReturnType<typeof checkDecision>, string>, 'headline'> & {
+      headline?: string | null;
+    },
   ): void => {
     if (decisions.some((d) => d.text === kept.text)) return;
     if (decisions.length >= MEETING_LIST_MAX_ITEMS) return;
     if (kept.voteCleared) votesCleared += 1;
-    decisions.push({ text: kept.text, vote: kept.vote });
+    decisions.push({
+      text: kept.text,
+      vote: kept.vote,
+      ...(kept.headline ? { headline: kept.headline } : {}),
+    });
     sourceNotes.push({
       kind: 'decision',
       text: kept.text,
@@ -629,6 +642,18 @@ export function verifyMinutesDraft(
     }
     content.tabled = tabled.slice(0, MEETING_TABLED_MAX_ITEMS);
   }
+  // The dates coming up (#5562), each with its line in a source.
+  if (wants('dates')) {
+    content.dates = verifiedDates(
+      output.dates ?? [],
+      request.meetingDate,
+      sources,
+      () => {
+        leftOut += 1;
+      },
+    );
+  }
+
 
   // Last meeting's action items and the standing reports, where each stands
   // tonight: the model's reading only with a line of a source, and in
@@ -917,6 +942,7 @@ function withRecoveredQuotes(
     decisions: output.decisions.map(fix),
     action_items: output.action_items.map(fix),
     tabled: (output.tabled ?? []).map(fix),
+    ...(output.dates ? { dates: output.dates.map(fix) } : {}),
     conflicts: output.conflicts?.map((conflict) => ({
       ...conflict,
       versions: conflict.versions.map(fix),
@@ -1119,6 +1145,58 @@ function mentions(quote: string, handle: Handle): boolean {
 }
 
 /** A `YYYY-MM-DD` that is a day on the calendar, or null. */
+/**
+ * A decision's headline as the minutes keep it (#5562): one line, at most
+ * {@link MEETING_DECISION_HEADLINE_MAX_LENGTH} characters, and none when it
+ * would only repeat the text.
+ */
+export function decisionHeadline(
+  headline: string | null | undefined,
+  text: string,
+): string | null {
+  const line = oneLine(headline ?? '').replace(/[.;:,]+$/, '');
+  if (!line || line.length > MEETING_DECISION_HEADLINE_MAX_LENGTH) return null;
+  return line.toLowerCase() === oneLine(text).replace(/[.;:,]+$/, '').toLowerCase()
+    ? null
+    : line;
+}
+
+/**
+ * The dates the meeting named (#5562), for the Coming up tiles: each a real
+ * day on or after the meeting, kept only with its line in a source (as a
+ * decision is), each day and matter once, soonest first.
+ */
+export function verifiedDates(
+  drafted: readonly {
+    date: string;
+    text: string;
+    quote: string;
+    source?: string;
+  }[],
+  meetingDate: string,
+  sources: readonly MinutesSource[],
+  onUnquoted: () => void,
+): MeetingDateItem[] {
+  const seen = new Set<string>();
+  const out: MeetingDateItem[] = [];
+  for (const item of drafted) {
+    const text = clamp(item.text, MEETING_ITEM_TEXT_MAX_LENGTH);
+    const date = realDate(item.date);
+    if (!text || !date || date < meetingDate) continue;
+    const key = `${date} ${text.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    if (!NAMES_A_DAY.test(item.quote) || !locate(item.quote, item.source, sources)) {
+      onUnquoted();
+      continue;
+    }
+    seen.add(key);
+    out.push({ date, text });
+  }
+  return out
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, MEETING_DATES_MAX_ITEMS);
+}
+
 function realDate(value: string | null): string | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const at = new Date(`${value}T00:00:00.000Z`);

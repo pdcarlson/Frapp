@@ -143,6 +143,35 @@ describe('the editor’s read over a draft', () => {
     expect(out.tabled).toEqual(tabled);
   });
 
+  it('keeps a decision’s headline and passes every part’s dates through (#5562)', () => {
+    const dates = [
+      { date: '2026-12-05', text: 'Afterparty', quote: 'December 5' },
+    ];
+    const out = applyReview(
+      [
+        { ...parts[0], dates },
+        ...parts.slice(1),
+      ],
+      {
+        ...empty,
+        decisions: [
+          {
+            from: ['D3'],
+            headline: 'Afterparty on December 5',
+            text: 'Approved hosting the Rusty Pipes afterparty on December 5 with a security deposit.',
+            vote: null,
+          },
+        ],
+        action_items: [],
+        open_questions: [],
+      },
+    );
+    expect(out.decisions[0]).toMatchObject({
+      headline: 'Afterparty on December 5',
+    });
+    expect(out.dates).toEqual(dates);
+  });
+
   it('takes the words of the candidate that holds the count, whichever is named first', () => {
     const counted: MeetingDraftOutput[] = [
       {

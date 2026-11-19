@@ -155,6 +155,7 @@ export function mergeParts(
     decisions: distinct(parts.flatMap((part) => part.decisions)),
     action_items: distinct(parts.flatMap((part) => part.action_items)),
     tabled: distinct(parts.flatMap((part) => part.tabled ?? [])),
+    dates: distinct(parts.flatMap((part) => part.dates ?? [])),
     officer_reports: lines(parts.map((part) => part.officer_reports)),
     old_business: lines(parts.map((part) => part.old_business)),
     new_business: lines(parts.map((part) => part.new_business)),

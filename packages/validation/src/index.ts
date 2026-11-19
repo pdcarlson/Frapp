@@ -129,6 +129,8 @@ export * from "./meeting-recording";
 export * from "./meeting-start";
 // ── Meeting minutes (#4312) ──────────────────────────────────────────────────
 export * from "./meetings";
+// How both apps lay minutes out to read, and the words of its ⋯ menu (#5562).
+export * from "./minutes-read";
 // Member nudges (#4781): the one card on Activity the AI writes for a member.
 export * from "./member-nudge";
 // ── `@`-mention resolution (C1 of #937) ──────────────────────────────────────

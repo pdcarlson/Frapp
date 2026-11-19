@@ -22,6 +22,8 @@ import { Type } from 'class-transformer';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  MEETING_DATES_MAX_ITEMS,
+  MEETING_DECISION_HEADLINE_MAX_LENGTH,
   MEETING_DRAFT_FAILURES,
   MEETING_DRAFT_SETTLED_BY,
   MEETING_FOLLOW_UP_STATUSES,
@@ -87,6 +89,33 @@ export class MeetingDecisionDto {
   @ValidateNested()
   @Type(() => MeetingVoteDto)
   vote: MeetingVoteDto | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: MEETING_DECISION_HEADLINE_MAX_LENGTH,
+    description:
+      'The outcome in a few words, shown bold over the text. Absent on decisions from before it.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(MEETING_DECISION_HEADLINE_MAX_LENGTH)
+  headline?: string | null;
+}
+
+/** A date the meeting named (#5562), for the minutes' Coming up. */
+export class MeetingDateItemDto {
+  @ApiProperty({ format: 'date', example: '2026-11-28' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  date: string;
+
+  @ApiProperty({ maxLength: MEETING_ITEM_TEXT_MAX_LENGTH })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(MEETING_ITEM_TEXT_MAX_LENGTH)
+  text: string;
 }
 
 export class MeetingActionItemDto {
@@ -162,7 +191,7 @@ export class MeetingTabledItemDto {
 export class MeetingContentDto {
   @ApiProperty({
     description:
-      'The TL;DR: a few "- " bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it.',
+      'The TL;DR: a few "- " bullets, what an ordinary member most needs to know or do, beyond the dates, decisions and action items listed after it. Empty on minutes from before it.',
   })
   tldr: string;
   @ApiProperty() summary: string;
@@ -175,6 +204,12 @@ export class MeetingContentDto {
     description: 'What the meeting tabled. Empty on minutes from before it.',
   })
   tabled: MeetingTabledItemDto[];
+  @ApiProperty({
+    type: [MeetingDateItemDto],
+    description:
+      'The dates the meeting named, soonest first. Empty on minutes from before it.',
+  })
+  dates: MeetingDateItemDto[];
   @ApiProperty() officer_reports: string;
   @ApiProperty() old_business: string;
   @ApiProperty() new_business: string;
@@ -233,6 +268,17 @@ export class MeetingContentPatchDto {
   @ValidateNested({ each: true })
   @Type(() => MeetingTabledItemDto)
   tabled?: MeetingTabledItemDto[];
+
+  @ApiPropertyOptional({
+    type: [MeetingDateItemDto],
+    maxItems: MEETING_DATES_MAX_ITEMS,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MEETING_DATES_MAX_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => MeetingDateItemDto)
+  dates?: MeetingDateItemDto[];
 
   @ApiPropertyOptional({ maxLength: MEETING_TEXT_MAX_LENGTH })
   @IsOptional()

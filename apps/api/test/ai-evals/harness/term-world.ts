@@ -1146,6 +1146,7 @@ export function createTermWorld(
       const content: MeetingContent = {
         tldr: '',
         tabled: [],
+        dates: [],
         summary: lines
           .filter(
             (line) =>

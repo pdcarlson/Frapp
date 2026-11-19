@@ -949,6 +949,32 @@ describe('MeetingService', () => {
       expect(second.content.tldr).toBe('- Pay dues by Friday');
     });
 
+    it('saves the dates coming up soonest first, and a decision’s headline (#5562)', async () => {
+      const saved = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: {
+          dates: [
+            { date: '2026-12-15', text: 'Next leadership meeting' },
+            { date: '2026-11-28', text: 'Officer installation' },
+          ],
+          decisions: [
+            {
+              text: 'Officer installation will be at chapter on November 28.',
+              headline: 'Officer installation on November 28',
+              vote: null,
+            },
+          ],
+        },
+      });
+      expect(saved.content.dates.map((item) => item.date)).toEqual([
+        '2026-11-28',
+        '2026-12-15',
+      ]);
+      expect(saved.content.decisions[0].headline).toBe(
+        'Officer installation on November 28',
+      );
+    });
+
     it('refuses a save over newer minutes', async () => {
       await expect(
         service.update(CHAPTER, 'mtg-1', SECRETARY, {
@@ -1191,10 +1217,11 @@ describe('MeetingService', () => {
       await expect(service.getTemplate(CHAPTER)).resolves.toEqual([
         'tldr',
         'summary',
-        'announcements',
+        'dates',
         'decisions',
         'action_items',
         'tabled',
+        'announcements',
         'discussion_log',
         'attendees',
       ]);
@@ -1206,11 +1233,11 @@ describe('MeetingService', () => {
         'summary',
         'summary',
       ]);
-      // The TL;DR (#5523) and Tabled (#5522) are always on, so a list without
-      // them still has them.
+      // The TL;DR (#5523), Coming up (#5562) and Tabled (#5522) are always
+      // on, so a list without them still has them.
       expect(repo.upsertTemplate).toHaveBeenCalledWith(
         CHAPTER,
-        ['tldr', 'summary', 'tabled', 'discussion_log'],
+        ['tldr', 'summary', 'dates', 'tabled', 'discussion_log'],
         PRESIDENT,
       );
     });
