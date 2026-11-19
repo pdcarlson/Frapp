@@ -105,6 +105,7 @@ function row(over: Record<string, unknown> = {}) {
     decision_count: 0,
     action_item_count: 0,
     recorded: false,
+    gist: null,
     ...over,
   };
 }
@@ -189,6 +190,13 @@ describe("Minutes, tied to the calendar", () => {
       pathname: "/minutes-details",
       params: { id: "m-new" },
     });
+  });
+
+  it("says each minutes' TL;DR first line under what they hold, as web does", () => {
+    state.rows = [row({ decision_count: 2, gist: "Dues are due Friday." })];
+    const text = screenText(render());
+    expect(text).toContain("2 decisions");
+    expect(text).toContain("Dues are due Friday.");
   });
 
   it("ends on the next meeting, opening its event", () => {

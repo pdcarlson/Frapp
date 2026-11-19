@@ -123,21 +123,17 @@ export const MEETING_ENTRY_COPY = {
 const MINUTES_GIST_MAX = 140;
 
 /**
- * What the event's Minutes card says about minutes the reader can open
- * (`spec/behavior/meetings.md` § Meetings, tied to their events; Paul,
- * 2026-11-19: "Build all of it"): where they stand, posted on which day or
- * still a draft, with how many decisions and action items they hold, and the
- * TL;DR's first line as the gist. Web and the phone draw the same two lines.
+ * An event's minutes in two lines (the event's Minutes card, web and phone):
+ * where they stand and what they hold, then the TL;DR's first line, which
+ * the list row carries as `gist`.
  */
-export function eventMinutesLines(
-  minutes: {
-    status: "draft" | "posted";
-    posted_at: string | null;
-    decision_count: number;
-    action_item_count: number;
-  },
-  tldr?: string | null,
-): { status: string; gist: string | null } {
+export function eventMinutesLines(minutes: {
+  status: "draft" | "posted";
+  posted_at: string | null;
+  decision_count: number;
+  action_item_count: number;
+  gist?: string | null;
+}): { status: string; gist: string | null } {
   const stand =
     minutes.status === "posted"
       ? minutes.posted_at
@@ -155,7 +151,52 @@ export function eventMinutesLines(
   ]
     .filter(Boolean)
     .join(" · ");
-  return { status, gist: minutesGist(tldr) };
+  return { status, gist: minutes.gist ?? null };
+}
+
+/** One tag on a Minutes list row, and which kind of chip draws it. */
+export interface MinutesRowTag {
+  key: "draft" | "recorded" | "decisions" | "actionItems" | "byline";
+  label: string;
+}
+
+/**
+ * A Minutes list row's tags, worked out from the minutes and never typed,
+ * in the order both apps draw them (#5680): Draft, Recorded, how many
+ * decisions and action items, and whose draft it is when it isn't the
+ * viewer's own.
+ */
+export function minutesRowTags(
+  row: {
+    status: string;
+    recorded: boolean;
+    decision_count: number;
+    action_item_count: number;
+  },
+  byline?: string | null,
+): MinutesRowTag[] {
+  const tags: (MinutesRowTag | null)[] = [
+    row.status === "draft"
+      ? { key: "draft", label: MEETING_COPY.draftBadge }
+      : null,
+    row.recorded
+      ? { key: "recorded", label: MEETING_LIST_COPY.recorded }
+      : null,
+    row.decision_count > 0
+      ? {
+          key: "decisions",
+          label: MEETING_LIST_COPY.decisions(row.decision_count),
+        }
+      : null,
+    row.action_item_count > 0
+      ? {
+          key: "actionItems",
+          label: MEETING_LIST_COPY.actionItems(row.action_item_count),
+        }
+      : null,
+    byline ? { key: "byline", label: byline } : null,
+  ];
+  return tags.filter((tag): tag is MinutesRowTag => tag !== null);
 }
 
 /** The TL;DR's first line, its bullet taken off and cut to a line or two. */

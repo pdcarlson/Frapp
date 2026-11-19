@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useRouter } from "expo-router";
 import {
-  useMeeting,
   useMeetingNoteTaking,
   useMeetings,
   useMinutesRequest,
@@ -62,8 +61,6 @@ export function EventMinutesRow({
   const on = useMeetingsOn();
   const router = useRouter();
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
-  // The TL;DR lives on the minutes themselves, read once they are known.
-  const detailQuery = useMeeting(on ? meetingsQuery.data?.[0]?.id : null);
   const canRecord = can("meetings:record", usePermissionList());
   const canDraft = useAiSurfaces().meetingNotes;
   const start = useStartMinutesFor();
@@ -143,9 +140,7 @@ export function EventMinutesRow({
     }
   }
 
-  const lines = minutes
-    ? eventMinutesLines(minutes, detailQuery.data?.content?.tldr)
-    : null;
+  const lines = minutes ? eventMinutesLines(minutes) : null;
   return (
     <>
       <ListSection>

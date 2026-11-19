@@ -8874,6 +8874,8 @@ export interface components {
             action_item_count: number;
             /** @description A recording was used for these minutes. */
             recorded: boolean;
+            /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
+            gist: string | null;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */

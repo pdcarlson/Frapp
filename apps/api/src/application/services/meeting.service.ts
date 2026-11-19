@@ -17,6 +17,7 @@ import {
   isMeetingType,
   normalizeMeetingSections,
   eventSeriesKey,
+  minutesGist,
   readMeetingContent,
   type MeetingContent,
   type MeetingTabledItem,
@@ -51,6 +52,8 @@ export interface MeetingListFacts {
   decision_count: number;
   action_item_count: number;
   recorded: boolean;
+  /** The TL;DR's first line, for the list row to say what happened. */
+  gist: string | null;
 }
 
 /**
@@ -270,6 +273,7 @@ export class MeetingService {
         decision_count: content.decisions.length,
         action_item_count: content.action_items.length,
         recorded: row.transcript !== null || recorded.has(row.id),
+        gist: minutesGist(content.tldr),
       });
     }
     return facts;
