@@ -68,16 +68,18 @@ describe("the notes outline (#5410)", () => {
   });
 });
 
-describe("the notes, the TL;DR and Tabled are always on", () => {
+describe("the notes, the TL;DR, Coming up and Tabled are always on", () => {
   it("adds them to a saved template that left them out, in catalog order", () => {
     expect(ALWAYS_MEETING_SECTIONS).toEqual([
       "tldr",
+      "dates",
       "tabled",
       "discussion_log",
     ]);
     expect(normalizeMeetingSections(["summary", "decisions"])).toEqual([
       "tldr",
       "summary",
+      "dates",
       "decisions",
       "tabled",
       "discussion_log",

@@ -506,7 +506,7 @@ export function NotesDraftPanel({
           />
         ) : null}
         {pastedFolded ? (
-          <div className="flex items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2">
+          <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">{pastedCopy.title}</p>
               <p className="text-caption text-muted-foreground">

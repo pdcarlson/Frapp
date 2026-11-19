@@ -110,7 +110,9 @@ describe('buildMinutesDraftPrompt', () => {
     );
     expect(content).toContain('write it last');
     // The dates, decisions and action items have their own lists (#5562).
-    expect(content).toContain('never restate a date, a decision or an action item');
+    expect(content).toContain(
+      'never restate a date, a decision or an action item',
+    );
     expect(content).toContain('leave out procedure');
   });
 

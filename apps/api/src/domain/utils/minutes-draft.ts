@@ -472,7 +472,10 @@ export function verifyMinutesDraft(
   };
 
   const pushDecision = (
-    kept: Omit<Exclude<ReturnType<typeof checkDecision>, string>, 'headline'> & {
+    kept: Omit<
+      Exclude<ReturnType<typeof checkDecision>, string>,
+      'headline'
+    > & {
       headline?: string | null;
     },
   ): void => {
@@ -653,7 +656,6 @@ export function verifyMinutesDraft(
       },
     );
   }
-
 
   // Last meeting's action items and the standing reports, where each stands
   // tonight: the model's reading only with a line of a source, and in
@@ -1156,7 +1158,10 @@ export function decisionHeadline(
 ): string | null {
   const line = oneLine(headline ?? '').replace(/[.;:,]+$/, '');
   if (!line || line.length > MEETING_DECISION_HEADLINE_MAX_LENGTH) return null;
-  return line.toLowerCase() === oneLine(text).replace(/[.;:,]+$/, '').toLowerCase()
+  return line.toLowerCase() ===
+    oneLine(text)
+      .replace(/[.;:,]+$/, '')
+      .toLowerCase()
     ? null
     : line;
 }
@@ -1185,7 +1190,10 @@ export function verifiedDates(
     if (!text || !date || date < meetingDate) continue;
     const key = `${date} ${text.toLowerCase()}`;
     if (seen.has(key)) continue;
-    if (!NAMES_A_DAY.test(item.quote) || !locate(item.quote, item.source, sources)) {
+    if (
+      !NAMES_A_DAY.test(item.quote) ||
+      !locate(item.quote, item.source, sources)
+    ) {
       onUnquoted();
       continue;
     }

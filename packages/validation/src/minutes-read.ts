@@ -224,7 +224,8 @@ export function minutesActionRows(
     index,
     mine: !!viewerId && item.owner_user_id === viewerId,
   }));
-  const rank = (row: MinutesActionRow) => (row.mine ? 0 : row.item.due_date ? 1 : 2);
+  const rank = (row: MinutesActionRow) =>
+    row.mine ? 0 : row.item.due_date ? 1 : 2;
   return rows.sort(
     (a, b) =>
       rank(a) - rank(b) ||
