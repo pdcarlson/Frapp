@@ -5,7 +5,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import {
-  AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
   LAST_YEAR_COPY,
   SIMILAR_TASK_COPY,
@@ -36,6 +35,9 @@ const state = vi.hoisted(() => ({
   readEvent: vi.fn(),
   eventForm: undefined as
     { template?: unknown; onCreated?: (outcome: unknown) => void } | undefined,
+  /** The ⋯ menu last opened. */
+  menu: undefined as
+    { title: string; actions: { key: string; run: () => void }[] } | undefined,
 }));
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
@@ -148,6 +150,20 @@ vi.mock("@/lib/events/select", () => ({
 vi.mock("@/lib/events/last-year-template", () => ({
   lastYearTemplate: (event: { name: string }) => ({ name: event.name }),
 }));
+vi.mock("@/components/item-actions-menu", () => ({
+  useItemMenu: () => ({
+    handleFor: (menu: NonNullable<typeof state.menu>) =>
+      menu.actions.length === 0
+        ? null
+        : {
+            ...menu,
+            open: () => {
+              state.menu = menu;
+            },
+          },
+    element: null,
+  }),
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63", accentOnPrimary: "#131211" }),
 }));
@@ -233,6 +249,31 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
       node.props.accessibilityLabel === label,
   )[0];
 
+/** Steps the card forward, as "Next suggestion" does. */
+function next(tree: ReactTestRenderer) {
+  act(() => byLabel(tree, AI_SUGGESTION_COPY.next)!.props.onPress());
+}
+
+type OpenedMenu = {
+  title: string;
+  actions: { key: string; run: () => void }[];
+};
+
+/** Opens a card's ⋯ and names what it holds, by key. */
+function menuOf(tree: ReactTestRenderer, title: string) {
+  state.menu = undefined;
+  act(() =>
+    byLabel(tree, `${AI_SUGGESTION_COPY.more}: ${title}`)!.props.onPress({
+      nativeEvent: { pageY: 0 },
+    }),
+  );
+  // Set by the press above, which TypeScript can't see.
+  const opened = state.menu as OpenedMenu | undefined;
+  return opened?.actions ?? [];
+}
+const menuAction = (tree: ReactTestRenderer, title: string, key: string) =>
+  menuOf(tree, title).find((action) => action.key === key);
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.items = [READY, UNFINISHED];
@@ -251,16 +292,29 @@ beforeEach(() => {
 });
 
 describe("Suggested tasks", () => {
-  it("lists each suggestion with who, when written out, and the line it came from", () => {
-    const text = screenText(render());
+  it("shows one suggestion at a time with who, when, and the line it came from", () => {
+    const tree = render();
+    let text = screenText(tree);
+    expect(text).toContain(AI_SUGGESTION_COPY.position(1, 2));
     expect(text).toContain(AI_SUGGESTION_COPY.fromMinutesOf);
     expect(text).toContain("Chapter meeting");
     expect(text).toContain("Book the hall");
     expect(text).toContain("“Ana will book the hall by Friday.”");
     expect(text).toContain("Ana Ruiz");
+    // The next one waits its turn (Paul, 2026-11-19: "one at a time").
+    expect(text).not.toContain("Order shirts");
+    expect(byLabel(tree, AI_SUGGESTION_COPY.previous)!.props.disabled).toBe(
+      true,
+    );
+
+    next(tree);
+    text = screenText(tree);
+    expect(text).toContain(AI_SUGGESTION_COPY.position(2, 2));
+    expect(text).toContain("Order shirts");
     // The quote isn't repeated when it is the title.
     expect(text).not.toContain("“Order shirts”");
     expect(text).toContain(AI_SUGGESTION_COPY.who);
+    expect(byLabel(tree, AI_SUGGESTION_COPY.next)!.props.disabled).toBe(true);
   });
 
   it("reads one meeting's suggestions when opened from its minutes", () => {
@@ -283,8 +337,63 @@ describe("Suggested tasks", () => {
     expect(state.seed).toBeUndefined();
   });
 
+  it("shows who and when as chips that open the form, and asks Who? where nobody is named", () => {
+    const tree = render();
+    next(tree);
+    const whoChip = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Assignee for Order shirts"),
+    )[0]!;
+    expect(whoChip.props.accessibilityLabel).toBe(
+      `Assignee for Order shirts: ${AI_SUGGESTION_COPY.who}`,
+    );
+    act(() => whoChip.props.onPress());
+    expect((state.seed as { title: string }).title).toBe("Order shirts");
+    // The due chip writes the day out, as web's does.
+    act(() => byLabel(tree, AI_SUGGESTION_COPY.previous)!.props.onPress());
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith(
+            "Due date for Book the hall: ",
+          ),
+      ),
+    ).toHaveLength(1);
+    expect(screenText(tree)).not.toContain(AI_SUGGESTION_COPY.when);
+  });
+
+  it("brings the next suggestion into the place of one decided, even the last", () => {
+    const tree = render();
+    next(tree);
+    expect(screenText(tree)).toContain(AI_SUGGESTION_COPY.position(2, 2));
+    // The second is decided and the list reads again without it.
+    state.items = [READY];
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <SuggestedTasksScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(screenText(tree)).toContain("Book the hall");
+  });
+
+  it("asks When? on a suggestion the minutes gave no day", () => {
+    state.items = [{ ...READY, task: { ...READY.task, due_date: null } }];
+    const tree = render();
+    expect(
+      byLabel(tree, `Due date for Book the hall: ${AI_SUGGESTION_COPY.when}`),
+    ).toBeDefined();
+    expect(screenText(tree)).toContain(AI_SUGGESTION_COPY.when);
+  });
+
   it("opens the task form, not a task, for one missing who or when", async () => {
     const tree = render();
+    next(tree);
     await act(async () =>
       byLabel(
         tree,
@@ -322,28 +431,25 @@ describe("Suggested tasks", () => {
 
   it("dismisses one", async () => {
     const tree = render();
-    await act(async () =>
-      byLabel(
-        tree,
-        `${AI_SUGGESTION_COPY.dismiss}: Book the hall`,
-      ).props.onPress(),
-    );
+    // Dismiss is worded in the card's ⋯ menu, as web's is.
+    expect(menuOf(tree, "Book the hall").map((action) => action.key)).toEqual([
+      "change",
+      "dismiss",
+      "report",
+    ]);
+    await act(async () => menuAction(tree, "Book the hall", "dismiss")!.run());
     expect(state.dismiss).toHaveBeenCalledWith({ id: "s1", reason: undefined });
   });
 
   it("reports a suggestion by its id, and offers that only to a member who can send it", () => {
     const tree = render();
-    act(() =>
-      byLabel(tree, `${AI_REPORT_COPY.action}: Book the hall`)!.props.onPress(),
-    );
+    act(() => menuAction(tree, "Book the hall", "report")!.run());
     expect(reporting.report).toHaveBeenCalledWith({
       subject: "ai_suggestion",
       subjectId: "s1",
     });
     reporting.offered = false;
-    expect(
-      byLabel(render(), `${AI_REPORT_COPY.action}: Book the hall`),
-    ).toBeUndefined();
+    expect(menuAction(render(), "Book the hall", "report")).toBeUndefined();
   });
 
   it("goes to Tasks, and asks the server nothing, where AI is off", () => {
@@ -412,10 +518,12 @@ describe("A suggestion that reads like an existing task (#5562)", () => {
     expect(text).toContain(SIMILAR_TASK_COPY.existing);
     expect(text).toContain("Hall: book it");
     expect(text).toContain("In progress");
-    // A plain Dismiss is still one tap away.
-    expect(
-      byLabel(tree, `${AI_SUGGESTION_COPY.dismiss}: Book the hall`),
-    ).toBeDefined();
+    // A plain Dismiss is still in the card's menu; changing it first is not,
+    // until the officer says it is a different task.
+    expect(menuOf(tree, "Book the hall").map((action) => action.key)).toEqual([
+      "dismiss",
+      "report",
+    ]);
     // Nothing creates it until the officer says which it is.
     expect(
       byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`),
@@ -473,14 +581,16 @@ describe("This time last year", () => {
   });
 
   it("says what happened last year under its own heading, dates written out", () => {
-    const text = screenText(render());
+    const tree = render();
+    const text = screenText(tree);
     expect(text).toContain(LAST_YEAR_COPY.heading);
     expect(text).toContain(LAST_YEAR_COPY.intro);
     expect(text).toContain("Spring formal");
     expect(text).toContain(lastYearEventLine("April 13, 2025", 1));
-    expect(text).toContain(lastYearTaskLine("November 18, 2025"));
-    // The minutes' tasks keep their own group above it.
+    // The minutes' tasks come first; last year's task is the next card.
     expect(text).toContain(AI_SUGGESTION_COPY.fromMinutesOf);
+    next(tree);
+    expect(screenText(tree)).toContain(lastYearTaskLine("November 18, 2025"));
   });
 
   it("opens the event form on last year's event, and adds nothing until it is created", async () => {
@@ -532,6 +642,7 @@ describe("This time last year", () => {
       id: "s3",
       reason: "already_doing",
     });
+    next(tree);
     await act(async () =>
       byLabel(
         tree,
