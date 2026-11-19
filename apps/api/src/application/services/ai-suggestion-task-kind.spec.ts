@@ -214,7 +214,10 @@ describe('TaskSuggestionKind (#4309)', () => {
       });
     });
 
-    const accepted = async (proposal: Record<string, unknown>) => {
+    const accepted = async (
+      proposal: Record<string, unknown>,
+      source?: { type: string; id: string },
+    ) => {
       const create = jest.fn().mockResolvedValue({ id: 'task-1' });
       const post = jest.fn().mockResolvedValue({ id: 'posting-1' });
       const accepting = new TaskSuggestionKind(
@@ -231,6 +234,7 @@ describe('TaskSuggestionKind (#4309)', () => {
         chapterId: 'ch-1',
         userId: 'admin-1',
         payload,
+        source,
       });
       return { create, post, resultId };
     };
@@ -293,5 +297,24 @@ describe('TaskSuggestionKind (#4309)', () => {
         expect(resultId).toBe('posting-1');
       },
     );
+
+    it('links a task from minutes to them by id, a posting too (#5562)', async () => {
+      const minutes = { type: 'meeting', id: 'meeting-1' };
+      const person = await accepted({ assignee_id: MEMBER }, minutes);
+      expect(person.create).toHaveBeenCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
+      const someone = await accepted({ audience: 'someone' }, minutes);
+      expect(someone.post).toHaveBeenCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
+      const other = await accepted(
+        { assignee_id: MEMBER },
+        { type: 'event', id: 'event-1' },
+      );
+      expect(other.create).toHaveBeenCalledWith(
+        expect.not.objectContaining({ meeting_id: expect.anything() }),
+      );
+    });
   });
 });

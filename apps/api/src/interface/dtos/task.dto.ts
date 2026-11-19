@@ -416,6 +416,15 @@ export class CreateTaskResponseDto implements Task {
   })
   group_id: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to.',
+  })
+  meeting_id: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 

@@ -271,6 +271,17 @@ describe("New task after a gate refusal", () => {
     },
   );
 
+  it("wraps a long title in place, one line of text that Done submits (#5562)", () => {
+    const tree = render();
+    const title = () =>
+      tree.root.find((node) => node.props.accessibilityLabel === "Task title");
+    expect(title().props.multiline).toBe(true);
+    expect(title().props.submitBehavior).toBe("blurAndSubmit");
+    act(() => title().props.onChangeText("Book the hall\nfor the formal"));
+    expect(titleValueOf(tree)).toBe("Book the hall for the formal");
+    act(() => tree.unmount());
+  });
+
   it("sends one create for two taps in one batch", () => {
     // Both presses run before `isPending` reaches a render, so both see the
     // same render's `canSubmit`; only the in-flight ref stops the second.

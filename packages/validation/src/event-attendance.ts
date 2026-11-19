@@ -78,6 +78,26 @@ export function eventOthersInvited(event: EventAttendanceFields): boolean {
   return (event.required_role_ids?.length ?? 0) === 0;
 }
 
+/**
+ * The roles an event invites, by name ("Exec, Brothers"), or `null` when
+ * everyone is invited or no listed role is known. Minutes are read by those
+ * the event invited, so this names who can read them (#5562).
+ */
+export function eventInvitedRoleNames(
+  event: EventAttendanceFields,
+  roles: readonly { id: string; name: string }[],
+): string | null {
+  if (eventOthersInvited(event)) return null;
+  const byId = new Map(roles.map((role) => [role.id, role.name]));
+  const names = [
+    ...(event.required_role_ids ?? []),
+    ...(event.optional_role_ids ?? []),
+  ]
+    .map((id) => byId.get(id))
+    .filter((name): name is string => !!name);
+  return names.length > 0 ? names.join(", ") : null;
+}
+
 /** The default status for a member who holds none of the listed roles. */
 export function eventDefaultAttendance(
   event: EventAttendanceFields,

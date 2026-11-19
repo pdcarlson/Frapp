@@ -277,6 +277,28 @@ describe("TaskForm (#3865, #3983)", () => {
     expect(screen.getByLabelText("Title")).toHaveValue("Sweep");
   });
 
+  it("wraps a long title in place, one line of text that Enter posts (#5562)", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "Sweep", dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+    });
+    const title = screen.getByLabelText("Title");
+    // A box that grows with its words, not a one-line input that cuts them.
+    expect(title.tagName).toBe("TEXTAREA");
+    fireEvent.change(title, {
+      target: { value: "Hold retrospectives\nin the last meetings" },
+    });
+    expect(title).toHaveValue("Hold retrospectives in the last meetings");
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() =>
+      expect(onPost).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Hold retrospectives in the last meetings",
+        }),
+      ),
+    );
+  });
+
   it("says a title is too long rather than posting it cut short", async () => {
     const { onPost } = renderDialog({
       prefill: { title: "x".repeat(300), dueDate: "2026-11-12" },

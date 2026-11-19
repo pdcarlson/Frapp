@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, MoreHorizontal, Undo2, Users } from "lucide-react";
 import {
@@ -10,6 +11,7 @@ import {
   actionStatus,
   canReopenOwnTask,
   isSentBack,
+  useMeeting,
   useReleaseTask,
   useUpdateTask,
   type TaskEdit,
@@ -22,6 +24,7 @@ import {
   parseBareDateLocalNoon,
 } from "@repo/formatting";
 import {
+  AI_SUGGESTION_COPY,
   TASK_AUDIENCE_COPY,
   TASK_PHOTOS_MAX,
   TASK_PROOF_KINDS,
@@ -135,7 +138,9 @@ export function TaskPanel(props: TaskPanelProps) {
           <PanelBody>
             <TaskPanelBody
               // A different task is a different editor: no draft carries over.
-              key={target.kind === "group" ? `g:${target.tile.id}` : target.task.id}
+              key={
+                target.kind === "group" ? `g:${target.tile.id}` : target.task.id
+              }
               {...props}
               target={target}
             />
@@ -159,7 +164,10 @@ function MoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <IconButton label={`More for ${title}`} className="text-muted-foreground">
+        <IconButton
+          label={`More for ${title}`}
+          className="text-muted-foreground"
+        >
           <MoreHorizontal className="h-[18px] w-[18px]" aria-hidden="true" />
         </IconButton>
       </DropdownMenuTrigger>
@@ -179,8 +187,13 @@ function MoreMenu({
 }
 
 /** "Thursday, November 20 at 5 PM", or "Thursday, November 20". */
-function writtenDue(task: { due_date: string; due_at?: string | null }): string {
-  const at = task.due_at ? new Date(task.due_at) : parseBareDateLocalNoon(task.due_date);
+function writtenDue(task: {
+  due_date: string;
+  due_at?: string | null;
+}): string {
+  const at = task.due_at
+    ? new Date(task.due_at)
+    : parseBareDateLocalNoon(task.due_date);
   if (!at || Number.isNaN(at.getTime())) return task.due_date;
   const now = new Date();
   const day = at.toLocaleDateString(undefined, {
@@ -291,7 +304,8 @@ function TaskPanelBody({
   }
 
   async function reassign(next: TaskWho | null) {
-    if (!next || next.kind !== "person" || next.userId === task.assignee_id) return;
+    if (!next || next.kind !== "person" || next.userId === task.assignee_id)
+      return;
     const stored = task.stored_status ?? task.status;
     if (stored !== "TODO") {
       const ok = await confirm({
@@ -306,9 +320,16 @@ function TaskPanelBody({
   }
 
   async function savePhotos(keptPaths: string[], files: File[]) {
-    const problem = files.length > 0 ? taskPhotosProblem(files, TASK_PHOTOS_MAX - keptPaths.length) : null;
+    const problem =
+      files.length > 0
+        ? taskPhotosProblem(files, TASK_PHOTOS_MAX - keptPaths.length)
+        : null;
     if (problem) {
-      toast({ title: "Couldn't add the photo", description: problem, variant: "destructive" });
+      toast({
+        title: "Couldn't add the photo",
+        description: problem,
+        variant: "destructive",
+      });
       return;
     }
     let uploaded: string[] = [];
@@ -337,7 +358,9 @@ function TaskPanelBody({
       : TASK_STATUS_LABELS[task.status];
 
   const assignee = personOf(task.assignee_id);
-  const references = (task.photos ?? []).filter((photo) => photo.kind === "reference");
+  const references = (task.photos ?? []).filter(
+    (photo) => photo.kind === "reference",
+  );
   const groupLabel = isGroup
     ? taskGroupLabel({
         audience: task.group?.audience ?? "everyone",
@@ -349,7 +372,11 @@ function TaskPanelBody({
   return (
     <div className="grid gap-5">
       {confirmDialog}
-      <TitleField task={task} editable={editable} onSave={(title) => save({ title })} />
+      <TitleField
+        task={task}
+        editable={editable}
+        onSave={(title) => save({ title })}
+      />
       {isGroup ? null : (
         <StatusActions
           task={task}
@@ -362,14 +389,19 @@ function TaskPanelBody({
           onChangeStatus={(next, proof) => onChangeStatus(task, next, proof)}
           onConfirm={() => onConfirm(task)}
           onReject={() => onReject(task)}
-          onGiveBack={task.open_task_id && isMine ? () => void giveBack() : undefined}
+          onGiveBack={
+            task.open_task_id && isMine ? () => void giveBack() : undefined
+          }
         />
       )}
       <dl className="grid gap-1">
         <FieldRow label="Who">
           {isGroup ? (
             <span className="inline-flex items-center gap-1.5 px-2 py-1.5 text-sm">
-              <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <Users
+                className="h-4 w-4 text-muted-foreground"
+                aria-hidden="true"
+              />
               {`${groupLabel} · ${target.tile.total}`}
             </span>
           ) : editable ? (
@@ -380,7 +412,11 @@ function TaskPanelBody({
               onChange={(next) => void reassign(next)}
               disabled={!!gate.controlProps().disabled}
               trigger={
-                <button type="button" className={valueButtonClass} aria-label={`Who: ${assignee.name}`}>
+                <button
+                  type="button"
+                  className={valueButtonClass}
+                  aria-label={`Who: ${assignee.name}`}
+                >
                   <PersonFace person={assignee} />
                   {assignee.name}
                 </button>
@@ -410,7 +446,9 @@ function TaskPanelBody({
                   label: TASK_PROOF_KIND_LABELS[kind],
                 }))}
                 value={task.proof_kind ?? "none"}
-                onChange={(proof_kind: TaskProofKind) => void save({ proof_kind })}
+                onChange={(proof_kind: TaskProofKind) =>
+                  void save({ proof_kind })
+                }
                 disabled={!!gate.controlProps().disabled}
                 dense
               />
@@ -419,7 +457,9 @@ function TaskPanelBody({
               </span>
             </div>
           ) : (
-            <StaticValue>{TASK_PROOF_KIND_LABELS[task.proof_kind ?? "none"]}</StaticValue>
+            <StaticValue>
+              {TASK_PROOF_KIND_LABELS[task.proof_kind ?? "none"]}
+            </StaticValue>
           )}
         </FieldRow>
         <RepeatRow
@@ -433,6 +473,9 @@ function TaskPanelBody({
           editable={editable}
           onSave={(description) => save({ description })}
         />
+        {task.meeting_id ? (
+          <FromMinutesRow meetingId={task.meeting_id} />
+        ) : null}
         {isGroup ? null : (
           <FieldRow label="Steps" alignTop>
             <div className="px-2 py-1">
@@ -479,18 +522,36 @@ function TaskPanelBody({
         </FieldRow>
       </dl>
       {isGroup ? (
-        <GroupProgress tile={target.tile} copies={target.copies} personOf={personOf} />
+        <GroupProgress
+          tile={target.tile}
+          copies={target.copies}
+          personOf={personOf}
+        />
       ) : (
         <TaskProof
-          task={editable ? { ...task, photos: (task.photos ?? []).filter((p) => p.kind !== "reference") } : task}
+          task={
+            editable
+              ? {
+                  ...task,
+                  photos: (task.photos ?? []).filter(
+                    (p) => p.kind !== "reference",
+                  ),
+                }
+              : task
+          }
           showProof={isMine || canManage}
           sentBack={sentBack}
         />
       )}
       {editable ? (
         // One line held at its height, so "Saving…" never moves anything.
-        <p className="h-5 text-caption text-muted-foreground" aria-live="polite">
-          {saving || updateTask.isPending ? "Saving…" : "Changes save as you make them."}
+        <p
+          className="h-5 text-caption text-muted-foreground"
+          aria-live="polite"
+        >
+          {saving || updateTask.isPending
+            ? "Saving…"
+            : "Changes save as you make them."}
         </p>
       ) : null}
     </div>
@@ -501,6 +562,27 @@ const valueButtonClass = cn(
   "inline-flex min-h-9 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-card-hover",
   FOCUS_RING,
 );
+
+/**
+ * The minutes a task was suggested from (#5562), named as the meeting is
+ * called now. Nothing shows to someone who can't read those minutes, or
+ * once they're deleted.
+ */
+export function FromMinutesRow({ meetingId }: { meetingId: string }) {
+  const meeting = useMeeting(meetingId);
+  const name = meeting.data?.event_name;
+  if (!name) return null;
+  return (
+    <FieldRow label={AI_SUGGESTION_COPY.taskMinutes}>
+      <Link
+        href={`/meetings/${meetingId}`}
+        className="px-2 text-sm font-medium text-accent-text underline-offset-4 hover:underline"
+      >
+        {name}
+      </Link>
+    </FieldRow>
+  );
+}
 
 export function FieldRow({
   label,
@@ -518,13 +600,21 @@ export function FieldRow({
         alignTop ? "items-start" : "items-center",
       )}
     >
-      <dt className={cn("text-sm text-muted-foreground", alignTop && "pt-2")}>{label}</dt>
+      <dt className={cn("text-sm text-muted-foreground", alignTop && "pt-2")}>
+        {label}
+      </dt>
       <dd className="min-w-0">{children}</dd>
     </div>
   );
 }
 
-export function StaticValue({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+export function StaticValue({
+  children,
+  muted = false,
+}: {
+  children: ReactNode;
+  muted?: boolean;
+}) {
   return (
     <span
       className={cn(
@@ -580,7 +670,9 @@ function InlineEditor({
         // around the editor is not such a layer.
         const layer =
           next instanceof Element
-            ? next.closest('[data-radix-popper-content-wrapper], [role="dialog"], [role="listbox"]')
+            ? next.closest(
+                '[data-radix-popper-content-wrapper], [role="dialog"], [role="listbox"]',
+              )
             : null;
         if (layer && box.current && !layer.contains(box.current)) return;
         onCommit();
@@ -592,7 +684,12 @@ function InlineEditor({
           onCancel();
         } else if (
           event.key === "Enter" &&
-          !(multiline && event.target instanceof HTMLTextAreaElement && !event.metaKey && !event.ctrlKey)
+          !(
+            multiline &&
+            event.target instanceof HTMLTextAreaElement &&
+            !event.metaKey &&
+            !event.ctrlKey
+          )
         ) {
           event.preventDefault();
           onCommit();
@@ -615,14 +712,19 @@ export function TitleField({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const heading = (
-    <p className="break-words text-title font-semibold text-foreground">{task.title}</p>
+    <p className="break-words text-title font-semibold text-foreground">
+      {task.title}
+    </p>
   );
   if (!editable) return heading;
   if (draft === null) {
     return (
       <button
         type="button"
-        className={cn("-mx-2 rounded-md px-2 py-1 text-left hover:bg-card-hover", FOCUS_RING)}
+        className={cn(
+          "-mx-2 rounded-md px-2 py-1 text-left hover:bg-card-hover",
+          FOCUS_RING,
+        )}
         aria-label={`Title: ${task.title}`}
         onClick={() => setDraft(task.title)}
       >
@@ -658,7 +760,8 @@ export function TitleField({
       />
       {tooLong ? (
         <p className="mt-1 text-caption text-destructive-text">
-          Keep the title to {TASK_TITLE_MAX_LENGTH} characters. It&apos;s {trimmed.length} now.
+          Keep the title to {TASK_TITLE_MAX_LENGTH} characters. It&apos;s{" "}
+          {trimmed.length} now.
         </p>
       ) : null}
     </InlineEditor>
@@ -776,9 +879,14 @@ export function PointsRow({
       <FieldRow label="Points">
         <button
           type="button"
-          className={cn(valueButtonClass, !task.point_reward && "text-muted-foreground")}
+          className={cn(
+            valueButtonClass,
+            !task.point_reward && "text-muted-foreground",
+          )}
           aria-label={`Points: ${shown}`}
-          onClick={() => setDraft(task.point_reward ? String(task.point_reward) : "")}
+          onClick={() =>
+            setDraft(task.point_reward ? String(task.point_reward) : "")
+          }
         >
           {shown}
         </button>
@@ -946,7 +1054,9 @@ export function NotesRow({
           aria-label={text ? `Notes: ${text}` : "Add notes"}
           onClick={() => setDraft(text)}
         >
-          <span className="line-clamp-4 whitespace-pre-wrap">{text || "Add notes"}</span>
+          <span className="line-clamp-4 whitespace-pre-wrap">
+            {text || "Add notes"}
+          </span>
         </button>
       </FieldRow>
     );
@@ -1000,7 +1110,10 @@ function StatusActions({
   gate: SubscriptionGate;
   pending: boolean;
   statusWord: string;
-  onChangeStatus: (next: TaskStatus, proof?: CompletionProof) => Promise<boolean>;
+  onChangeStatus: (
+    next: TaskStatus,
+    proof?: CompletionProof,
+  ) => Promise<boolean>;
   onConfirm: () => void;
   onReject: () => void;
   onGiveBack?: () => void;
@@ -1014,7 +1127,9 @@ function StatusActions({
   const cannotConfirm = isMine || viewerUnknown;
   const controls = gate.controlProps(pending);
   const reviewable =
-    canManage && status === "COMPLETED" && (!task.points_awarded || autoSignedOff);
+    canManage &&
+    status === "COMPLETED" &&
+    (!task.points_awarded || autoSignedOff);
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -1063,7 +1178,12 @@ function StatusActions({
           </Button>
         ) : null}
         {reviewable && !cannotConfirm && needsSignOff ? (
-          <Button size="sm" className="gap-1.5" {...controls} onClick={onConfirm}>
+          <Button
+            size="sm"
+            className="gap-1.5"
+            {...controls}
+            onClick={onConfirm}
+          >
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             {TASK_ACTION_LABELS.confirm}
           </Button>
@@ -1124,11 +1244,15 @@ function GroupProgress({
           return (
             <li key={copy.id} className="flex items-center gap-2 text-sm">
               <PersonFace person={person} />
-              <span className="min-w-0 flex-1 truncate text-foreground">{person.name}</span>
+              <span className="min-w-0 flex-1 truncate text-foreground">
+                {person.name}
+              </span>
               <span
                 className={cn(
                   "shrink-0 text-caption",
-                  copy.status === "OVERDUE" ? "text-destructive-text" : "text-muted-foreground",
+                  copy.status === "OVERDUE"
+                    ? "text-destructive-text"
+                    : "text-muted-foreground",
                 )}
               >
                 {isSentBack(copy)
@@ -1155,4 +1279,3 @@ function GroupProgress({
     </section>
   );
 }
-

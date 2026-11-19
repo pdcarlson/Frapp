@@ -243,6 +243,13 @@ export class ReadMinutesTool implements AgentReadTool<Args> {
         return content.tabled
           .map((item) => `Tabled: ${flat(item.text, ITEM_TEXT_MAX)}`)
           .join('\n');
+      case 'dates':
+        return content.dates
+          .map(
+            (item) =>
+              `${longDay(item.date, with_.timeZone)}: ${flat(item.text, ITEM_TEXT_MAX)}`,
+          )
+          .join('\n');
       default:
         return content[key].trim();
     }

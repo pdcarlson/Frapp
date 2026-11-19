@@ -2,12 +2,14 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { StyleSheet } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingDraftState, MeetingRecordingState } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
+  MINUTES_READ_COPY,
   MEETING_NOTES_MAX_LENGTH,
   MEETING_NOTE_TAKERS_COPY,
 } from "@repo/validation";
@@ -116,6 +118,8 @@ function recordingState(
   } as MeetingRecordingState;
 }
 
+let stopInFooter = false;
+
 function element(
   state: MeetingDraftState,
   hasContent = false,
@@ -132,6 +136,7 @@ function element(
         recording={recording}
         getVersion={getVersion}
         onSettled={onSettled}
+        stopInFooter={stopInFooter}
       />
     </FrappThemeProvider>
   );
@@ -155,9 +160,7 @@ const button = (tree: ReactTestRenderer, label: string) =>
       (node.props.accessibilityLabel === label || drawnText(node) === label),
   )[0];
 const field = (tree: ReactTestRenderer) =>
-  tree.root.findAll(
-    (node) => (node.type as unknown) === "TextInput",
-  )[0];
+  tree.root.findAll((node) => (node.type as unknown) === "TextInput")[0];
 const press = (tree: ReactTestRenderer, label: string) =>
   act(async () => button(tree, label).props.onPress());
 /** Draft minutes sits in the screen's pinned footer, which calls the panel. */
@@ -478,6 +481,49 @@ describe("NotesPanel", () => {
     await draft();
     expect(hooks.request).not.toHaveBeenCalled();
     expect(screenText(tree)).toContain(MEETING_NOTES_COPY.startFailed);
+  });
+
+  it("folds a pasted transcript into a card with View and Remove (#5562)", async () => {
+    const tree = render(draftState());
+    const transcript = Array.from(
+      { length: 40 },
+      (_, at) => `00:${String(at).padStart(2, "0")} Paul: point ${at}`,
+    ).join("\n");
+    // A paste lands in a focused box, which stays open until it blurs.
+    act(() => field(tree).props.onFocus());
+    act(() => field(tree).props.onChangeText(transcript));
+    expect(field(tree).props.value).toBe(transcript);
+    act(() => field(tree).props.onBlur());
+    expect(field(tree)).toBeUndefined();
+    expect(screenText(tree)).toContain(
+      MINUTES_READ_COPY.pastedTranscript.title,
+    );
+    expect(screenText(tree)).toContain("160 words");
+    await press(tree, MINUTES_READ_COPY.pastedTranscript.view);
+    expect(field(tree).props.value).toBe(transcript);
+    // Shown again, it keeps a fixed height and scrolls inside.
+    expect(StyleSheet.flatten(field(tree).props.style)).toMatchObject({
+      maxHeight: 260,
+    });
+    await press(tree, MINUTES_READ_COPY.pastedTranscript.hide);
+    await press(tree, MINUTES_READ_COPY.pastedTranscript.remove);
+    expect(confirm).toHaveBeenCalled();
+    expect(field(tree).props.value).toBe("");
+  });
+
+  it("leaves Drafting and Stop to the screen's footer when it pins them (#5562)", async () => {
+    stopInFooter = true;
+    try {
+      const tree = render(draftState({ status: "drafting", notes: "Notes" }));
+      expect(screenText(tree)).not.toContain(MEETING_NOTES_COPY.drafting);
+      expect(button(tree, MEETING_NOTES_COPY.stop)).toBeUndefined();
+      await act(async () => {
+        await panel.current?.stop();
+      });
+      expect(hooks.discard).toHaveBeenCalledWith({ id: "m1", keepNotes: true });
+    } finally {
+      stopInFooter = false;
+    }
   });
 
   it("locks the notes while a draft is written, and Stop keeps them", async () => {

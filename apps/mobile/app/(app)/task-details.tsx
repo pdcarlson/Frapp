@@ -56,6 +56,7 @@ import {
   createTaskFactStyles,
   TaskDetailSkeleton,
   TaskFact,
+  TaskMinutesFact,
   TaskFacts,
 } from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -694,6 +695,8 @@ function TaskScreen({
             {row.description}
           </Text>
         ) : null}
+
+        {row.meetingId ? <TaskMinutesFact meetingId={row.meetingId} /> : null}
 
         {row.subtasks.length > 0 || (controls.edit && !row.pointsAwarded) ? (
           <SubtaskChecklist

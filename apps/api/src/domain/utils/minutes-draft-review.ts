@@ -56,6 +56,8 @@ export const ReviewedMinutesSchema = z.object({
     z.object({
       /** Candidate ids this decision stands on; the first holds its quote. */
       from: z.array(z.string()),
+      /** The outcome in a few words, read before text (#5562). */
+      headline: z.string().optional(),
       text: z.string(),
       vote: Vote,
     }),
@@ -118,13 +120,14 @@ const REVIEW_RULES = [
   '- Decisions are outcomes: what the meeting approved, rejected, elected, chose, set or agreed. Drop every procedural step: moving on to the next agenda item or section, opening or closing the floor or nominations, approving the agenda, a motion or vote to discuss or consider something, seconding, calling the question, a recess, adjourning. Those are how the meeting ran, not what it decided.',
   '- One outcome is one decision. When several candidates are the same matter (a motion to discuss it, an amendment, the vote that settled it), write one decision for where it ended and list all their ids in from, with the id whose words show it being settled first. State the outcome with its substance from the candidates and the discussion: the amount, the conditions, the dates, who. "Voted to discuss the afterparty" is not a decision; "Approved hosting the Rusty Pipes afterparty on December 5, on condition of a security deposit" is.',
   '- An election is one decision per office: who won it, and the count when a candidate gives it.',
+  '- headline, on every decision: the outcome in at most ten plain words, read before text ("Officer installation on Saturday, November 28"). text then gives the full outcome with its conditions.',
   '- Keep every substantive decision and every action item the candidates hold. Never drop one because it is small; drop only procedure and duplicates.',
   '- Action items: one per thing someone agreed to do, starting with a verb. Merge duplicates the same way, first id holding the words. Keep owner and due_date only as a candidate gives them; otherwise null.',
   '- from: only ids from the candidate list. Every decision and action item you write needs at least one.',
   '- Use only what the candidates and the part accounts say. Add no name, number, date or outcome of your own.',
   `- discussion_log: the notes, the body of the minutes, built from the parts\u2019 own notes. Keep every point they hold; never shorten a topic to a line. A topic that ran across two parts becomes one topic with all its points. ${MINUTES_NOTES_FORMAT}`,
   '- summary: the opening paragraph, two to four sentences on what the meeting was about and what it settled. Never mention parts, passes, drafts, transcripts or notes; write about the meeting.',
-  '- announcements, officer_reports, old_business, new_business: the parts’ lines for the whole meeting, one item per line, duplicates merged.',
+  '- announcements, officer_reports, old_business, new_business: the parts’ lines for the whole meeting, one item per line, duplicates merged. Announcements leave out what the decisions, the action items or a date coming up already say.',
   `- ${TLDR_GUIDE} Write it for the whole meeting from the decisions and action items you keep; never mention parts.`,
   `- open_questions: what the officer still has to fill in, at most ${MEETING_DRAFT_GAPS_MAX}, one short plain sentence each. Drop a question another candidate or account answers, and drop questions about procedure.`,
   '- Write plainly, in the past tense. No markdown and no emojis; the only layout is discussion_log\u2019s topic lines and "- " bullets, and tldr\u2019s "- " bullets.',
@@ -226,7 +229,12 @@ export function applyReview(
         )) ||
       from.find((c) => !isProceduralDecision(c.text)) ||
       from[0];
-    decisions.push({ text: item.text, vote: item.vote, ...words(holder) });
+    decisions.push({
+      text: item.text,
+      ...(item.headline ? { headline: item.headline } : {}),
+      vote: item.vote,
+      ...words(holder),
+    });
   }
   const actionItems: MeetingDraftOutput['action_items'] = [];
   for (const item of reviewed.action_items) {
@@ -259,6 +267,8 @@ export function applyReview(
     // What was tabled is read by the first pass, from the sources, and
     // passes through, as its conflicts do.
     tabled: parts.flatMap((part) => part.tabled ?? []),
+    // So are the dates coming up (#5562), each checked against its line.
+    dates: parts.flatMap((part) => part.dates ?? []),
     open_questions: reviewed.open_questions.slice(0, MEETING_DRAFT_GAPS_MAX),
     conflicts: parts.flatMap((part) => part.conflicts ?? []),
   };

@@ -31,22 +31,26 @@ type Status = "PRESENT" | "LATE" | "EXCUSED";
  * hand). One request writes the event's attendance for everyone picked. It
  * only fills in: someone already marked (a check-in, an excuse) is shown
  * and can't be picked, so a check-in is never overwritten. Like every
- * officer mark it moves no points.
+ * officer mark it moves no points. It opens from the minutes' ⋯ menu,
+ * "Mark who was there", the same item the phone's menu has (#5562).
  */
 export function AttendanceBackfill({
   eventId,
   attendees,
   onMarked,
+  open,
+  onOpenChange: setOpen,
 }: {
   eventId: string;
   attendees: MeetingMinutes["attendees"];
   onMarked: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const ids = useId();
   const { toast } = useToast();
   const roster = useChapterRoster();
   const mark = useMarkAttendanceByHand();
-  const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Status>("PRESENT");
@@ -125,98 +129,87 @@ export function AttendanceBackfill({
   }
 
   return (
-    <>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        {already.size > 0
-          ? MEETING_ATTENDANCE_COPY.openMore
-          : MEETING_ATTENDANCE_COPY.open}
-      </Button>
-      <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{MEETING_ATTENDANCE_COPY.title}</DialogTitle>
-            <DialogDescription>
-              {MEETING_ATTENDANCE_COPY.body}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <SegmentedChoice
-              label={MEETING_ATTENDANCE_COPY.statusLabel}
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: "PRESENT", label: "Present" },
-                { value: "LATE", label: "Late" },
-                { value: "EXCUSED", label: "Excused" },
-              ]}
+    <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{MEETING_ATTENDANCE_COPY.title}</DialogTitle>
+          <DialogDescription>{MEETING_ATTENDANCE_COPY.body}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <SegmentedChoice
+            label={MEETING_ATTENDANCE_COPY.statusLabel}
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: "PRESENT", label: "Present" },
+              { value: "LATE", label: "Late" },
+              { value: "EXCUSED", label: "Excused" },
+            ]}
+          />
+          <Input
+            aria-label={MEETING_ATTENDANCE_COPY.find}
+            placeholder={MEETING_ATTENDANCE_COPY.find}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+          <label className="flex min-h-9 cursor-pointer items-center gap-2 px-2 text-sm font-semibold pointer-coarse:min-h-11">
+            <input
+              type="checkbox"
+              checked={allShownPicked}
+              disabled={pickable.length === 0}
+              onChange={toggleShown}
+              className={dashboardTableCheckboxClassName}
             />
-            <Input
-              aria-label={MEETING_ATTENDANCE_COPY.find}
-              placeholder={MEETING_ATTENDANCE_COPY.find}
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
-            <label className="flex min-h-9 cursor-pointer items-center gap-2 px-2 text-sm font-semibold pointer-coarse:min-h-11">
-              <input
-                type="checkbox"
-                checked={allShownPicked}
-                disabled={pickable.length === 0}
-                onChange={toggleShown}
-                className={dashboardTableCheckboxClassName}
-              />
-              {needle
-                ? MEETING_ATTENDANCE_COPY.pickShown(pickable.length)
-                : MEETING_ATTENDANCE_COPY.pickEveryone}
-            </label>
-            <ul
-              role="list"
-              aria-label={MEETING_ATTENDANCE_COPY.title}
-              className="grid max-h-72 gap-0.5 overflow-y-auto"
-            >
-              {shown.map((member) => (
-                <li key={member.id}>
-                  <label
-                    htmlFor={`${ids}-${member.id}`}
-                    className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-card-hover pointer-coarse:min-h-11"
-                  >
-                    <input
-                      id={`${ids}-${member.id}`}
-                      type="checkbox"
-                      checked={picked.has(member.id) || already.has(member.id)}
-                      disabled={already.has(member.id)}
-                      onChange={() => toggle(member.id)}
-                      className={dashboardTableCheckboxClassName}
-                    />
-                    <span className="min-w-0 flex-1 truncate">
-                      {member.name}
+            {needle
+              ? MEETING_ATTENDANCE_COPY.pickShown(pickable.length)
+              : MEETING_ATTENDANCE_COPY.pickEveryone}
+          </label>
+          <ul
+            role="list"
+            aria-label={MEETING_ATTENDANCE_COPY.title}
+            className="grid max-h-72 gap-0.5 overflow-y-auto"
+          >
+            {shown.map((member) => (
+              <li key={member.id}>
+                <label
+                  htmlFor={`${ids}-${member.id}`}
+                  className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-card-hover pointer-coarse:min-h-11"
+                >
+                  <input
+                    id={`${ids}-${member.id}`}
+                    type="checkbox"
+                    checked={picked.has(member.id) || already.has(member.id)}
+                    disabled={already.has(member.id)}
+                    onChange={() => toggle(member.id)}
+                    className={dashboardTableCheckboxClassName}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{member.name}</span>
+                  {already.has(member.id) ? (
+                    <span className="text-caption text-muted-foreground">
+                      {MEETING_ATTENDANCE_COPY.alreadyMarked}
                     </span>
-                    {already.has(member.id) ? (
-                      <span className="text-caption text-muted-foreground">
-                        {MEETING_ATTENDANCE_COPY.alreadyMarked}
-                      </span>
-                    ) : null}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              disabled={saving}
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={saving || picked.size === 0}
-              onClick={() => void save()}
-            >
-              {MEETING_ATTENDANCE_COPY.save(picked.size, status)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+                  ) : null}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            disabled={saving}
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={saving || picked.size === 0}
+            onClick={() => void save()}
+          >
+            {MEETING_ATTENDANCE_COPY.save(picked.size, status)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -50,6 +50,7 @@ import { PointsTag, TASK_ROWS_CLASS } from "./task-row";
 import {
   DueRow,
   FieldRow,
+  FromMinutesRow,
   NotesRow,
   PointsRow,
   StaticValue,
@@ -413,6 +414,7 @@ function OpenTaskPanelInner({
               editable={editable}
               onSave={(description) => save({ description })}
             />
+            {posting.meeting_id ? <FromMinutesRow meetingId={posting.meeting_id} /> : null}
             {posting.subtask_titles.length > 0 ? (
               <FieldRow label="Steps" alignTop>
                 <ul className="grid gap-1 px-2 py-1.5 text-sm text-foreground">

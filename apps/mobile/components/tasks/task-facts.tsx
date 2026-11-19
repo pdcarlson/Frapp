@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { useMeeting } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { AI_SUGGESTION_COPY } from "@repo/validation";
 import {
   SkeletonBlock,
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -78,6 +82,34 @@ export function TaskDetailSkeleton() {
   );
 }
 
+/**
+ * The minutes a task or a posting was suggested from (#5562), on a line of
+ * its own, named as the meeting is called now and opening them; the web's
+ * panels have the same row. Nothing shows to someone who can't read those
+ * minutes, or once they're deleted.
+ */
+export function TaskMinutesFact({ meetingId }: { meetingId: string }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createTaskFactStyles(tokens);
+  const router = useRouter();
+  const name = useMeeting(meetingId).data?.event_name;
+  if (!name) return null;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${AI_SUGGESTION_COPY.taskMinutes}: ${name}`}
+      onPress={() =>
+        router.push({ pathname: "/minutes-details", params: { id: meetingId } })
+      }
+      style={({ pressed }) => [styles.lineFact, pressed && { opacity: 0.6 }]}
+    >
+      <Text style={styles.factLabel}>{AI_SUGGESTION_COPY.taskMinutes}</Text>
+      <Text style={[styles.factValue, { color: accent }]}>{name}</Text>
+    </Pressable>
+  );
+}
+
 /** The facts' styles, and `factLabel` for a fact on a line of its own. */
 export function createTaskFactStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -90,6 +122,9 @@ export function createTaskFactStyles(tokens: SignetTokens) {
     },
     fact: {
       flex: 1,
+      gap: tokens.spacing.xs,
+    },
+    lineFact: {
       gap: tokens.spacing.xs,
     },
     factLabel: {

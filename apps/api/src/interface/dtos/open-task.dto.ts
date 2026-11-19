@@ -281,6 +281,15 @@ export class OpenTaskDto implements OpenTaskView {
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   claimed_at: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The minutes it was suggested from (#5562), or null. Read the meeting for its name, which the reader may not be allowed to.',
+  })
+  meeting_id: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 

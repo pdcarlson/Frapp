@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import {
   MEETING_COPY,
+  MEETING_NOTE_TAKERS_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
 } from "@repo/validation";
@@ -41,6 +42,8 @@ const state = vi.hoisted(() => ({
   recorder: { phase: "idle", refusal: null } as Record<string, unknown>,
   notesProps: null as Record<string, unknown> | null,
   panelDraft: vi.fn(),
+  panelStop: vi.fn(),
+  othersWrote: false,
   row: null as Record<string, unknown> | null,
   rowArgs: null as Record<string, unknown> | null,
   stage: null as Record<string, unknown> | null,
@@ -48,6 +51,12 @@ const state = vi.hoisted(() => ({
   summaryProps: null as Record<string, unknown> | null,
   summaryFlush: vi.fn(),
   event: undefined as Record<string, unknown> | undefined,
+  permissions: [] as string[],
+  menu: null as {
+    title: string;
+    actions: { key: string; label: string }[];
+  } | null,
+  remove: vi.fn(),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -87,26 +96,63 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePostMeeting: () => ({ mutateAsync: state.post, isPending: false }),
   useEvent: () => ({ data: state.event }),
   useMemberDisplayNames: () => ({ nameFor: () => null }),
+  useCurrentUser: () => ({ data: { id: "u1" } }),
+  usePermissionList: () => state.permissions,
+  useDeleteMeeting: () => ({ mutateAsync: state.remove, isPending: false }),
+  useMeetingActionItemTasks: () => ({ data: [] }),
 }));
+vi.mock("@/components/item-actions-menu", () => ({
+  useItemMenu: () => ({
+    handleFor: (menu: NonNullable<typeof state.menu>) => ({
+      ...menu,
+      open: () => {
+        state.menu = menu;
+      },
+    }),
+    element: null,
+  }),
+}));
+vi.mock("@/components/minutes/minutes-details-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return { MinutesDetailsSheet: forwardRef(() => null) };
+});
+vi.mock("@/components/minutes/mark-attendance-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return { MarkAttendanceSheet: forwardRef(() => null) };
+});
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => state.surfaces,
 }));
 vi.mock("@/components/screen-shell", () => ({
   ScreenShell: ({
     title,
+    subtitle,
+    backAction,
     children,
     footer,
   }: {
     title: string;
+    subtitle?: string;
+    backAction?: React.ReactNode;
     children: React.ReactNode;
     footer?: React.ReactNode;
-  }) => React.createElement("ScreenShell", { title }, children, footer),
+  }) =>
+    React.createElement(
+      "ScreenShell",
+      { title },
+      subtitle ? React.createElement("Text", null, subtitle) : null,
+      backAction,
+      children,
+      footer,
+    ),
+  StickyHeader: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("@/components/pull-to-refresh", () => ({
   useRefetchAll: () => undefined,
 }));
 vi.mock("@/components/minutes/minutes-body", () => ({
   MinutesBody: () => React.createElement("MinutesBody"),
+  MinutesJumpBar: () => null,
 }));
 vi.mock("@/components/minutes/notes-panel", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
@@ -115,11 +161,15 @@ vi.mock("@/components/minutes/notes-panel", async () => {
       props: Record<string, unknown>,
       ref: React.Ref<{ draft: () => Promise<void> }>,
     ) {
-      useImperativeHandle(ref, () => ({ draft: state.panelDraft }));
+      useImperativeHandle(ref, () => ({
+        draft: state.panelDraft,
+        stop: state.panelStop,
+      }));
       state.notesSheet += 1;
       state.notesProps = props;
       return null;
     }),
+    useOtherSources: () => ({ othersWrote: state.othersWrote }),
   };
 });
 vi.mock("@/components/minutes/summary-note", async () => {
@@ -175,6 +225,7 @@ const WRITTEN = { summary: "Budget passed 12-3." };
 function meeting(over: Record<string, unknown> = {}) {
   return {
     id: "m1",
+    event_id: "e1",
     status: "draft",
     can_edit: true,
     event_name: "Chapter meeting",
@@ -241,6 +292,7 @@ beforeEach(() => {
   state.controls = 0;
   state.recorder = { phase: "idle", refusal: null };
   state.notesProps = null;
+  state.othersWrote = false;
   state.summaryProps = null;
   state.event = undefined;
   state.draftPending = false;
@@ -249,7 +301,6 @@ beforeEach(() => {
   confirm.mockResolvedValue(true);
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ id: "m1" });
 });
-
 
 const EMPTY = {};
 
@@ -445,7 +496,9 @@ describe("Minutes on the phone", () => {
     state.meeting = meeting({ content: EMPTY });
     const tree = render();
     expect(button(tree, MEETING_NOTES_COPY.draft)).toBeUndefined();
-    act(() => (state.notesProps?.onDraftable as (draftable: boolean) => void)(true));
+    act(() =>
+      (state.notesProps?.onDraftable as (draftable: boolean) => void)(true),
+    );
     await act(async () =>
       button(tree, MEETING_NOTES_COPY.draft).props.onPress(),
     );
@@ -507,14 +560,68 @@ describe("Minutes on the phone", () => {
     expect(button(tree, MEETING_COPY.post)).toBeDefined();
   });
 
-  it("shows the note's chips: when, type, check-ins and who reads it", () => {
-    state.meeting = meeting({
-      attendees: { present: ["u1", "u2"], late: ["u3"], excused: ["u4"] },
-    });
-    state.event = { others_invited: true, excluded_role_ids: [] };
+  it("says what kind of meeting and when on one line, not a row of chips (#5562)", () => {
     const text = screenText(render());
-    expect(text).toContain(MEETING_COPY.checkedIn(3));
-    expect(text).toContain(MEETING_COPY.audienceEveryone);
+    expect(text).toMatch(/Chapter meeting, .* · Draft/);
+  });
+
+  it("opens web's ⋯ menu, in web's order, from beside the back row (#5562)", () => {
+    state.permissions = ["events:update"];
+    try {
+      state.meeting = meeting({
+        status: "posted",
+        posted_at: "2026-11-10T01:00:00.000Z",
+        can_edit: true,
+        can_delete: true,
+        transcript: "Speaker 1: Hello.",
+        event_end_time: "2026-11-10T00:00:00.000Z",
+      });
+      const tree = render();
+      act(() => {
+        tree.root
+          .findAll(
+            (node) =>
+              node.props.accessibilityLabel === "More" &&
+              typeof node.props.onPress === "function",
+          )[0]!
+          .props.onPress();
+      });
+      expect(state.menu?.actions.map((action) => action.label)).toEqual([
+        "Edit details",
+        "Mark who was there",
+        "Copy link",
+        "Open event",
+        "Transcript",
+        "Delete minutes",
+      ]);
+    } finally {
+      state.permissions = [];
+      state.menu = null;
+    }
+  });
+
+  it("leaves out what a member can't do from the ⋯ menu", () => {
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T01:00:00.000Z",
+      can_edit: false,
+      can_delete: false,
+    });
+    const tree = render();
+    act(() => {
+      tree.root
+        .findAll(
+          (node) =>
+            node.props.accessibilityLabel === "More" &&
+            typeof node.props.onPress === "function",
+        )[0]!
+        .props.onPress();
+    });
+    expect(state.menu?.actions.map((action) => action.label)).toEqual([
+      "Copy link",
+      "Open event",
+    ]);
+    state.menu = null;
   });
 
   it("keeps Post at the bottom when the microphone was refused", () => {
@@ -555,6 +662,33 @@ describe("Minutes on the phone", () => {
     state.draft = { status: "drafting" };
     const tree = render();
     expect(button(tree, MEETING_COPY.post)).toBeUndefined();
+  });
+
+  it("pins Drafting and Stop at the bottom while a draft is written, never Record (#5562)", async () => {
+    state.draft = { status: "drafting" };
+    state.recording = {
+      status: "none",
+      available: true,
+      blocked: null,
+      max_seconds: 7200,
+    };
+    state.row = recorderRow();
+    state.panelStop.mockResolvedValue(undefined);
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_NOTES_COPY.drafting);
+    expect(button(tree, "Record")).toBeUndefined();
+    expect(state.notesProps?.stopInFooter).toBe(true);
+    await act(async () =>
+      button(tree, MEETING_NOTES_COPY.stop).props.onPress(),
+    );
+    expect(state.panelStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the pinned draft reads everyone's notes when others wrote too, as the web does (#5562)", () => {
+    state.draft = { status: "drafting" };
+    state.othersWrote = true;
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_NOTE_TAKERS_COPY.draftingAll);
   });
 
   it("links the tasks suggested from posted minutes, and asks only where AI is on", () => {

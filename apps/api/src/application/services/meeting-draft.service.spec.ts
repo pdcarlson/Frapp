@@ -527,6 +527,7 @@ describe('MeetingDraftService', () => {
       expect(save.content).toEqual({
         tldr: '- Approved up to $1,200 for a DJ at formal.',
         tabled: [],
+        dates: [],
         summary: 'The chapter approved a DJ for formal.',
         announcements: '',
         decisions: [

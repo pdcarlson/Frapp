@@ -91,6 +91,7 @@ describe('TaskService', () => {
     series_id: null,
     occurrence_date: null,
     group_id: null,
+    meeting_id: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -288,6 +289,13 @@ describe('TaskService', () => {
         done: 0,
         confirmed: 0,
       });
+    });
+
+    it('links every copy to the minutes it was suggested from (#5562)', async () => {
+      await createForEveryone({ meeting_id: 'meeting-1' });
+      expect(mockTaskRepo.createGroup).toHaveBeenCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
     });
 
     it('pushes every member but the officer who made it', async () => {
@@ -1325,6 +1333,22 @@ describe('TaskService', () => {
   });
 
   describe('create', () => {
+    it('links a task suggested from minutes to them by id (#5562)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Book the bus',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        meeting_id: 'meeting-1',
+      });
+      expect(mockTaskRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
+    });
+
     it('should create task successfully', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockTaskRepo.create.mockResolvedValue(baseTask);

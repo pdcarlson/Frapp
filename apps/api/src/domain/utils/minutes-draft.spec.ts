@@ -84,7 +84,7 @@ describe('buildMinutesDraftPrompt', () => {
   it('carries the notes whole, between markers, and reads them back', () => {
     const prompt = buildMinutesDraftPrompt(request());
     expect(notesInPrompt(prompt.messages[0].content)).toBe(NOTES);
-    expect(prompt.promptVersion).toBe('minutes-draft@v9');
+    expect(prompt.promptVersion).toBe('minutes-draft@v10');
   });
 
   it('says the day of the week, so "by Wednesday" resolves', () => {
@@ -109,7 +109,10 @@ describe('buildMinutesDraftPrompt', () => {
       sections.indexOf('- summary:'),
     );
     expect(content).toContain('write it last');
-    expect(content).toContain('what members need to do and by when');
+    // The dates, decisions and action items have their own lists (#5562).
+    expect(content).toContain(
+      'never restate a date, a decision or an action item',
+    );
     expect(content).toContain('leave out procedure');
   });
 
@@ -245,6 +248,81 @@ describe('verifyMinutesDraft', () => {
       },
     ]);
     expect(review.left_out).toBe(1);
+  });
+
+  it('keeps a date coming up only with its line, soonest first, each once (#5562)', () => {
+    const { content, review } = verifyMinutesDraft(
+      output({
+        dates: [
+          {
+            date: '2026-10-23',
+            text: 'Bib pickup',
+            quote: 'Jordan will pick up the bibs friday',
+          },
+          {
+            date: '2026-10-21',
+            text: 'Email the 6',
+            quote: 'Priya will email the 6 by Wednesday',
+          },
+          {
+            date: '2026-10-21',
+            text: 'email the 6',
+            quote: 'Priya will email the 6 by Wednesday',
+          },
+          // Before the meeting: not coming up.
+          {
+            date: '2026-10-12',
+            text: 'Last week',
+            quote: 'Priya will email the 6 by Wednesday',
+          },
+          // Not a real day.
+          {
+            date: '2026-02-30',
+            text: 'Nowhere',
+            quote: 'Priya will email the 6 by Wednesday',
+          },
+          // No line of the notes names it.
+          { date: '2026-11-01', text: 'Formal', quote: 'formal is Nov 1' },
+        ],
+      }),
+      request(),
+    );
+    expect(content.dates).toEqual([
+      { date: '2026-10-21', text: 'Email the 6' },
+      { date: '2026-10-23', text: 'Bib pickup' },
+    ]);
+    expect(review.left_out).toBe(1);
+  });
+
+  it('keeps a decision’s headline, and none that only repeats its text (#5562)', () => {
+    const quote = 'formal: motion to spend up to $1,200 on a DJ. passed 22-5';
+    const { content } = verifyMinutesDraft(
+      output({
+        decisions: [
+          {
+            text: 'Approved up to $1,200 for a DJ at formal.',
+            headline: 'DJ for formal, up to $1,200.',
+            vote: null,
+            quote,
+          },
+          {
+            text: 'Formal is approved',
+            headline: 'Formal is approved',
+            vote: null,
+            quote,
+          },
+        ],
+      }),
+      request(),
+    );
+    expect(content.decisions).toEqual([
+      {
+        text: 'Approved up to $1,200 for a DJ at formal.',
+        headline: 'DJ for formal, up to $1,200',
+        vote: null,
+      },
+      { text: 'Formal is approved', vote: null },
+    ]);
   });
 
   it('puts a tabled matter’s quote back to its line, as a decision’s is', () => {

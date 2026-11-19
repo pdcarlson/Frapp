@@ -1249,6 +1249,10 @@ function pickContent(patch: MeetingContentPatch): MeetingContentPatch {
   if (patch.decisions !== undefined) out.decisions = patch.decisions;
   if (patch.action_items !== undefined) out.action_items = patch.action_items;
   if (patch.tabled !== undefined) out.tabled = patch.tabled;
+  // Soonest first, as Coming up reads them (#5562).
+  if (patch.dates !== undefined) {
+    out.dates = [...patch.dates].sort((a, b) => a.date.localeCompare(b.date));
+  }
   if (patch.officer_reports !== undefined) {
     out.officer_reports = patch.officer_reports;
   }

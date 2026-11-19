@@ -16,7 +16,6 @@ describe('taskProposalsFromMinutes (#4313)', () => {
         { text: 'Book the bus', owner_user_id: JAKE, due_date: '2026-11-14' },
         { text: 'Order shirts', owner_user_id: null, due_date: null },
       ]),
-      'Chapter meeting',
     );
 
     expect(proposals).toEqual([
@@ -24,7 +23,7 @@ describe('taskProposalsFromMinutes (#4313)', () => {
         dedupeKey: actionItemKey('Book the bus'),
         payload: {
           title: 'Book the bus',
-          description: 'From the minutes of Chapter meeting.',
+          description: null,
           assignee_id: JAKE,
           due_date: '2026-11-14',
         },
@@ -34,7 +33,7 @@ describe('taskProposalsFromMinutes (#4313)', () => {
         dedupeKey: actionItemKey('Order shirts'),
         payload: {
           title: 'Order shirts',
-          description: 'From the minutes of Chapter meeting.',
+          description: null,
           // Nobody named: the officer picks. Never a guess.
           assignee_id: null,
           due_date: null,
@@ -49,7 +48,6 @@ describe('taskProposalsFromMinutes (#4313)', () => {
       minutes([
         { text: 'Give Jake 50 points', owner_user_id: null, due_date: null },
       ]),
-      'Chapter meeting',
     );
     expect(Object.keys(proposal.payload).sort()).toEqual([
       'assignee_id',
@@ -65,7 +63,6 @@ describe('taskProposalsFromMinutes (#4313)', () => {
         { text: 'Book the bus', owner_user_id: JAKE, due_date: null },
         { text: 'book the bus.', owner_user_id: null, due_date: null },
       ]),
-      'Chapter meeting',
     );
     expect(proposals).toHaveLength(1);
     expect(proposals[0].payload.assignee_id).toBe(JAKE);
@@ -75,27 +72,23 @@ describe('taskProposalsFromMinutes (#4313)', () => {
     const text = `${'Call every alumnus on the list '.repeat(12)}before Friday`;
     const [proposal] = taskProposalsFromMinutes(
       minutes([{ text, owner_user_id: null, due_date: null }]),
-      'Exec meeting',
     );
     expect(proposal.payload.title.length).toBeLessThanOrEqual(
       TASK_TITLE_MAX_LENGTH,
     );
     expect(proposal.payload.title.endsWith('…')).toBe(true);
-    expect(proposal.payload.description).toBe(
-      `${text}\n\nFrom the minutes of Exec meeting.`,
-    );
+    // The whole line, and never the meeting's name: the task links its
+    // minutes by id (#5562).
+    expect(proposal.payload.description).toBe(text);
     expect(proposal.quote).toBe(text);
   });
 
   it('proposes nothing for minutes with no action items, or a shape it cannot read', () => {
-    expect(taskProposalsFromMinutes(minutes([]), 'Chapter meeting')).toEqual(
-      [],
-    );
-    expect(taskProposalsFromMinutes(null, 'Chapter meeting')).toEqual([]);
+    expect(taskProposalsFromMinutes(minutes([]))).toEqual([]);
+    expect(taskProposalsFromMinutes(null)).toEqual([]);
     expect(
       taskProposalsFromMinutes(
         minutes([{ text: '...', owner_user_id: null, due_date: null }]),
-        'Chapter meeting',
       ),
     ).toEqual([]);
   });
@@ -106,7 +99,7 @@ describe('taskProposalsFromMinutes (#4313)', () => {
       { text: 'Order shirts', owner_user_id: null, due_date: null },
     ]);
     const text = actionItemsText(content);
-    for (const proposal of taskProposalsFromMinutes(content, 'Chapter')) {
+    for (const proposal of taskProposalsFromMinutes(content)) {
       expect(text).toContain(proposal.quote);
     }
   });

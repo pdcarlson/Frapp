@@ -28,8 +28,11 @@ import {
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
   MEETING_NOTE_TAKERS_COPY,
+  MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
+  notesLookLikeTranscript,
+  notesWordCount,
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import {
@@ -97,9 +100,30 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** How long typing rests before the notes save: every notes box's wait. */
 const NOTES_AUTOSAVE_MS = 800;
 
+/**
+ * What a draft reads besides this officer's notes: other note-takers' notes,
+ * and the recording's transcript, a source of its own since #4935 that is
+ * never put into this box. The screen's "Drafting" line reads it too, so it
+ * says the same as the panel's (#5562).
+ */
+export function useOtherSources(
+  meetingId: string,
+  recording: MeetingRecordingState | null | undefined,
+) {
+  const notesState = useMeetingNotes(meetingId).data ?? null;
+  const transcriptReady =
+    recording?.status === "ready" && !!recording.transcript;
+  const otherWriters = (notesState?.takers ?? []).filter(
+    (taker) => taker.notes.trim() !== "" && taker.held === null,
+  );
+  return { othersWrote: otherWriters.length > 0 || transcriptReady };
+}
+
 export interface NotesPanelHandle {
   /** Asks for a draft from these notes and the transcript. */
   draft: () => Promise<void>;
+  /** Stops a draft being written; the notes stay. */
+  stop: () => Promise<void>;
 }
 
 export interface NotesPanelProps {
@@ -125,206 +149,205 @@ export interface NotesPanelProps {
    * draft that failed can be asked for again.
    */
   onDraftable?: (draftable: boolean) => void;
+  /**
+   * The screen pins "Drafting" and Stop at the bottom while a draft is
+   * written (#5562; Paul, 2026-11-19: they were buried under a long paste,
+   * with Record still pinned), so the panel leaves both out.
+   */
+  stopInFooter?: boolean;
 }
 
 export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
   function NotesPanel(
-  {
-    meetingId,
-    eventStart,
-    state,
-    hasContent,
-    recording = null,
-    getVersion,
-    onSettled,
-    autoDraft = false,
-    onDraftable,
-  },
-  ref,
-) {
-  const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+    {
+      meetingId,
+      eventStart,
+      state,
+      hasContent,
+      recording = null,
+      getVersion,
+      onSettled,
+      autoDraft = false,
+      onDraftable,
+      stopInFooter = false,
+    },
+    ref,
+  ) {
+    const { tokens } = useFrappTheme();
+    const { accent } = useChapterBranding();
+    const styles = createStyles(tokens, accent);
 
-  const request = useRequestMeetingDraft();
-  const discard = useDiscardMeetingDraft();
-  const use = useUseMeetingDraft();
-  const removeRecording = useRemoveMeetingRecording();
-  const { ensureConsent, consentSheet } = useAiConsentGate();
-  const reporting = useAiReport();
-  const keptName = `meeting-notes:${meetingId}`;
-  const stored = useKeptSheetOpening<KeptNotes>(keptName, {
-    waitsOnSend: true,
-  });
-  const fits = stored !== undefined && stored.base === state.notes;
-  const opening = fits ? stored : undefined;
-  // Typed over notes the server no longer holds: it goes.
-  useDropKeptSheetDraft(keptName, stored !== undefined && !fits);
-  const [notes, setNotes] = useState(opening?.notes ?? state.notes);
-  // The stored notes this visit's typing is over.
-  const [base, setBase] = useState(state.notes);
-  const kept = useKeptSheetDraft<KeptNotes>(
-    keptName,
-    { notes, base },
-    undefined,
-    opening,
-  );
-  const [problem, setProblem] = useState<string | null>(null);
-  const [focused, setFocused] = useState(false);
+    const request = useRequestMeetingDraft();
+    const discard = useDiscardMeetingDraft();
+    const use = useUseMeetingDraft();
+    const removeRecording = useRemoveMeetingRecording();
+    const { ensureConsent, consentSheet } = useAiConsentGate();
+    const reporting = useAiReport();
+    const keptName = `meeting-notes:${meetingId}`;
+    const stored = useKeptSheetOpening<KeptNotes>(keptName, {
+      waitsOnSend: true,
+    });
+    const fits = stored !== undefined && stored.base === state.notes;
+    const opening = fits ? stored : undefined;
+    // Typed over notes the server no longer holds: it goes.
+    useDropKeptSheetDraft(keptName, stored !== undefined && !fits);
+    const [notes, setNotes] = useState(opening?.notes ?? state.notes);
+    // The stored notes this visit's typing is over.
+    const [base, setBase] = useState(state.notes);
+    const kept = useKeptSheetDraft<KeptNotes>(
+      keptName,
+      { notes, base },
+      undefined,
+      opening,
+    );
+    const [problem, setProblem] = useState<string | null>(null);
+    const [focused, setFocused] = useState(false);
 
-  // Opened while an earlier visit's ask is still out (#5086): it shows what
-  // that visit sent, held as the asking sheet holds it until the ask settles.
-  const drafting =
-    state.status === "drafting" ||
-    request.isPending ||
-    use.isPending ||
-    kept.sendingElsewhere;
-  // That ask landed: the server holds what this sheet shows, as it does after
-  // a send from this visit.
-  const [heardLanding, setHeardLanding] = useState(false);
-  if (kept.landedElsewhere && !heardLanding) {
-    setHeardLanding(true);
-    // What was sent, as the sending visit takes it: the server stores it
-    // trimmed.
-    setBase(notes.trim());
-  }
-  // The draft read's `blocked` is as old as that read. What the member just
-  // answered on the sheet, or what the server just refused, is newer.
-  const [consentNow, setConsentNow] = useState<"agreed" | "required" | null>(
-    null,
-  );
-  const needsConsent =
-    consentNow === "required" ||
-    (state.blocked === "consent_required" && consentNow !== "agreed");
-
-  // Whenever a draft stops being written (put in, waiting, stopped, failed),
-  // the minutes behind the sheet may be behind.
-  const lastStatus = useRef(state.status);
-  const settled = useRef(onSettled);
-  useEffect(() => {
-    settled.current = onSettled;
-  });
-  useEffect(() => {
-    if (lastStatus.current === state.status) return;
-    const was = lastStatus.current;
-    lastStatus.current = state.status;
-    if (was === "drafting" || state.status === "applied") settled.current();
-  }, [state.status]);
-
-  // Since #4935 the recording's transcript is a source of its own, read by
-  // the draft beside everyone's notes, and is never put into this box.
-  const notesState = useMeetingNotes(meetingId).data ?? null;
-  const transcriptReady =
-    recording?.status === "ready" && !!recording.transcript;
-  const otherWriters = (notesState?.takers ?? []).filter(
-    (taker) => taker.notes.trim() !== "" && taker.held === null,
-  );
-  const othersWrote = otherWriters.length > 0 || transcriptReady;
-  const choose = useChooseMeetingDraftVersion();
-  const viewer = useCurrentUser().data as { id?: string } | undefined;
-  const myName = useMemberDisplayNames().nameFor(viewer?.id ?? "");
-  const isMine = (from: string) => !!myName && from === myName;
-
-  async function handleChoose(conflict: number, version: number) {
-    const expected = await getVersion();
-    if (!expected) {
-      setProblem(MEETING_NOTE_TAKERS_COPY.chooseFailed);
-      return;
+    // Opened while an earlier visit's ask is still out (#5086): it shows what
+    // that visit sent, held as the asking sheet holds it until the ask settles.
+    const drafting =
+      state.status === "drafting" ||
+      request.isPending ||
+      use.isPending ||
+      kept.sendingElsewhere;
+    // That ask landed: the server holds what this sheet shows, as it does after
+    // a send from this visit.
+    const [heardLanding, setHeardLanding] = useState(false);
+    if (kept.landedElsewhere && !heardLanding) {
+      setHeardLanding(true);
+      // What was sent, as the sending visit takes it: the server stores it
+      // trimmed.
+      setBase(notes.trim());
     }
-    try {
-      await choose.mutateAsync({
-        id: meetingId,
-        body: { conflict, version, expected_updated_at: expected },
-      });
-      settled.current();
-    } catch (error) {
-      if (codeOf(error) === "meeting.stale") settled.current();
-      setProblem(errorCopy(error, MEETING_NOTE_TAKERS_COPY.chooseFailed));
-    }
-  }
+    // The draft read's `blocked` is as old as that read. What the member just
+    // answered on the sheet, or what the server just refused, is newer.
+    const [consentNow, setConsentNow] = useState<"agreed" | "required" | null>(
+      null,
+    );
+    const needsConsent =
+      consentNow === "required" ||
+      (state.blocked === "consent_required" && consentNow !== "agreed");
 
-  async function handleDraft() {
-    if (kept.sendingElsewhere) return;
-    const text = notes.trim();
-    if (!text && !othersWrote) {
-      setProblem(MEETING_NOTES_COPY.empty);
-      return;
-    }
-    if (text.length > MEETING_NOTES_MAX_LENGTH) {
-      setProblem(
-        MEETING_NOTES_COPY.tooLong(MEETING_NOTES_MAX_LENGTH, text.length),
-      );
-      return;
-    }
-    setProblem(null);
-    if (needsConsent) {
-      try {
-        // A No leaves everything as it was: the notes stay in the box.
-        if (!(await ensureConsent())) return;
-        setConsentNow("agreed");
-      } catch {
-        setProblem(MEETING_NOTES_COPY.consentCheckFailed);
+    // Whenever a draft stops being written (put in, waiting, stopped, failed),
+    // the minutes behind the sheet may be behind.
+    const lastStatus = useRef(state.status);
+    const settled = useRef(onSettled);
+    useEffect(() => {
+      settled.current = onSettled;
+    });
+    useEffect(() => {
+      if (lastStatus.current === state.status) return;
+      const was = lastStatus.current;
+      lastStatus.current = state.status;
+      if (was === "drafting" || state.status === "applied") settled.current();
+    }, [state.status]);
+
+    const { othersWrote } = useOtherSources(meetingId, recording);
+    const choose = useChooseMeetingDraftVersion();
+    const viewer = useCurrentUser().data as { id?: string } | undefined;
+    const myName = useMemberDisplayNames().nameFor(viewer?.id ?? "");
+    const isMine = (from: string) => !!myName && from === myName;
+
+    async function handleChoose(conflict: number, version: number) {
+      const expected = await getVersion();
+      if (!expected) {
+        setProblem(MEETING_NOTE_TAKERS_COPY.chooseFailed);
         return;
       }
-    }
-    if (hasContent) {
-      const yes = await confirmAlert({
-        title: MEETING_NOTES_COPY.replaceTitle,
-        body: MEETING_NOTES_COPY.replaceBodyDraft,
-        confirmLabel: MEETING_NOTES_COPY.draft,
-      });
-      if (!yes) return;
-    }
-    const expected = await getVersion();
-    if (!expected) {
-      setProblem(MEETING_NOTES_COPY.startFailed);
-      return;
-    }
-    // Out of the kept store until the ask lands or fails: the server holds
-    // the notes once it lands.
-    kept.hold();
-    try {
-      await request.mutateAsync({
-        id: meetingId,
-        body: {
-          ...(text ? { notes: text } : {}),
-          expected_updated_at: expected,
-          meeting_date: meetingLocalDay(eventStart),
-        },
-      });
-      kept.clear();
-      // The server holds these notes now; what is typed next is over them.
-      setBase(text);
-    } catch (error) {
-      kept.release();
-      const code = codeOf(error);
-      if (code === "meeting.standards_refused")
-        setProblem(STANDARDS_MEETING_NOTE);
-      else if (code === "ai.consent.required") {
-        // Said No since the draft was read: the next press asks.
-        setConsentNow("required");
-        setProblem(MEETING_DRAFT_FAILURE_COPY.consent_required);
-      } else if (code === "ai.chapter_off")
-        setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
-      else if (code === "meeting.stale") {
-        // Someone saved on the web in the moment between the read and the
-        // ask. Nothing here is lost; the next press reads the new version.
+      try {
+        await choose.mutateAsync({
+          id: meetingId,
+          body: { conflict, version, expected_updated_at: expected },
+        });
         settled.current();
-        setProblem(MEETING_NOTES_COPY.startFailed);
-      } else setProblem(errorCopy(error, MEETING_NOTES_COPY.startFailed));
+      } catch (error) {
+        if (codeOf(error) === "meeting.stale") settled.current();
+        setProblem(errorCopy(error, MEETING_NOTE_TAKERS_COPY.chooseFailed));
+      }
     }
-  }
 
-  useImperativeHandle(ref, () => ({ draft: handleDraft }));
+    async function handleDraft() {
+      if (kept.sendingElsewhere) return;
+      const text = notes.trim();
+      if (!text && !othersWrote) {
+        setProblem(MEETING_NOTES_COPY.empty);
+        return;
+      }
+      if (text.length > MEETING_NOTES_MAX_LENGTH) {
+        setProblem(
+          MEETING_NOTES_COPY.tooLong(MEETING_NOTES_MAX_LENGTH, text.length),
+        );
+        return;
+      }
+      setProblem(null);
+      if (needsConsent) {
+        try {
+          // A No leaves everything as it was: the notes stay in the box.
+          if (!(await ensureConsent())) return;
+          setConsentNow("agreed");
+        } catch {
+          setProblem(MEETING_NOTES_COPY.consentCheckFailed);
+          return;
+        }
+      }
+      if (hasContent) {
+        const yes = await confirmAlert({
+          title: MEETING_NOTES_COPY.replaceTitle,
+          body: MEETING_NOTES_COPY.replaceBodyDraft,
+          confirmLabel: MEETING_NOTES_COPY.draft,
+        });
+        if (!yes) return;
+      }
+      const expected = await getVersion();
+      if (!expected) {
+        setProblem(MEETING_NOTES_COPY.startFailed);
+        return;
+      }
+      // Out of the kept store until the ask lands or fails: the server holds
+      // the notes once it lands.
+      kept.hold();
+      try {
+        await request.mutateAsync({
+          id: meetingId,
+          body: {
+            ...(text ? { notes: text } : {}),
+            expected_updated_at: expected,
+            meeting_date: meetingLocalDay(eventStart),
+          },
+        });
+        kept.clear();
+        // The server holds these notes now; what is typed next is over them.
+        setBase(text);
+      } catch (error) {
+        kept.release();
+        const code = codeOf(error);
+        if (code === "meeting.standards_refused")
+          setProblem(STANDARDS_MEETING_NOTE);
+        else if (code === "ai.consent.required") {
+          // Said No since the draft was read: the next press asks.
+          setConsentNow("required");
+          setProblem(MEETING_DRAFT_FAILURE_COPY.consent_required);
+        } else if (code === "ai.chapter_off")
+          setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
+        else if (code === "meeting.stale") {
+          // Someone saved on the web in the moment between the read and the
+          // ask. Nothing here is lost; the next press reads the new version.
+          settled.current();
+          setProblem(MEETING_NOTES_COPY.startFailed);
+        } else setProblem(errorCopy(error, MEETING_NOTES_COPY.startFailed));
+      }
+    }
+
+    useImperativeHandle(ref, () => ({ draft: handleDraft, stop: handleStop }));
 
     // Saved as they type, once typing rests (#5288), one save at a time so a
     // slow one can't land after a newer one. An emptied box saves only before
     // anything is drafted: emptying the notes clears the draft written from
     // them, which after a draft only Clear notes may do, and before one it
     // keeps a transcript's own draft from reading notes the officer deleted.
-  const saveNotes = useSaveMeetingNotes();
+    const saveNotes = useSaveMeetingNotes();
     const [saveFailed, setSaveFailed] = useState(false);
-  const typed = notes.replace(/\s+$/u, "");
+    const typed = notes.replace(/\s+$/u, "");
     const savable = (
       text: string,
       over = baseRef.current,
@@ -365,14 +388,14 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
         if (saving.current === run) saving.current = null;
       }
     }
-  const unsaved =
+    const unsaved =
       !drafting && !saveFailed && savable(typed, base, state.status);
-  useEffect(() => {
-    if (!unsaved) return;
+    useEffect(() => {
+      if (!unsaved) return;
       const timer = setTimeout(() => void persist(), NOTES_AUTOSAVE_MS);
-    return () => clearTimeout(timer);
+      return () => clearTimeout(timer);
       // `persist` reads the latest notes through refs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [unsaved, typed]);
     // Leaving the screen sends what is still waiting, as a note-taker's box
     // does; the phone's kept copy holds it too until then.
@@ -382,295 +405,355 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
       [],
     );
 
-  const draftable = notes.trim() !== "" || othersWrote;
-  const draftableReported = useRef<boolean | null>(null);
-  useEffect(() => {
-    if (draftableReported.current === draftable) return;
-    draftableReported.current = draftable;
-    onDraftable?.(draftable);
-  }, [draftable, onDraftable]);
+    const draftable = notes.trim() !== "" || othersWrote;
+    const draftableReported = useRef<boolean | null>(null);
+    useEffect(() => {
+      if (draftableReported.current === draftable) return;
+      draftableReported.current = draftable;
+      onDraftable?.(draftable);
+    }, [draftable, onDraftable]);
 
-  // A transcript just came in for minutes with nothing drafted: draft now.
-  const autoAsked = useRef(false);
-  const autoReady =
-    autoDraft &&
-    !drafting &&
-    state.status === "none" &&
-    !needsConsent &&
-    !kept.sendingElsewhere;
-  useEffect(() => {
-    if (!autoReady || autoAsked.current) return;
-    autoAsked.current = true;
-    void handleDraft();
-    // handleDraft reads the latest notes through the closure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoReady]);
+    // A transcript just came in for minutes with nothing drafted: draft now.
+    const autoAsked = useRef(false);
+    const autoReady =
+      autoDraft &&
+      !drafting &&
+      state.status === "none" &&
+      !needsConsent &&
+      !kept.sendingElsewhere;
+    useEffect(() => {
+      if (!autoReady || autoAsked.current) return;
+      autoAsked.current = true;
+      void handleDraft();
+      // handleDraft reads the latest notes through the closure.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoReady]);
 
-  async function handleStop() {
-    // Only the writing stops: the notes stay, stored and in the box.
-    try {
-      await discard.mutateAsync({ id: meetingId, keepNotes: true });
-    } catch (error) {
-      setProblem(errorCopy(error, MEETING_NOTES_COPY.stopFailed));
+    async function handleStop() {
+      // Only the writing stops: the notes stay, stored and in the box.
+      try {
+        await discard.mutateAsync({ id: meetingId, keepNotes: true });
+      } catch (error) {
+        setProblem(errorCopy(error, MEETING_NOTES_COPY.stopFailed));
+      }
     }
-  }
 
-  async function handleClear() {
-    const hasRecording = recording !== null && recording.status !== "none";
-    const yes = await confirmAlert({
-      title: MEETING_NOTES_COPY.clearTitle,
-      body: hasRecording
-        ? MEETING_NOTES_COPY.clearBodyRecording
-        : MEETING_NOTES_COPY.clearBody,
-      confirmLabel: MEETING_NOTES_COPY.clear,
-      destructive: true,
-    });
-    if (!yes) return;
-    try {
-      // The officer's own notes and the draft; other note-takers' stay theirs.
-      await discard.mutateAsync({ id: meetingId });
-      // The recording is the officer's upload: Clear notes removes it too.
-      if (hasRecording) await removeRecording.mutateAsync({ id: meetingId });
-      kept.clear();
-      setNotes("");
-      setBase("");
-      setProblem(null);
-    } catch (error) {
-      setProblem(errorCopy(error, MEETING_NOTES_COPY.clearFailed));
-    }
-  }
-
-  async function handleUse() {
-    if (hasContent) {
+    async function handleClear() {
+      const hasRecording = recording !== null && recording.status !== "none";
       const yes = await confirmAlert({
-        title: MEETING_NOTES_COPY.replaceTitle,
-        body: MEETING_NOTES_COPY.replaceBodyUse,
-        confirmLabel: MEETING_NOTES_COPY.useDraft,
+        title: MEETING_NOTES_COPY.clearTitle,
+        body: hasRecording
+          ? MEETING_NOTES_COPY.clearBodyRecording
+          : MEETING_NOTES_COPY.clearBody,
+        confirmLabel: MEETING_NOTES_COPY.clear,
+        destructive: true,
       });
       if (!yes) return;
+      try {
+        // The officer's own notes and the draft; other note-takers' stay theirs.
+        await discard.mutateAsync({ id: meetingId });
+        // The recording is the officer's upload: Clear notes removes it too.
+        if (hasRecording) await removeRecording.mutateAsync({ id: meetingId });
+        kept.clear();
+        setNotes("");
+        setBase("");
+        setProblem(null);
+      } catch (error) {
+        setProblem(errorCopy(error, MEETING_NOTES_COPY.clearFailed));
+      }
     }
-    const expected = await getVersion();
-    if (!expected) {
-      setProblem(MEETING_NOTES_COPY.useFailed);
-      return;
-    }
-    try {
-      await use.mutateAsync({ id: meetingId, expectedUpdatedAt: expected });
-    } catch (error) {
-      if (codeOf(error) === "meeting.stale") settled.current();
-      setProblem(errorCopy(error, MEETING_NOTES_COPY.useFailed));
-    }
-  }
 
-  const waiting = state.status === "ready";
-  const status: { problem: boolean; text: string } = problem
-    ? { problem: true, text: problem }
+    async function handleUse() {
+      if (hasContent) {
+        const yes = await confirmAlert({
+          title: MEETING_NOTES_COPY.replaceTitle,
+          body: MEETING_NOTES_COPY.replaceBodyUse,
+          confirmLabel: MEETING_NOTES_COPY.useDraft,
+        });
+        if (!yes) return;
+      }
+      const expected = await getVersion();
+      if (!expected) {
+        setProblem(MEETING_NOTES_COPY.useFailed);
+        return;
+      }
+      try {
+        await use.mutateAsync({ id: meetingId, expectedUpdatedAt: expected });
+      } catch (error) {
+        if (codeOf(error) === "meeting.stale") settled.current();
+        setProblem(errorCopy(error, MEETING_NOTES_COPY.useFailed));
+      }
+    }
+
+    const waiting = state.status === "ready";
+    const status: { problem: boolean; text: string } = problem
+      ? { problem: true, text: problem }
       : saveFailed
         ? { problem: true, text: MEETING_NOTE_TAKERS_COPY.saveFailed }
-    : drafting
-      ? {
-          problem: false,
-          text: othersWrote
-            ? MEETING_NOTE_TAKERS_COPY.draftingAll
-            : MEETING_NOTES_COPY.drafting,
-        }
-      : needsConsent
+        : drafting && stopInFooter
+          ? { problem: false, text: "" }
+          : drafting
             ? {
                 problem: false,
-                text: MEETING_DRAFT_FAILURE_COPY.consent_required,
+                text: othersWrote
+                  ? MEETING_NOTE_TAKERS_COPY.draftingAll
+                  : MEETING_NOTES_COPY.drafting,
               }
-        : state.status === "failed"
-          ? {
-              problem: state.failure !== "stopped",
-                  text:
-                    state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
-            }
-          : waiting
-            ? { problem: false, text: MEETING_NOTES_COPY.waiting }
-            : state.status === "applied"
+            : needsConsent
               ? {
                   problem: false,
-                  text: othersWrote
-                    ? MEETING_NOTE_TAKERS_COPY.appliedAll
-                    : MEETING_NOTES_COPY.applied,
+                  text: MEETING_DRAFT_FAILURE_COPY.consent_required,
                 }
-              : { problem: false, text: "" };
+              : state.status === "failed"
+                ? {
+                    problem: state.failure !== "stopped",
+                    text:
+                      state.failure_message ??
+                      MEETING_DRAFT_FAILURE_COPY.failed,
+                  }
+                : waiting
+                  ? { problem: false, text: MEETING_NOTES_COPY.waiting }
+                  : state.status === "applied"
+                    ? {
+                        problem: false,
+                        text: othersWrote
+                          ? MEETING_NOTE_TAKERS_COPY.appliedAll
+                          : MEETING_NOTES_COPY.applied,
+                      }
+                    : { problem: false, text: "" };
 
-  const reviewed = state.status === "applied" || state.status === "ready";
-  const { gaps, left_out: leftOut } = state.review;
-  // An API from before several note-takers sends no disagreements.
-  const conflicts = state.review.conflicts ?? [];
-  const canClear = !drafting && (notes !== "" || state.status !== "none");
-  const clearing = discard.isPending || removeRecording.isPending;
-  // A draft the AI wrote can be reported, like an Ask answer. Each draft is
-  // its own thing to report.
-  const reportTarget: AiReportTarget = {
-    subject: "meeting_draft",
-    subjectId: meetingId,
-    version: state.requested_at ?? null,
-  };
-  const draftReported = reporting.isReported(reportTarget);
+    const reviewed = state.status === "applied" || state.status === "ready";
+    const { gaps, left_out: leftOut } = state.review;
+    // An API from before several note-takers sends no disagreements.
+    const conflicts = state.review.conflicts ?? [];
+    const canClear = !drafting && (notes !== "" || state.status !== "none");
+    const clearing = discard.isPending || removeRecording.isPending;
+    // A draft the AI wrote can be reported, like an Ask answer. Each draft is
+    // its own thing to report.
+    const reportTarget: AiReportTarget = {
+      subject: "meeting_draft",
+      subjectId: meetingId,
+      version: state.requested_at ?? null,
+    };
+    const draftReported = reporting.isReported(reportTarget);
 
-  return (
-    <View style={styles.panel}>
-      <TextInput
-        multiline
-        value={notes}
-        editable={!drafting}
-        onChangeText={(text) => {
-          setNotes(text);
-          if (problem) setProblem(null);
-            if (saveFailed) setSaveFailed(false);
-        }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholder={MEETING_NOTES_COPY.placeholder}
-        placeholderTextColor={tokens.color.text.muted}
-        accessibilityLabel={MEETING_NOTES_COPY.heading}
-        style={[
-          styles.field,
-          styles.fieldMultilineText,
-          styles.notes,
-          focused ? styles.fieldFocused : null,
-        ]}
-      />
-      {status.text ? (
-        <Text
-          accessibilityLiveRegion="polite"
-          style={[styles.status, status.problem ? styles.problem : null]}
-        >
-          {status.text}
-        </Text>
-      ) : null}
+    // A pasted transcript folds into a card (#5562; Paul, 2026-11-19: a Wispr
+    // Flow paste made "the infinite scroll"): what it is and how long, with
+    // View and Remove, and the box stays a fixed height when it opens.
+    const [showText, setShowText] = useState(false);
+    const pasted = notesLookLikeTranscript(notes);
+    const folded = pasted && !showText && !focused;
+    const pastedCopy = MINUTES_READ_COPY.pastedTranscript;
 
-      <View style={styles.actions}>
-        {drafting ? (
+    async function handleRemovePasted() {
+      // After a draft only Clear notes may empty the stored notes, so Remove
+      // is Clear there; before one it empties the box, which saves.
+      if (state.status !== "none") {
+        await handleClear();
+        return;
+      }
+      const yes = await confirmAlert({
+        title: pastedCopy.removeTitle,
+        body: pastedCopy.removeBody,
+        confirmLabel: pastedCopy.remove,
+        destructive: true,
+      });
+      if (!yes) return;
+      setNotes("");
+      setShowText(false);
+    }
+
+    return (
+      <View style={styles.panel}>
+        {folded ? (
+          <View style={styles.pastedCard}>
+            <View style={styles.pastedText}>
+              <Text style={styles.reviewHead}>{pastedCopy.title}</Text>
+              <Text style={styles.hint}>
+                {pastedCopy.words(notesWordCount(notes))}
+              </Text>
+            </View>
+            <TextAction
+              label={pastedCopy.view}
+              color={accent}
+              onPress={() => setShowText(true)}
+            />
+            {!drafting ? (
+              <TextAction
+                label={pastedCopy.remove}
+                color={tokens.color.text.mutedForeground}
+                disabled={clearing}
+                onPress={() => void handleRemovePasted()}
+              />
+            ) : null}
+          </View>
+        ) : (
+          <TextInput
+            multiline
+            value={notes}
+            editable={!drafting}
+            onChangeText={(text) => {
+              setNotes(text);
+              if (problem) setProblem(null);
+              if (saveFailed) setSaveFailed(false);
+            }}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            placeholder={MEETING_NOTES_COPY.placeholder}
+            placeholderTextColor={tokens.color.text.muted}
+            accessibilityLabel={MEETING_NOTES_COPY.heading}
+            style={[
+              styles.field,
+              styles.fieldMultilineText,
+              styles.notes,
+              focused ? styles.fieldFocused : null,
+            ]}
+          />
+        )}
+        {pasted && showText && !focused ? (
           <TextAction
-            label={MEETING_NOTES_COPY.stop}
+            label={pastedCopy.hide}
             color={tokens.color.text.mutedForeground}
-            disabled={
-              discard.isPending || request.isPending || kept.sendingElsewhere
-            }
-            onPress={() => void handleStop()}
+            onPress={() => setShowText(false)}
           />
         ) : null}
-        {waiting ? (
-          <TextAction
-            label={MEETING_NOTES_COPY.useDraft}
-            color={accent}
-            disabled={use.isPending}
-            onPress={() => void handleUse()}
-          />
-        ) : null}
-        {!drafting && (reviewed || waiting) ? (
-          <TextAction
-            label={MEETING_NOTES_COPY.draftAgain}
-            color={accent}
-            onPress={() => void handleDraft()}
-          />
-        ) : null}
-        {canClear ? (
-          <TextAction
-            label={MEETING_NOTES_COPY.clear}
-            color={tokens.color.text.mutedForeground}
-            disabled={clearing}
-            onPress={() => void handleClear()}
-          />
-        ) : null}
-      </View>
-
-      {reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
-        <View style={styles.review}>
-          <Text accessibilityRole="header" style={styles.reviewHead}>
-            {MEETING_NOTES_COPY.toFillIn}
+        {status.text ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.status, status.problem ? styles.problem : null]}
+          >
+            {status.text}
           </Text>
-          {gaps.map((gap, index) => (
-            <Text key={index} style={styles.gap}>
-              {`• ${gap}`}
-            </Text>
-          ))}
-          {leftOut > 0 ? (
-            <Text style={styles.hint}>
-              {MEETING_NOTES_COPY.leftOut(leftOut)}
-            </Text>
+        ) : null}
+
+        <View style={styles.actions}>
+          {drafting && !stopInFooter ? (
+            <TextAction
+              label={MEETING_NOTES_COPY.stop}
+              color={tokens.color.text.mutedForeground}
+              disabled={
+                discard.isPending || request.isPending || kept.sendingElsewhere
+              }
+              onPress={() => void handleStop()}
+            />
+          ) : null}
+          {waiting ? (
+            <TextAction
+              label={MEETING_NOTES_COPY.useDraft}
+              color={accent}
+              disabled={use.isPending}
+              onPress={() => void handleUse()}
+            />
+          ) : null}
+          {!drafting && (reviewed || waiting) ? (
+            <TextAction
+              label={MEETING_NOTES_COPY.draftAgain}
+              color={accent}
+              onPress={() => void handleDraft()}
+            />
+          ) : null}
+          {canClear ? (
+            <TextAction
+              label={MEETING_NOTES_COPY.clear}
+              color={tokens.color.text.mutedForeground}
+              disabled={clearing}
+              onPress={() => void handleClear()}
+            />
           ) : null}
         </View>
-      ) : null}
 
-      {reviewed && !drafting && conflicts.length > 0 ? (
-        <View style={styles.review}>
-          <Text accessibilityRole="header" style={styles.reviewHead}>
-            {MEETING_NOTE_TAKERS_COPY.disagreed}
-          </Text>
-          {conflicts.map((conflict, index) => (
-            <View key={index} style={styles.conflict}>
-              <Text style={styles.settled}>
-                {conflict.settled_by
-                  ? MEETING_NOTE_TAKERS_COPY.settledBy[conflict.settled_by]
-                  : MEETING_NOTE_TAKERS_COPY.youDecide}
+        {reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
+          <View style={styles.review}>
+            <Text accessibilityRole="header" style={styles.reviewHead}>
+              {MEETING_NOTES_COPY.toFillIn}
+            </Text>
+            {gaps.map((gap, index) => (
+              <Text key={index} style={styles.gap}>
+                {`• ${gap}`}
               </Text>
-              <Text style={styles.gap}>{conflict.about}</Text>
-              {conflict.versions.map((version, at) => (
-                <View key={at} style={styles.version}>
-                  <Text style={styles.gap}>{version.text}</Text>
-                  <Text style={styles.hint}>
-                    {`${MEETING_NOTE_TAKERS_COPY.from(version.from, isMine(version.from))}: “${version.quote}”`}
-                  </Text>
-                  {conflict.chosen === at ? (
-                    <Text style={styles.hint}>
-                      {MEETING_NOTE_TAKERS_COPY.inMinutes}
-                    </Text>
-                  ) : state.status === "applied" ? (
-                    <OnboardingSecondaryButton
-                      fill
-                      label={
-                        conflict.chosen === null
-                          ? MEETING_NOTE_TAKERS_COPY.pickVersion(
-                              version.from,
-                              isMine(version.from),
-                            )
-                          : MEETING_NOTE_TAKERS_COPY.takeVersion(
-                              version.from,
-                              isMine(version.from),
-                            )
-                      }
-                      disabled={choose.isPending}
-                      onPress={() => void handleChoose(index, at)}
-                    />
-                  ) : null}
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      ) : null}
+            ))}
+            {leftOut > 0 ? (
+              <Text style={styles.hint}>
+                {MEETING_NOTES_COPY.leftOut(leftOut)}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
-      {/* Last, so it turning into "Reported" moves nothing. */}
-      {reviewed && !drafting && reporting.offered ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            draftReported
-              ? AI_REPORT_COPY.reported
-              : AI_REPORT_COPY.titles.meeting_draft
-          }
-          accessibilityState={draftReported ? { disabled: true } : undefined}
-          disabled={draftReported}
-          onPress={() => reporting.report(reportTarget)}
+        {reviewed && !drafting && conflicts.length > 0 ? (
+          <View style={styles.review}>
+            <Text accessibilityRole="header" style={styles.reviewHead}>
+              {MEETING_NOTE_TAKERS_COPY.disagreed}
+            </Text>
+            {conflicts.map((conflict, index) => (
+              <View key={index} style={styles.conflict}>
+                <Text style={styles.settled}>
+                  {conflict.settled_by
+                    ? MEETING_NOTE_TAKERS_COPY.settledBy[conflict.settled_by]
+                    : MEETING_NOTE_TAKERS_COPY.youDecide}
+                </Text>
+                <Text style={styles.gap}>{conflict.about}</Text>
+                {conflict.versions.map((version, at) => (
+                  <View key={at} style={styles.version}>
+                    <Text style={styles.gap}>{version.text}</Text>
+                    <Text style={styles.hint}>
+                      {`${MEETING_NOTE_TAKERS_COPY.from(version.from, isMine(version.from))}: “${version.quote}”`}
+                    </Text>
+                    {conflict.chosen === at ? (
+                      <Text style={styles.hint}>
+                        {MEETING_NOTE_TAKERS_COPY.inMinutes}
+                      </Text>
+                    ) : state.status === "applied" ? (
+                      <OnboardingSecondaryButton
+                        fill
+                        label={
+                          conflict.chosen === null
+                            ? MEETING_NOTE_TAKERS_COPY.pickVersion(
+                                version.from,
+                                isMine(version.from),
+                              )
+                            : MEETING_NOTE_TAKERS_COPY.takeVersion(
+                                version.from,
+                                isMine(version.from),
+                              )
+                        }
+                        disabled={choose.isPending}
+                        onPress={() => void handleChoose(index, at)}
+                      />
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Last, so it turning into "Reported" moves nothing. */}
+        {reviewed && !drafting && reporting.offered ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              draftReported
+                ? AI_REPORT_COPY.reported
+                : AI_REPORT_COPY.titles.meeting_draft
+            }
+            accessibilityState={draftReported ? { disabled: true } : undefined}
+            disabled={draftReported}
+            onPress={() => reporting.report(reportTarget)}
             style={({ pressed }) => [
               styles.report,
               pressed ? styles.pressed : null,
             ]}
-        >
-          <Text style={styles.reportText}>
-            {draftReported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
-          </Text>
-        </Pressable>
-      ) : null}
-      {consentSheet}
-      {reporting.reportSheet}
-    </View>
-  );
+          >
+            <Text style={styles.reportText}>
+              {draftReported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
+            </Text>
+          </Pressable>
+        ) : null}
+        {consentSheet}
+        {reporting.reportSheet}
+      </View>
+    );
   },
 );
 
@@ -690,8 +773,26 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...caption,
       color: tokens.color.text.mutedForeground,
     },
+    // A fixed height (#5562): a long paste scrolls inside the box, never
+    // pushing the screen's actions out of reach.
     notes: {
       minHeight: 120,
+      maxHeight: 260,
+      textAlignVertical: "top",
+    },
+    pastedCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+    },
+    pastedText: {
+      flex: 1,
+      gap: 2,
     },
     status: {
       ...caption,

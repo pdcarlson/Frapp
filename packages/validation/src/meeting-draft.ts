@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v9";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v10";
 
 const DueDate = z
   .string()
@@ -55,6 +55,11 @@ export const MeetingDraftOutputSchema = z.object({
   decisions: z.array(
     z.object({
       text: z.string(),
+      /**
+       * The outcome in a few words (#5562), drawn bold over `text`. Optional
+       * so a reply from before it still fits.
+       */
+      headline: z.string().optional(),
       /** Only when the notes give the count. */
       vote: z
         .object({ for: z.number(), against: z.number(), abstain: z.number() })
@@ -90,6 +95,22 @@ export const MeetingDraftOutputSchema = z.object({
       agenda_item: z.number().int().optional(),
     }),
   ),
+  /**
+   * The dates the meeting named (#5562), each a YYYY-MM-DD day with what
+   * happens then in a few words and the line it was named in, kept only when
+   * that line is in a source, as a decision is. Optional so a reply from
+   * before it still fits.
+   */
+  dates: z
+    .array(
+      z.object({
+        date: z.string(),
+        text: z.string(),
+        quote: z.string(),
+        source: z.string().optional(),
+      }),
+    )
+    .optional(),
   officer_reports: z.string(),
   old_business: z.string(),
   new_business: z.string(),

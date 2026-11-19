@@ -33,6 +33,7 @@ const posting = (over: Partial<OpenTask> = {}): OpenTask => ({
   claimed_task_id: null,
   claimed_by: null,
   claimed_at: null,
+  meeting_id: null,
   created_at: '2026-11-18T00:00:00.000Z',
   updated_at: '2026-11-18T00:00:00.000Z',
   ...over,
@@ -60,6 +61,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   series_id: null,
   occurrence_date: null,
   group_id: null,
+  meeting_id: null,
   created_at: '2026-11-18T00:00:00.000Z',
   ...over,
 });
@@ -185,6 +187,17 @@ describe('OpenTaskService (2026-11-18)', () => {
       });
       expect(notifications.notifyUser.mock.calls[0][2].body).toMatch(
         /^10 points · Due /,
+      );
+    });
+
+    it('keeps the minutes it was suggested from, by id (#5562)', async () => {
+      await create({ kind: 'chapter' }, { meeting_id: 'meeting-1' });
+      expect(repo.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ meeting_id: 'meeting-1' }),
+      );
+      await create({ kind: 'chapter' });
+      expect(repo.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ meeting_id: null }),
       );
     });
 

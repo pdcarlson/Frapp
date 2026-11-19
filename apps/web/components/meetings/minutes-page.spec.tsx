@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   actionItemTasks: { current: [] as unknown[] },
   permissions: { current: [] as string[] },
   markAttendance: vi.fn(),
+  updateEvent: vi.fn(),
   update: vi.fn(),
   post: vi.fn(),
   remove: vi.fn(),
@@ -46,6 +47,8 @@ vi.mock("@repo/hooks", () => ({
   useLinkMeetingEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEvents: () => ({ data: [] }),
   useEvent: () => ({ data: mocks.event.current }),
+  useRoles: () => ({ data: [] }),
+  useUpdateEvent: () => ({ mutateAsync: mocks.updateEvent, isPending: false }),
   useMeetings: () => ({ data: [] }),
   useCurrentUser: () => ({
     data: { id: "11111111-1111-4111-8111-111111111111" },
@@ -153,6 +156,7 @@ const { MinutesPage } = await import("./minutes-page");
 const EMPTY = {
   tldr: "",
   tabled: [],
+  dates: [],
   summary: "",
   announcements: "",
   decisions: [],
@@ -235,6 +239,7 @@ beforeEach(() => {
   for (const fn of [
     mocks.saveNotes,
     mocks.choose,
+    mocks.updateEvent,
     mocks.update,
     mocks.post,
     mocks.remove,
@@ -328,18 +333,26 @@ describe("MinutesPage", () => {
       screen.getByRole("heading", { name: "Chapter meeting" }),
     ).toBeTruthy();
     expect(screen.getByText("Budget approved.")).toBeTruthy();
-    expect(
-      screen.getByLabelText("30 for, 2 against, 1 abstaining").textContent,
-    ).toBe("30–2–1");
+    // The vote in words under the decision, as the phone reads it (#5562).
+    expect(screen.getByText("30 for, 2 against, 1 abstaining")).toBeTruthy();
     expect(screen.getByText(/Sam Lee · Due/)).toBeTruthy();
+    // Attendance is a row under the minutes, its count on the row.
+    expect(screen.getByText("2 attended")).toBeTruthy();
     expect(screen.getByText("Jake Ross, Sam Lee")).toBeTruthy();
     // Announcements is in the template but empty, so it isn't drawn.
     expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
-    // A member who can't edit gets no Edit or Delete, so no menu at all.
-    expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+    // A member who can't edit gets the menu with nothing that changes them.
+    fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Open event" })).toBeTruthy();
+    for (const name of ["Edit details", "Edit minutes", "Delete minutes"]) {
+      expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    }
   });
 
-  it("leads posted minutes with the TL;DR, as bullets, above the Summary (#5523)", () => {
+  it("leads posted minutes with the TL;DR, the full summary folded under it (#5562)", () => {
     loaded(
       minutes({
         content: {
@@ -354,9 +367,75 @@ describe("MinutesPage", () => {
     const headings = screen
       .getAllByRole("heading", { level: 3 })
       .map((node) => node.textContent);
-    expect(headings.slice(0, 2)).toEqual(["TL;DR", "Summary"]);
+    // The gist is said once: the Summary opens under the TL;DR.
+    expect(headings).toEqual(["TL;DR"]);
     expect(screen.getByText("Formal budget approved")).toBeTruthy();
     expect(screen.getByText("Book the venue by Friday")).toBeTruthy();
+    expect(screen.queryByText("Budget approved.")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Read the full summary" }),
+    );
+    expect(screen.getByText("Budget approved.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Hide the summary" }),
+    ).toBeTruthy();
+  });
+
+  it("draws Coming up as date tiles and leads a decision with its headline (#5562)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          dates: [{ date: "2026-11-28", text: "Officer installation" }],
+          decisions: [
+            {
+              text: "Moved to spend $400 from social on the formal venue deposit",
+              headline: "Formal deposit approved",
+              vote: null,
+            },
+          ],
+        },
+        sections: ["dates", "decisions"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("NOV")).toBeTruthy();
+    expect(screen.getByText("28")).toBeTruthy();
+    expect(screen.getByText("Officer installation")).toBeTruthy();
+    expect(screen.getByText(/^Saturday, /)).toBeTruthy();
+    expect(screen.getByText("Formal deposit approved").className).toContain(
+      "font-semibold",
+    );
+    expect(
+      screen.getByText(
+        "Moved to spend $400 from social on the formal venue deposit",
+      ).className,
+    ).toContain("text-muted-foreground");
+    // The jump bar goes to each, with its count.
+    const jump = screen.getByRole("navigation", { name: "Jump to a section" });
+    expect(jump.textContent).toContain("Coming up1");
+    expect(jump.textContent).toContain("Decisions1");
+  });
+
+  it("shows the first few of a long list, and the rest on Show all (#5562)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          decisions: Array.from({ length: 7 }, (_, at) => ({
+            text: `Decision ${at + 1}`,
+            vote: null,
+          })),
+        },
+        sections: ["decisions"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("Decision 4")).toBeTruthy();
+    expect(screen.queryByText("Decision 5")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 7" }));
+    expect(screen.getByText("Decision 7")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show fewer" })).toBeTruthy();
   });
 
   it("lists what was tabled, with where a carried item was first tabled (#5522)", () => {
@@ -410,8 +489,7 @@ describe("MinutesPage", () => {
       loaded(minutes());
       render(<MinutesPage id="m-1" />);
       expect(screen.getByText("Done:")).toBeTruthy();
-      expect(screen.getByText("1 action item, 1 done")).toBeTruthy();
-      expect(screen.getByText("1 decision")).toBeTruthy();
+      expect(screen.getByText("1 done")).toBeTruthy();
     } finally {
       mocks.actionItemTasks.current = [];
     }
@@ -444,6 +522,9 @@ describe("MinutesPage", () => {
     render(<MinutesPage id="m-1" />);
     const mine = screen.getByText("Collect the deposit").parentElement!;
     expect(mine.textContent).toContain("Yours");
+    // The reader's own come first, alone, until they ask for all of them.
+    expect(screen.queryByText("Send the shirt form")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "All 2" }));
     const theirs = screen.getByText("Send the shirt form").parentElement!;
     expect(theirs.textContent).not.toContain("Yours");
     expect(screen.getByText("Nobody named yet")).toBeTruthy();
@@ -478,11 +559,14 @@ describe("MinutesPage", () => {
       screen.getByText("100 members can't be added one by one").parentElement!
         .className,
     ).toContain("pl-5");
+    // A topic opens in place, its points under it.
+    expect(
+      screen.getByText("Rolling out to the chapter").closest("details"),
+    ).toBeTruthy();
     // The transcript opens in its own tab, not under the minutes.
-    expect(screen.getByText("Transcript")).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: "Open transcript" })
+        .getByRole("link", { name: /Open transcript/ })
         .getAttribute("href"),
     ).toBe("/meetings/m-1/transcript");
     expect(
@@ -753,7 +837,7 @@ describe("MinutesPage", () => {
     });
   });
 
-  it("saves an Other meeting without a name, since the name is optional", async () => {
+  it("saves an Other meeting from Edit details without a name, since the name is optional", async () => {
     const draft = minutes({
       status: "draft",
       posted_at: null,
@@ -763,12 +847,50 @@ describe("MinutesPage", () => {
     loaded(draft);
     mocks.update.mockResolvedValue({ ...draft, meeting_type: "other" });
     render(<MinutesPage id="m-1" />);
-    fireEvent.click(screen.getByRole("radio", { name: "Other" }));
-    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
-    expect(mocks.update.mock.calls[0]![0].body).toMatchObject({
+    openMenuItem("Edit details");
+    fireEvent.click(await screen.findByRole("radio", { name: "Other" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled());
+    // The type saves on its own, with none of the minutes' words.
+    expect(mocks.update.mock.calls[0]![0].body).toEqual({
+      expected_updated_at: draft.updated_at,
       meeting_type: "other",
       other_label: null,
     });
+    // Without events:update, the event's name and time aren't offered.
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  });
+
+  it("renames and moves the meeting's event from Edit details, for someone who can edit events (#5562)", async () => {
+    mocks.permissions.current = ["events:update"];
+    try {
+      loaded(minutes({ can_edit: true }));
+      mocks.updateEvent.mockResolvedValue({});
+      mocks.refetch.mockResolvedValue({ data: undefined });
+      render(<MinutesPage id="m-1" />);
+      openMenuItem("Edit details");
+      const name = (await screen.findByRole("textbox", {
+        name: "Name",
+      })) as HTMLInputElement;
+      expect(name.value).toBe("Chapter meeting");
+      // Who reads them is the event's, changed in the event.
+      expect(
+        screen
+          .getByRole("link", { name: "Change who's invited" })
+          .getAttribute("href"),
+      ).toBe("/events?event=e-1");
+      fireEvent.change(name, { target: { value: "Chapter meeting 12" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(mocks.updateEvent).toHaveBeenCalled());
+      expect(mocks.updateEvent.mock.calls[0]![0]).toMatchObject({
+        id: "e-1",
+        body: { name: "Chapter meeting 12" },
+      });
+      // Nothing about the minutes changed, so they aren't saved.
+      expect(mocks.update).not.toHaveBeenCalled();
+    } finally {
+      mocks.permissions.current = [];
+    }
   });
 
   it("loads their version, then saves against it rather than the version it first opened", async () => {
@@ -855,7 +977,8 @@ describe("MinutesPage", () => {
       }),
     );
     render(<MinutesPage id="m-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Mark more people" }));
+    // The ⋯ menu's item, the same on the phone (#5562).
+    openMenuItem("Mark who was there");
     // Someone already marked (here, checked in) can't be picked again.
     expect(
       (await screen.findByRole("checkbox", { name: /Jake Ross/ })).matches(
@@ -883,8 +1006,11 @@ describe("MinutesPage", () => {
     mocks.permissions.current = [];
     loaded(ownDraft({ attendees: { present: [], late: [], excused: [] } }));
     render(<MinutesPage id="m-1" />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+      key: "Enter",
+    });
     expect(
-      screen.queryByRole("button", { name: "Mark who was there" }),
+      screen.queryByRole("menuitem", { name: "Mark who was there" }),
     ).toBeNull();
   });
 
@@ -978,6 +1104,40 @@ describe("MinutesPage", () => {
       expect(
         screen.getByRole("textbox", { name: "Your notes" }),
       ).toHaveProperty("value", "notes");
+    });
+
+    it("folds a pasted transcript into a card with View and Remove, like the phone (#5562)", async () => {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      render(<MinutesPage id="m-1" />);
+      const transcript = Array.from(
+        { length: 40 },
+        (_, at) => `00:${String(at).padStart(2, "0")} Paul: point ${at}`,
+      ).join("\n");
+      const box = screen.getByRole("textbox", { name: "Your notes" });
+      // A paste lands in a focused box, which stays open until it blurs.
+      fireEvent.focus(box);
+      fireEvent.change(box, { target: { value: transcript } });
+      expect(box).toHaveProperty("value", transcript);
+      fireEvent.blur(box);
+      expect(screen.queryByRole("textbox", { name: "Your notes" })).toBeNull();
+      expect(screen.getByText("Pasted transcript")).toBeTruthy();
+      expect(screen.getByText("160 words")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "View" }));
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", transcript);
+      fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("textbox", { name: "Your notes" }),
+        ).toHaveProperty("value", ""),
+      );
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Remove the pasted transcript?",
+      );
     });
 
     it("puts To fill in above the minutes and redrafts with the answers, without asking", async () => {

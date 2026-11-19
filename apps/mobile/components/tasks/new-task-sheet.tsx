@@ -780,7 +780,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             >
               <BottomSheetTextInput
                 value={title}
-                onChangeText={setTitle}
+                // Wraps so a long title (a suggestion from minutes often is)
+                // reads whole in place, as on the web (#5562; Paul,
+                // 2026-11-19). Still one line of text: Return closes the
+                // keyboard and a pasted line break is a space.
+                multiline
+                submitBehavior="blurAndSubmit"
+                returnKeyType="done"
+                onChangeText={(next) =>
+                  setTitle(next.replace(/\s*[\r\n]+\s*/g, " "))
+                }
                 onFocus={() => setTitleFocused(true)}
                 onBlur={() => setTitleFocused(false)}
                 // Read-only while the create runs: it sent what was typed when
@@ -792,6 +801,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 maxLength={TASK_TITLE_MAX_LENGTH}
                 style={[
                   styles.field,
+                  styles.titleText,
                   titleFocused ? styles.fieldFocused : null,
                 ]}
               />
@@ -973,6 +983,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.sm,
     },
     fieldFocused: fieldStyles.fieldFocused,
+    titleText: fieldStyles.fieldMultilineText,
     splitRow: {
       flexDirection: "row",
       gap: tokens.spacing.sm,

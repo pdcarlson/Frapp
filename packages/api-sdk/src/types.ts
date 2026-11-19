@@ -8695,7 +8695,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "tabled" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "dates" | "decisions" | "action_items" | "tabled" | "announcements" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8706,6 +8706,8 @@ export interface components {
             text: string;
             /** @description The count, when the meeting recorded one. Never a guess. */
             vote: components["schemas"]["MeetingVoteDto"] | null;
+            /** @description The outcome in a few words, shown bold over the text. Absent on decisions from before it. */
+            headline?: string | null;
         };
         MeetingActionItemDto: {
             text: string;
@@ -8735,8 +8737,16 @@ export interface components {
             /** @description How many meetings have tabled it, this one included. */
             times: number;
         };
+        MeetingDateItemDto: {
+            /**
+             * Format: date
+             * @example 2026-11-28
+             */
+            date: string;
+            text: string;
+        };
         MeetingContentDto: {
-            /** @description The TL;DR: a few "- " bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it. */
+            /** @description The TL;DR: a few "- " bullets, what an ordinary member most needs to know or do, beyond the dates, decisions and action items listed after it. Empty on minutes from before it. */
             tldr: string;
             summary: string;
             announcements: string;
@@ -8744,6 +8754,8 @@ export interface components {
             action_items: components["schemas"]["MeetingActionItemDto"][];
             /** @description What the meeting tabled. Empty on minutes from before it. */
             tabled: components["schemas"]["MeetingTabledItemDto"][];
+            /** @description The dates the meeting named, soonest first. Empty on minutes from before it. */
+            dates: components["schemas"]["MeetingDateItemDto"][];
             officer_reports: string;
             old_business: string;
             new_business: string;
@@ -8777,7 +8789,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("tldr" | "summary" | "announcements" | "decisions" | "action_items" | "tabled" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            sections: ("tldr" | "summary" | "dates" | "decisions" | "action_items" | "tabled" | "announcements" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -8823,6 +8835,7 @@ export interface components {
             decisions?: components["schemas"]["MeetingDecisionDto"][];
             action_items?: components["schemas"]["MeetingActionItemDto"][];
             tabled?: components["schemas"]["MeetingTabledItemDto"][];
+            dates?: components["schemas"]["MeetingDateItemDto"][];
             officer_reports?: string;
             old_business?: string;
             new_business?: string;
@@ -9490,6 +9503,11 @@ export interface components {
              * @description The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person.
              */
             group_id: string | null;
+            /**
+             * Format: uuid
+             * @description The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to.
+             */
+            meeting_id: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -9586,6 +9604,11 @@ export interface components {
             claimed_by: string | null;
             /** Format: date-time */
             claimed_at: string | null;
+            /**
+             * Format: uuid
+             * @description The minutes it was suggested from (#5562), or null. Read the meeting for its name, which the reader may not be allowed to.
+             */
+            meeting_id: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

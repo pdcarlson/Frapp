@@ -9,6 +9,7 @@ import {
   describeAttendance,
   eventAttendanceFor,
   eventLimitsAudience,
+  eventInvitedRoleNames,
   eventOthersInvited,
   othersInvitedForCreate,
   eventRequiresAnyone,
@@ -292,5 +293,33 @@ describe("others_invited on a row written without it", () => {
         attendanceToWire({ everyone: "not_invited", roles: { o: "optional" } }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("eventInvitedRoleNames (#5562)", () => {
+  const roles = [
+    { id: "r1", name: "Exec" },
+    { id: "r2", name: "Brothers" },
+  ];
+  it("names the invited roles, required then optional", () => {
+    expect(
+      eventInvitedRoleNames(
+        {
+          others_invited: false,
+          required_role_ids: ["r1"],
+          optional_role_ids: ["r2"],
+        },
+        roles,
+      ),
+    ).toBe("Exec, Brothers");
+  });
+  it("is null when everyone is invited or no listed role is known", () => {
+    expect(eventInvitedRoleNames({ others_invited: true }, roles)).toBeNull();
+    expect(
+      eventInvitedRoleNames(
+        { others_invited: false, required_role_ids: ["gone"] },
+        roles,
+      ),
+    ).toBeNull();
   });
 });

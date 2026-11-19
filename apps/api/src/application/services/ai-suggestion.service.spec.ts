@@ -789,6 +789,8 @@ describe('AiSuggestionService (#4309)', () => {
         due_at: null,
         subtasks: [],
         point_reward: null,
+        // The minutes it came from, by id (#5562).
+        meeting_id: MEETING,
       });
       const call = tasks.create.mock.calls[0][0] as unknown as Record<
         string,

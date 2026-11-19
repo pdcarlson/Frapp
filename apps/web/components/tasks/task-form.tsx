@@ -179,7 +179,7 @@ export function TaskForm({
   useReportDraft(draft, onDraftChange);
   const [missing, setMissing] = useState<Missing>({});
   const [posting, setPosting] = useState(false);
-  const titleRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
   const assigneeRef = useRef<HTMLButtonElement>(null);
   const dueRef = useRef<HTMLInputElement>(null);
   const uploadPhotos = useUploadTaskPhotos();
@@ -366,16 +366,30 @@ export function TaskForm({
       <SubscriptionNotice gate={gate} feature="creating tasks" />
       <div className="grid gap-1">
         <Label htmlFor={`${ids}-title`}>Title</Label>
-        <Input
+        {/* One line that wraps, so a long title (a suggestion from minutes
+            often is) reads whole in place (#5562; Paul, 2026-11-19: "I
+            should be able to see the whole thing in place"). It is still one
+            line of text: Enter submits and a pasted line break is a space. */}
+        <Textarea
           ref={titleRef}
           id={`${ids}-title`}
           data-plus-autofocus
-          className={field}
+          rows={1}
+          className={cn(
+            "min-h-10 resize-none py-2 [field-sizing:content] pointer-coarse:min-h-11",
+            layout === "card" ? "min-h-9 py-1.5" : null,
+          )}
           value={draft.title}
           placeholder="Sweep the porch"
           aria-invalid={missing.title || missing.titleTooLong || undefined}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           onChange={(event) => {
-            const next = event.target.value;
+            const next = event.target.value.replace(/\s*[\r\n]+\s*/g, " ");
             edit({ title: next });
             setMissing((prev) => ({
               ...prev,

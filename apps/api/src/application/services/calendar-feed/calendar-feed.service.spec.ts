@@ -80,6 +80,7 @@ function task(overrides: Partial<TaskView> = {}): TaskView {
     series_id: null,
     occurrence_date: null,
     group_id: null,
+    meeting_id: null,
     created_at: '2026-11-01T00:00:00.000Z',
     ...overrides,
   };

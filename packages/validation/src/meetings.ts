@@ -59,13 +59,19 @@ export const MEETING_SECTIONS = [
   // before anything else (Paul, 2026-11-18, #5523: "a more parsable version
   // of the minutes, just for your average brother to read").
   { key: "tldr", label: "TL;DR", defaultOn: true },
-  // What a member opens minutes for comes first: what was settled and who
-  // owes what, then the body of the discussion, then the record (Paul,
-  // 2026-11-17: "What matters is the body of the discussion").
+  // The opening paragraph. Read under the TL;DR, behind "Read the full
+  // summary", once there is a TL;DR (#5562).
   { key: "summary", label: "Summary", defaultOn: true },
-  // Announcements next: what every member needs to hear, read first (Paul,
-  // 2026-11-18: "summary, announcements, decisions, and then action items").
-  { key: "announcements", label: "Announcements", defaultOn: true },
+  // Then each kind of thing in its own shape, so a scroll says what it is
+  // before a word is read (Paul, 2026-11-19, #5562: "Scrolling through the
+  // minutes, nothing stands out"): the dates coming up, what was settled,
+  // who owes what, what was put off, then the announcements and the notes.
+  // Changed in #5562 from Paul's 2026-11-18 order ("summary, announcements,
+  // decisions, and then action items"), at his ask.
+  // The dates the meeting named (#5562): a day and a few words each, drawn
+  // as date tiles. Empty unless a date was named, so it reads only where it
+  // has something.
+  { key: "dates", label: "Coming up", defaultOn: true },
   { key: "decisions", label: "Decisions", defaultOn: true },
   { key: "action_items", label: "Action items", defaultOn: true },
   // What the meeting put off to a later one (#5522; Paul, 2026-11-18: "it
@@ -73,6 +79,7 @@ export const MEETING_SECTIONS = [
   // agenda to pick up (#5534). Empty unless something was tabled, so it
   // reads only where it has something.
   { key: "tabled", label: "Tabled", defaultOn: true },
+  { key: "announcements", label: "Announcements", defaultOn: true },
   // The notes themselves: every topic with its detail. Always on, because
   // minutes without them lose what was said (Paul, 2026-11-17: "a 7-minute
   // meeting gets distilled into one sentence ... there's zero detail").
@@ -97,12 +104,14 @@ export const DEFAULT_MEETING_SECTIONS: readonly MeetingSectionKey[] =
 /**
  * Sections every chapter's minutes carry, whatever its template says: the
  * TL;DR is what most members read (Paul, 2026-11-18, #5523: always on, so a
- * template saved before it still gets one), what was tabled has to be found
+ * template saved before it still gets one), the dates coming up are what a
+ * member scrolls for (#5562), what was tabled has to be found
  * by the next meeting (#5522), and the notes by topic are what minutes are
  * for, so no switch turns any of them off.
  */
 export const ALWAYS_MEETING_SECTIONS: readonly MeetingSectionKey[] = [
   "tldr",
+  "dates",
   "tabled",
   "discussion_log",
 ];
@@ -161,10 +170,36 @@ export const MeetingVoteSchema = z.object({
   abstain: voteCount,
 });
 
+/** A decision's headline: a few words, read before its full text. */
+export const MEETING_DECISION_HEADLINE_MAX_LENGTH = 120;
+
 export const MeetingDecisionSchema = z.object({
   text: z.string().trim().min(1).max(MEETING_ITEM_TEXT_MAX_LENGTH),
   /** Only when the notes give the count; never a guess. */
   vote: MeetingVoteSchema.nullable(),
+  /**
+   * The outcome in a few words, drawn bold over the full text (#5562), so a
+   * scroll down the decisions reads as a list of outcomes. Absent on
+   * decisions written before it, which show their text alone.
+   */
+  headline: z
+    .string()
+    .trim()
+    .max(MEETING_DECISION_HEADLINE_MAX_LENGTH)
+    .nullable()
+    .optional(),
+});
+
+/** The most dates one meeting's minutes keep. */
+export const MEETING_DATES_MAX_ITEMS = 30;
+
+/**
+ * A date the meeting named (#5562): the day, and what happens then in a few
+ * words ("Officer installation at chapter"), for the Coming up tiles.
+ */
+export const MeetingDateItemSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  text: z.string().trim().min(1).max(MEETING_ITEM_TEXT_MAX_LENGTH),
 });
 
 export const MeetingActionItemSchema = z.object({
@@ -212,6 +247,7 @@ export const MeetingContentSchema = z.object({
   decisions: z.array(MeetingDecisionSchema).max(MEETING_LIST_MAX_ITEMS),
   action_items: z.array(MeetingActionItemSchema).max(MEETING_LIST_MAX_ITEMS),
   tabled: z.array(MeetingTabledItemSchema).max(MEETING_TABLED_MAX_ITEMS),
+  dates: z.array(MeetingDateItemSchema).max(MEETING_DATES_MAX_ITEMS),
   officer_reports: sectionText,
   old_business: sectionText,
   new_business: sectionText,
@@ -222,6 +258,7 @@ export type MeetingVote = z.infer<typeof MeetingVoteSchema>;
 export type MeetingDecision = z.infer<typeof MeetingDecisionSchema>;
 export type MeetingActionItem = z.infer<typeof MeetingActionItemSchema>;
 export type MeetingTabledItem = z.infer<typeof MeetingTabledItemSchema>;
+export type MeetingDateItem = z.infer<typeof MeetingDateItemSchema>;
 export type MeetingContent = z.infer<typeof MeetingContentSchema>;
 
 export const EMPTY_MEETING_CONTENT: MeetingContent = Object.freeze({
@@ -231,6 +268,7 @@ export const EMPTY_MEETING_CONTENT: MeetingContent = Object.freeze({
   decisions: [],
   action_items: [],
   tabled: [],
+  dates: [],
   officer_reports: "",
   old_business: "",
   new_business: "",
@@ -267,6 +305,10 @@ export function readMeetingContent(value: unknown): MeetingContent {
       0,
       MEETING_TABLED_MAX_ITEMS,
     ),
+    dates: list("dates", MeetingDateItemSchema).slice(
+      0,
+      MEETING_DATES_MAX_ITEMS,
+    ),
     officer_reports: text("officer_reports"),
     old_business: text("old_business"),
     new_business: text("new_business"),
@@ -283,6 +325,7 @@ export function meetingSectionHasContent(
   if (key === "decisions") return content.decisions.length > 0;
   if (key === "action_items") return content.action_items.length > 0;
   if (key === "tabled") return content.tabled.length > 0;
+  if (key === "dates") return content.dates.length > 0;
   return content[key].trim().length > 0;
 }
 

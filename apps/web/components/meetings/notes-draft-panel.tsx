@@ -20,8 +20,11 @@ import {
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
   MEETING_NOTE_TAKERS_COPY,
+  MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
+  notesLookLikeTranscript,
+  notesWordCount,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -279,6 +282,33 @@ export function NotesDraftPanel({
     }
   }
 
+  // A pasted transcript folds into a card (#5562; Paul, 2026-11-19: a Wispr
+  // Flow paste made "the infinite scroll"), the phone's twin in
+  // `notes-panel.tsx`: what it is and how long, with View and Remove.
+  const [showText, setShowText] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const pasted = notesLookLikeTranscript(notes);
+  const pastedFolded = pasted && !showText && !focused;
+  const pastedCopy = MINUTES_READ_COPY.pastedTranscript;
+
+  async function handleRemovePasted() {
+    // After a draft only Clear notes may empty the stored notes, so Remove
+    // is Clear there; before one it empties the box, which saves.
+    if (state.status !== "none") {
+      await handleClear();
+      return;
+    }
+    const answer = await confirm({
+      title: pastedCopy.removeTitle,
+      description: pastedCopy.removeBody,
+      confirmLabel: pastedCopy.remove,
+      tone: "destructive",
+    });
+    if (!answer) return;
+    autosave.change("");
+    setShowText(false);
+  }
+
   async function handleChoose(conflict: number, version: number) {
     const expected = await prepare();
     if (!expected) return;
@@ -449,7 +479,7 @@ export function NotesDraftPanel({
           </h3>
           <p className="text-caption text-muted-foreground">
             {folded
-              ? MEETING_NOTES_COPY.foldedSummary(wordCount(notes))
+              ? MEETING_NOTES_COPY.foldedSummary(notesWordCount(notes))
               : MEETING_NOTES_COPY.hint}
           </p>
         </div>
@@ -475,19 +505,50 @@ export function NotesDraftPanel({
             confirm={confirm}
           />
         ) : null}
-        <Textarea
-          aria-labelledby={`${ids}-heading`}
-          aria-describedby={`${ids}-status`}
-          aria-invalid={problem ? true : undefined}
-          placeholder={MEETING_NOTES_COPY.placeholder}
-          rows={8}
-          value={notes}
-          disabled={drafting || disabled}
-          onChange={(event) => {
-            autosave.change(event.target.value);
-            if (problem) setProblem(null);
-          }}
-        />
+        {pastedFolded ? (
+          <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{pastedCopy.title}</p>
+              <p className="text-caption text-muted-foreground">
+                {pastedCopy.words(notesWordCount(notes))}
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setShowText(true)}>
+              {pastedCopy.view}
+            </Button>
+            {!drafting ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disabled || discard.isPending}
+                onClick={() => void handleRemovePasted()}
+              >
+                {pastedCopy.remove}
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <Textarea
+            aria-labelledby={`${ids}-heading`}
+            aria-describedby={`${ids}-status`}
+            aria-invalid={problem ? true : undefined}
+            placeholder={MEETING_NOTES_COPY.placeholder}
+            rows={8}
+            value={notes}
+            disabled={drafting || disabled}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onChange={(event) => {
+              autosave.change(event.target.value);
+              if (problem) setProblem(null);
+            }}
+          />
+        )}
+        {pasted && showText && !focused ? (
+          <Button variant="ghost" size="sm" onClick={() => setShowText(false)}>
+            {pastedCopy.hide}
+          </Button>
+        ) : null}
         {saving && autosave.status !== "failed" ? (
           <p className="text-caption text-muted-foreground">{saving}</p>
         ) : null}
@@ -639,10 +700,4 @@ export function NotesDraftPanel({
       {consentDialog}
     </section>
   );
-}
-
-/** Words in the notes, for the folded panel's one line. */
-function wordCount(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
 }

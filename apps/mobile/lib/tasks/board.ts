@@ -80,6 +80,8 @@ export interface TaskRowModel {
   createdAt: string | null;
   /** The group task this is one member's copy of (#4295 step 3), or `null`. */
   groupId: string | null;
+  /** The minutes it was suggested from (#5562): read for their name now. */
+  meetingId: string | null;
   /**
    * The group this copy is one of (#4295 step 3; 2026-11-18): who the task
    * went to and how far along the copies are, or `null` for one person's.
@@ -237,6 +239,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     photos: readLiveTaskPhotos(row.photos),
     createdAt: str(row, "created_at"),
     groupId: str(row, "group_id"),
+    meetingId: str(row, "meeting_id"),
     group: toGroup(row.group),
     openTaskId: str(row, "open_task_id"),
   };

@@ -27905,10 +27905,11 @@
               "enum": [
                 "tldr",
                 "summary",
-                "announcements",
+                "dates",
                 "decisions",
                 "action_items",
                 "tabled",
+                "announcements",
                 "discussion_log",
                 "attendees",
                 "officer_reports",
@@ -27963,6 +27964,12 @@
                 "$ref": "#/components/schemas/MeetingVoteDto"
               }
             ]
+          },
+          "headline": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 120,
+            "description": "The outcome in a few words, shown bold over the text. Absent on decisions from before it."
           }
         },
         "required": [
@@ -28029,12 +28036,30 @@
           "times"
         ]
       },
+      "MeetingDateItemDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-28"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "date",
+          "text"
+        ]
+      },
       "MeetingContentDto": {
         "type": "object",
         "properties": {
           "tldr": {
             "type": "string",
-            "description": "The TL;DR: a few \"- \" bullets, what was decided, what members need to do and by when, and what is coming up. Empty on minutes from before it."
+            "description": "The TL;DR: a few \"- \" bullets, what an ordinary member most needs to know or do, beyond the dates, decisions and action items listed after it. Empty on minutes from before it."
           },
           "summary": {
             "type": "string"
@@ -28061,6 +28086,13 @@
               "$ref": "#/components/schemas/MeetingTabledItemDto"
             }
           },
+          "dates": {
+            "description": "The dates the meeting named, soonest first. Empty on minutes from before it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDateItemDto"
+            }
+          },
           "officer_reports": {
             "type": "string"
           },
@@ -28081,6 +28113,7 @@
           "decisions",
           "action_items",
           "tabled",
+          "dates",
           "officer_reports",
           "old_business",
           "new_business",
@@ -28184,10 +28217,11 @@
               "enum": [
                 "tldr",
                 "summary",
-                "announcements",
+                "dates",
                 "decisions",
                 "action_items",
                 "tabled",
+                "announcements",
                 "discussion_log",
                 "attendees",
                 "officer_reports",
@@ -28357,6 +28391,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MeetingTabledItemDto"
+            }
+          },
+          "dates": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingDateItemDto"
             }
           },
           "officer_reports": {
@@ -30224,6 +30265,12 @@
             "nullable": true,
             "description": "The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person."
           },
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -30270,6 +30317,7 @@
           "series_id",
           "occurrence_date",
           "group_id",
+          "meeting_id",
           "created_at",
           "photos"
         ]
@@ -30488,6 +30536,12 @@
             "format": "date-time",
             "nullable": true
           },
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The minutes it was suggested from (#5562), or null. Read the meeting for its name, which the reader may not be allowed to."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -30524,6 +30578,7 @@
           "claimed_task_id",
           "claimed_by",
           "claimed_at",
+          "meeting_id",
           "created_at",
           "updated_at",
           "eligible_count",

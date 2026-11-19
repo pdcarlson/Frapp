@@ -67,6 +67,12 @@ export interface Task {
    * progress, proof and points.
    */
   group_id: string | null;
+  /**
+   * The minutes this task was suggested from (#5562), or null. The screens
+   * read the meeting's name from it, so a renamed meeting shows its new
+   * name; cleared if the minutes are deleted.
+   */
+  meeting_id: string | null;
   created_at: string;
 }
 

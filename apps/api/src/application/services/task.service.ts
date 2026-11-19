@@ -232,6 +232,11 @@ export interface CreateTaskInput {
   /** What Mark done needs (#4635). Default `none`. */
   proof_kind?: TaskProofKind;
   /**
+   * The minutes the task was suggested from (#5562). Set only by accepting
+   * a suggestion from minutes; never from the HTTP body.
+   */
+  meeting_id?: string | null;
+  /**
    * Repeat on this rule (#5119): the task is the first copy of a new series,
    * and the sweep makes each next copy once the latest one is due.
    */
@@ -1031,6 +1036,7 @@ export class TaskService {
           completed_at: null,
           confirmed_at: null,
           proof_kind: input.proof_kind ?? 'none',
+          ...(input.meeting_id ? { meeting_id: input.meeting_id } : {}),
         });
 
     // Reference photos go in after their task, like the checklist below. A
@@ -1150,6 +1156,7 @@ export class TaskService {
       point_reward: input.point_reward ?? null,
       proof_kind: input.proof_kind ?? 'none',
       subtask_titles: subtaskTitles,
+      ...(input.meeting_id ? { meeting_id: input.meeting_id } : {}),
     });
 
     // `notifyAssigned` reports its own failures, so one member's push can't

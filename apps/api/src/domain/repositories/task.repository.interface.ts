@@ -322,4 +322,6 @@ export interface CreateTaskGroupInput {
   point_reward: number | null;
   proof_kind: TaskProofKind;
   subtask_titles: string[];
+  /** The minutes the task was suggested from (#5562), on every copy. */
+  meeting_id?: string | null;
 }

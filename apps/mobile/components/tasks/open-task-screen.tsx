@@ -41,6 +41,7 @@ import {
   TaskDetailSkeleton,
   TaskFact,
   TaskFacts,
+  TaskMinutesFact,
 } from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { goBackTo } from "@/lib/href";
@@ -266,6 +267,10 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
           <Text style={styles.description} selectable>
             {posting.description}
           </Text>
+        ) : null}
+
+        {posting.meeting_id ? (
+          <TaskMinutesFact meetingId={posting.meeting_id} />
         ) : null}
 
         {posting.proof_kind !== "none" ? (
