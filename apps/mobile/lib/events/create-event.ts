@@ -1,33 +1,30 @@
 import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
-  MAX_CHECK_IN_OPENS_MINUTES,
   attendanceInvitesNobody,
+  CHECK_IN_OPENS_ERROR,
+  parseCheckInOpens,
   attendanceToWire,
   othersInvitedForCreate,
-  describeAttendance,
   emptyAttendanceDraft,
   eventRequiresAnyone,
   noRepeatDraft,
   repeatRuleOf,
-  repeatSummary,
   withEveryone,
   type EventAttendanceDraft,
   type RepeatDraft,
-  type RepeatEditSeries,
 } from "@repo/validation";
-import { formatPoints } from "@repo/formatting";
 import { parsePointReward } from "@/lib/tasks/create-task";
 
 /**
  * Draft state and validation for the "New event" sheet
  * (`components/events/new-event-sheet.tsx`).
  *
- * The sheet opens simple: a name, when it starts and ends, and a place. The
- * rest sits behind "More options" (Paul, 2026-11-06: "nobody wants a billion
- * options showing up when they open create event"): who's coming by role,
- * points, how early check-in opens, repeat, a description and notes. The check-in zone stays on the web
- * editor, where a map belongs.
+ * The sheet is a name and one row per setting (#5561, Paul 2026-11-19), in
+ * the order web's form draws them: type, when, repeat, location, who's
+ * coming, points, description, notes and when check-in opens. Each row says
+ * what it is set to, so nothing waits behind a More options toggle. The
+ * check-in zone stays on the web editor, where a map belongs.
  *
  * `CreateEventDto` is the authority. These copies exist so the sheet can say
  * what is wrong before it posts a request it knows will 400, the relationship
@@ -92,9 +89,15 @@ export interface NewEventDraft {
    * event's own.
    */
   notes?: string;
-  /** Whether "More options" is open: kept with the draft, so a reopen keeps it. */
-  showMore: boolean;
+  /**
+   * The row open in place (#5561): When shows its pickers, Repeat its
+   * options. Kept with the draft, so a reopen comes back as it was left.
+   */
+  openRow: EventFormOpenRow;
 }
+
+/** The New event rows that open in place on the phone; one at a time. */
+export type EventFormOpenRow = "when" | "repeat" | "checkIn" | null;
 
 /** A fresh draft. */
 export function emptyEventDraft(): NewEventDraft {
@@ -113,7 +116,7 @@ export function emptyEventDraft(): NewEventDraft {
     repeat: noRepeatDraft(),
     description: "",
     notes: "",
-    showMore: false,
+    openRow: null,
   };
 }
 
@@ -299,21 +302,6 @@ export interface NewEventErrors {
   repeat?: string;
 }
 
-/**
- * The "Check-in opens" field as minutes, or `null` when it isn't a whole
- * number in `0 … MAX_CHECK_IN_OPENS_MINUTES` (the `CreateEventDto` bound).
- * Blank is the default, as a blank points field is 0.
- */
-export function parseCheckInOpens(input: string): number | null {
-  const text = input.trim();
-  if (text.length === 0) return DEFAULT_CHECK_IN_OPENS_MINUTES;
-  if (!/^\d+$/.test(text)) return null;
-  const minutes = Number(text);
-  return minutes <= MAX_CHECK_IN_OPENS_MINUTES ? minutes : null;
-}
-
-/** The error under the field when {@link parseCheckInOpens} refuses it. */
-export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPENS_MINUTES} minutes before the start.`;
 
 /**
  * The draft as a request body, or the reasons it isn't one.
@@ -407,51 +395,3 @@ export function validateNewEvent(
   return { ok: true, body };
 }
 
-/**
- * What "More options" holds, said in one line while it is closed, so the
- * officer can see what the event will do without opening it:
- * "10 pts · Optional for everyone · Doesn't repeat". A check-in lead other
- * than the default joins it ("Check-in opens 30 min early"); the default goes
- * unsaid, as it does on every event.
- */
-export function moreOptionsSummary(
-  draft: Pick<
-    NewEventDraft,
-    "pointsInput" | "attendance" | "repeat" | "checkInOpensInput"
-  >,
-  roleName: (roleId: string) => string | undefined,
-  start: Date,
-  /** False hides points, for a member who can't attach them (#3709). */
-  setsRequirements = true,
-  /** On an edit, the series a Repeat change applies to. */
-  series?: RepeatEditSeries,
-): string {
-  const points = parsePointReward(draft.pointsInput);
-  const pointsText = !setsRequirements
-    ? null
-    : points.kind === "value"
-      ? // Written out, and "No points" for none, as web's editor summary
-        // says it (`pointsLabel`; #4135).
-        formatPoints(points.points)
-      : points.kind === "omit"
-        ? "No points"
-        : "Points need a fix";
-  const repeat = repeatSummary(draft.repeat, start, series);
-  const opens = parseCheckInOpens(draft.checkInOpensInput);
-  const opensText =
-    opens === null
-      ? "Check-in time needs a fix"
-      : opens === DEFAULT_CHECK_IN_OPENS_MINUTES
-        ? null
-        : opens === 0
-          ? "Check-in opens at the start"
-          : `Check-in opens ${opens} min early`;
-  return [
-    pointsText,
-    describeAttendance(draft.attendance, roleName),
-    opensText,
-    repeat,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(" · ");
-}

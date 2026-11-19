@@ -913,7 +913,7 @@ describe("EventsPage keeps the editor's draft (#4593)", () => {
     first.unmount();
 
     render(tree());
-    const editor = await screen.findByRole("region", { name: "Create event" });
+    const editor = await screen.findByRole("region", { name: "New event" });
     expect(within(editor).getByLabelText("Event name")).toHaveValue("Formal");
     expect(within(editor).getByText("Draft restored")).toBeInTheDocument();
   });
@@ -926,7 +926,7 @@ describe("EventsPage keeps the editor's draft (#4593)", () => {
     first.unmount();
 
     render(tree());
-    expect(screen.queryByRole("region", { name: "Create event" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "New event" })).toBeNull();
     await user.click(screen.getByRole("button", { name: /^new event$/i }));
     expect(screen.getByLabelText("Event name")).toHaveValue("Formal");
   });
@@ -939,6 +939,6 @@ describe("EventsPage keeps the editor's draft (#4593)", () => {
 
     permissionsRef.current = ["members:view"];
     render(tree());
-    expect(screen.queryByRole("region", { name: "Create event" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "New event" })).toBeNull();
   });
 });
