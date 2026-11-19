@@ -39,9 +39,22 @@ export function MessageGifImage({
   }
   const playing = !reduceMotion || played;
   const image = useRef<Image>(null);
+  // The first render's state needs no call: expo-image applies `autoplay`
+  // when the image loads. Only a later change (a tap, or Reduce Motion
+  // switching) goes through the handle (FRAPP-MOBILE-14).
+  const applied = useRef(playing);
   useEffect(() => {
-    if (playing) void image.current?.startAnimating();
-    else void image.current?.stopAnimating();
+    if (applied.current === playing) return;
+    applied.current = playing;
+    const handle = image.current;
+    if (!handle) return;
+    // The native call looks the view up by tag on the main thread. A row the
+    // list has unmounted or recycled since then rejects with
+    // "ViewNotFound: Unable to find the 'ImageView' view"; there is nothing
+    // left to play or pause, so the rejection is dropped, not left unhandled.
+    (playing ? handle.startAnimating() : handle.stopAnimating()).catch(
+      () => {},
+    );
   }, [playing]);
 
   const label = gif.title ? `GIF: ${gif.title}` : "GIF";
