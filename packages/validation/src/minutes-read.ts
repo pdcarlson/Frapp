@@ -55,6 +55,20 @@ export const MINUTES_READ_COPY = {
     delete: "Delete minutes",
   },
   linkCopied: "Link copied",
+  /**
+   * Notes that are a pasted transcript fold into a card (#5562; Paul,
+   * 2026-11-19: a pasted Wispr Flow transcript made "the infinite scroll").
+   */
+  pastedTranscript: {
+    title: "Pasted transcript",
+    words: (count: number) =>
+      count === 1 ? "1 word" : `${count.toLocaleString("en-US")} words`,
+    view: "View",
+    hide: "Hide",
+    remove: "Remove",
+    removeTitle: "Remove the pasted transcript?",
+    removeBody: "Your notes box empties. A draft already written stays.",
+  },
   /** Edit details: the meeting's facts in one form. */
   details: {
     title: "Details",
@@ -217,4 +231,26 @@ export function minutesActionRows(
       (a.item.due_date ?? "").localeCompare(b.item.due_date ?? "") ||
       a.index - b.index,
   );
+}
+
+/** Past this many characters, notes read as a pasted transcript. */
+export const MINUTES_PASTED_TRANSCRIPT_CHARS = 3000;
+/** "12:04" or "1:02:33" at the start of a line, the way transcripts mark time. */
+const TIMESTAMPED_LINE = /^\s*\[?\(?\d{1,2}:\d{2}(?::\d{2})?\b/;
+
+/**
+ * Whether the notes are a pasted transcript rather than notes typed by hand
+ * (#5562): long, or stamped with times line after line. Both apps fold such
+ * notes into a card instead of a box that scrolls forever.
+ */
+export function notesLookLikeTranscript(text: string): boolean {
+  if (text.length > MINUTES_PASTED_TRANSCRIPT_CHARS) return true;
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const stamped = lines.filter((line) => TIMESTAMPED_LINE.test(line)).length;
+  return stamped >= 3 && stamped >= lines.length / 2;
+}
+
+/** How many words the notes hold, for the transcript card. */
+export function notesWordCount(text: string): number {
+  return text.split(/\s+/).filter((word) => word.length > 0).length;
 }

@@ -41,6 +41,7 @@ const state = vi.hoisted(() => ({
   recorder: { phase: "idle", refusal: null } as Record<string, unknown>,
   notesProps: null as Record<string, unknown> | null,
   panelDraft: vi.fn(),
+  panelStop: vi.fn(),
   row: null as Record<string, unknown> | null,
   rowArgs: null as Record<string, unknown> | null,
   stage: null as Record<string, unknown> | null,
@@ -158,7 +159,10 @@ vi.mock("@/components/minutes/notes-panel", async () => {
       props: Record<string, unknown>,
       ref: React.Ref<{ draft: () => Promise<void> }>,
     ) {
-      useImperativeHandle(ref, () => ({ draft: state.panelDraft }));
+      useImperativeHandle(ref, () => ({
+        draft: state.panelDraft,
+        stop: state.panelStop,
+      }));
       state.notesSheet += 1;
       state.notesProps = props;
       return null;
@@ -654,6 +658,26 @@ describe("Minutes on the phone", () => {
     state.draft = { status: "drafting" };
     const tree = render();
     expect(button(tree, MEETING_COPY.post)).toBeUndefined();
+  });
+
+  it("pins Drafting and Stop at the bottom while a draft is written, never Record (#5562)", async () => {
+    state.draft = { status: "drafting" };
+    state.recording = {
+      status: "none",
+      available: true,
+      blocked: null,
+      max_seconds: 7200,
+    };
+    state.row = recorderRow();
+    state.panelStop.mockResolvedValue(undefined);
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_NOTES_COPY.drafting);
+    expect(button(tree, "Record")).toBeUndefined();
+    expect(state.notesProps?.stopInFooter).toBe(true);
+    await act(async () =>
+      button(tree, MEETING_NOTES_COPY.stop).props.onPress(),
+    );
+    expect(state.panelStop).toHaveBeenCalledTimes(1);
   });
 
   it("links the tasks suggested from posted minutes, and asks only where AI is on", () => {

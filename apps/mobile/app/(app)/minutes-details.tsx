@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   StyleSheet,
   Text,
   View,
@@ -67,6 +68,7 @@ import {
   NotesPanel,
   type NotesPanelHandle,
 } from "@/components/minutes/notes-panel";
+import { TextAction } from "@/components/minutes/recorder-controls";
 import {
   RecorderControls,
   RecorderStage,
@@ -236,6 +238,7 @@ function LoadedMinutes({
   const sectionY = useRef(new Map<MeetingSectionKey, number>());
   const jumpBarHeight = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menu = useItemMenu();
   const [openedAt] = useState(() => Date.now());
@@ -490,7 +493,28 @@ function LoadedMinutes({
   let footer: ReactNode = null;
   if (finishing || heldHere) {
     if (recorderFooter && recorderLeads) footer = recorderFooter;
-    else if (finishing && !busy && !drafting && (!empty || writtenHere)) {
+    else if (finishing && drafting) {
+      // While the minutes are written, what is happening and Stop are the
+      // one thing at the bottom (#5562; Paul, 2026-11-19: they were buried
+      // under a long paste, with Record still pinned).
+      footer = (
+        <View style={styles.draftingBar}>
+          <ActivityIndicator color={tokens.color.text.mutedForeground} />
+          <Text accessibilityLiveRegion="polite" style={[styles.draftingText]}>
+            {MEETING_NOTES_COPY.drafting}
+          </Text>
+          <TextAction
+            label={MEETING_NOTES_COPY.stop}
+            color={tokens.color.text.foreground}
+            disabled={stopping}
+            onPress={() => {
+              setStopping(true);
+              void notesRef.current?.stop().finally(() => setStopping(false));
+            }}
+          />
+        </View>
+      );
+    } else if (finishing && !busy && !drafting && (!empty || writtenHere)) {
       footer = (
         <SheetPrimaryButton
           label={MEETING_COPY.post}
@@ -526,6 +550,7 @@ function LoadedMinutes({
         onSettled={() => void refetch()}
         autoDraft={!!transcript && empty}
         onDraftable={setDraftable}
+        stopInFooter
       />
     ) : null;
   // The minutes to review. While the recorder works and nothing is written
@@ -764,6 +789,17 @@ function createStyles(tokens: SignetTokens) {
     },
     problem: {
       color: tokens.color.semantic.destructiveText,
+    },
+    draftingBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      minHeight: 52,
+    },
+    draftingText: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      flex: 1,
     },
     transcript: {
       gap: tokens.spacing.sm,

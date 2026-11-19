@@ -6,6 +6,8 @@ import {
   minutesJumps,
   minutesReadSections,
   minutesTopics,
+  notesLookLikeTranscript,
+  notesWordCount,
 } from "./minutes-read";
 
 const content = (patch: Partial<MeetingContent>): MeetingContent => ({
@@ -150,5 +152,23 @@ describe("minutesActionRows", () => {
 
   it("marks nothing as the reader's without a reader", () => {
     expect(minutesActionRows(items, null).some((row) => row.mine)).toBe(false);
+  });
+});
+
+describe("notesLookLikeTranscript", () => {
+  it("folds long notes and timestamped ones, not short typed notes", () => {
+    expect(notesLookLikeTranscript("Budget approved.\nFormal Dec 5")).toBe(
+      false,
+    );
+    expect(notesLookLikeTranscript("word ".repeat(700))).toBe(true);
+    expect(
+      notesLookLikeTranscript(
+        "00:01 Paul: Call to order\n00:15 Shawn: Treasurer\n01:02 Paul: Next",
+      ),
+    ).toBe(true);
+  });
+
+  it("counts words", () => {
+    expect(notesWordCount("  one two\nthree ")).toBe(3);
   });
 });
