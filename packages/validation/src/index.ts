@@ -116,14 +116,14 @@ export * from "./field-limits";
 export * from "./invite-emails";
 // The invite card funnel (#5663): steps, closed property sets, shapes.
 export * from "./invite-funnel";
+// The invite carried through an install by the clipboard (#5626). See
+// ./invite-paste.
+export * from "./invite-paste";
 // Invite paste/URL extraction and https minting, shared so web `/join`,
 // mobile s02, the API email helper, and the landing `/join` redirect cannot
 // drift on what a copied join link is or whether a public http: origin is
 // allowed. See ./invite-token.
 export * from "./invite-token";
-// The invite carried through an install by the clipboard (#5626). See
-// ./invite-paste.
-export * from "./invite-paste";
 export * from "./last-year";
 export * from "./legal";
 // The words and date labels the minutes screens share on web and mobile.
