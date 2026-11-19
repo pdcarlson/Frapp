@@ -46,6 +46,7 @@ export * from "./scheduled-message-times";
 export * from "./search-analytics";
 export * from "./service-entry-card";
 export * from "./setup-checklist";
+export * from "./similar-tasks";
 export * from "./task-card";
 export * from "./task-review";
 export * from "./task-views";

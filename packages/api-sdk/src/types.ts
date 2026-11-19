@@ -9874,6 +9874,11 @@ export interface components {
              */
             due_at?: string | null;
             subtasks?: string[];
+            /**
+             * Format: uuid
+             * @description A task the chapter already has that this suggestion is (#5562, "Already a task"). When set, nothing is made and every other field is ignored: the accept records that task as the suggestion's, so the action item it came from follows that task. It must be a task in the chapter.
+             */
+            existing_task_id?: string;
         };
         PointsSuggestionEditsDto: {
             /** @description Points for each member. Negative takes points away. Not 0. */

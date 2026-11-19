@@ -5,6 +5,9 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const mocks = vi.hoisted(() => ({
   items: { current: [] as unknown[] },
+  tasks: { current: [] as unknown[] | undefined },
+  react: null as unknown as typeof import("react"),
+  similarTask: null as unknown as typeof import("@repo/validation").similarTask,
   accept: vi.fn(),
   dismiss: vi.fn(),
   decide: vi.fn(),
@@ -44,6 +47,33 @@ vi.mock("@repo/hooks", () => ({
       ],
     };
   },
+  // The chapter's open tasks, to spot a suggestion that is one of them
+  // (#5562): `similarTask`'s own rule over these rows, with Create anyway.
+  useSimilarTasks: (items: { id: string; task: { title: string } }[]) => {
+    const [kept, setKept] = mocks.react.useState<ReadonlySet<string>>(
+      new Set(),
+    );
+    return {
+      twinOf: (id: string) => {
+        const item = items.find((row) => row.id === id);
+        if (!item || kept.has(id) || mocks.tasks.current === undefined) {
+          return null;
+        }
+        return mocks.similarTask(
+          item.task.title,
+          mocks.tasks.current as {
+            id: string;
+            title: string;
+            status: string;
+          }[],
+        );
+      },
+      keep: (id: string) => setKept((previous) => new Set(previous).add(id)),
+      known: mocks.tasks.current !== undefined,
+    };
+  },
+  existingTaskLine: (task: { status: string; due: string | null }) =>
+    `${task.status} · Due ${task.due}`,
   useMembers: () => ({
     data: [
       { user_id: "u-jake", display_name: "Jake Ross" },
@@ -62,6 +92,8 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 
+mocks.react = await import("react");
+mocks.similarTask = (await import("@repo/validation")).similarTask;
 const { SuggestedTasks } = await import("./suggested-tasks");
 
 const chapter = chapterSubscription(mocks.currentChapter);
@@ -106,6 +138,7 @@ describe("SuggestedTasks (#4313)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.meetingsEnabled.length = 0;
+    mocks.tasks.current = [];
     mocks.accept.mockResolvedValue({});
     mocks.dismiss.mockResolvedValue({});
     chapter.active();
@@ -593,5 +626,126 @@ describe("SuggestedTasks (#4313)", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false);
+  });
+
+  describe("a suggestion that reads like an existing task (#5562)", () => {
+    const existing = {
+      id: "t-hall",
+      title: "Formal: book the hall",
+      status: "IN_PROGRESS",
+      due: "2026-11-20",
+    };
+
+    it("sets the two side by side and records Already a task as that task", async () => {
+      mocks.tasks.current = [existing];
+      mocks.items.current = [
+        suggestion("1", { title: "Book the hall for formal" }),
+      ];
+      render(
+        <SuggestedTasks
+          source={{ type: "meeting", id: "m-1" }}
+          headingId="s"
+        />,
+      );
+      expect(
+        screen.getByText("Looks like a task you already have"),
+      ).toBeTruthy();
+      expect(screen.getByText("Book the hall for formal")).toBeTruthy();
+      expect(screen.getByText("Formal: book the hall")).toBeTruthy();
+      expect(screen.getByText("IN_PROGRESS · Due 2026-11-20")).toBeTruthy();
+      expect(
+        screen
+          .getByRole("link", { name: "Open the existing task" })
+          .getAttribute("href"),
+      ).toBe("/tasks?task=t-hall");
+      // Nothing creates it until the officer says which it is.
+      expect(screen.queryByRole("button", { name: "Create task" })).toBeNull();
+
+      // A plain Dismiss is still one press away.
+      expect(
+        screen.getByRole("button", {
+          name: "Dismiss Book the hall for formal",
+        }),
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Already a task" }));
+      await waitFor(() =>
+        expect(mocks.accept).toHaveBeenCalledWith({
+          id: "1",
+          task: { existing_task_id: "t-hall" },
+        }),
+      );
+      expect(mocks.dismiss).not.toHaveBeenCalled();
+      expect(mocks.toast).toHaveBeenCalledWith({
+        title: "Noted as a task you already have",
+        description: "Formal: book the hall",
+      });
+    });
+
+    it("brings back the usual card on Create anyway", () => {
+      mocks.tasks.current = [existing];
+      mocks.items.current = [
+        suggestion("1", { title: "Book the hall for formal" }),
+      ];
+      render(
+        <SuggestedTasks
+          source={{ type: "meeting", id: "m-1" }}
+          headingId="s"
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Create anyway" }));
+      expect(
+        screen.queryByText("Looks like a task you already have"),
+      ).toBeNull();
+      expect(screen.getByRole("button", { name: "Create task" })).toBeTruthy();
+    });
+
+    it("leaves a finished task alone: doing it again is new work", () => {
+      mocks.tasks.current = [{ ...existing, status: "COMPLETED" }];
+      mocks.items.current = [
+        suggestion("1", { title: "Book the hall for formal" }),
+      ];
+      render(
+        <SuggestedTasks
+          source={{ type: "meeting", id: "m-1" }}
+          headingId="s"
+        />,
+      );
+      expect(
+        screen.queryByText("Looks like a task you already have"),
+      ).toBeNull();
+    });
+
+    it("offers no Create all until the task list has been read", () => {
+      mocks.tasks.current = undefined;
+      mocks.items.current = [suggestion("1"), suggestion("2")];
+      render(
+        <SuggestedTasks
+          source={{ type: "meeting", id: "m-1" }}
+          headingId="s"
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /^Create all/ })).toBeNull();
+    });
+
+    it("leaves a likely duplicate out of Create all until the officer says", () => {
+      mocks.tasks.current = [existing];
+      mocks.items.current = [
+        suggestion("1"),
+        suggestion("2"),
+        suggestion("3", { title: "Book the hall for formal" }),
+      ];
+      render(
+        <SuggestedTasks
+          source={{ type: "meeting", id: "m-1" }}
+          headingId="s"
+        />,
+      );
+      expect(
+        screen.getByRole("button", {
+          name: "Create the 2 that are ready",
+        }),
+      ).toBeTruthy();
+    });
   });
 });

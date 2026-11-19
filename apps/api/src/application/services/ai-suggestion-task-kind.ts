@@ -223,10 +223,24 @@ function toPayload(task: TaskSuggestionPayload): AiSuggestionPayload {
 }
 
 /**
+ * The task the chapter already has that an accept says this suggestion is
+ * (#5562, "Already a task"), or null when the accept makes a new one. Only an
+ * officer's accept sets it, never a proposal.
+ */
+function existingTaskIdOf(payload: AiSuggestionPayload): string | null {
+  return uuidOrNull(payload.existing_task_id);
+}
+
+/**
  * Suggested tasks (#4313 is the first producer: tasks from minutes). Accepting
  * one creates the task through {@link TaskService.create} as the officer who
  * accepted, so it is their task exactly as if they had typed it: the assignee
  * gets the usual assignment push, and no chat card is posted.
+ *
+ * An accept may instead name a task the chapter already has (#5562): the
+ * card that sets a suggestion beside an open task it reads like answers
+ * "Already a task" this way. Nothing is made; the suggestion records that
+ * task as its result, so the action item it came from follows it.
  */
 @Injectable()
 export class TaskSuggestionKind implements AiSuggestionKindHandler {
@@ -273,6 +287,12 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
     edits: Record<string, unknown>,
   ): AiSuggestionPayload {
     const next = readTaskPayload(payload);
+    if (edits.existing_task_id !== undefined) {
+      const existing = uuidOrNull(edits.existing_task_id);
+      if (!existing) throw new BadRequestException('Name the existing task.');
+      // The rest of the edit is moot: nothing is made.
+      return { ...toPayload(next), existing_task_id: existing };
+    }
     // Present means sent: a DTO instance can carry declared-but-unset fields
     // as `undefined`, so `in` would read every field as an edit.
     const has = (key: string) => edits[key] !== undefined;
@@ -308,7 +328,22 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
     return toPayload(next);
   }
 
+  /**
+   * Naming the task it already is changes nothing about the suggestion, so
+   * only the task's own fields count.
+   */
+  countsAsEdited(
+    before: AiSuggestionPayload,
+    after: AiSuggestionPayload,
+  ): boolean {
+    return (
+      JSON.stringify(readTaskPayload(before)) !==
+      JSON.stringify(readTaskPayload(after))
+    );
+  }
+
   assertAcceptable(payload: AiSuggestionPayload): void {
+    if (existingTaskIdOf(payload)) return;
     const task = readTaskPayload(payload);
     if (!task.title) {
       throw new BadRequestException({
@@ -336,6 +371,12 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
     payload: AiSuggestionPayload;
     source?: { type: string; id: string };
   }): Promise<{ resultId: string }> {
+    const existingId = existingTaskIdOf(input.payload);
+    if (existingId) {
+      // Missing or another chapter's answers 404, as the task route does.
+      const existing = await this.tasks.findById(existingId, input.chapterId);
+      return { resultId: existing.id };
+    }
     const task = readTaskPayload(input.payload);
     // `assertAcceptable` ran before the claim; these narrow the types.
     if (!namesSomeone(task) || !task.due_date) {
