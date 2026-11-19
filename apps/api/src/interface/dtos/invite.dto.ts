@@ -186,7 +186,8 @@ export class InviteDetailsResponseDto
 
   @ApiProperty({
     format: 'date-time',
-    description: 'When the invite was made, for a dead card ("sent it on Friday, November 14").',
+    description:
+      'When the invite was made, for a dead card ("sent it on Friday, November 14").',
   })
   sent_at: string;
 }

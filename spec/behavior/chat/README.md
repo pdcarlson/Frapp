@@ -330,8 +330,8 @@ A message thread (#3785) opened from the channel shows the same background behin
 - **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md).
   They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations.
   This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
-- **System DM on invite accept.**
-  When a member accepts an invite, the inviter receives a `kind="system_audit"` message in their DM channel with that member — `"Alex Chen accepted your invite."` This is the same server-originated system-message pattern as the audit bridge, but targeted to a DM rather than `#chapter-audit`.
+- **No system messages in DMs.**
+  A DM holds only what its two members wrote. Invite accepted used to arrive as a Frapp `system_audit` line in a DM between the inviter and the new member, a conversation neither had started; since #5625 (Paul, 2026-11-19: "not the biggest fan of these DMs") it is a notification to the inviter ([`notifications.md`](../notifications.md)).
 
 ## Channel list previews
 

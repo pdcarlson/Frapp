@@ -46,13 +46,9 @@ import {
   type RollingWindowRoom,
 } from '#domain/utils/rolling-window';
 import { ActivationService } from './activation.service';
-import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
-import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
-import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
-import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
@@ -67,7 +63,6 @@ import {
   MEMBER_JOINED_AUDIENCE,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
-import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 /**
  * What an invite is for, read without using it up (#3352). Only what the
@@ -144,6 +139,20 @@ export function inviteStatus(invite: Invite, now = new Date()): InviteStatus {
  * An invite's state as its link tells it (#5625). A chapter link is never
  * `used`: any number of people join with it until it expires or is turned off.
  */
+/**
+ * What the invite's sender is told when someone joins with it (#5625): their
+ * own invite, so it says so, rather than the officers' "<name> joined".
+ */
+function inviterNoticeTitle(
+  name: string | undefined,
+  chapterLink: boolean,
+): string {
+  const who = name || 'Someone';
+  return chapterLink
+    ? `${who} joined with your chapter link`
+    : `${who} accepted your invite`;
+}
+
 function linkState(
   invite: Invite,
   described: { refused: boolean },
@@ -299,11 +308,8 @@ export class InviteService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
     private readonly activation: ActivationService,
-    private readonly chatService: ChatService,
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: IEmailProvider,
     private readonly config: ConfigService,
-    @Inject(CHAT_MESSAGE_REPOSITORY)
-    private readonly chatMessages: IChatMessageRepository,
     private readonly legalAcceptance: LegalAcceptanceService,
     private readonly rbac: RbacService,
   ) {}
@@ -1174,25 +1180,51 @@ export class InviteService {
           .then(([user]) => user)
           .catch(() => undefined),
       ]);
-      const recipients = holders.filter((id) => id !== userId);
-      if (recipients.length > 0) {
-        const name = joiner?.display_name?.trim();
-        await this.notificationService.notifyMembers(
-          invite.chapter_id,
-          recipients,
-          {
-            title: name ? `${name} joined` : 'A new member joined',
-            body: 'New member of the chapter',
-            priority: 'NORMAL',
-            category: 'members',
-            // `memberUserId` is who joined, a `users.id`, so the in-app list
-            // draws their picture and their name's colour (#4346). Not
-            // `senderId`: that key means a chat sender, and a block withholds
-            // rows by it. Not `memberId`, which means a `members.id`.
-            data: { target: { screen: 'members' }, memberUserId: userId },
-          },
-        );
-      }
+      const name = joiner?.display_name?.trim();
+      // `memberUserId` is who joined, a `users.id`, so the in-app list draws
+      // their picture and their name's colour (#4346). Not `senderId`: that
+      // key means a chat sender, and a block withholds rows by it. Not
+      // `memberId`, which means a `members.id`.
+      const data = { target: { screen: 'members' }, memberUserId: userId };
+      // Whoever sent the invite hears it as theirs (#5625, Paul 2026-11-19:
+      // "not the biggest fan of these DMs"). It used to arrive as a Frapp
+      // message inside a DM with the new member, a conversation neither had
+      // started, which the new member also found waiting as their first DM.
+      // A notification is where "your invite was used" belongs; saying hi is
+      // the inviter's own choice, from the member's profile.
+      const inviterId = invite.created_by !== userId ? invite.created_by : null;
+      const recipients = holders.filter(
+        (id) => id !== userId && id !== inviterId,
+      );
+      // Started together, so one failing still lets the other go out.
+      await Promise.all([
+        inviterId
+          ? this.notificationService.notifyMembers(
+              invite.chapter_id,
+              [inviterId],
+              {
+                title: inviterNoticeTitle(name, invite.reusable),
+                body: 'Say hi from their profile in Members.',
+                priority: 'NORMAL',
+                category: 'members',
+                data,
+              },
+            )
+          : undefined,
+        recipients.length > 0
+          ? this.notificationService.notifyMembers(
+              invite.chapter_id,
+              recipients,
+              {
+                title: name ? `${name} joined` : 'A new member joined',
+                body: 'New member of the chapter',
+                priority: 'NORMAL',
+                category: 'members',
+                data,
+              },
+            )
+          : undefined,
+      ]);
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'error',
@@ -1202,67 +1234,7 @@ export class InviteService {
       });
     }
 
-    await this.notifyInviterOfAcceptance(invite, userId);
-
     return { chapterId: invite.chapter_id, memberId: member.id };
-  }
-
-  /**
-   * Posts a `system_audit` DM to the inviter naming who accepted, per
-   * spec/behavior/chat/README.md. Writes through the message repository, as
-   * `PollService` does for its closing notice — `ChatService.sendMessage` would
-   * reject `SYSTEM_SENDER_ID` as a poster in a DM it isn't one of the two
-   * members of, so this bypasses it.
-   * Never allowed to fail the redemption itself: an inviter who left the
-   * chapter, a missing accepter profile, or any insert error is logged and
-   * swallowed, not thrown.
-   */
-  private async notifyInviterOfAcceptance(
-    invite: Invite,
-    accepterUserId: string,
-  ): Promise<void> {
-    // A rejoin (the inviter left the chapter, then redeems their own
-    // still-valid token) makes accepter === inviter — `getOrCreateDm` only
-    // checks array length, so [x, x] would silently pass and produce a
-    // degenerate self-DM. Nothing to announce to the accepter about
-    // themselves, so skip it outright.
-    if (invite.created_by === accepterUserId) return;
-
-    try {
-      const accepter = await this.userRepo.findById(accepterUserId);
-      if (!accepter) return;
-
-      const dm = await this.chatService.getOrCreateDm({
-        chapter_id: invite.chapter_id,
-        member_ids: [invite.created_by, accepterUserId],
-      });
-
-      const message: Partial<ChatMessage> = {
-        channel_id: dm.id,
-        sender_id: SYSTEM_SENDER_ID,
-        content: invite.reusable
-          ? `${accepter.display_name} joined with your chapter link.`
-          : `${accepter.display_name} accepted your invite.`,
-        kind: 'system_audit',
-      };
-      try {
-        await this.chatMessages.create(message);
-      } catch (error) {
-        logThrowable(
-          this.logger,
-          'warn',
-          'Invite-accept system_audit message insert failed',
-          error,
-        );
-      }
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'Failed to notify inviter of invite acceptance',
-        error,
-      );
-    }
   }
 
   /**
