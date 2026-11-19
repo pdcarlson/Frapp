@@ -763,7 +763,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   Chat never triggers an action ([Chat as a source](#chat-as-a-source)), and a suggestion made from a private read would outlive it.
 - **Only the asker sees it, and it is not kept.**
   The summary is the response to the request.
-  The server stores no summary, no prompt and no point, the beta diagnostics window never covers it, and the client holds it only while the panel is open: closing the panel, leaving the channel or reloading ends it.
+  The server stores no summary, no prompt and no point, the beta diagnostics window never covers it, and the client holds it only while it is open: closing it, leaving the channel or reloading ends it.
 - **Report this is the one way any of it is kept.**
   A summary that stands carries Report this, as every AI-made surface does ([Stored AI text](#stored-ai-text)).
   The server seals the exchange into the response and forgets it, as it does for an Ask answer; a report hands it back, and only then is it stored: the messages the model read and the summary, encrypted, for 30 days, for the Frapp team.
@@ -774,11 +774,14 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 - **Where it is.**
   On web: "Catch me up" in the channel's menu, a "Summarize thread" control on a thread of 5 or more messages, and a strip above the timeline when a channel opens with 20 or more new messages ([`../ui/web-dashboard/README.md` § Chat](../ui/web-dashboard/README.md#chat)).
   With summaries off for the chapter, or for a member without `ai:use`, none of these appear.
-- **On the phone** the summary is a sheet over the channel or the thread ([`../ui/mobile/screens.md`](../ui/mobile/screens.md) s05).
+- **Where the summary shows.**
+  In the conversation it summarizes, never over it: a block under the channel's header (or at the top of the thread), at most a third of the screen and scrolling inside itself, on web and on the phone alike (Paul, 2026-11-19: "I NEVER WANT TO SEE ANOTHER ONE OF THESE SIDE CARDS"; until then web drew it as a panel on the window's right edge and the phone as a sheet).
+  Hide folds it to the strip "Your summary is still here." with "Back to summary", and its × ends it.
+- **On the phone** ([`../ui/mobile/screens.md`](../ui/mobile/screens.md) s05)
   The ways in are the same three, placed where a phone has room: a "Catch me up" row in the channel header's ⋯ menu, a "Summarize thread" action on the thread's reply-count line (and a strip under the thread's header at 20 or more replies), and a strip under the channel's header when it opens with 20 or more new messages.
   The mobile timeline has no unread divider to hang the offer on, so the strip counts from what Chat home held when the channel was opened; a channel opened cold, from a push, offers the last 24 hours from the menu and no strip.
-  A sheet cannot sit beside the message the way web's panel does, so pressing a line closes the sheet and scrolls to the message, and the strip then reads "Your summary is still here." with "Back to summary": the same summary comes back, with no second request.
-  Swiping the sheet away, the strip's ×, or leaving the channel ends it.
+  A phone has no room for the summary and the message at once, as a computer does, so pressing a line folds the summary to its strip and scrolls to the message; "Back to summary" brings the same summary back, with no second request.
+  The ×, on the summary or its strip, or leaving the channel ends it.
 - **When it can't** it says which: the member has not turned Frapp AI on (with a button that opens Meet Frapp AI), the president has summaries or channel messages turned off, the chapter or the member reached its allowance, or summaries are not available.
   A provider refusal reads "This conversation can't be summarized."
 - **Limits.**

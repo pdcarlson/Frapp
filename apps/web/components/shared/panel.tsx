@@ -54,9 +54,18 @@ import { cn } from "@/lib/utils";
  * (`thread-panel.tsx`). Below the side-by-side width the tool column is the
  * whole page, so docked is a full page there.
  *
- * A panel opened from somewhere with no page of its own (`/event` in chat)
- * stays the sheet. A yes/no question stays a centred dialog: there, blocking
- * the screen is the point.
+ * **Docked where it was opened** (`docked="here"`, Paul, 2026-11-19: "I
+ * NEVER WANT TO SEE ANOTHER ONE OF THESE SIDE CARDS"). A panel opened from a
+ * surface with no page of its own (a profile from a name in chat, + New
+ * channel, an event form from chat's + card or from an Ask answer) docks
+ * into the surface around it instead of sliding over the window: the nearest
+ * `PANEL_HOST_ATTRIBUTE` box it is rendered inside (chat's own column, Ask's
+ * card). It covers that box with a back arrow, as a thread covers the chat
+ * on a narrow window, and the page beside it stays live.
+ *
+ * The sheet is left only as the fallback for a panel with nowhere to dock (a
+ * test, a page outside the shell). A yes/no question stays a centred dialog:
+ * there, blocking the screen is the point.
  */
 type PanelDock = {
   onClose: () => void;
@@ -75,6 +84,16 @@ const noSubscribe = () => () => undefined;
 const TOOL_COLUMN_SELECTOR = "[data-tool-column]";
 
 /**
+ * Marks a box a `docked="here"` panel opened inside it covers: chat's column
+ * (`chat-shell.tsx`) and Ask's card (`ask-card.tsx`). The box must be a
+ * containing block (`relative`, or `fixed`) so the panel fills it.
+ */
+export const PANEL_HOST_ATTRIBUTE = "data-panel-host";
+
+/** `true` docks in the tool column; `"here"` in the surface it opened from. */
+export type PanelDocking = boolean | "here";
+
+/**
  * The panel's root: the sheet, or with `docked` the page's own column. Use it
  * in place of `Sheet` so a caller switches with one prop.
  */
@@ -87,21 +106,33 @@ export function Panel({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  docked?: boolean;
+  docked?: PanelDocking;
   /** The back arrow's name when docked: where it goes ("Back to events"). */
   backLabel?: string;
   children: React.ReactNode;
 }) {
   const titleId = React.useId();
   const descriptionId = React.useId();
-  useOpenerTracking(docked);
+  useOpenerTracking(docked !== false);
   // `undefined` on the server and in the first hydrating render, so the
   // markup matches; then the column, or `null` when there is none.
-  const column = React.useSyncExternalStore<Element | null | undefined>(
+  const toolColumn = React.useSyncExternalStore<Element | null | undefined>(
     noSubscribe,
-    () => (docked ? document.querySelector(TOOL_COLUMN_SELECTOR) : null),
+    () =>
+      docked === true ? document.querySelector(TOOL_COLUMN_SELECTOR) : null,
     () => undefined,
   );
+  // `"here"`: the host box around where this panel is rendered, found from a
+  // hidden marker once it is in the document.
+  const marker = React.useRef<HTMLSpanElement>(null);
+  const [host, setHost] = React.useState<Element | null | undefined>(
+    undefined,
+  );
+  React.useLayoutEffect(() => {
+    if (docked !== "here") return;
+    setHost(marker.current?.closest(`[${PANEL_HOST_ATTRIBUTE}]`) ?? null);
+  }, [docked]);
+  const column = docked === "here" ? host : toolColumn;
 
   const dock = React.useMemo<PanelDock>(
     () => ({
@@ -113,21 +144,31 @@ export function Panel({
     [onOpenChange, backLabel, titleId, descriptionId],
   );
 
-  // Docked with no tool column to land in (a page outside the shell, a
-  // test) falls back to the sheet rather than showing nothing.
+  const hereMarker =
+    docked === "here" ? <span ref={marker} hidden data-panel-marker="" /> : null;
+  // Docked with nowhere to land (a page outside the shell, a test) falls
+  // back to the sheet rather than showing nothing.
   if (!docked || column === null) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        {children}
-      </Sheet>
+      <>
+        {hereMarker}
+        <Sheet open={open} onOpenChange={onOpenChange}>
+          {children}
+        </Sheet>
+      </>
     );
   }
-  if (!open || !column) return null;
-  return createPortal(
-    <PanelDockContext.Provider value={dock}>
-      {children}
-    </PanelDockContext.Provider>,
-    column,
+  if (!open || !column) return hereMarker;
+  return (
+    <>
+      {hereMarker}
+      {createPortal(
+        <PanelDockContext.Provider value={dock}>
+          {children}
+        </PanelDockContext.Provider>,
+        column,
+      )}
+    </>
   );
 }
 
@@ -193,6 +234,21 @@ const OPENER_WINDOW_MS = 1000;
 
 function openerOf(box: HTMLElement): HTMLElement | null {
   const pressed = lastPressed;
+  const active = document.activeElement;
+  // A press inside a popover that closes as the panel opens (a name's
+  // popout, whose View profile opens the profile): the popover hands focus
+  // to what it belongs to before it goes, and that is where focus returns,
+  // since the pressed button leaves with the popover.
+  const popover = pressed?.control.closest("[data-radix-popper-content-wrapper]");
+  if (
+    popover &&
+    active instanceof HTMLElement &&
+    active !== document.body &&
+    !popover.contains(active) &&
+    !box.contains(active)
+  ) {
+    return active;
+  }
   if (
     pressed &&
     Date.now() - pressed.at < OPENER_WINDOW_MS &&
@@ -201,7 +257,6 @@ function openerOf(box: HTMLElement): HTMLElement | null {
   ) {
     return pressed.control;
   }
-  const active = document.activeElement;
   return active instanceof HTMLElement && active !== document.body
     ? active
     : null;
@@ -232,6 +287,13 @@ function DockedPanel({
     closeFocus.current = onCloseAutoFocus;
   }, [onCloseAutoFocus]);
   const descriptionId = dock.descriptionId;
+  const onBack = dock.onClose;
+  React.useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    box.addEventListener(DOCKED_BACK_EVENT, onBack);
+    return () => box.removeEventListener(DOCKED_BACK_EVENT, onBack);
+  }, [onBack]);
   React.useEffect(() => {
     const box = ref.current;
     const column = box?.parentElement;
@@ -243,7 +305,17 @@ function DockedPanel({
       (child): child is HTMLElement =>
         child !== box && child instanceof HTMLElement && !child.inert,
     );
-    for (const child of covered) child.inert = true;
+    // Hidden as well as inert: a dialog the panel docks in (Ask's card)
+    // keeps its own focus trap, which skips hidden nodes but not inert ones,
+    // so Tab would otherwise wrap to a control it can't focus. The panel is
+    // opaque over them, so nothing visible changes.
+    const hiddenBefore = new Map<HTMLElement, string>();
+    const cover = (child: HTMLElement) => {
+      child.inert = true;
+      hiddenBefore.set(child, child.style.visibility);
+      child.style.visibility = "hidden";
+    };
+    for (const child of covered) cover(child);
     // A child that joins the column while the panel is up is covered too:
     // Ask Frapp's floating bar mounts once Ask access resolves, which can be
     // after a deep link opened the panel (#5476). It is released with the
@@ -254,7 +326,7 @@ function DockedPanel({
           if (node === box || !(node instanceof HTMLElement) || node.inert) {
             continue;
           }
-          node.inert = true;
+          cover(node);
           covered.push(node);
         }
       }
@@ -306,7 +378,10 @@ function DockedPanel({
       observer.disconnect();
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("pointerdown", onPointerDown, true);
-      for (const child of covered) child.inert = false;
+      for (const child of covered) {
+        child.inert = false;
+        child.style.visibility = hiddenBefore.get(child) ?? "";
+      }
       // Closed while the member was working elsewhere (an upload finishing
       // while they type in chat): focus is theirs, so leave it there.
       if (!ours) return;
@@ -327,8 +402,7 @@ function DockedPanel({
         onKeyDown?.(event);
         if (event.key !== "Escape" || event.defaultPrevented) return;
         const target = event.target as HTMLElement;
-        if (target.closest("input, textarea, select, [contenteditable]"))
-          return;
+        if (target.closest(FIELD_SELECTOR)) return;
         event.preventDefault();
         event.stopPropagation();
         dock.onClose();
@@ -366,6 +440,30 @@ const DOCKED_INSET_CLASS = "px-[max(1.25rem,calc((100%_-_576px)/2_+_1.25rem))]";
  * what was being edited.
  */
 export const OWNS_ESCAPE = "data-owns-escape";
+
+/** Sent to a docked panel's box to go back, as its arrow does. */
+const DOCKED_BACK_EVENT = "frapp:docked-back";
+
+/** Where a docked panel leaves Escape to the control that has it. */
+const FIELD_SELECTOR = "input, textarea, select, [contenteditable]";
+
+/**
+ * For a dialog hosting a `docked="here"` panel (Ask's card): Escape pressed
+ * inside the panel is the panel's, which goes back, as it does anywhere a
+ * panel is docked, rather than closing the dialog with the form in it. Call
+ * it from the dialog's `onEscapeKeyDown`; true means the dialog must stay
+ * (`preventDefault`). A field keeps its Escape and the panel stays.
+ */
+export function escapeIntoDockedPanel(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const box = target.closest("[data-docked-panel]");
+  if (!box) return false;
+  if (target.closest(FIELD_SELECTOR) || target.closest(`[${OWNS_ESCAPE}]`)) {
+    return true;
+  }
+  box.dispatchEvent(new Event(DOCKED_BACK_EVENT));
+  return true;
+}
 
 export const PanelContent = React.forwardRef<
   React.ElementRef<typeof SheetContent>,
@@ -446,6 +544,7 @@ export function PanelHeader({
         <IconButton
           label={dock.backLabel}
           onClick={dock.onClose}
+          data-panel-back=""
           className="shrink-0 text-muted-foreground"
         >
           <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />

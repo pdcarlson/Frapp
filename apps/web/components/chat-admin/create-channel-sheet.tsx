@@ -31,6 +31,7 @@ import {
   PanelFooter,
   PanelDescription,
   PanelHeader,
+  type PanelDocking,
 } from "@/components/shared/panel";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -108,9 +109,9 @@ export function CreateChannelSheet({
   /**
    * Open in place of the page that owns it (Chat admin), beside chat,
    * rather than over the app (`components.md` § Surface size). Chat's own
-   * + beside a category has no page, so it stays a sheet.
+   * + beside a category docks it `"here"`, over the chat column.
    */
-  docked?: boolean;
+  docked?: PanelDocking;
   /** The back arrow's name when docked. */
   backLabel?: string;
 }) {
@@ -143,7 +144,7 @@ export function CreateChannelSheet({
   const [alwaysFormal, setAlwaysFormal] = useState(false);
 
   const kept = useKeptFormDraft<ChannelDraft>(
-    channelDraftName(initialCategoryId, docked),
+    channelDraftName(initialCategoryId, docked === true),
     open,
     {
       name,
