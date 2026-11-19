@@ -72,7 +72,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
   'GoogleCalendarCallbackController.callback':
     "Google's OAuth redirect; connects nothing, only sends the browser back to where the sign-in started, whose signed-in member finishes it.",
   'InviteDetailsController.details':
-    "The card an invite link opens on, before anyone signs in (#5625); the unguessable invite token in the body is the credential, and it shows only the chapter, sender, role and whether the link works.",
+    'The card an invite link opens on, before anyone signs in (#5625); the unguessable invite token in the body is the credential, and it shows only the chapter, sender, role and whether the link works.',
   'DevLogController.post':
     'Posts to the dev-log channel; guarded by DevLogTokenGuard (a shared secret), not a user session.',
 };
