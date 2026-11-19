@@ -112,6 +112,15 @@ export class CreateOpenTaskDto {
   group_id?: string;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Only the active members holding a role in this tier may claim it (#5473). A tier holding the chapter’s Everyone role means anyone; a tier nobody holds a role in is a 400.',
+  })
+  @IsOptional()
+  @IsUUID()
+  tier_id?: string;
+
+  @ApiPropertyOptional({
     type: [String],
     minItems: 1,
     maxItems: TASK_PEOPLE_MAX,
@@ -242,7 +251,7 @@ export class OpenTaskDto implements OpenTaskView {
   @ApiProperty({
     enum: OPEN_TASK_SCOPES,
     description:
-      'Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members) or `people` (`scope_user_ids`). Alumni never may.',
+      'Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members), `tier` (everyone holding a role in it, #5473) or `people` (`scope_user_ids`). Alumni never may.',
   })
   scope: OpenTaskScope;
 

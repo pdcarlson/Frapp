@@ -758,13 +758,17 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
   },
   'application/services/task.service.ts': {
     // +1 for a task for everyone (#4295 step 3): each copy's assignment push.
-    calls: 9,
+    // +3 for a following group (#5473): "finished" to its members, the
+    // review push to one who can confirm, as the creator's names the task.
+    calls: 12,
     entries: [MEMBER_TEXT],
   },
   'application/workers/scheduled-jobs.service.ts': {
     // +3 for repeating tasks (#5119): each new copy's assignment push and the
     // "stopped repeating" notice, both titled with the task as task pushes are.
-    calls: 18,
+    // +1 for a group task's following group (#5473): its overdue line, once
+    // for the group, titled with the task.
+    calls: 19,
     entries: [MEMBER_TEXT],
   },
   'application/workers/discord-import-worker.service.ts': {

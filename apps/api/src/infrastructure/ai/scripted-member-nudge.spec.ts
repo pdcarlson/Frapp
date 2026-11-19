@@ -34,6 +34,7 @@ const TASK: Task = {
   occurrence_date: null,
   group_id: null,
   meeting_id: null,
+  followed_by: null,
   created_at: '2026-11-08T15:00:00.000Z',
 };
 

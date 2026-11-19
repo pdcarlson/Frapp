@@ -1223,22 +1223,33 @@ export class ScheduledJobsService {
    * a `warning`, as it was before: the claim is released and the task stays
    * in the lookback for days, so the next tick retries and nothing is lost.
    */
-  private notifyTaskOverdue(task: SweepTaskRow) {
-    return this.claimAndNotify({
+  private async notifyTaskOverdue(task: SweepTaskRow): Promise<boolean> {
+    // A copy of a group task tells its following group once for the whole
+    // group (#5473), under a claim keyed by the group, not once per copy.
+    const groupFollowed = !!(task.followed_by && task.group_id);
+    const sent = await this.claimAndNotify({
       chapterId: task.chapter_id,
       entityType: 'TASK',
       entityId: task.id,
       threshold: 'OVERDUE',
       dueDate: task.due_date,
       recipients: async () => {
-        if (task.created_by === task.assignee_id) return [task.assignee_id];
+        // The tier, role or group following a one-person task (#5473), read
+        // now; its members get the same line. Never fails the claim: a
+        // failed read reaches nobody and is reported.
+        const followers = groupFollowed
+          ? []
+          : await this.taskService.followerRecipients(task, task.chapter_id);
+        if (task.created_by === task.assignee_id) {
+          return [task.assignee_id, ...followers];
+        }
         const assigner = await this.memberRepo.findByUserAndChapter(
           task.created_by,
           task.chapter_id,
         );
         return assigner
-          ? [task.assignee_id, task.created_by]
-          : [task.assignee_id];
+          ? [task.assignee_id, task.created_by, ...followers]
+          : [task.assignee_id, ...followers];
       },
       resolveFailureLevel: 'warning',
       title: task.title,
@@ -1246,6 +1257,23 @@ export class ScheduledJobsService {
       category: 'tasks',
       target: { screen: 'tasks', taskId: task.id },
     });
+    if (groupFollowed && task.group_id) {
+      await this.claimAndNotify({
+        chapterId: task.chapter_id,
+        entityType: 'TASK',
+        entityId: task.group_id,
+        threshold: 'OVERDUE',
+        dueDate: task.due_date,
+        recipients: () =>
+          this.taskService.followerRecipients(task, task.chapter_id),
+        resolveFailureLevel: 'warning',
+        title: task.title,
+        body: `Overdue · was due ${formatDueDate(task.due_date)}`,
+        category: 'tasks',
+        target: { screen: 'tasks', taskId: task.id },
+      });
+    }
+    return sent;
   }
 
   /**

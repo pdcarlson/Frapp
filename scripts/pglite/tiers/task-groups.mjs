@@ -133,6 +133,48 @@ console.log(
       { roleGroup, untargeted },
     );
 
+    // A group for a tier, followed by a group (#5473): every copy carries the
+    // follower, and a follower that isn't an entry is refused.
+    const TIER = "a5473000-0000-4000-8000-0000000000f1";
+    const FOLLOWER = "group:a5473000-0000-4000-8000-0000000000f2";
+    const tierCopies = (
+      await db.query(
+        `select group_id, followed_by from create_task_group(
+           $1::uuid, $2::uuid, 'tier',
+           array[$2::uuid, $3::uuid], 'Plan the retreat', null,
+           date '2026-11-20', null, null, 'none', array[]::text[],
+           $4::uuid, 'Exec board', $5)`,
+        [CHAPTER, A, B, TIER, FOLLOWER],
+      )
+    ).rows;
+    const tierGroup = (
+      await db.query(
+        `select audience, target_id from task_groups where id = $1`,
+        [tierCopies[0]?.group_id],
+      )
+    ).rows[0];
+    await db.exec("savepoint p5473;");
+    let badFollower = null;
+    try {
+      await db.query(
+        `update tasks set followed_by = 'committee:${TIER}' where group_id = $1`,
+        [tierCopies[0]?.group_id],
+      );
+    } catch (e) {
+      badFollower = String(e?.message ?? e);
+    } finally {
+      await db.exec("rollback to savepoint p5473;");
+    }
+    check(
+      "a group for a tier keeps its id, every copy carries its follower, and a malformed follower is refused",
+      tierCopies.length === 2 &&
+        tierCopies.every((c) => c.followed_by === FOLLOWER) &&
+        tierGroup?.audience === "tier" &&
+        tierGroup?.target_id === TIER &&
+        /tasks_followed_by_check/.test(badFollower ?? ""),
+      { tierCopies, tierGroup, badFollower },
+    );
+
     await db.exec(`delete from task_groups where id = '${groupId}';`);
     const kept = (
       await db.query(

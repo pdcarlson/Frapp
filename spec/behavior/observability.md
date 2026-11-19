@@ -624,11 +624,11 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `task-created` | An officer creates a task. `audience` is `person`, or the group it went to: `everyone`, `people`, `role` or `group` (2026-11-18); `group_size` is how many copies it made (1 for one person) | `assigned_to_self`, `audience`, `group_size`, `has_due_time`, `has_point_reward`, `has_reference_photo`, `has_subtasks`, `posted_to_chat`, `proof_kind`, `repeats` |
+| `task-created` | An officer creates a task. `audience` is `person`, or the group it went to: `everyone`, `people`, `role` or `group` (2026-11-18), or `tier` (#5473); `followed` whether a tier, role or group follows it (#5473); `group_size` is how many copies it made (1 for one person) | `assigned_to_self`, `audience`, `followed`, `group_size`, `has_due_time`, `has_point_reward`, `has_reference_photo`, `has_subtasks`, `posted_to_chat`, `proof_kind`, `repeats` |
 | `task-status-changed` | The assignee or an officer moves a task to a new status. `has_proof_photo`, `has_proof_link` and `has_completion_note` are whether proof photos, a proof link or a reply came with it | `status`, `has_proof_photo`, `has_proof_link`, `has_completion_note` |
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back. `asked_for_photo` is whether they raised its proof to Photo | `asked_for_photo` |
-| `open-task-created` | An officer posts a task up for grabs (2026-11-18). `scope` is `chapter`, `role`, `group` or `people`; `eligible_count` how many members could claim it | `scope`, `eligible_count`, `has_due_time`, `has_point_reward`, `has_subtasks`, `proof_kind` |
+| `open-task-created` | An officer posts a task up for grabs (2026-11-18). `scope` is `chapter`, `role`, `group`, `tier` (#5473) or `people`; `eligible_count` how many members could claim it | `scope`, `eligible_count`, `has_due_time`, `has_point_reward`, `has_subtasks`, `proof_kind` |
 | `open-task-claimed` | A task up for grabs is taken: claimed by a member, or handed to one by an officer (`assigned_by_officer`) | `assigned_by_officer` |
 
 **Meetings (`meetings`)**

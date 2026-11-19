@@ -11650,7 +11650,7 @@
             "bearer": []
           }
         ],
-        "summary": "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635)",
+        "summary": "A short-lived link to one of a task's photos (assignee or tasks:manage, #4635; a following group's member gets reference photos only, #5473)",
         "tags": [
           "Tasks"
         ]
@@ -29921,20 +29921,21 @@
               "everyone",
               "people",
               "role",
-              "group"
+              "group",
+              "tier"
             ],
-            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy."
+            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy."
           },
           "target_id": {
             "type": "string",
             "format": "uuid",
             "nullable": true,
-            "description": "The role or chapter group it went to, for `role` and `group`; null otherwise."
+            "description": "The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise."
           },
           "target_name": {
             "type": "string",
             "nullable": true,
-            "description": "That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
+            "description": "That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
           },
           "total": {
             "type": "number",
@@ -30047,6 +30048,16 @@
             "type": "string",
             "format": "uuid",
             "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`."
+          },
+          "audience_tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "With `audience: \"everyone\"` only (#5473): just the active members holding a role in this tier get a copy (\"Exec board\"). A tier holding the chapter’s Everyone role means everyone; a tier nobody holds a role in is a 400. Not with `audience_role_id` or `audience_group_id`."
+          },
+          "followed_by": {
+            "type": "string",
+            "pattern": "^(tier|role|group):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task."
           },
           "due_date": {
             "type": "string",
@@ -30271,6 +30282,11 @@
             "nullable": true,
             "description": "The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to."
           },
+          "followed_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -30318,6 +30334,7 @@
           "occurrence_date",
           "group_id",
           "meeting_id",
+          "followed_by",
           "created_at",
           "photos"
         ]
@@ -30367,6 +30384,12 @@
               "link"
             ],
             "description": "What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer."
+          },
+          "followed_by": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^(tier|role|group):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "description": "The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. Null takes it off. A new one must name a tier, role or group the editor is in; the one the task has stays whoever edits. With `scope: group` it changes every copy, confirmed ones too. Not with `scope: series`."
           },
           "scope": {
             "type": "string",
@@ -30491,9 +30514,10 @@
               "chapter",
               "role",
               "group",
-              "people"
+              "people",
+              "tier"
             ],
-            "description": "Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members) or `people` (`scope_user_ids`). Alumni never may."
+            "description": "Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members), `tier` (everyone holding a role in it, #5473) or `people` (`scope_user_ids`). Alumni never may."
           },
           "scope_id": {
             "type": "string",
@@ -30741,6 +30765,11 @@
             "type": "string",
             "format": "uuid",
             "description": "Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only the active members holding a role in this tier may claim it (#5473). A tier holding the chapter’s Everyone role means anyone; a tier nobody holds a role in is a 400."
           },
           "user_ids": {
             "minItems": 1,
@@ -33961,20 +33990,21 @@
               "everyone",
               "people",
               "role",
-              "group"
+              "group",
+              "tier"
             ],
-            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders) or `group` (a chapter group’s members). Each got their own copy."
+            "description": "Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy."
           },
           "target_id": {
             "type": "string",
             "format": "uuid",
             "nullable": true,
-            "description": "The role or chapter group it went to, for `role` and `group`; null otherwise."
+            "description": "The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise."
           },
           "target_name": {
             "type": "string",
             "nullable": true,
-            "description": "That role’s or group’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
+            "description": "That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. \"Everyone in Recruitment Committee\"."
           },
           "total": {
             "type": "number",

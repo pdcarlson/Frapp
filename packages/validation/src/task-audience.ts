@@ -18,16 +18,18 @@ export type TaskAudience = (typeof TASK_AUDIENCES)[number];
 /**
  * Who a group task went to, as task reads carry it (`group.audience`, Paul,
  * 2026-11-18): the chapter (`everyone`), several people picked one by one
- * (`people`), a role's holders (`role`) or a chapter group's members
- * (`group`). Each of them got their own copy. A request still sends
- * `audience: "everyone"`, narrowed by `audience_role_id` or
- * `audience_group_id`, or `assignee_ids` for several people.
+ * (`people`), a role's holders (`role`), a chapter group's members
+ * (`group`), or everyone holding a role in a tier (`tier`, #5473). Each of
+ * them got their own copy. A request still sends `audience: "everyone"`,
+ * narrowed by `audience_role_id`, `audience_group_id` or `audience_tier_id`,
+ * or `assignee_ids` for several people.
  */
 export const TASK_GROUP_AUDIENCES = [
   TASK_AUDIENCE_EVERYONE,
   "people",
   "role",
   "group",
+  "tier",
 ] as const;
 
 export type TaskGroupAudience = (typeof TASK_GROUP_AUDIENCES)[number];
@@ -48,7 +50,13 @@ export const TASK_SUGGESTION_AUDIENCES = [
 export type TaskSuggestionAudience = (typeof TASK_SUGGESTION_AUDIENCES)[number];
 
 /** Who may claim a task up for grabs (`open_tasks.scope`). */
-export const OPEN_TASK_SCOPES = ["chapter", "role", "group", "people"] as const;
+export const OPEN_TASK_SCOPES = [
+  "chapter",
+  "role",
+  "group",
+  "people",
+  "tier",
+] as const;
 
 export type OpenTaskScope = (typeof OPEN_TASK_SCOPES)[number];
 
@@ -92,6 +100,7 @@ export const TASK_AUDIENCE_COPY = {
   /** Refused: the role, group or chapter has nobody in it to give it to. */
   nobodyInRole: "Nobody holds that role yet",
   nobodyInGroup: "Nobody is in that group yet",
+  nobodyInTier: "Nobody holds a role in that tier yet",
   nobodyInChapter: "This chapter has no active members yet",
   /** Under the picker once Everyone is chosen. */
   everyoneHint: (count: number | null) =>
@@ -159,12 +168,14 @@ export function everyoneCount(
  * Whom a task is for, as a picker holds it (Paul, 2026-11-18): one person; a
  * copy each for everyone in a target; or one task up for grabs that someone
  * in a target claims. A target is the chapter, a role's holders, a chapter
- * group's members, or people picked one by one. Alumni are never in one.
+ * group's members, everyone holding a role in a tier (#5473), or people
+ * picked one by one. Alumni are never in one.
  */
 export type TaskWhoTarget =
   | { kind: "chapter" }
   | { kind: "role"; id: string }
   | { kind: "group"; id: string }
+  | { kind: "tier"; id: string }
   | { kind: "people"; userIds: string[] };
 
 export type TaskWho =
@@ -180,12 +191,14 @@ export type TaskWhoTaskFields =
       audience: TaskAudience;
       audience_role_id?: string;
       audience_group_id?: string;
+      audience_tier_id?: string;
     };
 
 /** The fields `POST /v1/open-tasks` takes for who may claim it. */
 export interface TaskWhoOpenTaskFields {
   role_id?: string;
   group_id?: string;
+  tier_id?: string;
   user_ids?: string[];
 }
 
@@ -247,6 +260,11 @@ export function taskWhoRequest(who: TaskWho): TaskWhoRequest | null {
           endpoint: "/v1/tasks",
           fields: { audience: "everyone", audience_group_id: target.id },
         };
+      case "tier":
+        return {
+          endpoint: "/v1/tasks",
+          fields: { audience: "everyone", audience_tier_id: target.id },
+        };
       case "people":
         return {
           endpoint: "/v1/tasks",
@@ -261,6 +279,8 @@ export function taskWhoRequest(who: TaskWho): TaskWhoRequest | null {
       return { endpoint: "/v1/open-tasks", fields: { role_id: target.id } };
     case "group":
       return { endpoint: "/v1/open-tasks", fields: { group_id: target.id } };
+    case "tier":
+      return { endpoint: "/v1/open-tasks", fields: { tier_id: target.id } };
     case "people":
       return {
         endpoint: "/v1/open-tasks",
@@ -302,6 +322,10 @@ export function taskWhoSuggestionFields(
     return { ...NO_SUGGESTION_WHO, assignee_id: picked.userId };
   }
   const { target } = picked;
+  // A suggestion's payload has no tier field yet (#5473), so the suggested
+  // tasks' pickers offer no tiers; one that slipped through picks nobody
+  // rather than widening to the chapter.
+  if (target.kind === "tier") return { ...NO_SUGGESTION_WHO };
   if (picked.kind === "each" && target.kind === "people") {
     return { ...NO_SUGGESTION_WHO, assignee_ids: target.userIds };
   }
@@ -363,10 +387,12 @@ export interface TaskWhoSuggestionSource {
 function targetOf(fields: {
   roleId?: string | null;
   groupId?: string | null;
+  tierId?: string | null;
   userIds?: string[] | null;
 }): TaskWhoTarget {
   if (fields.roleId) return { kind: "role", id: fields.roleId };
   if (fields.groupId) return { kind: "group", id: fields.groupId };
+  if (fields.tierId) return { kind: "tier", id: fields.tierId };
   if (fields.userIds && fields.userIds.length > 0) {
     return { kind: "people", userIds: distinctIds(fields.userIds) };
   }
@@ -393,6 +419,7 @@ export function taskWhoOf(
           : targetOf({
               roleId: source.scope === "role" ? source.scope_id : null,
               groupId: source.scope === "group" ? source.scope_id : null,
+              tierId: source.scope === "tier" ? source.scope_id : null,
               userIds: source.scope === "people" ? source.scope_user_ids : [],
             }),
     });
@@ -404,9 +431,11 @@ export function taskWhoOf(
         ? { kind: "role", id: target_id }
         : audience === "group" && target_id
           ? { kind: "group", id: target_id }
-          : audience === "people"
-            ? { kind: "people", userIds: [...(options.groupUserIds ?? [])] }
-            : { kind: "chapter" };
+          : audience === "tier" && target_id
+            ? { kind: "tier", id: target_id }
+            : audience === "people"
+              ? { kind: "people", userIds: [...(options.groupUserIds ?? [])] }
+              : { kind: "chapter" };
     // A people group read without its people still says "a copy each".
     return target.kind === "people" && target.userIds.length < 2
       ? { kind: "each", target }
@@ -448,7 +477,9 @@ export function taskGroupLabel(group: {
   total: number;
 }): string {
   if (
-    (group.audience === "role" || group.audience === "group") &&
+    (group.audience === "role" ||
+      group.audience === "group" ||
+      group.audience === "tier") &&
     group.target_name
   ) {
     return TASK_AUDIENCE_COPY.everyoneIn(group.target_name);
@@ -472,7 +503,9 @@ export function openTaskScopeLabel(
   names?: readonly string[],
 ): string {
   if (
-    (posting.scope === "role" || posting.scope === "group") &&
+    (posting.scope === "role" ||
+      posting.scope === "group" ||
+      posting.scope === "tier") &&
     posting.scope_name
   ) {
     return TASK_AUDIENCE_COPY.someoneIn(posting.scope_name);

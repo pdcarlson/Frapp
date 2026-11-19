@@ -70,6 +70,8 @@ function targetOf(posting: OpenTask): TaskAudienceTarget {
       return { kind: 'role', id: posting.scope_id ?? '' };
     case 'group':
       return { kind: 'group', id: posting.scope_id ?? '' };
+    case 'tier':
+      return { kind: 'tier', id: posting.scope_id ?? '' };
     case 'people':
       return { kind: 'people', userIds: posting.scope_user_ids ?? [] };
     case 'chapter':
@@ -130,7 +132,9 @@ export class OpenTaskService {
   ): Promise<OpenTaskView> {
     const eligible = await reader.eligible(targetOf(posting));
     const liveName =
-      posting.scope === 'role' || posting.scope === 'group'
+      posting.scope === 'role' ||
+      posting.scope === 'group' ||
+      posting.scope === 'tier'
         ? posting.scope_id
           ? await reader.nameOf(posting.scope, posting.scope_id)
           : null
