@@ -19,6 +19,7 @@ import {
 import { ShareGlyph } from "@/components/control-glyphs";
 import { InviteByEmail } from "@/components/more/invite-by-email";
 import { InvitedList } from "@/components/more/invited-list";
+import { ChapterLinkSection } from "@/components/more/chapter-link-section";
 import { InviteLinksCard } from "@/components/onboarding/invite-links-card";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { ScreenShell } from "@/components/screen-shell";
@@ -46,6 +47,7 @@ import { InlineNote } from "@/components/inline-note";
  * through the same `POST /v1/invites/email`; then Share invite, setup's
  * share-first link (`useInviteShares`), which mints a fresh single-use link
  * and opens the share sheet with it, Mail and Gmail among its targets; then
+ * the chapter link (#3353), one link for the whole chapter for 7 days; then
  * the chapter's invites under Invited, each with web's Share link, Send again
  * and Revoke. No token is ever drawn. Inside a chapter the Send button, the
  * field's focus border and the link tile take the chapter accent, where
@@ -222,6 +224,7 @@ function InviteBody({ focused }: { focused: boolean }) {
             }
           />
         </View>
+        <ChapterLinkSection chapterName={shareName} />
         <InvitedList
           invites={invites.data}
           isError={invites.isError}

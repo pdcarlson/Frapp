@@ -142,6 +142,73 @@ export function useCreateInvite() {
   });
 }
 
+/**
+ * The chapter link (#3353, Paul 2026-11-19: "One chapter link, 7 days"): one
+ * link an officer posts where the chapter will see it, such as its Discord.
+ * Anyone who opens it joins at the chapter's default invite role until it
+ * expires or an officer turns it off (`useRevokeInvite`). `null` when there
+ * is none; an expired one comes back with `status: "expired"`. Under the
+ * `["invites", chapterId]` prefix, so every invite write refreshes it.
+ */
+export function useChapterLink(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["invites", chapterId, "chapter-link"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/invites/chapter-link", {
+        signal,
+      });
+      if (error) throw error;
+      return data.link;
+    },
+    staleTime: 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * The line under the Chapter link label, on web's Invite members panel and
+ * the phone's Invite members screen alike.
+ */
+export const CHAPTER_LINK_HINT =
+  "One link for the whole chapter. Post it in your group chat or Discord, and anyone with it can join for 7 days.";
+
+/** A new chapter link; the one before it stops working at once. */
+export function useCreateChapterLink() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["invites", "create-chapter-link"],
+    mutationFn: async () => {
+      const { data, error } = await client.POST("/v1/invites/chapter-link");
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (link) => {
+      queryClient.setQueryData(["invites", chapterId, "chapter-link"], link);
+      queryClient.invalidateQueries({ queryKey: ["invites", chapterId] });
+    },
+  });
+}
+
+/**
+ * When a chapter link stops working, in words, for the line under it:
+ * "Works until Wednesday, November 26". Written out, as dates are across the
+ * apps.
+ */
+export function chapterLinkExpiryLabel(
+  link: Pick<InviteListItem, "status" | "expires_at">,
+): string {
+  const date = new Date(link.expires_at).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  return link.status === "expired" ? `Expired ${date}` : `Works until ${date}`;
+}
+
 export function useEmailInvites() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();

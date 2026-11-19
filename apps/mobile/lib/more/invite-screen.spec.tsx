@@ -33,6 +33,8 @@ const refetchInvites = vi.fn();
 let invitesOptions:
   { enabled?: boolean; refetchInterval?: number | false } | undefined;
 let inviteRows: Record<string, unknown>[] = [];
+let chapterLink: Record<string, unknown> | null = null;
+const createChapterLink = vi.fn();
 let invitesFailed = false;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -48,6 +50,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateInvite: () => ({ isPending: false, mutateAsync: createInvite }),
   useEmailInvites: () => ({ isPending: false, mutateAsync: emailInvites }),
   useRevokeInvite: () => ({ isPending: false, mutateAsync: revokeInvite }),
+  useChapterLink: () => ({ data: chapterLink }),
+  useCreateChapterLink: () => ({
+    isPending: false,
+    mutateAsync: createChapterLink,
+  }),
   useInvites: (options?: {
     enabled?: boolean;
     refetchInterval?: number | false;
@@ -166,6 +173,16 @@ beforeEach(() => {
   invitesOptions = undefined;
   inviteRows = [];
   invitesFailed = false;
+  chapterLink = null;
+  createChapterLink.mockReset().mockResolvedValue({
+    ...ROW,
+    id: "link-1",
+    token: "tok-chapter",
+    role: "Everyone",
+    email: null,
+    status: "pending",
+    reusable: true,
+  });
   vi.mocked(Share.share)
     .mockReset()
     .mockResolvedValue({ action: "sharedAction" });
@@ -346,6 +363,76 @@ describe("Invite members", () => {
     const [content] = vi.mocked(Share.share).mock.calls[0];
     expect(content.message).toContain("tok-row");
     sheet.mockRestore();
+    tree.unmount();
+  });
+
+  // #3353, Paul 2026-11-19: "One chapter link, 7 days".
+  it("makes a chapter link and opens the share sheet with it", async () => {
+    const tree = render();
+    expect(screenText(tree)).toContain("One link for the whole chapter.");
+    const make = pressables(
+      tree,
+      "Makes the link and opens the share sheet.",
+    )[0];
+    await act(async () => make.props.onPress());
+    expect(createChapterLink).toHaveBeenCalled();
+    const [content] = vi.mocked(Share.share).mock.calls[0];
+    expect(content.message).toContain("Join FIJI Tau Nu on Frapp");
+    expect(content.message).toContain("tok-chapter");
+    tree.unmount();
+  });
+
+  it("shares, replaces or turns off a live chapter link from its menu", async () => {
+    chapterLink = {
+      ...ROW,
+      id: "link-1",
+      token: "tok-chapter",
+      role: "Everyone",
+      email: null,
+      status: "pending",
+      reusable: true,
+      expires_at: "2026-11-26T17:00:00.000Z",
+    };
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    expect(screenText(tree)).toContain("Works until Thursday, November 26");
+
+    act(() => rowFor(tree, "Chapter link").props.onPress());
+    const [options, pick] = sheet.mock.calls[0];
+    expect(options.options).toEqual([
+      "Share link",
+      "Make a new link",
+      "Turn off link",
+      "Cancel",
+    ]);
+    expect(options.destructiveButtonIndex).toBe(2);
+
+    await act(async () => pick(2));
+    expect(revokeInvite).toHaveBeenCalledWith("link-1");
+    expect(screenText(tree)).toContain("Chapter link turned off.");
+
+    await act(async () => pick(1));
+    expect(createChapterLink).toHaveBeenCalled();
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("offers a new chapter link once the last one expired", () => {
+    chapterLink = {
+      ...ROW,
+      id: "link-1",
+      token: "tok-chapter",
+      role: "Everyone",
+      email: null,
+      status: "expired",
+      reusable: true,
+      expires_at: "2026-11-26T17:00:00.000Z",
+    };
+    const tree = render();
+    expect(screenText(tree)).toContain("Make a chapter link");
+    expect(screenText(tree)).toContain("Expired Thursday, November 26");
     tree.unmount();
   });
 

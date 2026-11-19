@@ -104,6 +104,7 @@ describe('InviteService', () => {
       findById: jest.fn(),
       findByToken: jest.fn(),
       findByChapter: jest.fn(),
+      findChapterLink: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       createMany: jest.fn(),
       markRevoked: jest.fn().mockResolvedValue(undefined),
@@ -289,6 +290,7 @@ describe('InviteService', () => {
       email: null,
       revoked_at: null,
       email_failed_at: null,
+      reusable: false,
       ...overrides,
     };
   }
@@ -306,6 +308,7 @@ describe('InviteService', () => {
       expires_at: data.expires_at!,
       created_by: data.created_by!,
       email: data.email ?? null,
+      reusable: data.reusable ?? false,
     });
   }
 
@@ -1692,6 +1695,7 @@ describe('InviteService', () => {
         used_at: null,
         revoked_at: null,
         created_at: '2024-01-01',
+        reusable: false,
       },
     ]);
   });
@@ -2004,6 +2008,139 @@ describe('InviteService', () => {
       'user-2',
       'ch-1',
     );
+  });
+
+  // Paul, 2026-11-19: "One chapter link, 7 days".
+  describe('chapter link (#3353)', () => {
+    const memberRole = seededMemberRole();
+
+    beforeEach(() => {
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
+      mockInviteRepo.create.mockImplementation((data) =>
+        Promise.resolve(storedInvite(data, 'link-2')),
+      );
+    });
+
+    it('makes a reusable link at the default role that lasts 7 days', async () => {
+      const before = Date.now();
+      const link = await service.createChapterLink('ch-1', 'user-1');
+
+      const data = mockInviteRepo.create.mock.calls[0][0];
+      expect(data).toEqual(
+        expect.objectContaining({
+          chapter_id: 'ch-1',
+          role: 'Member',
+          reusable: true,
+          email: null,
+        }),
+      );
+      const days =
+        (new Date(data.expires_at!).getTime() - before) / (24 * 3600 * 1000);
+      expect(days).toBeGreaterThan(6.99);
+      expect(days).toBeLessThan(7.01);
+      expect(link).toEqual(
+        expect.objectContaining({ reusable: true, status: 'pending' }),
+      );
+    });
+
+    it('turns off the link before it', async () => {
+      mockInviteRepo.findChapterLink.mockResolvedValue(
+        inviteRow({ id: 'link-1', reusable: true }),
+      );
+
+      await service.createChapterLink('ch-1', 'user-1');
+
+      expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('link-1');
+      expect(
+        mockInviteRepo.markRevoked.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockInviteRepo.create.mock.invocationCallOrder[0]);
+    });
+
+    it('answers 409 when another officer made one at the same moment', async () => {
+      mockInviteRepo.create.mockRejectedValue(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+
+      await expect(
+        service.createChapterLink('ch-1', 'user-1'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'invite.chapter_link_conflict',
+        }),
+      });
+    });
+
+    it('stays out of the invite list', async () => {
+      mockInviteRepo.findByChapter.mockResolvedValue([
+        inviteRow({ id: 'link-1', reusable: true }),
+        inviteRow({ id: 'inv-1' }),
+      ]);
+
+      const rows = await service.findByChapter('ch-1', 'user-1');
+
+      expect(rows.map((row) => row.id)).toEqual(['inv-1']);
+    });
+
+    it('reads back the current link, expired ones included', async () => {
+      mockInviteRepo.findChapterLink.mockResolvedValue(
+        inviteRow({
+          id: 'link-1',
+          reusable: true,
+          expires_at: '2020-01-01T00:00:00.000Z',
+        }),
+      );
+
+      await expect(service.findChapterLink('ch-1', 'user-1')).resolves.toEqual(
+        expect.objectContaining({ id: 'link-1', status: 'expired' }),
+      );
+    });
+
+    it('lets many people join without using it up', async () => {
+      const member = memberFixture({
+        user_id: 'user-2',
+        role_ids: [memberRole.id],
+      });
+      arrangeRedeem({
+        invite: inviteRow({ reusable: true }),
+        roles: [memberRole],
+        member,
+      });
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'user-2', chapter_id: 'ch-1' }),
+      );
+    });
+
+    it('never releases a claim it did not make when the join fails', async () => {
+      arrangeRedeem({
+        invite: inviteRow({ reusable: true }),
+        roles: [memberRole],
+      });
+      mockMemberRepo.create.mockRejectedValue(new Error('insert failed'));
+
+      await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+        'insert failed',
+      );
+      expect(mockInviteRepo.releaseClaim).not.toHaveBeenCalled();
+    });
+
+    it('refuses a link an officer turned off', async () => {
+      arrangeRedeem({
+        invite: inviteRow({
+          reusable: true,
+          revoked_at: '2026-01-01T00:00:00.000Z',
+          used_at: '2026-01-01T00:00:00.000Z',
+        }),
+        roles: [memberRole],
+      });
+
+      await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+        GoneException,
+      );
+    });
   });
 
   describe('revoke', () => {
