@@ -133,6 +133,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Catch me up now opens right at the top of the channel or thread you are reading, so it no longer covers part of the screen.",
       "Officers can make one chapter link from Invite members that anyone can join with for 7 days, to post in your group chat or Discord, and turn it off anytime.",
       "Drafting minutes starts from one box now: paste your notes or a transcript, watch each step with a clock while it writes, and get a notification when the draft is ready, with only the sections it filled in to read over.",
+      "When a meeting's minutes haven't been posted, you can tap Request minutes on the event to remind whoever is writing them.",
+      "Search settings from the top of Chapter settings and Settings, or from search, and it takes you straight to the setting you meant, even if you call it something else.",
+      "Each suggested task is now one tidy card with who and when as chips, Create task, and a ⋯ menu for changing, dismissing or reporting it, shown one at a time with \"1 of 8\" on the web and your phone.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
@@ -150,6 +153,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Tasks puts your tasks first: your points sit in one quiet line, a task up for grabs opens on its own page, and New event on the Calendar now sits at the bottom like New task.",
       "While minutes are drafted from your notes, Drafting and Stop stay at the bottom of the screen.",
       "Tasks can repeat every day, week or month: pick Repeat when you make one, and a new one appears each time the last one comes due.",
+      "You can now give a task to a whole tier like Exec board, and mark a task as from a tier, role or group so everyone in it can follow how it's going.",
     ],
   },
   {
