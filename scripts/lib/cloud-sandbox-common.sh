@@ -195,16 +195,33 @@ cs_ensure_docker_daemon() {
 # Authenticate to Docker Hub when DOCKERHUB_USERNAME/DOCKERHUB_TOKEN are present.
 # Lifts anonymous pull rate limits (supabase start pulls ~10 images). Never fatal:
 # a failed/absent login just falls back to anonymous pulls.
+#
+# Records the outcome for `cs_failure_hint ratelimit`, which runs later in the same shell:
+#   CS_DOCKER_LOGIN         absent | ok | failed
+#   CS_DOCKER_LOGIN_REASON  Docker's own error line when the login failed
+# Before this, the login's output went to /dev/null and the rate-limit hint always said "add
+# DOCKERHUB_USERNAME and DOCKERHUB_TOKEN", so a session whose token had EXPIRED was told to add
+# credentials that were already there (2026-11-19). The reason is Docker's message
+# ("unauthorized: personal access token is expired"), which never contains the token.
+CS_DOCKER_LOGIN="${CS_DOCKER_LOGIN:-absent}"
+CS_DOCKER_LOGIN_REASON="${CS_DOCKER_LOGIN_REASON:-}"
 cs_docker_login_if_creds() {
   if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
     cs_log "Logging in to Docker Hub as ${DOCKERHUB_USERNAME}..."
-    if printf '%s' "$DOCKERHUB_TOKEN" \
-      | docker login --username "$DOCKERHUB_USERNAME" --password-stdin >/dev/null 2>&1; then
+    local out
+    if out="$(printf '%s' "$DOCKERHUB_TOKEN" \
+      | docker login --username "$DOCKERHUB_USERNAME" --password-stdin 2>&1)"; then
+      CS_DOCKER_LOGIN=ok
       cs_log "Docker Hub login succeeded."
     else
-      cs_log "WARN: Docker Hub login failed; continuing with anonymous pulls."
+      CS_DOCKER_LOGIN=failed
+      # The last non-empty line is Docker's verdict; the token is never echoed back.
+      CS_DOCKER_LOGIN_REASON="$(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -n 1 \
+        | sed -E 's/^Error response from daemon: //')"
+      cs_log "WARN: Docker Hub login failed (${CS_DOCKER_LOGIN_REASON:-no reason given}); continuing with anonymous pulls."
     fi
   else
+    CS_DOCKER_LOGIN=absent
     cs_log "DOCKERHUB_USERNAME/TOKEN not set; using anonymous pulls (may hit rate limits)."
   fi
 }
@@ -357,7 +374,19 @@ cs_failure_hint() {
       printf 'the sandbox network policy blocked a container registry. Set Network = Full, or Custom + public.ecr.aws + *.cloudfront.net, in this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.'
       ;;
     ratelimit)
-      printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.'
+      # Three different situations, three different fixes (CS_DOCKER_LOGIN is set by
+      # cs_docker_login_if_creds earlier in the same shell).
+      case "${CS_DOCKER_LOGIN:-absent}" in
+        failed)
+          printf 'Docker Hub refused the pull (anonymous rate limit) because the Docker Hub login FAILED: %s. DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are set; the token is expired, revoked or wrong. Create a new read-only personal access token on Docker Hub (Account settings, Personal access tokens) and replace DOCKERHUB_TOKEN in this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.' "${CS_DOCKER_LOGIN_REASON:-no reason given}"
+          ;;
+        ok)
+          printf 'Docker Hub refused the pull even though the Docker Hub login succeeded, so the account'\''s own pull limit was hit. The credentials are fine; retry in a new session later.'
+          ;;
+        *)
+          printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to this session'\''s environment dashboard (Claude Code web). Applies to NEW sessions only.'
+          ;;
+      esac
       ;;
     deterministic)
       printf 'a local, repeatable failure (denied ulimit, port already in use, Docker daemon down, or an incompatible Postgres data volume) — retrying cannot help. Match the exact error in %s against the symptom table in docs/internal/environment/CLOUD_SANDBOX.md ("When bringup fails").' "$where"

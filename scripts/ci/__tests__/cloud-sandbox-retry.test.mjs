@@ -294,6 +294,19 @@ test("every class carries a non-empty, actionable hint", () => {
     /Network = Full|public\.ecr\.aws/,
   );
   assert.match(bash("cs_failure_hint ratelimit").stdout, /DOCKERHUB_TOKEN/);
+  // The rate-limit remedy follows the login's outcome. With credentials set and the login
+  // failed (an expired token, 2026-11-19), "add DOCKERHUB_TOKEN" sends the reader after
+  // something that is already there.
+  const failedLogin = bash(
+    'CS_DOCKER_LOGIN=failed CS_DOCKER_LOGIN_REASON="unauthorized: personal access token is expired" cs_failure_hint ratelimit',
+  ).stdout;
+  assert.match(failedLogin, /login FAILED: unauthorized: personal access token is expired/);
+  assert.match(failedLogin, /replace DOCKERHUB_TOKEN/);
+  assert.doesNotMatch(failedLogin, /Add DOCKERHUB_USERNAME/);
+  assert.doesNotMatch(
+    bash("CS_DOCKER_LOGIN=ok cs_failure_hint ratelimit").stdout,
+    /Add DOCKERHUB_USERNAME/,
+  );
   // `dependencies` gets a second, negative assertion. A bare /npm ci/ match was satisfied by an
   // earlier draft that read "Bringup already tried to repair it with `npm ci` and that failed
   // too" — left over from when the check installed. That sentence would tell a sentinel-only
