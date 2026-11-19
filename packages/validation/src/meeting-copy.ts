@@ -122,7 +122,16 @@ export const MEETING_ENTRY_COPY = {
 /** The list of a chapter's minutes. */
 export const MEETING_LIST_COPY = {
   title: "Minutes",
-  drafts: "Drafts",
+  /**
+   * Meetings, tied to their events (Paul, 2026-11-19): meetings on the
+   * calendar that ended with no minutes, drafts, then what was posted, with
+   * the next meeting at the foot.
+   */
+  needsMinutes: "Needs minutes",
+  startMinutes: "Start minutes",
+  nextUp: "Next up",
+  openEvent: "Open event",
+  drafts: "In progress",
   posted: "Minutes",
   none: "Minutes show here once a secretary posts them.",
   loadFailedTitle: "Couldn't load the minutes",
@@ -130,7 +139,6 @@ export const MEETING_LIST_COPY = {
   /** A draft that isn't the reader's own names whose it is. */
   draftOf: (name: string) => `${name}'s draft`,
   /** The list's grouping and finding (#5290). */
-  yourDrafts: "Your drafts",
   search: "Search minutes",
   allTypes: "All",
   types: "Meeting types",
