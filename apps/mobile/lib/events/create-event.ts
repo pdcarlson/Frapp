@@ -1,3 +1,4 @@
+import { randomClientId } from "@repo/api-sdk";
 import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
@@ -11,6 +12,8 @@ import {
   noRepeatDraft,
   repeatRuleOf,
   withEveryone,
+  agendaWithPending,
+  type EventAgendaItem,
   type EventAttendanceDraft,
   type RepeatDraft,
 } from "@repo/validation";
@@ -90,14 +93,26 @@ export interface NewEventDraft {
    */
   notes?: string;
   /**
-   * The row open in place (#5561): When shows its pickers, Repeat its
-   * options. Kept with the draft, so a reopen comes back as it was left.
+   * A new event's agenda (Paul 2026-11-19, "where is the ability to add
+   * agenda items"): the first meeting's own, sent with the create. Optional
+   * because a draft kept by an older build has none; an edit's agenda is
+   * edited on the event's page, not here.
+   */
+  agenda?: EventAgendaItem[];
+  /**
+   * The Agenda row's add field: a line typed but never entered still goes
+   * with Create (`agendaWithPending`).
+   */
+  agendaPending?: string;
+  /**
+   * The row open in place (#5561): Repeat its options, Check-in its field.
+   * Kept with the draft, so a reopen comes back as it was left.
    */
   openRow: EventFormOpenRow;
 }
 
 /** The New event rows that open in place on the phone; one at a time. */
-export type EventFormOpenRow = "when" | "repeat" | "checkIn" | null;
+export type EventFormOpenRow = "repeat" | "checkIn" | null;
 
 /** A fresh draft. */
 export function emptyEventDraft(): NewEventDraft {
@@ -116,6 +131,8 @@ export function emptyEventDraft(): NewEventDraft {
     repeat: noRepeatDraft(),
     description: "",
     notes: "",
+    agenda: [],
+    agendaPending: "",
     openRow: null,
   };
 }
@@ -289,6 +306,8 @@ export interface ValidatedNewEvent {
   recurrence_rule?: string;
   check_in_opens_minutes?: number;
   event_type_id?: string;
+  /** The first meeting's agenda (#4934); omitted when empty. */
+  agenda?: EventAgendaItem[];
 }
 
 export interface NewEventErrors {
@@ -374,6 +393,12 @@ export function validateNewEvent(
   if (location.length > 0) body.location = location;
   if (description.length > 0) body.description = description;
   if (notes.length > 0) body.notes = notes;
+  const agenda = agendaWithPending(
+    draft.agenda ?? [],
+    draft.agendaPending ?? "",
+    randomClientId,
+  );
+  if (agenda.length > 0) body.agenda = agenda;
   if (wire.required_role_ids.length > 0) {
     body.required_role_ids = wire.required_role_ids;
   }

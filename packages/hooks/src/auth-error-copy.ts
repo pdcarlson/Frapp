@@ -80,6 +80,50 @@ export function isEmailSendCapped(error: unknown): boolean {
  */
 export const EMAIL_RESEND_COOLDOWN_SECONDS = 60;
 
+/** GoTrue's email code is six digits unless a project changed it. */
+export const EMAIL_CODE_LENGTH = 6;
+
+/**
+ * Continue with email on the invite card, web and phone alike (#5625): the
+ * address, then the code from the email typed in place. The same email also
+ * carries a sign-in link, which works until the Auth templates print the code,
+ * and on another device.
+ */
+export const EMAIL_CODE_COPY = {
+  sendLabel: "Send code",
+  sentTitle: "Check your email",
+  sent: (email: string) =>
+    `We sent a ${EMAIL_CODE_LENGTH}-digit code to ${email}. Enter it here, or tap the link in the email.`,
+  wrongCode: "That code didn't work. Use the newest email, or send a new code.",
+  invalidEmail: "Enter the email you use for school or your chapter.",
+  differentEmail: "Use a different email",
+  sendAgain: "Send a new code",
+  sendAgainIn: (seconds: number) => `Send again in ${seconds}s`,
+} as const;
+
+/**
+ * What a failed code check says (#5625), and whether the code itself was the
+ * problem. GoTrue answers a wrong or expired code with `otp_expired` (a 403)
+ * or a 400; only then is the field cleared. Anything else (offline, too many
+ * tries, an Auth outage) is not the member's code, so it says what happened
+ * and keeps the code for another try.
+ */
+export function describeEmailCodeError(error: unknown): {
+  message: string;
+  wrongCode: boolean;
+} {
+  const status = statusOf(error);
+  if (
+    authCodeOf(error) === "otp_expired" ||
+    status === 400 ||
+    status === 401 ||
+    status === 403
+  ) {
+    return { message: EMAIL_CODE_COPY.wrongCode, wrongCode: true };
+  }
+  return { message: authFallbackCopy(error), wrongCode: false };
+}
+
 export const EMAIL_SEND_CAPPED_COPY =
   "We can't send email right now. Too many went out in the last hour. Try again in a few minutes.";
 

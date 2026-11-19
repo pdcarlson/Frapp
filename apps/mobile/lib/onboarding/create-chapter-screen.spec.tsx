@@ -1268,9 +1268,9 @@ describe("chapter setup — invite", () => {
     expect(fillOf(control(root, "Skip for now"))).toBeUndefined();
     const text = allText(root);
     expect(text).toContain("A new link for each person");
-    expect(text).toContain("app.frapp.live, good for 24 hours");
+    expect(text).toContain("app.frapp.live, good for 7 days");
     expect(text).toContain(
-      "Send each person their own link. A link lets one person in and lasts 24 hours.",
+      "Send each person their own link. A link lets one person in and lasts 7 days.",
     );
     expect(text).not.toContain("Create another link");
 

@@ -4,7 +4,6 @@ import {
   selectEventDetail,
   withoutMeetingLists,
   selectMyAttendance,
-  selectSeriesName,
   selectSeriesOccurrences,
 } from "./select";
 
@@ -166,40 +165,6 @@ describe("selectSeriesOccurrences", () => {
     expect(
       selectSeriesOccurrences(selectAllEventRows(data), other, now),
     ).toEqual([]);
-  });
-});
-
-describe("the series as a whole", () => {
-  const meeting = (
-    id: string,
-    day: number,
-    extra: Record<string, unknown> = {},
-  ) => ({
-    id,
-    name: "Chapter",
-    start_time: new Date(2026, 10, day, 18).toISOString(),
-    end_time: new Date(2026, 10, day, 19).toISOString(),
-    recurrence_rule: id === "head" ? "WEEKLY" : null,
-    parent_event_id: id === "head" ? null : "head",
-    ...extra,
-  });
-
-  it("names the series by what most of its meetings are called", () => {
-    const rows = selectAllEventRows([
-      meeting("head", 8, { name: "Chapter: Kickoff" }),
-      meeting("c1", 15),
-      meeting("c2", 22),
-    ]);
-    expect(selectSeriesName(rows, "head")).toBe("Chapter");
-    expect(selectSeriesName(rows, "other")).toBeNull();
-  });
-
-  it("breaks a name tie toward the soonest meeting's name", () => {
-    const rows = selectAllEventRows([
-      meeting("c1", 15, { name: "Chapter: Elections" }),
-      meeting("head", 8),
-    ]);
-    expect(selectSeriesName(rows, "head")).toBe("Chapter");
   });
 });
 

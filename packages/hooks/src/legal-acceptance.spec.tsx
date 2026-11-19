@@ -1,8 +1,7 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  JOIN_TERMS_REQUIRED_COPY,
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
   TERMS_PROMPT_COPY,
 } from "@repo/validation";
@@ -12,7 +11,7 @@ import {
   markLegalAcceptanceRecorded,
   termsPromptErrorCopy,
   useAcceptLegalTerms,
-  useJoinTermsCheckbox,
+  joinRedeemBody,
   useLegalAcceptance,
   type LegalAcceptance,
 } from "./legal-acceptance";
@@ -55,7 +54,8 @@ describe("Terms acceptance hooks (#2302)", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockClient.GET).toHaveBeenCalledWith(
-      "/v1/users/me/legal-acceptance", { signal: expect.any(AbortSignal) }
+      "/v1/users/me/legal-acceptance",
+      { signal: expect.any(AbortSignal) },
     );
     expect(result.current.data?.required).toBe(true);
   });
@@ -98,9 +98,7 @@ describe("Terms acceptance hooks (#2302)", () => {
   it("leaves an empty cache empty rather than inventing a status", () => {
     markLegalAcceptanceRecorded(queryClient);
 
-    expect(
-      queryClient.getQueryData(legalAcceptanceQueryKey()),
-    ).toBeUndefined();
+    expect(queryClient.getQueryData(legalAcceptanceQueryKey())).toBeUndefined();
   });
 
   it("marks the status accepted after a join with the box ticked", async () => {
@@ -206,70 +204,11 @@ describe("termsPromptErrorCopy (#2302)", () => {
   });
 });
 
-describe("useJoinTermsCheckbox (#2302)", () => {
-  let queryClient: QueryClient;
-
-  beforeEach(() => {
-    queryClient = createTestQueryClient();
-  });
-
-  const render = (required: boolean | "pending" | "error") => {
-    const GET = vi.fn(() =>
-      required === "pending"
-        ? new Promise(() => {})
-        : Promise.resolve(
-            required === "error"
-              ? { data: undefined, error: { statusCode: 500 } }
-              : { data: { required }, error: undefined },
-          ),
-    );
-    return renderHook(() => useJoinTermsCheckbox({ enabled: true }), {
-      wrapper: createWrapper(queryClient, { GET }, null),
-    });
-  };
-
-  it("doesn't ask a user the server says already accepted", async () => {
-    const { result } = render(false);
-    await waitFor(() => expect(result.current.needed).toBe(false));
-    expect(result.current.blocker).toBeNull();
-    expect(result.current.redeemBody("t")).toEqual({ token: "t" });
-  });
-
-  it("asks, and blocks the join until the box is ticked", async () => {
-    const { result } = render(true);
-    await waitFor(() => expect(result.current.needed).toBe(true));
-    expect(result.current.blocker).toBe(JOIN_TERMS_REQUIRED_COPY);
-
-    act(() => result.current.setAccepted(true));
-    expect(result.current.blocker).toBeNull();
-    expect(result.current.redeemBody("t")).toEqual({
+describe("joinRedeemBody (#5625)", () => {
+  it("always carries the acceptance the Terms line stands for", () => {
+    expect(joinRedeemBody("t")).toEqual({
       token: "t",
       accept_terms_privacy: true,
     });
-  });
-
-  it("asks while the status is loading or failed, rather than earn a refusal", async () => {
-    expect(render("pending").result.current.needed).toBe(true);
-    const failed = render("error");
-    await waitFor(() => expect(failed.result.current.needed).toBe(true));
-  });
-
-  it("asks again, with the box cleared, when the server refuses a join", async () => {
-    const { result } = render(false);
-    await waitFor(() => expect(result.current.needed).toBe(false));
-
-    act(() => result.current.onJoinError(refusalWithoutCode));
-
-    expect(result.current.needed).toBe(true);
-    expect(result.current.accepted).toBe(false);
-  });
-
-  it("ignores other failures", async () => {
-    const { result } = render(false);
-    await waitFor(() => expect(result.current.needed).toBe(false));
-
-    act(() => result.current.onJoinError({ statusCode: 410 }));
-
-    expect(result.current.needed).toBe(false);
   });
 });

@@ -6,7 +6,7 @@
  * so a row reads the same on both: one picture per row, kept here once.
  *
  * Drawn from Lucide (ISC), the set web's controls already use: Tag, Clock,
- * Repeat, MapPin, Users, Star, AlignLeft, FileText and Scan. A circle is
+ * Repeat, MapPin, Users, Star, ListChecks, AlignLeft, FileText and Scan. A circle is
  * written as two arcs so both renderers take plain paths.
  */
 export const EVENT_FORM_GLYPHS = {
@@ -34,6 +34,7 @@ export const EVENT_FORM_GLYPHS = {
   points: [
     "M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z",
   ],
+  agenda: ["m3 17 2 2 4-4", "m3 7 2 2 4-4", "M13 6h8", "M13 12h8", "M13 18h8"],
   description: ["M21 6H3", "M15 12H3", "M17 18H3"],
   notes: [
     "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z",

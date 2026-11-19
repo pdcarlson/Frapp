@@ -217,10 +217,7 @@ export function MyCheckIn({
 
   if (view.kind === "loading") {
     return (
-      <SectionSkeleton
-        label="Loading your check-in"
-        className="rounded-lg border border-border p-3"
-      >
+      <SectionSkeleton label="Loading your check-in">
         <SkeletonText lines={1} />
       </SectionSkeleton>
     );
@@ -237,38 +234,45 @@ export function MyCheckIn({
       title = view.label;
       break;
     case "open":
-      title = "Check-in is open";
+      title = "Open now";
       detail =
         view.zone === "none"
           ? `Closes ${clockLabel(view.closesAt, now)}`
           : ZONE_CHECK_IN_LINE[view.zone];
       break;
     case "upcoming":
-      title = `Check-in opens ${clockLabel(view.opensAt, now)}`;
+      title = `Opens ${clockLabel(view.opensAt, now)}`;
       break;
     case "closed":
-      title = "Check-in is closed";
+      title = "Closed";
       break;
     default:
-      title = "Check-in is unavailable";
+      title = "Unavailable";
   }
 
   const canCheckIn = view.kind === "open" && view.zone === "none";
 
+  // The details' Check-in row (the sheet's `DetailRow` names it): what the
+  // window says, and the button beside it while it's open.
   return (
-    <section
-      aria-label="Your check-in"
-      className="rounded-lg border border-border p-3"
-    >
-      <p className="mb-1 text-caption text-muted-foreground">Your check-in</p>
-      <p className="text-sm font-semibold">{title}</p>
-      {detail ? (
-        <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
-      ) : null}
-      {canCheckIn ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+    <div aria-label="Your check-in" role="group" className="grid gap-1">
+      <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1">
+        <span
+          className={
+            view.kind === "checked-in" || view.kind === "open"
+              ? "font-semibold"
+              : undefined
+          }
+        >
+          {title}
+        </span>
+        {detail ? (
+          <span className="text-muted-foreground">{detail}</span>
+        ) : null}
+        {canCheckIn ? (
           <Button
             size="sm"
+            className="ml-auto"
             {...gate.controlProps(checkIn.isPending)}
             onClick={() => void checkIn.run(eventId, pointValue)}
           >
@@ -279,13 +283,15 @@ export function MyCheckIn({
             )}
             Check in
           </Button>
-          <SubscriptionNotice
-            gate={gate}
-            feature="event check-in"
-            className="mb-0 w-full"
-          />
-        </div>
+        ) : null}
+      </div>
+      {canCheckIn ? (
+        <SubscriptionNotice
+          gate={gate}
+          feature="event check-in"
+          className="mb-0 w-full"
+        />
       ) : null}
-    </section>
+    </div>
   );
 }

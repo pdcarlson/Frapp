@@ -73,6 +73,7 @@ const NO_FACTS = {
   decision_count: 0,
   action_item_count: 0,
   recorded: false,
+  gist: null,
 };
 
 function dtoOf(view: MeetingView): MeetingDto {

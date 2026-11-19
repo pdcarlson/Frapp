@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
 import { EventTypeRow } from "@/components/events/event-type-picker";
+import { AgendaDraftList } from "@/components/events/event-agenda";
 import {
   PropertyRow,
   RowInput,
@@ -73,6 +74,11 @@ import {
   saveRequestFor,
   saveScopeFor,
   SERIES_SCOPE_COPY,
+  EVENT_FORM_AGENDA_REPEAT_NOTE,
+  agendaWithPending,
+  EVENT_LENGTH_CHOICES,
+  eventLengthLabel,
+  type EventAgendaItem,
   type EventAttendanceDraft,
   type EventEditScope,
   type RepeatDraft,
@@ -98,6 +104,7 @@ import {
 } from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
+import { TimeField } from "@/components/ui/time-field";
 import { Label } from "@/components/ui/label";
 import {
   SubscriptionNotice,
@@ -110,7 +117,7 @@ import {
   guardIntDraft,
   parseGuardedInt,
 } from "@/lib/utils";
-import { formatEventWindow, parseInstant } from "@repo/formatting";
+import { parseInstant } from "@repo/formatting";
 import { isoToLocalInput } from "@/components/events/local-input";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
@@ -132,50 +139,191 @@ function localInputToIso(value: string): string {
   return date.toISOString();
 }
 
+/** `YYYY-MM-DD` plus `days`, read at local noon so a clock change can't skip one. */
+function addDays(day: string, days: number): string {
+  const at = new Date(`${day}T12:00`);
+  if (Number.isNaN(at.getTime())) return day;
+  at.setDate(at.getDate() + days);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/** A field set flat into the row: no box until it is hovered or focused. */
+const INLINE_FIELD =
+  "h-9 border-transparent bg-transparent px-2 shadow-none hover:bg-card-hover focus-visible:bg-surface-1 pointer-coarse:h-11";
+
 /**
- * One end of an event's schedule: a day typed without a year (`DateField`,
- * leaning ahead) beside the browser's time input. The value is the
- * `YYYY-MM-DDTHH:MM` the editor has always held, with either half empty
- * until it is filled in.
+ * The When row's value, laid out as Google Calendar's event editor sets it
+ * (Paul 2026-11-19: "typing the exact same thing in the second row and just
+ * adding an hour is really tedious"): the day once, then the start and the
+ * end as times. Each time is typed or picked from a list of quarter hours
+ * (`TimeField`, not the browser's own input), and the end's list says how
+ * long each choice runs ("9 PM · 1 hr"). Moving the day or the start carries
+ * the end with it; an end before the start runs past midnight. A meeting
+ * that spans days (a retreat) gets its end's own day from "Ends another
+ * day".
+ *
+ * The values are the `YYYY-MM-DDTHH:MM` the editor has always held, either
+ * half empty until it is filled in.
  */
-function ScheduleEnd({
-  id,
-  label,
-  value,
-  onChange,
+function WhenFields({
+  startAt,
+  endAt,
+  onStart,
+  onEnd,
+  invalid,
 }: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
+  startAt: string;
+  endAt: string;
+  onStart: (next: string) => void;
+  onEnd: (next: string) => void;
+  invalid: boolean;
 }) {
-  const [day = "", time = ""] = value.split("T");
-  const join = (nextDay: string, nextTime: string) =>
-    nextDay || nextTime ? `${nextDay}T${nextTime}` : "";
+  const [startDay = "", startTime = ""] = startAt.split("T");
+  const [endDay = "", endTime = ""] = endAt.split("T");
+  // Only past midnight: the next day, at a time before the start.
+  const overnight =
+    !!startDay &&
+    endDay === addDays(startDay, 1) &&
+    !!endTime &&
+    !!startTime &&
+    endTime <= startTime;
+  const spansDays =
+    !!startDay && !!endDay && endDay !== startDay && !overnight;
+  const [askedForEndDay, setAskedForEndDay] = useState(false);
+  const showEndDay = askedForEndDay || spansDays;
+  const startInstant = parseInstant(localInputToIso(startAt));
+  const endInstant = parseInstant(localInputToIso(endAt));
+  const lengthMinutes =
+    startInstant && endInstant
+      ? Math.round((endInstant.getTime() - startInstant.getTime()) / 60_000)
+      : null;
+  const join = (day: string, time: string) =>
+    day || time ? `${day}T${time}` : "";
+  const setEndTime = (time: string) => {
+    if (showEndDay) {
+      onEnd(join(endDay || startDay, time));
+      return;
+    }
+    // On the start's day, or the next one when it runs past midnight.
+    const day =
+      startDay && time && startTime && time <= startTime
+        ? addDays(startDay, 1)
+        : startDay;
+    onEnd(join(day, time));
+  };
   return (
-    <fieldset className="grid gap-1">
-      <legend className="mb-1 text-sm font-semibold leading-none">
-        {label}
-      </legend>
-      <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-2">
-        <DateField
-          id={id}
-          aria-label={`${label}, day`}
-          placeholder="e.g. Friday"
-          lean="ahead"
-          value={day}
-          onChange={(nextDay) => onChange(join(nextDay, time))}
-        />
-        <Input
-          id={`${id}-time`}
-          aria-label={`${label}, time`}
-          type="time"
-          step={300}
-          value={time}
-          onChange={(event) => onChange(join(day, event.target.value))}
-        />
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+        <div className="min-w-[9.5rem] flex-1">
+          <DateField
+            id="event-start"
+            aria-label="Starts, day"
+            placeholder="Pick a day"
+            lean="ahead"
+            value={startDay}
+            className={INLINE_FIELD}
+            onChange={(day) => onStart(join(day, startTime))}
+          />
+        </div>
+        <div className="w-[5.75rem]">
+          <TimeField
+            id="event-start-time"
+            aria-label="Starts, time"
+            placeholder="Start"
+            value={startTime}
+            className={INLINE_FIELD}
+            onChange={(time) => onStart(join(startDay, time))}
+          />
+        </div>
+        <span aria-hidden="true" className="text-muted-foreground">
+          –
+        </span>
+        <div className="w-[5.75rem]">
+          <TimeField
+            id="event-end-time"
+            aria-label="Ends, time"
+            placeholder="End"
+            value={endTime}
+            anchor={startTime || undefined}
+            // The end's list runs a day on from the start, each with its
+            // length, as Google Calendar's does.
+            from={showEndDay ? undefined : startTime || undefined}
+            className={cn(INLINE_FIELD, invalid && "text-destructive-text")}
+            aria-invalid={invalid || undefined}
+            onChange={setEndTime}
+          />
+        </div>
       </div>
-    </fieldset>
+      {/* How long, one click each, as the phone's sheet offers: the end
+          moves, the start stays. */}
+      {startDay && startTime ? (
+        <div
+          role="radiogroup"
+          aria-label="How long"
+          className="flex flex-wrap items-center gap-1 px-1"
+        >
+          {EVENT_LENGTH_CHOICES.map((minutes) => {
+            const held = lengthMinutes === minutes;
+            return (
+              <button
+                key={minutes}
+                type="button"
+                role="radio"
+                aria-checked={held}
+                onClick={() => {
+                  const from = parseInstant(localInputToIso(startAt));
+                  if (!from) return;
+                  onEnd(
+                    isoToLocalInput(
+                      new Date(from.getTime() + minutes * 60_000).toISOString(),
+                    ),
+                  );
+                }}
+                className={cn(
+                  "h-7 rounded-full border px-2.5 text-caption transition-colors pointer-coarse:h-9",
+                  held
+                    ? "border-transparent bg-accent-subtle font-semibold text-accent-text"
+                    : "border-border text-muted-foreground hover:bg-card-hover hover:text-foreground",
+                  FOCUS_RING,
+                )}
+              >
+                {eventLengthLabel(minutes)}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      {showEndDay ? (
+        <div className="flex items-center gap-2">
+          <span className="w-10 shrink-0 pl-2 text-caption text-muted-foreground">
+            Ends
+          </span>
+          <div className="min-w-[9.5rem] flex-1">
+            <DateField
+              id="event-end"
+              aria-label="Ends, day"
+              placeholder="Pick a day"
+              lean="ahead"
+              value={endDay}
+              className={INLINE_FIELD}
+              onChange={(day) => onEnd(join(day, endTime))}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAskedForEndDay(true)}
+          className={cn(
+            "w-fit rounded-sm px-2 text-caption text-muted-foreground hover:text-foreground hover:underline",
+            FOCUS_RING,
+          )}
+        >
+          Ends another day
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -190,7 +338,7 @@ function ScheduleEnd({
 type ZoneVertexDraft = { id: string; lat: string; lng: string };
 
 /** The rows that open a menu (#5561); one is open at a time. */
-type EventFormMenu = "when" | "repeat" | "attendance" | "checkIn";
+type EventFormMenu = "repeat" | "attendance" | "checkIn";
 
 /**
  * What the form keeps when the officer leaves it unsaved (#4593): every field
@@ -211,6 +359,8 @@ type EventFields = {
   checkInZoneName: string;
   /** Minutes before the start that check-in opens, as typed (#5561). */
   checkInOpens: string;
+  /** A new event's agenda (create only; an event's own is edited on it). */
+  agenda: EventAgendaItem[];
 };
 type EventFormDraft = EventFields & {
   typeFilledName: string | null;
@@ -237,6 +387,7 @@ const EVENT_FIELD_KEYS = [
   "checkInZone",
   "checkInZoneName",
   "checkInOpens",
+  "agenda",
 ] as const satisfies readonly (keyof EventFields)[];
 
 /** A kept edit over the record as it is now: only what the officer changed. */
@@ -310,6 +461,7 @@ function openingDraft({
       checkInZone: zone,
       checkInZoneName: text(event.check_in_zone_name),
       checkInOpens: String(checkInOpensMinutes(event.check_in_opens_minutes)),
+      agenda: [],
     };
     return { ...fields, typeFilledName: null, base: fields };
   }
@@ -334,6 +486,8 @@ function openingDraft({
       checkInOpens: String(
         checkInOpensMinutes(template.check_in_opens_minutes),
       ),
+      // Last year's agenda isn't this year's meeting.
+      agenda: [],
       typeFilledName: null,
       base: null,
     };
@@ -352,6 +506,7 @@ function openingDraft({
     checkInZone: [],
     checkInZoneName: "",
     checkInOpens: String(DEFAULT_CHECK_IN_OPENS_MINUTES),
+    agenda: [],
     typeFilledName: null,
     base: null,
   };
@@ -603,7 +758,24 @@ export function EventEditorDialog({
     const end = parseInstant(localInputToIso(endAt));
     setStartAt(next);
     if (after) lastWholeStart.current = after;
-    if (before && after && end) {
+    if (after && !end) {
+      const [startDay = "", startTime = ""] = next.split("T");
+      const endTime = endAt.split("T")[1] ?? "";
+      if (endTime) {
+        // An end time picked before the start was whole keeps that time, on
+        // the start's day, or the next when it runs past midnight.
+        setEndAt(
+          `${endTime <= startTime ? addDays(startDay, 1) : startDay}T${endTime}`,
+        );
+      } else {
+        // No end yet: an hour, as a new event in Google Calendar starts.
+        setEndAt(
+          isoToLocalInput(
+            new Date(after.getTime() + 60 * 60_000).toISOString(),
+          ),
+        );
+      }
+    } else if (before && after && end) {
       setEndAt(
         isoToLocalInput(
           new Date(
@@ -641,6 +813,10 @@ export function EventEditorDialog({
   );
   const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
   const [checkInZoneName, setCheckInZoneName] = useState("");
+  const [agenda, setAgenda] = useState<EventAgendaItem[]>([]);
+  // The Agenda row's add field: a line typed but never entered still goes
+  // with Create.
+  const [agendaDraft, setAgendaDraft] = useState("");
   // Kept when left unsaved (#4593). The open sections are kept with it but
   // aren't an edit, so only the fields decide whether there is a draft.
   const fields = {
@@ -657,6 +833,7 @@ export function EventEditorDialog({
     checkInZone,
     checkInZoneName,
     checkInOpens,
+    agenda,
   };
   // An edit's record as the form opened on it (`EventFormDraft.base`).
   const [openedBase, setOpenedBase] = useState<EventFields | null>(null);
@@ -789,6 +966,9 @@ export function EventEditorDialog({
     setCheckInZone(fill.checkInZone);
     setCheckInZoneName(fill.checkInZoneName);
     setCheckInOpens(fill.checkInOpens);
+    // A draft kept before the form had an agenda has none.
+    setAgenda(fill.agenda ?? []);
+    setAgendaDraft("");
     setMenu(null);
     // What the form opened on, so Discard shows only once something is typed.
     setOpenedFields(fill);
@@ -922,13 +1102,26 @@ export function EventEditorDialog({
     }
     const startIso = localInputToIso(startAt);
     const endIso = localInputToIso(endAt);
+    // The first of the When fields that is missing, or the end's time.
+    const focusScheduleProblem = () => {
+      const [startDay, startTime] = startAt.split("T");
+      document
+        .getElementById(
+          !startDay
+            ? "event-start"
+            : !startTime
+              ? "event-start-time"
+              : "event-end-time",
+        )
+        ?.focus();
+    };
     if (!startIso || !endIso) {
       toast({
         title: "Valid schedule required",
         description: "Provide both start and end times.",
         variant: "destructive",
       });
-      setMenu("when");
+      focusScheduleProblem();
       return;
     }
     if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
@@ -937,7 +1130,7 @@ export function EventEditorDialog({
         description: "End must be after start.",
         variant: "destructive",
       });
-      setMenu("when");
+      focusScheduleProblem();
       return;
     }
 
@@ -1034,6 +1227,7 @@ export function EventEditorDialog({
     kept.hold();
     try {
       if (mode === "create") {
+        const sentAgenda = agendaWithPending(agenda, agendaDraft, randomClientId);
         // Role lists are omitted when empty on create; on update (below)
         // every list is sent, so an emptied one clears.
         //
@@ -1087,6 +1281,9 @@ export function EventEditorDialog({
                   ...(zoneName ? { check_in_zone_name: zoneName } : {}),
                 }
               : {}),
+            // The first meeting's own (a series' later meetings start with
+            // none, `spec/behavior/events.md` § Agenda and attachments).
+            ...(sentAgenda.length > 0 ? { agenda: sentAgenda } : {}),
           });
         } catch (error) {
           card?.failed();
@@ -1261,27 +1458,15 @@ export function EventEditorDialog({
         : "Repeats";
   const startIso = localInputToIso(startAt);
   const endIso = localInputToIso(endAt);
-  // The line both apps' event cards read (`formatEventWindow`), so the form
-  // says the time the way the card it posts will.
-  const whenValue =
-    startIso && endIso
-      ? formatEventWindow(startIso, endIso)
-      : startIso
-        ? formatEventWindow(startIso, null)
-        : null;
   const endsBeforeStart =
     !!startIso &&
     !!endIso &&
     new Date(endIso).getTime() <= new Date(startIso).getTime();
-  const lengthMinutes =
-    startIso && endIso && !endsBeforeStart
-      ? Math.round(
-          (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000,
-        )
-      : null;
   const fieldSignature = (value: EventFields | null) =>
     value ? JSON.stringify(EVENT_FIELD_KEYS.map((key) => value[key])) : "";
-  const touched = fieldSignature(fields) !== fieldSignature(openedFields);
+  const touched =
+    fieldSignature(fields) !== fieldSignature(openedFields) ||
+    agendaDraft.trim() !== "";
   const menuProps = (row: EventFormMenu) => ({
     open: menu === row,
     onOpenChange: (next: boolean) => setMenu(next ? row : null),
@@ -1426,49 +1611,23 @@ export function EventEditorDialog({
               disabled={usingPreviewData}
             />
 
-            <PropertyRow glyph="when" label={EVENT_FORM_ROW_LABELS.when}>
-              <Popover {...menuProps("when")}>
-                <PopoverTrigger asChild>
-                  <RowValueButton
-                    empty={!whenValue}
-                    invalid={endsBeforeStart}
-                    aria-label={`When: ${whenValue ?? "not set"}`}
-                  >
-                    {whenValue ?? "Pick a day and time"}
-                  </RowValueButton>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="grid w-[22rem] gap-3">
-                  {/* A day and a time each, the way Google Calendar takes
-                      them: the day typed without a year (#3937), the time the
-                      browser's own. Moving the start keeps the length. */}
-                  <ScheduleEnd
-                    id="event-start"
-                    label="Starts"
-                    value={startAt}
-                    onChange={moveStart}
-                  />
-                  <ScheduleEnd
-                    id="event-end"
-                    label="Ends"
-                    value={endAt}
-                    onChange={setEndAt}
-                  />
-                  <p
-                    className={cn(
-                      "text-caption",
-                      endsBeforeStart
-                        ? "text-destructive-text"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {endsBeforeStart
-                      ? "Ends before it starts."
-                      : lengthMinutes !== null
-                        ? lengthLabel(lengthMinutes)
-                        : "Set a day and a time for both."}
-                  </p>
-                </PopoverContent>
-              </Popover>
+            <PropertyRow
+              glyph="when"
+              label={EVENT_FORM_ROW_LABELS.when}
+              align="start"
+            >
+              <WhenFields
+                startAt={startAt}
+                endAt={endAt}
+                onStart={moveStart}
+                onEnd={setEndAt}
+                invalid={endsBeforeStart}
+              />
+              {endsBeforeStart ? (
+                <p className="px-2 text-caption text-destructive-text">
+                  Ends before it starts.
+                </p>
+              ) : null}
             </PropertyRow>
 
             <PropertyRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
@@ -1577,6 +1736,33 @@ export function EventEditorDialog({
                     {pointValue.trim() === "1" ? "point" : "points"}
                   </span>
                 </div>
+              </PropertyRow>
+            ) : null}
+
+            {/*
+              The agenda while the event is made (Paul 2026-11-19: "where is
+              the ability to add agenda items"). Only on create: an event's
+              agenda is edited on its page, checked off there during the
+              meeting, so an edit here would race that one.
+            */}
+            {mode === "create" ? (
+              <PropertyRow
+                glyph="agenda"
+                label={EVENT_FORM_ROW_LABELS.agenda}
+                align="start"
+              >
+                <AgendaDraftList
+                  agenda={agenda}
+                  onChange={setAgenda}
+                  draft={agendaDraft}
+                  onDraftChange={setAgendaDraft}
+                  disabled={usingPreviewData}
+                />
+                {repeat.preset !== "NONE" && agenda.length > 0 ? (
+                  <p className="px-2 text-caption text-muted-foreground">
+                    {EVENT_FORM_AGENDA_REPEAT_NOTE}
+                  </p>
+                ) : null}
               </PropertyRow>
             ) : null}
 
@@ -1800,15 +1986,4 @@ export function EventEditorDialog({
       </PanelContent>
     </Panel>
   );
-}
-
-/** `"2 hours"`, `"1 hour 30 minutes"`, `"45 minutes"`: the When menu's length. */
-function lengthLabel(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  const part = (count: number, unit: string) =>
-    `${count} ${unit}${count === 1 ? "" : "s"}`;
-  if (hours === 0) return part(rest, "minute");
-  if (rest === 0) return part(hours, "hour");
-  return `${part(hours, "hour")} ${part(rest, "minute")}`;
 }

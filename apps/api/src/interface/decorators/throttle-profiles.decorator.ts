@@ -59,3 +59,22 @@ export const ThrottleFanOutWrite = () =>
  */
 export const ThrottleExpensiveRead = () =>
   Throttle({ read: { limit: 20, ttl: MINUTE_MS } });
+
+/**
+ * 120/min — a lookup by an unguessable token that needs no account, counted
+ * per address because there is no user to count it by. Higher than the
+ * default `write` bucket rather than lower: a whole pledge class opens the
+ * chapter link at once on one campus network (#5625), and the token, not the
+ * rate, is what keeps a guess from finding anything.
+ */
+export const ThrottlePublicTokenRead = () =>
+  Throttle({ write: { limit: 120, ttl: MINUTE_MS } });
+
+/**
+ * 3/hour — a push to one person who never asked to hear from the caller, such
+ * as "Ask for a new link" on a dead invite (#5625). A real visitor asks once;
+ * the hourly window keeps a stranger holding an old link from paging the
+ * sender all day, about 72 pushes a day per account at most.
+ */
+export const ThrottlePersonalNudge = () =>
+  Throttle({ write: { limit: 3, ttl: 60 * MINUTE_MS } });

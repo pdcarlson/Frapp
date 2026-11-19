@@ -53,7 +53,7 @@ function inviteEmailHtml(params: SendInviteEmailParams): string {
   const { joinUrl, role } = params;
   return (
     `<p>${escapeHtml(inviteHeadline(params))}.</p>` +
-    `<p>You'll join as <strong>${escapeHtml(role)}</strong>. The link works once and expires in 24 hours.</p>` +
+    `<p>You'll join as <strong>${escapeHtml(role)}</strong>. The link works once and expires in 7 days.</p>` +
     `<p><a href="${joinUrl}">Accept the invite</a></p>` +
     `<p>Or copy this link into your browser:<br>${joinUrl}</p>`
   );
@@ -61,7 +61,7 @@ function inviteEmailHtml(params: SendInviteEmailParams): string {
 
 function inviteEmailText(params: SendInviteEmailParams): string {
   const { joinUrl, role } = params;
-  return `${inviteHeadline(params)}.\n\nYou'll join as ${role}. The link works once and expires in 24 hours.\n\nAccept the invite: ${joinUrl}`;
+  return `${inviteHeadline(params)}.\n\nYou'll join as ${role}. The link works once and expires in 7 days.\n\nAccept the invite: ${joinUrl}`;
 }
 
 /**

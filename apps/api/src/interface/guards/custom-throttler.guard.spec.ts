@@ -30,6 +30,7 @@ import { ReportController } from '../controllers/report.controller';
 import { SearchController } from '../controllers/search.controller';
 import { DevLogController } from '../controllers/dev-log.controller';
 import { InviteController } from '../controllers/invite.controller';
+import { InviteDetailsController } from '../controllers/invite-details.controller';
 import { ActController } from '../controllers/act.controller';
 import { EventController } from '../controllers/event.controller';
 import { AskController } from '../controllers/ask.controller';
@@ -1188,6 +1189,8 @@ describe('CustomThrottlerGuard', () => {
       cls: new (...args: never[]) => unknown;
       handler: (...args: never[]) => unknown;
       limit: number;
+      /** Window in ms; the minute unless the profile says otherwise. */
+      ttl?: number;
     }
 
     /**
@@ -1204,7 +1207,8 @@ describe('CustomThrottlerGuard', () => {
       cls: new (...args: never[]) => unknown,
       handler: (...args: never[]) => unknown,
       limit: number,
-    ): RouteCase => ({ route: r, cls, handler, limit });
+      ttl?: number,
+    ): RouteCase => ({ route: r, cls, handler, limit, ttl });
 
     const RP = ReportController.prototype;
     const IN = InviteController.prototype;
@@ -1225,6 +1229,19 @@ describe('CustomThrottlerGuard', () => {
       route('POST /invites/batch', InviteController, IN.createBatch, 5),
       route('POST /invites/redeem', InviteController, IN.redeem, 10),
       route('POST /invites/preview', InviteController, IN.preview, 10),
+      route(
+        'POST /invites/details',
+        InviteDetailsController,
+        InviteDetailsController.prototype.details,
+        120,
+      ),
+      route(
+        'POST /invites/ask-for-new-link',
+        InviteController,
+        IN.askForNewLink,
+        3,
+        60 * 60_000,
+      ),
       route('POST /events', EventController, EV.create, 10),
       route('PATCH /events/:id', EventController, EV.update, 10),
       route('POST /ai/ask', AskController, AskController.prototype.ask, 10),
@@ -1352,7 +1369,7 @@ describe('CustomThrottlerGuard', () => {
       await overrideGuard.onModuleInit();
     });
 
-    it.each(cases)('$route is capped at $limit/min', async (c) => {
+    it.each(cases)('$route is capped at $limit per window', async (c) => {
       await expect(overrideGuard.canActivate(ctxFor(c))).resolves.toBe(true);
 
       // Exactly one bucket runs: the other is method-gated off. Asserting the
@@ -1363,9 +1380,9 @@ describe('CustomThrottlerGuard', () => {
       // increment(key, ttl, limit, blockDuration, throttlerName)
       expect(increment).toHaveBeenCalledWith(
         expect.any(String),
-        60_000,
+        c.ttl ?? 60_000,
         c.limit,
-        60_000,
+        c.ttl ?? 60_000,
         bucketFor(c.route.split(' ')[0]),
       );
     });

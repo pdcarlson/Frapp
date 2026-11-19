@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   permissions: { current: [] as string[] },
   taking: { current: { isPending: false, data: [] as unknown[] } },
   request: { current: { isLoading: false, data: null as unknown } },
-  detail: { current: { data: undefined as unknown } },
   ask: vi.fn(),
   start: vi.fn(),
   push: vi.fn(),
@@ -18,7 +17,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@repo/hooks", () => ({
   useMeetings: () => ({ ...mocks.meetings.current, refetch: vi.fn() }),
-  useMeeting: () => mocks.detail.current,
   useMyPermissions: () => ({
     data: { permissions: mocks.permissions.current },
   }),
@@ -52,7 +50,6 @@ beforeEach(() => {
   mocks.permissions.current = [];
   mocks.taking.current = { isPending: false, data: [] };
   mocks.request.current = { isLoading: false, data: null };
-  mocks.detail.current = { data: undefined };
   mocks.ask.mockReset();
   mocks.start.mockReset();
   mocks.push.mockReset();
@@ -120,11 +117,9 @@ describe("EventMinutes", () => {
           posted_at: "2026-11-18T12:00:00Z",
           decision_count: 2,
           action_item_count: 3,
+          gist: "Dues are due Friday.",
         },
       ],
-    };
-    mocks.detail.current = {
-      data: { content: { tldr: "- Dues are due Friday.\n- Formal is set." } },
     };
     render(<EventMinutes eventId="e-1" eventName="Chapter" />);
     expect(
@@ -133,7 +128,6 @@ describe("EventMinutes", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText("Dues are due Friday.")).toBeTruthy();
-    expect(screen.queryByText(/Formal is set/)).toBeNull();
   });
 
   it("offers no Write minutes when the read failed", () => {
@@ -230,7 +224,9 @@ describe("EventMinutes", () => {
     it("reads Requested once the member has asked, with nothing to press", () => {
       mocks.request.current = askable(true);
       render(<EventMinutes eventId="e-1" eventName="Chapter" />);
-      expect(screen.getByText("Not posted yet. You asked for them.")).toBeTruthy();
+      expect(
+        screen.getByText("Not posted yet. You asked for them."),
+      ).toBeTruthy();
       const button = screen.getByRole("button", { name: "Minutes requested" });
       expect((button as HTMLButtonElement).disabled).toBe(true);
     });
@@ -241,7 +237,9 @@ describe("EventMinutes", () => {
       const { rerender } = render(
         <EventMinutes eventId="e-1" eventName="Chapter" />,
       );
-      expect(screen.queryByRole("button", { name: "Request minutes" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Request minutes" }),
+      ).toBeNull();
       mocks.taking.current = {
         isPending: false,
         data: [
@@ -256,7 +254,9 @@ describe("EventMinutes", () => {
       };
       rerender(<EventMinutes eventId="e-1" eventName="Chapter" />);
       expect(screen.getByRole("link", { name: "Take notes" })).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Request minutes" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Request minutes" }),
+      ).toBeNull();
     });
 
     it("offers nothing once the minutes are posted and readable", () => {
@@ -267,7 +267,9 @@ describe("EventMinutes", () => {
       };
       mocks.request.current = askable(false);
       render(<EventMinutes eventId="e-1" eventName="Chapter" />);
-      expect(screen.queryByRole("button", { name: "Request minutes" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Request minutes" }),
+      ).toBeNull();
       expect(screen.getByRole("link", { name: "Open minutes" })).toBeTruthy();
     });
   });

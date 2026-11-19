@@ -13,6 +13,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   MEETING_COPY,
   MEETING_TEXT_MAX_LENGTH,
+  MINUTES_AUTOSAVE_MS,
   readMeetingContent,
 } from "@repo/validation";
 import { TextAction } from "@/components/minutes/recorder-controls";
@@ -24,8 +25,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 const summaryOf = (meeting: MeetingMinutes) =>
   readMeetingContent(meeting.content).summary;
 
-/** How long typing rests before it saves: the web draft's own wait. */
-export const SUMMARY_AUTOSAVE_MS = 1200;
+/** How long typing rests before it saves: the section editor's own wait. */
+export const SUMMARY_AUTOSAVE_MS = MINUTES_AUTOSAVE_MS;
 
 export interface SummaryNoteHandle {
   /**
@@ -33,6 +34,8 @@ export interface SummaryNoteHandle {
    * post, or null when the save didn't land (stale, offline).
    */
   flush: () => Promise<string | null>;
+  /** Someone saved since: the note offers their version, and flush waits. */
+  isStale: () => boolean;
 }
 
 /**
@@ -45,8 +48,8 @@ export interface SummaryNoteHandle {
  * instead of overwriting it. A refusal keeps every word on screen and offers
  * their version.
  *
- * Decisions and action items have no phone editor yet (#4412); a line under
- * the note says where they are added.
+ * The line under the note opens the section editor (#4412) for the
+ * TL;DR, decisions and action items.
  */
 export const SummaryNote = forwardRef<
   SummaryNoteHandle,
@@ -56,8 +59,10 @@ export const SummaryNote = forwardRef<
     reload: () => Promise<MeetingMinutes | null>;
     /** Whether the note has words, for the screen's Post. */
     onWritten?: (written: boolean) => void;
+    /** Opens the section editor for the other sections (#4412). */
+    onEditAll?: () => void;
   }
->(function SummaryNote({ meeting, reload, onWritten }, ref) {
+>(function SummaryNote({ meeting, reload, onWritten, onEditAll }, ref) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
@@ -138,6 +143,7 @@ export const SummaryNote = forwardRef<
 
   useImperativeHandle(ref, () => ({
     flush: () => (stale ? Promise.resolve(null) : save()),
+    isStale: () => stale,
   }));
 
   // Saves once typing rests. A failed save waits for the next keystroke.
@@ -208,7 +214,15 @@ export const SummaryNote = forwardRef<
           {MEETING_COPY.saveFailed}
         </Text>
       ) : null}
-      <Text style={styles.hint}>{MEETING_COPY.restOnWeb}</Text>
+      {/* Stale, the note's own Load their version comes first: the editor
+          would open on their version over what is typed here. */}
+      {onEditAll && !stale ? (
+        <TextAction
+          label={MEETING_COPY.editAllSections}
+          color={accent}
+          onPress={onEditAll}
+        />
+      ) : null}
     </View>
   );
 });
@@ -229,10 +243,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
     problem: {
       ...caption,
       color: tokens.color.semantic.destructiveText,
-    },
-    hint: {
-      ...caption,
-      color: tokens.color.text.mutedForeground,
     },
   });
 }

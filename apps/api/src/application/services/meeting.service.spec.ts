@@ -318,6 +318,7 @@ describe('MeetingService', () => {
         transcript: 'Words.',
         content: {
           ...EMPTY_MEETING_CONTENT,
+          tldr: '- Dues are due Friday.\n- Formal is set.',
           decisions: [{ text: 'Dues due Friday', vote: null }],
           action_items: [
             { text: 'Book the venue', owner_user_id: null, due_date: null },
@@ -337,6 +338,7 @@ describe('MeetingService', () => {
         decision_count: 1,
         action_item_count: 2,
         recorded: true,
+        gist: 'Dues are due Friday.',
       });
       expect(facts.get('mtg-one')).toEqual({
         series_key: null,
@@ -344,6 +346,7 @@ describe('MeetingService', () => {
         decision_count: 0,
         action_item_count: 0,
         recorded: true,
+        gist: null,
       });
     });
 

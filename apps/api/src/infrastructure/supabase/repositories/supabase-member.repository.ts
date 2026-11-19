@@ -101,6 +101,15 @@ export class SupabaseMemberRepository implements IMemberRepository {
     return data || [];
   }
 
+  async countByChapter(chapterId: string): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('members')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId);
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
+  }
+
   async findChapterMemberIdentities(
     chapterId: string,
   ): Promise<ChapterMemberIdentity[]> {

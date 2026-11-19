@@ -138,6 +138,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Each suggested task is now one tidy card with who and when as chips, Create task, and a ⋯ menu for changing, dismissing or reporting it, shown one at a time with \"1 of 8\" on the web and your phone.",
       "A role an officer gives you now stays until an officer takes it off; you can still leave the roles you picked while they're offered.",
       "Officers who invite members or manage roles can filter the Directory to see who has the phone app with notifications on, who turned them off, and who only uses the web.",
+      "An event's Minutes now says when they were posted, how many decisions and action items they hold, and the first line of the TL;DR, so you can see what happened before opening them.",
+      "For officers who take minutes, Meetings on the web and Minutes on the phone now start with the meetings that ended without minutes, each with Start minutes, and end with the next meeting coming up, so none get forgotten.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",

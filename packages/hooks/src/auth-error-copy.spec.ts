@@ -8,8 +8,10 @@ import {
   WRONG_CREDENTIALS_COPY,
   authFallbackCopy,
   cooldownCopy,
+  describeEmailCodeError,
   describeEmailSendError,
   describeOAuthError,
+  EMAIL_CODE_COPY,
   describePasswordSignInError,
   describeSignUpError,
   emailCooldownSeconds,
@@ -351,5 +353,34 @@ describe("OAUTH_MEMBERSHIP_HINT", () => {
     expect(OAUTH_MEMBERSHIP_HINT).toBe(
       "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.",
     );
+  });
+});
+
+describe("describeEmailCodeError (#5625)", () => {
+  it("calls a wrong or expired code the code's fault, and clears it", () => {
+    for (const error of [
+      { status: 403, code: "otp_expired" },
+      { status: 400 },
+    ]) {
+      expect(describeEmailCodeError(error)).toEqual({
+        message: EMAIL_CODE_COPY.wrongCode,
+        wrongCode: true,
+      });
+    }
+  });
+
+  it("doesn't blame the code when the check itself failed", () => {
+    const offline = Object.assign(new Error("Failed to fetch"), {
+      name: "AuthRetryableFetchError",
+      status: 0,
+    });
+    expect(describeEmailCodeError(offline)).toEqual({
+      message: OFFLINE_COPY,
+      wrongCode: false,
+    });
+    expect(describeEmailCodeError({ status: 429 })).toEqual({
+      message: STATUS_ERROR_COPY[429],
+      wrongCode: false,
+    });
   });
 });

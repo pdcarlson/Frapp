@@ -438,8 +438,8 @@ export class PollService {
   /**
    * Post a `system_audit` notice into the poll's channel announcing that it
    * expired (#404). Uses `messageRepo.create` directly rather than
-   * `ChatService.sendMessage` — the same reason `notifyInviterOfAcceptance`
-   * and `postWelcomeMessage` bypass it: that path would reject
+   * `ChatService.sendMessage` — the same reason `postWelcomeMessage`
+   * bypasses it: that path would reject
    * `SYSTEM_SENDER_ID` as a poster. `push-rules.ts` already suppresses push
    * for `system_audit`, so this is visible in the channel without paging
    * anyone — the sweep's caller (`ScheduledJobsService`) is what decides

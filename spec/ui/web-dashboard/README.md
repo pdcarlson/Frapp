@@ -870,6 +870,8 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   Toggles under the month (Events, My tasks, Assigned by me, Birthdays) switch each kind and double as the key; they appear only for kinds the viewer has and are remembered per browser as the kinds hidden, so a kind added later starts on.
   On the compact month a day carries a ring after its event dots when anything is due, and the picked day lists its tasks after its events.
   Rules and words: `@repo/hooks/calendar-tasks`, which mobile's Calendar reads too.
+  **A task due at a time** ([#5116](https://github.com/frapplive/Frapp/issues/5116), Shawn, 2026-11-15) sits on that moment's local day and says its time in the viewer's clock ("5 PM", or "17" on a 24-hour clock, as the Tasks rows write it): its agenda row's line under the title starts with it, its card reads "Due Thursday, November 20 at 5 PM", and the hour grid draws it as a slim marker at that time (half an hour tall, ending at midnight for a task due in the day's last half hour), sharing lanes with the events it overlaps, the way Google Calendar draws a timed task; a task with no time stays in the All day strip.
+  A day's timed tasks list first, by time, then its untimed ones, as [`tasks.md`](../../behavior/tasks.md) orders a day; one task an officer handed to many at two different times is two rows. On the grid an assigned task's marker still names who it went to or how many are done.
   *(Changed in [#5560](https://github.com/pdcarlson/Frapp/issues/5560) by pdcarlson, 2026-11-19: tasks are agenda rows in the Tasks hue, above; the layer toggles became the colour key, which switches Tasks as one kind; the hour grid's All day strip still draws the chips.)*
   **Birthdays too** ([#4959](https://github.com/pdcarlson/Frapp/issues/4959), Shawn, 2026-11-14): every birthday a member shares with the chapter ([`members.md` § Profiles](../../behavior/members.md#profiles)) is an all-day item on its day each year, listed before the day's tasks, from `GET /v1/members/birthdays`.
   It draws a cake and the member's name with no fill and nothing to open, as Google Calendar draws its birthdays calendar; on the compact month its day carries a muted dot.
@@ -1393,7 +1395,7 @@ The **mark** is the exception, because [`../brand-identity.md`](../brand-identit
 The mirror half is `/profile`: it renders *inside* a chapter, so its s15 identity header takes the accent roles rather than the house family the board happens to draw it in.
 
 **The reference wins on visuals and not on the data model.** s02 draws a six-cell row for a shared chapter code;
-[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use 24-hour invite tokens, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
+[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use invite tokens that last 7 days, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
 So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and keeps one token field that accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`).
 `apps/mobile/app/(auth)/join.tsx` had already made that call in its own docstring; both surfaces now record it, so neither can drift.
 

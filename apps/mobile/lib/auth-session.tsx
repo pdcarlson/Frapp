@@ -16,6 +16,7 @@ import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
 import { MemberFacingError } from "@repo/hooks/error-copy";
+import { describeEmailCodeError } from "@repo/hooks/auth-error-copy";
 import {
   describeAuthReturnError,
   describeOAuthKickoffError,
@@ -85,6 +86,13 @@ type AuthSessionContextValue = {
     password: string;
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
+  /**
+   * Signs in with the six-digit code from the same email a magic link sends
+   * (#5625), so the invite card never has to leave the app. Needs the Auth
+   * email template to print `{{ .Token }}`; until it does, the link is the
+   * way in.
+   */
+  verifyEmailCode: (input: { email: string; code: string }) => Promise<void>;
   /**
    * Sends the sign-up confirmation email again, for a password account that
    * was never confirmed (`email_not_confirmed`, #3833). Its link opens the app
@@ -605,6 +613,30 @@ export function AuthSessionProvider({
     [supabase],
   );
 
+  const verifyEmailCode = useCallback(
+    async ({ email, code }: { email: string; code: string }) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: "email",
+      });
+      if (error) {
+        // A mistyped code is the member's, not a failure to report.
+        if (!describeEmailCodeError(error).wrongCode) {
+          reportAuthFailure({
+            flow: "email_code_verify",
+            screen: "/join",
+            error,
+          });
+        }
+        throw error;
+      }
+    },
+    [supabase],
+  );
+
   const resendConfirmation = useCallback(
     async ({ email }: { email: string }) => {
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
@@ -757,6 +789,7 @@ export function AuthSessionProvider({
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      verifyEmailCode,
       resendConfirmation,
       signInWithOAuthProvider,
       signOut,
@@ -774,6 +807,7 @@ export function AuthSessionProvider({
       signOut,
       status,
       userId,
+      verifyEmailCode,
     ],
   );
 

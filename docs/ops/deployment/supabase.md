@@ -313,6 +313,28 @@ recovery and email-change templates too. Until
 [#1926](https://github.com/pdcarlson/Frapp/issues/1926) asserts the template daily, a
 dashboard reset to `{{ .ConfirmationURL }}` would sit green.
 
+#### Both templates print the 6-digit code (#5625)
+
+*2026-11-19.* The invite card's Continue with email (web `/join` and the phone's join
+screen) sends this email and asks for the code in it, so a member signs in without
+leaving the card or switching devices (`EMAIL_CODE_COPY` in
+`packages/hooks/src/auth-error-copy.ts`). GoTrue sends **Magic Link** to a confirmed
+address and **Confirm signup** to a new one, so both print `{{ .Token }}` (6 digits, the
+hosted default `mailer_otp_length`). The link stays: it still signs in on another device,
+and until these are pasted it is the only way in from the email. Paste on staging, sign in
+there with a new address and an old one, then production. These replace the two bodies
+above; subjects and the `type` in each link are unchanged.
+
+Magic Link:
+
+`<h2>Sign in to Frapp</h2><p>Your code is <strong>{{ .Token }}</strong>. Enter it where you asked for it, or use this one-time link. Both expire soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
+
+Confirm signup:
+
+`<h2>Confirm your email</h2><p>Your code is <strong>{{ .Token }}</strong>. Enter it where you asked for it, or open this link to finish creating your Frapp account.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Confirm your email</a></p><p>If you did not create a Frapp account, you can ignore this email.</p>`
+
+The local stack prints it too, from `supabase/templates/magic-link.html` (`supabase/config.toml`; confirmations are off locally, so only Magic Link is sent). The CLI's own default prints only the link. Restart the local stack to pick it up.
+
 #### ADR-25 step 3: the sender becomes Frapp
 
 *2026-09-24 ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).* From the merge of

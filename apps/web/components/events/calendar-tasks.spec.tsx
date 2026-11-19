@@ -1,7 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { selectCalendarTasks } from "@repo/hooks/calendar-tasks";
-import { AgendaTaskRow, CalendarTaskChip } from "./calendar-tasks";
+import {
+  AgendaTaskRow,
+  CalendarTaskBlock,
+  CalendarTaskChip,
+} from "./calendar-tasks";
 
 /*
  * A task's card (#4144), opened from its agenda row or its hour-grid chip:
@@ -64,5 +68,57 @@ describe("the task card", () => {
     );
     expect(await screen.findByText("Assigned by Marcus")).toBeInTheDocument();
     expect(screen.getByText("Overdue")).toBeInTheDocument();
+  });
+});
+
+describe("a task due at a time (#5116)", () => {
+  // 5 PM local on Friday, November 6, 2026, as the API returns `due_at`.
+  const fivePm = new Date(2026, 10, 6, 17).toISOString();
+  const [timedMine, timedAssigned] = selectCalendarTasks(
+    [
+      {
+        id: "t-timed",
+        title: "Book the bus",
+        assignee_id: "me",
+        created_by: "officer",
+        due_date: "2026-11-06",
+        due_at: fivePm,
+        status: "TODO",
+      },
+      {
+        id: "t-timed-m1",
+        title: "Print flyers",
+        assignee_id: "m1",
+        created_by: "me",
+        due_date: "2026-11-06",
+        due_at: fivePm,
+        status: "TODO",
+      },
+    ],
+    "me",
+  );
+
+  it("leads the agenda row's line with the time, and the card says it", async () => {
+    render(<AgendaTaskRow item={timedMine!} nameOf={nameOf} />);
+    const row = screen.getByRole("button", {
+      name: "Book the bus, due 5 PM, your task, to do",
+    });
+    expect(row).toHaveTextContent("5 PM · To do");
+
+    fireEvent.click(row);
+    expect(
+      await screen.findByText("Due Friday, November 6 at 5 PM"),
+    ).toBeInTheDocument();
+  });
+
+  it("names who an assigned task went to on its hour-grid marker", () => {
+    render(
+      <CalendarTaskBlock item={timedAssigned!} nameOf={nameOf} style={{}} />,
+    );
+    const marker = screen.getByRole("button", {
+      name: "Print flyers, due 5 PM, assigned by you, to do",
+    });
+    expect(marker).toHaveTextContent("5 PM");
+    expect(marker).toHaveTextContent("Sam");
   });
 });

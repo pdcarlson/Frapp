@@ -14,6 +14,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -28,6 +29,7 @@ import { FreeTier, GraceBlocked } from '../decorators/subscription.decorator';
 import {
   ThrottleExpensiveWrite,
   ThrottleFanOutWrite,
+  ThrottlePersonalNudge,
 } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentUser,
@@ -188,6 +190,22 @@ export class InviteController {
     @Body() dto: PreviewInviteDto,
   ): Promise<InvitePreviewResponseDto> {
     return this.inviteService.preview(dto.token);
+  }
+
+  @Post('ask-for-new-link')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ThrottlePersonalNudge()
+  @ApiOperation({
+    summary: "Ask a dead invite's sender for a new link",
+    description:
+      'Notifies whoever sent the invite, by name, that the caller wants a new link (#5625). 409 when the invite still works or the caller is already in the chapter; 404 for an unknown invite.',
+  })
+  @ApiNoContentResponse()
+  async askForNewLink(
+    @CurrentUser('id') userId: string,
+    @Body() dto: PreviewInviteDto,
+  ): Promise<void> {
+    await this.inviteService.askForNewLink(dto.token, userId);
   }
 
   @Post('redeem')

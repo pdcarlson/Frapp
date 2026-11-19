@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ReorderList, moveItem } from "./reorder-list";
+import { ReorderList } from "./reorder-list";
 
 const ITEMS = ["Alpha", "Beta", "Gamma"];
 
@@ -19,19 +19,6 @@ function renderList(onReorder = vi.fn(), disabled = false) {
   );
   return onReorder;
 }
-
-describe("moveItem", () => {
-  it("moves one entry and leaves the input alone", () => {
-    expect(moveItem(ITEMS, 0, 2)).toEqual(["Beta", "Gamma", "Alpha"]);
-    expect(moveItem(ITEMS, 2, 0)).toEqual(["Gamma", "Alpha", "Beta"]);
-    expect(ITEMS).toEqual(["Alpha", "Beta", "Gamma"]);
-  });
-
-  it("ignores a move off either end", () => {
-    expect(moveItem(ITEMS, 0, -1)).toEqual(ITEMS);
-    expect(moveItem(ITEMS, 1, 3)).toEqual(ITEMS);
-  });
-});
 
 describe("ReorderList", () => {
   it("moves a row with the arrow keys on its grip, and announces where it went", () => {

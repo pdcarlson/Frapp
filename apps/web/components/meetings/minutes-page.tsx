@@ -53,23 +53,30 @@ import {
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
   MEETING_TABLED_MAX_ITEMS,
-  MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
   MEETING_VOTE_MAX,
+  MINUTES_EDITOR_COPY,
   MINUTES_FLOW_COPY,
   MINUTES_PREVIEW,
   MINUTES_READ_COPY,
+  BLANK_MINUTES_ROW,
   minutesAddableSections,
+  minutesEditDraftOf,
   minutesEditorSections,
   can,
+  clampMeetingVote,
+  cleanMeetingContent,
+  sameMinutesDraft,
   isMeetingContentEmpty,
-  meetingDraftQuoteFor,
-  meetingDraftSourceFor,
+  meetingDraftQuote,
+  MINUTES_AUTOSAVE_MS,
+  minutesTablingOffers,
+  tabledRowFromAgenda,
+  type MeetingDraftQuote,
   MEETING_NOTE_TAKERS_COPY,
   meetingTypeLabel,
   minutesJumps,
   minutesReadSections,
-  readMeetingContent,
   type MeetingActionItem,
   type MeetingContent,
   type MeetingDateItem,
@@ -78,7 +85,6 @@ import {
   type MeetingTabledItem,
   type MeetingTextSection,
   type MeetingType,
-  agendaMatterKey,
   meetingTabledFromLabel,
   readEventAgenda,
 } from "@repo/validation";
@@ -145,72 +151,9 @@ import {
 /** The Select value for an action item nobody was named for. */
 const NO_OWNER = "none";
 
-type Draft = {
-  meeting_type: MeetingType;
-  other_label: string;
-  content: MeetingContent;
-};
-
-function draftOf(meeting: MeetingMinutes): Draft {
-  return {
-    meeting_type: meeting.meeting_type as MeetingType,
-    other_label: meeting.other_label ?? "",
-    content: readMeetingContent(meeting.content),
-  };
-}
-
-/** What a save sends: blank rows dropped and text trimmed at the ends. */
-function cleanContent(content: MeetingContent): MeetingContent {
-  return {
-    ...content,
-    decisions: content.decisions
-      .map((decision) => ({
-        ...decision,
-        text: decision.text.trim(),
-        headline: decision.headline?.trim() || null,
-      }))
-      .filter((decision) => decision.text.length > 0),
-    dates: content.dates
-      .map((item) => ({ ...item, text: item.text.trim() }))
-      .filter((item) => item.text.length > 0 && item.date.length > 0),
-    action_items: content.action_items
-      .map((item) => ({ ...item, text: item.text.trim() }))
-      .filter((item) => item.text.length > 0),
-    tabled: content.tabled
-      .map((item) => ({ ...item, text: item.text.trim() }))
-      .filter((item) => item.text.length > 0),
-  };
-}
-
-/**
- * A draft as a save would store it: blank rows gone, ends trimmed. Two
- * drafts that only differ in a trailing space are the same, so a pause
- * after typing a space saves nothing and nothing typed is trimmed away.
- */
-function storedForm(draft: Draft): string {
-  const content = cleanContent(draft.content);
-  const text = Object.fromEntries(
-    Object.entries(content).map(([key, value]) => [
-      key,
-      typeof value === "string" ? value.trim() : value,
-    ]),
-  );
-  return JSON.stringify({
-    meeting_type: draft.meeting_type,
-    other_label: draft.meeting_type === "other" ? draft.other_label.trim() : "",
-    content: text,
-  });
-}
-
-function sameDraft(a: Draft, b: Draft): boolean {
-  return storedForm(a) === storedForm(b);
-}
-
-/**
- * How long a draft's typing rests before it saves on its own, the way Google
- * Docs and Notion save (Paul, 2026-11-16: no Save button to chase).
- */
-const AUTOSAVE_MS = 1200;
+const draftOf = minutesEditDraftOf;
+const cleanContent = cleanMeetingContent;
+const sameDraft = sameMinutesDraft;
 
 /**
  * `/meetings/:id`: one meeting's minutes (`spec/behavior/meetings.md`). Read
@@ -464,7 +407,7 @@ function Minutes({
         }
         setSaveFailed(true);
         toast({
-          title: "Couldn't save the minutes",
+          title: MINUTES_EDITOR_COPY.saveFailedTitle,
           description: getErrorMessage(error, "Try again in a moment."),
           variant: "destructive",
         });
@@ -485,7 +428,7 @@ function Minutes({
   const pendingAutosave = autosaves && dirty && !stale && !drafting;
   useEffect(() => {
     if (!pendingAutosave || saveFailed) return;
-    const timer = window.setTimeout(() => void save(), AUTOSAVE_MS);
+    const timer = window.setTimeout(() => void save(), MINUTES_AUTOSAVE_MS);
     return () => window.clearTimeout(timer);
     // `save` reads the latest draft through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -505,7 +448,7 @@ function Minutes({
   async function handleSave() {
     const saved = await save();
     if (saved && saved.status === "posted") setEditing(false);
-    if (saved) toast({ title: "Minutes saved" });
+    if (saved) toast({ title: MINUTES_EDITOR_COPY.savedToast });
   }
 
   /**
@@ -575,8 +518,8 @@ function Minutes({
     const fresh = await onReload();
     if (!fresh) {
       toast({
-        title: "Couldn't load their version",
-        description: "Check your connection and try again.",
+        title: MINUTES_EDITOR_COPY.loadFailed,
+        description: MINUTES_EDITOR_COPY.loadFailedBody,
         variant: "destructive",
       });
       return;
@@ -681,10 +624,10 @@ function Minutes({
     : stale
       ? null
       : saveFailed
-        ? "Not saved"
+        ? MINUTES_EDITOR_COPY.notSaved
         : update.isPending || dirty
-          ? "Saving…"
-          : "Saved";
+          ? MINUTES_EDITOR_COPY.saving
+          : MINUTES_EDITOR_COPY.saved;
 
   const notesPanel =
     showNotes && draftState ? (
@@ -791,13 +734,15 @@ function Minutes({
                         setEditing(false);
                       }}
                     >
-                      Cancel
+                      {MINUTES_EDITOR_COPY.cancel}
                     </Button>
                     <Button
                       disabled={busy || update.isPending || !dirty}
                       onClick={() => void handleSave()}
                     >
-                      {dirty || update.isPending ? "Save" : "Saved"}
+                      {dirty || update.isPending
+                        ? MINUTES_EDITOR_COPY.save
+                        : MINUTES_EDITOR_COPY.saved}
                     </Button>
                   </>
                 ) : saveFailed ? (
@@ -806,7 +751,7 @@ function Minutes({
                     disabled={busy || update.isPending}
                     onClick={() => void handleSave()}
                   >
-                    Save
+                    {MINUTES_EDITOR_COPY.save}
                   </Button>
                 ) : null}
                 {/* Nothing to post until there is something written. */}
@@ -992,7 +937,7 @@ function Minutes({
                     decisions={draft.content.decisions}
                     onChange={(decisions) => editContent({ decisions })}
                     quoteFor={(text) =>
-                      quoteOf(review, "decision", text, myName)
+                      meetingDraftQuote(review, "decision", text, myName)
                     }
                   />
                 ) : key === "action_items" ? (
@@ -1001,7 +946,7 @@ function Minutes({
                     items={draft.content.action_items}
                     onChange={(action_items) => editContent({ action_items })}
                     quoteFor={(text) =>
-                      quoteOf(review, "action_item", text, myName)
+                      meetingDraftQuote(review, "action_item", text, myName)
                     }
                   />
                 ) : key === "tabled" ? (
@@ -1277,37 +1222,16 @@ function meetingHasEnded(meeting: MeetingMinutes): boolean {
  * The line of the officer's notes a drafted item came from, shown while the
  * item still reads as drafted, so each one can be checked at a glance.
  */
-function NotesQuote({ quote }: { quote: DraftQuote | null }) {
+function NotesQuote({ quote }: { quote: MeetingDraftQuote | null }) {
   if (!quote) return null;
   return (
     <p className="break-words text-caption text-muted-foreground">
       {quote.from
         ? MEETING_NOTE_TAKERS_COPY.from(quote.from, quote.mine)
-        : "From your notes"}
+        : MINUTES_EDITOR_COPY.fromYourNotes}
       : “{quote.quote}”
     </p>
   );
-}
-
-/** The line a drafted item came from, and whose it is (#4935). */
-type DraftQuote = { quote: string; from: string | null; mine: boolean };
-
-function quoteOf(
-  review: MeetingDraftState["review"] | null,
-  kind: "decision" | "action_item",
-  text: string,
-  myName: string | null,
-): DraftQuote | null {
-  const quote = meetingDraftQuoteFor(review, kind, text);
-  if (!quote) return null;
-  const from = meetingDraftSourceFor(review, kind, text);
-  return { quote, from, mine: !!from && from === myName };
-}
-
-function clampVote(value: string): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return Math.min(parsed, MEETING_VOTE_MAX);
 }
 
 function DecisionsEditor({
@@ -1317,9 +1241,10 @@ function DecisionsEditor({
 }: {
   decisions: MeetingDecision[];
   onChange: (next: MeetingDecision[]) => void;
-  quoteFor: (text: string) => DraftQuote | null;
+  quoteFor: (text: string) => MeetingDraftQuote | null;
 }) {
   const ids = useId();
+  const copy = MINUTES_EDITOR_COPY.decision;
   const set = (index: number, patch: Partial<MeetingDecision>) =>
     onChange(
       decisions.map((decision, at) =>
@@ -1335,8 +1260,8 @@ function DecisionsEditor({
         >
           <div className="flex items-start gap-2">
             <GrowingTextarea
-              aria-label={`Decision ${index + 1}`}
-              placeholder="What was decided"
+              aria-label={copy.label(index + 1)}
+              placeholder={copy.placeholder}
               rows={1}
               className="min-h-10"
               value={decision.text}
@@ -1344,7 +1269,7 @@ function DecisionsEditor({
               onChange={(event) => set(index, { text: event.target.value })}
             />
             <IconButton
-              label={`Remove decision ${index + 1}`}
+              label={copy.remove(index + 1)}
               onClick={() =>
                 onChange(decisions.filter((_, at) => at !== index))
               }
@@ -1370,11 +1295,7 @@ function DecisionsEditor({
               {(["for", "against", "abstain"] as const).map((side) => (
                 <div key={side} className="grid w-24 gap-1">
                   <Label htmlFor={`${ids}-${index}-${side}`}>
-                    {side === "for"
-                      ? "For"
-                      : side === "against"
-                        ? "Against"
-                        : "Abstaining"}
+                    {copy[side]}
                   </Label>
                   <Input
                     id={`${ids}-${index}-${side}`}
@@ -1387,7 +1308,7 @@ function DecisionsEditor({
                       set(index, {
                         vote: {
                           ...decision.vote!,
-                          [side]: clampVote(event.target.value),
+                          [side]: clampMeetingVote(event.target.value),
                         },
                       })
                     }
@@ -1399,7 +1320,7 @@ function DecisionsEditor({
                 size="sm"
                 onClick={() => set(index, { vote: null })}
               >
-                Remove the count
+                {copy.removeVote}
               </Button>
             </div>
           ) : (
@@ -1411,7 +1332,7 @@ function DecisionsEditor({
                 set(index, { vote: { for: 0, against: 0, abstain: 0 } })
               }
             >
-              Add a vote count
+              {copy.addVote}
             </Button>
           )}
         </div>
@@ -1420,9 +1341,9 @@ function DecisionsEditor({
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => onChange([...decisions, { text: "", vote: null }])}
+          onClick={() => onChange([...decisions, BLANK_MINUTES_ROW.decision()])}
         >
-          Add a decision
+          {copy.add}
         </Button>
       ) : null}
     </div>
@@ -1493,7 +1414,7 @@ function DatesEditor({
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => onChange([...items, { date: "", text: "" }])}
+          onClick={() => onChange([...items, BLANK_MINUTES_ROW.date()])}
         >
           {MEETING_COPY.addDate}
         </Button>
@@ -1518,14 +1439,12 @@ function TabledEditor({
   onChange: (next: MeetingTabledItem[]) => void;
 }) {
   const event = useEvent(eventId ?? "");
-  const tabledWords = new Set(items.map((item) => agendaMatterKey(item.text)));
   // Each agenda item not tabled yet, as a chip (#5534): one tap tables it,
   // and one carried from an earlier Tabled list keeps its first date and
   // counts once more.
-  const offered = readEventAgenda(event.data?.agenda).filter(
-    (item) =>
-      item.text.trim().length > 0 &&
-      !tabledWords.has(agendaMatterKey(item.text)),
+  const offered = minutesTablingOffers(
+    readEventAgenda(event.data?.agenda),
+    items,
   );
   const full = items.length >= MEETING_TABLED_MAX_ITEMS;
   return (
@@ -1533,36 +1452,25 @@ function TabledEditor({
       {offered.length > 0 && !full ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-caption text-muted-foreground">
-            From the agenda:
+            {MINUTES_EDITOR_COPY.tabled.fromAgenda}
           </span>
           {offered.map((item) => (
             <button
               key={item.id}
               type="button"
-              aria-label={`Table "${item.text}"`}
-              onClick={() =>
-                onChange([
-                  ...items,
-                  {
-                    text: item.text,
-                    first_meeting_id: item.tabled_from?.meeting_id ?? null,
-                    first_start_time: item.tabled_from?.start_time ?? null,
-                    times: item.tabled_from
-                      ? Math.min(
-                          item.tabled_from.times + 1,
-                          MEETING_TABLED_MAX_TIMES,
-                        )
-                      : 1,
-                  },
-                ])
-              }
+              aria-label={MINUTES_EDITOR_COPY.tabled.tableItem(
+                `"${item.text}"`,
+              )}
+              onClick={() => onChange([...items, tabledRowFromAgenda(item)])}
               className={cn(
                 "inline-flex min-h-8 max-w-full items-center gap-1 rounded-full border border-border px-2.5 text-caption hover:bg-card-hover pointer-coarse:min-h-11",
                 FOCUS_RING_OFFSET,
               )}
             >
               <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">Table {item.text}</span>
+              <span className="truncate">
+                {MINUTES_EDITOR_COPY.tabled.tableItem(item.text)}
+              </span>
             </button>
           ))}
         </div>
@@ -1573,8 +1481,8 @@ function TabledEditor({
           <div key={index} className="space-y-1">
             <div className="flex items-start gap-2">
               <GrowingTextarea
-                aria-label={`Tabled item ${index + 1}`}
-                placeholder="What was put off"
+                aria-label={MINUTES_EDITOR_COPY.tabled.label(index + 1)}
+                placeholder={MINUTES_EDITOR_COPY.tabled.placeholder}
                 rows={1}
                 className="min-h-10"
                 value={item.text}
@@ -1590,7 +1498,7 @@ function TabledEditor({
                 }
               />
               <IconButton
-                label={`Remove tabled item ${index + 1}`}
+                label={MINUTES_EDITOR_COPY.tabled.remove(index + 1)}
                 onClick={() => onChange(items.filter((_, at) => at !== index))}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
@@ -1606,19 +1514,9 @@ function TabledEditor({
         <Button
           variant="secondary"
           size="sm"
-          onClick={() =>
-            onChange([
-              ...items,
-              {
-                text: "",
-                first_meeting_id: null,
-                first_start_time: null,
-                times: 1,
-              },
-            ])
-          }
+          onClick={() => onChange([...items, BLANK_MINUTES_ROW.tabled()])}
         >
-          Table an item
+          {MINUTES_EDITOR_COPY.tabled.add}
         </Button>
       ) : null}
     </div>
@@ -1635,9 +1533,10 @@ function ActionItemsEditor({
   disabled: boolean;
   items: MeetingActionItem[];
   onChange: (next: MeetingActionItem[]) => void;
-  quoteFor: (text: string) => DraftQuote | null;
+  quoteFor: (text: string) => MeetingDraftQuote | null;
 }) {
   const ids = useId();
+  const copy = MINUTES_EDITOR_COPY.actionItem;
   const rosterQuery = useChapterRoster();
   const members = useMemo(
     () =>
@@ -1662,8 +1561,8 @@ function ActionItemsEditor({
         >
           <div className="flex items-start gap-2">
             <GrowingTextarea
-              aria-label={`Action item ${index + 1}`}
-              placeholder="What needs doing"
+              aria-label={copy.label(index + 1)}
+              placeholder={copy.placeholder}
               rows={1}
               className="min-h-10"
               value={item.text}
@@ -1671,7 +1570,7 @@ function ActionItemsEditor({
               onChange={(event) => set(index, { text: event.target.value })}
             />
             <IconButton
-              label={`Remove action item ${index + 1}`}
+              label={copy.remove(index + 1)}
               onClick={() => onChange(items.filter((_, at) => at !== index))}
             >
               <X className="h-4 w-4" aria-hidden="true" />
@@ -1680,7 +1579,7 @@ function ActionItemsEditor({
           <NotesQuote quote={quoteFor(item.text)} />
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid min-w-0 gap-1">
-              <Label htmlFor={`${ids}-${index}-owner`}>Who</Label>
+              <Label htmlFor={`${ids}-${index}-owner`}>{copy.who}</Label>
               <Select
                 disabled={disabled}
                 value={item.owner_user_id ?? NO_OWNER}
@@ -1691,10 +1590,10 @@ function ActionItemsEditor({
                 }
               >
                 <SelectTrigger id={`${ids}-${index}-owner`}>
-                  <SelectValue placeholder="Nobody named" />
+                  <SelectValue placeholder={copy.nobody} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_OWNER}>Nobody named</SelectItem>
+                  <SelectItem value={NO_OWNER}>{copy.nobody}</SelectItem>
                   {members.map((member) => (
                     <SelectItem key={member.id} value={member.id}>
                       {member.name}
@@ -1704,10 +1603,10 @@ function ActionItemsEditor({
               </Select>
             </div>
             <div className="grid min-w-0 gap-1">
-              <Label htmlFor={`${ids}-${index}-due`}>Due</Label>
+              <Label htmlFor={`${ids}-${index}-due`}>{copy.due}</Label>
               <DueDateField
                 id={`${ids}-${index}-due`}
-                placeholder="No date"
+                placeholder={copy.noDue}
                 // An action item is due by a day: it stores no time.
                 withoutTime
                 value={item.due_date ?? ""}
@@ -1723,14 +1622,9 @@ function ActionItemsEditor({
         <Button
           variant="secondary"
           size="sm"
-          onClick={() =>
-            onChange([
-              ...items,
-              { text: "", owner_user_id: null, due_date: null },
-            ])
-          }
+          onClick={() => onChange([...items, BLANK_MINUTES_ROW.actionItem()])}
         >
-          Add an action item
+          {copy.add}
         </Button>
       ) : null}
     </div>
