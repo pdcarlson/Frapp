@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const { hidden } = vi.hoisted(() => ({
@@ -32,6 +32,13 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: "chap-1" }),
 }));
 
+const askEntry = vi.hoisted(() => ({
+  current: null as null | { open: boolean; openWith: () => void },
+}));
+vi.mock("@/components/ask/ask-host", () => ({
+  useAskEntry: () => askEntry.current,
+}));
+
 import { AppNav } from "./app-nav";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
@@ -60,6 +67,10 @@ function renderNav(props: Partial<React.ComponentProps<typeof AppNav>> = {}) {
 }
 
 describe("AppNav", () => {
+  afterEach(() => {
+    askEntry.current = null;
+  });
+
   it("orders the IA the way the board does", () => {
     const { container } = renderNav();
     // Headings are <p>, rows are <a>. Matching on text alone would also catch
@@ -121,7 +132,9 @@ describe("AppNav", () => {
     // A treasurer's reports:export was a Reports row of its own; now it is the
     // reason the Settings row shows at all.
     renderNav({ permissions: ["members:view", "reports:export"] });
-    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Chapter settings" }),
+    ).toBeInTheDocument();
   });
 
   it("drops Settings for a tools-only officer whose tools are all switched off", () => {
@@ -141,16 +154,17 @@ describe("AppNav", () => {
       permissions: ["chapter-config:view"],
       isModuleEnabled: () => false,
     });
-    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Chapter settings" }),
+    ).toBeInTheDocument();
   });
 
   it("marks Chapter settings as the page while one of its tools is open (#3837)", () => {
     // The tools open inside Chapter settings now, so the row is the page.
     renderNav({ pathname: "/settings" });
-    expect(screen.getByRole("link", { name: "Chapter settings" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      screen.getByRole("link", { name: "Chapter settings" }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   it("draws no permission-gated row while permissions are unresolved (#3854)", () => {
@@ -165,7 +179,9 @@ describe("AppNav", () => {
       }
       // Rows with no permission rule render at once.
       expect(screen.getByRole("link", { name: "Events" })).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Documents" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Documents" }),
+      ).toBeInTheDocument();
       unmount();
     }
   });
@@ -175,7 +191,9 @@ describe("AppNav", () => {
     // a member keeps the Directory row they hold, and the page states the outage.
     renderNav({ permissions: null });
     expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Chapter settings" }),
+    ).toBeInTheDocument();
   });
 
   it("draws the gated rows once an officer's permissions answer", () => {
@@ -186,7 +204,9 @@ describe("AppNav", () => {
     rerender(
       <AppNav collapsed={false} permissions={OFFICER} pathname="/events" />,
     );
-    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Chapter settings" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
   });
 
@@ -268,6 +288,47 @@ describe("AppNav", () => {
     expect(
       screen.queryByRole("button", { name: /collapse sidebar/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("holds Ask Frapp at its foot, the crest alone in the rail (#5560)", () => {
+    askEntry.current = { open: false, openWith: vi.fn() };
+    const { unmount } = renderNav({ onToggleCollapsed: vi.fn() });
+    const ask = screen.getByRole("button", { name: "Ask Frapp" });
+    expect(ask).toHaveTextContent("Ask Frapp");
+    // One foot row: Ask fills it and the toggle is a glyph at its end, named
+    // by its label and tooltip, so a full sidebar still fits 1024x768.
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(ask.parentElement).toBe(collapse.parentElement);
+    expect(
+      ask.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(collapse).not.toHaveTextContent("Collapse sidebar");
+    expect(collapse).toHaveAttribute("title", "Collapse sidebar");
+    expect(ask).toHaveClass("h-[34px]");
+    unmount();
+
+    // With no toggle (a forced rail) it still has its place.
+    const { unmount: unmountRail } = renderNav({ collapsed: true });
+    const crest = screen.getByRole("button", { name: "Ask Frapp" });
+    expect(crest).not.toHaveTextContent("Ask Frapp");
+    expect(crest).toHaveAttribute("title", "Ask Frapp");
+    unmountRail();
+
+    // The drawer has none; below `lg` the page floats its own.
+    renderNav({ variant: "drawer" });
+    expect(
+      screen.queryByRole("button", { name: "Ask Frapp" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("adds no box at the foot for a member without Ask (#5560)", () => {
+    const { container } = renderNav({ onToggleCollapsed: vi.fn() });
+    const toggle = container.querySelector("[data-nav-toggle]");
+    // The toggle pins itself down, with nothing empty above it.
+    expect(toggle).toHaveClass("mt-auto");
+    expect(toggle?.previousElementSibling).toBe(
+      screen.getByRole("navigation", { name: "Primary" }),
+    );
   });
 
   it("labels the collapse toggle with its action, and names it in the rail (#4044)", () => {

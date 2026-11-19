@@ -9,7 +9,6 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { AccentChip } from "@/components/status-chip";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
   itemMenuAccessibility,
@@ -29,7 +28,7 @@ import { markDoneLabel } from "@/lib/tasks/task-photos";
  *
  * A flush row on the screen background, split from the one above by a
  * hairline, with a leading checkbox, a title, a due/done subtitle, and an
- * optional trailing points chip.
+ * optional trailing points, in muted text (#5570).
  * The finished row is drawn at `opacity:.62` with a line-through title and a
  * box in the raised neutral fill with a muted check. Canvas draws that box
  * gold; foundations.md §6 ("Where the accent goes", 2026-11-05) overrides it:
@@ -95,7 +94,7 @@ const CHECKBOX_SLOP = 10;
 
 /**
  * What a task says, read once for its row and its Grid card alike (#4175), so
- * the two layouts can't drift on a status word, the red, or the points chip.
+ * the two layouts can't drift on a status word, the red, or the points.
  */
 function taskFacts(row: TaskRowModel, now: Date) {
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
@@ -199,7 +198,13 @@ function TaskCheckbox({
   );
 }
 
-/** The trailing points chip, accent while open and green once awarded. */
+/**
+ * The trailing points, as muted text: "+5 pts", and "+5 pts ✓" once awarded.
+ * An accent pill until #5570 (Paul, 2026-11-19): a yellow pill on every row
+ * was brighter than the task's title, and the title is what a member reads
+ * a list for. Things 3 and Todoist draw a to-do's extras in the quiet grey
+ * under or beside its title; colour on a row is kept for its due and overdue.
+ */
 function PointsChip({
   chip,
   styles,
@@ -208,11 +213,7 @@ function PointsChip({
   styles: TaskStyles;
 }) {
   if (!chip) return null;
-  return chip.tone === "awarded" ? (
-    <Text style={styles.awardedChip}>{chip.label}</Text>
-  ) : (
-    <AccentChip label={chip.label} />
-  );
+  return <Text style={styles.points}>{chip.label}</Text>;
 }
 
 /**
@@ -334,7 +335,7 @@ export function TaskRow({
 /**
  * s08's Grid layout (#4175): one task as a card, two to a line
  * (`components/grid-line.tsx` lays the lines out). The card is the row stood
- * on end, the box and points chip over the title and its due line, and it
+ * on end, the box and points over the title and its due line, and it
  * takes the row's two targets: the box completes or takes back, anywhere else
  * opens the task's screen, where Edit sits for an officer. Linear's and
  * Asana's board cards carry the same facts as their list rows.
@@ -520,11 +521,9 @@ function createStyles(tokens: SignetTokens) {
     subtitleDone: {
       color: tokens.color.text.muted,
     },
-    awardedChip: {
+    points: {
       ...typeRole(tokens.typography.role.caption),
-      // Canvas draws `#4BC262` here, which is the Signet success token
-      // (`semantic.success`) since the 2026-11-12 lift (#3826).
-      color: tokens.color.semantic.success,
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

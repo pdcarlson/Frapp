@@ -126,3 +126,38 @@ export async function fetchAllPages<T>(
 
   return rows;
 }
+
+/**
+ * Read a query's full result set by its `id`, one page at a time: each page is
+ * the rows after the last id read (`id > last`, ordered by id, see `page`'s
+ * `after`), until a page comes back empty. Prefer it to `fetchAllPages` for a
+ * table that can change while it is read: an offset shifts when a row is added
+ * or deleted before it, so the next page repeats a row or skips one, where a
+ * row after the last id is read once or not at all. A row added during the
+ * read may or may not be in the result; no row that was there throughout is
+ * missed or read twice. The caller sorts the result if it wants another order.
+ *
+ * `page` must filter `id > after` when `after` is set, order by `id`
+ * ascending, and limit the page. The same two rules as `fetchAllPages` hold:
+ * only an empty page ends the read, since a server cap below the asked-for
+ * size makes every page short.
+ */
+export async function fetchAllById<T extends { id: string }>(
+  page: (after: string | null) => PromiseLike<PagedQueryResult<T>>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let after: string | null = null;
+  for (;;) {
+    if (rows.length > MAX_PAGED_ROWS) {
+      throw new Error(
+        `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,
+      );
+    }
+    const { data, error } = await page(after);
+    if (error) throw new SupabaseQueryError(error);
+    const batch = data ?? [];
+    if (batch.length === 0) return rows;
+    rows.push(...batch);
+    after = batch[batch.length - 1].id;
+  }
+}

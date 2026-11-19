@@ -167,7 +167,7 @@ export default function PointsPage() {
       // and a rank renumbered from #1 per search would misreport chapter
       // standing on the surface officers read it off.
       //
-      // Equal totals share a rank (1, 1, 3), the way the mobile points card
+      // Equal totals share a rank (1, 1, 3), the way the mobile points line
       // counts it: a new chapter's board is its whole roster at 0, and
       // numbering that #1 to #40 would rank people who haven't started. The
       // rows arrive by total descending, so a row's rank is one past the

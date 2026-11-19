@@ -374,7 +374,7 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 | Row | 32 | 44 | menu, select and command rows; a checkbox row inside a form |
 | Small | 36 | 44 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a dense list row, a sheet's fields and footer buttons |
 | Field | 40 | 44 | text fields, select triggers, Default buttons, the color picker |
-| Primary | (web: Field) | 48 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A web full-width primary is a Default button, 44 on touch |
+| Primary | (web: Field) | 48 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A property-row form commits from its header instead ([components.md § Property rows](components.md#property-rows)). A web full-width primary is a Default button, 44 on touch |
 
 - **Mouse and touch are one rule, not two designs.** Web reads `pointer-coarse` for the touch column (Tailwind's `pointer-coarse:` variant), so a laptop gets the dense column and a phone or tablet browser the 44 floor. Mobile is touch-only and reads the touch column alone. The web sidebar (34) and app bar (34) are older pointer-only geometry and stay as [components.md](components.md) §7 draws them.
 - **Labels stay 14, values stay 16.** Button, tab and table-header labels are 14px at every height. A menu or select row's label is 14px on a mouse and 16px on touch. A typed value is 16px at every height, because §7's body floor binds on text a member types.

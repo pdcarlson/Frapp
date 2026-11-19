@@ -22,17 +22,11 @@ import {
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
-import { memberLabel } from "@repo/hooks/display-names";
 import { can, TASK_AUDIENCE_COPY } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_TASKS } from "@/components/back-row";
-import {
-  ErrorState,
-  SkeletonBlock,
-  SkeletonRegion,
-  SkeletonText,
-} from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { StatusChip } from "@/components/status-chip";
 import { HistoryRow } from "@/components/history-row";
@@ -57,6 +51,13 @@ import {
 } from "@/components/tasks/task-action-bar";
 import { WhoHasIt } from "@/components/tasks/who-has-it";
 import { GroupProgress } from "@/components/tasks/group-progress";
+import { OpenTaskScreen } from "@/components/tasks/open-task-screen";
+import {
+  createTaskFactStyles,
+  TaskDetailSkeleton,
+  TaskFact,
+  TaskFacts,
+} from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { showActionMenu } from "@/lib/action-menu";
@@ -85,6 +86,7 @@ import {
   taskScreenControls,
 } from "@/lib/tasks/task-screen";
 import { useStartTask } from "@/lib/tasks/use-start-task";
+import { useMemberLabel } from "@/lib/tasks/use-member-label";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
 import { useTaskReview } from "@/lib/tasks/use-task-review";
 import {
@@ -102,7 +104,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Linear's issue page lays out a pushed issue.
  *
  * Reached from a row on the task board, from the Calendar's task rows, and
- * from a task push through the board (`/tasks?task=<id>`), with an `id`.
+ * from a task push through the board (`/tasks?task=<id>`), with an `id`. A
+ * task up for grabs opens here too, with `posting=<id>` in place of the `id`,
+ * and draws its own screen (`OpenTaskScreen`, #5570).
  *
  * ## What it shows
  *
@@ -163,7 +167,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Remove people (#5492) pushes this screen with `select=1`, and it opens in
  * select mode.
  */
-export default function TaskDetailsScreen() {
+export default function TaskDetailsRoute() {
+  // `posting=<id>`: a task up for grabs (#5570), which is a posting and not
+  // yet a task, so it reads off its own list and has its own controls.
+  const { posting } = useLocalSearchParams<{ posting?: string | string[] }>();
+  const postingId = Array.isArray(posting) ? posting[0] : posting;
+  return postingId ? (
+    <OpenTaskScreen postingId={postingId} />
+  ) : (
+    <TaskDetailsScreen />
+  );
+}
+
+function TaskDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const params = useLocalSearchParams<{
@@ -250,16 +266,14 @@ function TaskScreen({
   arrival: "edit" | "who" | null;
 }) {
   const { tokens } = useFrappTheme();
+  const factStyles = createTaskFactStyles(tokens);
   const { accent } = useChapterBranding();
   const router = useRouter();
   const viewerId = useViewerUserId();
   const canManage = can("tasks:manage", usePermissionList());
   const roster = useMemberDisplayNames();
-  const { byId, avatarFor, avatarTintFor } = roster;
-  const nameOf = useCallback(
-    (userId: string) => memberLabel(byId[userId], userId),
-    [byId],
-  );
+  const { avatarFor, avatarTintFor } = roster;
+  const nameOf = useMemberLabel();
   // In a sentence ("Assigned by you"), the viewer is "you".
   const nameInLine = useCallback(
     (userId: string) => (userId === viewerId ? "you" : nameOf(userId)),
@@ -634,9 +648,9 @@ function TaskScreen({
         ) : null}
 
         {!editing && (due || points || from) ? (
-          <View style={styles.facts}>
+          <TaskFacts>
             {due ? (
-              <Fact
+              <TaskFact
                 label="Due"
                 value={due.replace(/^Due /, "")}
                 color={
@@ -645,7 +659,7 @@ function TaskScreen({
               />
             ) : null}
             {points ? (
-              <Fact
+              <TaskFact
                 label="Points"
                 value={points.label}
                 // Green once the ledger moved; the accent stays Mark done's.
@@ -656,8 +670,8 @@ function TaskScreen({
                 }
               />
             ) : null}
-            {from ? <Fact label="From" value={from} color={null} /> : null}
-          </View>
+            {from ? <TaskFact label="From" value={from} color={null} /> : null}
+          </TaskFacts>
         ) : null}
 
         {/* Who a group task went to and how far its copies are, on a line
@@ -666,7 +680,7 @@ function TaskScreen({
             officer instead. */}
         {showFor ? (
           <View style={styles.forFact}>
-            <Text style={styles.factLabel}>For</Text>
+            <Text style={factStyles.factLabel}>For</Text>
             <GroupProgress
               who={groupLabel}
               done={progress.done}
@@ -856,94 +870,17 @@ function TaskScreen({
   );
 }
 
-/** One of the three facts: a caption over its value, as Linear's header. */
-function Fact({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  /** A status colour for the value, or `null` for the foreground. */
-  color: string | null;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  return (
-    <View
-      style={styles.fact}
-      accessible
-      accessibilityLabel={`${label}: ${value}`}
-    >
-      <Text style={styles.factLabel}>{label}</Text>
-      <Text
-        style={[styles.factValue, color ? { color } : null]}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-/**
- * The loading state, on the loaded screen's own shapes: the status chip and
- * the facts row. The description, checklist and the rest are left out, since
- * each draws only when the task has one.
- */
-export function TaskDetailSkeleton() {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const { caption, label } = tokens.typography.role;
-  return (
-    <SkeletonRegion label="Loading task" style={styles.skeleton}>
-      <SkeletonBlock
-        width={tokens.spacing["3xl"] + tokens.spacing.lg}
-        height={tokens.spacing.xl}
-        radius={tokens.radius.control}
-      />
-      <View style={styles.facts}>
-        {[0, 1, 2].map((index) => (
-          <View key={index} style={styles.fact}>
-            <SkeletonText role={caption} width="40%" />
-            <SkeletonText role={label} width="70%" />
-          </View>
-        ))}
-      </View>
-    </SkeletonRegion>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     frame: {
       flex: 1,
     },
-    skeleton: {
-      gap: tokens.spacing.md,
-    },
     chipRow: {
       flexDirection: "row",
     },
-    // Due, Points and From, a third of the row each; For has its own line.
-    facts: {
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-    },
-    fact: {
-      flex: 1,
-      gap: tokens.spacing.xs,
-    },
+    // For, on a line of its own under the facts row (`TaskFacts`).
     forFact: {
       gap: tokens.spacing.xs,
-    },
-    factLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    factValue: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
     description: {
       ...typeRole(tokens.typography.role.body),

@@ -1,6 +1,7 @@
 import {
   escapeFilterValue,
   escapeLikePattern,
+  fetchAllById,
   fetchAllPages,
   omitColumns,
   type PagedQueryResult,
@@ -176,5 +177,35 @@ describe('fetchAllPages', () => {
       expect(result).toHaveLength(50);
       expect(ranges).toEqual([[0, 49]]);
     });
+  });
+});
+
+describe('fetchAllById', () => {
+  const byId = (...ids: string[]) => ids.map((id) => ({ id }));
+
+  it('asks for the rows after the last id, until a page comes back empty', async () => {
+    const pages: PagedQueryResult<{ id: string }>[] = [
+      { data: byId('a', 'b'), error: null },
+      // A short page is a server cap, not the end.
+      { data: byId('c'), error: null },
+      { data: [], error: null },
+    ];
+    const afters: (string | null)[] = [];
+    const result = await fetchAllById(async (after) => {
+      afters.push(after);
+      return pages.shift()!;
+    });
+
+    expect(result.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+    expect(afters).toEqual([null, 'b', 'c']);
+  });
+
+  it('throws a failed page rather than returning part of the rows', async () => {
+    await expect(
+      fetchAllById(async () => ({
+        data: null,
+        error: { message: 'boom' },
+      })),
+    ).rejects.toMatchObject({ name: 'SupabaseQueryError' });
   });
 });

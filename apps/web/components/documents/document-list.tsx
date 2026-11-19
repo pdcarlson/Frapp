@@ -12,7 +12,6 @@ import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { DocumentFilterMenu } from "@/components/documents/document-filters";
 import {
-  DOCUMENT_CAP_NOTICE,
   NO_DOCUMENT_FILTERS,
   type DocumentFilters,
   type DocumentSort,
@@ -38,7 +37,6 @@ export function DocumentList({
   loadError,
   visible,
   total,
-  truncated,
   filtering,
   activeFolder,
   search,
@@ -74,8 +72,6 @@ export function DocumentList({
   visible: LibraryDocument<ChapterDocument>[];
   /** Documents in the open folder before search and filters, for "4 of 10". */
   total: number;
-  /** The list response hit PostgREST's row cap, so older files may be missing. */
-  truncated: boolean;
   /** A search or filter is narrowing the list. */
   filtering: boolean;
   activeFolder: string | null;
@@ -227,11 +223,6 @@ export function DocumentList({
           >
             Try again
           </button>
-        </p>
-      ) : null}
-      {truncated && (listState === "ready" || listState === "empty") ? (
-        <p className="pt-2 text-caption text-muted-foreground" role="status">
-          {DOCUMENT_CAP_NOTICE}
         </p>
       ) : null}
       <div className="pt-2">

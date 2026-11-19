@@ -371,7 +371,13 @@ export type TaskMenuForTask = (
  * edge, so it goes outside the screen's scroll (beside `ScreenShell`, as the
  * board places its own), or it would sit against the scrolling content.
  */
-export function useCalendarTaskMenu(): {
+export function useCalendarTaskMenu({
+  aboveCreate = false,
+}: {
+  /** The screen draws a floating + (the Calendar's New event, #5570), so
+   * the bar sits over it rather than on it (`UndoBar`'s `aboveCreate`). */
+  aboveCreate?: boolean;
+} = {}): {
   menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
   menuForTask: TaskMenuForTask;
   host: ReactNode;
@@ -400,6 +406,7 @@ export function useCalendarTaskMenu(): {
         key={toggles.undo.key}
         message={toggles.undo.message}
         onUndo={() => void toggles.takeBack(toggles.undo!.id)}
+        aboveCreate={aboveCreate}
       />
     ) : null,
     undoKey: toggles.undo?.key ?? null,

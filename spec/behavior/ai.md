@@ -282,7 +282,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   On web the top bar's find field, which reads "Search or ask Frapp", asks from any page and opens the conversation as a dialog where Find opens (changed in #4904 by pdcarlson, 2026-11-13, Paul's pick;
   until then a button in the chat composer opened it over the thread;
   [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar).
-  Changed in #5476 by pdcarlson, 2026-11-18 (Paul's pick, after Shawn and he didn't want Ask in the search bar): on web the field only finds, and a floating Ask bar with the crest opens Ask, as on the phone: at the bottom of every tool page, or at the foot of the Channels column when chat is alone, never over a message box (in a channel, `@Frapp` asks). It opens the same dialog;
+  Changed in #5476 by pdcarlson, 2026-11-18 (Paul's pick, after Shawn and he didn't want Ask in the search bar): on web the field only finds, and a floating Ask bar with the crest opens Ask, as on the phone: at the bottom of every tool page, or at the foot of the Channels column when chat is alone, never over a message box (in a channel, `@Frapp` asks); from `lg` up it sits at the foot of the sidebar on every layout instead (changed in #5560 by pdcarlson, 2026-11-19). It opens the same dialog;
   on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field only asks, and the Search screen's last row opens it with the searched words (changed in #5139 by pdcarlson, 2026-11-16; from #4904 the field also listed places that matched what was typed;
   [`../ui/mobile/navigation.md`](../ui/mobile/navigation.md) § Global entries).
   With Ask off for the chapter, for a member without `ai:use`, or on a server with no AI, there is no entry anywhere.
@@ -823,7 +823,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A finished task links to Tasks and a finished event to that event; a finished points change links nowhere, because the phone has no points page.
 - **Every card has Edit beside Cancel and Confirm** (Paul, 2026-11-15, #5117).
   *(Changed in #5148 by pdcarlson, 2026-11-16: Cancel is now Dismiss in the card's ··· menu, and Confirm is named for the action; see How a card reads below.)*
-  An event's Edit opens the ordinary New event form filled in from the card, with More options open (who's coming by role, the end, notes, the repeat), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
+  An event's Edit opens the ordinary New event form filled in from the card, every row showing what it holds (who's coming by role, the end, notes, the repeat; More options until #5561), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
   The event is made either way, and the card says it was added.
   If the form's answer carries no event id, or the proposal can no longer record it, the proposal is taken down instead, so it is never drawn again with a Confirm that would make the event a second time.
   A task's Edit opens the task form on the phone (as Confirm on a task missing who or when already did) and turns the task's name and details into fields on web, where who and when are already fields on the card.

@@ -90,19 +90,21 @@ export function formatDueDate(
 }
 
 export type PointsChip =
-  /** Gold chip — points on offer, or earned but not yet confirmed. */
+  /** Points on offer, or earned but not yet confirmed: "+5 pts". */
   | { tone: "offered"; label: string }
-  /** Green chip with a check — the ledger has actually moved. */
+  /** The ledger has actually moved: "+5 pts ✓". */
   | { tone: "awarded"; label: string };
 
 /**
- * The trailing chip on a task row, or `null` for a task carrying no reward —
- * which is the drawn LATER row.
+ * A task's points as its row and the task screen say them, or `null` for a
+ * task carrying no reward (the drawn LATER row). The board draws both tones
+ * as muted text since #5570; the task screen's Points fact turns green once
+ * awarded.
  *
  * `points_awarded` is the column `confirm_task_completion` sets, so it is the
  * one honest signal that the ledger moved. A `COMPLETED` row still awaiting an
- * officer's confirm therefore keeps the gold chip: it has earned nothing yet,
- * and drawing the green check would claim an award that has not happened.
+ * officer's confirm therefore stays `offered`, with no check: it has earned
+ * nothing yet, and the check would claim an award that has not happened.
  * Canvas draws no such state — see the TODO-DESIGN in `task-row.tsx`.
  */
 export function formatPointsChip(

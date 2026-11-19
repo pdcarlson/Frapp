@@ -26,7 +26,6 @@ import {
 import {
   DELETE_DOCUMENT_BODY,
   DELETE_DOCUMENT_LABEL,
-  DOCUMENT_CAP_NOTICE,
   SORT_OPTIONS,
   deleteDocumentTitle,
   isActiveDateFilter,
@@ -339,7 +338,6 @@ export default function DocumentsScreen() {
     filters: applied,
     semesterKnown,
     filtering,
-    truncated,
   } = useDocumentLibrary({
     documents,
     folder,
@@ -1019,10 +1017,6 @@ export default function DocumentsScreen() {
         <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
           {deleteFailed}
         </Text>
-      ) : null}
-      {truncated &&
-      !(documentsQuery.isError && documentsQuery.data === undefined) ? (
-        <InlineNote>{DOCUMENT_CAP_NOTICE}</InlineNote>
       ) : null}
 
       {showCards &&

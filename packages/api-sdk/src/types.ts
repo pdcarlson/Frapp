@@ -4246,6 +4246,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder) */
+        post: operations["ChapterDocumentController_move_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/types": {
         parameters: {
             query?: never;
@@ -4420,7 +4437,8 @@ export interface paths {
         delete: operations["ChapterDocumentController_delete_v1"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename a document or move it to another folder (not a copy from the Google Drive folder) */
+        patch: operations["ChapterDocumentController_update_v1"];
         trace?: never;
     };
     "/v1/documents/{id}/access": {
@@ -10370,6 +10388,11 @@ export interface components {
             /** @description One result per upload, in the order sent */
             results: components["schemas"]["DocumentConfirmResultDto"][];
         };
+        MoveDocumentsDto: {
+            document_ids: string[];
+            /** @description Folder name to move them into; null for no folder. */
+            folder: string | null;
+        };
         DocumentTypeDto: {
             id: string;
             chapter_id: string;
@@ -10433,6 +10456,12 @@ export interface components {
             sort_order?: number;
             /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. Left out, it stays as it is; null opens it to everyone. */
             who_can_see?: string[] | null;
+        };
+        UpdateDocumentDto: {
+            /** @description New title. Refused for a file added by its Google Drive link, which keeps Drive's name. */
+            title?: string;
+            /** @description Folder name to move it into; null for no folder. A name the chapter has no folder for makes one, as an upload does. */
+            folder?: string | null;
         };
         SetDocumentAccessDto: {
             /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
@@ -22308,6 +22337,38 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_move_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveDocumentsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_listTypes_v1: {
         parameters: {
             query?: never;
@@ -22795,6 +22856,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {

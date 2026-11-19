@@ -73,9 +73,14 @@ test("the sidebar fits a 1024×768 window with every row showing", async ({
   // last row, needs the permissions stub. Backwork needs both: its permission,
   // and its module, which a failed chapter read would switch off with every
   // other module row.
-  await expect(nav.getByRole("link", { name: "Chapter settings" })).toBeVisible();
+  await expect(
+    nav.getByRole("link", { name: "Chapter settings" }),
+  ).toBeVisible();
   await expect(nav.getByRole("link", { name: "Backwork" })).toBeVisible();
 
+  // This sessionless page has no Ask Frapp. A member with Ask gets the same
+  // nav region: the bar shares the collapse toggle's 34px row at the foot
+  // (#5560), so it costs no height. A second foot row would not fit here.
   const measured = await nav.evaluate((el) => ({
     scrollHeight: el.scrollHeight,
     clientHeight: el.clientHeight,

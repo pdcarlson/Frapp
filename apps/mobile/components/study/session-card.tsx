@@ -18,8 +18,8 @@ import { Chip } from "@/components/filter-chips";
  *
  * TODO-DESIGN: Canvas draws 52px/700; `display` is 32/700 and arithmetic on a
  * role token is banned by `foundations.md` §7, so the nearest role wins — the
- * ruling `components/tasks/points-summary-card.tsx` already made for the points
- * balance.
+ * ruling the task board's points card made for its balance (a card until
+ * #5570).
  *
  * `foundations.md` §7 reserves monospace for "the study timer" among other
  * fixed-width strings, but Canvas draws it in Figtree with

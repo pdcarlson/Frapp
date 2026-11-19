@@ -14300,6 +14300,56 @@
         ]
       }
     },
+    "/v1/documents/move": {
+      "post": {
+        "operationId": "ChapterDocumentController_move_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveDocumentsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterDocumentDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/types": {
       "get": {
         "operationId": "ChapterDocumentController_listTypes_v1",
@@ -15006,6 +15056,60 @@
           }
         ],
         "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "patch": {
+        "operationId": "ChapterDocumentController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename a document or move it to another folder (not a copy from the Google Drive folder)",
         "tags": [
           "Documents"
         ]
@@ -32686,6 +32790,28 @@
           "results"
         ]
       },
+      "MoveDocumentsDto": {
+        "type": "object",
+        "properties": {
+          "document_ids": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "folder": {
+            "type": "string",
+            "nullable": true,
+            "description": "Folder name to move them into; null for no folder.",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "document_ids",
+          "folder"
+        ]
+      },
       "DocumentTypeDto": {
         "type": "object",
         "properties": {
@@ -32902,6 +33028,22 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "UpdateDocumentDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "New title. Refused for a file added by its Google Drive link, which keeps Drive's name.",
+            "maxLength": 255
+          },
+          "folder": {
+            "type": "string",
+            "nullable": true,
+            "description": "Folder name to move it into; null for no folder. A name the chapter has no folder for makes one, as an upload does.",
+            "maxLength": 100
           }
         }
       },
