@@ -154,6 +154,28 @@ export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
+ * Paste: Lucide's `ClipboardPaste`, for the Paste that stands in where the
+ * system's own button isn't available (Android, iOS before 16, #5626).
+ */
+export function PasteGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M9 2h6a1 1 0 011 1v2a1 1 0 01-1 1H9a1 1 0 01-1-1V3a1 1 0 011-1z"
+        {...detail}
+      />
+      <Path
+        d="M8 4H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 001.8-1.1"
+        {...detail}
+      />
+      <Path d="M16 4h2a2 2 0 012 2v1.3" {...detail} />
+      <Path d="M11 14h10M17 18l4-4-4-4" {...detail} />
+    </Frame>
+  );
+}
+
+/**
  * A file that downloads when tapped: a backwork file Frapp found (#5209).
  * Web draws Lucide's `Download` there.
  */

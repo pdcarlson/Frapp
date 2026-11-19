@@ -7,6 +7,7 @@ import { AccessibilityInfo, Alert, BackHandler } from "react-native";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { ReduceMotion } from "react-native-reanimated";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,8 +160,11 @@ import {
   FrappClientProvider,
   pendingInviteTitle as offerTitle,
 } from "@repo/hooks";
-import { OTHER_ACCOUNT_ACTION, OTHER_ACCOUNT_PROMPT } from "@repo/validation";
-import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
+import {
+  INVITE_PASTE_COPY,
+  OTHER_ACCOUNT_ACTION,
+  OTHER_ACCOUNT_PROMPT,
+} from "@repo/validation";
 import {
   consumeRememberedInviteToken,
   peekRememberedInviteThen,
@@ -169,10 +173,7 @@ import {
 } from "@/lib/onboarding/invite-token";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import { JoinWithInvite } from "@/components/onboarding/join-with-invite";
-import JoinChapter, {
-  JOIN_CHOICE_TITLE,
-  JOIN_INVITE_TITLE,
-} from "@/app/(auth)/join";
+import JoinChapter, { JOIN_CHOICE_TITLE } from "@/app/(auth)/join";
 
 type Node = ReactTestRenderer["root"];
 type AlertButton = { text: string; style?: string; onPress?: () => void };
@@ -265,24 +266,24 @@ function openAccount(root: Node): void {
   });
 }
 
-/** Answers the question with "I have an invite". */
-function openInvite(root: Node): void {
-  act(() => {
-    control(root, "I have an invite")?.props.onPress();
-  });
+/**
+ * An invite as the API mints them (a UUID), numbered so each spec's is its
+ * own. Paste takes nothing else (`pastedInviteToken`, #5626).
+ */
+function inviteId(n: number): string {
+  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 }
 
-/** Types into the invite field. */
-function typeToken(root: Node, value: string): void {
-  act(() => {
-    root.findByType("TextInput" as never).props.onChangeText(value);
-  });
-}
-
-/** The field's Continue: on to the confirm step. */
-function continueToConfirm(root: Node): void {
-  act(() => {
-    control(root, "Continue")?.props.onPress();
+/**
+ * Puts `text` on the clipboard and taps the question's Paste (#5626). The
+ * spec's Paste is Frapp's own button, which reads the clipboard on the tap:
+ * the mocked `expo-clipboard` has no system button.
+ */
+async function pasteInvite(root: Node, text: string): Promise<void> {
+  vi.mocked(Clipboard.getStringAsync).mockResolvedValueOnce(text);
+  await act(async () => {
+    control(root, "Paste")?.props.onPress();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -373,13 +374,8 @@ describe("join screen — account deletion (5.1.1(v))", () => {
       "Signed in as brother@westfield.edu",
     );
 
-    // Still one tap away from the invite step.
-    openAccount(tree.root);
-    openInvite(tree.root);
-    openAccount(tree.root);
-    expect(control(tree.root, "Delete account")).toBeDefined();
     // And the screen still does its own job.
-    expect(control(tree.root, "Continue")).toBeDefined();
+    expect(control(tree.root, "Paste")).toBeDefined();
   });
 
   it("confirms before deleting, and does not delete on cancel", () => {
@@ -471,8 +467,8 @@ describe("join screen — account deletion (5.1.1(v))", () => {
       "Deleting account",
       "Sign out",
       "Account",
-      "I have an invite",
-      "starting our chapter",
+      "Paste",
+      INVITE_PASTE_COPY.startingAction,
     ]) {
       expect(control(tree.root, label)?.props.disabled).toBe(true);
     }
@@ -480,10 +476,8 @@ describe("join screen — account deletion (5.1.1(v))", () => {
       .findAllByType("Pressable" as never, { deep: true })
       .find((p) => p.props.accessibilityLabel === "Close account menu");
     expect(backdrop?.props.disabled).toBe(true);
-    // The step button is disabled too, but keeps its label: its spinner means
-    // "a join is running", and what is running is the deletion.
-    openInvite(tree.root);
-    expect(control(tree.root, "Continue")?.props.disabled).toBe(true);
+    // Paste keeps its label: a spinner would mean "a join is running", and
+    // what is running is the deletion.
     expect(
       tree.root.findAllByType("ActivityIndicator" as never, { deep: true }),
     ).toHaveLength(0);
@@ -508,7 +502,7 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     for (const label of [
       "Deleting account",
       "Sign out",
-      "starting our chapter",
+      INVITE_PASTE_COPY.startingAction,
     ]) {
       expect(control(tree.root, label)?.props.disabled).toBe(true);
     }
@@ -613,13 +607,15 @@ describe("join screen — the question (#3350)", () => {
     consumeRememberedInviteToken();
   });
 
-  it("asks how the member is getting in, with Delete account tucked away and Sign out on its face", () => {
+  it("asks whether they're joining, with Paste, the founder's line, Delete account tucked away and Sign out on its face", () => {
     const tree = render();
     const text = allText(tree.root);
 
     expect(text).toContain(JOIN_CHOICE_TITLE);
-    expect(control(tree.root, "I have an invite")).toBeDefined();
-    expect(control(tree.root, "starting our chapter")).toBeDefined();
+    expect(text).toContain(INVITE_PASTE_COPY.lede);
+    expect(control(tree.root, "Paste")).toBeDefined();
+    expect(control(tree.root, INVITE_PASTE_COPY.startingAction)).toBeDefined();
+    // Nobody types an invite, so there is no field (#5626).
     expect(hasField(tree.root)).toBe(false);
     // The destructive control no longer leads the first screen; Sign out
     // sits on its face, beside the account it would sign out of (#3782).
@@ -627,80 +623,61 @@ describe("join screen — the question (#3350)", () => {
     expect(control(tree.root, "Sign out")).toBeDefined();
   });
 
-  it("opens the invite step, with the Hide My Email hint, and comes back", () => {
+  it("opens the card on a pasted invite link, reading the clipboard only on the tap (#5626)", async () => {
     const tree = render();
-    openInvite(tree.root);
+    expect(Clipboard.getStringAsync).not.toHaveBeenCalled();
+    const token = inviteId(1);
 
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
-    expect(hasField(tree.root)).toBe(true);
-    expect(allText(tree.root)).toContain(OAUTH_MEMBERSHIP_HINT);
-
-    act(() => {
-      labelled(tree.root, "Back to the choices")?.props.onPress();
-    });
-    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
-    expect(hasField(tree.root)).toBe(false);
-  });
-
-  it("shows the invite's card before joining with it (#3352, #5625)", async () => {
-    const tree = render();
-    openInvite(tree.root);
-    typeToken(tree.root, "https://app.frapp.live/join?token=invite-token-2a9f");
-
-    continueToConfirm(tree.root);
+    await pasteInvite(tree.root, `https://app.frapp.live/join?token=${token}`);
     await settle();
-    // Continue only moves on; nothing is used up yet.
+    // The paste only opens the card; nothing is used up yet.
     expect(redeemMutateAsync).not.toHaveBeenCalled();
-    // The card, on the invite read out of the pasted link.
-    expect(cardToken(tree.root)).toBe("invite-token-2a9f");
-    expect(hasField(tree.root)).toBe(false);
-    expect(allText(tree.root)).toContain("Chapter invite-token-2a9f");
+    expect(cardToken(tree.root)).toBe(token);
+    // Remembered like a link's, so a sign-in or a relaunch keeps it.
+    expect(peekRememberedInviteToken()).toBe(token);
+    expect(allText(tree.root)).toContain(`Chapter ${token}`);
 
     await pressJoin(tree.root);
     expect(redeemMutateAsync).toHaveBeenCalledWith({
-      token: "invite-token-2a9f",
+      token,
       accept_terms_privacy: true,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });
 
-  it("won't continue without an invite in the field", () => {
+  it("says in place of the lede when the clipboard holds no invite, and moves nothing", async () => {
     const tree = render();
-    openInvite(tree.root);
+    await pasteInvite(tree.root, "see you at chapter tonight");
+    expect(card(tree.root)).toBeUndefined();
+    let text = allText(tree.root);
+    expect(text).toContain(INVITE_PASTE_COPY.notInvite);
+    expect(text).not.toContain(INVITE_PASTE_COPY.lede);
 
-    continueToConfirm(tree.root);
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
-    expect(allText(tree.root)).toContain("Paste the invite your officer sent");
+    await pasteInvite(tree.root, "");
+    text = allText(tree.root);
+    expect(text).toContain(INVITE_PASTE_COPY.empty);
+    expect(text).not.toContain(INVITE_PASTE_COPY.notInvite);
 
-    // The keyboard's own key does the same.
-    act(() => {
-      tree.root.findByType("TextInput" as never).props.onSubmitEditing();
-    });
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    // A real one after all opens the card.
+    await pasteInvite(tree.root, inviteId(2));
+    expect(cardToken(tree.root)).toBe(inviteId(2));
   });
 
-  it("steps back from the card to the field with the invite kept, then to the question", () => {
+  it("steps back from the card to the question, forgetting the pasted invite", async () => {
     const tree = render();
-    openInvite(tree.root);
-    typeToken(tree.root, "invite-token-3");
-    continueToConfirm(tree.root);
+    await pasteInvite(tree.root, inviteId(3));
+    expect(cardToken(tree.root)).toBe(inviteId(3));
 
     act(() => {
-      labelled(tree.root, "Back to the invite")?.props.onPress();
+      labelled(tree.root, "Back to the choices")?.props.onPress();
     });
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
-    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
-      "invite-token-3",
-    );
+    expect(card(tree.root)).toBeUndefined();
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(peekRememberedInviteToken()).toBeNull();
 
-    // Android's back button walks the same steps.
-    continueToConfirm(tree.root);
+    // Android's back button does the same.
+    await pasteInvite(tree.root, inviteId(3));
     let handled = false;
-    act(() => {
-      handled = latestBackHandler()();
-    });
-    expect(handled).toBe(true);
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
     act(() => {
       handled = latestBackHandler()();
     });
@@ -711,7 +688,7 @@ describe("join screen — the question (#3350)", () => {
   it("sends a founder to chapter setup", () => {
     const tree = render();
     act(() => {
-      control(tree.root, "starting our chapter")?.props.onPress();
+      control(tree.root, INVITE_PASTE_COPY.startingAction)?.props.onPress();
     });
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/create-chapter");
   });
@@ -724,19 +701,17 @@ describe("join screen — the question (#3350)", () => {
     await settle();
     expect(control(tree.root, "Join chapter")).toBeDefined();
 
-    // Back shows the field the link filled, keyboard down: the next step is
-    // Continue, not typing.
+    // Back declines it: the question, with nothing remembered.
     act(() => {
-      labelled(tree.root, "Back to the invite")?.props.onPress();
+      labelled(tree.root, "Back to the choices")?.props.onPress();
     });
-    const field = tree.root.findByType("TextInput" as never);
-    expect(field.props.value).toBe("invite-token-9");
-    expect(field.props.autoFocus).toBe(false);
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(peekRememberedInviteToken()).toBeNull();
   });
 
-  it("steps back inside the screen on Android: the menu first, then the invite step", () => {
+  it("steps back inside the screen on Android: the menu first, then the card", async () => {
     const tree = render();
-    openInvite(tree.root);
+    await pasteInvite(tree.root, inviteId(4));
     openAccount(tree.root);
     expect(control(tree.root, "Delete account")).toBeDefined();
 
@@ -746,7 +721,7 @@ describe("join screen — the question (#3350)", () => {
     });
     expect(handled).toBe(true);
     expect(control(tree.root, "Delete account")).toBeUndefined();
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(cardToken(tree.root)).toBe(inviteId(4));
 
     act(() => {
       handled = latestBackHandler()();
@@ -776,7 +751,7 @@ describe("join screen — the question (#3350)", () => {
     await pressJoin(tree.root);
     expect(cardToken(tree.root)).toBe("invite-token-10");
 
-    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+    expect(labelled(tree.root, "Back to the choices")?.props.disabled).toBe(
       true,
     );
 
@@ -847,8 +822,8 @@ describe("join screen — the question (#3350)", () => {
   });
 
   it("leaves Android back alone while another screen covers it", () => {
-    // An opened link puts /join on its invite step; "I'm starting our
-    // chapter" can't be reached from there, but any pushed screen blurs it.
+    // An opened link puts /join on its card; "Create a chapter" can't be
+    // reached from there, but any pushed screen blurs it.
     params.mockReturnValue({ token: "invite-token-12" });
     const tree = render();
     expect(liveBackHandlers()).toHaveLength(1);
@@ -869,7 +844,7 @@ describe("join screen — the question (#3350)", () => {
       handled = live[live.length - 1]();
     });
     expect(handled).toBe(true);
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
 
     // The same for the Account menu.
     openAccount(tree.root);
@@ -908,9 +883,6 @@ describe("join screen — the question (#3350)", () => {
     params.mockReturnValue({ token: "invite-token-14" });
     const first = render();
     act(() => {
-      labelled(first.root, "Back to the invite")?.props.onPress();
-    });
-    act(() => {
       labelled(first.root, "Back to the choices")?.props.onPress();
     });
     act(() => {
@@ -935,9 +907,6 @@ describe("join screen — the question (#3350)", () => {
     // card, until the member backs out of it.
     const second = render();
     expect(cardToken(second.root)).toBe("invite-token-15");
-    act(() => {
-      labelled(second.root, "Back to the invite")?.props.onPress();
-    });
     act(() => {
       labelled(second.root, "Back to the choices")?.props.onPress();
     });
@@ -1030,8 +999,8 @@ describe("join screen — the invite card (#3352, #5625)", () => {
       signed_in: true,
     });
     expect(recordInviteStep).toHaveBeenCalledWith({ step: "new-link-asked" });
-    // Back still leads to the field, to paste another.
-    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+    // Back still leads to the question, to paste another.
+    expect(labelled(tree.root, "Back to the choices")?.props.disabled).toBe(
       false,
     );
   });
@@ -1075,17 +1044,16 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     await settle();
 
     expect(allText(tree.root)).toContain("This invite link doesn't work");
-    act(() => {
-      tree.root
-        .findAllByType("TextInput" as never, { deep: true })[0]
-        .props.onChangeText("https://app.frapp.live/join?token=good-token-1");
-    });
-    act(() => {
-      control(tree.root, "Open invite")?.props.onPress();
-    });
+    // Paste, as on the question (#5626): something else says so in place.
+    await pasteInvite(tree.root, "1Z999AA10123456784");
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.notInvite);
+    expect(cardToken(tree.root)).toBe("not-an-invite");
+
+    const good = inviteId(1);
+    await pasteInvite(tree.root, `https://app.frapp.live/join?token=${good}`);
     await settle();
-    expect(cardToken(tree.root)).toBe("good-token-1");
-    expect(allText(tree.root)).toContain("Chapter good-token-1");
+    expect(cardToken(tree.root)).toBe(good);
+    expect(allText(tree.root)).toContain(`Chapter ${good}`);
   });
 
   it("offers the chapter instead of a Join to someone already in it", async () => {
@@ -1116,10 +1084,10 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
-  it("joins the link just opened, not the invite the field already held", async () => {
+  it("joins the link just opened, not the invite the card already held", async () => {
     const tree = render();
-    openInvite(tree.root);
-    typeToken(tree.root, "old-invite-24");
+    await pasteInvite(tree.root, inviteId(24));
+    expect(cardToken(tree.root)).toBe(inviteId(24));
 
     params.mockReturnValue({ token: "new-invite-24" });
     rerender(tree);
@@ -1132,14 +1100,13 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     });
   });
 
-  it("reads the invite only on the card, not while typing", async () => {
+  it("reads the invite only on the card, not for a paste that held none", async () => {
     const tree = render();
-    openInvite(tree.root);
-    typeToken(tree.root, "invite-token-25");
+    await pasteInvite(tree.root, "invite-token-25");
     await settle();
     expect(invitePost).not.toHaveBeenCalled();
 
-    continueToConfirm(tree.root);
+    await pasteInvite(tree.root, inviteId(25));
     await settle();
     expect(invitePost).toHaveBeenCalledTimes(1);
   });
@@ -1194,16 +1161,14 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     params.mockReturnValue({ token: "invite-token-31" });
     const tree = render();
     act(() => {
-      labelled(tree.root, "Back to the invite")?.props.onPress();
+      labelled(tree.root, "Back to the choices")?.props.onPress();
     });
-    typeToken(tree.root, "invite-token-32");
+    await pasteInvite(tree.root, inviteId(32));
 
     // Anything that re-runs the link check, with the launch param still set.
     vi.mocked(Linking.useURL).mockReturnValue("frapp://other");
     rerender(tree);
-    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
-      "invite-token-32",
-    );
+    expect(cardToken(tree.root)).toBe(inviteId(32));
   });
 
   it("keeps a failed join's error when the screen's only invite came from a link", async () => {
@@ -1267,15 +1232,14 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     expect(cardToken(tree.root)).toBe("invite-token-39");
   });
 
-  it("leaves the member on the field after a deletion fails", () => {
+  it("leaves the member on the question after a deletion fails", () => {
     vi.mocked(Linking.useURL).mockReturnValue(
       "frapp://join?token=link-token-43",
     );
     const tree = render();
     act(() => {
-      labelled(tree.root, "Back to the invite")?.props.onPress();
+      labelled(tree.root, "Back to the choices")?.props.onPress();
     });
-    typeToken(tree.root, "invite-token-44");
 
     isPending = true;
     rerender(tree);
@@ -1283,9 +1247,7 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     rerender(tree);
 
     expect(card(tree.root)).toBeUndefined();
-    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
-      "invite-token-44",
-    );
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
   });
 });
 
@@ -1394,6 +1356,26 @@ describe("join screen — signed out with an invite (#5625)", () => {
     });
   });
 
+  it("lets the member off a link that isn't an invite, back to sign-in, forgetting it", async () => {
+    // Pasted on sign-in's strip (#5626): remembered, so sign-in sends every
+    // return here. Signed out the card has no Back, so this line is the way.
+    detailsAnswer = () => ({
+      error: { statusCode: 404, message: "Invite not found" },
+    });
+    act(() => rememberInviteToken(inviteId(60)));
+    const tree = render();
+    await settle();
+    expect(allText(tree.root)).toContain("This invite link doesn't work");
+
+    act(() => {
+      labelled(tree.root, "Have a password? Sign in")?.props.onPress();
+    });
+    expect(peekRememberedInviteToken()).toBeNull();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith(
+      "/(auth)/sign-in",
+    );
+  });
+
   it("sends a visit with no invite to sign-in", () => {
     const tree = render();
     const redirect = tree.root.findAllByType("Redirect" as never)[0];
@@ -1485,7 +1467,7 @@ describe("join screen — invites for this account (#3782)", () => {
     consumeRememberedInviteToken();
   });
 
-  it("offers each invite above the two answers, with its school, sender and role", async () => {
+  it("offers each invite above Paste, with its school, sender and role", async () => {
     const tree = render();
     await settle();
 
@@ -1496,11 +1478,11 @@ describe("join screen — invites for this account (#3782)", () => {
     expect(text).toContain(
       "Rensselaer Polytechnic Institute · from Paul Carlson · Member",
     );
-    // Above the answers, not instead of them.
+    // Above Paste, not instead of it, and the lede says Paste is for another.
     const order = text.indexOf(offerTitle("FIJI Tau Nu"));
     expect(order).toBeGreaterThan(-1);
-    expect(order).toBeLessThan(text.indexOf("I have an invite"));
-    expect(control(tree.root, "I have an invite")).toBeDefined();
+    expect(order).toBeLessThan(text.indexOf(INVITE_PASTE_COPY.ledeWithOffers));
+    expect(control(tree.root, "Paste")).toBeDefined();
     expect(markText(tree.root)).toBe("FIJI");
   });
 
@@ -1517,9 +1499,6 @@ describe("join screen — invites for this account (#3782)", () => {
     await settle();
     expect(cardToken(tree.root)).toBe("invite-token-30");
 
-    act(() => {
-      labelled(tree.root, "Back to the invite")?.props.onPress();
-    });
     act(() => {
       labelled(tree.root, "Back to the choices")?.props.onPress();
     });
@@ -1582,7 +1561,7 @@ describe("join screen — invites for this account (#3782)", () => {
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });
 
-  it("steps back from an offer to the question, not to a field it never filled", async () => {
+  it("steps back from an offer to the question, with the offer still there", async () => {
     const tree = render();
     await settle();
     act(() => {
@@ -1594,32 +1573,41 @@ describe("join screen — invites for this account (#3782)", () => {
     });
     expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
     expect(allText(tree.root)).toContain(offerTitle("FIJI Tau Nu"));
-
-    openInvite(tree.root);
-    expect(tree.root.findByType("TextInput" as never).props.value).toBe("");
+    // An offer was never remembered, so backing out leaves nothing behind.
+    expect(peekRememberedInviteToken()).toBeNull();
   });
 
-  it("puts back an invite the member had pasted when they back out of an offer", async () => {
+  it("keeps the offers after a pasted invite is declined with Back", async () => {
     const tree = render();
     await settle();
-    openInvite(tree.root);
-    typeToken(tree.root, "pasted-token-50");
+    await pasteInvite(tree.root, inviteId(70));
+    await settle();
+    expect(cardToken(tree.root)).toBe(inviteId(70));
+
     act(() => {
       labelled(tree.root, "Back to the choices")?.props.onPress();
     });
+    await settle();
+    expect(peekRememberedInviteToken()).toBeNull();
+    expect(allText(tree.root)).toContain(offerTitle("FIJI Tau Nu"));
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.ledeWithOffers);
+  });
+
+  it("drops a paste's message once the member opens an offer instead", async () => {
+    const tree = render();
+    await settle();
+    await pasteInvite(tree.root, "see you at chapter tonight");
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.notInvite);
 
     act(() => {
       control(tree.root, offerTitle("FIJI Tau Nu"))?.props.onPress();
     });
-    expect(cardToken(tree.root)).toBe(FIJI_OFFER.token);
+    await settle();
     act(() => {
       labelled(tree.root, "Back to the choices")?.props.onPress();
     });
-
-    openInvite(tree.root);
-    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
-      "pasted-token-50",
-    );
+    expect(allText(tree.root)).not.toContain(INVITE_PASTE_COPY.notInvite);
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.ledeWithOffers);
   });
 
   /** Whether the card's Join is on screen. */
@@ -1659,18 +1647,13 @@ describe("join screen — signed in as (#3782)", () => {
     expect(control(root, "Delete account")).toBeUndefined();
   }
 
-  it("shows the account and Sign out on the question, the field and the card", () => {
+  it("shows the account and Sign out on the question and the card", async () => {
     const tree = render();
     expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
     expectAccountLine(tree.root);
 
-    openInvite(tree.root);
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
-    expectAccountLine(tree.root);
-
-    typeToken(tree.root, "invite-token-40");
-    continueToConfirm(tree.root);
-    expect(cardToken(tree.root)).toBe("invite-token-40");
+    await pasteInvite(tree.root, inviteId(40));
+    expect(cardToken(tree.root)).toBe(inviteId(40));
     expectAccountLine(tree.root);
   });
 
@@ -1704,9 +1687,7 @@ describe("join screen — signed in as (#3782)", () => {
     // A sign-out that hasn't come back yet.
     signOut.mockReturnValueOnce(new Promise<void>(() => {}));
     const tree = render();
-    openInvite(tree.root);
-    typeToken(tree.root, "invite-token-42");
-    continueToConfirm(tree.root);
+    await pasteInvite(tree.root, inviteId(42));
     await settle();
     expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
 
@@ -1716,7 +1697,7 @@ describe("join screen — signed in as (#3782)", () => {
     expect(signOut).toHaveBeenCalledTimes(1);
     expect(control(tree.root, "Account")?.props.disabled).toBe(true);
     expect(control(tree.root, "Sign out")?.props.disabled).toBe(true);
-    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+    expect(labelled(tree.root, "Back to the choices")?.props.disabled).toBe(
       true,
     );
   });
@@ -1754,19 +1735,15 @@ describe("join screen — polish", () => {
     expect(labelled(tree.root, "Back to the choices")).toBeUndefined();
   });
 
-  it("steps back with a house-gold ‹ Back row, under the label each step had", () => {
+  it("steps back from the card with a house-gold ‹ Back row", async () => {
     const tree = render();
-    openInvite(tree.root);
+    await pasteInvite(tree.root, inviteId(9));
 
     const back = labelled(tree.root, "Back to the choices");
     const text = back?.findByType("Text" as never);
     expect(text?.props.children).toBe("Back");
     // `gold.askText`: `(auth)` has no chapter accent to follow.
     expect(backArrowColor(back!)).toBe("#F4CB63");
-
-    typeToken(tree.root, "invite-token-9");
-    continueToConfirm(tree.root);
-    expect(labelled(tree.root, "Back to the invite")).toBeDefined();
   });
 
   it("lifts the Account menu's row a rung while held, and dims it to 0.5 while disabled", () => {
@@ -1803,19 +1780,14 @@ describe("join screen — polish", () => {
     ];
 
     expect(entering()).toEqual(still);
-    openInvite(tree.root);
-    expect(entering()).toEqual(still);
-    typeToken(tree.root, "invite-token-3");
-    continueToConfirm(tree.root);
+    await pasteInvite(tree.root, inviteId(3));
     await settle();
     expect(entering()).toEqual(still);
   });
 
   it("taps once when the join lands, and not when it fails", async () => {
     const tree = render();
-    openInvite(tree.root);
-    typeToken(tree.root, "invite-token-7");
-    continueToConfirm(tree.root);
+    await pasteInvite(tree.root, inviteId(7));
     await settle();
 
     redeemMutateAsync.mockRejectedValueOnce(new Error("offline"));
@@ -1853,16 +1825,16 @@ describe("join screen — Already in a chapter? (replaced New account created)",
     consumeRememberedInviteToken();
   });
 
-  it("puts one quiet line under the two answers, and no card above them", async () => {
+  it("puts one quiet line under the lede, and no card above it", async () => {
     const tree = render();
     await settle();
     const text = allText(tree.root);
     expect(line(tree.root)).toBeDefined();
     expect(text).not.toContain("New account created");
     expect(text).not.toContain("Continue with the new account");
-    // Under the answers, not competing with the question.
+    // Under the lede, not competing with the question.
     expect(text.indexOf(OTHER_ACCOUNT_PROMPT)).toBeGreaterThan(
-      text.indexOf("I'm starting our chapter"),
+      text.indexOf(INVITE_PASTE_COPY.lede),
     );
   });
 

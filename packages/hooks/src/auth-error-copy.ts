@@ -306,8 +306,7 @@ export function authFallbackCopy(
 
 /**
  * Shown beside every Continue with Apple button (web's sign-in and sign-up,
- * the phone's s01), and under the invite field on the phone's s02 invite step
- * (`spec/ui/design-system/writing.md`, "Mobile s02 invite step"): an invited
+ * the phone's s01): an invited
  * member who signs in with Apple's Hide My Email can still redeem an invite
  * sent to a university address, because redeem binds the signed-in user, not
  * the invite's email (`spec/behavior/onboarding.md`). The store's App Review

@@ -21,6 +21,7 @@ import {
   chapterInitials,
   extractInviteToken,
   extractInviteTokenFromQuery,
+  INVITE_PASTE_COPY,
 } from "@repo/validation";
 import { JoinWithInvite } from "@/components/join/join-with-invite";
 import { TermsLine } from "@/components/join/terms-line";
@@ -566,12 +567,12 @@ function JoinWithoutInvite() {
 /** Shared with the Suspense fallback, so the column does not grow on hydration. */
 const JOIN_FOOTER = (
   <p>
-    Starting a chapter?{" "}
+    {INVITE_PASTE_COPY.startingPrompt}{" "}
     <Link
       href={CREATE_CHAPTER_PATH}
       className="font-semibold text-accent-text hover:underline"
     >
-      Create a chapter
+      {INVITE_PASTE_COPY.startingAction}
     </Link>
   </p>
 );
