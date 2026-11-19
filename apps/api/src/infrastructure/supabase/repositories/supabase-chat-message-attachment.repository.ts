@@ -117,7 +117,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
         chat_messages: { sender_id: string | null };
       };
       return {
-        ...stripAttachmentRow(rest as unknown as ChatMessageAttachment),
+        ...stripAttachmentRow(rest),
         sender_id: message.sender_id,
       };
     });

@@ -548,7 +548,12 @@ export class ChatAttachmentService {
     const blocked = new Set(blockedUserIds);
     const visible = rows
       .filter((row) => !isFromBlockedSender(row.sender_id, blocked))
-      .map(({ sender_id: _sender, ...row }) => row);
+      // The sender only decides the mask; it is not part of the answer.
+      .map((row) => {
+        const { sender_id, ...attachment } = row;
+        void sender_id;
+        return attachment;
+      });
 
     const signed = await this.withSignedUrls(visible, {
       channelId,
