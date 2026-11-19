@@ -163,3 +163,32 @@
     animation: none;
   }
 }
+
+/*
+ * The setting a search opened (`lib/settings/use-setting-jump.ts`): a chapter
+ * accent tint and ring that hold for a moment and fade, the way Vercel's and
+ * GitHub's settings searches light the field they land on. Held without the
+ * fade under reduced motion.
+ */
+@keyframes setting-flash {
+  0%,
+  55% {
+    background-color: var(--accent-subtle);
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.setting-flash {
+  border-radius: 12px;
+  animation: setting-flash 2.6s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .setting-flash {
+    animation: none;
+    background-color: var(--accent-subtle);
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+}

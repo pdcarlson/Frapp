@@ -45,6 +45,7 @@ export * from "./rush-card";
 export * from "./scheduled-message-times";
 export * from "./search-analytics";
 export * from "./service-entry-card";
+export * from "./settings-search";
 export * from "./setup-checklist";
 export * from "./similar-tasks";
 export * from "./task-card";

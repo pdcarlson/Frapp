@@ -94,7 +94,7 @@ export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
 /** What a screen reader says the action does, beyond its label. */
 export const QUICK_ACTION_HINTS: Record<QuickActionKey, string> = {
   newMinutes: "Starts minutes for the meeting on now, or a new one.",
-  search: "Opens search for channels, members, messages and events.",
+  search: "Opens search for channels, settings, members, messages and events.",
   newEvent: "Opens the new event sheet.",
   newTask: "Opens the new task sheet.",
   invite: "Opens invites to email or share with new members.",

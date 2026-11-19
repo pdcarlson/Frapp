@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { StyleSheet, Text, View, type ScrollView } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useAiChapterSettings,
@@ -28,6 +28,12 @@ import { BACK_TO_YOU } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
+import {
+  SettingAnchor,
+  SettingJumpProvider,
+  useSettingJumpState,
+} from "@/components/settings/setting-anchor";
+import { useSettingsSearchField } from "@/components/settings/settings-search";
 import { Toggle } from "@/components/toggle";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
@@ -58,6 +64,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * fields) stay on web for now: they are setup an officer does once, at a desk.
  * Grouped rows with a chevron, as iOS Settings and Discord mobile's Server
  * Settings draw theirs.
+ *
+ * **Search settings** (2026-11-19) sits on top, as on web and in iOS
+ * Settings: it finds every setting the member can change, here or on
+ * Settings, and web-only ones open the dashboard
+ * (`components/settings/settings-search.tsx`). A `setting` param, from that
+ * search or from Search, lights its row (`SettingAnchor`).
  */
 export default function ChapterSettingsScreen() {
   const router = useRouter();
@@ -66,6 +78,13 @@ export default function ChapterSettingsScreen() {
   const styles = createStyles(tokens);
   const accentSheetRef = useRef<BottomSheetModal>(null);
   const chatBackgroundSheetRef = useRef<BottomSheetModal>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const { setting } = useLocalSearchParams<{ setting?: string }>();
+  const jump = useSettingJumpState(setting);
+  const search = useSettingsSearchField({
+    here: "/chapter-settings",
+    jumpHere: jump.jump,
+  });
 
   const permissions = usePermissionList();
   const access = chapterSettingsAccess(permissions);
@@ -114,140 +133,163 @@ export default function ChapterSettingsScreen() {
     : "Set by an officer with chapter settings access.";
 
   return (
-    <ScreenShell back={BACK_TO_YOU} title="Chapter settings">
-      {access.chapter ? (
-        <>
-          <SectionHeader>Chapter</SectionHeader>
-          <ListSection>
-            <ListRow
-              label="Chapter accent"
-              // An editor's row is the swatch and a chevron. Anyone else's
-              // can't open, so it says who can change it rather than leaving
-              // a dead row unexplained (design-system README §5).
-              description={readOnlyLine}
-              accessibilityHint={
-                canEditProfile
-                  ? "Opens the color picker for the chapter accent."
-                  : undefined
-              }
-              onPress={
-                canEditProfile
-                  ? () => accentSheetRef.current?.present()
-                  : undefined
-              }
-              trailing={
-                <View
-                  accessibilityLabel="Current chapter accent"
-                  style={[styles.swatch, { backgroundColor: accent }]}
-                />
-              }
-            />
-            <ListRow
-              label="Chat background"
-              value={
-                chapterBackground.data
-                  ? CHAT_BACKGROUND_LABELS[chapterBackground.data.background]
-                  : undefined
-              }
-              description={readOnlyLine}
-              accessibilityHint={
-                canEditProfile
-                  ? "Choose the background every channel shows unless it has its own."
-                  : undefined
-              }
-              onPress={
-                canEditProfile
-                  ? () => chatBackgroundSheetRef.current?.present()
-                  : undefined
-              }
-            />
-            {geofencesEnabled ? (
-              // Read-only here (the phone has no zone editor), so it says
-              // where zones are changed: the dashboard's Study zones tool.
-              <ListRow
-                label="Study zones"
-                description="Managed on the web dashboard."
-                value={
-                  zoneCount === null
-                    ? "—"
-                    : `${zoneCount} ${zoneCount === 1 ? "zone" : "zones"}`
-                }
-              />
-            ) : null}
-          </ListSection>
-        </>
-      ) : null}
-
-      {aiAvailable && aiSettings ? (
-        <>
-          <SectionHeader>{AI_SETTINGS_COPY.title}</SectionHeader>
-          <ListSection>
-            {AI_SWITCHES.map((entry) => {
-              const { checked, parentOff, waitsOnParent } = aiSwitchState(
-                entry,
-                aiSettings,
-              );
-              const failed = aiFailedKey === entry.key;
-              return (
-                <ListRow
-                  key={entry.key}
-                  label={entry.label}
-                  nested={entry.dependsOn !== undefined}
-                  muted={parentOff}
-                  description={
-                    failed
-                      ? `${AI_SETTINGS_COPY.saveFailed}. Try again.`
-                      : waitsOnParent
-                        ? `${entry.short} ${AI_SETTINGS_COPY.dependsOnAsk}`
-                        : entry.short
-                  }
-                  descriptionTone={failed ? "destructive" : "default"}
-                  trailing={
-                    <Toggle
-                      value={checked}
-                      disabled={
-                        !aiSettings.can_change ||
-                        // One save at a time: each answer replaces the whole
-                        // cached row, so two in flight could draw one wrong.
-                        updateAi.isPending ||
-                        // Waiting on Ask blocks turning it on, never off.
-                        waitsOnParent
+    <ScreenShell
+      back={BACK_TO_YOU}
+      title="Chapter settings"
+      scrollRef={scrollRef}
+      keyboardShouldPersistTaps="handled"
+    >
+      {search.field}
+      {search.searching ? search.results : null}
+      <SettingJumpProvider
+        anchor={search.searching ? null : jump.anchor}
+        serial={jump.serial}
+        scrollRef={scrollRef}
+      >
+        {search.searching ? null : (
+          <>
+            {access.chapter ? (
+              <>
+                <SectionHeader>Chapter</SectionHeader>
+                <ListSection>
+                  <SettingAnchor id="accent">
+                    <ListRow
+                      label="Chapter accent"
+                      // An editor's row is the swatch and a chevron. Anyone else's
+                      // can't open, so it says who can change it rather than leaving
+                      // a dead row unexplained (design-system README §5).
+                      description={readOnlyLine}
+                      accessibilityHint={
+                        canEditProfile
+                          ? "Opens the color picker for the chapter accent."
+                          : undefined
                       }
-                      onValueChange={(next) => {
-                        setAiFailedKey(null);
-                        updateAi.mutate(
-                          { [entry.key]: next },
-                          { onError: () => setAiFailedKey(entry.key) },
-                        );
-                      }}
-                      accessibilityLabel={entry.label}
+                      onPress={
+                        canEditProfile
+                          ? () => accentSheetRef.current?.present()
+                          : undefined
+                      }
+                      trailing={
+                        <View
+                          accessibilityLabel="Current chapter accent"
+                          style={[styles.swatch, { backgroundColor: accent }]}
+                        />
+                      }
                     />
-                  }
-                />
-              );
-            })}
-          </ListSection>
-          <Text style={styles.footnote}>
-            {aiSettings.can_change
-              ? AI_SETTINGS_COPY.phoneFootnote
-              : `${AI_SETTINGS_COPY.presidentOnly} ${AI_SETTINGS_COPY.phoneFootnote}`}
-          </Text>
-        </>
-      ) : null}
+                  </SettingAnchor>
+                  <SettingAnchor id="chat-background">
+                    <ListRow
+                      label="Chat background"
+                      value={
+                        chapterBackground.data
+                          ? CHAT_BACKGROUND_LABELS[
+                              chapterBackground.data.background
+                            ]
+                          : undefined
+                      }
+                      description={readOnlyLine}
+                      accessibilityHint={
+                        canEditProfile
+                          ? "Choose the background every channel shows unless it has its own."
+                          : undefined
+                      }
+                      onPress={
+                        canEditProfile
+                          ? () => chatBackgroundSheetRef.current?.present()
+                          : undefined
+                      }
+                    />
+                  </SettingAnchor>
+                  {geofencesEnabled ? (
+                    // Read-only here (the phone has no zone editor), so it says
+                    // where zones are changed: the dashboard's Study zones tool.
+                    <ListRow
+                      label="Study zones"
+                      description="Managed on the web dashboard."
+                      value={
+                        zoneCount === null
+                          ? "—"
+                          : `${zoneCount} ${zoneCount === 1 ? "zone" : "zones"}`
+                      }
+                    />
+                  ) : null}
+                </ListSection>
+              </>
+            ) : null}
 
-      {access.roles ? (
-        <>
-          <SectionHeader>People</SectionHeader>
-          <ListSection>
-            <ListRow
-              label="Roles"
-              value={roleCount === null ? null : String(roleCount)}
-              accessibilityHint="Opens the chapter's tiers and roles, and what each can do."
-              onPress={() => router.push("/chapter-roles")}
-            />
-          </ListSection>
-        </>
-      ) : null}
+            {aiAvailable && aiSettings ? (
+              <SettingAnchor id="ai">
+                <SectionHeader>{AI_SETTINGS_COPY.title}</SectionHeader>
+                <ListSection>
+                  {AI_SWITCHES.map((entry) => {
+                    const { checked, parentOff, waitsOnParent } = aiSwitchState(
+                      entry,
+                      aiSettings,
+                    );
+                    const failed = aiFailedKey === entry.key;
+                    return (
+                      <ListRow
+                        key={entry.key}
+                        label={entry.label}
+                        nested={entry.dependsOn !== undefined}
+                        muted={parentOff}
+                        description={
+                          failed
+                            ? `${AI_SETTINGS_COPY.saveFailed}. Try again.`
+                            : waitsOnParent
+                              ? `${entry.short} ${AI_SETTINGS_COPY.dependsOnAsk}`
+                              : entry.short
+                        }
+                        descriptionTone={failed ? "destructive" : "default"}
+                        trailing={
+                          <Toggle
+                            value={checked}
+                            disabled={
+                              !aiSettings.can_change ||
+                              // One save at a time: each answer replaces the whole
+                              // cached row, so two in flight could draw one wrong.
+                              updateAi.isPending ||
+                              // Waiting on Ask blocks turning it on, never off.
+                              waitsOnParent
+                            }
+                            onValueChange={(next) => {
+                              setAiFailedKey(null);
+                              updateAi.mutate(
+                                { [entry.key]: next },
+                                { onError: () => setAiFailedKey(entry.key) },
+                              );
+                            }}
+                            accessibilityLabel={entry.label}
+                          />
+                        }
+                      />
+                    );
+                  })}
+                </ListSection>
+                <Text style={styles.footnote}>
+                  {aiSettings.can_change
+                    ? AI_SETTINGS_COPY.phoneFootnote
+                    : `${AI_SETTINGS_COPY.presidentOnly} ${AI_SETTINGS_COPY.phoneFootnote}`}
+                </Text>
+              </SettingAnchor>
+            ) : null}
+
+            {access.roles ? (
+              <>
+                <SectionHeader>People</SectionHeader>
+                <ListSection>
+                  <ListRow
+                    label="Roles"
+                    value={roleCount === null ? null : String(roleCount)}
+                    accessibilityHint="Opens the chapter's tiers and roles, and what each can do."
+                    onPress={() => router.push("/chapter-roles")}
+                  />
+                </ListSection>
+              </>
+            ) : null}
+          </>
+        )}
+      </SettingJumpProvider>
 
       {access.chapter ? (
         <>
