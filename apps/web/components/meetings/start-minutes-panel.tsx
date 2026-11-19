@@ -251,7 +251,8 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const sourceName =
     source?.kind === "event"
       ? (recent.find((event) => event.id === source.id)?.name ?? "")
-      : meeting.name;
+      : // Left blank, it is made as "Chapter meeting", and filed so.
+        meeting.name.trim() || DEFAULT_MEETING_NAME;
   const type = typeChoice ?? guessMeetingType(sourceName);
 
   function fill(next: MinutesDraft) {

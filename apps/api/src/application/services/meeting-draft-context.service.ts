@@ -56,8 +56,8 @@ export interface MeetingDraftContext {
  *
  * - only minutes that officer may read now (`MeetingService` read rule), and
  *   whose event they can still see;
- * - only posted minutes of the same type (and, for "other", the same label),
- *   never Standards;
+ * - only posted minutes of the same type (and, for "other", the same label;
+ *   with no label, only tonight's own series), never Standards;
  * - only meetings with the same audience as tonight's (the same roles
  *   required, invited and left out, and the same rule for everyone else), so
  *   nothing from an officers-only meeting reaches minutes the whole chapter
@@ -210,9 +210,18 @@ export async function sameAudienceMinutes(
       )
     ).map((event) => [event.id, event]),
   );
+  // Other with no label says nothing about what kind of meeting it is, so
+  // only earlier meetings of tonight's own series count: a one-off
+  // "Ben Cunningham Meeting" reads no other meeting's action items.
+  const seriesOnly =
+    meetingType === 'other' && !(options.otherLabel ?? '').trim();
   return rows.flatMap((row) => {
     const event = visible.get(row.event_id as string);
-    return event && sameAudience(event, tonight) ? [{ row, event }] : [];
+    return event &&
+      sameAudience(event, tonight) &&
+      (!seriesOnly || seriesOf(event) === seriesOf(tonight))
+      ? [{ row, event }]
+      : [];
   });
 }
 
