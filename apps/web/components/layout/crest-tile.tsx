@@ -52,14 +52,21 @@ export function chapterMarkFor(chapter: {
 }
 
 /**
- * Two sizes: `nav` is the 28px tile in the chapter row, `home` the 112px one
- * the home view centres (#3779). The same mark, fallback and step-down at both.
+ * Three sizes: `nav` is the 28px tile in the chapter row, `card` the 56px one
+ * on the invite card (#5625), `home` the 112px one the home view centres
+ * (#3779). The same mark, fallback and step-down at both.
  */
 const SIZES = {
   nav: {
     box: "h-7 w-7 rounded-[8px]",
     text: "text-[9.5px] tracking-[0.06em]",
     longText: "text-[7.5px] tracking-normal",
+  },
+  /** The invite card's tile (#5625): the chapter, before any account. */
+  card: {
+    box: "h-14 w-14 rounded-[16px]",
+    text: "text-sm tracking-[0.06em]",
+    longText: "text-caption tracking-normal",
   },
   home: {
     box: "h-28 w-28 rounded-[28px]",

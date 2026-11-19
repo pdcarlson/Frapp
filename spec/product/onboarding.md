@@ -28,8 +28,8 @@ Checkout is offered at `incomplete` and again at `canceled`; `past_due` recovers
 
 ## Invite System
 
-1. Admin generates an invite token (valid for 24 hours, assigned a role).
+1. Admin generates an invite token (valid for 7 days, assigned a role).
 2. Token is shared as a link (e.g. `app.frapp.live/join?token=abc123`), or the admin enters a list of email addresses and the API emails each one its own token's join link directly.
-3. New user signs up (Supabase Auth) and enters the token. A user who hasn't accepted the current Terms of Service and Privacy Policy also ticks the Terms checkbox; one who has isn't asked again.
-4. API validates the token (not expired, not used), refuses a user who hasn't accepted the current Terms and didn't tick the box (403, and the token stays usable), and links the user to the chapter with the token's role. The full rules, including 409 and the subscription lock, are [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Invite Token Rules.
+3. The link opens the chapter's invite card, and the new user signs in with Apple, Google or an emailed code from it, which joins in the same tap (#5625). The Terms line under the buttons is the acceptance, so every join sends it.
+4. API validates the token (not expired, not used), refuses a user who hasn't accepted the current Terms and didn't send the acceptance (403, and the token stays usable), and links the user to the chapter with the token's role. The full rules, including 409 and the subscription lock, are [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Invite Token Rules.
 5. Token is marked as used.

@@ -1392,7 +1392,7 @@ The **mark** is the exception, because [`../brand-identity.md`](../brand-identit
 The mirror half is `/profile`: it renders *inside* a chapter, so its s15 identity header takes the accent roles rather than the house family the board happens to draw it in.
 
 **The reference wins on visuals and not on the data model.** s02 draws a six-cell row for a shared chapter code;
-[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use 24-hour invite tokens, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
+[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use invite tokens that last 7 days, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
 So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and keeps one token field that accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`).
 `apps/mobile/app/(auth)/join.tsx` had already made that call in its own docstring; both surfaces now record it, so neither can drift.
 

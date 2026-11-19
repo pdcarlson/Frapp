@@ -70,6 +70,8 @@ type AuthFailureFlow =
   | "sign_up"
   /** Asking for a magic link or email code. */
   | "magic_link_send"
+  /** Typing the email's six-digit code (#5625). */
+  | "email_code_verify"
   /** Resending the sign-up confirmation email. */
   | "confirmation_resend"
   /** Starting Google or Apple, in the browser or natively. */

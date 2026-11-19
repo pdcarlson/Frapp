@@ -11,17 +11,15 @@ import {
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  isInviteEmail,
-  LEGAL_ACCEPTANCE_LABEL,
-  MAX_INVITE_EMAILS,
-} from '@repo/validation';
+import { isInviteEmail, MAX_INVITE_EMAILS } from '@repo/validation';
 import type {
   BulkEmailInviteResult,
   InviteListItem,
   InviteStatus,
 } from '../../application/services/invite.service';
 import type {
+  InviteDetails,
+  InviteLinkState,
   InvitePreview,
   PendingInvite,
 } from '../../application/services/invite.service';
@@ -97,13 +95,17 @@ export class RedeemInviteDto {
   token: string;
 
   /**
-   * The join screen's Terms checkbox (#2302). Required, as `true`, only when
-   * the caller hasn't accepted the current Terms; `GET
+   * The user's agreement to the current Terms (#2302). Required, as `true`,
+   * only when the caller hasn't accepted the current Terms; `GET
    * /v1/users/me/legal-acceptance` says which. The server stamps the record,
-   * so this is the user's claim that they ticked it, not the record itself.
+   * so this is the user's claim, not the record itself. The join screens send
+   * it on every join (#5625): their Terms line under the buttons ("By joining
+   * you agree to…", `termsLine` in `@repo/validation`) is the agreement, and
+   * the old checkbox (`LEGAL_ACCEPTANCE_LABEL`) is gone from them.
    */
   @ApiPropertyOptional({
-    description: `True when the user ticked "${LEGAL_ACCEPTANCE_LABEL}" Needed only if they haven't accepted the current version.`,
+    description:
+      'True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version.',
   })
   @IsOptional()
   @IsStrictBoolean()
@@ -155,6 +157,40 @@ export class InvitePreviewResponseDto implements InvitePreview {
 
   @ApiProperty()
   expires_at: string;
+}
+
+/** `InviteDetails` in `invite.service.ts`: the invite screen's card (#5625). */
+export class InviteDetailsResponseDto
+  extends InvitePreviewResponseDto
+  implements InviteDetails
+{
+  @ApiProperty({
+    enum: ['live', 'expired', 'used', 'off', 'locked'],
+    description:
+      "Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role); `locked` (a working link into a chapter whose subscription is inactive, so it can't take new members until it's restored). Only `live` can be joined.",
+  })
+  state: InviteLinkState;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join.",
+  })
+  chapter_id: string;
+
+  @ApiProperty({
+    description:
+      'How many members the chapter has now. 0 when the link does not work: only a live link earns the count.',
+    example: 41,
+  })
+  member_count: number;
+
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When the invite was made, for a dead card ("sent it on Friday, November 14").',
+  })
+  sent_at: string;
 }
 
 /** One row of `GET /v1/invites/mine` (`PendingInvite`, #3776). */

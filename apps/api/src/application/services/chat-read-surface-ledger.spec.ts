@@ -649,11 +649,11 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     ],
   },
   'application/services/invite.service.ts': {
-    calls: 2,
+    calls: 3,
     entries: [
       {
         status: 'not-hidden',
-        why: 'A push naming the member who joined, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
+        why: 'Notifications naming the member who joined (to the inviter and the officer roster) and the member who asked for a new invite (to its sender) (#5625). A notice that merely names a member is not hidden.',
       },
     ],
   },

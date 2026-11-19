@@ -21,7 +21,7 @@ export interface LegalLink {
   url: string;
 }
 
-const TERMS_LINK: LegalLink = {
+export const TERMS_LINK: LegalLink = {
   label: "Terms of Service",
   url: `${LEGAL_BASE_URL}/terms`,
 };

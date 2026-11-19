@@ -10,7 +10,7 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * owner pick 2026-11-06 "Share first") and, inside a chapter, the Invite
  * members screen (`app/(app)/invite.tsx`) draw the same flow from here.
  *
- * An invite lets one person in and lapses after a day, so every press of
+ * An invite lets one person in and lapses after 7 days, so every press of
  * Share invite mints a fresh link and opens the share sheet with it. The
  * founder never sees a token or a "Create another link" button; they press
  * Share once per person. Nothing is minted before a press, so a founder who

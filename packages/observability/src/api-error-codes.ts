@@ -96,6 +96,11 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // (#3353), or two officers making one at the same moment.
   "invite.chapter_link_out_of_reach",
   "invite.chapter_link_conflict",
+  // Ask for a new link on an invite that still works (another tab saw it
+  // revived), or from someone already in its chapter (#5625). The card
+  // refetches and shows the live link or the chapter.
+  "invite.still_live",
+  "invite.already_member",
   // An officer named a role so it reads as @everyone (#4191) or @here.
   "role.everyone_name",
   // A tier reorder that would lift New members or Alumni above Everyone
