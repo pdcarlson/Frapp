@@ -81,6 +81,15 @@ const buttonVariants = cva(
         // variant, which was this recipe under a second name.
         ghost:
           "font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
+        // A page's one main action (Paul, 2026-11-19, picked on a decision
+        // card over a filled pill): accent outline and accent text, so it sits
+        // level with the search and filter buttons beside it in the page
+        // header and the page's content is what the eye lands on. Every "New
+        // ..." button (`new-button.tsx`) and the main actions that keep their
+        // own verb (Log service, Upload, Adjust points) draw it. It was Events'
+        // New event's look first (#5560).
+        action:
+          "border-primary/35 font-semibold text-primary hover:bg-primary/10",
         // Tint, never a solid red fill (§3): `--destructive-tint` (13%) at
         // rest, `--destructive-tint-hover` (20%) on hover. The label is the
         // AA-lifted tone: `--destructive` on its own tint measures 3.79:1 over

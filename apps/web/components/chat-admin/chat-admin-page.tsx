@@ -12,7 +12,6 @@ import {
   Loader2,
   Pencil,
   PinOff,
-  Plus,
   Trash2,
   Users,
 } from "lucide-react";
@@ -42,6 +41,7 @@ import {
 import { Can } from "@/components/shared/can";
 import { ChatBackgroundDefaultCard } from "./chat-background-default-card";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -1133,12 +1133,7 @@ function ChatAdminBody({
                   onOpenChange={setCreateDialogOpen}
                   docked
                   backLabel="Back to chat admin"
-                  trigger={
-                    <Button className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      New channel
-                    </Button>
-                  }
+                  trigger={<NewButton thing="channel" />}
                 />
               </div>
             </div>

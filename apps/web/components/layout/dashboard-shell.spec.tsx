@@ -1,6 +1,8 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
+import { PageActions } from "@/components/layout/page-actions";
+import { NewButton } from "@/components/ui/new-button";
 import { hydrateRoot } from "react-dom/client";
 
 /*
@@ -609,6 +611,37 @@ describe("DashboardShell", () => {
     expect(main).toHaveAttribute("id", "main-content");
     expect(main).toContainElement(page);
     expect(main.className).not.toContain("px-4");
+  });
+
+  it("puts a page's actions in its own header beside the X, at every width (Paul, 2026-11-19)", () => {
+    mockPathname.value = "/events";
+    for (const width of [1440, 800]) {
+      setWindowWidth(width);
+      const { container, unmount } = render(
+        <DashboardShell>
+          <PageActions>
+            <NewButton thing="event" />
+          </PageActions>
+          <p>list</p>
+        </DashboardShell>,
+      );
+      const header = container.querySelector(
+        "[data-tool-page-header]",
+      ) as HTMLElement;
+      const page = container.querySelector("[data-tool-page]") as HTMLElement;
+      expect(
+        within(header).getByRole("button", { name: "New event" }),
+      ).toBeInTheDocument();
+      expect(
+        within(page).queryByRole("button", { name: "New event" }),
+      ).toBeNull();
+      // Below the side-by-side width the header shows only while it holds
+      // actions: the CSS rule that does it.
+      expect(header.className).toContain(
+        "has-[[data-page-actions]:not(:empty)]:flex",
+      );
+      unmount();
+    }
   });
 
   it("honours the server-read collapse preference on first render", () => {
