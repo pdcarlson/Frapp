@@ -56,8 +56,12 @@ export function readRolePickerPayload(
   return { title, role_ids: ids };
 }
 
-/** Under a role the viewer neither holds nor can join now, on web and the phone. */
-export const ROLE_PICKER_CLOSED_CAPTION = "No longer open to join";
+/**
+ * Under a role the viewer can't join or leave now, held or not, on web and the
+ * phone: an officer unmarked it, or the viewer is an alum (#5650).
+ */
+export const ROLE_PICKER_CLOSED_CAPTION =
+  "Closed. An officer can add or remove it.";
 
 /** A role the viewer can tap on the card, as `usePickableRoles` lists them. */
 export interface RolePickerRoleState {

@@ -102,7 +102,7 @@ export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
  * web and the phone, while the role can be marked.
  */
 export const SELF_ASSIGNABLE_SWITCH_DESCRIPTION =
-  "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in.";
+  "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in. Turn it off and members who have it keep it until an officer takes it off.";
 
 /**
  * What the Roles overview says about its Non-chapter business section, on web

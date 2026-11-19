@@ -18,7 +18,7 @@ Members can leave only roles marked self-assignable, as they can join only those
   ```
 
   On staging, as a member holding a role an officer gave that isn't offered in Pick your roles, the role no longer shows a Leave button there; a role the member picked still does.
-- **Promoter notes**: schema only, no data written. Order against the API doesn't matter: the API from before this migration still shows Leave on an unmarked role, and tapping it now gets a 409 ("This role changed while you were saving"), because the old API's own check lets the leave through and the function refuses it. The window costs a refused tap until the new API deploys, nothing more.
+- **Promoter notes**: schema only, no data written. Order against the API doesn't matter to the data. Leave on an unmarked role is drawn by the client (`selectPickableRoles` in `@repo/hooks`), so a client from before this change keeps offering it: against the old API the tap gets a 409 ("This role changed while you were saving"), because the old API's check lets the leave through and the function refuses it; against the new API it gets a 403. Web clears this with its deploy; a phone build from before #5650 keeps offering Leave on those roles, refused every time, until it updates. Nothing is written in either case.
 
 ## Rollback
 
