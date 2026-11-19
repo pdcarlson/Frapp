@@ -1019,17 +1019,16 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     await settle();
 
     expect(allText(tree.root)).toContain("This invite link doesn't work");
-    act(() => {
-      tree.root
-        .findAllByType("TextInput" as never, { deep: true })[0]
-        .props.onChangeText("https://app.frapp.live/join?token=good-token-1");
-    });
-    act(() => {
-      control(tree.root, "Open invite")?.props.onPress();
-    });
+    // Paste, as on the question (#5626): something else says so in place.
+    await pasteInvite(tree.root, "1Z999AA10123456784");
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.notInvite);
+    expect(cardToken(tree.root)).toBe("not-an-invite");
+
+    const good = inviteId(1);
+    await pasteInvite(tree.root, `https://app.frapp.live/join?token=${good}`);
     await settle();
-    expect(cardToken(tree.root)).toBe("good-token-1");
-    expect(allText(tree.root)).toContain("Chapter good-token-1");
+    expect(cardToken(tree.root)).toBe(good);
+    expect(allText(tree.root)).toContain(`Chapter ${good}`);
   });
 
   it("offers the chapter instead of a Join to someone already in it", async () => {
@@ -1277,6 +1276,26 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(peekRememberedInviteThen()).toBe("join");
   });
 
+  it("lets the member off a link that isn't an invite, back to sign-in, forgetting it", async () => {
+    // Pasted on sign-in's strip (#5626): remembered, so sign-in sends every
+    // return here. Signed out the card has no Back, so this line is the way.
+    detailsAnswer = () => ({
+      error: { statusCode: 404, message: "Invite not found" },
+    });
+    act(() => rememberInviteToken(inviteId(60)));
+    const tree = render();
+    await settle();
+    expect(allText(tree.root)).toContain("This invite link doesn't work");
+
+    act(() => {
+      labelled(tree.root, "Have a password? Sign in")?.props.onPress();
+    });
+    expect(peekRememberedInviteToken()).toBeNull();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith(
+      "/(auth)/sign-in",
+    );
+  });
+
   it("sends a visit with no invite to sign-in", () => {
     const tree = render();
     const redirect = tree.root.findAllByType("Redirect" as never)[0];
@@ -1476,6 +1495,39 @@ describe("join screen — invites for this account (#3782)", () => {
     expect(allText(tree.root)).toContain(offerTitle("FIJI Tau Nu"));
     // An offer was never remembered, so backing out leaves nothing behind.
     expect(peekRememberedInviteToken()).toBeNull();
+  });
+
+  it("keeps the offers after a pasted invite is declined with Back", async () => {
+    const tree = render();
+    await settle();
+    await pasteInvite(tree.root, inviteId(70));
+    await settle();
+    expect(cardToken(tree.root)).toBe(inviteId(70));
+
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+    await settle();
+    expect(peekRememberedInviteToken()).toBeNull();
+    expect(allText(tree.root)).toContain(offerTitle("FIJI Tau Nu"));
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.ledeWithOffers);
+  });
+
+  it("drops a paste's message once the member opens an offer instead", async () => {
+    const tree = render();
+    await settle();
+    await pasteInvite(tree.root, "see you at chapter tonight");
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.notInvite);
+
+    act(() => {
+      control(tree.root, offerTitle("FIJI Tau Nu"))?.props.onPress();
+    });
+    await settle();
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+    expect(allText(tree.root)).not.toContain(INVITE_PASTE_COPY.notInvite);
+    expect(allText(tree.root)).toContain(INVITE_PASTE_COPY.ledeWithOffers);
   });
 
   /** Whether the card's Join is on screen. */

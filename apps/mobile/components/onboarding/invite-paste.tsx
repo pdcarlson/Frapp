@@ -38,8 +38,11 @@ const SYSTEM_PASTE = Platform.OS === "ios" && Clipboard.isPasteButtonAvailable;
 export function useInvitePaste(onInvite: (token: string) => void): {
   message: string | null;
   onText: (text: string | null) => void;
+  /** Back to the lede, for a screen the member left another way. */
+  clear: () => void;
 } {
   const [message, setMessage] = useState<string | null>(null);
+  const clear = useCallback(() => setMessage(null), []);
   const onText = useCallback(
     (text: string | null) => {
       const token = pastedInviteToken(text);
@@ -56,7 +59,7 @@ export function useInvitePaste(onInvite: (token: string) => void): {
     },
     [onInvite],
   );
-  return { message, onText };
+  return { message, onText, clear };
 }
 
 /**

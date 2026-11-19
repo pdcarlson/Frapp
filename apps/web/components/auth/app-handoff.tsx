@@ -161,14 +161,17 @@ function GetAppStep({
   const copy = installHandoffCopy(appName);
   const [copied, setCopied] = useState<"no" | "yes" | "failed">("no");
   function copyInvite() {
-    const link = buildJoinUrl(window.location.origin, token);
     try {
+      // Inside the `try`: the link refuses a public plain-http origin, and
+      // the store must still open with the fallback line shown.
+      const link = buildJoinUrl(window.location.origin, token);
       void navigator.clipboard
         .writeText(link)
         .then(() => setCopied("yes"))
         .catch(() => setCopied("failed"));
     } catch {
-      // No clipboard at all (an insecure origin, an old in-app browser).
+      // No clipboard at all (an insecure origin, an old in-app browser), or
+      // no link to copy.
       setCopied("failed");
     }
   }

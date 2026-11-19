@@ -62,7 +62,7 @@ import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350), and
+ * s02, "Joining a chapter?" (`spec/ui/mobile/screens.md`, #3350, #5626), and
  * the invite card (#5625).
  *
  * An invite link, or an invite remembered across a sign-in or a relaunch,
@@ -83,8 +83,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * the Account menu in the top corner, because this is the only screen a
  * zero-membership account can reach (Apple 5.1.1(v), #2295).
  *
- * There is no invite field: nobody types an invite, and Paste takes the link
- * or the bare invite alike (`pastedInviteToken`). The canvas's six cells for a
+ * The question has no invite field: nobody types an invite, and Paste takes
+ * the link or the bare invite alike (`pastedInviteToken`), here and on the
+ * card's "This invite link doesn't work". The canvas's six cells for a
  * shared code were never the data model (`spec/behavior/onboarding.md`).
  */
 
@@ -142,9 +143,11 @@ export default function JoinChapter() {
   // brought the member here. A link carries one invite, and that is the one
   // the member came for, so the question offers no others, as web `/join`
   // offers none when opened with a token.
-  // Set once the effect below applies one; until then `inviteIncoming`
-  // (below) reads the same answer at render, so the first render already
-  // knows and the offers are never fetched for a link-opened visit.
+  // Set once the effect below applies a link or param; until then
+  // `inviteIncoming` (below) reads the same answer at render, so the first
+  // render already knows and the offers are never fetched for a link-opened
+  // visit. A remembered invite counts only while it is remembered: one pasted
+  // here and then declined with Back leaves the emailed offers as they were.
   const [appliedLinkInvite, setAppliedLinkInvite] = useState(false);
   // Whether the confirm step was opened from a pending-invite offer: backing
   // out of it keeps nothing remembered, since an offer never was.
@@ -213,7 +216,7 @@ export default function JoinChapter() {
       // A link just opened wins over the invite the card holds. A remembered
       // invite only fills an empty one.
       setToken((current) => (fresh || current.length === 0 ? next : current));
-      setAppliedLinkInvite(true);
+      if (fresh) setAppliedLinkInvite(true);
       setFromOffer(false);
       // An opened invite link has already answered the question and filled
       // the field, so it goes straight to the confirm step.
@@ -350,6 +353,20 @@ export default function JoinChapter() {
     [submitting],
   );
   const paste = useInvitePaste(openInvite);
+  // What a paste said belongs to the question as it was then: any way onto
+  // the card (an offer, a link) or off to chapter setup clears it.
+  const clearPasteMessage = paste.clear;
+  useEffect(() => {
+    if (view === "confirm") clearPasteMessage();
+  }, [clearPasteMessage, view]);
+
+  /** Off the card, signed out: back to sign-in, the invite forgotten. */
+  const leaveInvite = useCallback(() => {
+    if (submitting) return;
+    consumeRememberedInviteToken();
+    setToken("");
+    router.replace("/(auth)/sign-in");
+  }, [router, submitting]);
 
   if (status === "unauthenticated" && incomingInvite === null) {
     return <Redirect href="/(auth)/sign-in" />;
@@ -371,13 +388,11 @@ export default function JoinChapter() {
    * unreachable from here, so without this row that account can never be
    * deleted from the app (#2295).
    *
-   * The failure deliberately uses the shared native alert rather than this
-   * screen's `error` slot. That slot belongs to invite redemption and is
-   * cleared on every keystroke (`onChangeText`) and on every join attempt, so a
-   * "deletion didn't finish, please retry" notice put there is erased by the
-   * user's next tap — on the one flow whose entire contract is retry. The
-   * alert also announces itself to VoiceOver and survives navigation, matching
-   * Settings exactly.
+   * The failure deliberately uses the shared native alert rather than a line
+   * on the screen, which the member's next tap (a paste, a join) would
+   * replace: on the one flow whose entire contract is retry. The alert also
+   * announces itself to VoiceOver and survives navigation, matching Settings
+   * exactly.
    */
   function handleDeleteAccount() {
     confirmDeleteAccount({
@@ -449,9 +464,9 @@ export default function JoinChapter() {
     >
       <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         {/*
-          The column scrolls: on a 375x667 phone with the keyboard up the
-          invite step does not fit, and a non-scrolling column would clip its
-          last control.
+          The column scrolls: on a 375x667 phone, offers above Paste and the
+          card's longer states do not fit, and a non-scrolling column would
+          clip their last control.
         */}
         {/*
           What the menu covers leaves the accessibility tree while it is up:
@@ -488,6 +503,7 @@ export default function JoinChapter() {
               }
               onBusyChange={setInviteBusy}
               onOtherInvite={openInvite}
+              onLeave={leaveInvite}
             />
           ) : (
             <>
@@ -617,6 +633,7 @@ export default function JoinChapter() {
                     disabled={submitting}
                     onPress={() => {
                       setAccountOpen(false);
+                      paste.clear();
                       router.push("/create-chapter");
                     }}
                   />

@@ -21,6 +21,16 @@ describe("pastedInviteToken", () => {
     ).toBe(INVITE_ID);
   });
 
+  it("finds it in a link with more message on the lines after it", () => {
+    for (const lineBreak of ["\n", "\r\n"]) {
+      expect(
+        pastedInviteToken(
+          `https://app.frapp.live/join?token=${INVITE_ID}${lineBreak}See you Tuesday`,
+        ),
+      ).toBe(INVITE_ID);
+    }
+  });
+
   it("takes a bare invite, the way an officer might copy just the code", () => {
     expect(pastedInviteToken(`  ${INVITE_ID.toUpperCase()}\n`)).toBe(
       INVITE_ID.toUpperCase(),

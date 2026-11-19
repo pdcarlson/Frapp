@@ -29,8 +29,18 @@ const UUID_PATTERN =
 export function pastedInviteToken(
   text: string | null | undefined,
 ): string | null {
-  const token = extractInviteToken(text);
-  return token !== null && UUID_PATTERN.test(token) ? token : null;
+  const isInvite = (token: string | null): token is string =>
+    token !== null && UUID_PATTERN.test(token);
+  const whole = extractInviteToken(text);
+  if (isInvite(whole)) return whole;
+  // A whole message copied around the link ("…?token=<uuid>\nSee you
+  // Tuesday"): a URL parser drops the line break and glues the next line onto
+  // the token, so each word is tried on its own too.
+  for (const word of (text ?? "").split(/\s+/)) {
+    const token = extractInviteToken(word);
+    if (isInvite(token)) return token;
+  }
+  return null;
 }
 
 /** The phone's Paste, on sign-in and on the join question. */

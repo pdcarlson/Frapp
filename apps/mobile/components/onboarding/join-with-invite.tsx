@@ -22,7 +22,6 @@ import {
   useRedeemInvite,
   type InviteDetails,
 } from "@repo/hooks";
-import { extractInviteToken } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   DeadInviteHero,
@@ -34,14 +33,13 @@ import {
   PasswordSignInLine,
 } from "@/components/onboarding/join-sign-in";
 import {
-  OnboardingFieldLabel,
-  OnboardingTextInput,
-} from "@/components/onboarding/onboarding-field";
+  InvitePasteButton,
+  useInvitePaste,
+} from "@/components/onboarding/invite-paste";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
-import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { TermsLine } from "@/components/onboarding/terms-line";
 import { ErrorState } from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
@@ -75,7 +73,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *   chapter and its sender, and "Ask Paul for a new link" notifies them by
  *   name. Asking needs an account, so the sender knows who; signed out, the
  *   button opens the ways in, marked `ask`.
- * - **Not an invite** (404). Says so, and takes another link.
+ * - **Not an invite** (404). Says so, and Paste takes another link, as the
+ *   join question's does (#5626). Signed out, "Have a password? Sign in", as
+ *   on web, forgets this one and goes back to sign-in, which would otherwise
+ *   send the remembered invite straight back here.
  *
  * `header` and `accountLine` are the join screen's own chrome (Back, the
  * Account menu, "Signed in as"), drawn above the card.
@@ -87,6 +88,7 @@ export function JoinWithInvite({
   accountLine,
   onBusyChange,
   onOtherInvite,
+  onLeave,
 }: {
   token: string;
   /** What a sign-in from the card came back to do, read when it mounted. */
@@ -96,6 +98,8 @@ export function JoinWithInvite({
   onBusyChange?: (busy: boolean) => void;
   /** Another link pasted on the not-an-invite screen. */
   onOtherInvite: (token: string) => void;
+  /** Off the not-an-invite screen while signed out, back to sign-in. */
+  onLeave: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -105,6 +109,7 @@ export function JoinWithInvite({
   const redeem = useRedeemInvite();
   const ask = useAskForNewLink();
   const details = useInviteDetails(token);
+  const paste = useInvitePaste(onOtherInvite);
 
   const signedIn = status === "authenticated";
   const chapters = useListChapters({ enabled: signedIn });
@@ -266,8 +271,12 @@ export function JoinWithInvite({
           <Text accessibilityRole="header" style={styles.title}>
             {UNKNOWN_INVITE_COPY.title}
           </Text>
-          <Text style={styles.body}>{UNKNOWN_INVITE_COPY.body}</Text>
-          <OtherInviteForm onOpen={onOtherInvite} />
+          <Text
+            style={paste.message ? styles.bodyError : styles.body}
+            accessibilityLiveRegion="polite"
+          >
+            {paste.message ?? UNKNOWN_INVITE_COPY.body}
+          </Text>
         </>
       ) : (
         <ErrorState
@@ -277,6 +286,14 @@ export function JoinWithInvite({
           isRetrying={details.isFetching}
         />
       );
+    if (statusOf(details.error) === 404) {
+      footer = (
+        <>
+          <InvitePasteButton onText={paste.onText} size="large" />
+          {signedIn ? null : <PasswordSignInLine onPress={onLeave} />}
+        </>
+      );
+    }
   } else if (!invite) {
     body = <InviteHeroSkeleton />;
   } else if (alreadyIn && !busy) {
@@ -389,47 +406,6 @@ export function JoinWithInvite({
   );
 }
 
-/**
- * Another link, for a link that isn't an invite. It only opens it here, so
- * it works signed out too: the card does the rest.
- */
-function OtherInviteForm({ onOpen }: { onOpen: (token: string) => void }) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const open = () => {
-    const next = extractInviteToken(value);
-    if (!next) {
-      setError("Paste the whole invite link your officer sent.");
-      return;
-    }
-    onOpen(next);
-  };
-  return (
-    <View style={styles.otherInvite}>
-      <OnboardingFieldLabel>Have another invite link?</OnboardingFieldLabel>
-      <OnboardingTextInput
-        value={value}
-        onChangeText={(next) => {
-          setValue(next);
-          setError(null);
-        }}
-        placeholder="Paste it here"
-        autoCapitalize="none"
-        autoCorrect={false}
-        autoComplete="off"
-        textContentType="none"
-        accessibilityLabel="Another invite link"
-        returnKeyType="go"
-        onSubmitEditing={open}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <OnboardingSecondaryButton label="Open invite" onPress={open} />
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
@@ -464,6 +440,11 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
+    // What a paste found, in the body's slot and size, so nothing moves.
+    bodyError: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.semantic.destructive,
+    },
     signInBlock: {
       marginTop: tokens.spacing.md,
       gap: tokens.spacing.md,
@@ -482,10 +463,6 @@ function createStyles(tokens: SignetTokens) {
     askedText: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
-    },
-    otherInvite: {
-      marginTop: tokens.spacing.sm,
-      gap: tokens.spacing.sm,
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,

@@ -134,6 +134,11 @@ describe("sign-in's Joining a chapter? strip (#5626)", () => {
     expect(Clipboard.getStringAsync).not.toHaveBeenCalled();
   });
 
+  it("isn't on the card's own password sign-in, where an invite is open", () => {
+    vi.mocked(useLocalSearchParams).mockReturnValue({ password: "1" });
+    expect(texts(render())).not.toContain(INVITE_PASTE_COPY.title);
+  });
+
   it("remembers a pasted invite and opens its card", async () => {
     const tree = render();
     await paste(tree, `https://app.frapp.live/join?token=${INVITE_ID}`);

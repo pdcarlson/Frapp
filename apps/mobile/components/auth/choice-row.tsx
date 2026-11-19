@@ -7,9 +7,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 
 /**
- * One large answer on a pre-chapter screen: s02's "I have an invite" and
- * "I'm starting our chapter" (#3350), and each chapter on the chapter picker,
- * which reuses s02's visual language.
+ * One large answer on a pre-chapter screen: each invite emailed to the
+ * account, offered on s02's question (#3782), and each chapter on the chapter
+ * picker, which reuses s02's visual language.
  *
  * A lighter surface with a hairline, never a shadow (foundations.md §10). The
  * trailing slot is a chevron unless the caller passes something else, such as

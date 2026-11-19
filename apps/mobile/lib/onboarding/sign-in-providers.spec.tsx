@@ -235,6 +235,20 @@ describe("sign-in providers on iOS", () => {
     expect(lead().props.android_ripple).toBeUndefined();
     expect(held().opacity).toBe(0.55);
   });
+
+  it("holds the invite strip's Paste while a sign-in runs (#5626)", async () => {
+    const tree = render();
+    const paste = () => pressableLabelled(tree.root, "Paste");
+    expect(paste().props.disabled).toBe(false);
+
+    // A paste mid-sign-in would remember an invite, and sign-in's redirect
+    // would pull the member off the screen before the sign-in lands.
+    auth.signInWithOAuthProvider.mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      pressableLabelled(tree.root, "Continue with Google").props.onPress();
+    });
+    expect(paste().props.disabled).toBe(true);
+  });
 });
 
 describe("the email form", () => {
