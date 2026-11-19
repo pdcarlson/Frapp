@@ -369,8 +369,8 @@ export function taskHistory(
   );
   // No name: the read has no `completed_by`, and an officer may mark a
   // member's task done for them.
-  // "Submitted to Exec board" when a group follows it (#5473), as web's
-  // review header says it.
+  // "Submitted to Exec board" when a group follows it (#5473), the words
+  // web's review header takes (`TASK_FOLLOWER_COPY.submittedTo`).
   if (row.isDone) {
     add(
       "done",

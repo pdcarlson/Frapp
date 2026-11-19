@@ -1315,6 +1315,81 @@ describe("New task's From (#5473)", () => {
     act(() => tree.unmount());
   });
 
+  function renderDuplicate(followedBy: string): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            prefill={{
+              title: "Sweep the porch",
+              description: null,
+              who: { kind: "person", userId: "user-2" },
+              pointsInput: "",
+              proofKind: "none",
+              subtasks: [],
+              due: { kind: "date", date: "2026-09-30" },
+              dueTime: null,
+              followedBy,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("duplicates a task's From when it is one of the officer's own", () => {
+    failure = FAILED;
+    const tree = renderDuplicate(EXEC);
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).toMatchObject({ followed_by: EXEC });
+    act(() => tree.unmount());
+  });
+
+  it("opens a Duplicate on Just you when the officer isn't in its group", () => {
+    failure = FAILED;
+    const tree = renderDuplicate("group:0d9e8f7a-6b5c-4d3e-9f21-0a1b2c3d4e5f");
+    expect(screenText(tree)).toContain("Just you");
+    expect(screenText(tree)).not.toContain("a deleted group");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("says a repeating task can't be from a group, and sends none", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    act(() => fromSheet(tree).props.onSelect(EXEC));
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            node.props.accessibilityRole === "button",
+        )
+        .props.onPress(),
+    );
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    expect(screenText(tree)).toContain(
+      "A repeating task can't be from a group yet.",
+    );
+    expect(tree.root.findAll((node) => node.props.title === "From")).toHaveLength(0);
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
   it("offers no From to a suggestion, which can't carry one", () => {
     let tree!: ReactTestRenderer;
     act(() => {
@@ -1336,6 +1411,14 @@ describe("New task's From (#5473)", () => {
       );
     });
     expect(screenText(tree)).not.toContain("Just you");
+    // Nor a tier in its picker: its payload has no tier field yet.
+    expect(
+      tree.root.find(
+        (node) =>
+          typeof node.props.onChange === "function" &&
+          node.props.tiers !== undefined,
+      ).props.tiers,
+    ).toBe(false);
     act(() => tree.unmount());
   });
 });

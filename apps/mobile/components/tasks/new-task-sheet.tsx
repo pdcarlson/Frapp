@@ -497,8 +497,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const fromOffered = offerGroups && !suggestion && !postToChannel;
     const followerChoices = fromOffered ? whoRead.followers : [];
     const repeating = !!(repeatRule?.ok && repeatRule.rule);
+    // Only one of the officer's own (#5473): a Duplicate of a task from a
+    // group they aren't in, or one deleted since, would only be refused, so
+    // it opens on Just you; so does a kept draft until the choices are read.
+    const ownFollower =
+      followedBy &&
+      followerChoices.some((choice) => choice.entry === followedBy)
+        ? followedBy
+        : null;
     const sentFollower =
-      fromOffered && !upForGrabs && !repeating ? followedBy : null;
+      fromOffered && !upForGrabs && !repeating ? ownFollower : null;
     const body = withFollower(
       withRepeat(validateNewTask(draft, at), repeatRule),
       sentFollower,

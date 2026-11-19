@@ -2,8 +2,9 @@
  * The tiers, roles and groups a task can be from (#5473, `spec/behavior/tasks.md`
  * § Following a task): the ones the viewer is in, since the API takes only a
  * follower its sender is in, so "From Exec board" is true. Pure, from the
- * Who picker's directory (`./task-who-picker`) and the chapter's reads, so
- * the phone's From sheet and web's From select list the same choices.
+ * Who picker's directory (`./task-who-picker`) and the chapter's reads, and
+ * platform-free, so any From control can list them; the phone's From sheet
+ * does.
  *
  * Left out, as the API refuses or nothing would come of them: a class year
  * (an automatic group that opens nothing), and the tier holding the Everyone
@@ -11,7 +12,9 @@
  */
 
 import {
+  TASK_FOLLOWER_COPY,
   isEveryoneRole,
+  parseTaskFollower,
   taskFollowerEntry,
   type TaskFollowerKind,
 } from "@repo/validation";
@@ -43,10 +46,14 @@ export const FOLLOWER_HEADINGS: Readonly<Record<TaskFollowerKind, string>> = {
 export function followerChoices(
   directory: WhoDirectory,
   reads: {
-    /** `GET /v1/roles`: which tier holds the Everyone role. */
-    roles?: unknown;
-    /** `GET /v1/groups`: which groups are class years. */
-    groups?: readonly WhoGroupSource[] | null;
+    /**
+     * `GET /v1/roles`, the read the directory was built from: which tier
+     * holds the Everyone role. Required, so no caller offers that tier by
+     * leaving it out.
+     */
+    roles: unknown;
+    /** `GET /v1/groups`, likewise: which groups are class years. */
+    groups: readonly WhoGroupSource[] | null;
   },
 ): FollowerChoice[] {
   const viewer = directory.people.find((person) => person.isViewer)?.userId;
@@ -90,4 +97,45 @@ export function followerChoices(
     }
   }
   return choices;
+}
+
+/**
+ * The choices with a task's own follower kept in, by the name its read
+ * carries, when the viewer isn't in it (an edit by another officer, or a
+ * group deleted since): picking something else is a change, never a loss on
+ * opening. A value that isn't an entry adds nothing.
+ */
+export function listedFollowers(
+  choices: readonly FollowerChoice[],
+  value: string | null,
+  currentName: string | null = null,
+): FollowerChoice[] {
+  if (!value || choices.some((choice) => choice.entry === value)) {
+    return [...choices];
+  }
+  const parsed = parseTaskFollower(value);
+  if (!parsed) return [...choices];
+  return [
+    ...choices,
+    {
+      entry: value,
+      kind: parsed.kind,
+      name: currentName?.trim() || TASK_FOLLOWER_COPY.deleted,
+      count: 0,
+    },
+  ];
+}
+
+/** What a From control says: "Just you", or the follower's name. */
+export function followerLabel(
+  choices: readonly FollowerChoice[],
+  value: string | null,
+  currentName: string | null = null,
+): string {
+  if (!value) return TASK_FOLLOWER_COPY.justYou;
+  return (
+    listedFollowers(choices, value, currentName).find(
+      (choice) => choice.entry === value,
+    )?.name ?? TASK_FOLLOWER_COPY.deleted
+  );
 }

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { FollowerChoice } from "@repo/hooks/task-follower-choices";
+import {
+  followerLabel,
+  listedFollowers,
+  type FollowerChoice,
+} from "@repo/hooks/task-follower-choices";
 import { TASK_FOLLOWER_COPY } from "@repo/validation";
-import { followerLabel, followerOptions, listedFollowers } from "./follower";
+import { followerOptions } from "./follower";
 
 /** The phone's From sheet (#5473): its rows, headings and label. */
 /** Stored entries name rows by uuid (`parseTaskFollower`). */

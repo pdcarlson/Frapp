@@ -133,7 +133,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
   // "repeats weekly".
   const cadence = row.isDone ? null : taskRepeatCadence(row.series);
   // The tier, role or group it is from, last (#5473): "Due Friday · From
-  // Exec board", as web's row carries the chip.
+  // Exec board".
   const from = row.followedBy
     ? TASK_FOLLOWER_COPY.chip(row.followedByName)
     : null;

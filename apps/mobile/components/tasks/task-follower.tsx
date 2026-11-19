@@ -1,7 +1,10 @@
 import { useRef } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import type { FollowerChoice } from "@repo/hooks/task-follower-choices";
+import {
+  followerLabel,
+  type FollowerChoice,
+} from "@repo/hooks/task-follower-choices";
 import { SignetTokens } from "@repo/theme/signet";
 import { TASK_FOLLOWER_COPY } from "@repo/validation";
 import { DisclosureGlyph } from "@/components/control-glyphs";
@@ -9,13 +12,13 @@ import { OptionSheet } from "@/components/option-sheet";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { followerLabel, followerOptions } from "@/lib/tasks/follower";
+import { followerOptions } from "@/lib/tasks/follower";
 
 /**
  * From (#5473; Shawn, 2026-11-18): "Just you", or a tier, role or group the
  * officer is in, so everyone in it can see the task and how it's going while
  * officers still confirm it. A field row that opens a pick-one sheet split
- * into Tiers, Roles and Groups with their counts, as web's select is. Asana
+ * into Tiers, Roles and Groups with their counts. Asana
  * and Linear let a team follow a task the same way, and Slack's user groups
  * sit above their people.
  *

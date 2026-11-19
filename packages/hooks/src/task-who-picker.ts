@@ -289,11 +289,6 @@ export function allRoles(directory: WhoDirectory): WhoSet[] {
   return directory.tiers.flatMap((tier) => tier.roles);
 }
 
-/** Every tier that can be picked whole (#5473), in the chapter's order. */
-export function allTierSets(directory: WhoDirectory): WhoSet[] {
-  return directory.tiers.flatMap((tier) => (tier.set ? [tier.set] : []));
-}
-
 /** A tier's key for folding, the roles in no tier's included. */
 export function tierKey(tier: WhoTier): string {
   return tier.id ?? "other";

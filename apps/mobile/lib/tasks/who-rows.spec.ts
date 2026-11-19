@@ -179,6 +179,16 @@ describe("whoRows: a tier picked whole (#5473)", () => {
     ]);
   });
 
+  it("finds no tier of one role, nor every tier for \"every\"", () => {
+    // Committees holds one role: its role row stands for it.
+    expect(
+      labels(whoRows(tiered, { ...base, tab: "people", search: "committees" })),
+    ).toEqual([]);
+    expect(
+      labels(whoRows(tiered, { ...base, tab: "people", search: "every" })),
+    ).toEqual([]);
+  });
+
   it("offers no tier where the payload can't carry one (a suggestion)", () => {
     const rows = whoRows(tiered, { ...base, tab: "sets", tiers: false });
     expect(rows.some((row) => row.kind === "set" && row.set.kind === "tier")).toBe(

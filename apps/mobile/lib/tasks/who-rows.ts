@@ -10,7 +10,6 @@ import {
   GROUPS_HEADING,
   WHO_PICKER_COPY,
   allRoles,
-  allTierSets,
   tierKey,
   whoMatches,
   type WhoDirectory,
@@ -57,7 +56,7 @@ export function whoRows(
     expanded: ReadonlySet<string>;
     openTiers: ReadonlySet<string>;
     /**
-     * Offer a tier whole (#5473), as web's picker does. Off for a suggested
+     * Offer a tier whole (#5473). Off for a suggested
      * task, whose payload has no tier field yet, so a tier pick there would
      * send nobody. On when absent.
      */
@@ -93,11 +92,23 @@ export function whoRows(
     const people = directory.people.filter((person) =>
       whoMatches(person.name, options.search),
     );
+    // A tier is found by its own name, and only where the browse view
+    // offers it whole: a tier of one role is that role.
+    const tierPicks = tiers
+      ? directory.tiers.flatMap((tier) =>
+          tier.set &&
+          tier.roles.length > 1 &&
+          whoMatches(tier.set.name, options.search)
+            ? [wholeTier(tier.set)]
+            : [],
+        )
+      : [];
     const sets = [
-      ...(tiers ? allTierSets(directory).map(wholeTier) : []),
-      ...allRoles(directory),
-      ...directory.groups,
-    ].filter((set) => whoMatches(set.name, options.search));
+      ...tierPicks,
+      ...[...allRoles(directory), ...directory.groups].filter((set) =>
+        whoMatches(set.name, options.search),
+      ),
+    ];
     return [
       ...(people.length > 0
         ? [
