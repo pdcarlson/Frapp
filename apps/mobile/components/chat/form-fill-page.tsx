@@ -434,6 +434,7 @@ function FormFillBody({
               <SkeletonRegion
                 label="Loading your answers"
                 style={styles.questions}
+                flush
               >
                 {payload.questions.map((question) => (
                   <View key={question.id} style={styles.question}>

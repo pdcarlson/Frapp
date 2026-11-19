@@ -186,7 +186,7 @@ export function FormResponsesPage({
           ) : query.isPending ? (
             // A question's shape, a title over its bars, so the page doesn't
             // jump when the answers land (components.md §10).
-            <SkeletonRegion label="Loading responses" style={styles.list}>
+            <SkeletonRegion label="Loading responses" style={styles.list} flush>
               {payload.questions.map((question) => (
                 <View key={question.id} style={styles.item}>
                   <SkeletonText

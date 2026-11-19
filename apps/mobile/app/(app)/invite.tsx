@@ -144,7 +144,7 @@ function InviteBody({ focused }: { focused: boolean }) {
             isRetrying={permissionsQuery.isFetching}
           />
         ) : (
-          <SkeletonRegion label="Loading invites">
+          <SkeletonRegion label="Loading invites" flush>
             <SkeletonBlock
               width="100%"
               height={72}

@@ -478,7 +478,7 @@ export default function HostCheckInScreen() {
               // Loading: a block the size of the code's white card, so the
               // screen doesn't jump when it lands (components.md §10,
               // content-shaped), pulsing with every other skeleton.
-              <SkeletonRegion label="Loading check-in code">
+              <SkeletonRegion label="Loading check-in code" flush>
                 <SkeletonBlock
                   width={qrSize + 2 * tokens.spacing.lg}
                   height={qrSize + 2 * tokens.spacing.lg}

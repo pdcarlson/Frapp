@@ -116,7 +116,11 @@ import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
-import { ErrorState, SkeletonRegion } from "@/components/state-block";
+import {
+  ErrorState,
+  SkeletonOnCard,
+  SkeletonRegion,
+} from "@/components/state-block";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
@@ -680,11 +684,14 @@ export default function ActivityScreen() {
     if (activity.isPending) {
       return (
         <>
-          <SkeletonRegion label="Loading activity">
+          <SkeletonRegion label="Loading activity" flush>
             <View style={styles.body}>
               <WeekStripSkeleton />
-              <WeekCardSkeleton />
-              <SemesterStripSkeleton />
+              {/* Two cards: their bars sit on the card, not the page. */}
+              <SkeletonOnCard>
+                <WeekCardSkeleton />
+                <SemesterStripSkeleton />
+              </SkeletonOnCard>
               <View>
                 <SectionHeader>To do</SectionHeader>
                 {Array.from({ length: 4 }, (_, index) => (
@@ -1330,7 +1337,7 @@ function ArchiveView({
   let content: ReactNode;
   if (query.isPending) {
     content = (
-      <SkeletonRegion label="Loading your archive">
+      <SkeletonRegion label="Loading your archive" flush>
         <View>
           <SectionHeader>Events</SectionHeader>
           {Array.from({ length: 3 }, (_, index) => (
