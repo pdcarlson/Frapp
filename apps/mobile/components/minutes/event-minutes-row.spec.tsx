@@ -146,7 +146,7 @@ describe("EventMinutesRow", () => {
       {
         id: "m1",
         status: "posted",
-        posted_at: "2026-11-18T20:00:00Z",
+        posted_at: "2026-11-18T12:00:00Z",
         decision_count: 2,
         action_item_count: 3,
       } as never,

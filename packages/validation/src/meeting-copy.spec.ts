@@ -28,7 +28,7 @@ describe("guessMeetingType", () => {
 describe("eventMinutesLines", () => {
   const posted = {
     status: "posted" as const,
-    posted_at: "2026-11-18T20:00:00Z",
+    posted_at: "2026-11-18T12:00:00Z",
     decision_count: 2,
     action_item_count: 1,
   };
