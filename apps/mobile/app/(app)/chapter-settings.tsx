@@ -23,7 +23,7 @@ import {
   isModuleEnabled,
 } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
-import { BACK_TO_YOU } from "@/components/back-row";
+import { BACK_TO_CHAT } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
@@ -40,7 +40,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Chapter settings, on the phone (#4074): the chapter's side of settings, as
- * web's Chapter settings is, reached from You → Admin. Settings (s16) is the
+ * web's Chapter settings is, reached from the chapter menu on Chat home's
+ * chapter name (2026-11-19; You → Admin until then). Settings (s16) is the
  * member's own; until this screen it also carried a "Chapter · Admin" group,
  * which moved here whole.
  *
@@ -127,7 +128,7 @@ export default function ChapterSettingsScreen() {
 
   return (
     <ScreenShell
-      back={BACK_TO_YOU}
+      back={BACK_TO_CHAT}
       title="Chapter settings"
       scrollRef={scrollRef}
       keyboardShouldPersistTaps="handled"

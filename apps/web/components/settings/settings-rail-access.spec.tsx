@@ -20,7 +20,7 @@ afterEach(() => {
  * The Settings page shows each viewer what they can use (#2946).
  *
  * Settings became the one door to officer setup and tools when the nav's
- * Admin group folded into it, so the nav's Settings row now admits a treasurer
+ * Admin group folded into it, so the Chapter settings link now admits a treasurer
  * who holds only `reports:export`. Before, every setup tab rendered for
  * whoever arrived, and the config-gated ones answered a non-holder with
  * "Couldn't load chapter configuration". `settings-access.spec.ts` pins the

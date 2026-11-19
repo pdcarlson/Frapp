@@ -87,7 +87,7 @@ in the S2 nav restructure (#957) — see
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
 | Chapter picker | Chapter row, the one marked Current included (multi-chapter account only) | Activates, refreshes the session, lands in the tabs. When it fails, whether it stays with the error or still lands in the tabs is the rule in [`screens.md`'s supporting-routes paragraph](../../spec/ui/mobile/screens.md) |
-| Chapter picker (You → Switch chapter) | `‹ You` above the title, and again while a switch is running | Lands on the You tab; while a switch runs it is dimmed and does nothing. Opened from a `frapp://chapter-picker` link, the picker draws no row |
+| Chapter picker (Chat home's chapter name → Switch chapter) | `‹ Chat` above the title, and again while a switch is running | Lands on Chat; while a switch runs it is dimmed and does nothing. Opened from a `frapp://chapter-picker` link, the picker draws no row |
 | Study hours | Study zone row (2+ zones) | Opens the zone picker sheet; picking one closes it and updates the card |
 | Study hours | Start session (location not yet granted) | Opens the **primer sheet first**, never the OS prompt — "Not now" dismisses quietly |
 | Study hours | Start session (location granted) | Session card replaces the start card; the timer ticks |

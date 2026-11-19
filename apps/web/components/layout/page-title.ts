@@ -40,11 +40,13 @@ export type PageTitle = {
 
 /**
  * Routes that are not nav rows. Profile and the personal Settings page hang
- * off the account menu; the nav's own settings row is "Chapter settings".
+ * off the account menu; Chapter settings opens from the chapter menu atop the
+ * nav, under the words that menu item uses.
  */
 const OFF_NAV_TITLES: Readonly<Record<string, string>> = {
   "/profile": "Profile",
   "/preferences": "Settings",
+  "/settings": "Chapter settings",
   "/whats-new": "What's new",
 };
 

@@ -117,8 +117,6 @@ describe("isNavItemVisible", () => {
       requireAnyOf: ["backwork:upload", "backwork:admin"],
     };
     expect(isNavItemVisible(anyOfItem, undefined, () => true)).toBe(false);
-    const showWhenItem: NavItem = { ...coreItem, showWhen: () => true };
-    expect(isNavItemVisible(showWhenItem, undefined)).toBe(false);
   });
 
   it("shows a gated row when the offline dashboard can't ask (null)", async () => {
@@ -140,10 +138,10 @@ describe("isNavItemVisible", () => {
     expect(isNavItemVisible(moduleItem, undefined, undefined)).toBe(true);
   });
 
-  it("hides the real Directory and Chapter settings rows until permissions resolve", async () => {
+  it("hides the real Directory and Backwork rows until permissions resolve", async () => {
     const { isNavItemVisible } = await import("./protected-nav-item");
     const { DASHBOARD_NAV_ITEMS } = await import("./nav-config");
-    for (const id of ["members", "settings", "backwork"]) {
+    for (const id of ["members", "backwork"]) {
       const row = DASHBOARD_NAV_ITEMS.find((item) => item.id === id);
       expect(row, id).toBeDefined();
       expect(
@@ -202,10 +200,10 @@ describe("isNavItemVisible", () => {
 // The restructure's whole point is that a member sees a short list of things
 // they can actually open. These pin the shape rather than the wording.
 describe("DASHBOARD_NAV structure", () => {
-  it("has no officer-only section: officer setup and tools sit behind one Settings row", async () => {
+  it("has no officer-only section, and no Chapter settings row: it opens from the chapter menu", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     const { isNavItemVisible } = await import("./protected-nav-item");
-    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOLS } =
+    const { SETTINGS_TOOLS } =
       await import("@/components/settings/settings-access");
 
     // The six-row Admin group is what pushed a President's nav past a 768px
@@ -219,13 +217,12 @@ describe("DASHBOARD_NAV structure", () => {
     }
 
     const items = DASHBOARD_NAV.flatMap((section) => section.items);
-    const settings = items.find((item) => item.id === "settings");
-    expect(settings?.requireAnyOf).toEqual(SETTINGS_ENTRY_PERMISSIONS);
-    expect(isNavItemVisible(settings!, ["members:view"])).toBe(false);
+    // One door into Chapter settings, the chapter menu (Paul, 2026-11-19).
+    expect(items.some((item) => item.href.startsWith("/settings"))).toBe(false);
     // Every officer tool opens inside Chapter settings (#3837), and none of
     // them is a row of its own.
     for (const tool of SETTINGS_TOOLS) {
-      expect(tool.href.startsWith(`${settings?.href}?`), tool.id).toBe(true);
+      expect(tool.href.startsWith("/settings?"), tool.id).toBe(true);
       expect(items.some((item) => item.href === tool.href)).toBe(false);
     }
   });

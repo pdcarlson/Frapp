@@ -9,16 +9,11 @@ import {
   MeetingsGlyph,
   PointsGlyph,
   ServiceGlyph,
-  SettingsGlyph,
   StudyGlyph,
   TasksGlyph,
   type NavGlyphComponent,
 } from "@/components/layout/nav-glyphs";
 import type { UnsetFeatureKey } from "@repo/hooks";
-import {
-  SETTINGS_ENTRY_PERMISSIONS,
-  hasSettingsDestination,
-} from "@/components/settings/settings-access";
 
 /**
  * Permission-aware dashboard navigation.
@@ -30,8 +25,7 @@ import {
  * § Navigation map mirrors this file, and a change to one changes the other.
  *
  * Structure (#2946): a Chat anchor with no section header, then Chapter, then
- * Resources, then one unlabeled group holding Directory, Billing and Chapter
- * settings. Chat leads because chat is the product's home — `/` and
+ * Resources, then one unlabeled group holding Directory. Chat leads because chat is the product's home — `/` and
  * `/dashboard` both redirect there. The anchor holds two rows since #3774
  * (Shawn, 2026-11-12): Chat, then Direct messages, which opens the same chat
  * panel on the member's conversations instead of the chapter's channels, the
@@ -40,13 +34,16 @@ import {
  * `/chat?view=direct` (`CHAT_VIEW_PARAM`). Profile and the personal Settings page are
  * deliberately absent: they live in the account menu, which the shell hangs
  * off the top-bar avatar (`account-menu.tsx`), because they are about the
- * viewer, not about the chapter. That is the two doors (#3856): the row here
- * is named "Chapter settings" so it cannot be mistaken for the member's own.
+ * viewer, not about the chapter. That is the two doors (#3856). Chapter
+ * settings is the other door, and it has no row here: it opens from the
+ * chapter menu atop this list (`chapter-nav-header.tsx`), beside switching
+ * and joining chapters, the way Slack's workspace menu and Discord's server
+ * menu hold their settings (Paul, 2026-11-19: one place, not two).
  *
  * **The nav fits a 1024×768 window for every seeded role.** A six-row Admin
  * group (Roles, Study Zones, Reports, Chat Admin, Discord Import, Settings)
  * used to close the list. For a President it needed an 828px-tall window and
- * scrolled on a 768px one. It folded into the Settings row: Roles is a Settings
+ * scrolled on a 768px one. It folded into Chapter settings: Roles is a Settings
  * tab, and the four officer tools keep their own pages behind the Settings rail
  * (`components/settings/settings-access.ts`). Adding a row costs 36px of that
  * budget, and `tests/visual/nav-fit.spec.ts` fails the build when the nav no
@@ -109,17 +106,6 @@ export type NavItem = {
    * gating" above). Omit for a feature that works with nothing in it.
    */
   hiddenUntilSetUp?: UnsetFeatureKey;
-  /**
-   * A last check for a row whose destination depends on more than one
-   * permission or module: the row shows only when this returns true. It runs
-   * after the permission rule, and only once permissions have resolved; until
-   * then a row with `showWhen` is hidden, like any permission-gated row
-   * (`isNavItemVisible`, #3854).
-   */
-  showWhen?: (
-    permissions: readonly string[],
-    isModuleEnabled?: (moduleKey: string) => boolean,
-  ) => boolean;
 } & NavPermissionRule;
 
 export type NavSection = {
@@ -255,7 +241,7 @@ export const DASHBOARD_NAV: NavSection[] = [
   },
   {
     /*
-     * Directory and Chapter settings share one UNLABELED group.
+     * Directory sits in its own UNLABELED group.
      *
      * Directory and Billing were two sections of one item each, so the
      * headings "DIRECTORY" and "FINANCE" were each announcing a single row
@@ -264,14 +250,15 @@ export const DASHBOARD_NAV: NavSection[] = [
      * deleted chrome. Settings joined them when the Admin group folded into it
      * (#2946). Billing then left the sidebar for Chapter settings' Plan and
      * billing row (#3827): a president checks the plan once a semester, which
-     * is not a daily nav destination. The group keeps a wider top margin so it
-     * still reads as its own block.
+     * is not a daily nav destination. Chapter settings left it for the
+     * chapter menu atop the nav (Paul, 2026-11-19), which already linked it.
+     * The group keeps a wider top margin so it still reads as its own block.
      *
      * `anchor` is the existing "render items with no heading" flag, the same
      * one Chat uses. It is not a claim that this group is an app home.
      */
-    id: "directory-settings",
-    label: "Directory and settings",
+    id: "directory",
+    label: "Directory",
     anchor: true,
     items: [
       {
@@ -282,22 +269,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         description:
           "Actives and alumni, profile cards, invites, deactivation.",
         requirePermission: "members:view",
-      },
-      {
-        id: "settings",
-        label: "Chapter settings",
-        icon: SettingsGlyph,
-        href: "/settings",
-        description:
-          "Chapter setup, roles, plan and billing, and officer tools: chat admin, Discord import, study zones, reports.",
-        // Shown to anyone Settings has something for: a tab they can use, or
-        // an officer tool whose module is on (`settings-access.ts`). The
-        // permission set is the coarse gate; `showWhen` drops the row when
-        // the only tools behind it are switched off. The fail-fast rule in
-        // `spec/ui/design-system/README.md` §5 is why the row is gated at all:
-        // an entry point that opens onto nothing is the defect.
-        requireAnyOf: SETTINGS_ENTRY_PERMISSIONS,
-        showWhen: hasSettingsDestination,
       },
     ],
   },
