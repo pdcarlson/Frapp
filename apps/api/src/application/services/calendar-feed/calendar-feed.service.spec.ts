@@ -1,6 +1,14 @@
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import { CalendarFeedService } from './calendar-feed.service';
+import {
+  CalendarFeedService,
+  calendarFeedTokenHash,
+} from './calendar-feed.service';
+import {
+  openAiText,
+  parseAiTextKeyRing,
+  sealAiText,
+} from '#domain/utils/ai-text-cipher';
 import type { ICalendarFeedRepository } from '#domain/repositories/calendar-feed.repository.interface';
 import type { CalendarFeed } from '#domain/entities/calendar-feed.entity';
 import type { Event } from '#domain/entities/event.entity';
@@ -13,17 +21,34 @@ const CHAPTER = 'chapter-1';
 const USER = 'user-1';
 const TOKEN = 'a'.repeat(43);
 const NOW = new Date('2026-11-12T19:00:00.000Z');
+const KEY = `k1:${Buffer.alloc(32, 7).toString('base64')}`;
+const RING = parseAiTextKeyRing(KEY, 'CALENDAR_FEED_TOKEN_KEY');
+const CONTEXT = `calendar-feed:${CHAPTER}:${USER}`;
 
+/** A link made before tokens were sealed: its token stored in plain text. */
 function feedRow(overrides: Partial<CalendarFeed> = {}): CalendarFeed {
+  const token = overrides.token ?? TOKEN;
   return {
     id: 'feed-1',
     user_id: USER,
     chapter_id: CHAPTER,
-    token: TOKEN,
+    token,
+    token_hash: calendarFeedTokenHash(token),
+    token_sealed: null,
     created_at: '2026-11-12T00:00:00.000Z',
     revoked_at: null,
     ...overrides,
   };
+}
+
+/** A link as it is stored now: hashed, and sealed so the menu can show it. */
+function sealedRow(token = TOKEN, overrides: Partial<CalendarFeed> = {}) {
+  return feedRow({
+    token: null,
+    token_hash: calendarFeedTokenHash(token),
+    token_sealed: sealAiText(RING, token, CONTEXT),
+    ...overrides,
+  });
 }
 
 function event(overrides: Partial<Event> = {}): Event {
@@ -89,6 +114,7 @@ function task(overrides: Partial<TaskView> = {}): TaskView {
 
 interface SetupOptions {
   apiUrl?: string;
+  key?: string;
   feed?: CalendarFeed | null;
   member?: { role_ids: string[] } | null;
   canRead?: boolean;
@@ -99,7 +125,8 @@ interface SetupOptions {
 
 function setup({
   apiUrl = 'https://api.frapp.live',
-  feed = feedRow(),
+  key = KEY,
+  feed = sealedRow(),
   member = { role_ids: ['brothers'] },
   canRead = true,
   enabledModules = null,
@@ -107,12 +134,15 @@ function setup({
   tasks = [task()],
 }: SetupOptions = {}) {
   const feeds: jest.Mocked<ICalendarFeedRepository> = {
-    findByToken: jest.fn().mockResolvedValue(feed),
+    findByTokenHash: jest.fn().mockResolvedValue(feed),
     findLive: jest.fn().mockResolvedValue(null),
     create: jest
       .fn()
-      .mockImplementation(async (data) => feedRow({ ...data, id: 'new' })),
+      .mockImplementation(async (data) =>
+        feedRow({ ...data, token: null, id: 'new' }),
+      ),
     revokeLive: jest.fn().mockResolvedValue(undefined),
+    sealLegacy: jest.fn().mockResolvedValue(undefined),
   };
   const chapters = {
     findById: jest.fn().mockResolvedValue({
@@ -133,8 +163,12 @@ function setup({
   };
   const taskService = { list: jest.fn().mockResolvedValue(tasks) };
   const config = {
-    get: (key: string) =>
-      ({ API_URL: apiUrl, APP_URL: 'https://app.frapp.live' })[key],
+    get: (name: string) =>
+      ({
+        API_URL: apiUrl,
+        APP_URL: 'https://app.frapp.live',
+        CALENDAR_FEED_TOKEN_KEY: key,
+      })[name],
   } as unknown as ConfigService;
 
   const service = new CalendarFeedService(
@@ -150,28 +184,64 @@ function setup({
 }
 
 describe('CalendarFeedService.ensure / reset', () => {
-  it('returns the live link without making another', async () => {
+  it('returns the live link, opened from its sealed copy, without making another', async () => {
     const { service, feeds } = setup();
-    feeds.findLive.mockResolvedValue(feedRow());
+    feeds.findLive.mockResolvedValue(sealedRow());
     const link = await service.ensure(CHAPTER, USER);
     expect(link).toEqual({
       url: `https://api.frapp.live/v1/calendar-feed/feed.ics?token=${TOKEN}`,
       webcal_url: `webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=${TOKEN}`,
     });
     expect(feeds.create).not.toHaveBeenCalled();
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
   });
 
-  it('makes a link with a 256-bit url-safe token on first ask', async () => {
+  it('makes a link with a 256-bit url-safe token, stored only hashed and sealed', async () => {
     const { service, feeds } = setup();
     const link = await service.ensure(CHAPTER, USER);
-    const token = feeds.create.mock.calls[0][0].token;
+    const token = new URL(link.url).searchParams.get('token') ?? '';
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(feeds.create).toHaveBeenCalledWith({
-      chapter_id: CHAPTER,
-      user_id: USER,
-      token,
-    });
-    expect(link.url).toContain(`token=${token}`);
+    const stored = feeds.create.mock.calls[0][0];
+    expect(Object.keys(stored).sort()).toEqual([
+      'chapter_id',
+      'token_hash',
+      'token_sealed',
+      'user_id',
+    ]);
+    expect(stored.token_hash).toBe(calendarFeedTokenHash(token));
+    expect(stored.token_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.token_sealed).not.toContain(token);
+    expect(openAiText(RING, stored.token_sealed, CONTEXT)).toBe(token);
+  });
+
+  it('seals a legacy link when it is shown, and still shows it', async () => {
+    const { service, feeds } = setup();
+    feeds.findLive.mockResolvedValue(feedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).toContain(`token=${TOKEN}`);
+    const [id, sealed] = feeds.sealLegacy.mock.calls[0];
+    expect(id).toBe('feed-1');
+    expect(openAiText(RING, sealed, CONTEXT)).toBe(TOKEN);
+  });
+
+  it("won't open a sealed copy moved onto another member's link", async () => {
+    const { service, feeds } = setup();
+    feeds.findLive.mockResolvedValue(
+      sealedRow(TOKEN, { user_id: 'someone-else' }),
+    );
+    await expect(service.ensure(CHAPTER, 'someone-else')).rejects.toThrow();
+  });
+
+  it('refuses to make or show a link without CALENDAR_FEED_TOKEN_KEY', async () => {
+    const { service, feeds } = setup({ key: '' });
+    await expect(service.ensure(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    await expect(service.reset(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(feeds.create).not.toHaveBeenCalled();
+    expect(feeds.revokeLive).not.toHaveBeenCalled();
   });
 
   it('hands back the link a racing request made', async () => {
@@ -226,6 +296,37 @@ describe('CalendarFeedService.fetch', () => {
     await expect(service.fetch(TOKEN, NOW)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('looks a link up by the hash of its token', async () => {
+    const { service, feeds } = setup();
+    await service.fetch(TOKEN, NOW);
+    expect(feeds.findByTokenHash).toHaveBeenCalledWith(
+      calendarFeedTokenHash(TOKEN),
+    );
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
+  });
+
+  it('seals a legacy link on fetch and serves it', async () => {
+    const { service, feeds } = setup({ feed: feedRow() });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VEVENT');
+    const [, sealed] = feeds.sealLegacy.mock.calls[0];
+    expect(openAiText(RING, sealed, CONTEXT)).toBe(TOKEN);
+  });
+
+  it('still serves a legacy link when sealing it fails', async () => {
+    const { service, feeds } = setup({ feed: feedRow() });
+    feeds.sealLegacy.mockRejectedValue(new Error('db down'));
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VEVENT');
+  });
+
+  it('serves links already handed out without CALENDAR_FEED_TOKEN_KEY', async () => {
+    const { service, feeds } = setup({ key: '', feed: feedRow() });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VEVENT');
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
   });
 
   it('serves the member-visible events and open tasks, linked back', async () => {
@@ -283,7 +384,7 @@ describe('CalendarFeedService.fetch', () => {
   it.each([
     [
       'the link was reset',
-      { feed: feedRow({ revoked_at: NOW.toISOString() }) },
+      { feed: sealedRow(TOKEN, { revoked_at: NOW.toISOString() }) },
     ],
     ['the member left the chapter', { member: null }],
     ['the member lost members:view', { canRead: false }],
@@ -310,18 +411,18 @@ describe('CalendarFeedService.fetch', () => {
     const { service, feeds } = setup();
     await service.fetch(TOKEN, NOW);
     await service.fetch(TOKEN, new Date(NOW.getTime() + 60_000));
-    expect(feeds.findByToken).toHaveBeenCalledTimes(1);
+    expect(feeds.findByTokenHash).toHaveBeenCalledTimes(1);
     await service.fetch(TOKEN, new Date(NOW.getTime() + 6 * 60_000));
-    expect(feeds.findByToken).toHaveBeenCalledTimes(2);
+    expect(feeds.findByTokenHash).toHaveBeenCalledTimes(2);
   });
 
   it('stops serving the old render once the link is reset', async () => {
     const { service, feeds } = setup();
     await service.fetch(TOKEN, NOW);
-    feeds.findLive.mockResolvedValue(feedRow());
+    feeds.findLive.mockResolvedValue(sealedRow());
     await service.reset(CHAPTER, USER);
-    feeds.findByToken.mockResolvedValue(
-      feedRow({ revoked_at: NOW.toISOString() }),
+    feeds.findByTokenHash.mockResolvedValue(
+      sealedRow(TOKEN, { revoked_at: NOW.toISOString() }),
     );
     const ics = await service.fetch(TOKEN, NOW);
     expect(ics).not.toContain('BEGIN:VEVENT');

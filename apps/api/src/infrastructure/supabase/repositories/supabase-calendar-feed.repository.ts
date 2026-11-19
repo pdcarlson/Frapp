@@ -8,7 +8,8 @@ import { SupabaseQueryError } from '../supabase-query-error';
 /**
  * Members' calendar subscription links (#3322).
  *
- * Every query but `findByToken` filters on `chapter_id` and `user_id`. The
+ * Every query but `findByTokenHash` and `sealLegacy` filters on `chapter_id`
+ * and `user_id`; `sealLegacy` names one row by id. The
  * table enables RLS with no policies, so only the API (service role) reaches
  * it, and a link is served only through `CalendarFeedService`.
  */
@@ -19,11 +20,11 @@ export class SupabaseCalendarFeedRepository implements ICalendarFeedRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async findByToken(token: string): Promise<CalendarFeed | null> {
+  async findByTokenHash(tokenHash: string): Promise<CalendarFeed | null> {
     const { data, error } = await this.supabase
       .from('calendar_feeds')
       .select('*')
-      .eq('token', token)
+      .eq('token_hash', tokenHash)
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
@@ -47,12 +48,14 @@ export class SupabaseCalendarFeedRepository implements ICalendarFeedRepository {
   async create(data: {
     chapter_id: string;
     user_id: string;
-    token: string;
+    token_hash: string;
+    token_sealed: string;
   }): Promise<CalendarFeed> {
     const row: TablesInsert<'calendar_feeds'> = {
       chapter_id: data.chapter_id,
       user_id: data.user_id,
-      token: data.token,
+      token_hash: data.token_hash,
+      token_sealed: data.token_sealed,
     };
     const { data: created, error } = await this.supabase
       .from('calendar_feeds')
@@ -61,6 +64,15 @@ export class SupabaseCalendarFeedRepository implements ICalendarFeedRepository {
       .single();
     if (error) throw new SupabaseQueryError(error);
     return created;
+  }
+
+  async sealLegacy(id: string, tokenSealed: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('calendar_feeds')
+      .update({ token_sealed: tokenSealed, token: null })
+      .eq('id', id)
+      .not('token', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async revokeLive(chapterId: string, userId: string): Promise<void> {
