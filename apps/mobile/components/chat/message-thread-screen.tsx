@@ -72,7 +72,7 @@ import {
   type AskAccess,
   type ChatCatchUpPoint,
 } from "@repo/validation";
-import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
+import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import type { SendOptions } from "@/lib/chat/use-chat-channel";
 import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
@@ -997,6 +997,7 @@ export function MessageThreadScreen({
             ) : null}
           </View>
 
+          {catchUp.block}
           {catchUp.waiting ? (
             <CatchUpStrip
               line={CHAT_CATCH_UP_COPY.resume_line}

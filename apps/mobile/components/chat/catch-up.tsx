@@ -1,13 +1,13 @@
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal } from "@gorhom/bottom-sheet";
+  Keyboard,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useChatCatchUp, type ChatCatchUpTarget } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
@@ -33,37 +33,30 @@ import {
 import { CloseGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { Segmented } from "@/components/segmented";
-import {
-  SHEET_STACK_BEHAVIOR,
-  SheetBackToClose,
-  SheetGrabber,
-  SheetScrim,
-  useGuardedSheetRef,
-  useSheetBackgroundStyle,
-} from "@/components/sheet-scaffold";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
-import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Catch me up on the phone (#3946, `spec/behavior/ai.md` § Catch me up): a
  * member back from class opens a busy channel and asks for the short version.
  * They get a few lines, each one a door to the message it came from. Web's
  * twin is `apps/web/components/chat/catch-up-panel.tsx`; both ask the same
- * route (`useChatCatchUp`) and say the same words (`CHAT_CATCH_UP_COPY`).
+ * route (`useChatCatchUp`), say the same words (`CHAT_CATCH_UP_COPY`) and sit
+ * in the same place.
  *
- * **Where the others put it.** Slack's recap on a phone is a sheet over the
- * channel whose lines jump to their messages; Discord's summaries sit above
- * the channel as a strip to jump from. This takes both: a strip under the
- * header offers it when a channel opens with many new messages
- * ({@link CatchUpStrip}), the header's menu and a thread's header offer it
- * any time, and the summary itself is a sheet.
+ * **In the channel, not over it** (Paul, 2026-11-19, on web's side card: "I
+ * NEVER WANT TO SEE ANOTHER ONE OF THESE SIDE CARDS"; web and phone stay one
+ * design). It was a bottom sheet over the channel. Now the summary is a block
+ * under the channel's (or the thread's) header, where the offer strip sits,
+ * as Gmail and Outlook put a thread's summary at its top and Discord puts its
+ * summaries strip above a channel. It is at most a third of the screen and
+ * scrolls inside itself, so the conversation stays in view under it.
  *
- * **A line opens its message, and the summary waits.** A phone can't show
- * the sheet and the message side by side as web's panel does, so tapping a
- * line closes the sheet and scrolls to the message. The same strip then
- * reads "Your summary is still here", and leads back to the same summary:
- * reading four lines costs one request, not four. Swiping the sheet away
- * ends the summary, and so does leaving the channel.
+ * **A line opens its message, and the summary folds.** A phone can't show
+ * the summary and the message at once the way a computer can, so pressing a
+ * line folds the block to the one-line strip ("Your summary is still here.")
+ * and scrolls to the message; the strip leads back to the same summary, so
+ * reading four lines costs one request, not four. Hide folds it the same way
+ * (as on web). The × ends the summary, and so does leaving the channel.
  *
  * **Only the member's, and never stored.** The summary lives in this hook's
  * state. Report this is the one way any of it is kept
@@ -73,14 +66,14 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * **Consent is asked at the first summary**, not when an entry point shows
  * (`useAiConsentGate`). The server checks again.
  *
- * **Nothing moves while it works.** The sheet opens at one fixed height with
- * its title and range control in place; the working line sits where the
- * first group lands.
+ * **Nothing moves while it works.** The block opens with its title and range
+ * control in place; the working line sits where the first group lands.
  */
 
-const SNAP_POINTS = ["78%"];
+/** The most of the screen the open summary takes. */
+const MAX_SHARE_OF_SCREEN = 1 / 3;
 
-/** What a summary is of. The same shape web's panel takes. */
+/** What a summary is of. The same shape web's takes. */
 export type CatchUpScope =
   | {
       kind: "channel";
@@ -113,23 +106,25 @@ function targetFor(
 }
 
 export interface CatchUp {
-  /** Asks for a summary straight away and opens the sheet on it. */
+  /** Asks for a summary straight away and opens it under the header. */
   start: (scope: CatchUpScope) => void;
   /**
-   * A summary is waiting behind a message the member opened from it.
-   * `resume` brings the sheet back; `drop` ends the summary.
+   * A summary is folded to one line: hidden, or behind a message the member
+   * opened from it. `resume` unfolds it; `drop` ends the summary.
    */
   waiting: boolean;
   resume: () => void;
   drop: () => void;
-  /** The sheet is up, or a summary is waiting: no offer should show. */
+  /** A summary is open or folded: no offer should show. */
   active: boolean;
-  /** Render once in the screen. */
+  /** The open summary, to render under the header; null when none or folded. */
+  block: ReactNode;
+  /** The consent and report sheets the summary may ask through. Render once. */
   sheets: ReactNode;
 }
 
 /**
- * The sheet and what opens it, for one screen (a channel or a thread).
+ * The summary and what opens it, for one screen (a channel or a thread).
  * `start` asks for a summary of the thread, of the new stretch when the
  * channel had one, otherwise of the last 24 hours.
  */
@@ -141,10 +136,9 @@ export function useCatchUp({
   /** The channel on screen. A summary of any other channel is dropped. */
   channelId: string | null;
   nameFor: (userId: string) => string | null | undefined;
-  /** Opens the message a line rests on. The sheet has already closed. */
+  /** Opens the message a line rests on. The summary has already folded. */
   onOpenPoint: (point: ChatCatchUpPoint) => void;
 }): CatchUp {
-  const sheetRef = useRef<BottomSheetModal>(null);
   const { current, run, reset } = useChatCatchUp();
   const { ensureConsent, consentSheet } = useAiConsentGate();
   const reporting = useAiReport();
@@ -153,9 +147,8 @@ export function useCatchUp({
   // A summary that never reached the server: no answer on the AI sheet yet,
   // or the answer could not be read.
   const [held, setHeld] = useState<Held | null>(null);
-  // The sheet closed so the member could look at a message.
+  // Folded to one line: by Hide, or so the member could look at a message.
   const [away, setAway] = useState(false);
-  const leavingForPoint = useRef(false);
 
   const end = useCallback(() => {
     setScope(null);
@@ -166,7 +159,7 @@ export function useCatchUp({
 
   // Leaving the channel ends its summary. This screen stays mounted across a
   // channel switch, so what it held is dropped during render, and a request
-  // in flight and a sheet left up go with the old channel.
+  // in flight goes with the old channel.
   const [seenChannelId, setSeenChannelId] = useState(channelId);
   if (seenChannelId !== channelId) {
     setSeenChannelId(channelId);
@@ -174,13 +167,7 @@ export function useCatchUp({
     setHeld(null);
     setAway(false);
   }
-  useEffect(
-    () => () => {
-      reset();
-      sheetRef.current?.dismiss();
-    },
-    [channelId, reset],
-  );
+  useEffect(() => () => reset(), [channelId, reset]);
 
   const summarize = useCallback(
     async (next: CatchUpScope, nextRange: ChatCatchUpRange) => {
@@ -212,10 +199,8 @@ export function useCatchUp({
       setAway(false);
       setScope(next);
       setRange(nextRange);
-      // The keyboard first, as every sheet door in chat does (#4142): a
-      // sheet opened over the open keyboard sits under it on iOS.
+      // The keyboard down, so the summary has the room above the composer.
       Keyboard.dismiss();
-      sheetRef.current?.present();
       void summarize(next, nextRange);
     },
     [reset, summarize],
@@ -224,22 +209,11 @@ export function useCatchUp({
   const resume = useCallback(() => {
     setAway(false);
     Keyboard.dismiss();
-    sheetRef.current?.present();
   }, []);
-
-  const onDismiss = useCallback(() => {
-    if (leavingForPoint.current) {
-      leavingForPoint.current = false;
-      setAway(true);
-      return;
-    }
-    end();
-  }, [end]);
 
   const openPoint = useCallback(
     (point: ChatCatchUpPoint) => {
-      leavingForPoint.current = true;
-      sheetRef.current?.dismiss();
+      setAway(true);
       onOpenPoint(point);
     },
     [onOpenPoint],
@@ -248,27 +222,28 @@ export function useCatchUp({
   const shown =
     scope && current?.channelId === scope.channelId ? current : null;
 
-  const sheets = (
-    <>
-      <CatchUpSheet
-        sheetRef={sheetRef}
+  const block =
+    scope && !away ? (
+      <CatchUpBlock
         scope={scope}
         range={range}
         held={held}
         run={shown}
         nameFor={nameFor}
         onRange={(next) => {
-          if (!scope) return;
           setRange(next);
           void summarize(scope, next);
         }}
-        onAgain={() => {
-          if (scope) void summarize(scope, range);
-        }}
+        onAgain={() => void summarize(scope, range)}
         onOpenPoint={openPoint}
-        onDismiss={onDismiss}
+        onHide={() => setAway(true)}
+        onClose={end}
         report={reporting}
       />
+    ) : null;
+
+  const sheets = (
+    <>
       {consentSheet}
       {reporting.reportSheet}
     </>
@@ -280,6 +255,7 @@ export function useCatchUp({
     resume,
     drop: end,
     active: scope !== null,
+    block,
     sheets,
   };
 }
@@ -287,8 +263,8 @@ export function useCatchUp({
 type Reporting = ReturnType<typeof useAiReport>;
 type Run = ReturnType<typeof useChatCatchUp>["current"];
 
-interface CatchUpSheetProps {
-  scope: CatchUpScope | null;
+interface CatchUpBlockProps {
+  scope: CatchUpScope;
   range: ChatCatchUpRange;
   held: Held | null;
   run: Run;
@@ -296,12 +272,12 @@ interface CatchUpSheetProps {
   onRange: (range: ChatCatchUpRange) => void;
   onAgain: () => void;
   onOpenPoint: (point: ChatCatchUpPoint) => void;
-  onDismiss: () => void;
+  onHide: () => void;
+  onClose: () => void;
   report: Reporting;
 }
 
-function CatchUpSheet({
-  sheetRef,
+function CatchUpBlock({
   scope,
   range,
   held,
@@ -310,108 +286,118 @@ function CatchUpSheet({
   onRange,
   onAgain,
   onOpenPoint,
-  onDismiss,
+  onHide,
+  onClose,
   report,
-}: CatchUpSheetProps & { sheetRef: RefObject<BottomSheetModal | null> }) {
+}: CatchUpBlockProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const backgroundStyle = useSheetBackgroundStyle();
-  // The thread dismisses it on every channel switch, up or not (#5059): the
-  // ref it holds only reaches a sheet that is up.
-  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(sheetRef);
-  const close = useCallback(() => sheetRef.current?.dismiss(), [sheetRef]);
+  const { height } = useWindowDimensions();
   const working = !held && run?.phase === "working";
+  const title =
+    scope.kind === "thread"
+      ? CHAT_CATCH_UP_COPY.thread_title
+      : CHAT_CATCH_UP_COPY.name;
 
   return (
-    <BottomSheetModal
-      ref={modalRef}
-      stackBehavior={SHEET_STACK_BEHAVIOR}
-      // One fixed height: with dynamic sizing the sheet would grow with
-      // every group that lands.
-      enableDynamicSizing={false}
-      snapPoints={SNAP_POINTS}
-      backgroundStyle={backgroundStyle}
-      handleComponent={SheetGrabber}
-      backdropComponent={SheetScrim}
-      onAnimate={onAnimate}
-      onDismiss={() => {
-        markClosed();
-        onDismiss();
-      }}
+    <View
+      testID="catch-up-block"
+      accessibilityLabel={title}
+      style={[styles.block, { maxHeight: Math.round(height * MAX_SHARE_OF_SCREEN) }]}
     >
-      <SheetBackToClose onClose={close} />
-      {scope ? (
-        <BottomSheetScrollView
-          onAccessibilityEscape={close}
-          contentContainerStyle={styles.body}
+      <View style={styles.blockHead}>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          style={styles.blockTitle}
         >
-          <View style={styles.heading}>
-            <Text accessibilityRole="header" style={styles.title}>
-              {scope.kind === "thread"
-                ? CHAT_CATCH_UP_COPY.thread_title
-                : CHAT_CATCH_UP_COPY.name}
-            </Text>
-            <Text style={styles.caption}>
-              {scope.channelName ? `#${scope.channelName} · ` : ""}
-              {CHAT_CATCH_UP_COPY.private}
-            </Text>
-          </View>
-          {scope.kind === "channel" ? (
-            // Never disabled while it works: picking another range replaces
-            // the request in flight.
-            <Segmented
-              accessibilityLabel={CHAT_CATCH_UP_COPY.range_label}
-              value={range}
-              onChange={onRange}
-              options={(scope.unread
-                ? (["unread", "day", "week"] as const)
-                : (["day", "week"] as const)
-              ).map((value) => ({
-                value,
-                label: CHAT_CATCH_UP_COPY.ranges[value],
-              }))}
+          {title}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={CHAT_CATCH_UP_COPY.hide}
+          onPress={onHide}
+          style={({ pressed }) => [
+            styles.headButton,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.hideText}>{CHAT_CATCH_UP_COPY.hide}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={CHAT_CATCH_UP_COPY.close}
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.stripDismiss,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <CloseGlyph size={16} color={tokens.color.text.mutedForeground} />
+        </Pressable>
+      </View>
+      <ScrollView
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        onAccessibilityEscape={onClose}
+        contentContainerStyle={styles.body}
+      >
+        {scope.kind === "channel" ? (
+          // Never disabled while it works: picking another range replaces
+          // the request in flight.
+          <Segmented
+            accessibilityLabel={CHAT_CATCH_UP_COPY.range_label}
+            dense
+            value={range}
+            onChange={onRange}
+            options={(scope.unread
+              ? (["unread", "day", "week"] as const)
+              : (["day", "week"] as const)
+            ).map((value) => ({
+              value,
+              label: CHAT_CATCH_UP_COPY.ranges[value],
+            }))}
+          />
+        ) : null}
+        <View accessibilityLiveRegion="polite" style={styles.result}>
+          {held?.kind === "consent" ? (
+            <Notice
+              line={chatCatchUpUnavailableLine("consent_required")}
+              action={CHAT_CATCH_UP_COPY.consent_action}
+              onAction={onAgain}
+              styles={styles}
+            />
+          ) : held?.kind === "failed" ? (
+            <Notice
+              line={held.message}
+              action={CHAT_CATCH_UP_COPY.try_again}
+              onAction={onAgain}
+              styles={styles}
+            />
+          ) : working ? (
+            <Text style={styles.working}>{CHAT_CATCH_UP_COPY.working}</Text>
+          ) : run?.phase === "failed" ? (
+            <Notice
+              line={run.failure ?? CHAT_CATCH_UP_COPY.failed}
+              action={CHAT_CATCH_UP_COPY.try_again}
+              onAction={onAgain}
+              styles={styles}
+            />
+          ) : run?.summary ? (
+            <Summary
+              // A new summary reads its own "Today".
+              key={run.summary.summary_id ?? run.summary.status}
+              summary={run.summary}
+              nameFor={nameFor}
+              onAgain={onAgain}
+              onOpenPoint={onOpenPoint}
+              report={report}
+              styles={styles}
             />
           ) : null}
-          <View accessibilityLiveRegion="polite" style={styles.result}>
-            {held?.kind === "consent" ? (
-              <Notice
-                line={chatCatchUpUnavailableLine("consent_required")}
-                action={CHAT_CATCH_UP_COPY.consent_action}
-                onAction={onAgain}
-                styles={styles}
-              />
-            ) : held?.kind === "failed" ? (
-              <Notice
-                line={held.message}
-                action={CHAT_CATCH_UP_COPY.try_again}
-                onAction={onAgain}
-                styles={styles}
-              />
-            ) : working ? (
-              <Text style={styles.working}>{CHAT_CATCH_UP_COPY.working}</Text>
-            ) : run?.phase === "failed" ? (
-              <Notice
-                line={run.failure ?? CHAT_CATCH_UP_COPY.failed}
-                action={CHAT_CATCH_UP_COPY.try_again}
-                onAction={onAgain}
-                styles={styles}
-              />
-            ) : run?.summary ? (
-              <Summary
-                // A new summary reads its own "Today".
-                key={run.summary.summary_id ?? run.summary.status}
-                summary={run.summary}
-                nameFor={nameFor}
-                onAgain={onAgain}
-                onOpenPoint={onOpenPoint}
-                report={report}
-                styles={styles}
-              />
-            ) : null}
-          </View>
-        </BottomSheetScrollView>
-      ) : null}
-    </BottomSheetModal>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -590,6 +576,7 @@ function Summary({
         );
       })}
       <Notes summary={summary} styles={styles} />
+      <Text style={styles.caption}>{CHAT_CATCH_UP_COPY.private}</Text>
       <View style={styles.foot}>
         <QuietButton
           label={CHAT_CATCH_UP_COPY.again}
@@ -676,17 +663,37 @@ export function CatchUpStrip({
 function createStyles(tokens: SignetTokens) {
   const caption = typeRole(tokens.typography.role.caption);
   return StyleSheet.create({
+    block: {
+      backgroundColor: tokens.color.surface.surface1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: tokens.color.border.hairline,
+    },
+    blockHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      minHeight: tokens.touch.minimum,
+      paddingLeft: tokens.spacing.lg,
+    },
+    blockTitle: {
+      ...typeRole(tokens.typography.role.label),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
+      flex: 1,
+    },
+    headButton: {
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.sm,
+    },
+    hideText: {
+      ...caption,
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.mutedForeground,
+    },
     body: {
       paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing["2xl"],
+      paddingBottom: tokens.spacing.md,
       gap: tokens.spacing.md,
-    },
-    heading: {
-      gap: tokens.spacing.xs,
-    },
-    title: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
     },
     caption: {
       ...caption,

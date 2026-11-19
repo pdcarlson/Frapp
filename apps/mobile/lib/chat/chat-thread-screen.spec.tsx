@@ -604,9 +604,9 @@ vi.mock("@/lib/ai/availability", () => ({
     askAccess: askAccess.value,
   }),
 }));
-vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
+vi.mock("@/components/chat/catch-up", async (importOriginal) => ({
   ...(await importOriginal<
-    typeof import("@/components/chat/catch-up-sheet")
+    typeof import("@/components/chat/catch-up")
   >()),
   useCatchUp: (options: {
     onOpenPoint: (point: Record<string, unknown>) => void;
@@ -618,6 +618,7 @@ vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
       active: catchUp.active,
       resume: catchUp.resume,
       drop: catchUp.drop,
+      block: null,
       sheets: null,
     };
   },

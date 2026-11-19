@@ -695,15 +695,12 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Until then the ops-setup nudge stays.
 - **Catch me up** (added 2026-11-12, [#3946](https://github.com/pdcarlson/Frapp/issues/3946);
   behavior in [`../../behavior/ai.md` § Catch me up](../../behavior/ai.md#catch-me-up)) has three doors, none shown unless summaries are on for the chapter and the member: the first row of the channel's `⋯` menu, a "Summarize thread" text button in a thread's header once the thread holds 5 messages, and a strip above the timeline when a channel opens with 20 or more new messages ([`components.md` § The Catch me up strip](../design-system/components.md#the-catch-me-up-strip)).
-  The summary opens as a panel on the right edge, in the place and at the width Ask's panel had until #4702 (440px, not modal, the whole viewport below `sm`), because the next thing a member does with a line is open its message, and the summary should still be there.
-  Slack's recap and Teams' Copilot recap open beside the conversation for the same reason; Discord's summaries are a strip to jump from, which is the offer strip here.
-  The panel's header says who it is for ("Only you can see this.
-  It isn't saved.").
-  Under it a segmented control picks the stretch (New messages, Last 24 hours, Last 7 days; New messages only when the channel had some), and picking one asks again.
-  The points sit under four group labels, each point one sentence over its author and the full date and time, and the whole point is the link.
+  The summary opens in the channel itself, as a block between the channel header and the first message, in the offer strip's place (a thread's opens at the top of the thread pane). Changed 2026-11-19 at Paul's word ("I NEVER WANT TO SEE ANOTHER ONE OF THESE SIDE CARDS"): until then it was a 440px panel on the window's right edge, in the place Ask's panel had until #4702, chosen so the summary stayed beside the message a line opened, as Slack's recap and Teams' Copilot recap do; it covered the page beside chat. The block keeps that reason without the card: it is at most a third of the pane tall and scrolls inside itself, so pressing a line scrolls the conversation under it to the message and the summary is still above it. Gmail's and Outlook's thread summaries sit at the top of the thread the same way, and Discord's summaries are a strip above the channel.
+  Its header row is the title, a dense segmented control picking the stretch (New messages, Last 24 hours, Last 7 days; New messages only when the channel had some; picking one asks again), then **Hide** and an ×.
+  Hide folds it to the one-line strip "Your summary is still here." with **Back to summary**, the phone's strip; the × ends it. Escape inside the block ends it too; nothing is dimmed or modal, so Escape in the composer stays the composer's.
+  The points sit under four group labels, each point one sentence over its author and the full date and time, and the whole point is the link. Under them, who it is for ("Only you can see this. It isn't saved."), then Summarize again and Report this.
   While it works, one line ("Reading the conversation") sits where the first group lands, so nothing above it moves.
-  Leaving the channel closes the panel and ends the summary.
-  If Ask's card is open too, the summary is drawn over that side of it until one is closed.
+  Leaving the channel ends the summary.
 - **`@Frapp` in the message box asks Frapp from the channel** (added in #4713 by pdcarlson, 2026-11-13; behavior in [`../../behavior/ai.md` § Asking from a channel](../../behavior/ai.md#asking-from-a-channel)).
   For a member with Ask the composer's `@` list offers Frapp (`mention-list.tsx`), and while the draft names `@Frapp` a caption on the composer's control row, beside the send button, says only they will see the question and the answer.
   Where the row is too narrow for the sentence (a phone-width window) it is a private mark and "Only you", and a screen reader still gets the sentence.

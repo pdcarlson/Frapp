@@ -106,7 +106,7 @@ import {
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ImportantStrip } from "@/components/chat/important-strip";
-import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
+import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -1943,9 +1943,11 @@ function ChannelThreadScreen() {
           ) : null}
 
           {/*
-            One strip, in one place: back to a summary a line was opened
-            from, or the offer on a channel opened with many new messages.
+            The open summary, in the channel under its header; folded, one
+            strip in the same place leads back to it. Otherwise the offer on
+            a channel opened with many new messages.
           */}
+          {catchUp.block}
           {catchUp.waiting ? (
             <CatchUpStrip
               line={CHAT_CATCH_UP_COPY.resume_line}

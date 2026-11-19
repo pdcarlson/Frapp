@@ -17,7 +17,8 @@ import { screenText } from "@/test/screen-text";
 /**
  * Catch me up on the phone (#3946): what a member sees for each way a
  * summary can end, that nothing is sent before they have said yes, and that
- * a line opens its message while the summary waits to be come back to. The
+ * a line opens its message while the summary folds to wait for them. It sits
+ * in the channel under the header, never a sheet over it (Paul, 2026-11-19). The
  * screens' entry points are in `chat-thread-screen.spec.tsx` and
  * `message-thread-screen.spec.tsx`.
  */
@@ -61,9 +62,8 @@ vi.mock("@/components/ai/report-ai-sheet", () => ({
   }),
 }));
 
-import { useCatchUp, type CatchUp, type CatchUpScope } from "./catch-up-sheet";
+import { useCatchUp, type CatchUp, type CatchUpScope } from "./catch-up";
 
-const modal = { present: vi.fn(), dismiss: vi.fn() };
 const onOpenPoint = vi.fn();
 let catchUp!: CatchUp;
 
@@ -80,7 +80,12 @@ function Harness({
     onOpenPoint,
   });
   onValue(value);
-  return value.sheets;
+  return (
+    <>
+      {value.block}
+      {value.sheets}
+    </>
+  );
 }
 const keep = (value: CatchUp) => {
   catchUp = value;
@@ -93,17 +98,15 @@ const screen = (channelId: string) => (
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(screen("c1"), {
-      createNodeMock: (element) =>
-        (element.type as unknown) === "BottomSheetModal" ? modal : null,
-    });
+    tree = create(screen("c1"));
   });
   return tree;
 }
-const sheet = (tree: ReactTestRenderer) =>
+const block = (tree: ReactTestRenderer) =>
   tree.root.findAll(
-    (node) => (node.type as unknown) === "BottomSheetModal",
-  )[0]!;
+    (node) =>
+      typeof node.type === "string" && node.props.testID === "catch-up-block",
+  );
 const byLabel = (tree: ReactTestRenderer, label: string) =>
   tree.root.findAll(
     (node) =>
@@ -164,8 +167,6 @@ const done = (over?: Partial<ChatCatchUp>) => ({
 });
 async function start(tree: ReactTestRenderer, scope: CatchUpScope) {
   await act(async () => catchUp.start(scope));
-  // What gorhom reports as `present()` starts bringing the sheet up.
-  act(() => sheet(tree).props.onAnimate(-1, 0));
   return tree;
 }
 function show(tree: ReactTestRenderer, current: unknown) {
@@ -185,15 +186,14 @@ beforeEach(() => {
 describe("Catch me up", () => {
   it("asks for the new stretch straight away, by the count it was opened with", async () => {
     const tree = await start(render(), CHANNEL);
-    expect(modal.present).toHaveBeenCalledTimes(1);
+    expect(block(tree)).toHaveLength(1);
     expect(gate.ensureConsent).toHaveBeenCalledTimes(1);
     expect(hooks.run).toHaveBeenCalledWith("c1", {
       unread: { count: 60, as_of: "2026-11-12T15:00:00.000Z" },
     });
-    const text = screenText(tree);
-    expect(text).toContain(CHAT_CATCH_UP_COPY.name);
-    expect(text).toContain("#general");
-    expect(text).toContain(CHAT_CATCH_UP_COPY.private);
+    expect(screenText(tree)).toContain(CHAT_CATCH_UP_COPY.name);
+    show(tree, done());
+    expect(screenText(tree)).toContain(CHAT_CATCH_UP_COPY.private);
     expect(catchUp.active).toBe(true);
     expect(catchUp.waiting).toBe(false);
   });
@@ -277,7 +277,7 @@ describe("Catch me up", () => {
     expect(text).toContain(askLeftOutLine(3));
   });
 
-  it("opens a line's message, and waits to be come back to without asking again", async () => {
+  it("opens a line's message and folds, then comes back without asking again", async () => {
     const tree = await start(render(), CHANNEL);
     show(tree, done());
     const line = tree.root.findAll(
@@ -286,59 +286,44 @@ describe("Catch me up", () => {
         String(node.props.accessibilityLabel).startsWith(POINT.text),
     )[0]!;
     act(() => line.props.onPress());
-    expect(modal.dismiss).toHaveBeenCalledTimes(1);
     expect(onOpenPoint).toHaveBeenCalledWith(
       expect.objectContaining({ message_id: "m7" }),
     );
-    // The sheet finishes closing: the summary is kept.
-    act(() => sheet(tree).props.onDismiss());
+    // Folded to the strip so the message shows: the summary is kept.
+    expect(block(tree)).toHaveLength(0);
     expect(hooks.reset).toHaveBeenCalledTimes(1); // the one `start` made
     expect(catchUp.waiting).toBe(true);
     expect(catchUp.active).toBe(true);
 
     act(() => catchUp.resume());
-    expect(modal.present).toHaveBeenCalledTimes(2);
     expect(hooks.run).toHaveBeenCalledTimes(1);
     expect(catchUp.waiting).toBe(false);
     expect(screenText(tree)).toContain(POINT.text);
   });
 
-  it("ends the summary when the sheet is swiped away", async () => {
+  it("folds by Hide and ends by its ×", async () => {
     const tree = await start(render(), CHANNEL);
     show(tree, done());
+    act(() => byLabel(tree, CHAT_CATCH_UP_COPY.hide)[0]!.props.onPress());
+    expect(catchUp.waiting).toBe(true);
+    expect(block(tree)).toHaveLength(0);
+
+    act(() => catchUp.resume());
     hooks.reset.mockClear();
-    act(() => sheet(tree).props.onDismiss());
+    act(() => byLabel(tree, CHAT_CATCH_UP_COPY.close)[0]!.props.onPress());
     expect(hooks.reset).toHaveBeenCalledTimes(1);
     expect(catchUp.active).toBe(false);
-    expect(catchUp.waiting).toBe(false);
+    expect(block(tree)).toHaveLength(0);
   });
 
   it("drops a waiting summary from the strip's ×", async () => {
     const tree = await start(render(), CHANNEL);
     show(tree, done());
-    act(() => catchUp.resume());
+    act(() => byLabel(tree, CHAT_CATCH_UP_COPY.hide)[0]!.props.onPress());
     hooks.reset.mockClear();
     act(() => catchUp.drop());
     expect(hooks.reset).toHaveBeenCalledTimes(1);
     expect(catchUp.active).toBe(false);
-    void tree;
-  });
-
-  it("leaves the sheet alone on a channel switch when it was never opened (#5059)", async () => {
-    const tree = render();
-    act(() => tree.update(screen("c2")));
-    expect(modal.dismiss).not.toHaveBeenCalled();
-    // gorhom would have wedged on that dismiss, and the next present drawn
-    // nothing: the next Catch me up still opens.
-    await act(async () => catchUp.start({ ...CHANNEL, channelId: "c2" }));
-    expect(modal.present).toHaveBeenCalledTimes(1);
-  });
-
-  it("leaves a sheet swiped away alone on the next channel switch (#5059)", async () => {
-    const tree = await start(render(), CHANNEL);
-    act(() => sheet(tree).props.onDismiss());
-    act(() => tree.update(screen("c2")));
-    expect(modal.dismiss).not.toHaveBeenCalled();
   });
 
   it("drops the summary, and any request, when the channel changes under it", async () => {
@@ -347,8 +332,8 @@ describe("Catch me up", () => {
     hooks.reset.mockClear();
     act(() => tree.update(screen("c2")));
     expect(hooks.reset).toHaveBeenCalled();
-    expect(modal.dismiss).toHaveBeenCalled();
     expect(catchUp.active).toBe(false);
+    expect(block(tree)).toHaveLength(0);
   });
 
   it("never shows another channel's summary", async () => {

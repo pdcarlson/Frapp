@@ -54,9 +54,18 @@ import { cn } from "@/lib/utils";
  * (`thread-panel.tsx`). Below the side-by-side width the tool column is the
  * whole page, so docked is a full page there.
  *
- * A panel opened from somewhere with no page of its own (`/event` in chat)
- * stays the sheet. A yes/no question stays a centred dialog: there, blocking
- * the screen is the point.
+ * **Docked where it was opened** (`docked="here"`, Paul, 2026-11-19: "I
+ * NEVER WANT TO SEE ANOTHER ONE OF THESE SIDE CARDS"). A panel opened from a
+ * surface with no page of its own (a profile from a name in chat, + New
+ * channel, an event form from chat's + card or from an Ask answer) docks
+ * into the surface around it instead of sliding over the window: the nearest
+ * `PANEL_HOST_ATTRIBUTE` box it is rendered inside (chat's own column, Ask's
+ * card). It covers that box with a back arrow, as a thread covers the chat
+ * on a narrow window, and the page beside it stays live.
+ *
+ * The sheet is left only as the fallback for a panel with nowhere to dock (a
+ * test, a page outside the shell). A yes/no question stays a centred dialog:
+ * there, blocking the screen is the point.
  */
 type PanelDock = {
   onClose: () => void;
@@ -75,6 +84,16 @@ const noSubscribe = () => () => undefined;
 const TOOL_COLUMN_SELECTOR = "[data-tool-column]";
 
 /**
+ * Marks a box a `docked="here"` panel opened inside it covers: chat's column
+ * (`chat-shell.tsx`) and Ask's card (`ask-card.tsx`). The box must be a
+ * containing block (`relative`, or `fixed`) so the panel fills it.
+ */
+export const PANEL_HOST_ATTRIBUTE = "data-panel-host";
+
+/** `true` docks in the tool column; `"here"` in the surface it opened from. */
+export type PanelDocking = boolean | "here";
+
+/**
  * The panel's root: the sheet, or with `docked` the page's own column. Use it
  * in place of `Sheet` so a caller switches with one prop.
  */
@@ -87,21 +106,33 @@ export function Panel({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  docked?: boolean;
+  docked?: PanelDocking;
   /** The back arrow's name when docked: where it goes ("Back to events"). */
   backLabel?: string;
   children: React.ReactNode;
 }) {
   const titleId = React.useId();
   const descriptionId = React.useId();
-  useOpenerTracking(docked);
+  useOpenerTracking(docked !== false);
   // `undefined` on the server and in the first hydrating render, so the
   // markup matches; then the column, or `null` when there is none.
-  const column = React.useSyncExternalStore<Element | null | undefined>(
+  const toolColumn = React.useSyncExternalStore<Element | null | undefined>(
     noSubscribe,
-    () => (docked ? document.querySelector(TOOL_COLUMN_SELECTOR) : null),
+    () =>
+      docked === true ? document.querySelector(TOOL_COLUMN_SELECTOR) : null,
     () => undefined,
   );
+  // `"here"`: the host box around where this panel is rendered, found from a
+  // hidden marker once it is in the document.
+  const marker = React.useRef<HTMLSpanElement>(null);
+  const [host, setHost] = React.useState<Element | null | undefined>(
+    undefined,
+  );
+  React.useLayoutEffect(() => {
+    if (docked !== "here") return;
+    setHost(marker.current?.closest(`[${PANEL_HOST_ATTRIBUTE}]`) ?? null);
+  }, [docked]);
+  const column = docked === "here" ? host : toolColumn;
 
   const dock = React.useMemo<PanelDock>(
     () => ({
@@ -113,21 +144,31 @@ export function Panel({
     [onOpenChange, backLabel, titleId, descriptionId],
   );
 
-  // Docked with no tool column to land in (a page outside the shell, a
-  // test) falls back to the sheet rather than showing nothing.
+  const hereMarker =
+    docked === "here" ? <span ref={marker} hidden data-panel-marker="" /> : null;
+  // Docked with nowhere to land (a page outside the shell, a test) falls
+  // back to the sheet rather than showing nothing.
   if (!docked || column === null) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        {children}
-      </Sheet>
+      <>
+        {hereMarker}
+        <Sheet open={open} onOpenChange={onOpenChange}>
+          {children}
+        </Sheet>
+      </>
     );
   }
-  if (!open || !column) return null;
-  return createPortal(
-    <PanelDockContext.Provider value={dock}>
-      {children}
-    </PanelDockContext.Provider>,
-    column,
+  if (!open || !column) return hereMarker;
+  return (
+    <>
+      {hereMarker}
+      {createPortal(
+        <PanelDockContext.Provider value={dock}>
+          {children}
+        </PanelDockContext.Provider>,
+        column,
+      )}
+    </>
   );
 }
 
@@ -446,6 +487,7 @@ export function PanelHeader({
         <IconButton
           label={dock.backLabel}
           onClick={dock.onClose}
+          data-panel-back=""
           className="shrink-0 text-muted-foreground"
         >
           <ArrowLeft className="h-[18px] w-[18px]" aria-hidden="true" />

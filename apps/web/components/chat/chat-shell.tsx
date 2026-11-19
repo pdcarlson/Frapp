@@ -179,7 +179,7 @@ import { ChatBackground, useChapterLetters } from "./chat-background";
 import { ChatDropTarget } from "./chat-drop-target";
 import {
   CatchUpOffer,
-  useCatchUpPanel,
+  useCatchUp,
   type CatchUpScope,
 } from "./catch-up-panel";
 import {
@@ -2937,7 +2937,7 @@ export function ChatShell({
     },
     [activeChannelId, jumpToChannelMessage],
   );
-  const catchUp = useCatchUpPanel({
+  const catchUp = useCatchUp({
     activeChannelId,
     nameFor,
     onOpenPoint: openCatchUpPoint,
@@ -3542,6 +3542,9 @@ export function ChatShell({
           canPost={activeChannel.can_post !== false}
           onClose={closeThread}
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
+          catchUpBlock={
+            catchUp.openKind === "thread" ? catchUp.element : null
+          }
           jumpTo={threadJump}
           askRefusal={replyAskRefusalFor}
           // A reply scheduled into this thread (#5005): the API checks it as
@@ -3574,7 +3577,13 @@ export function ChatShell({
       or `md:sticky` rail positioning. They are flush columns divided by
       hairlines, and each owns its own scroll because the page has none.
     */
-    <div className="flex h-full min-h-0">
+    <div
+      // A form or a profile opened from chat docks over this column
+      // (`Panel`'s `docked="here"`) rather than sliding over the window.
+      data-panel-host=""
+      data-chat-column=""
+      className="relative flex h-full min-h-0"
+    >
       {/*
         The shell's skip link lands the keyboard user at the top of the chat
         panel, which holds the channel list this link exists to skip past.
@@ -4177,6 +4186,8 @@ export function ChatShell({
                 }))
               }
             />
+            {/* The summary itself, in the channel above its messages. */}
+            {catchUp.openKind === "channel" ? catchUp.element : null}
             {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
@@ -4533,6 +4544,10 @@ export function ChatShell({
         <MemberDetailSheet
           open={profileOpen}
           onOpenChange={setProfileOpen}
+          // Over the chat column, never over the page beside it (Paul,
+          // 2026-11-19: no side cards).
+          docked="here"
+          backLabel="Back to chat"
           userId={profileUserId}
           identity={{
             name: nameFor(profileUserId),
@@ -4541,11 +4556,13 @@ export function ChatShell({
         />
       ) : null}
 
-      {catchUp.element}
+      {catchUp.dialogs}
       {confirmDialog}
       {canManageChannel ? (
         <CreateChannelSheet
           open={createChannelIn !== undefined}
+          docked="here"
+          backLabel="Back to chat"
           onOpenChange={(open) => {
             if (!open) setCreateChannelIn(undefined);
           }}
@@ -4568,6 +4585,8 @@ export function ChatShell({
       {eventEditor ? (
         <EventEditorDialog
           open={eventEditor.open}
+          docked="here"
+          backLabel="Back to chat"
           onOpenChange={(open) =>
             setEventEditor((previous) =>
               previous ? { ...previous, open } : previous,

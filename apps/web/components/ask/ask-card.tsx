@@ -275,11 +275,30 @@ export function AskCard({
           <DialogOverlay className="motion-reduce:animate-none" />
           <DialogPrimitive.Content
             aria-describedby={undefined}
+            // An event form opened from an answer docks over the card
+            // (`Panel`'s `docked="here"`), never a card over the window.
+            data-panel-host=""
             // Closing drops a question still being answered (above), so a
             // stray click on the page behind does not close it mid-answer.
             // Escape and the close button still do.
             onInteractOutside={(event) => {
               if (askedHere) event.preventDefault();
+            }}
+            // Escape in an event form docked over the card goes back to the
+            // answer, as it does from a docked form anywhere, rather than
+            // closing Ask with the form in it. A field keeps its own Escape.
+            onEscapeKeyDown={(event) => {
+              const target = event.target;
+              if (!(target instanceof Element)) return;
+              const docked = target.closest("[data-docked-panel]");
+              if (!docked) return;
+              event.preventDefault();
+              if (target.closest("input, textarea, select, [contenteditable]")) {
+                return;
+              }
+              docked
+                .querySelector<HTMLElement>("[data-panel-back]")
+                ?.click();
             }}
             onOpenAutoFocus={(event) => {
               event.preventDefault();

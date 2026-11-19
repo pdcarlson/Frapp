@@ -2269,10 +2269,10 @@ describe("ChatShell catch me up (#3946)", () => {
         unread: { count: 140, as_of: expect.any(String) },
       }),
     );
-    // The panel is up and the strip has made way for it.
-    expect(
-      screen.getByRole("complementary", { name: "Catch me up" }),
-    ).toBeInTheDocument();
+    // The summary is up in the channel, above the timeline, and the strip
+    // has made way for it.
+    const summary = screen.getByRole("region", { name: "Catch me up" });
+    expect(summary.closest("[data-chat-column]")).not.toBeNull();
     expect(
       screen.queryByText("140 new messages since you were last here."),
     ).toBeNull();

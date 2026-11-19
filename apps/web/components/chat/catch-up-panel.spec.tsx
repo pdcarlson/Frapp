@@ -9,7 +9,8 @@ import {
 } from "@repo/validation";
 
 /**
- * The summary panel's own rules (#3946): consent before the first request
+ * The summary's own rules (#3946), inline at the top of the conversation
+ * since 2026-11-19 (Paul: no more side cards): consent before the first request
  * leaves, the stretch it asks for, every honest state in plain words, and a
  * summary that ends when the member leaves the channel.
  */
@@ -51,7 +52,7 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({ ensureConsent: state.consent, consentDialog: null }),
 }));
 
-const { CATCH_UP_OPEN_ATTRIBUTE, CatchUpOffer, useCatchUpPanel } = await import(
+const { CatchUpOffer, useCatchUp } = await import(
   "./catch-up-panel"
 );
 type CatchUpScope = import("./catch-up-panel").CatchUpScope;
@@ -109,7 +110,7 @@ function Harness({
   activeChannelId?: string | null;
   scope?: CatchUpScope;
 }) {
-  const panel = useCatchUpPanel({
+  const panel = useCatchUp({
     activeChannelId,
     nameFor: (id) => (id === "user-1" ? "Sam Okafor" : null),
     onOpenPoint,
@@ -120,6 +121,7 @@ function Harness({
         open
       </button>
       {panel.element}
+      {panel.dialogs}
     </main>
   );
 }
@@ -130,14 +132,13 @@ async function openPanel(props: Parameters<typeof Harness>[0] = {}) {
   return view;
 }
 
-describe("useCatchUpPanel", () => {
+describe("useCatchUp", () => {
   beforeEach(() => {
     state.run.mockReset().mockResolvedValue(undefined);
     state.reset.mockReset();
     state.consent.mockReset().mockResolvedValue(true);
     state.current = null;
     onOpenPoint.mockReset();
-    document.documentElement.removeAttribute(CATCH_UP_OPEN_ATTRIBUTE);
   });
 
   it("asks for the stretch that was new when the channel had one", async () => {
@@ -145,12 +146,11 @@ describe("useCatchUpPanel", () => {
     expect(state.consent).toHaveBeenCalledTimes(1);
     expect(state.run).toHaveBeenCalledWith(CHANNEL, { unread: UNREAD });
     expect(
-      screen.getByRole("complementary", { name: CHAT_CATCH_UP_COPY.name }),
+      screen.getByRole("region", { name: CHAT_CATCH_UP_COPY.name }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("radio", { name: CHAT_CATCH_UP_COPY.ranges.unread }),
     ).toBeChecked();
-    expect(document.documentElement).toHaveAttribute(CATCH_UP_OPEN_ATTRIBUTE);
   });
 
   it("asks for the last 24 hours when nothing was new, and offers no new-messages range", async () => {
@@ -226,10 +226,33 @@ describe("useCatchUpPanel", () => {
   });
 
   it("says who it is for, and that it is not saved", async () => {
+    state.current = done({ points: [point({})] });
     await openPanel();
-    expect(
-      screen.getByText(`#general · ${CHAT_CATCH_UP_COPY.private}`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(CHAT_CATCH_UP_COPY.private)).toBeInTheDocument();
+  });
+
+  it("sits in the page: no portal, nothing fixed over the window", async () => {
+    const view = await openPanel();
+    const block = screen.getByRole("region", { name: CHAT_CATCH_UP_COPY.name });
+    expect(view.container.contains(block)).toBe(true);
+    expect(block.className).not.toMatch(/\bfixed\b/);
+  });
+
+  it("folds to one line by Hide and comes back with the same summary", async () => {
+    state.current = done({ points: [point({ text: "Dues are due Friday." })] });
+    await openPanel();
+    expect(state.run).toHaveBeenCalledTimes(1);
+    await userEvent.click(
+      screen.getByRole("button", { name: CHAT_CATCH_UP_COPY.hide }),
+    );
+    expect(screen.queryByText("Dues are due Friday.")).toBeNull();
+    expect(screen.getByText(CHAT_CATCH_UP_COPY.resume_line)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: CHAT_CATCH_UP_COPY.resume_action }),
+    );
+    expect(screen.getByText("Dues are due Friday.")).toBeInTheDocument();
+    // No second request: it is the same summary.
+    expect(state.run).toHaveBeenCalledTimes(1);
   });
 
   it("shows the working line while the request is out", async () => {
@@ -277,6 +300,8 @@ describe("useCatchUpPanel", () => {
     expect(onOpenPoint).toHaveBeenCalledWith(
       expect.objectContaining({ message_id: "m2" }),
     );
+    // The summary stays above the conversation for the next line.
+    expect(screen.getByText("Dues are due Friday.")).toBeInTheDocument();
   });
 
   it("offers Report this on a summary that stands, with the server's receipt", async () => {
@@ -370,22 +395,21 @@ describe("useCatchUpPanel", () => {
     await userEvent.click(
       screen.getByRole("button", { name: CHAT_CATCH_UP_COPY.close }),
     );
-    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.queryByRole("region")).toBeNull();
     expect(state.reset).toHaveBeenCalled();
-    expect(document.documentElement).not.toHaveAttribute(CATCH_UP_OPEN_ATTRIBUTE);
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
-    // Focus moved into the panel when it opened, so Escape reaches it.
-    expect(screen.getByRole("complementary")).toHaveFocus();
+    // Focus moved into the summary when it opened, so Escape reaches it.
+    expect(screen.getByRole("region")).toHaveFocus();
     await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.queryByRole("region")).toBeNull();
   });
 
-  it("ends with the channel: leaving it closes the panel", async () => {
+  it("ends with the channel: leaving it closes the summary", async () => {
     const view = await openPanel();
     state.reset.mockClear();
     view.rerender(<Harness activeChannelId="channel-2" />);
-    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("region")).toBeNull());
     expect(state.reset).toHaveBeenCalled();
   });
 });
