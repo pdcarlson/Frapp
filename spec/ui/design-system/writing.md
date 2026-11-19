@@ -330,40 +330,39 @@ Store-facing wording: Paul approves it.
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
-| No events, calendar, can create | — | `Pick a day to schedule the first event.` (one line under the month); on the compact month, `Pick a day, then New event to schedule the first event.` |
-| Compact month, picked day has no events | — | `Nothing on this day.` (under the day's heading) |
-| No events, calendar, can't create | — | `Nothing on the calendar yet.` (one line under the month) |
-| No events, List tab | — | `Nothing scheduled yet.` (one line; the phone's line too, #4135) |
+| No events at all | — | `Nothing scheduled yet.` (one line over the agenda, whose days still list tasks and birthdays; the phone's line too, #4135) |
+| Today, nothing on it | — | `Nothing today.` (under the `Today` heading, which always shows) |
+| A picked day with nothing on it | — | `Nothing on Monday.`, `Nothing on November 30.`, `Nothing tomorrow.` (under that day's heading) |
+| Seven days from where the agenda starts hold nothing | — | `Nothing this week.` (one line; the agenda carries on to the next day that has anything) |
+| More past the agenda's four weeks | — | a **Show more** button under the last day |
 | Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line) |
-| Nothing in the next two weeks, later events exist | — | `Nothing in the next two weeks.` (one line; the **Later** disclosure sits under it) |
 | Attendance or cadence filter matched nothing | — | `No events match these filters.` then a **Clear filters** link (one line) |
 | Search matched nothing | — | `No events match that search.` then a **Clear search** link (one line) |
 | Error | `Couldn't load events` | the load-failure line (§ copy rules); the phone's title too (#4135) |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
-The list groups its rows under day headings written out: `Today`, `Tomorrow`, `Yesterday`, the weekday within the coming week (`Sunday`), otherwise the month and day (`November 14`, with the year outside the current one); `formatDayHeading` in `@repo/formatting`.
+The agenda (#5560) groups its rows under day headings written out: `Today`, `Tomorrow`, `Yesterday`, the weekday within the coming week (`Sunday`), otherwise the month and day (`November 14`, with the year outside the current one); `formatDayHeading` in `@repo/formatting`.
 A row under one says only its time (`6:48 PM`), and a repeating series, shown once as its next meeting, says how it repeats before it: `Every Sunday · 6:48 PM`, `Every other Sunday · 6:48 PM`, `Every month on the 9th · 6:48 PM` (`seriesCadenceLabel`, `@repo/hooks/event-series`).
-Under Upcoming the list holds today through the next 14 days; later events wait behind `Later`, with their count (`3 events`) and a chevron, a disclosure that opens in place (#3707, #3822).
+*(Changed in #5560 by pdcarlson, 2026-11-19: Upcoming held today through the next 14 days, later events waiting behind a `Later` disclosure with their count (#3707, #3822). The agenda reaches four weeks and then offers **Show more**.)*
+Each day heading ends with a quiet `Hours ›` (named `Hours for Today` to a screen reader), which opens the hour grid on that day; its back button reads `Events`.
+A required event says `Required` after its title, in the events hue; the grey `Mandatory` pill is gone (#5560). The Attendance filter still says `Mandatory`.
+A task row says where it stands (`To do`, `Overdue`, `Waiting on an officer`), and one handed to many says `Assigned by you` with its progress at the right (`0 of 3 done`); a birthday row says `Birthday` under the name.
+The colour key under the navigator reads `Events`, `Tasks` and `Birthdays`, each with its count (`Events, 4` to a screen reader).
 These lines, and the Directory's empty, error and search-miss lines, are one string on both apps: `EVENTS_COPY`, `eventsCount`, `DIRECTORY_COPY` and `directoryNoSearchMatches` in `@repo/validation` (`screen-copy.ts`, #4135, 2026-11-13).
 A point count read as text, as in a row's meta line, is written out on both apps (`7:00 PM · Great Room · 10 points`, `formatPoints`); a chip or badge says `+10 pts` (`formatPointsChip`), the phone's event rows and Event detail included (#4135; the phone's meta line said `10 pts` until then).
 The toolbar's filter button is `Filter`, named `Filter events`, or `Filter events, 2 on` while filters are off their defaults, which it also shows as a count;
 its popover's groups are `Time` (`Upcoming`, `Past`, `All`), `Attendance` (`All`, `Mandatory`, `Optional`) and `Cadence` (`All`, `Repeating`, `One-time`), then `Clear`.
 Bulk selection is `Select`, then `Mark attendance complete` and `Done`, with the count reading `2 selected` (2026-11-09).
 
-The page opens on whichever view, List or Calendar, this person last used on this browser (2026-11-09, #3822).
-Without one, a chapter with no events opens on the Calendar rather than an empty list, and a viewer who can create events (`events:create` and `members:view`, `EVENT_CREATE_PERMISSIONS`) gets a dashed `+` on today's square, where the first event will go.
-The choice is made once, when the events first load, so making that first event doesn't move the officer to the list.
-A viewer without them sees the dates as text, with no New event button and nothing to press on a day (2026-11-06).
-On a page narrower than 600px, beside chat or on a phone, the month is compact (#4022): a day carries a dot per event instead of their names, pressing a day picks it (for every viewer, since that is how its events are reached;
-a day of the month before or after opens that month), and the picked day's events are listed under the grid by time and name.
-There a creator makes an event with the day list's New event, which replaces the dashed `+` and the pressable day number.
+The page opened on whichever view, List or Calendar, this person last used on this browser (2026-11-09, #3822), and a chapter with no events opened on the Calendar with a dashed `+` on today's square.
+*(Changed in #5560 by pdcarlson, 2026-11-19: there is one agenda and no view to remember, so the Calendar's first-event lines (`Pick a day to schedule the first event.`, its compact form, `Nothing on the calendar yet.`, `Nothing on this day.`) went with it. A viewer who can create events (`events:create` and `members:view`, `EVENT_CREATE_PERMISSIONS`) makes the first one with New event or an hour of the hour grid; a viewer without them gets neither.)*
 The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05).
 The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Calendar (s06, Events until #4610) is the month alone since #5310: it has no List and no switch to remember.
 With nothing current or upcoming, the picked day's list under the month says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)* *(Changed in #5310 by `pdcarlson`, 2026-11-17: the line was the List's or the Calendar's, whichever was showing; the month's day list is the only place left for it.)*
 It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
-Otherwise a day with nothing on it says `Nothing on this day.` (2026-11-09). The List's `Nothing in the next two weeks.` and its folded `Later` row (#4135, 2026-11-13) went with the List in #5310; web's Events list keeps its own.
+Otherwise a day with nothing on it says `Nothing on this day.` (2026-11-09). The List's `Nothing in the next two weeks.` and its folded `Later` row (#4135, 2026-11-13) went with the List in #5310; web's Events list kept its own until its agenda (#5560), which says `Nothing this week.` instead.
 
 ### Attendance (dashboard)
 

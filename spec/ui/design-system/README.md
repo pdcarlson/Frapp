@@ -59,6 +59,7 @@ Signet must not read as another generic Google/Material utility, and must not be
 **Paul, 2026-11-17, on the phone's Calendar:** "I don't like these like toggle list to grid ... all of those toggle things are not my favorite." The bars "up top" are what made the Calendar tab "clunky". This binds new work from today. The switchers already shipped (the Calendar's two, #5310; `ListLayoutToggle` on the Directory, Documents and Tasks, web and phone, and web Events' List \| Calendar, #5313) are filed to come out, not drift to work around. This supersedes [`components.md`](components.md) § Segmented control's List / Grid paragraph. A segmented control that picks a value in a form (a sheet's audience, a poll's kind) isn't a view switcher and stays.
 
 The Calendar's two came out in #5310 step 2 (2026-11-17).
+Web Events' List \| Calendar, and its calendar's Month \| Week \| Day, came out in #5560 step 2 (2026-11-19): one agenda with a navigator beside it ([`web-dashboard/README.md` § Chapter ops](../web-dashboard/README.md#chapter-ops-events-tasks-points-study-service-and-study-zones)).
 
 ---
 

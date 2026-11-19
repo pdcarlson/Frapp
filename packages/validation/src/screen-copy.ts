@@ -13,15 +13,11 @@ export const EVENTS_COPY = {
    * events yet" would not be on the phone.
    */
   empty: "Nothing scheduled yet.",
-  /** Upcoming holds the next two weeks (#3707); the rest waits behind Later. */
-  noneSoon: "Nothing in the next two weeks.",
-  /** The fold's label for what starts past the two-week horizon. */
-  later: "Later",
   /** The screen is Events on both apps, so the error says events. */
   loadError: "Couldn't load events",
 } as const;
 
-/** `"1 event"`, `"4 events"`: a count beside a section label or the Later fold. */
+/** `"1 event"`, `"4 events"`: a count beside a section label. */
 export function eventsCount(count: number): string {
   return `${count} ${count === 1 ? "event" : "events"}`;
 }

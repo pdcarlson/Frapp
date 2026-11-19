@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   collapseSeries,
   eventSeriesKey,
-  horizonEnd,
   isSeriesEvent,
   seriesCadenceLabel,
   seriesCadenceOf,
   ruleTokenLabel,
   seriesHeadOf,
-  splitByHorizon,
 } from "./event-series";
 
 type Row = {
@@ -100,38 +98,6 @@ describe("collapseSeries", () => {
     const entries = collapseSeries(rows, NOW);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.event.id).toBe("head");
-  });
-});
-
-describe("splitByHorizon", () => {
-  it("holds today through the end of the fourteenth day after it", () => {
-    const end = new Date(horizonEnd(NOW));
-    expect(end.getHours()).toBe(0);
-    const today = new Date(NOW);
-    today.setHours(0, 0, 0, 0);
-    expect(Math.round((end.getTime() - today.getTime()) / 86_400_000)).toBe(15);
-  });
-
-  it("puts what starts past the horizon behind Later", () => {
-    const end = horizonEnd(NOW);
-    const at = (ms: number) => ({
-      event: { id: String(ms), start_time: new Date(ms).toISOString() },
-      series: null,
-    });
-    const { soon, later } = splitByHorizon(
-      [at(NOW + 3600_000), at(end - 1), at(end), at(end + 86_400_000)],
-      NOW,
-    );
-    expect(soon).toHaveLength(2);
-    expect(later).toHaveLength(2);
-  });
-
-  it("keeps an unreadable start in view", () => {
-    const { soon } = splitByHorizon(
-      [{ event: { id: "x", start_time: "nope" }, series: null }],
-      NOW,
-    );
-    expect(soon).toHaveLength(1);
   });
 });
 

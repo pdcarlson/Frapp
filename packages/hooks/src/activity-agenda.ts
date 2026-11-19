@@ -12,6 +12,7 @@ import {
   type ActivitySection,
   type ActivityToDo,
 } from "./activity-rows";
+import type { CalendarKind } from "./calendar-tasks";
 import { NOTIFICATION_TILE_HUE } from "./notification-rows";
 import { isSentBack } from "./task-card";
 
@@ -448,6 +449,18 @@ export const ACTIVITY_STRIP_HUE: Record<ActivityStripKind, RoleColorHex> = {
   events: NOTIFICATION_TILE_HUE.events,
   tasks: NOTIFICATION_TILE_HUE.tasks,
   answers: roleColor("violet"),
+};
+
+/**
+ * Each kind's hue on the web Events agenda (#5560): its row mark, its dot on
+ * the navigator and its swatch in the colour key, so the three always agree.
+ * Events and tasks are the strip's own; birthdays rose. Never the accent,
+ * which marks today, and never red, which is overdue.
+ */
+export const CALENDAR_KIND_HUE: Record<CalendarKind, RoleColorHex> = {
+  events: ACTIVITY_STRIP_HUE.events,
+  tasks: ACTIVITY_STRIP_HUE.tasks,
+  birthdays: roleColor("rose"),
 };
 
 const STRIP_KIND_ORDER: readonly ActivityStripKind[] = [

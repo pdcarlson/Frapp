@@ -35,80 +35,99 @@ import { useViewerUserId } from "./use-user";
  */
 export type CalendarTaskState = "open" | "overdue" | "waiting" | "confirmed";
 
-/** Which kinds of thing the calendar is showing. */
+/**
+ * The calendar's per-item layers: `calendarTasksByDay` files a task by whose
+ * it is. The phone's Calendar reads every layer; the web Events colour key
+ * switches whole kinds ({@link CalendarKind}), not layers.
+ */
 export type CalendarLayer = "events" | "mine" | "assigned" | "birthdays";
 
-export const CALENDAR_LAYERS: ReadonlyArray<{
-  value: CalendarLayer;
+export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set([
+  "events",
+  "mine",
+  "assigned",
+  "birthdays",
+]);
+
+/**
+ * A kind of thing on the web Events agenda (#5560): each has one hue
+ * (`CALENDAR_KIND_HUE` in `activity-agenda.ts`), drawn the same on its rows,
+ * its navigator dots and its colour key swatch. My tasks and Assigned by me
+ * are both Tasks.
+ */
+export type CalendarKind = "events" | "tasks" | "birthdays";
+
+/** The colour key's order and words. */
+export const CALENDAR_KINDS: ReadonlyArray<{
+  value: CalendarKind;
   label: string;
 }> = [
   { value: "events", label: "Events" },
-  { value: "mine", label: "My tasks" },
-  { value: "assigned", label: "Assigned by me" },
-  // Members' shared birthdays (#4959, `calendar-birthdays.ts`).
+  { value: "tasks", label: "Tasks" },
   { value: "birthdays", label: "Birthdays" },
 ];
 
-export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set(
-  CALENDAR_LAYERS.map((layer) => layer.value),
+const KNOWN_KINDS = new Set<CalendarKind>(
+  CALENDAR_KINDS.map((kind) => kind.value),
 );
 
-/**
- * Layers added after the stored list was a list of what's shown: a list saved
- * before one existed can't name it, so it reads as on (#4959).
- */
-const LAYERS_ADDED_SINCE_SHOWN_LISTS: readonly CalendarLayer[] = ["birthdays"];
+/** The kind a non-event item is drawn as. */
+export function calendarKindOf(item: CalendarItem): CalendarKind {
+  return item.kind === "birthdays" ? "birthdays" : "tasks";
+}
+
+/** The layers `calendarTasksByDay` keeps while `hidden` kinds are off. */
+export function calendarLayersShowing(
+  hidden: ReadonlySet<CalendarKind>,
+): Set<CalendarLayer> {
+  const layers = new Set<CalendarLayer>();
+  if (!hidden.has("events")) layers.add("events");
+  if (!hidden.has("tasks")) {
+    layers.add("mine");
+    layers.add("assigned");
+  }
+  if (!hidden.has("birthdays")) layers.add("birthdays");
+  return layers;
+}
 
 /**
- * Reads the stored layer choice back as the layers to show, keeping only
- * names it knows; `null` when nothing (or nothing readable) is stored.
- *
- * Stored as `{ "hidden": [...] }` since #4959, so a layer added later starts
- * on for everyone, as a new calendar does in Google Calendar. A bare array is
- * the older form, the shown layers, and gains the layers added since.
+ * The kinds a member switched off, read back from storage as
+ * `{ "hidden": [...] }`, so a kind added later starts on. Unknown names are
+ * dropped; `null` when nothing readable is stored, which means all on.
  */
-export function parseCalendarLayers(
+export function parseHiddenCalendarKinds(
   raw: string | null | undefined,
-): Set<CalendarLayer> | null {
+): Set<CalendarKind> | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      const shown = new Set(knownLayers(parsed));
-      for (const layer of LAYERS_ADDED_SINCE_SHOWN_LISTS) shown.add(layer);
-      return shown;
-    }
     if (
-      parsed &&
-      typeof parsed === "object" &&
-      Array.isArray((parsed as { hidden?: unknown }).hidden)
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray((parsed as { hidden?: unknown }).hidden)
     ) {
-      const hidden = new Set(
-        knownLayers((parsed as { hidden: unknown[] }).hidden),
-      );
-      return new Set(
-        [...ALL_CALENDAR_LAYERS].filter((layer) => !hidden.has(layer)),
-      );
+      return null;
     }
-    return null;
+    return new Set(
+      (parsed as { hidden: unknown[] }).hidden.filter(
+        (value): value is CalendarKind =>
+          KNOWN_KINDS.has(value as CalendarKind),
+      ),
+    );
   } catch {
     return null;
   }
 }
 
-/** The stored form of `shown`: the layers it hides. */
-export function serializeCalendarLayers(
-  shown: ReadonlySet<CalendarLayer>,
+/** The stored form of the kinds switched off. */
+export function serializeHiddenCalendarKinds(
+  hidden: ReadonlySet<CalendarKind>,
 ): string {
   return JSON.stringify({
-    hidden: [...ALL_CALENDAR_LAYERS].filter((layer) => !shown.has(layer)),
+    hidden: CALENDAR_KINDS.map((kind) => kind.value).filter((kind) =>
+      hidden.has(kind),
+    ),
   });
-}
-
-function knownLayers(values: unknown[]): CalendarLayer[] {
-  return values.filter((value): value is CalendarLayer =>
-    ALL_CALENDAR_LAYERS.has(value as CalendarLayer),
-  );
 }
 
 interface CalendarTaskAssignee {

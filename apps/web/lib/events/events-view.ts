@@ -1,59 +1,16 @@
 import {
-  parseCalendarLayers,
-  serializeCalendarLayers,
-  type CalendarLayer,
+  parseHiddenCalendarKinds,
+  serializeHiddenCalendarKinds,
+  type CalendarKind,
 } from "@repo/hooks/calendar-tasks";
 
-export type EventsView = "list" | "calendar";
-
-/** The calendar's Month, Week or Day (#4818). */
-export type CalendarView = "month" | "week" | "day";
-
-/**
- * The Events page's last view (List or Calendar) on this browser, per user
- * (#3822): the page opens where this person left it. Not on the server: a
- * phone and a laptop each keep their own, like the last chat channel
- * (`lib/chat/last-channel.ts`).
- *
- * localStorage, best-effort: a private window, blocked site data or a full
- * quota throws or reads empty, and the page then opens by its first-load rule
- * (the calendar for a chapter with no events, else the list).
- */
-function eventsViewStorageKey(userId: string): string {
-  return `frapp.events.view.${userId}`;
-}
-
-export function readEventsView(
-  userId: string | null | undefined,
-): EventsView | null {
-  if (!userId || typeof window === "undefined") return null;
-  try {
-    const stored = window.localStorage.getItem(eventsViewStorageKey(userId));
-    return stored === "list" || stored === "calendar" ? stored : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeEventsView(
-  userId: string | null | undefined,
-  view: EventsView,
-): void {
-  if (!userId || typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(eventsViewStorageKey(userId), view);
-  } catch {
-    /* Best-effort: the choice holds for this page's life. */
-  }
-}
-
-/** Where a calendar-made event starts when the month's day number made it. */
+/** Where an hour-grid event starts when no hour was pressed. */
 const CALENDAR_DEFAULT_START_HOUR = 18;
 
 /**
  * The start a calendar press hands the editor: the day at `startHour`, which
- * an hour of the Week or Day view passes, else 6 PM for the month's day
- * number (most chapter events are evening ones).
+ * an hour of the hour grid passes, else 6 PM (most chapter events are
+ * evening ones).
  */
 export function calendarCreateStart(
   day: Date,
@@ -63,67 +20,46 @@ export function calendarCreateStart(
 }
 
 /**
- * The calendar's last Month / Week / Day choice on this browser, per user
- * (#4818), kept the same way and for the same reason as the view.
+ * The kinds the Events colour key has switched off (#5560), on this browser,
+ * per user: a member who turns birthdays off finds them off next time. Not on
+ * the server: a phone and a laptop each keep their own, like the last chat
+ * channel (`lib/chat/last-channel.ts`).
+ *
+ * The key replaced the calendar's layer toggles, whose stored choice
+ * (`frapp.events.calendar-layers.*`) is left unread: it switched My tasks and
+ * Assigned by me apart, which the key no longer does.
+ *
+ * localStorage, best-effort: a private window, blocked site data or a full
+ * quota throws or reads empty, and every kind then shows.
  */
-export function readCalendarView(
-  userId: string | null | undefined,
-): CalendarView | null {
-  if (!userId || typeof window === "undefined") return null;
-  try {
-    const stored = window.localStorage.getItem(
-      `frapp.events.calendar-view.${userId}`,
-    );
-    return stored === "month" || stored === "week" || stored === "day"
-      ? stored
-      : null;
-  } catch {
-    return null;
-  }
+function hiddenKindsStorageKey(userId: string): string {
+  return `frapp.events.hidden-kinds.${userId}`;
 }
 
-export function writeCalendarView(
+export function readHiddenKinds(
   userId: string | null | undefined,
-  view: CalendarView,
-): void {
-  if (!userId || typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(`frapp.events.calendar-view.${userId}`, view);
-  } catch {
-    /* Best-effort, as the view. */
-  }
-}
-
-/**
- * What the calendar shows (#4144): events, the viewer's tasks, the tasks they
- * assigned. Kept the same way and for the same reason as the view: a member
- * who turns their tasks off finds them off next time. `null` when nothing is
- * stored, which means everything on.
- */
-export function readCalendarLayers(
-  userId: string | null | undefined,
-): Set<CalendarLayer> | null {
+): Set<CalendarKind> | null {
   if (!userId || typeof window === "undefined") return null;
   try {
-    return parseCalendarLayers(
-      window.localStorage.getItem(`frapp.events.calendar-layers.${userId}`),
+    return parseHiddenCalendarKinds(
+      window.localStorage.getItem(hiddenKindsStorageKey(userId)),
     );
   } catch {
     return null;
   }
 }
 
-export function writeCalendarLayers(
+export function writeHiddenKinds(
   userId: string | null | undefined,
-  layers: ReadonlySet<CalendarLayer>,
+  hidden: ReadonlySet<CalendarKind>,
 ): void {
   if (!userId || typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
-      `frapp.events.calendar-layers.${userId}`,
-      serializeCalendarLayers(layers),
+      hiddenKindsStorageKey(userId),
+      serializeHiddenCalendarKinds(hidden),
     );
   } catch {
-    /* Best-effort, as the view. */
+    /* Best-effort: the choice holds for this page's life. */
   }
 }

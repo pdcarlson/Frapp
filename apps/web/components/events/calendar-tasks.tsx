@@ -2,12 +2,11 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Cake, Circle, CircleCheck, UsersRound } from "lucide-react";
+import { Cake, Circle, CircleCheck } from "lucide-react";
+import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
 import {
-  CALENDAR_LAYERS,
   calendarTaskAccessibleLabel,
   type CalendarItem,
-  type CalendarLayer,
   type CalendarTask,
   type CalendarTaskState,
 } from "@repo/hooks/calendar-tasks";
@@ -27,12 +26,11 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Tasks on the Events calendar (#4144). An event is a filled chip with an
- * edge; a task has no fill and leads with a round check mark, the way Google
- * Calendar sets its tasks apart from its events. The mark says where the
- * task stands: an empty ring is still to do (red when overdue), a ring with a
- * check is done and waiting on an officer, a green check is confirmed.
- * Rules and words: `@repo/hooks` `calendar-tasks.ts`.
+ * Tasks and birthdays on Events (#4144, #4959): the agenda's rows (#5560)
+ * and the hour grid's all-day chips. On the agenda a task leads with a ring
+ * in the Tasks hue, filled once it is done, and a birthday with a square in
+ * the Birthdays hue (`CALENDAR_KIND_HUE`), the marks the navigator's dots and
+ * the colour key draw. Rules and words: `@repo/hooks` `calendar-tasks.ts`.
  */
 
 /**
@@ -127,7 +125,7 @@ function CalendarTaskPopover({
 }: {
   item: CalendarTask;
   nameOf: (userId: string) => string;
-  /** The trigger: a chip on the wide month, a row under the compact one. */
+  /** The trigger: an agenda row, or a chip on the hour grid. */
   children: ReactNode;
 }) {
   return (
@@ -197,57 +195,30 @@ function CalendarTaskPopover({
 }
 
 /**
- * A member's birthday on the grid (#4959): a cake and their name, no fill and
- * nothing to open, the way Google Calendar draws its birthdays calendar apart
- * from events. The name reads "Dana Lowe's birthday" to a screen reader.
+ * A member's birthday on the hour grid's all-day strip (#4959): a cake and
+ * their name, no fill and nothing to open. The name reads "Dana Lowe's
+ * birthday" to a screen reader.
  */
-function BirthdayItem({
-  item,
-  row,
-}: {
-  item: CalendarBirthday;
-  /** The compact month's row under the picked day, rather than a chip. */
-  row: boolean;
-}) {
+function BirthdayChip({ item }: { item: CalendarBirthday }) {
   const label = calendarBirthdayLabel(item);
   return (
     <div
       title={label}
-      className={cn(
-        "flex items-center text-left",
-        row
-          ? "min-h-11 w-full gap-3 px-2 py-1.5"
-          : cn("gap-1 px-1.5 py-1", CHIP_TEXT),
-      )}
+      className={cn("flex items-center gap-1 px-1.5 py-1 text-left", CHIP_TEXT)}
     >
-      <span className={cn("flex shrink-0 items-center", row ? "w-16" : null)}>
-        <Cake
-          aria-hidden="true"
-          className={cn("text-muted-foreground", row ? "h-4 w-4" : "h-3 w-3")}
-        />
-      </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-foreground",
-          row ? "text-sm font-semibold" : null,
-        )}
-      >
+      <Cake
+        aria-hidden="true"
+        className="h-3 w-3 shrink-0 text-muted-foreground"
+      />
+      <span className="min-w-0 flex-1 truncate text-foreground">
         <span className="sr-only">{label}</span>
         <span aria-hidden="true">{item.title}</span>
       </span>
-      {row ? (
-        <span className="shrink-0 text-caption text-muted-foreground">
-          Birthday
-        </span>
-      ) : null}
     </div>
   );
 }
 
-/**
- * The wide month's chip for a task (no fill, a check mark, the title), or a
- * birthday's.
- */
+/** The hour grid's chip for a task (no fill, a check mark, the title), or a birthday's. */
 export function CalendarTaskChip({
   item,
   nameOf,
@@ -255,8 +226,7 @@ export function CalendarTaskChip({
   item: CalendarItem;
   nameOf: (userId: string) => string;
 }) {
-  if (item.kind === "birthdays")
-    return <BirthdayItem item={item} row={false} />;
+  if (item.kind === "birthdays") return <BirthdayChip item={item} />;
   return <TaskChip item={item} nameOf={nameOf} />;
 }
 
@@ -300,124 +270,128 @@ function TaskChip({
   );
 }
 
-/** The compact month's row for a task or a birthday, under the picked day. */
-export function CalendarTaskRow({
-  item,
-  nameOf,
-}: {
-  item: CalendarItem;
-  nameOf: (userId: string) => string;
-}) {
-  if (item.kind === "birthdays") return <BirthdayItem item={item} row />;
-  return <TaskRow item={item} nameOf={nameOf} />;
+/** The agenda row's frame, shared by every kind so their text lines up. */
+export const AGENDA_ROW_CLASS =
+  "flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1.5 text-left";
+
+/** The 16px column every agenda row leads with: its kind's mark. */
+export function AgendaMarkSlot({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex w-4 shrink-0 items-center justify-center self-stretch"
+    >
+      {children}
+    </span>
+  );
 }
 
-function TaskRow({
+/**
+ * A task on the agenda (#5560): a ring in the Tasks hue, filled once the
+ * task is done (waiting on an officer or confirmed), when its title steps
+ * back. One row per task the viewer assigned to many (`selectCalendarTasks`
+ * groups them), naming its progress at the right. It opens the task's card.
+ */
+export function AgendaTaskRow({
   item,
   nameOf,
 }: {
   item: CalendarTask;
   nameOf: (userId: string) => string;
 }) {
-  const trailing = item.kind === "mine" ? item.label : item.progress;
+  const hue = CALENDAR_KIND_HUE.tasks;
+  const done = item.state === "waiting" || item.state === "confirmed";
+  const meta =
+    item.kind === "mine"
+      ? item.label
+      : item.assignees.length === 1
+        ? item.assignees[0]!.label
+        : "Assigned by you";
+  const trailing =
+    item.kind === "mine"
+      ? null
+      : item.assignees.length === 1
+        ? nameOf(item.assignees[0]!.userId)
+        : item.progress;
   return (
     <CalendarTaskPopover item={item} nameOf={nameOf}>
       <button
         type="button"
-        title={item.title}
         aria-label={calendarTaskAccessibleLabel(item)}
+        data-kind="tasks"
         className={cn(
-          "flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors",
+          AGENDA_ROW_CLASS,
+          "transition-colors hover:bg-card-hover",
           FOCUS_RING,
-          "hover:bg-card-hover",
         )}
       >
-        <span className="flex w-16 shrink-0 items-center gap-1.5">
-          <TaskMark state={item.state} className="h-4 w-4" />
-          {item.kind === "assigned" ? (
-            <UsersRound
-              aria-hidden="true"
-              className="h-3.5 w-3.5 text-muted-foreground"
-            />
-          ) : null}
+        <AgendaMarkSlot>
+          <span
+            data-testid="agenda-mark"
+            data-hue={hue}
+            data-done={done || undefined}
+            className="h-4 w-4 rounded-full border-2"
+            style={{
+              borderColor: hue,
+              backgroundColor: done ? hue : undefined,
+            }}
+          />
+        </AgendaMarkSlot>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span
+            className={cn(
+              "truncate text-sm font-semibold",
+              done ? "text-muted-foreground line-through" : "text-foreground",
+            )}
+          >
+            {item.title}
+          </span>
+          <span
+            className={cn(
+              "truncate text-caption",
+              item.state === "overdue"
+                ? "text-destructive-text"
+                : "text-muted-foreground",
+            )}
+          >
+            {meta}
+          </span>
         </span>
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-sm font-semibold",
-            taskTitleClassName(item.state),
-          )}
-        >
-          {item.title}
-        </span>
-        <span
-          className={cn(
-            "shrink-0 text-caption",
-            item.state === "overdue"
-              ? "text-destructive-text"
-              : "text-muted-foreground",
-          )}
-        >
-          {trailing}
-        </span>
+        {trailing ? (
+          <span className="max-w-[40%] shrink-0 truncate text-caption tabular-nums text-muted-foreground">
+            {trailing}
+          </span>
+        ) : null}
       </button>
     </CalendarTaskPopover>
   );
 }
 
 /**
- * What the calendar shows, as toggles that double as its key: each carries
- * the mark its kind is drawn with, the way Google Calendar's list of
- * calendars both explains and switches its colours. Only kinds the viewer
- * has are offered; a member with no tasks sees no row at all.
+ * A member's birthday on the agenda (#4959, #5560): a square in the
+ * Birthdays hue and their name. Nothing to open.
  */
-export function CalendarLayerToggles({
-  offered,
-  shown,
-  onToggle,
-}: {
-  offered: ReadonlySet<CalendarLayer>;
-  shown: ReadonlySet<CalendarLayer>;
-  onToggle: (layer: CalendarLayer) => void;
-}) {
+export function AgendaBirthdayRow({ item }: { item: CalendarBirthday }) {
+  const hue = CALENDAR_KIND_HUE.birthdays;
   return (
-    <div
-      role="group"
-      aria-label="Show on calendar"
-      className="flex flex-wrap items-center gap-1.5"
-    >
-      {CALENDAR_LAYERS.filter((layer) => offered.has(layer.value)).map(
-        (layer) => {
-          const on = shown.has(layer.value);
-          return (
-            <button
-              key={layer.value}
-              type="button"
-              aria-pressed={on}
-              className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-caption font-semibold transition-colors",
-                FOCUS_RING,
-                on
-                  ? "border-input bg-surface-1 text-foreground hover:bg-card-hover"
-                  : "border-dashed border-input text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => onToggle(layer.value)}
-            >
-              <span aria-hidden="true" className={cn(on ? null : "opacity-40")}>
-                {layer.value === "events" ? (
-                  <span className="block h-3 w-1 rounded-full bg-primary" />
-                ) : layer.value === "mine" ? (
-                  <Circle className="h-3 w-3 text-muted-foreground" />
-                ) : layer.value === "birthdays" ? (
-                  <Cake className="h-3 w-3 text-muted-foreground" />
-                ) : (
-                  <UsersRound className="h-3 w-3 text-muted-foreground" />
-                )}
-              </span>
-              {layer.label}
-            </button>
-          );
-        },
-      )}
+    <div data-kind="birthdays" className={AGENDA_ROW_CLASS}>
+      <AgendaMarkSlot>
+        <span
+          data-testid="agenda-mark"
+          data-hue={hue}
+          className="h-4 w-4 rounded-[4px]"
+          style={{ backgroundColor: hue }}
+        />
+      </AgendaMarkSlot>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-semibold text-foreground">
+          <span className="sr-only">{calendarBirthdayLabel(item)}</span>
+          <span aria-hidden="true">{item.title}</span>
+        </span>
+        <span aria-hidden="true" className="text-caption text-muted-foreground">
+          Birthday
+        </span>
+      </span>
     </div>
   );
 }

@@ -33,30 +33,16 @@ export const stateMicrocopy = {
   // not an empty chapter. The `preview*` pair had no reader left.
   events: {
     loading: "Loading chapter events...",
-    // Inline lines, not card titles (`components.md` §10). A chapter with no
-    // events opens on the calendar, so `empty` is what the List tab says if
-    // someone switches to it; the calendar carries its own line. The phone
-    // says the same line (#4135).
+    // Inline lines, not card titles (`components.md` §10). Said over the
+    // agenda, whose days still list tasks and birthdays. The phone says the
+    // same `empty` line (#4135).
     empty: EVENTS_COPY.empty,
     noUpcoming: "No upcoming events.",
     noPast: "No past events.",
-    // Upcoming holds the next two weeks (#3707); what's after them waits
-    // behind Later, right under this line.
-    noneSoon: EVENTS_COPY.noneSoon,
     noSearchMatches: "No events match that search.",
     noFilterMatches: "No events match these filters.",
-    // On the calendar of a chapter with no events. Officers who can create
-    // get the how; everyone else gets the fact.
-    calendarFirstEvent: "Pick a day to schedule the first event.",
-    // The compact month (#4022): pressing a day picks it, and New event under
-    // the grid makes one on the picked day.
-    calendarFirstEventCompact:
-      "Pick a day, then New event to schedule the first event.",
-    // The compact month's day list, for a picked day with nothing on it.
-    // Week and Day (#4818): pressing an empty hour makes an event then.
-    calendarFirstEventHours: "Press an hour to schedule the first event.",
-    calendarDayEmpty: "Nothing on this day.",
-    calendarNothingYet: "Nothing on the calendar yet.",
+    // The agenda (#5560): seven days from where it starts hold nothing.
+    nothingThisWeek: "Nothing this week.",
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:
       "Reconnect to load event schedules and attendance updates.",

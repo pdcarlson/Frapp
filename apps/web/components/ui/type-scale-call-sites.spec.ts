@@ -103,30 +103,22 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
       "sit in the composer's 16px icon slot beside the emoji icon (#4631).",
   },
   {
-    file: "components/events/events-calendar.tsx",
-    literal: "text-[11px]",
-    count: 1,
-    reason:
-      "Grandfathered: the month grid's overflow link, beside the event " +
-      "chips (now `EventChip` in events-time-grid.tsx). #3075 decides.",
-  },
-  {
     file: "components/events/events-time-grid.tsx",
     literal: "text-[11px]",
     count: 1,
     reason:
-      "Grandfathered: `EventChip`, the month grid's event chip (moved here " +
-      "in #4818 so the Week's All day strip draws the same chip). At " +
-      "caption size four of seven demo titles truncate in a 160px day cell " +
-      "that fits them at the board's 11px. #3075 decides.",
+      "Grandfathered: `EventChip`, the hour grid's All day chip (once the " +
+      "month grid's, which #5560 removed). At caption size most titles " +
+      "truncate in a narrow day column that fits them at the board's 11px. " +
+      "#3075 decides.",
   },
   {
     file: "components/events/calendar-tasks.tsx",
     literal: "text-[11px]",
     count: 1,
     reason:
-      "The month grid's task chip (#4144), which shares a day cell with the " +
-      "event chips above and must match their size. #3075 decides both.",
+      "The hour grid's All day task chip (#4144), which shares the strip " +
+      "with the event chips and must match their size. #3075 decides both.",
   },
   {
     file: "components/billing/pro-chip.tsx",

@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
 import { formatTimeOfDay, localIsoDate } from "@repo/formatting";
 import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import {
+  attendanceFieldsOf,
+  type EventAttendanceFields,
+} from "@repo/validation";
+import {
   blockGeometry,
   endsWithinDay,
   GRID_HOURS as HOURS,
@@ -31,6 +35,38 @@ export type CalendarEventFacts = {
   clockLabel: string | null;
   viewLabel: string;
 };
+
+/**
+ * What the grid draws for one event: its name, its time, whether it requires
+ * this viewer (`useRequiredOfViewer`'s answer) and its series mark.
+ */
+export function calendarEventFacts(
+  event: EventRow,
+  requiredOf: (event: EventAttendanceFields) => boolean,
+): CalendarEventFacts {
+  const eventName = String(event.name ?? "Untitled event");
+  // Required of this viewer, by default or by a role of theirs (#4132).
+  const isMandatory = requiredOf(attendanceFieldsOf(event));
+  // The time of day only: the day is the column's own.
+  const clockLabel = formatTimeOfDay(event.start_time);
+  return {
+    eventId: String(event.id ?? event.name ?? "unknown-event"),
+    eventName,
+    isMandatory,
+    // The series head carries `recurrence_rule`; every generated occurrence
+    // carries `parent_event_id` instead (and a null `recurrence_rule`), see
+    // `event-series.service.ts`. Distinct icons so the two don't read as the
+    // same thing.
+    isSeriesHead:
+      typeof event.recurrence_rule === "string" &&
+      event.recurrence_rule.length > 0,
+    isSeriesInstance:
+      typeof event.parent_event_id === "string" &&
+      event.parent_event_id.length > 0,
+    clockLabel,
+    viewLabel: `View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`,
+  };
+}
 
 type EventsTimeGridProps = {
   /** The columns, each at local midnight: seven for Week, one for Day. */

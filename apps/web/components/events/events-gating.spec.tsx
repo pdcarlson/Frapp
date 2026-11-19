@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -280,27 +281,26 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 describe("EventsPage subscription gating", () => {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
   // editor dialog's `open`, so §5 rule 1 lands here: the New event button and
-  // the calendar's day controls are the triggers that must refuse to open it
-  // (#841). With no events the page opens on the calendar, so both are on
-  // screen together.
+  // the hour grid's hours are the triggers that must refuse to open it (#841).
   beforeEach(() => vi.clearAllMocks());
 
   const newEvent = () => screen.getByRole("button", { name: /new event/i });
 
-  it("disables every create entry point and names the blocker when incomplete", () => {
+  it("disables every create entry point and names the blocker when incomplete", async () => {
     chapter.incomplete();
     render(<EventsPage />);
 
     expect(newEvent()).toBeDisabled();
-    // The calendar's days are more ways into the same dialog; gating only the
-    // header button would leave a live path to a doomed form. The dashed +
-    // on today isn't drawn at all while the days are off.
-    for (const day of screen.getAllByRole("button", {
+    // The hour grid's hours are more ways into the same dialog; gating only
+    // the header button would leave a live path to a doomed form.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hours for Today" }),
+    );
+    for (const hour of screen.getAllByRole("button", {
       name: /^create event on/i,
     })) {
-      expect(day).toBeDisabled();
+      expect(hour).toBeDisabled();
     }
-    expect(screen.queryByTestId("calendar-first-event-slot")).toBeNull();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
 
