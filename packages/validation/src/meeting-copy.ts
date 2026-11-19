@@ -190,7 +190,16 @@ export const MEETING_COPY = {
    * minute-taker writes it, as they write the Summary.
    */
   tldrPlaceholder:
-    "A few short lines for every member: what was decided, what they need to do and by when, what's coming up.",
+    "Two or three short lines for every member: the gist. Dates, decisions and action items have lists of their own.",
+  /** A decision's short outcome, bold over its detail (#5562). */
+  decisionHeadline: "Headline (optional)",
+  decisionHeadlinePlaceholder: "The outcome in a few words",
+  /** Coming up, written by hand (#5562). */
+  dateDay: "Day",
+  dateWhat: "What happens",
+  dateWhatPlaceholder: "What happens that day",
+  removeDate: "Remove date",
+  addDate: "Add a date",
   saveFailed: "Not saved yet. It tries again as you type.",
   /** The note's chips (#5288). */
   checkedIn: (count: number) => `${count} checked in`,
@@ -204,8 +213,6 @@ export const MEETING_COPY = {
  * 2026-11-16; `events.md` § Marking attendance by hand).
  */
 export const MEETING_ATTENDANCE_COPY = {
-  open: "Mark who was there",
-  openMore: "Mark more people",
   title: "Who was there",
   body: "This fills in the event's attendance for anyone not marked yet. Officer marks don't add points.",
   statusLabel: "Mark them as",

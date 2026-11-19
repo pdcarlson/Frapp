@@ -7,6 +7,7 @@ import {
   type MeetingSectionKey,
   type MinutesNoteLine,
 } from "./meetings";
+import { meetingSectionLabel } from "./meeting-copy";
 
 /**
  * Minutes as both apps lay them out to read (#5562; Paul, 2026-11-19:
@@ -32,6 +33,8 @@ export const MINUTES_READ_COPY = {
   mine: "Mine",
   all: (count: number) => `All ${count}`,
   noneMine: "None of these are yours.",
+  done: (count: number) => `${count} done`,
+  points: (count: number) => (count === 1 ? "1 point" : `${count} points`),
   nobodyNamed: "Nobody named yet",
   due: (day: string) => `Due ${day}`,
   yours: "Yours",
@@ -59,6 +62,13 @@ export const MINUTES_READ_COPY = {
     when: "When",
     type: "Type",
     whoCanRead: "Who can read",
+    starts: "Starts",
+    ends: "Ends",
+    everyone: "Everyone the event invites",
+    someRoles: (roles: string) => `Members invited by role: ${roles}`,
+    changeWho: "Change who's invited",
+    otherLabel: "What kind of meeting (optional)",
+    endBeforeStart: "End after it starts.",
     eventNote:
       "Name, time and who can read belong to the meeting's event, so changing them here changes the event too.",
     eventOnly:
@@ -97,11 +107,11 @@ export function minutesReadSections(
   );
 }
 
-/** A jump bar stop: a section and how many it holds, when that's a count. */
+/** A jump bar stop: a section and how many it holds. */
 export interface MinutesJump {
   key: MeetingSectionKey;
   label: string;
-  count: number | null;
+  count: number;
 }
 
 /**
@@ -113,15 +123,17 @@ export function minutesJumps(
   content: MeetingContent,
 ): MinutesJump[] {
   const stops: MinutesJump[] = [];
-  const add = (key: MeetingSectionKey, label: string, count: number | null) => {
-    if (sections.includes(key)) stops.push({ key, label, count });
+  const add = (key: MeetingSectionKey, count: number) => {
+    if (sections.includes(key)) {
+      stops.push({ key, label: meetingSectionLabel(key), count });
+    }
   };
-  add("dates", "Coming up", content.dates.length);
-  add("decisions", "Decisions", content.decisions.length);
-  add("action_items", "Action items", content.action_items.length);
-  add("tabled", "Tabled", content.tabled.length);
-  add("announcements", "Announcements", minutesLines(content.announcements));
-  add("discussion_log", "Notes", minutesTopics(content.discussion_log).length);
+  add("dates", content.dates.length);
+  add("decisions", content.decisions.length);
+  add("action_items", content.action_items.length);
+  add("tabled", content.tabled.length);
+  add("announcements", minutesLines(content.announcements));
+  add("discussion_log", minutesTopics(content.discussion_log).length);
   return stops.length > 1 ? stops : [];
 }
 

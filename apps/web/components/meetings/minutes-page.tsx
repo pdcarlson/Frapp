@@ -12,12 +12,15 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Check,
+  CalendarDays,
+  FileText,
   Link2,
   MoreHorizontal,
   Pencil,
   Plus,
+  SlidersHorizontal,
   Trash2,
+  UserCheck,
   X,
 } from "lucide-react";
 import { codeOf, statusOf } from "@repo/api-sdk";
@@ -38,42 +41,41 @@ import {
   type MeetingDraftState,
   type MeetingNotesState,
   type MeetingRecordingState,
-  type MeetingActionItemTask,
   type MeetingMinutes,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import {
   MEETING_COPY,
-  MEETING_LIST_COPY,
+  MEETING_DATES_MAX_ITEMS,
+  MEETING_DECISION_HEADLINE_MAX_LENGTH,
   MEETING_ITEM_TEXT_MAX_LENGTH,
   MEETING_LIST_MAX_ITEMS,
-  MEETING_OTHER_LABEL_MAX_LENGTH,
   MEETING_TABLED_MAX_ITEMS,
   MEETING_TABLED_MAX_TIMES,
   MEETING_TEXT_MAX_LENGTH,
-  MEETING_TYPES,
-  MEETING_TYPE_LABELS,
   MEETING_VOTE_MAX,
-  STANDARDS_MEETING_NOTE,
+  MINUTES_PREVIEW,
+  MINUTES_READ_COPY,
   can,
   isMeetingContentEmpty,
   meetingDraftQuoteFor,
   meetingDraftSourceFor,
   MEETING_NOTE_TAKERS_COPY,
-  meetingSectionHasContent,
-  meetingTabledFromLabel,
   meetingTypeLabel,
+  minutesJumps,
+  minutesReadSections,
   readMeetingContent,
   shownMeetingSections,
   type MeetingActionItem,
   type MeetingContent,
+  type MeetingDateItem,
   type MeetingDecision,
   type MeetingSectionKey,
   type MeetingTabledItem,
   type MeetingTextSection,
   type MeetingType,
-  parseMinutesNotes,
   agendaMatterKey,
+  meetingTabledFromLabel,
   readEventAgenda,
 } from "@repo/validation";
 import { ErrorState } from "@/components/shared/async-states";
@@ -82,14 +84,12 @@ import {
   InlineNote,
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
-import { Badge } from "@/components/ui/badge";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SegmentedChoice } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -116,11 +116,27 @@ import { SuggestedTasks } from "@/components/ai/suggested-tasks";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
-  meetingDueLabel,
   meetingWhenLabel,
   sectionLabel,
-  voteLine,
 } from "@/components/meetings/meeting-copy";
+import {
+  ActionChecklist,
+  Attendees,
+  DatesView,
+  DecisionsView,
+  LinesView,
+  MinutesJumpBar,
+  MinutesRow,
+  TabledView,
+  TldrBlock,
+  TopicsView,
+  attendanceDetail,
+  hasAttendees,
+} from "@/components/meetings/minutes-read";
+import {
+  MinutesDetailsDialog,
+  type MinutesTypeValue,
+} from "@/components/meetings/minutes-details-dialog";
 
 /** The Select value for an action item nobody was named for. */
 const NO_OWNER = "none";
@@ -144,8 +160,15 @@ function cleanContent(content: MeetingContent): MeetingContent {
   return {
     ...content,
     decisions: content.decisions
-      .map((decision) => ({ ...decision, text: decision.text.trim() }))
+      .map((decision) => ({
+        ...decision,
+        text: decision.text.trim(),
+        headline: decision.headline?.trim() || null,
+      }))
       .filter((decision) => decision.text.length > 0),
+    dates: content.dates
+      .map((item) => ({ ...item, text: item.text.trim() }))
+      .filter((item) => item.text.length > 0 && item.date.length > 0),
     action_items: content.action_items
       .map((item) => ({ ...item, text: item.text.trim() }))
       .filter((item) => item.text.length > 0),
@@ -269,7 +292,9 @@ function Minutes({
   const viewer = useCurrentUser().data as { id?: string } | undefined;
   // Marking attendance is the events rule, the same as on the event's own
   // attendance list: it counts toward points.
-  const canMarkAttendance = can("events:update", usePermissionList());
+  // The same rule names the event and moves its time in Edit details.
+  const canEditEvents = can("events:update", usePermissionList());
+  const canMarkAttendance = canEditEvents;
   const myName = viewer?.id ? names.nameFor(viewer.id) : null;
 
   const isDraft = meeting.status === "draft";
@@ -346,19 +371,15 @@ function Minutes({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const shown = useMemo(() => {
-    const content = editing || posting ? draft.content : base.content;
-    const keys = shownMeetingSections(
-      meeting.sections as MeetingSectionKey[],
-      content,
-    );
-    if (editing) return keys;
-    return keys.filter((key) =>
-      key === "attendees"
-        ? hasAttendees(meeting)
-        : meetingSectionHasContent(content, key),
-    );
-  }, [editing, posting, draft.content, base.content, meeting]);
+  // The editor's sections: the template's, and any with words in it.
+  const shown = useMemo(
+    () =>
+      shownMeetingSections(
+        meeting.sections as MeetingSectionKey[],
+        draft.content,
+      ),
+    [draft.content, meeting.sections],
+  );
 
   function editContent(patch: Partial<MeetingContent>) {
     setDraft((current) => ({
@@ -534,11 +555,57 @@ function Minutes({
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      toast({ title: "Link copied" });
+      toast({ title: MINUTES_READ_COPY.linkCopied });
     } catch {
       toast({ title: "Couldn't copy the link", variant: "destructive" });
     }
   }
+
+  /**
+   * Edit details' type, saved on its own: the minutes' words being typed
+   * stay on screen and go with their own save (#5562).
+   */
+  async function saveType(next: MinutesTypeValue): Promise<boolean> {
+    while (inFlight.current) await inFlight.current;
+    const otherLabel = next.other_label.trim();
+    const typeOnly = {
+      meeting_type: next.meeting_type,
+      other_label: next.meeting_type === "other" ? next.other_label : "",
+    };
+    try {
+      const saved = await update.mutateAsync({
+        id: meeting.id,
+        body: {
+          expected_updated_at: loadedAtRef.current,
+          meeting_type: next.meeting_type,
+          other_label:
+            next.meeting_type === "other" && otherLabel ? otherLabel : null,
+        },
+      });
+      loadedAtRef.current = saved.updated_at;
+      baseRef.current = { ...baseRef.current, ...typeOnly };
+      setLoadedAt(saved.updated_at);
+      setBase((current) => ({ ...current, ...typeOnly }));
+      setDraft((current) => ({ ...current, ...typeOnly }));
+      return true;
+    } catch (error) {
+      if (codeOf(error) === "meeting.stale") {
+        setStale(true);
+        return false;
+      }
+      toast({
+        title: MINUTES_READ_COPY.details.saveFailed,
+        description: getErrorMessage(error, "Try again in a moment."),
+        variant: "destructive",
+      });
+      return false;
+    }
+  }
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [attendanceOpen, setAttendanceOpen] = useState(false);
+  const canBackfill =
+    !!meeting.event_id && canMarkAttendance && meetingHasEnded(meeting);
 
   const when = meetingWhenLabel(meeting.event_start_time);
   const typeLabel = meetingTypeLabel(
@@ -547,6 +614,16 @@ function Minutes({
   );
   // What the read view shows: while a post lands, the words just posted.
   const view = posting ? draft : base;
+  // The read view's blocks and its jump bar (#5562), the same as the phone's.
+  const readKeys = minutesReadSections(
+    meeting.sections as MeetingSectionKey[],
+    view.content,
+  );
+  const jumps = editing ? [] : minutesJumps(readKeys, view.content);
+  const showsAttendance =
+    !editing &&
+    (hasAttendees(meeting) ||
+      (meeting.sections as MeetingSectionKey[]).includes("attendees"));
   const hasContent = !isMeetingContentEmpty(cleanContent(draft.content));
   // Once a draft has filled the minutes, they lead and the notes the draft
   // read fold away underneath; before that, the notes are the first step.
@@ -591,6 +668,9 @@ function Minutes({
         confirm={confirm}
       />
     ) : null;
+
+  const menu = MINUTES_READ_COPY.menu;
+  const hasTranscript = !!meeting.transcript?.trim();
 
   return (
     // A flex column, so the notes panel moves between the top and the foot
@@ -673,46 +753,93 @@ function Minutes({
               // Reading posted minutes is the job here, so nothing about
               // changing them is a big button (Paul, 2026-11-18: "Why would I
               // want to go edit the minutes all the time"): Copy link is a
-              // small icon, Edit and Delete sit behind the dots.
-              <IconButton label="Copy link" onClick={() => void copyLink()}>
+              // small icon, the rest sit behind the dots.
+              <IconButton label={menu.copyLink} onClick={() => void copyLink()}>
                 <Link2 className="h-4 w-4" aria-hidden="true" />
               </IconButton>
             ) : null}
-            {(meeting.can_edit && !editing && !posting) ||
-            meeting.can_delete ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <IconButton label="More" disabled={busy}>
-                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                  </IconButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {meeting.can_edit && !editing && !posting ? (
-                    <DropdownMenuItem onSelect={() => setEditing(true)}>
-                      <Pencil className="h-4 w-4" aria-hidden="true" />
-                      Edit minutes
+            {/*
+              The ⋯ menu (#5562): the same items in the same order as the
+              phone's, so the two never feel like two systems (Paul,
+              2026-11-19).
+            */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <IconButton label={menu.label} disabled={busy}>
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </IconButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {meeting.can_edit && !posting ? (
+                  <DropdownMenuItem onSelect={() => setDetailsOpen(true)}>
+                    <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                    {menu.editDetails}
+                  </DropdownMenuItem>
+                ) : null}
+                {meeting.can_edit && !editing && !posting ? (
+                  <DropdownMenuItem onSelect={() => setEditing(true)}>
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                    {menu.editMinutes}
+                  </DropdownMenuItem>
+                ) : null}
+                {canBackfill ? (
+                  <DropdownMenuItem onSelect={() => setAttendanceOpen(true)}>
+                    <UserCheck className="h-4 w-4" aria-hidden="true" />
+                    {menu.attendance}
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onSelect={() => void copyLink()}>
+                  <Link2 className="h-4 w-4" aria-hidden="true" />
+                  {menu.copyLink}
+                </DropdownMenuItem>
+                {meeting.event_id ? (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/events?event=${meeting.event_id}`}>
+                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                      {menu.openEvent}
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+                {hasTranscript && !editing ? (
+                  <DropdownMenuItem asChild>
+                    {/* Its own tab: an hour of lines under the minutes
+                        buries them (Paul, 2026-11-18). */}
+                    <Link
+                      href={`/meetings/${meeting.id}/transcript`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      <FileText className="h-4 w-4" aria-hidden="true" />
+                      {menu.transcript}
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+                {meeting.can_delete ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      disabled={remove.isPending}
+                      onSelect={() => void handleDelete()}
+                      className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      {menu.delete}
                     </DropdownMenuItem>
-                  ) : null}
-                  {meeting.can_delete ? (
-                    <>
-                      {meeting.can_edit && !editing && !posting ? (
-                        <DropdownMenuSeparator />
-                      ) : null}
-                      <DropdownMenuItem
-                        disabled={remove.isPending}
-                        onSelect={() => void handleDelete()}
-                        className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                        Delete minutes
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
+        <MinutesJumpBar
+          jumps={jumps}
+          onJump={(jump) =>
+            document
+              .getElementById(`${ids}-${jump.key}`)
+              ?.closest("section")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+        />
       </header>
 
       {stale ? (
@@ -764,73 +891,25 @@ function Minutes({
         aria-busy={drafting || undefined}
         className="m-0 min-w-0 space-y-8 border-0 p-0"
       >
-        {!editing && shown.length === 0 ? (
-          <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
-        ) : null}
-
-        {!editing && !isDraft ? (
-          <AtAGlance
-            content={view.content}
-            attended={
-              hasAttendees(meeting)
-                ? (meeting.attendees?.present.length ?? 0) +
-                  (meeting.attendees?.late.length ?? 0)
-                : null
-            }
-            doneCount={
-              [...actionItemTasks.values()].filter((entry) => entry.done).length
-            }
-          />
-        ) : null}
-
-        {shown.map((key, at) => (
-          <section
-            key={key}
-            aria-labelledby={`${ids}-${key}`}
-            className={cn(
-              "space-y-3",
-              // Read as a document: each section opens under a rule, its
-              // name a quiet label over what it holds, so the eye lands on
-              // the content and the sections still part clearly.
-              !editing && at > 0 && "border-t border-border pt-6",
-            )}
-          >
-            <h3
-              id={`${ids}-${key}`}
-              className={
-                editing
-                  ? "text-base font-semibold"
-                  : `${EYEBROW} text-muted-foreground`
-              }
+        {editing ? (
+          shown.map((key) => (
+            <section
+              key={key}
+              aria-labelledby={`${ids}-${key}`}
+              className="space-y-3"
             >
-              {sectionLabel(key)}
-            </h3>
-            {key === "attendees" ? (
-              <>
+              <h3 id={`${ids}-${key}`} className="text-base font-semibold">
+                {sectionLabel(key)}
+              </h3>
+              {key === "attendees" ? (
                 <Attendees meeting={meeting} nameFor={names.nameFor} />
-                {editing &&
-                meeting.event_id &&
-                canMarkAttendance &&
-                meetingHasEnded(meeting) ? (
-                  <AttendanceBackfill
-                    eventId={meeting.event_id}
-                    attendees={meeting.attendees}
-                    onMarked={() => void onReload()}
-                  />
-                ) : null}
-              </>
-            ) : key === "decisions" ? (
-              editing ? (
+              ) : key === "decisions" ? (
                 <DecisionsEditor
                   decisions={draft.content.decisions}
                   onChange={(decisions) => editContent({ decisions })}
                   quoteFor={(text) => quoteOf(review, "decision", text, myName)}
                 />
-              ) : (
-                <DecisionsView decisions={view.content.decisions} />
-              )
-            ) : key === "action_items" ? (
-              editing ? (
+              ) : key === "action_items" ? (
                 <ActionItemsEditor
                   disabled={drafting}
                   items={draft.content.action_items}
@@ -839,116 +918,163 @@ function Minutes({
                     quoteOf(review, "action_item", text, myName)
                   }
                 />
-              ) : (
-                <ActionItemsView
-                  items={view.content.action_items}
-                  nameFor={names.nameFor}
-                  viewerId={viewer?.id ?? null}
-                  tasks={actionItemTasks}
-                />
-              )
-            ) : key === "tabled" ? (
-              editing ? (
+              ) : key === "tabled" ? (
                 <TabledEditor
                   items={draft.content.tabled}
                   eventId={meeting.event_id}
                   onChange={(tabled) => editContent({ tabled })}
                 />
+              ) : key === "dates" ? (
+                <DatesEditor
+                  items={draft.content.dates}
+                  onChange={(dates) => editContent({ dates })}
+                />
               ) : (
-                <TabledView items={view.content.tabled} />
-              )
-            ) : editing ? (
-              <GrowingTextarea
-                aria-labelledby={`${ids}-${key}`}
-                value={draft.content[key as MeetingTextSection]}
-                maxLength={MEETING_TEXT_MAX_LENGTH}
-                // Grows with the text, so a long summary reads whole.
-                className="min-h-28"
-                rows={key === "summary" ? 6 : 4}
-                placeholder={
-                  key === "tldr" ? MEETING_COPY.tldrPlaceholder : undefined
-                }
-                onChange={(event) =>
-                  editContent({
-                    [key]: event.target.value,
-                  } as Partial<MeetingContent>)
-                }
-              />
-            ) : key === "summary" ? (
-              <p className="whitespace-pre-wrap break-words text-base leading-relaxed">
-                {view.content.summary}
-              </p>
-            ) : (
-              <LinesView
-                text={view.content[key as MeetingTextSection]}
-                outline={key === "discussion_log"}
-                // The lead (#5523): what a member reads if they read
-                // nothing else, a size up from the sections under it.
-                lead={key === "tldr"}
-              />
-            )}
-          </section>
-        ))}
-
-        {!editing && meeting.transcript?.trim() ? (
-          // The whole recording, kept with posted minutes (#5410): the
-          // record of what was said, for reading through or asking Frapp AI.
-          <section className="space-y-1 border-t border-border pt-4">
-            <h3 className="text-sm font-semibold">{MEETING_COPY.transcript}</h3>
-            {/* Its own tab: an hour of lines under the minutes buries them
-                (Paul, 2026-11-18). */}
-            <Link
-              href={`/meetings/${meeting.id}/transcript`}
-              target="_blank"
-              rel="noopener"
-              className={inlineNoteActionClassName}
-            >
-              {MEETING_COPY.openTranscript}
-            </Link>
-          </section>
-        ) : null}
-
-        {editing ? (
-          <section aria-labelledby={`${ids}-type`} className="space-y-2">
-            <h3 id={`${ids}-type`} className="text-sm font-semibold">
-              Meeting type
-            </h3>
-            <SegmentedChoice
-              label="Meeting type"
-              value={draft.meeting_type}
-              onChange={(meeting_type) =>
-                setDraft((current) => ({ ...current, meeting_type }))
-              }
-              options={MEETING_TYPES.map((value) => ({
-                value,
-                label: MEETING_TYPE_LABELS[value],
-              }))}
-            />
-            {draft.meeting_type === "other" ? (
-              <div className="grid max-w-sm gap-1">
-                <Label htmlFor={`${ids}-other`}>
-                  What kind of meeting (optional)
-                </Label>
-                <Input
-                  id={`${ids}-other`}
-                  value={draft.other_label}
-                  maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
+                <GrowingTextarea
+                  aria-labelledby={`${ids}-${key}`}
+                  value={draft.content[key as MeetingTextSection]}
+                  maxLength={MEETING_TEXT_MAX_LENGTH}
+                  // Grows with the text, so a long summary reads whole.
+                  className="min-h-28"
+                  rows={key === "summary" ? 6 : 4}
+                  placeholder={
+                    key === "tldr" ? MEETING_COPY.tldrPlaceholder : undefined
+                  }
                   onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      other_label: event.target.value,
-                    }))
+                    editContent({
+                      [key]: event.target.value,
+                    } as Partial<MeetingContent>)
                   }
                 />
+              )}
+            </section>
+          ))
+        ) : (
+          <>
+            {readKeys.length === 0 ? (
+              <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
+            ) : null}
+            {readKeys.map((key, at) => (
+              <section
+                key={key}
+                aria-labelledby={`${ids}-${key}`}
+                className={cn(
+                  // Clears the sticky header and its jump bar on a jump.
+                  "scroll-mt-36 space-y-3",
+                  // Each section opens under a rule, its name a quiet label
+                  // over what it holds, so the eye lands on the content.
+                  at > 0 && "border-t border-border pt-6",
+                )}
+              >
+                <h3
+                  id={`${ids}-${key}`}
+                  className={`${EYEBROW} text-muted-foreground`}
+                >
+                  {sectionLabel(key)}
+                </h3>
+                {key === "tldr" ? (
+                  <TldrBlock
+                    tldr={view.content.tldr}
+                    summary={view.content.summary}
+                  />
+                ) : key === "summary" ? (
+                  <p className="whitespace-pre-wrap break-words text-base leading-relaxed">
+                    {view.content.summary}
+                  </p>
+                ) : key === "dates" ? (
+                  <DatesView dates={view.content.dates} />
+                ) : key === "decisions" ? (
+                  <DecisionsView decisions={view.content.decisions} />
+                ) : key === "action_items" ? (
+                  <ActionChecklist
+                    items={view.content.action_items}
+                    nameFor={names.nameFor}
+                    viewerId={viewer?.id ?? null}
+                    tasks={actionItemTasks}
+                  />
+                ) : key === "tabled" ? (
+                  <TabledView items={view.content.tabled} />
+                ) : key === "discussion_log" ? (
+                  <TopicsView text={view.content.discussion_log} />
+                ) : (
+                  <LinesView
+                    text={view.content[key as MeetingTextSection]}
+                    outline={false}
+                    preview={
+                      key === "announcements"
+                        ? MINUTES_PREVIEW.announcements
+                        : undefined
+                    }
+                  />
+                )}
+              </section>
+            ))}
+            {showsAttendance || hasTranscript ? (
+              // Attendance and the transcript are rows under the minutes:
+              // a long list of names or an hour of lines never sits
+              // between a member and what was decided.
+              <div className="space-y-2 border-t border-border pt-6">
+                {showsAttendance ? (
+                  <MinutesRow
+                    label={MINUTES_READ_COPY.attendance}
+                    detail={attendanceDetail(meeting)}
+                  >
+                    <Attendees meeting={meeting} nameFor={names.nameFor} />
+                  </MinutesRow>
+                ) : null}
+                {hasTranscript ? (
+                  // The whole recording, kept with posted minutes (#5410),
+                  // in its own tab (Paul, 2026-11-18).
+                  <Link
+                    href={`/meetings/${meeting.id}/transcript`}
+                    target="_blank"
+                    rel="noopener"
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border p-3 text-sm hover:bg-card-hover",
+                      FOCUS_RING_OFFSET,
+                    )}
+                  >
+                    <FileText
+                      className="h-4 w-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="flex-1 font-semibold">
+                      {MEETING_COPY.transcript}
+                    </span>
+                    <span className="text-caption text-muted-foreground">
+                      {MEETING_COPY.openTranscript}
+                    </span>
+                  </Link>
+                ) : null}
               </div>
             ) : null}
-            <p className="text-caption text-muted-foreground">
-              {STANDARDS_MEETING_NOTE}
-            </p>
-          </section>
-        ) : null}
+          </>
+        )}
       </fieldset>
 
+      {meeting.can_edit ? (
+        <MinutesDetailsDialog
+          meeting={meeting}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          type={{
+            meeting_type: draft.meeting_type,
+            other_label: draft.other_label,
+          }}
+          canEditEvent={canEditEvents}
+          onSaveType={saveType}
+          onEventSaved={() => void onReload()}
+        />
+      ) : null}
+      {canBackfill && meeting.event_id ? (
+        <AttendanceBackfill
+          eventId={meeting.event_id}
+          attendees={meeting.attendees}
+          open={attendanceOpen}
+          onOpenChange={setAttendanceOpen}
+          onMarked={() => void onReload()}
+        />
+      ) : null}
       {confirmDialog}
     </div>
   );
@@ -977,263 +1103,6 @@ function GrowingTextarea({
 function meetingHasEnded(meeting: MeetingMinutes): boolean {
   const end = Date.parse(meeting.event_end_time ?? meeting.event_start_time);
   return Number.isFinite(end) && end <= Date.now();
-}
-
-function hasAttendees(meeting: MeetingMinutes): boolean {
-  const a = meeting.attendees;
-  return !!a && a.present.length + a.late.length + a.excused.length > 0;
-}
-
-function Attendees({
-  meeting,
-  nameFor,
-}: {
-  meeting: MeetingMinutes;
-  nameFor: (userId: string) => string | null;
-}) {
-  const attendees = meeting.attendees;
-  if (!attendees) {
-    return <InlineNote>{MEETING_COPY.attendeesGone}</InlineNote>;
-  }
-  if (!hasAttendees(meeting)) {
-    return <InlineNote>{MEETING_COPY.attendeesNone}</InlineNote>;
-  }
-  const groups = [
-    { label: MEETING_LIST_COPY.present, ids: attendees.present },
-    { label: MEETING_LIST_COPY.late, ids: attendees.late },
-    { label: MEETING_LIST_COPY.excused, ids: attendees.excused },
-  ].filter((group) => group.ids.length > 0);
-  return (
-    <dl className="space-y-2 text-sm">
-      {groups.map((group) => (
-        <div key={group.label}>
-          <dt className="text-caption text-muted-foreground">
-            {group.label}, {group.ids.length}
-          </dt>
-          <dd>
-            {group.ids
-              .map((userId) => memberLabel(nameFor(userId), userId))
-              .sort((a, b) => a.localeCompare(b))
-              .join(", ")}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function DecisionsView({ decisions }: { decisions: MeetingDecision[] }) {
-  return (
-    // Each outcome on its own, marked by an accent rule, so the decisions
-    // read apart from the discussion around them.
-    <ul role="list" className="space-y-2 text-sm">
-      {decisions.map((decision, index) => (
-        <li key={index} className="border-l-2 border-primary py-0.5 pl-3">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <p className="min-w-0 whitespace-pre-wrap break-words">
-              {decision.text}
-            </p>
-            {decision.vote ? (
-              <Badge
-                variant="outline"
-                title={voteLine(decision.vote)}
-                aria-label={voteLine(decision.vote)}
-                className="tabular-nums"
-              >
-                {voteTally(decision.vote)}
-              </Badge>
-            ) : null}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
- * The minutes at a glance, under the title: how many decisions, how many
- * action items and how many of those are done, and who came. A member sees
- * what the meeting produced before reading a word of it.
- */
-function AtAGlance({
-  content,
-  attended,
-  doneCount,
-}: {
-  content: MeetingContent;
-  attended: number | null;
-  doneCount: number;
-}) {
-  const decisions = content.decisions.length;
-  const actions = content.action_items.length;
-  const facts = [
-    decisions > 0
-      ? `${decisions} ${decisions === 1 ? "decision" : "decisions"}`
-      : null,
-    actions > 0
-      ? `${actions} ${actions === 1 ? "action item" : "action items"}${
-          doneCount > 0 ? `, ${doneCount} done` : ""
-        }`
-      : null,
-    attended !== null && attended > 0 ? `${attended} attended` : null,
-  ].filter((fact): fact is string => fact !== null);
-  if (facts.length === 0) return null;
-  return (
-    <ul role="list" className="-mt-2 flex flex-wrap gap-2">
-      {facts.map((fact) => (
-        <li
-          key={fact}
-          className="rounded-full border border-border px-3 py-1 text-caption tabular-nums text-muted-foreground"
-        >
-          {fact}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** "22–5", with abstentions only when there were some: "22–5–1". */
-function voteTally(vote: NonNullable<MeetingDecision["vote"]>): string {
-  const counts = [vote.for, vote.against];
-  if (vote.abstain > 0) counts.push(vote.abstain);
-  return counts.join("–");
-}
-
-function ActionItemsView({
-  items,
-  nameFor,
-  viewerId,
-  tasks,
-}: {
-  items: MeetingActionItem[];
-  nameFor: (userId: string) => string | null;
-  /** The reader, whose own items say so (a chair finds theirs at a glance). */
-  viewerId: string | null;
-  /** The tasks the items became, by their place in the list. */
-  tasks: ReadonlyMap<number, MeetingActionItemTask>;
-}) {
-  // A checklist, ticked as each item's task is marked done (Paul,
-  // 2026-11-18: "action items should be like checkboxes that show updates
-  // as the tasks are actually checked off"). The boxes only show: an item is
-  // checked off by doing its task, where its points and sign-off live.
-  return (
-    <ul role="list" className="space-y-3 text-sm">
-      {items.map((item, index) => {
-        const task = tasks.get(index);
-        const done = task?.done ?? false;
-        const meta = [
-          item.owner_user_id
-            ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
-            : "Nobody named yet",
-          item.due_date ? `Due ${meetingDueLabel(item.due_date)}` : null,
-          task?.group && !done
-            ? `${task.group.done} of ${task.group.total} done`
-            : null,
-        ].filter(Boolean);
-        const yours = !!viewerId && item.owner_user_id === viewerId;
-        return (
-          <li key={index} className="flex gap-3">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border",
-                done
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border",
-              )}
-            >
-              {done ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <p
-                  className={cn(
-                    "min-w-0 whitespace-pre-wrap break-words",
-                    done && "text-muted-foreground",
-                  )}
-                >
-                  <span className="sr-only">
-                    {done ? "Done: " : task ? "Not done yet: " : ""}
-                  </span>
-                  {item.text}
-                </p>
-                {yours ? <Badge>Yours</Badge> : null}
-              </div>
-              <p className="text-caption text-muted-foreground">
-                {meta.join(" · ")}
-              </p>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/**
- * A section written one item per line (the notes, reports, announcements,
- * business). The notes come as an outline, a topic over its "- " points,
- * and draw as one: the topic in bold, its points as a list under it, the
- * way Granola lays out meeting notes. A plain line that opens with its
- * topic ("Treasurer: ...") shows the topic in bold, so it can be skimmed.
- */
-function LinesView({
-  text,
-  outline,
-  lead = false,
-}: {
-  text: string;
-  outline: boolean;
-  lead?: boolean;
-}) {
-  const lines = parseMinutesNotes(text, { outline });
-  return (
-    <ul
-      role="list"
-      className={`space-y-1.5 leading-relaxed ${lead ? "text-base" : "text-sm"}`}
-    >
-      {lines.map((line, index) => {
-        if (line.kind === "topic") {
-          return (
-            // A topic reads as a heading over its points, as in Paul's
-            // Granola notes (2026-11-17), not as one more bold line.
-            <li
-              key={index}
-              className="break-words pt-4 text-base font-semibold first:pt-0"
-            >
-              {line.text}
-            </li>
-          );
-        }
-        if (line.kind === "point") {
-          return (
-            <li
-              key={index}
-              className={`flex gap-2 break-words ${line.depth ? "pl-5" : ""}`}
-            >
-              <span aria-hidden className="select-none text-muted-foreground">
-                {line.depth ? "◦" : "•"}
-              </span>
-              <span className="min-w-0">{line.text}</span>
-            </li>
-          );
-        }
-        return (
-          <li key={index} className="break-words">
-            {line.head ? (
-              <>
-                <span className="font-semibold">{line.head}</span>
-                {": "}
-                {line.text}
-              </>
-            ) : (
-              line.text
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
 
 /**
@@ -1316,6 +1185,18 @@ function DecisionsEditor({
             </IconButton>
           </div>
           <NotesQuote quote={quoteFor(decision.text)} />
+          <div className="grid gap-1">
+            <Label htmlFor={`${ids}-${index}-headline`}>
+              {MEETING_COPY.decisionHeadline}
+            </Label>
+            <Input
+              id={`${ids}-${index}-headline`}
+              value={decision.headline ?? ""}
+              maxLength={MEETING_DECISION_HEADLINE_MAX_LENGTH}
+              placeholder={MEETING_COPY.decisionHeadlinePlaceholder}
+              onChange={(event) => set(index, { headline: event.target.value })}
+            />
+          </div>
           {decision.vote ? (
             <div className="flex flex-wrap items-end gap-3">
               {(["for", "against", "abstain"] as const).map((side) => (
@@ -1381,31 +1262,58 @@ function DecisionsEditor({
 }
 
 /**
- * What the meeting tabled (#5522): each matter, with where it was first
- * tabled when an earlier meeting did.
+ * Coming up by hand (#5562): a day and what happens then, for a date the
+ * draft missed or one an officer adds.
  */
-function TabledView({ items }: { items: MeetingTabledItem[] }) {
+function DatesEditor({
+  items,
+  onChange,
+}: {
+  items: MeetingDateItem[];
+  onChange: (next: MeetingDateItem[]) => void;
+}) {
+  const ids = useId();
+  const set = (index: number, patch: Partial<MeetingDateItem>) =>
+    onChange(
+      items.map((item, at) => (at === index ? { ...item, ...patch } : item)),
+    );
   return (
-    <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
-      {items.map((item, index) => {
-        const from = meetingTabledFromLabel(item);
-        return (
-          <li key={index} className="flex gap-2 break-words">
-            <span aria-hidden className="select-none text-muted-foreground">
-              •
-            </span>
-            <span className="min-w-0">
-              {item.text}
-              {from ? (
-                <span className="block text-caption text-muted-foreground">
-                  {from}
-                </span>
-              ) : null}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="space-y-3">
+      {items.map((item, index) => (
+        <div key={index} className="flex items-start gap-2">
+          <Input
+            type="date"
+            aria-label={`${MEETING_COPY.dateDay} ${index + 1}`}
+            className="w-40 shrink-0"
+            value={item.date}
+            onChange={(event) => set(index, { date: event.target.value })}
+          />
+          <Input
+            id={`${ids}-${index}`}
+            aria-label={`${MEETING_COPY.dateWhat} ${index + 1}`}
+            placeholder={MEETING_COPY.dateWhatPlaceholder}
+            value={item.text}
+            maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
+            onChange={(event) => set(index, { text: event.target.value })}
+          />
+          <IconButton
+            label={`${MEETING_COPY.removeDate} ${index + 1}`}
+            onClick={() => onChange(items.filter((_, at) => at !== index))}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        </div>
+      ))}
+      {items.length < MEETING_DATES_MAX_ITEMS ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => onChange([...items, { date: "", text: "" }])}
+        >
+          {MEETING_COPY.addDate}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
