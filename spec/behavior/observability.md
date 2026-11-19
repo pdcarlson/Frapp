@@ -479,7 +479,7 @@ Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned
 
 ## Push Prompt Telemetry
 
-Mobile asks for notification permission only after the member taps "Turn on", on onboarding's notifications step, the chat home's one reminder, or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server can't see the answer: `POST /push-tokens` follows only an "allowed", and repeats on every launch. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
+Mobile asks for notification permission only after the member taps "Turn on", on onboarding's notifications step, the chat home's one reminder, or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server sees only the phone's current answer, not the prompt that produced it: every `POST /push-tokens` carries `notifications_enabled`, stored on the device's `push_tokens` row for the Directory's Phone app filter. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
 
 | Property | Meaning |
 | --- | --- |

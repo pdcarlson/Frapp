@@ -62,6 +62,7 @@ export class NotificationController {
       userId,
       dto.token,
       dto.device_name,
+      dto.notifications_enabled,
     );
   }
 

@@ -7,6 +7,7 @@ import { ChatNotificationPreferenceService } from '../src/application/services/c
 import { ChatMentionService } from '../src/application/services/chat-mention.service';
 import { ChannelAccessListService } from '../src/application/services/channel-access-list.service';
 import { MemberService } from '../src/application/services/member.service';
+import { MemberPhoneReachService } from '../src/application/services/member-phone-reach.service';
 import { ServiceEntryService } from '../src/application/services/service-entry.service';
 import { ChapterDocumentService } from '../src/application/services/chapter-document.service';
 import { FinancialInvoiceService } from '../src/application/services/financial-invoice.service';
@@ -69,6 +70,10 @@ describe('Route declaration order — a literal route must not be swallowed by :
     findProfileById: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
 
+  const phoneReachServiceMock = {
+    findForViewer: jest.fn().mockResolvedValue({ scope: 'self', members: [] }),
+  };
+
   const mentionServiceMock = {
     listMentionRoles: jest.fn().mockResolvedValue([]),
   };
@@ -125,6 +130,8 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .useValue(accessListServiceMock)
       .overrideProvider(MemberService)
       .useValue(memberServiceMock)
+      .overrideProvider(MemberPhoneReachService)
+      .useValue(phoneReachServiceMock)
       .overrideProvider(ServiceEntryService)
       .useValue(serviceEntryServiceMock)
       .overrideProvider(ChapterDocumentService)
@@ -296,6 +303,20 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
     expect(memberServiceMock.findBirthdaysByChapter).toHaveBeenCalledWith(
       CHAPTER_ID,
+    );
+    expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/members/phone-reach reaches phoneReach, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/members/phone-reach`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(phoneReachServiceMock.findForViewer).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      expect.any(String),
     );
     expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
   });

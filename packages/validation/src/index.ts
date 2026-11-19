@@ -185,6 +185,7 @@ export * from "./permission-registry";
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
 export * from "./permissions";
 export * from "./phone";
+export * from "./phone-reach";
 export * from "./profile-copy";
 export * from "./profile-correction";
 export * from "./push-action-categories";

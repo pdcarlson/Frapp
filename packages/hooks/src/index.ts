@@ -33,6 +33,7 @@ export * from "./landing-channel";
 export * from "./legal-acceptance";
 export * from "./linked-apps";
 export * from "./member-avatar-color";
+export * from "./member-phone-reach";
 export * from "./member-threads";
 export * from "./open-chat-transport";
 export * from "./pay-errors";

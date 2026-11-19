@@ -100,6 +100,11 @@ const state = vi.hoisted(() => ({
   membersError: false,
   // The Non-chapter business roles the viewer can pick (#4958).
   pickable: [] as { id: string; name: string; held: boolean }[],
+  // `GET /v1/members/phone-reach`; `null` is a read not answered yet.
+  phoneReach: null as null | {
+    scope: "chapter" | "self";
+    byUserId: Map<string, unknown>;
+  },
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -114,6 +119,7 @@ const refetches = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  useMemberPhoneReach: () => ({ reach: state.phoneReach }),
   useActiveChapterId: () => state.chapterId,
   usePickableRoles: () => ({ roles: state.pickable, isLoading: false }),
   usePermissionList: () => state.permissions,
@@ -341,6 +347,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 }
 
 beforeEach(() => {
+  state.phoneReach = null;
   state.pickable = [];
   state.chapterId = "c-1";
   state.search = [];
@@ -622,6 +629,58 @@ describe("s13's Actives filters (#3971)", () => {
     act(() => body().props.children.props.action!.onPress());
     expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
     expect(activesFiltersChip(tree).props.label).toBe("Filters");
+  });
+
+  it("offers the Phone app filter only with the chapter's reach, and narrows to who a push can't reach", () => {
+    const tree = render();
+    expect(
+      (sheet(tree) as unknown as { showPhoneReach?: boolean }).showPhoneReach,
+    ).toBe(false);
+    act(() => tree.unmount());
+
+    state.phoneReach = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          "u-1",
+          {
+            user_id: "u-1",
+            state: "on",
+            platform: "ios",
+            last_opened_at: null,
+          },
+        ],
+        [
+          "u-2",
+          {
+            user_id: "u-2",
+            state: "web_only",
+            platform: null,
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    const officer = render();
+    expect(
+      (sheet(officer) as unknown as { showPhoneReach?: boolean })
+        .showPhoneReach,
+    ).toBe(true);
+    pick(officer, { phoneReach: "unreachable" });
+    expect(listed(officer)).toEqual(["Andre Silva"]);
+    // The count line rides in the list's header, which the FlatList stand-in
+    // doesn't draw, so it is rendered on its own.
+    let header!: ReactTestRenderer;
+    act(() => {
+      header = create(
+        <FrappThemeProvider>
+          {list(officer).props.ListHeaderComponent as React.ReactElement}
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(header)).toContain(
+      "1 of 2 members can't get notifications",
+    );
   });
 
   it("drops a pick whose role no longer exists rather than empty the list", () => {

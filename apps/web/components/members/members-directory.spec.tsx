@@ -89,6 +89,14 @@ const leaderboardRead = read([{ user_id: "u-1", total: 42 }]);
 
 const classesRead = read([]);
 
+/** What `useMemberPhoneReach` answers: `null` until a test sets it. */
+const phoneReachRead = vi.hoisted(() => ({
+  value: null as null | {
+    scope: "chapter" | "self";
+    byUserId: Map<string, unknown>;
+  },
+}));
+
 // The live-meeting card has its own spec (#5219).
 vi.mock("@/components/meetings/live-meeting-card", () => ({
   LiveMeetingCard: () => null,
@@ -108,6 +116,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useMemberSearch: (q: string) => (q ? searchRead : membersRead),
     useRoles: () => rolesRead,
     useLeaderboard: () => leaderboardRead,
+    useMemberPhoneReach: () => ({ reach: phoneReachRead.value }),
     // The member view, which every member can read. The config read refuses
     // every seeded role below President (#2957), so the directory must not
     // depend on it; it reports that refusal here rather than being left out.
@@ -182,6 +191,7 @@ beforeEach(() => {
     read([{ id: "r-1", name: "Treasurer", is_system: false, permissions: [] }]),
   );
   Object.assign(leaderboardRead, read([{ user_id: "u-1", total: 42 }]));
+  phoneReachRead.value = null;
 });
 
 describe("Directory on the greenfield shell", () => {
@@ -324,6 +334,71 @@ describe("Directory on the greenfield shell", () => {
     // An unset chip is named by its label alone; a set one names its value.
     expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Role" })).toBeInTheDocument();
+  });
+
+  it("offers the Phone app filter only when the server sends the whole chapter's reach", () => {
+    phoneReachRead.value = {
+      scope: "self",
+      byUserId: new Map([
+        [
+          "u-1",
+          {
+            user_id: "u-1",
+            state: "on",
+            platform: "ios",
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    const { unmount } = render(<MembersDirectory />);
+    expect(screen.queryByRole("button", { name: "Phone app" })).toBeNull();
+    unmount();
+
+    phoneReachRead.value = { scope: "chapter", byUserId: new Map() };
+    render(<MembersDirectory />);
+    expect(
+      screen.getByRole("button", { name: "Phone app" }),
+    ).toBeInTheDocument();
+  });
+
+  it("narrows to members notifications can't reach, says how many, and names each one's state", async () => {
+    const user = userEvent.setup();
+    phoneReachRead.value = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          "u-1",
+          {
+            user_id: "u-1",
+            state: "on",
+            platform: "ios",
+            last_opened_at: "2026-11-18T12:00:00.000Z",
+          },
+        ],
+        [
+          "u-2",
+          {
+            user_id: "u-2",
+            state: "web_only",
+            platform: null,
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    render(<MembersDirectory />);
+    // No state on the rows until the filter is set.
+    expect(screen.queryByText("Web only")).toBeNull();
+
+    await pick(user, "Phone app", "Not reachable");
+
+    expect(screen.queryByText("Ada Lovelace")).toBeNull();
+    expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
+    expect(screen.getByText("Web only")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 of 2 members can't get notifications"),
+    ).toBeInTheDocument();
   });
 
   // #3941: the options are graduation years, so the chapter's `class` word

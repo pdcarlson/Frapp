@@ -96,6 +96,14 @@ export class RegisterPushTokenDto {
   @IsString()
   @MaxLength(255)
   device_name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Whether the phone lets Frapp's notifications show right now (the OS permission, and on Android the app's notification channel). Sent on every register so officers can see who a push reaches. Omitted by older builds, which leaves the stored value as it was.",
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  notifications_enabled?: boolean;
 }
 
 export class ListNotificationPreferencesQueryDto {

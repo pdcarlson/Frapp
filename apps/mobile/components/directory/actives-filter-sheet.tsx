@@ -30,6 +30,11 @@ import {
   type FilterRole,
 } from "@/lib/directory/actives-filter";
 import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
+import {
+  PHONE_REACH_FILTER_OPTIONS,
+  PHONE_REACH_LABEL,
+  type PhoneReachFilter,
+} from "@repo/validation";
 
 /**
  * The Directory's Actives filters (#3971), behind the Filters chip on the
@@ -64,6 +69,11 @@ export interface ActivesFilterSheetProps {
    */
   rolesStatus: "loading" | "error" | "ready";
   onRetryRoles: () => void;
+  /**
+   * Whether to offer the Phone app section: only for officers the server
+   * sends the whole chapter's reach to (invite or role rights), as web's chip.
+   */
+  showPhoneReach?: boolean;
 }
 
 const ANY = "__any";
@@ -81,6 +91,7 @@ export const ActivesFilterSheet = forwardRef<
     classWord,
     rolesStatus,
     onRetryRoles,
+    showPhoneReach = false,
   },
   ref,
 ) {
@@ -175,6 +186,31 @@ export const ActivesFilterSheet = forwardRef<
                 ]}
               />
             </View>
+
+            {showPhoneReach ? (
+              <View style={styles.section}>
+                <SectionHeader>{PHONE_REACH_LABEL}</SectionHeader>
+                <FilterChips
+                  accessibilityLabel={PHONE_REACH_LABEL}
+                  selected={filter.phoneReach ?? ANY}
+                  onSelect={(value) =>
+                    set({
+                      phoneReach:
+                        value === ANY || value === null
+                          ? null
+                          : (value as PhoneReachFilter),
+                    })
+                  }
+                  chips={[
+                    { value: ANY, label: "Any" },
+                    ...PHONE_REACH_FILTER_OPTIONS.map((o) => ({
+                      value: o.value,
+                      label: o.label,
+                    })),
+                  ]}
+                />
+              </View>
+            ) : null}
 
             {years.length > 0 ? (
               <View style={styles.section}>
