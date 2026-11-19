@@ -398,8 +398,9 @@ cs_log "Starting Supabase (images cached)..."
 #
 # This is the ONLY retried step. It is the only network-bound one — ~10 images from ECR
 # Public via CloudFront — and a CDN hiccup here used to kill the whole session. cs_retry
-# retries transient failures and returns immediately on a blocked allowlist or an exhausted
-# Docker Hub quota, both of which need a change in the web UI that no retry can supply.
+# retries transient failures and returns immediately on a blocked allowlist or a registry rate
+# limit. Both usually need a change in the web UI that no retry can supply (for a rate limit,
+# working Docker Hub credentials); the ratelimit hint says which, from how the login went.
 #
 # $CS_SUPABASE_START_ARGS must stay UNQUOTED through the wrapper: quoting it collapses
 # `-x edge-runtime` into one argument and silently un-does the exclusion, which is the
