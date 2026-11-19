@@ -41,7 +41,7 @@ Paul, 2026-11-10 (#3722, under #4068): each channel answers two questions, and o
   A list is stored sorted and without repeats, so two lists that say the same thing are equal.
   The President's `*` passes every list, so a chapter can't lock itself out.
   A client can't send an empty list (it would admit only `*`); a list empties only when the last role, tier or group on it is deleted, and the deletion takes its entry off every list in the chapter.
-  A group grants nothing, so it is how a channel opens to a set of people without giving them a role: who is in a group is the officers' call in Chapter settings → Groups (`groups:manage`), and naming a group on a list is the channel officers' call.
+  A group grants nothing, so it is how a channel opens to a set of people without giving them a role: who is in a group is the officers' call in Chapter settings → Roles and groups, or on the member's profile (`groups:manage`), and naming a group on a list is the channel officers' call.
   Once a list names a group, changing who is in it or deleting it is a change to that channel's access, so it also needs `channels:manage`; otherwise a `groups:manage` holder could add themselves to a group that gates a channel they can't read.
   A pledge class's group follows the class, which officers set.
   A class year's group can't go on a list at all (the API refuses it, and `can_read_chat_channel` ignores it): members set their own graduation year, so it would let anyone in.
@@ -2023,7 +2023,7 @@ The rules (`ChatMentionService`, `apps/api/src/application/services/chat-mention
   Presence is advisory (`presence-topics.ts`), so a forged entry can make someone "here" who isn't; that costs them a mention, never access.
 - **Tiers and groups are pinged the same way** (#4076; tiers decided by Paul and Shawn on 2026-11-11).
   `@<tier name>` reaches everyone holding any role in the tier, and `@<group name>` everyone in the group now ([`members.md` § Groups](../members.md#groups)): a pledge class's group reaches the class, "Class of 2027" whoever has that graduation year.
-  Each tier and group has its own `mentionable` switch, on by default, with the role's rule: while off, only a member holding `channels:manage`, `roles:manage` or `*` can ping it (the tier's on its page under Roles, the group's in Chapter settings → Groups).
+  Each tier and group has its own `mentionable` switch, on by default, with the role's rule: while off, only a member holding `channels:manage`, `roles:manage` or `*` can ping it (the tier's on its page under Roles, the group's under Roles and groups).
   A tier holding the Everyone role reaches nearly the whole chapter, so it also follows the Everyone role's switch (§ `@everyone`, officers only by default): without that, `@Members` would be `@everyone` for anyone.
   Matching is the role's, by the whole folded name.
   When a tier, a role and a group share a name, the token reaches everyone in the ones the sender may ping, together, and the picker lists each, labelled by kind.

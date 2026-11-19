@@ -25,12 +25,6 @@ vi.mock("@repo/hooks", async () => ({
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
   ).dmChannelIdOf,
   useMemberByUserId: () => memberState,
-  useRoles: () => ({
-    data: [
-      { id: "r-pres", name: "President", color: null, rank: 1 },
-      { id: "r-rush", name: "Rush Chair", color: null, rank: 2 },
-    ],
-  }),
   useMemberDisplayNames: () => ({
     avatarTintFor: () => null,
     roleColorFor: () => null,
@@ -48,6 +42,18 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
 
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
+}));
+
+// Roles and groups on the card have their own spec
+// (`member-assignments.spec.tsx`); here they only have to get the member.
+vi.mock("@/components/members/member-assignments", () => ({
+  MemberAssignments: ({ roleIds }: { roleIds: string[] }) => (
+    <ul aria-label="Roles">
+      {roleIds.map((id) => (
+        <li key={id}>{id}</li>
+      ))}
+    </ul>
+  ),
 }));
 
 import { anchorFor, MemberPopout } from "./member-popout";
@@ -105,7 +111,7 @@ describe("MemberPopout", () => {
     expect(card).toHaveTextContent("Jane Smith");
     expect(card).toHaveTextContent("Economics · '27");
     expect(screen.getByRole("list", { name: "Roles" })).toHaveTextContent(
-      "PresidentRush Chair",
+      "r-presr-rush",
     );
   });
 

@@ -5,8 +5,8 @@
  * 2026-11-07).
  *
  * Sized for a real chapter, not a seed: Paul's has 113 roles after its Discord
- * import, so the list is searched, and its order is fixed when the editor
- * opens (held roles first) so a row never jumps out from under a finger.
+ * import, so the list is searched. Its rows and their order come from
+ * `memberAssignmentSections` (`@repo/hooks`), shared with web.
  */
 import type { ChapterRole } from "@repo/hooks/chapter-roles";
 import {
@@ -22,35 +22,6 @@ import {
  * changes hands only through Transfer presidency.
  */
 export type RoleOption = ChapterRole;
-
-/**
- * The editor's row order, taken once when it opens: the roles the member holds,
- * then the rest, each by name. Toggling never re-sorts, so the row under a
- * finger stays put.
- */
-export function orderRoleOptions(
-  options: readonly RoleOption[],
-  heldIds: readonly string[],
-): RoleOption[] {
-  const held = new Set(heldIds);
-  const byName = (a: RoleOption, b: RoleOption) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-  // The Everyone role is no row (#4191).
-  const listed = options.filter((o) => !o.everyone);
-  return [
-    ...listed.filter((o) => held.has(o.id)).sort(byName),
-    ...listed.filter((o) => !held.has(o.id)).sort(byName),
-  ];
-}
-
-export function filterRoleOptions(
-  options: readonly RoleOption[],
-  search: string,
-): readonly RoleOption[] {
-  const needle = search.trim().toLowerCase();
-  if (needle.length === 0) return options;
-  return options.filter((o) => o.name.toLowerCase().includes(needle));
-}
 
 /**
  * The member's role ids with `roleId` turned on or off. Ids the list doesn't
@@ -84,8 +55,6 @@ export function removesBaseAccess(
   const settled = rolesAfterSave(after, before, options);
   return removesMemberAccess(before, settled, memberAccessRoleIds(options));
 }
-
-export const ROLES_LOCKED_CAPTION = "Changes with Transfer presidency";
 
 export function removeBaseAccessTitle(name: string): string {
   return `Take away ${name}'s access?`;

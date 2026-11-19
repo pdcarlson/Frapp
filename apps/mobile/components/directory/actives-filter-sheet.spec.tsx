@@ -40,6 +40,7 @@ function render(
     rolesStatus?: "loading" | "error" | "ready";
     onRetryRoles?: () => void;
     showPhoneReach?: boolean;
+    groups?: { id: string; name: string }[];
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -56,6 +57,7 @@ function render(
           rolesStatus={more.rolesStatus ?? "ready"}
           onRetryRoles={more.onRetryRoles ?? vi.fn()}
           showPhoneReach={more.showPhoneReach}
+          groups={more.groups}
         />
       </FrappThemeProvider>,
     );
@@ -178,6 +180,21 @@ describe("ActivesFilterSheet (#3971)", () => {
     };
   }
 
+  it("offers a Group section only when a group has members, as web's chip", () => {
+    expect(
+      inHeader(render(), (p) => p.accessibilityLabel === "Group"),
+    ).toBeNull();
+    const onChange = vi.fn();
+    const tree = render(NO_ACTIVES_FILTER, onChange, {
+      groups: [{ id: "g-house", name: "In house" }],
+    });
+    act(() => section(tree, "Group").onSelect("g-house"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...NO_ACTIVES_FILTER,
+      groupId: "g-house",
+    });
+  });
+
   it("offers the Phone app section only when asked, with web's choices", () => {
     expect(
       inHeader(render(), (p) => p.accessibilityLabel === "Phone app"),
@@ -222,6 +239,7 @@ describe("ActivesFilterSheet (#3971)", () => {
     const onChange = vi.fn();
     const set = {
       roleId: null,
+      groupId: null,
       graduationYear: 2028,
       pledgeClassId: "pc-a",
       status: "active" as const,

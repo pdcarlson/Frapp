@@ -3,7 +3,14 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { statusOf } from "@repo/api-sdk";
-import { useRoles, useUpdateMemberRoles } from "@repo/hooks";
+import {
+  memberAssignmentSections,
+  useRoles,
+  useSetGroupMembership,
+  useUpdateMemberRoles,
+  type AssignmentRow,
+  type ChapterGroup,
+} from "@repo/hooks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
@@ -19,23 +26,29 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
-  filterRoleOptions,
-  orderRoleOptions,
   removeBaseAccessBody,
   removeBaseAccessTitle,
   removesBaseAccess,
-  ROLES_LOCKED_CAPTION,
   rolesSaveFailedBody,
   ROLES_SAVE_FAILED_TITLE,
   toggleRole,
   type RoleOption,
 } from "@/lib/directory/role-editor";
 import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
+import { useRolesData } from "@/lib/roles/use-roles-data";
 
 /**
- * Edit a member's roles: the only place on mobile that does it (Directory, tap
- * a member, Roles). A stacked tall sheet over the member's profile, as
- * `new-task-sheet.tsx` stacks its assignee picker.
+ * Give and take a member's roles and groups (Paul, 2026-11-19: one place for
+ * both, set from the person), opened by "+ Add role" or "+ Add to group" on
+ * their profile. The list is web's (`memberAssignmentSections`): the roles
+ * under their tiers, then roles outside them, then the chapter's own groups,
+ * with the groups first when it was opened for a group. A role the viewer
+ * can't give is shown, dimmed, with why. A group tick saves at once through
+ * `POST`/`DELETE /v1/groups/:id/members/:userId`; a pledge class's or class
+ * year's group follows the member's own details and is never listed.
+ *
+ * A stacked tall sheet over the member's profile, as `new-task-sheet.tsx`
+ * stacks its assignee picker.
  *
  * **Each tap saves**, as Discord's member role list does on a phone, so there
  * is no Save button to find at the foot of a 113-row list. Saves are sent one
@@ -47,9 +60,20 @@ import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
  * `members:view`) asks first, because it locks them out of chat the way the
  * 2026-11-07 testers were. President is shown but locked: it moves only with
  * Transfer presidency, and the API refuses it here.
+ *
+ * Rows keep their place as they are ticked: the order is by tier and the
+ * role's own order, never by what the member holds.
  */
 export interface MemberRolesSession {
   memberId: string;
+  /** The member's `users.id`, which groups are keyed by. */
+  userId: string;
+  /** Which part the sheet opens at. */
+  focus: "roles" | "groups";
+  /** Whether the viewer may tick roles (`roles:manage`). */
+  canManageRoles: boolean;
+  /** Whether the viewer may tick groups (`groups:manage`). */
+  canManageGroups: boolean;
   name: string;
   heldIds: string[];
   /** When the profile holding `heldIds` was fetched (ms since epoch). */
@@ -73,14 +97,21 @@ export interface MemberRolesSheetProps {
   /** Set when the Roles row is tapped; the sheet reads it once per opening. */
   session: MemberRolesSession | null;
   options: readonly RoleOption[];
+  /** The chapter's groups (`useGroups`); only the manual ones are listed. */
+  groups: readonly ChapterGroup[];
 }
+
+type SheetItem =
+  | { type: "heading"; key: string; title: string }
+  | { type: "role"; key: string; row: AssignmentRow; option: RoleOption }
+  | { type: "group"; key: string; row: AssignmentRow; group: ChapterGroup };
 
 type SaveStatus = "idle" | "saving" | "saved";
 
 export const MemberRolesSheet = forwardRef<
   BottomSheetModal,
   MemberRolesSheetProps
->(function MemberRolesSheet({ session, options }, ref) {
+>(function MemberRolesSheet({ session, options, groups }, ref) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand.accent);
@@ -88,12 +119,14 @@ export const MemberRolesSheet = forwardRef<
   const tallSheet = useTallSheetProps();
   const closeSheet = useSheetClose(ref);
   const updateRoles = useUpdateMemberRoles();
+  const setMembership = useSetGroupMembership();
+  const [groupPending, setGroupPending] = useState<string | null>(null);
   const rolesQuery = useRoles();
+  const rolesData = useRolesData();
 
   const [draft, setDraft] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<SaveStatus>("idle");
-  const [orderedIds, setOrderedIds] = useState<string[]>([]);
 
   // One save line per member, kept across openings, so a save still out when
   // the officer moves to someone else finishes (or fails out loud) on its own,
@@ -135,26 +168,85 @@ export const MemberRolesSheet = forwardRef<
     setDraft(start);
     setSearch("");
     setStatus(keep && line.inFlight ? "saving" : "idle");
-    setOrderedIds(orderRoleOptions(options, start).map((o) => o.id));
-    // `options` is read for the opening order only, so a roles refetch while
-    // the sheet is open doesn't reshuffle the rows.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  const ordered = useMemo(() => {
-    const byId = new Map(options.map((o) => [o.id, o]));
-    const known = orderedIds
-      .map((id) => byId.get(id))
-      .filter((o): o is RoleOption => !!o);
-    // A role created while the sheet is open goes at the end.
-    const seen = new Set(orderedIds);
-    return [...known, ...options.filter((o) => !seen.has(o.id) && !o.everyone)];
-  }, [options, orderedIds]);
-  const visible = useMemo(
-    () => filterRoleOptions(ordered, search),
-    [ordered, search],
-  );
-  const held = useMemo(() => new Set(draft), [draft]);
+  const items = useMemo<SheetItem[]>(() => {
+    if (!session) return [];
+    const sections = memberAssignmentSections({
+      roles: rolesData.roles,
+      tiers: rolesData.tiers,
+      groups,
+      reach: rolesData.reach,
+      canManageRoles: session.canManageRoles,
+      canManageGroups: session.canManageGroups,
+      heldRoleIds: draft,
+      userId: session.userId,
+      query: search,
+    });
+    // Opened from "Add to group", the groups come first.
+    const ordered =
+      session.focus === "groups"
+        ? [
+            ...sections.filter((s) => s.key === "groups"),
+            ...sections.filter((s) => s.key !== "groups"),
+          ]
+        : sections;
+    const optionsById = new Map(options.map((o) => [o.id, o]));
+    const groupsById = new Map(groups.map((g) => [g.id, g]));
+    const out: SheetItem[] = [];
+    for (const section of ordered) {
+      const rows: SheetItem[] = [];
+      for (const row of section.rows) {
+        if (row.kind === "role") {
+          const option = optionsById.get(row.id);
+          if (option)
+            rows.push({ type: "role", key: `role:${row.id}`, row, option });
+        } else {
+          const group = groupsById.get(row.id);
+          if (group)
+            rows.push({ type: "group", key: `group:${row.id}`, row, group });
+        }
+      }
+      if (rows.length > 0) {
+        out.push(
+          {
+            type: "heading",
+            key: `heading:${section.key}`,
+            title: section.title,
+          },
+          ...rows,
+        );
+      }
+    }
+    return out;
+  }, [session, rolesData, groups, draft, search, options]);
+
+  async function onToggleGroup(group: ChapterGroup) {
+    if (!session || groupPending) return;
+    const inGroup = group.member_ids.includes(session.userId);
+    setGroupPending(group.id);
+    setStatus("saving");
+    try {
+      await setMembership.mutateAsync({
+        groupId: group.id,
+        userId: session.userId,
+        in: !inGroup,
+      });
+      setStatus("saved");
+    } catch (caught) {
+      setStatus("idle");
+      Alert.alert(
+        inGroup
+          ? "Couldn't take out of that group"
+          : "Couldn't add to that group",
+        caught instanceof Error && caught.message
+          ? caught.message
+          : "Check your connection and try again.",
+      );
+    } finally {
+      setGroupPending(null);
+    }
+  }
 
   const isShown = (memberId: string) =>
     sessionRef.current?.memberId === memberId;
@@ -212,7 +304,7 @@ export const MemberRolesSheet = forwardRef<
   }
 
   function onToggle(option: RoleOption) {
-    if (!session || option.locked) return;
+    if (!session || option.locked || !session.canManageRoles) return;
     const current = draftRef.current;
     const next = toggleRole(current, option.id);
     if (removesBaseAccess(current, next, options)) {
@@ -260,8 +352,8 @@ export const MemberRolesSheet = forwardRef<
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetFlatList
         onAccessibilityEscape={closeSheet}
-        data={visible}
-        keyExtractor={(option: RoleOption) => option.id}
+        data={items}
+        keyExtractor={(item: SheetItem) => item.key}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         // The title, search and status stay pinned over a long list.
@@ -269,7 +361,11 @@ export const MemberRolesSheet = forwardRef<
         ListHeaderComponent={
           <View style={styles.header}>
             <TallSheetHeader
-              title={session ? `${session.name}'s roles` : "Roles"}
+              title={
+                session
+                  ? `${session.name}'s roles and groups`
+                  : "Roles and groups"
+              }
               onClose={closeSheet}
             />
             {/* `BottomSheetTextInput`, not `SearchField`: a plain input breaks
@@ -277,9 +373,9 @@ export const MemberRolesSheet = forwardRef<
             <BottomSheetTextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search roles"
+              placeholder="Search roles and groups"
               placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel="Search roles"
+              accessibilityLabel="Search roles and groups"
               autoCapitalize="none"
               autoCorrect={false}
               style={styles.field}
@@ -295,41 +391,61 @@ export const MemberRolesSheet = forwardRef<
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
-            {options.length === 0
-              ? "This chapter has no roles yet."
-              : "No roles match that search."}
+            {search.trim()
+              ? "Nothing matches that search."
+              : "This chapter has no roles or groups yet."}
           </Text>
         }
-        renderItem={({ item }: { item: RoleOption }) => {
-          const selected = held.has(item.id);
+        renderItem={({ item: entry }: { item: SheetItem }) => {
+          if (entry.type === "heading") {
+            return (
+              <Text style={styles.heading} accessibilityRole="header">
+                {entry.title}
+              </Text>
+            );
+          }
+          const { row } = entry;
+          const disabled =
+            row.disabledReason !== null ||
+            (entry.type === "group" && groupPending !== null);
+          const checked = row.held;
+          const dim = row.disabledReason !== null;
           return (
             <Pressable
               accessibilityRole="checkbox"
-              accessibilityLabel={item.name}
-              accessibilityHint={item.locked ? ROLES_LOCKED_CAPTION : undefined}
-              accessibilityState={{ checked: selected, disabled: item.locked }}
-              disabled={item.locked}
-              onPress={() => onToggle(item)}
+              accessibilityLabel={row.name}
+              accessibilityHint={row.disabledReason ?? undefined}
+              accessibilityState={{
+                checked,
+                disabled,
+                busy: entry.type === "group" && groupPending === row.id,
+              }}
+              disabled={disabled}
+              onPress={() =>
+                entry.type === "role"
+                  ? onToggle(entry.option)
+                  : void onToggleGroup(entry.group)
+              }
               style={({ pressed }) => [
                 styles.row,
-                pressed && !item.locked ? styles.rowPressed : null,
+                pressed && !disabled ? styles.rowPressed : null,
               ]}
             >
               <View
                 style={[
                   styles.dot,
-                  item.color ? { backgroundColor: item.color } : null,
+                  row.color ? { backgroundColor: row.color } : null,
                 ]}
               />
               <View style={styles.rowText}>
                 <Text
-                  style={[styles.rowLabel, item.locked ? styles.muted : null]}
+                  style={[styles.rowLabel, dim ? styles.muted : null]}
                   numberOfLines={1}
                 >
-                  {item.name}
+                  {row.name}
                 </Text>
-                {item.locked ? (
-                  <Text style={styles.caption}>{ROLES_LOCKED_CAPTION}</Text>
+                {row.disabledReason ? (
+                  <Text style={styles.caption}>{row.disabledReason}</Text>
                 ) : null}
               </View>
               {/* A fixed slot, so names line up whichever rows are on. */}
@@ -338,9 +454,9 @@ export const MemberRolesSheet = forwardRef<
                 accessibilityElementsHidden
                 importantForAccessibility="no-hide-descendants"
               >
-                {selected ? (
+                {checked ? (
                   <CheckGlyph
-                    color={item.locked ? tokens.color.text.muted : brand.accent}
+                    color={dim ? tokens.color.text.muted : brand.accent}
                     size={16}
                   />
                 ) : null}
@@ -383,6 +499,15 @@ function createStyles(tokens: SignetTokens, accent: string) {
       gap: tokens.spacing.sm,
       paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
+    },
+    heading: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.xs,
     },
     rowPressed: {
       opacity: 0.6,

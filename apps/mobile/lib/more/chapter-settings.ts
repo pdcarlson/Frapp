@@ -11,13 +11,18 @@ import { can, canAny } from "@repo/validation";
  *
  * - `chapter`: the accent, chat background and study zones, behind
  *   `chapter-config:view`, as the Settings group they moved from was.
- * - `roles`: web's Roles tab gate, `chapter-config:view` or `roles:manage`.
+ * - `roles`: web's Roles and groups tab gate, `chapter-config:view`,
+ *   `roles:manage` or `groups:manage` (one page for both since Paul's
+ *   2026-11-19 call).
  *
  * `usePermissionList()` is `[]` while loading, so every answer here is false
  * until the role is read: the row fails closed.
  */
 export function chapterSettingsAccess(permissions: readonly string[]) {
   const chapter = can("chapter-config:view", permissions);
-  const roles = canAny(["chapter-config:view", "roles:manage"], permissions);
+  const roles = canAny(
+    ["chapter-config:view", "roles:manage", "groups:manage"],
+    permissions,
+  );
   return { chapter, roles, any: chapter || roles };
 }

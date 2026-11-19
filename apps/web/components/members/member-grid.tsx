@@ -72,7 +72,8 @@ export function MemberGrid({
   factsOf: (member: MemberProfile) => MemberFacts;
   selectedIds: readonly string[];
   onToggle: (id: string, selected: boolean) => void;
-  onOpen: (member: MemberProfile) => void;
+  /** Opens the member's card beside the tile that was pressed. */
+  onOpen: (member: MemberProfile, opener: HTMLElement) => void;
   avatarTintFor: (userId: string) => MemberAvatarTint | null;
 }) {
   return (
@@ -98,7 +99,7 @@ export function MemberGrid({
           >
             <button
               type="button"
-              onClick={() => onOpen(member)}
+              onClick={(event) => onOpen(member, event.currentTarget)}
               aria-label={facts.label}
               className={cn(
                 gridTileButtonClassName,

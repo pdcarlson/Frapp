@@ -7,6 +7,7 @@ import {
   SearchGlyph,
 } from "@/components/members/directory-glyphs";
 import {
+  useGroups,
   useLeaderboard,
   useMemberDisplayNames,
   useMemberPhoneReach,
@@ -60,6 +61,11 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
+import {
+  anchorFor,
+  MemberPopout,
+  type MemberPopoutAnchor,
+} from "@/components/chat/member-popout";
 import { MemberGrid } from "@/components/members/member-grid";
 import { useListLayout } from "@/lib/list-layout";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -224,6 +230,7 @@ export function MembersDirectory() {
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [cohortFilter, setCohortFilter] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"active" | "pending" | null>(
     null,
   );
@@ -236,6 +243,10 @@ export function MembersDirectory() {
   // member even once a role save moves them off this tab's list.
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const [popoutOpen, setPopoutOpen] = useState(false);
+  const [popoutAnchor, setPopoutAnchor] = useState<MemberPopoutAnchor | null>(
+    null,
+  );
 
   const chapterWords = useChapterVocabulary();
   const trimmedQuery = query.trim();
@@ -334,6 +345,22 @@ export function MembersDirectory() {
     filterRoleOptions.some((role) => role.id === roleFilter)
       ? roleFilter
       : null;
+  // Beside Role (Paul, 2026-11-19): who is In house, on a committee, in a
+  // pledge class. Every group the chapter has with someone in it, its own
+  // first; a group deleted meanwhile reads as no filter.
+  const groupsQuery = useGroups();
+  const groupChipOptions = useMemo(
+    () =>
+      (groupsQuery.data ?? [])
+        .filter((group) => group.member_ids.length > 0)
+        .map((group) => ({ value: group.id, label: group.name })),
+    [groupsQuery.data],
+  );
+  const groupMemberIds = useMemo(() => {
+    const group = (groupsQuery.data ?? []).find((g) => g.id === groupFilter);
+    return group ? new Set(group.member_ids) : null;
+  }, [groupsQuery.data, groupFilter]);
+  const effectiveGroupFilter = groupMemberIds ? groupFilter : null;
 
   const pointsByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -455,6 +482,15 @@ export function MembersDirectory() {
         return false;
       }
       if (
+        groupMemberIds !== null &&
+        !(
+          typeof member.user_id === "string" &&
+          groupMemberIds.has(member.user_id)
+        )
+      ) {
+        return false;
+      }
+      if (
         effectiveCohortFilter !== null &&
         String(member.graduation_year ?? "") !== effectiveCohortFilter
       ) {
@@ -484,6 +520,7 @@ export function MembersDirectory() {
   }, [
     members,
     effectiveRoleFilter,
+    groupMemberIds,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
@@ -555,6 +592,7 @@ export function MembersDirectory() {
   }, [
     trimmedQuery,
     effectiveRoleFilter,
+    effectiveGroupFilter,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
@@ -602,6 +640,7 @@ export function MembersDirectory() {
   const narrowed =
     usingSearch ||
     effectiveRoleFilter !== null ||
+    effectiveGroupFilter !== null ||
     effectiveCohortFilter !== null ||
     effectiveClassFilter !== null ||
     statusFilter !== null ||
@@ -667,10 +706,17 @@ export function MembersDirectory() {
     );
   }
 
-  function openMember(member: MemberProfile) {
+  /**
+   * A row opens the member's card beside it (Paul, 2026-11-19: a small card
+   * from the row, as chat's name does, instead of the profile taking over
+   * the Directory). Their roles and groups are set on the card; View profile
+   * opens the full record in the Directory's place.
+   */
+  function openMember(member: MemberProfile, opener: HTMLElement) {
     setActiveMemberId(memberId(member));
     setActiveUserId(typeof member.user_id === "string" ? member.user_id : null);
-    setDetailSheetOpen(true);
+    setPopoutAnchor(anchorFor(opener));
+    setPopoutOpen(true);
   }
 
   async function applyBulkRole() {
@@ -872,6 +918,15 @@ export function MembersDirectory() {
             value={effectiveRoleFilter}
             onChange={setRoleFilter}
           />
+          {groupChipOptions.length > 0 ? (
+            <FilterChip
+              label="Group"
+              anyLabel="Any group"
+              options={groupChipOptions}
+              value={effectiveGroupFilter}
+              onChange={setGroupFilter}
+            />
+          ) : null}
           <FilterChip
             label="Graduation year"
             anyLabel="Any year"
@@ -1013,6 +1068,7 @@ export function MembersDirectory() {
             <InlineNoteAction
               onClick={() => {
                 setRoleFilter(null);
+                setGroupFilter(null);
                 setCohortFilter(null);
                 setClassFilter(null);
                 setStatusFilter(null);
@@ -1163,7 +1219,9 @@ export function MembersDirectory() {
                 */}
                     <button
                       type="button"
-                      onClick={() => openMember(member)}
+                      onClick={(event) =>
+                        openMember(member, event.currentTarget)
+                      }
                       aria-label={label}
                       className={cn(
                         "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
@@ -1307,6 +1365,24 @@ export function MembersDirectory() {
         empty `sortedMembers` and renders an unknown member with its roles
         cleared and a Save that silently no-ops.
       */}
+      <MemberPopout
+        userId={activeUserId}
+        anchor={popoutAnchor}
+        open={popoutOpen}
+        onOpenChange={setPopoutOpen}
+        identity={
+          activeMember
+            ? {
+                name: displayNameOf(activeMember),
+                avatarUrl:
+                  typeof activeMember.avatar_url === "string"
+                    ? activeMember.avatar_url
+                    : null,
+              }
+            : null
+        }
+        onViewProfile={() => setDetailSheetOpen(true)}
+      />
       <MemberDetailSheet
         open={detailSheetOpen}
         onOpenChange={setDetailSheetOpen}

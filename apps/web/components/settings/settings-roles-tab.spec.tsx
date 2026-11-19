@@ -54,6 +54,12 @@ vi.mock("@/components/roles/role-page", () => ({
     <div data-testid="role-page">{props.roleId}</div>
   ),
 }));
+// Groups have their own spec (`roles/groups-section.spec.tsx`).
+vi.mock("@/components/roles/groups-section", () => ({
+  GroupsSection: (props: { canManage: boolean }) => (
+    <div data-testid="groups" data-can-manage={String(props.canManage)} />
+  ),
+}));
 vi.mock("@/components/roles/presidency", () => ({
   PresidencyClaimBanner: () => null,
   TransferPresidencySection: () => <div data-testid="transfer" />,
@@ -109,6 +115,26 @@ describe("SettingsRolesTab", () => {
     expect(mockPush).toHaveBeenCalledWith("/settings?tab=roles&tier=tier-1");
     await user.click(screen.getByRole("button", { name: "open role" }));
     expect(mockPush).toHaveBeenCalledWith("/settings?tab=roles&role=role-1");
+  });
+
+  it("lists the groups under the roles, on the same page (2026-11-19)", () => {
+    render(tab());
+    const overview = screen.getByTestId("overview");
+    const groups = screen.getByTestId("groups");
+    expect(
+      overview.compareDocumentPosition(groups) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows only the groups to a member who can manage groups and nothing else", () => {
+    mockPermissions.mockReturnValue(["groups:manage"]);
+    render(tab());
+    expect(screen.queryByTestId("overview")).toBeNull();
+    expect(screen.getByTestId("groups")).toHaveAttribute(
+      "data-can-manage",
+      "true",
+    );
   });
 
   it("opens a tier's permissions from ?tier=, and goes back to the list", async () => {

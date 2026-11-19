@@ -12,6 +12,7 @@ import type {
 import { SupabaseQueryError } from '../supabase-query-error';
 import { fetchAllPages } from '../supabase.utils';
 import {
+  PG_CHECK_VIOLATION,
   PG_FOREIGN_KEY_VIOLATION,
   PG_NO_DATA_FOUND,
   PG_UNIQUE_VIOLATION,
@@ -183,5 +184,42 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
       throw new SupabaseQueryError(error);
     }
     return data ?? [];
+  }
+
+  async addMember(
+    groupId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<'added' | 'already' | 'group_not_found' | 'member_not_found'> {
+    const { error } = await this.supabase
+      .from('chapter_group_members')
+      .insert({ group_id: groupId, chapter_id: chapterId, user_id: userId });
+    if (!error) return 'added';
+    if (error.code === PG_UNIQUE_VIOLATION) return 'already';
+    if (error.code === PG_FOREIGN_KEY_VIOLATION) {
+      // The composite keys don't say which one failed; the group's is the
+      // only one the caller didn't already check, so ask it.
+      const group = await this.findById(groupId, chapterId);
+      return group ? 'member_not_found' : 'group_not_found';
+    }
+    // `chapter_group_members_manual_only` refuses an automatic group.
+    if (error.code === PG_CHECK_VIOLATION) return 'group_not_found';
+    throw new SupabaseQueryError(error);
+  }
+
+  async removeMember(
+    groupId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chapter_group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .select('user_id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 }

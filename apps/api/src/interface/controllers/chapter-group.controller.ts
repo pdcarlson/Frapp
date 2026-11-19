@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -103,6 +104,33 @@ export class ChapterGroupController {
     @Body() dto: SetChapterGroupMembersDto,
   ) {
     return this.groups.setMembers(id, chapterId, userId, dto.member_ids);
+  }
+
+  @Post(':id/members/:userId')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Put one member in a manual group' })
+  @ApiOkResponse({ type: ChapterGroupDto })
+  @RequirePermissions(SystemPermissions.GROUPS_MANAGE)
+  async addMember(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') actorId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) memberUserId: string,
+  ) {
+    return this.groups.addMember(id, chapterId, actorId, memberUserId);
+  }
+
+  @Delete(':id/members/:userId')
+  @ApiOperation({ summary: 'Take one member out of a manual group' })
+  @ApiOkResponse({ type: ChapterGroupDto })
+  @RequirePermissions(SystemPermissions.GROUPS_MANAGE)
+  async removeMember(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') actorId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) memberUserId: string,
+  ) {
+    return this.groups.removeMember(id, chapterId, actorId, memberUserId);
   }
 
   @Delete(':id')

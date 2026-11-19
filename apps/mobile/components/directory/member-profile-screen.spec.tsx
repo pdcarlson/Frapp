@@ -116,6 +116,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       : { data: state.classes, isPending: false, isSuccess: true };
   },
   useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetGroupMembership: () => ({ mutateAsync: vi.fn() }),
+  useRoleTiers: () => ({ data: [] }),
+  useMembers: () => ({ data: [], isSuccess: true }),
+  useMyPermissions: () => ({ data: { permissions: state.permissions } }),
   useAssignPledgeClasses: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveMember: () => ({ mutate: state.removeMutate, isPending: false }),
   useCorrectMemberProfile: () => ({
@@ -1083,10 +1087,10 @@ describe("MemberProfile roles", () => {
     ];
   });
 
-  function editButton(tree: ReactTestRenderer) {
+  function editButton(tree: ReactTestRenderer, label = "Add role") {
     return tree.root.findAll(
       (node) =>
-        node.props.accessibilityLabel === "Edit Ada's roles" &&
+        node.props.accessibilityLabel === label &&
         typeof node.props.onPress === "function",
     )[0];
   }
@@ -1110,14 +1114,34 @@ describe("MemberProfile roles", () => {
     PROFILES[ADA] = profile(ADA, "Ada");
   });
 
-  it("offers no Edit to a viewer without roles:manage", () => {
+  it("offers no Add to a viewer without roles:manage or groups:manage", () => {
     state.permissions = ["members:view"];
+    state.groups = [];
     const tree = render(ADA);
     expect(editButton(tree)).toBeUndefined();
+    expect(editButton(tree, "Add to group")).toBeUndefined();
     act(() => tree.unmount());
+    state.groups = undefined;
   });
 
-  it("opens the role editor for this member when the viewer holds roles:manage", () => {
+  it("opens the one sheet at the groups for Add to group", () => {
+    state.permissions = ["members:view", "groups:manage"];
+    state.groups = [];
+    const tree = render(ADA);
+    act(() => editButton(tree, "Add to group")?.props.onPress());
+    const editor = tree.root.findByType(MemberRolesSheet);
+    expect(editor.props.session).toMatchObject({
+      focus: "groups",
+      userId: ADA,
+      canManageRoles: false,
+      canManageGroups: true,
+    });
+    act(() => tree.unmount());
+    state.permissions = [];
+    state.groups = undefined;
+  });
+
+  it("opens the roles-and-groups sheet for this member when the viewer holds roles:manage", () => {
     state.permissions = ["members:view", "roles:manage"];
     const tree = render(ADA);
     const button = editButton(tree);
@@ -1125,8 +1149,12 @@ describe("MemberProfile roles", () => {
     act(() => button?.props.onPress());
     const editor = tree.root.findByType(MemberRolesSheet);
     expect(present).toHaveBeenCalled();
-    expect(editor.props.session).toEqual({
+    expect(editor.props.session).toMatchObject({
       memberId: `m-${ADA}`,
+      userId: ADA,
+      focus: "roles",
+      canManageRoles: true,
+      canManageGroups: false,
       name: "Ada",
       heldIds: [],
     });
@@ -1136,7 +1164,7 @@ describe("MemberProfile roles", () => {
 
   // The editor stacks over the profile (#3790), so a DM landing under it
   // would close the profile and open the thread with the editor still on top.
-  it("holds Edit while a DM with this member opens", async () => {
+  it("holds Add role while a DM with this member opens", async () => {
     state.permissions = ["members:view", "roles:manage"];
     const pending = deferred<unknown>();
     state.mutateAsync.mockReturnValueOnce(pending.promise);

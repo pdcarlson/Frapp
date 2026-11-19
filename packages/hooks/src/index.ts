@@ -108,6 +108,7 @@ export * from "./use-gifs";
 export * from "./use-google-calendar";
 export * from "./use-google-drive";
 export * from "./use-groups";
+export * from "./member-assignments";
 export * from "./use-hidden-permissions";
 export * from "./use-important-messages";
 export * from "./use-invites";

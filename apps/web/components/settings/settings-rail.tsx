@@ -97,8 +97,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   */
   { value: "ai", label: "AI", group: "chapter" },
   { value: "billing", label: "Plan and billing", group: "chapter" },
-  { value: "roles", label: "Roles", group: "people" },
-  { value: "groups", label: "Groups", group: "people" },
+  { value: "roles", label: "Roles and groups", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },
   { value: "fields", label: "Member fields", group: "people" },
   ...MODULE_SETTINGS.map((module): SettingsTab => ({
@@ -118,6 +117,8 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
  */
 const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
   theme: "org",
+  // Groups share the Roles page since 2026-11-19.
+  groups: "roles",
   danger: "billing",
   modules: "events",
   workflows: "hours",

@@ -94,7 +94,6 @@ import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsAiTab } from "@/components/settings/settings-ai-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import { SettingsClassesTab } from "@/components/settings/settings-classes-tab";
-import { SettingsGroupsTab } from "@/components/settings/settings-groups-tab";
 import {
   SettingsBodySkeleton,
   SettingsTabSkeleton,
@@ -816,11 +815,6 @@ function SettingsPageContent() {
             roster, neither of which is chapter config, and its words fall
             back to the member view's vocabulary.
           */}
-          {/* No config gate: groups are no chapter config (#4076). */}
-          <TabsContent value="groups" className="mt-0">
-            <SettingsGroupsTab canManage={can("groups:manage", permissions)} />
-          </TabsContent>
-
           <TabsContent value="classes" className="mt-0">
             <SettingsClassesTab
               canManage={can("roles:manage", permissions)}

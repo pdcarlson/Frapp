@@ -1,6 +1,6 @@
 /**
- * The Directory's Actives filters (#3971): role, graduation year, pledge class
- * and status, the four web's Directory toolbar carries
+ * The Directory's Actives filters (#3971): role, group, graduation year,
+ * pledge class and status, the ones web's Directory toolbar carries
  * (`apps/web/components/members/members-directory.tsx`), applied to the same
  * `GET /v1/members` rows by the same rules, so a filter reads the same on
  * both.
@@ -21,6 +21,8 @@ export type ActivesStatus = "active" | "pending";
 
 export interface ActivesFilter {
   roleId: string | null;
+  /** A group the member is in (Paul, 2026-11-19), as web's Group chip. */
+  groupId: string | null;
   graduationYear: number | null;
   pledgeClassId: string | null;
   status: ActivesStatus | null;
@@ -34,6 +36,7 @@ export interface ActivesFilter {
 
 export const NO_ACTIVES_FILTER: ActivesFilter = {
   roleId: null,
+  groupId: null,
   graduationYear: null,
   pledgeClassId: null,
   status: null,
@@ -108,6 +111,8 @@ export function effectiveActivesFilter(
   filter: ActivesFilter,
   known: {
     roleIds: ReadonlySet<string>;
+    /** Groups with at least one member, the ones the sheet offers. */
+    groupIds?: ReadonlySet<string>;
     years: readonly number[];
     classIds: ReadonlySet<string>;
     /** Whether the Phone app filter is offered (officers only). */
@@ -118,6 +123,10 @@ export function effectiveActivesFilter(
     roleId:
       filter.roleId !== null && known.roleIds.has(filter.roleId)
         ? filter.roleId
+        : null,
+    groupId:
+      filter.groupId !== null && known.groupIds?.has(filter.groupId)
+        ? filter.groupId
         : null,
     graduationYear:
       filter.graduationYear !== null &&
@@ -144,8 +153,14 @@ export function filterActives(
   filter: ActivesFilter,
   /** Each member's phone reach by `user_id`, for the Phone app filter. */
   reachByUserId?: ReadonlyMap<string, PhoneReach>,
+  /** The `user_id`s in the picked group, for the Group filter. */
+  groupMemberIds?: ReadonlySet<string>,
 ): Record<string, unknown>[] {
   return actives.filter((row) => {
+    if (filter.groupId !== null) {
+      const userId = str(row, "user_id");
+      if (!userId || !groupMemberIds?.has(userId)) return false;
+    }
     if (filter.phoneReach !== null) {
       const userId = str(row, "user_id");
       const reach = userId ? reachByUserId?.get(userId) : undefined;

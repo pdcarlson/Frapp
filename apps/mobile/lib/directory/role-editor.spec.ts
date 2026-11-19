@@ -1,8 +1,6 @@
 import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { describe, expect, it } from "vitest";
 import {
-  filterRoleOptions,
-  orderRoleOptions,
   removesBaseAccess,
   rolesSaveFailedBody,
   toggleRole,
@@ -41,32 +39,6 @@ const ROLES = [
   },
   { name: "No id" },
 ];
-
-describe("orderRoleOptions", () => {
-  it("puts held roles first, then the rest, each by name ignoring case", () => {
-    const ordered = orderRoleOptions(parseChapterRoles(ROLES), [
-      "r-member",
-      "r-brothers",
-    ]);
-    expect(ordered.map((o) => o.name)).toEqual([
-      "Brothers",
-      "Member",
-      "cabinet",
-      "President",
-      "Rush Guest",
-    ]);
-  });
-});
-
-describe("filterRoleOptions", () => {
-  const options = parseChapterRoles(ROLES);
-  it("matches any part of the name, ignoring case and outer spaces", () => {
-    expect(filterRoleOptions(options, "  CAB ").map((o) => o.id)).toEqual([
-      "r-cabinet",
-    ]);
-    expect(filterRoleOptions(options, "")).toBe(options);
-  });
-});
 
 describe("toggleRole", () => {
   it("adds at the end and removes in place, keeping ids the list doesn't know", () => {
@@ -144,14 +116,6 @@ describe("the Everyone role (#4191)", () => {
     },
     { id: "r-chair", name: "Rush Chair", permissions: ["tasks:manage"] },
   ];
-
-  it("offers no row for it", () => {
-    expect(
-      orderRoleOptions(parseChapterRoles(roles), ["r-everyone"]).map(
-        (o) => o.id,
-      ),
-    ).toEqual(["r-new", "r-chair"]);
-  });
 
   it("doesn't warn about access when the save leaves Everyone to hold it", () => {
     const options = parseChapterRoles(roles);

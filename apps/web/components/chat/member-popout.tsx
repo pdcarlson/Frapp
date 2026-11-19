@@ -2,13 +2,8 @@
 
 import { useMemo, useRef } from "react";
 import { Loader2, MessageSquare } from "lucide-react";
-import {
-  useMemberByUserId,
-  useMemberDisplayNames,
-  useRoles,
-} from "@repo/hooks";
+import { useMemberByUserId, useMemberDisplayNames } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { resolveRoleChips } from "@repo/validation";
 import {
   Popover,
   PopoverAnchor,
@@ -19,16 +14,13 @@ import { Button } from "@/components/ui/button";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
   metaLine,
-  RoleChip,
   stringField,
   stringIds,
   type MemberRecord,
 } from "@/components/members/member-detail-rows";
+import { MemberAssignments } from "@/components/members/member-assignments";
 import { useMessageMember } from "@/lib/chat/use-message-member";
 import { initials } from "@/lib/utils";
-
-/** How many role chips the popout shows before "+N"; the full list is a click away. */
-const POPOUT_ROLE_LIMIT = 4;
 
 /**
  * Where the popout sits: the name, photo or `@` chip that opened it. Read live
@@ -73,9 +65,12 @@ function refocusOpener(
  * profile sheet over the whole page. Chat stays where it was.
  *
  * The card is who they are at a glance (photo, name in their role color, the
- * class-year line, roles) and the two things a name is clicked for: Message,
+ * class-year line, their roles and groups) and the two things a name is
+ * clicked for: Message,
  * and View profile, which opens the full `MemberDetailSheet` with their
- * contact rows and an officer's controls. It reads the same
+ * contact rows and the rest of an officer's controls. An officer sets roles
+ * and groups right on the card (`MemberAssignments`, Paul 2026-11-19), and the
+ * Directory opens this same card from a row. It reads the same
  * `GET /v1/members/by-user/{userId}` the sheet reads, so View profile opens on
  * a warm cache. The roster's name and photo draw until that read lands, so the
  * card never opens blank.
@@ -105,7 +100,6 @@ export function MemberPopout({
   side?: "left" | "right";
 }) {
   const memberQuery = useMemberByUserId(userId ?? "");
-  const rolesQuery = useRoles();
   const { avatarTintFor, roleColorFor } = useMemberDisplayNames();
 
   const member =
@@ -115,10 +109,6 @@ export function MemberPopout({
   const memberRoleIds = useMemo(
     () => stringIds(member?.role_ids),
     [member?.role_ids],
-  );
-  const roleChips = useMemo(
-    () => resolveRoleChips(rolesQuery.data, memberRoleIds),
-    [rolesQuery.data, memberRoleIds],
   );
 
   const displayName = memberLabel(
@@ -136,8 +126,6 @@ export function MemberPopout({
   );
 
   const contentRef = useRef<HTMLDivElement>(null);
-  const shownChips = roleChips.slice(0, POPOUT_ROLE_LIMIT);
-  const hiddenChipCount = roleChips.length - shownChips.length;
 
   return (
     <Popover open={open && !!userId && !!anchor} onOpenChange={onOpenChange}>
@@ -181,17 +169,15 @@ export function MemberPopout({
 
         {!member && memberQuery.isPending ? (
           <SkeletonText lines={1} />
-        ) : shownChips.length > 0 ? (
-          <ul aria-label="Roles" className="flex flex-wrap gap-1.5">
-            {shownChips.map((chip) => (
-              <RoleChip key={chip.id} chip={chip} />
-            ))}
-            {hiddenChipCount > 0 ? (
-              <li className="inline-flex items-center px-1 text-caption text-muted-foreground">
-                +{hiddenChipCount}
-              </li>
-            ) : null}
-          </ul>
+        ) : userId ? (
+          <MemberAssignments
+            compact
+            memberId={stringField(member, "id")}
+            userId={userId}
+            roleIds={memberRoleIds}
+            displayName={displayName}
+            editable={member !== null && !memberQuery.isError}
+          />
         ) : null}
 
         <div className="flex gap-2">
