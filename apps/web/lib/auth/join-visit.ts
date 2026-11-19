@@ -86,3 +86,34 @@ export function shouldSkipJoinForMember({
     hasAccess
   );
 }
+
+/**
+ * What a sign-in started from the invite card goes on to do when it lands back
+ * on `/join` (#5625): `join` the chapter, or `ask` the sender for a new link.
+ * The card's Continue buttons put it on their return path, so one tap is
+ * sign-in and join together. A visit without it never acts on its own: an
+ * existing member who opens a link is shown the card, not joined behind
+ * their back.
+ */
+export const JOIN_THEN_KEY = "then";
+export type JoinThen = "join" | "ask";
+
+export function readJoinThen(search: URLSearchParams): JoinThen | null {
+  const value = search.get(JOIN_THEN_KEY);
+  return value === "join" || value === "ask" ? value : null;
+}
+
+/** `/join` with this visit's query, marked to finish with `then`. */
+export function joinReturnPath(search: URLSearchParams, then: JoinThen): string {
+  const next = new URLSearchParams(search.toString());
+  next.set(JOIN_THEN_KEY, then);
+  return `/join?${next.toString()}`;
+}
+
+/** `/join` with this visit's query and no `then`, once it has been acted on. */
+export function joinPathWithoutThen(search: URLSearchParams): string {
+  const next = new URLSearchParams(search.toString());
+  next.delete(JOIN_THEN_KEY);
+  const query = next.toString();
+  return query ? `/join?${query}` : "/join";
+}

@@ -8,9 +8,9 @@ import {
 } from "@testing-library/react";
 
 /**
- * #2302. A user who hasn't accepted the current Terms can't join without
- * ticking the box, and one who has isn't asked again. Mobile's
- * `lib/onboarding/join-screen.spec.tsx` pins the same rules.
+ * `/join` with no invite in the link: the emailed invites and the paste
+ * field. An invite link gets the card instead, pinned in
+ * `components/join/join-with-invite.spec.tsx` (#5625).
  */
 
 const {
@@ -48,8 +48,6 @@ const perms = vi.hoisted(() => ({
   isLoading: false,
 }));
 
-// The Terms checkbox runs the real `useJoinTermsCheckbox` against a mock API
-// client (`statusClient`), so this pins the page and the shared rule together.
 const actualHooks = vi.hoisted(() => ({}) as typeof import("@repo/hooks"));
 vi.mock("@repo/hooks", async (importOriginal) => {
   Object.assign(
@@ -182,7 +180,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("web join — an invite link opened on a phone (#4002)", () => {
+describe("web join — no invite in the link", () => {
   function renderPage() {
     legal.data = { required: false };
     const queryClient = new QueryClient({
@@ -203,190 +201,6 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
       </QueryClientProvider>,
     );
   }
-
-  it("offers the app first to a signed-out visitor, and holds sign-in until they choose the browser", async () => {
-    device.phone = "ios";
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(await screen.findByText("Join in the Frapp app")).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "Open in Frapp" }).getAttribute("href"),
-    ).toBe("frapp://join?token=abc");
-    expect(
-      screen.getByRole("link", { name: "Get Frapp" }).getAttribute("href"),
-    ).toBe("https://apps.apple.com/app/id6812025642");
-    await waitFor(() => expect(sessionUser).toHaveBeenCalled());
-    expect(replace).not.toHaveBeenCalled();
-
-    // The choice goes into the URL, so it outlives the sign-in round trip.
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue in the browser" }),
-    );
-    expect(replace).toHaveBeenCalledWith("/join?token=abc&web=1");
-  });
-
-  it("sends a visitor who chose the browser on to sign-in, keeping the choice for the way back", async () => {
-    device.phone = "ios";
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc&web=1");
-    renderPage();
-
-    await waitFor(() =>
-      expect(replace).toHaveBeenCalledWith(
-        `/sign-in?redirectTo=${encodeURIComponent("/join?token=abc&web=1")}`,
-      ),
-    );
-    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
-  });
-
-  it("shows the filled form, not the offer again, when sign-in brings them back", async () => {
-    device.phone = "ios";
-    searchParams.current = new URLSearchParams("token=abc&web=1");
-    renderPage();
-
-    expect(
-      ((await screen.findByLabelText("Invite")) as HTMLInputElement).value,
-    ).toBe("abc");
-    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
-    expect(replace).not.toHaveBeenCalled();
-  });
-
-  it("hands Android the intent link, which falls back to Play by itself", async () => {
-    device.phone = "android";
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(
-      (await screen.findByRole("link", { name: "Open in Frapp" })).getAttribute(
-        "href",
-      ),
-    ).toBe(
-      "intent://join?token=abc#Intent;scheme=frapp;package=live.frapp.mobile;end",
-    );
-    expect(
-      screen.getByRole("link", { name: "Get Frapp" }).getAttribute("href"),
-    ).toBe("https://play.google.com/store/apps/details?id=live.frapp.mobile");
-  });
-
-  it("walks a beta tester through getting Frapp Staging, then opening the invite (2026-11-19)", async () => {
-    device.phone = "ios";
-    device.app = STAGING_APP;
-    vi.stubEnv(
-      "NEXT_PUBLIC_IOS_INSTALL_URL",
-      "https://testflight.apple.com/join/AbCd1234",
-    );
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(
-      await screen.findByText("Join in the Frapp Staging app"),
-    ).toBeTruthy();
-    const [getStep, openStep] = screen.getAllByRole("listitem");
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(
-      within(getStep!)
-        .getByRole("link", { name: "Get Frapp Staging" })
-        .getAttribute("href"),
-    ).toBe("https://testflight.apple.com/join/AbCd1234");
-    expect(within(getStep!).getByText(/Opens TestFlight/)).toBeTruthy();
-    expect(
-      within(openStep!)
-        .getByRole("link", { name: "Open in Frapp Staging" })
-        .getAttribute("href"),
-    ).toBe("frapp-staging://join?token=abc");
-  });
-
-  it("walks an Android tester through Play's tester page, then the intent link", async () => {
-    device.phone = "android";
-    device.app = STAGING_APP;
-    vi.stubEnv(
-      "NEXT_PUBLIC_ANDROID_INSTALL_URL",
-      "https://play.google.com/apps/internaltest/4701234567890",
-    );
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    const getLink = await screen.findByRole("link", {
-      name: "Get Frapp Staging",
-    });
-    expect(getLink.getAttribute("href")).toBe(
-      "https://play.google.com/apps/internaltest/4701234567890",
-    );
-    expect(screen.getByText(/Opens Google Play's tester page/)).toBeTruthy();
-    expect(
-      screen
-        .getByRole("link", { name: "Open in Frapp Staging" })
-        .getAttribute("href"),
-    ).toBe(
-      "intent://join?token=abc#Intent;scheme=frapp-staging;package=live.frapp.mobile.staging;end",
-    );
-  });
-
-  it("tells a non-tester to use the browser when the store listing is the fallback", async () => {
-    device.phone = "ios";
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(
-      await screen.findByText(/if the store says it isn't available yet/),
-    ).toBeTruthy();
-  });
-
-  it("offers only Open in the app for Frapp Staging before its install link is set", async () => {
-    device.phone = "ios";
-    device.app = STAGING_APP;
-    vi.stubEnv("NEXT_PUBLIC_IOS_INSTALL_URL", "");
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(
-      (
-        await screen.findByRole("link", { name: "Open in Frapp Staging" })
-      ).getAttribute("href"),
-    ).toBe("frapp-staging://join?token=abc");
-    expect(screen.queryByRole("link", { name: /^Get / })).toBeNull();
-    expect(screen.queryByRole("listitem")).toBeNull();
-  });
-
-  it("offers the app to a signed-in account with no chapter", async () => {
-    device.phone = "ios";
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(await screen.findByText("Join in the Frapp app")).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue in the browser" }),
-    );
-    expect(replace).toHaveBeenCalledWith("/join?token=abc&web=1");
-  });
-
-  it("keeps the web form for a member of a chapter, whom the app can't yet take to a second one", async () => {
-    device.phone = "ios";
-    perms.data = { permissions: ["chat:read"] };
-    chapters.data = [
-      {
-        chapter_id: "ch-north",
-        member_id: "m-north",
-        role_ids: ["r-1"],
-        has_completed_onboarding: true,
-        chapter: { id: "ch-north", name: "Northfield" },
-      },
-    ];
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    expect(
-      ((await screen.findByLabelText("Invite")) as HTMLInputElement).value,
-    ).toBe("abc");
-    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
-  });
 
   it("goes straight to the form on a phone with no invite in the link", async () => {
     device.phone = "ios";
@@ -409,18 +223,6 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     ).toBe("/chat?setup=chapter");
   });
 
-  it("sends a signed-out desktop visitor straight to sign-in, as before", async () => {
-    sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-
-    await waitFor(() =>
-      expect(replace).toHaveBeenCalledWith(
-        `/sign-in?redirectTo=${encodeURIComponent("/join?token=abc")}`,
-      ),
-    );
-    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
-  });
 });
 
 describe("web join — a member already in a chapter (#3850)", () => {
@@ -599,15 +401,6 @@ describe("web join — a member already in a chapter (#3850)", () => {
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
 
-  it("keeps the page when that visit carries an invite, which may be for another chapter", async () => {
-    chapters.data = [northfield];
-    searchParams.current = new URLSearchParams("from=sign-in&token=abc");
-    renderPage();
-
-    expect(await screen.findByLabelText("Invite")).toBeTruthy();
-    expect(replace).not.toHaveBeenCalledWith("/chat");
-  });
-
   it("decides once, so a join on this page never triggers the skip mid-redeem", async () => {
     chapters.data = [];
     searchParams.current = new URLSearchParams("from=sign-in");
@@ -635,39 +428,18 @@ describe("web join — a member already in a chapter (#3850)", () => {
   });
 });
 
-describe("web join — the Terms checkbox (#2302)", () => {
+describe("web join — the Terms line (#2302, #5625)", () => {
   beforeEach(() => {
     redeemMutate.mockReset();
     redeemMutate.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
   });
 
-  it("doesn't ask a user who already accepted the current Terms", async () => {
+  it("shows the line under Join, with no checkbox, and every join carries the acceptance", async () => {
     legal.data = { required: false };
     await renderReady();
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByText(/By joining you agree to the/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
-
-    await waitFor(() =>
-      expect(redeemMutate).toHaveBeenCalledWith({ token: "invite-token-1" }),
-    );
-  });
-
-  it("asks, and won't join until the box is ticked", async () => {
-    legal.data = { required: true };
-    await renderReady();
-
-    fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
-
-    expect(redeemMutate).not.toHaveBeenCalled();
-    expect(screen.getByText(/Agree to the Terms of Service/)).toBeTruthy();
-  });
-
-  it("sends the checkbox once it is ticked", async () => {
-    legal.data = { required: true };
-    await renderReady();
-
-    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
 
     await waitFor(() =>
@@ -677,36 +449,14 @@ describe("web join — the Terms checkbox (#2302)", () => {
       }),
     );
   });
-
-  it("asks while the status is still unknown", async () => {
-    legal.data = undefined;
-    await renderReady();
-    expect(screen.getByRole("checkbox")).toBeTruthy();
-  });
-
-  it("shows the checkbox when the server refuses a join for want of it", async () => {
-    legal.data = { required: false };
-    // No `code`, as an API older than #1020 sends it: the message fallback.
-    redeemMutate.mockRejectedValueOnce({
-      statusCode: 403,
-      error: "FORBIDDEN",
-      message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
-      requestId: "req_1",
-    });
-    await renderReady();
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
-
-    fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
-
-    await screen.findByRole("checkbox");
-  });
 });
 
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const ui = (
+  // A fresh tree each call, so a rerender reaches the page itself.
+  const build = () => (
     <QueryClientProvider client={queryClient}>
       <FrappClientProvider
         client={
@@ -720,7 +470,8 @@ function renderPage() {
       </FrappClientProvider>
     </QueryClientProvider>
   );
-  return { ...render(ui), ui };
+  const ui = build();
+  return { ...render(ui), ui, build };
 }
 
 const OFFER = {
@@ -735,17 +486,15 @@ const OFFER = {
 };
 
 describe("web join — signed out (#3776)", () => {
-  it("sends a visitor with no live session to sign in, keeping the invite", async () => {
+  it("sends a visitor with no live session and no invite to sign in", async () => {
     sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    window.history.replaceState(null, "", "/join?token=abc");
+    searchParams.current = new URLSearchParams("from=sign-in");
     renderPage();
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
-        "/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dabc",
+        "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dsign-in",
       ),
     );
-    window.history.replaceState(null, "", "/");
   });
 
   it("offers a retry, not a bounce, when Auth can't be asked", async () => {
@@ -777,35 +526,21 @@ describe("web join — invites for the verified address (#3776)", () => {
     expect(
       screen.getByText("State University · from Paul Carlson · Member"),
     ).toBeTruthy();
-    // The Terms status is read first; until then the box is asked for.
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 
     fireEvent.click(
       screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
     );
 
     await waitFor(() =>
-      expect(redeemMutate).toHaveBeenCalledWith({ token: "emailed-token" }),
+      expect(redeemMutate).toHaveBeenCalledWith({
+        token: "emailed-token",
+        accept_terms_privacy: true,
+      }),
     );
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
   });
 
-  it("asks for the Terms before an offered Join, too", async () => {
-    legal.data = { required: true };
-    pending.data = [OFFER];
-    renderPage();
-    await screen.findByText("You've been invited to Sigma Chi Alpha");
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
-    );
-
-    await screen.findByRole("alert");
-    expect(redeemMutate).not.toHaveBeenCalled();
-  });
-
-  it("shows one Join, with the Terms box above it, and keeps the paste field behind a link (#5076)", async () => {
-    legal.data = { required: true };
+  it("shows one Join, with the Terms line under it, and keeps the paste field behind a link (#5076)", async () => {
     pending.data = [OFFER];
     renderPage();
     const join = await screen.findByRole("button", {
@@ -813,23 +548,13 @@ describe("web join — invites for the verified address (#3776)", () => {
     });
     expect(screen.queryByRole("button", { name: "Join chapter" })).toBeNull();
     expect(screen.queryByLabelText("Invite")).toBeNull();
-    const box = screen.getByRole("checkbox");
+    const line = screen.getByText(/By joining you agree to the/);
     expect(
-      box.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING,
+      join.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-
-    fireEvent.click(box);
-    fireEvent.click(join);
-    await waitFor(() =>
-      expect(redeemMutate).toHaveBeenCalledWith({
-        token: "emailed-token",
-        accept_terms_privacy: true,
-      }),
-    );
   });
 
-  it("opens the paste field on Have a different invite?, sharing the one Terms box (#5076)", async () => {
-    legal.data = { required: true };
+  it("opens the paste field on Have a different invite?, sharing the one Terms line (#5076)", async () => {
     pending.data = [OFFER];
     renderPage();
     fireEvent.click(
@@ -837,18 +562,10 @@ describe("web join — invites for the verified address (#3776)", () => {
     );
     expect(screen.getByLabelText("Invite")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Join chapter" })).toBeTruthy();
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getAllByText(/By joining you agree to the/)).toHaveLength(1);
     expect(
       screen.queryByRole("button", { name: "Have a different invite?" }),
     ).toBeNull();
-  });
-
-  it("shows only the invite a link brought", async () => {
-    pending.data = [OFFER];
-    searchParams.current = new URLSearchParams("token=link-token");
-    renderPage();
-    await screen.findByLabelText("Invite");
-    expect(screen.queryByText(/You've been invited to/)).toBeNull();
   });
 
   it("offers nothing when none is pending, and the form is the primary", async () => {
@@ -866,8 +583,8 @@ describe("web join — who is signed in (#3776)", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
 
-  it("signs out and comes back to this invite after signing in again", async () => {
-    searchParams.current = new URLSearchParams("token=abc");
+  it("signs out and comes back to this page after signing in again", async () => {
+    searchParams.current = new URLSearchParams("from=switcher");
     const assign = vi.fn();
     const original = window.location;
     Object.defineProperty(window, "location", {
@@ -880,7 +597,7 @@ describe("web join — who is signed in (#3776)", () => {
       fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
       await waitFor(() =>
         expect(assign).toHaveBeenCalledWith(
-          "/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dabc",
+          "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dswitcher",
         ),
       );
       expect(signOut).toHaveBeenCalled();
@@ -930,13 +647,6 @@ describe("web join — Already in a chapter? (replaced /new-account)", () => {
         value: original,
       });
     }
-  });
-
-  it("isn't shown when an invite link opened the page", async () => {
-    searchParams.current = new URLSearchParams("token=abc");
-    renderPage();
-    await screen.findByLabelText("Invite");
-    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
   });
 
   it("still shows when the emailed-invites read failed: it is the way out", async () => {
@@ -996,7 +706,7 @@ describe("web join — Already in a chapter? (replaced /new-account)", () => {
 
     pending.isLoading = false;
     pending.data = [OFFER];
-    view.rerender(view.ui);
+    view.rerender(view.build());
     await screen.findByRole("button", { name: "Join Sigma Chi Alpha" });
     expect(screen.queryByLabelText("Invite")).toBeNull();
   });
