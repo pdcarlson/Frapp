@@ -154,6 +154,8 @@ describe('GoogleDriveSyncService', () => {
       updateDriveCopy: jest.fn().mockResolvedValue(undefined),
       setPinnedAt: jest.fn(),
       setWhoCanSee: jest.fn(),
+      updateFiling: jest.fn(),
+      moveMany: jest.fn(),
     };
     storage = {
       uploadFile: jest.fn().mockResolvedValue(undefined),

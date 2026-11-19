@@ -115,14 +115,6 @@ describe("useDocumentLibrary (#3938)", () => {
     });
     expect(result.current.visible).toEqual([]);
   });
-
-  it("says when the response sat at the row cap", () => {
-    const many = Array.from({ length: 1000 }, (_, i) =>
-      doc(`d${i}`, `File ${i}`, "u-ana", "2026-10-01T00:00:00Z"),
-    );
-    expect(render({ documents: many }).result.current.truncated).toBe(true);
-    expect(render().result.current.truncated).toBe(false);
-  });
 });
 
 describe("useDocumentLibrary file type (#3938)", () => {

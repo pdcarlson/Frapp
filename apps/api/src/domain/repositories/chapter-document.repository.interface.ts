@@ -70,6 +70,18 @@ export interface IChapterDocumentRepository {
     chapterId: string,
     pinnedAt: string | null,
   ): Promise<ChapterDocument | null>;
+  /** Rename or refile an upload or linked file; `null` for a folder copy or a miss. */
+  updateFiling(
+    id: string,
+    chapterId: string,
+    patch: Pick<Partial<ChapterDocument>, 'title' | 'folder'>,
+  ): Promise<ChapterDocument | null>;
+  /** Refile uploads and linked files into `folder`; folder copies are skipped. */
+  moveMany(
+    ids: string[],
+    chapterId: string,
+    folder: string | null,
+  ): Promise<ChapterDocument[]>;
   /** Sets one file's own who can see (`null`: the same as its folder). */
   setWhoCanSee(
     id: string,

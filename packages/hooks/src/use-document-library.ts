@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { displayNameOrNull } from "./display-names";
 import {
-  DOCUMENT_LIST_CAP,
   isFiltering,
   kindOptions,
   queryDocuments,
@@ -40,8 +39,6 @@ export type DocumentLibrary<D extends LibrarySourceDocument> = {
   semesterKnown: boolean;
   /** A search or a filter is narrowing the list. */
   filtering: boolean;
-  /** The response sat at the row cap, so older files may be missing. */
-  truncated: boolean;
 };
 
 /**
@@ -178,7 +175,6 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
     filters: applied,
     semesterKnown: since !== undefined,
     filtering: isFiltering(search, applied, since !== undefined),
-    truncated: documents.length >= DOCUMENT_LIST_CAP,
   };
 }
 

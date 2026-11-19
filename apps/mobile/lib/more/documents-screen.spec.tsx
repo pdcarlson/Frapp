@@ -1011,17 +1011,6 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(rowLabels(tree)).toHaveLength(3);
   });
 
-  it("says when the library hit the 1,000-row cap", () => {
-    documentRows = Array.from({ length: 1000 }, (_, index) => ({
-      id: `d-${index}`,
-      title: `File ${index}`,
-      created_at: "2026-08-12T14:00:00.000Z",
-    }));
-    expect(screenText(render())).toContain(
-      "Showing the newest 1,000 documents.",
-    );
-  });
-
   it("deletes from the long-press sheet, after a confirm, for chapter_docs:manage only", async () => {
     const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
     const member = loaded();

@@ -221,7 +221,6 @@ function ChapterDocumentsPage() {
     filters: effectiveFilters,
     semesterKnown,
     filtering,
-    truncated,
   } = useDocumentLibrary({
     documents,
     folder: activeFolder,
@@ -535,7 +534,6 @@ function ChapterDocumentsPage() {
             visible={tieredVisible}
             activeFolder={activeFolder}
             total={folderTotal}
-            truncated={truncated}
             filtering={filtering}
             search={search}
             setSearch={setSearch}
