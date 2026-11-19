@@ -52,6 +52,20 @@ describe("Get the app card (#4002)", () => {
     ).toBe("https://play.google.com/store/apps/details?id=live.frapp.mobile");
   });
 
+  it("follows this environment's install link when one is set (2026-11-19)", () => {
+    device.phone = "ios";
+    vi.stubEnv(
+      "NEXT_PUBLIC_IOS_INSTALL_URL",
+      "https://testflight.apple.com/join/AbCd1234",
+    );
+    render(<GetTheAppCard />);
+
+    expect(
+      screen.getByRole("link", { name: "Get the app" }).getAttribute("href"),
+    ).toBe("https://testflight.apple.com/join/AbCd1234");
+    vi.unstubAllEnvs();
+  });
+
   it("shows nothing on a desktop or tablet", () => {
     render(<GetTheAppCard />);
     expect(screen.queryByText(GET_THE_APP_TITLE)).toBeNull();

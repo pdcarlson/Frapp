@@ -8,8 +8,6 @@ import { selectOwnAttendance, useCheckIn, useMyAttendance } from "@repo/hooks";
 import {
   CHECK_IN_CODE_CHANGED_COPY,
   CHECK_IN_LINK_PATH,
-  PRODUCTION_NATIVE_APP,
-  STORE_LISTING_URLS,
   checkInTargetFrom,
   openCheckInInAppUrl,
   statusLabel,
@@ -21,7 +19,8 @@ import { SignedInAs } from "@/components/auth/signed-in-as";
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonText } from "@/components/shared/async-states";
 import { getLiveSessionUser } from "@/lib/auth/rejected-session";
-import { useNativeApp, usePhonePlatform } from "@/lib/use-phone-platform";
+import { useAppInstall } from "@/lib/app-install";
+import { usePhonePlatform } from "@/lib/use-phone-platform";
 import { cn } from "@/lib/utils";
 import {
   checkInFailure,
@@ -177,9 +176,13 @@ function CheckInForTarget({
   if (outcome.kind === "done") {
     return (
       <AuthScreen
-        title={outcome.already ? "You're already checked in" : "You're checked in"}
+        title={
+          outcome.already ? "You're already checked in" : "You're checked in"
+        }
       >
-        <p className="text-sm text-muted-foreground">You can close this page.</p>
+        <p className="text-sm text-muted-foreground">
+          You can close this page.
+        </p>
       </AuthScreen>
     );
   }
@@ -302,10 +305,9 @@ function AppButtons({
   target: CheckInLinkTarget;
   lead: boolean;
 }) {
-  const app = useNativeApp();
-  // The staging app has no store listing: it comes from TestFlight and the
-  // internal track, so a staging page offers no store button for it.
-  const listed = app.id === PRODUCTION_NATIVE_APP.id;
+  // This environment's install link (`lib/app-install.ts`): none for the
+  // staging app until its TestFlight or Play tester link is set.
+  const { app, installUrl } = useAppInstall(platform);
   return (
     <div className={lead ? "flex flex-col gap-3" : "flex gap-3"}>
       <Button
@@ -317,13 +319,13 @@ function AppButtons({
           Open in {app.name}
         </a>
       </Button>
-      {listed ? (
+      {installUrl ? (
         <Button
           asChild
           variant={lead ? "secondary" : "ghost"}
           className={lead ? "w-full" : "flex-1"}
         >
-          <a href={STORE_LISTING_URLS[platform]}>Get Frapp</a>
+          <a href={installUrl}>Get {app.name}</a>
         </Button>
       ) : null}
     </div>

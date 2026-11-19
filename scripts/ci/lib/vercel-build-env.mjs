@@ -92,7 +92,9 @@ export const APP_CONFIG_KEYS = Object.freeze({
     ]),
     optional: Object.freeze([
       "NEXT_PUBLIC_ANDROID_APP_CERT_SHA256",
+      "NEXT_PUBLIC_ANDROID_INSTALL_URL",
       "NEXT_PUBLIC_APPLE_TEAM_ID",
+      "NEXT_PUBLIC_IOS_INSTALL_URL",
       "NEXT_PUBLIC_LANDING_URL",
       "NEXT_PUBLIC_POSTHOG_HOST",
       "NEXT_PUBLIC_POSTHOG_KEY",

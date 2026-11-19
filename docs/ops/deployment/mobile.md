@@ -800,8 +800,9 @@ are no store-build records for those channels, so the native check is skipped th
 
 Frapp Staging is the second app that installs beside the store app and talks to staging
 (the `staging` profile; what makes it a separate app is in
-[`spec/environments` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)). It is for
-the people building Frapp, never a chapter. The **Staging app** workflow
+[`spec/environments` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)). It was for
+the people building Frapp, never a chapter (Paul, 2026-11-13); since 2026-11-19 it is also the app
+Paul's chapter beta-tests on, while production has no members yet. The **Staging app** workflow
 ([`staging-app.yml`](../../../.github/workflows/staging-app.yml)) builds, uploads and updates it.
 Its header owns how; this section is how to use it.
 
@@ -843,6 +844,19 @@ regenerates it, the way [§ 6.6](#66-store-submission) does for the store app), 
 404 until `NEXT_PUBLIC_APPLE_TEAM_ID` and `NEXT_PUBLIC_ANDROID_APP_CERT_SHA256` are set in
 Infisical `staging` ([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)). Until
 then a staging QR opens the staging web page, whose Open in Frapp Staging still reaches the app.
+
+**Getting testers in (2026-11-19).** Testers outside the developer team come in through a TestFlight
+**external** group with its public link turned on, not as App Store Connect users: nobody's Apple ID
+is collected, and the link takes up to 10,000 people. Apple's Beta App Review checks the first build
+of each new version (the group's test information needs a staging sign-in for the reviewer); later
+builds of that version usually go straight out, and OTA updates never need review. A new binary
+reaches the external group only once it is added there in App Store Connect (TestFlight → the
+group → Builds → +), because `eas submit`'s `--groups` takes internal groups only. On Android,
+Play's internal track takes up to 100 testers from an email list or a Google Group. Each link goes in
+Infisical `staging` (`NEXT_PUBLIC_IOS_INSTALL_URL`, `NEXT_PUBLIC_ANDROID_INSTALL_URL`,
+[`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)), and an invite link opened on a
+phone then walks the tester from getting the app to opening the invite in it
+([`spec/behavior/onboarding.md` § Invite Token Rules](../../../spec/behavior/onboarding.md#invite-token-rules)).
 
 Known limits: a staging binary's native crashes are not symbolicated in Sentry, because a local
 build can't read the Secret EAS variable the upload needs; and a native change takes about an hour

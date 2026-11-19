@@ -290,6 +290,8 @@ environment; Infisical resolves it to that environment's canonical value.
 | `NEXT_PUBLIC_POSTHOG_HOST`           | `${POSTHOG_HOST}`                                             | apps/web, apps/landing | ❌       |
 | `NEXT_PUBLIC_APPLE_TEAM_ID`          | _(literal Team ID — `prod` and `staging`; see below)_          | apps/web               | ❌       |
 | `NEXT_PUBLIC_ANDROID_APP_CERT_SHA256` | _(literal fingerprint(s), per app — `prod`, `staging`; below)_ | apps/web               | ❌       |
+| `NEXT_PUBLIC_IOS_INSTALL_URL`        | _(literal TestFlight public link, per app — `prod`, `staging`; below)_ | apps/web        | ❌       |
+| `NEXT_PUBLIC_ANDROID_INSTALL_URL`    | _(literal Play tester link, per app — `prod`, `staging`; below)_ | apps/web              | ❌       |
 
 **You type the literal string `${SUPABASE_URL}` as the value.** Infisical recognizes this as a reference and resolves it at inject time.
 
@@ -313,6 +315,19 @@ Play, internal testing included; add the upload key's fingerprint after a comma 
 APKs installed outside Play should open links too. A malformed value publishes nothing rather than
 a file that names the wrong app. Both are inlined at build, so a changed value reaches the files
 on the next web deploy.
+
+**The two install links (2026-11-19) are literals too, one per app.** They are where every "Get the
+app" button on a phone sends someone (`apps/web/lib/app-install.ts`): the invite hand-off on `/join`,
+the phone dashboard's Get the app card and `/check-in`. During the beta the apps aren't listed
+publicly, so `NEXT_PUBLIC_IOS_INSTALL_URL` is the app's TestFlight **external** group's public link
+(App Store Connect → the app → TestFlight → the external group → Public Link,
+`https://testflight.apple.com/join/…`), which anyone can open without being added by Apple ID, and
+`NEXT_PUBLIC_ANDROID_INSTALL_URL` is the app's Play tester link (Play Console → the app → Testing →
+the track → Testers → "How testers join your test", `https://play.google.com/apps/internaltest/…` or
+`…/apps/testing/<package>`). `staging` takes Frapp Staging's links and `prod` the store app's. Unset
+or not an `https` URL, the store app's buttons fall back to its store listing and Frapp Staging's
+show no Get button. Neither is a secret. Both are inlined at build, so a changed value reaches the
+page on the next web deploy.
 
 The builds also take `NEXT_PUBLIC_LANDING_URL`, `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` and
 `SENTRY_AUTH_TOKEN` from the store. They're direct values, not references, so they're documented
@@ -404,6 +419,8 @@ Reads the `NEXT_PUBLIC_*` references:
 | `NEXT_PUBLIC_POSTHOG_HOST`              | `lib/posthog/config.ts`                                                                                                                                                                                                                                                                                                                                                  | ❌ — optional Infisical `${POSTHOG_HOST}`; defaults to `https://us.i.posthog.com`. Override only for EU/self-host. Same names on `apps/landing`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `NEXT_PUBLIC_APPLE_TEAM_ID`             | `app/.well-known/apple-app-site-association/route.ts` (`lib/app-links.ts`) | ❌ — optional; `prod` and `staging`. Unset or malformed, the file answers 404, and invite links open the web even on a build that claims them (#4002; [§ References](#references--framework-specific-names)) |
 | `NEXT_PUBLIC_ANDROID_APP_CERT_SHA256`   | `app/.well-known/assetlinks.json/route.ts` (`lib/app-links.ts`) | ❌ — optional; `prod` and `staging` (each its own app's). Comma-separated SHA-256 fingerprints; unset or none valid, the file answers 404 (#4002; [§ References](#references--framework-specific-names)) |
+| `NEXT_PUBLIC_IOS_INSTALL_URL`           | `lib/app-install.ts` | ❌ — optional; `prod` and `staging` (each its own app's TestFlight public link). Unset, the store app's Get buttons open its App Store listing and Frapp Staging's are hidden ([§ References](#references--framework-specific-names)) |
+| `NEXT_PUBLIC_ANDROID_INSTALL_URL`       | `lib/app-install.ts` | ❌ — optional; `prod` and `staging` (each its own app's Play tester link). Unset, the store app's Get buttons open its Play listing and Frapp Staging's are hidden ([§ References](#references--framework-specific-names)) |
 | `SENTRY_AUTH_TOKEN`                     | `next.config.js` (`@repo/observability/next/sentry-build-config.js`); `apps/landing/next.config.js` reads the same name (build-time only, never bundled) | ❌ — optional **for `apps/web` / `apps/landing`**; when absent, source-map **upload** is skipped but debug IDs are still injected (`sourcemaps.disable` is always false), so a laptop or CI `next build` succeeds. **Still required in the deploy environment for readable `frapp-web` / `frapp-landing` stack traces** — without it production issues stay minified; which Infisical environments carry it: [§ apps/api](#appsapi-nestjs--cloud-run), the `SENTRY_AUTH_TOKEN` row. **`apps/mobile` is not the same story and does not belong in this row — see [§ apps/mobile](#appsmobile-expo--eas), which is where the mobile behaviour is documented.** |
 | `SUPABASE_AUTH_BYPASS`                  | `proxy.ts`                                                                                                                                                                                                                                                                                                                                                               | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
