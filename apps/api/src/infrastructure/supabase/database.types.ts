@@ -303,20 +303,6 @@ export interface Database {
     };
     Functions: {
       /**
-       * `20261119162302` (#5471). Records a member's ask for unposted minutes
-       * and decides, under a lock on the meeting, whether it pings: one ask
-       * per member per meeting, one ping per meeting per cooldown.
-       */
-      request_meeting_minutes: {
-        Args: {
-          p_meeting_id: string;
-          p_chapter_id: string;
-          p_user_id: string;
-          p_cooldown_seconds: number;
-        };
-        Returns: { requested: boolean; ping: boolean; asked: number }[];
-      };
-      /**
        * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
        * channel's `member_ids` unless already listed. Empty result set means
        * the row didn't match (wrong id/chapter, or not PRIVATE).
@@ -1199,6 +1185,20 @@ export interface Database {
       reorder_role_tiers: {
         Args: { p_chapter_id: string; p_ids: string[]; p_fixed_ids: string[] };
         Returns: RoleTier[];
+      };
+      /**
+       * `20261119162302` (#5471). Records a member's ask for unposted minutes
+       * and decides, under a lock on the meeting, whether it pings: one ask
+       * per member per meeting, one ping per meeting per cooldown.
+       */
+      request_meeting_minutes: {
+        Args: {
+          p_meeting_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+          p_cooldown_seconds: number;
+        };
+        Returns: { requested: boolean; ping: boolean; asked: number }[];
       };
       /**
        * `20261112170000` (#4314) — reads again every chat window that holds or
