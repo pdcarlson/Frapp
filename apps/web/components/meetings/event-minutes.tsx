@@ -7,15 +7,18 @@ import { codeOf } from "@repo/api-sdk";
 import {
   useMeetingNoteTaking,
   useMeetings,
+  useMinutesRequest,
   useMyPermissions,
   useStartMeeting,
 } from "@repo/hooks";
 import {
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
+  MINUTES_REQUEST_COPY,
   can,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import { RequestMinutesButton } from "@/components/meetings/request-minutes-button";
 import { inlineNoteActionClassName } from "@/components/shared/inline-note";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -39,7 +42,9 @@ export function useMeetingsModuleOn(): boolean {
  * calendar event. Nothing at all while the meetings module is off.
  *
  * Someone else's unposted minutes offer Take notes instead (#4935): to an
- * officer who records minutes, and to a member their author added.
+ * officer who records minutes, and to a member their author added. To
+ * anyone else the event invites, once it has ended, they offer Request
+ * minutes (#5471).
  */
 export function EventMinutes({
   eventId,
@@ -54,6 +59,11 @@ export function EventMinutes({
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
   const takingQuery = useMeetingNoteTaking({
     enabled: on && !!eventId,
+    eventId,
+  });
+  // Only asked once the reader is known to see no minutes of their own.
+  const requestQuery = useMinutesRequest({
+    enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
     eventId,
   });
   const permissions = useMyPermissions().data?.permissions ?? [];
@@ -87,9 +97,24 @@ export function EventMinutes({
       </MinutesRowFrame>
     );
   }
+  const askable = minutes ? null : requestQuery.data;
+  if (askable) {
+    return (
+      <MinutesRowFrame
+        status={
+          askable.requested
+            ? MINUTES_REQUEST_COPY.requestedStatus
+            : MINUTES_REQUEST_COPY.notPosted
+        }
+      >
+        <RequestMinutesButton state={askable} />
+      </MinutesRowFrame>
+    );
+  }
   if (!minutes && !canRecord) return null;
-  // Someone else may have started them; the note-taking read decides.
-  if (!minutes && takingQuery.isPending) {
+  // Someone else may have started them; the note-taking read and the
+  // request read decide.
+  if (!minutes && (takingQuery.isPending || requestQuery.isLoading)) {
     return <MinutesRowFrame status={null} />;
   }
 

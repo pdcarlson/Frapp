@@ -86,6 +86,7 @@ import type {
   Invite,
   Meeting,
   MeetingDraft,
+  MeetingMinutesRequest,
   MeetingNote,
   MeetingRecording,
   MeetingTemplate,
@@ -254,6 +255,7 @@ export interface Database {
       google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
       meeting_drafts: TableDefinition<MeetingDraft>;
+      meeting_minutes_requests: TableDefinition<MeetingMinutesRequest>;
       meeting_notes: TableDefinition<MeetingNote>;
       meeting_recordings: TableDefinition<MeetingRecording>;
       meeting_templates: TableDefinition<MeetingTemplate>;
@@ -300,6 +302,20 @@ export interface Database {
       };
     };
     Functions: {
+      /**
+       * `20261119162302` (#5471). Records a member's ask for unposted minutes
+       * and decides, under a lock on the meeting, whether it pings: one ask
+       * per member per meeting, one ping per meeting per cooldown.
+       */
+      request_meeting_minutes: {
+        Args: {
+          p_meeting_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+          p_cooldown_seconds: number;
+        };
+        Returns: { requested: boolean; ping: boolean; asked: number }[];
+      };
       /**
        * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
        * channel's `member_ids` unless already listed. Empty result set means

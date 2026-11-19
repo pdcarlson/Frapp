@@ -110,6 +110,7 @@ export * from "./use-important-messages";
 export * from "./use-invites";
 export * from "./use-invoices";
 export * from "./use-meetings";
+export * from "./use-minutes-request";
 export * from "./use-members";
 export * from "./use-message-reminders";
 export * from "./use-notifications";

@@ -21556,6 +21556,103 @@
         ]
       }
     },
+    "/v1/minutes-requests": {
+      "get": {
+        "operationId": "MeetingMinutesRequestController_state_v1",
+        "parameters": [
+          {
+            "name": "event_id",
+            "required": true,
+            "in": "query",
+            "description": "The meeting’s event.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MinutesRequestStateDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The event’s unposted minutes, when the caller may ask for them (one row or none), and whether they have",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/minutes-request": {
+      "post": {
+        "operationId": "MeetingMinutesRequestController_request_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinutesRequestStateDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask for unposted minutes, which pings whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over`",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/bootstrap": {
       "get": {
         "description": "The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
@@ -38848,6 +38945,28 @@
           "blocked",
           "max_bytes",
           "max_seconds"
+        ]
+      },
+      "MinutesRequestStateDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requested": {
+            "type": "boolean",
+            "description": "The caller has asked for these minutes."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "event_id",
+          "requested"
         ]
       },
       "BootstrapDto": {

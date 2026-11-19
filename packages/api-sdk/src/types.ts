@@ -6454,6 +6454,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/minutes-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event’s unposted minutes, when the caller may ask for them (one row or none), and whether they have */
+        get: operations["MeetingMinutesRequestController_state_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/minutes-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask for unposted minutes, which pings whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over` */
+        post: operations["MeetingMinutesRequestController_request_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -12676,6 +12710,14 @@ export interface components {
             max_bytes: number;
             /** @description The longest recording this server takes, in seconds. */
             max_seconds: number;
+        };
+        MinutesRequestStateDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The caller has asked for these minutes. */
+            requested: boolean;
         };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
@@ -27393,6 +27435,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecorderAvailabilityDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingMinutesRequestController_state_v1: {
+        parameters: {
+            query: {
+                /** @description The meeting’s event. */
+                event_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinutesRequestStateDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingMinutesRequestController_request_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinutesRequestStateDto"];
                 };
             };
             /** @description Error */

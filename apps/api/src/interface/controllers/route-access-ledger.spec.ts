@@ -131,6 +131,10 @@ const MEMBERSHIP_ONLY_ROUTES: Record<string, string> = {
     'Adding a note-taker (#4935); the service lets only the minutes’ author or a meetings:edit holder.',
   'MeetingNotesController.remove':
     'Removing a note-taker (#4935): the author or a meetings:edit holder, or the note-taker themselves, checked in the service.',
+  'MeetingMinutesRequestController.state':
+    'Whether the caller may ask for an event’s unposted minutes (#5471); the service answers only for a member the event shows itself to.',
+  'MeetingMinutesRequestController.request':
+    'Asking for unposted minutes (#5471): any member the meeting’s event shows itself to, checked in the service, which 404s anyone else.',
   'AttendanceController.checkIn':
     'Any member checks themselves in; the check-in token and window are verified in the service.',
   'UserController.getMyPermissions':
