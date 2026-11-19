@@ -107,7 +107,7 @@ describe("the Accent tab says what the accent actually does", () => {
     // #1157 moved this and the copy did not follow for a year. The positive
     // half, file-scoped because it is asserting the call, not the copy.
     expect(settingsPage).toMatch(
-      /background: signetDarkTokens\.color\.surface\.card/,
+      /background: signetDarkTokens\.color\.surface\.popover/,
     );
   });
 

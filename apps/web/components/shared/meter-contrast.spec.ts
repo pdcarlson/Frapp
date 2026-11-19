@@ -100,7 +100,8 @@ describe("the fix that would itself have been a defect", () => {
     // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
     // ladder surface (and since #2586 until its hover does too), so no seed's
     // fill sits at the wash's luminance any more: the worst case is
-    // `#4B1A7E`'s `#9B70D9` at 2.65:1 since the 2026-11-12 ladder (#3826;
+    // 2.73:1 on the 2026-11-19 ladder with engine v4 (`#4B1A7E`'s `#9B70D9` at 2.65:1 on the
+    // 2026-11-12 ladder, #3826;
     // `#BF0A30`'s `#D83144` at 2.52:1 on the 2026-11-05 ladder, `#800000`'s
     // `#F42F22` at 2.68:1 before it). The collision is gone, but `bg-input` is
     // still a worse track than the chosen one, and that ordering, not the
@@ -109,7 +110,7 @@ describe("the fix that would itself have been a defect", () => {
     const worst = Math.min(
       ...SEEDS.map((seed) => ratio(fillFor(seed), inputTrack)),
     );
-    expect(worst).toBeCloseTo(2.65, 2);
+    expect(worst).toBeCloseTo(2.727, 2);
     expect(worst).toBeLessThan(
       Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK))),
     );
@@ -146,17 +147,20 @@ describe("why the track recedes instead of rising", () => {
     }
   });
 
-  it("grooves on every container above the floor, --surface-1 included", () => {
+  it("grooves on every container above the floor except --surface-1", () => {
     // On the 2026-11-05 ladder one step from the floor was 1.049:1, not a
     // usable groove, and this test recorded `--surface-1` as the one container
     // the recipe could not serve. The 2026-11-12 ladder (#3826) put every step
-    // at least 1.15:1 apart, so the track now grooves on `--surface-1` too
-    // (1.17:1), and no container above the floor falls short.
+    // at least 1.15:1 apart, so the track grooved on `--surface-1` too
+    // (1.17:1). The owner's softer 2026-11-19 ladder steps 1.08:1 there, so
+    // `--surface-1` is again the one container short of a groove; a meter is
+    // not placed on it (polls sit in a message card, `--card`), so this
+    // records the gap rather than failing on it.
     const short = CONTAINERS.filter(
       (container) =>
         container !== SURFACE.background && ratio(TRACK, container) < 1.1,
     );
-    expect(short).toEqual([]);
+    expect(short).toEqual([SURFACE.surface1]);
   });
 
   it("would have caught the two candidates that wash out inside a dialog", () => {

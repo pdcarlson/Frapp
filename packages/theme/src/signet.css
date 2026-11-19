@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Signet design tokens — the dark-first neutral graphite system.
+ * Signet design tokens — the dark-first violet near-black system.
  *
  * This stylesheet is what BOTH web surfaces ship — `apps/web` since the #920
  * shell cutover, `apps/landing` since its token cutover (#2366). A surface
@@ -39,30 +39,33 @@
 @layer base {
   :root {
     /* ── Surface ladder (fixed for every chapter; foundations §2) ──
-     * Each step is at least 1.15:1 from the one below it, the contrast
-     * fixture's `INDISTINGUISHABLE` bound, so a column, a card and a menu
-     * each read as their own surface (#3826, #2399). The 2026-11-05 ladder
-     * (#0A0A0A / #111111 / #171717 / #1E1E1E) stepped at 1.05 / 1.05 / 1.08.
-     * `elevation-contrast.spec.ts` holds the floor. */
-    --background: #050505;
-    --surface-1: #1A1A1A;
-    --card: #262626;
+     * A faintly violet near-black with gentle steps (1.08 / 1.10 / 1.15),
+     * the owner's pick on 2026-11-19 from the groups design mockup. The
+     * steps sit under the old 1.15 floor on purpose: the hairline
+     * (`--border`, lifted to 12% white with it) separates a column, a card
+     * and a menu, as in the mockup, rather than the fill alone. The
+     * 2026-11-12 ladder (#050505 / #1A1A1A / #262626 / #313131, #3826)
+     * stepped at 1.17 / 1.15 / 1.16. `elevation-contrast.spec.ts` holds
+     * the new floor. */
+    --background: #0B0A0D;
+    --surface-1: #151419;
+    --card: #1F1D25;
     --card-foreground: #F5F5F5;
-    --popover: #313131;
+    --popover: #2A2830;
     --popover-foreground: #F5F5F5;
 
     /* ── Borders & hairlines (foundations §3) ─────────────────────
      * Low-opacity white only, so a hairline tracks whatever surface
      * it sits on. Fixed-hex border colors are banned. */
-    --border: rgba(255,255,255,0.08);
+    --border: rgba(255,255,255,0.12);
     --input: rgba(255,255,255,0.14);
     /* The edge that identifies a control (a field, a select, a Secondary
-     * button, a switch's track, a segmented control): 0.42 since 2026-11-12
-     * (#4389), the lowest alpha at which a field's edge clears WCAG 1.4.11's
-     * 3:1 on every seat (3.03:1 in a dialog, its worst; `--input` there is
-     * 1.14:1). `--input` stays the quiet edge for frames, wells and boxes
+     * button, a switch's track, a segmented control): the lowest alpha at
+     * which a field's edge clears WCAG 1.4.11's 3:1 on every seat (#4389),
+     * which was 0.42 on the 2026-11-12 ladder and is 0.40 on the darker
+     * 2026-11-19 one. `--input` stays the quiet edge for frames, wells and boxes
      * meant to recede (foundations §3). */
-    --control-edge: rgba(255,255,255,0.42);
+    --control-edge: rgba(255,255,255,0.40);
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
@@ -203,8 +206,10 @@
      * is also the quiet fill under text where `--muted` used to be one
      * (components.md §1).
      *
-     * It is the lowest neutral still a perceptible step (1.15:1,
-     * `INDISTINGUISHABLE`) over `--popover`: #3B3B3B, 1.16:1. Until the
+     * It is the lowest step still perceptible (1.15:1,
+     * `INDISTINGUISHABLE`) over `--popover` in `--popover`'s own violet
+     * tint: #34323A, 1.15:1 (#3B3B3B, neutral, on the 2026-11-12 ladder,
+     * 2026-11-19). Until the
      * 2026-11-12 surface ladder (#3826) it was `--popover` lifted 6%
      * toward white; on the lighter `--popover` that would be #3D3D3D,
      * and every tone drawn on it as text reads better the lower it sits.
@@ -214,7 +219,7 @@
      * figures live in `packages/validation/src/role-colors.ts`).
      * `elevation-contrast.spec.ts` derives it from `--popover`, so a ladder
      * change fails there instead of leaving this value behind. */
-    --card-hover: #3B3B3B;
+    --card-hover: #34323A;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
      * deriveSignetPalette("#DDB844") output, pinned by signet.css.spec.ts.
@@ -223,7 +228,7 @@
     --primary-hover: #D2AD37;
     --primary-foreground: #292109;
     --ring: #796938;
-    --accent-subtle: #332A10;
+    --accent-subtle: #342B11;
     --accent-border: #5F522C;
     --accent-text: #E7C86B;
 
@@ -240,7 +245,7 @@
      * on it can fall under 4.5:1 (#2604), so it is only ever the
      * momentary pointer-down shade, never a held state
      * (accent-engine.md §8).
-     * `--accent-subtle-hover` is the Tinted hover: 15% of the way from
+     * `--accent-subtle-hover` is the Tinted hover: 14% of the way from
      * the subtle step toward accent-7, which lands between two steps
      * rather than on a named one. (Until the 2026-11-12 surface ladder,
      * #3826, the subtle step was accent-3 and this mix was 22%, which
@@ -250,7 +255,7 @@
      * Both are stated as approximations here rather than pretending
      * to a scale step the generator never produced. */
     --primary-pressed: color-mix(in srgb, rgb(0 0 0) 8%, var(--primary-hover));
-    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 15%, var(--accent-subtle));
+    --accent-subtle-hover: color-mix(in srgb, var(--accent-border) 14%, var(--accent-subtle));
 
     /* ── House gold (brand-identity.md; never retints per chapter) ── */
     --gold-house: #EFB63B;
@@ -310,8 +315,10 @@
      * board's warm pair is history.
      *
      * RE-PITCHED 2026-11-12 with the surface ladder (#3826): `--popover` is
-     * #313131, and #3C3C3C measures 1.18:1 on it, the same amplitude. */
-    --skeleton-highlight: #3C3C3C;
+     * #313131, and #3C3C3C measures 1.18:1 on it, the same amplitude.
+     * RE-PITCHED 2026-11-19 with the violet ladder: #36343C on #2A2830,
+     * 1.19:1, in the ladder's tint. */
+    --skeleton-highlight: #36343C;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because

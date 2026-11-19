@@ -1,7 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { pageSurfaces } from "@/lib/surfaces";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { meterStyles } from "@/components/meter";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -18,9 +17,8 @@ import { formatHoursValue } from "@/lib/study/format";
  * a bar with an invented end would read as a chapter rule
  * (`spec/ui/mobile/screens.md`, "omitted, not faked").
  *
- * The meter is `components/meter.ts`'s, but this line sits on the screen
- * rather than in a card, so its groove is the card tint instead of
- * `--background`, which would vanish against the screen around it.
+ * The meter is `components/meter.ts`'s. This line sits on the screen rather
+ * than in a card, so the meter is named as drawn on `--background`.
  */
 export interface WeekSummaryProps {
   minutes: number;
@@ -86,7 +84,6 @@ export function WeekSummary({
 }
 
 function createStyles(tokens: SignetTokens) {
-  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     block: {
       gap: tokens.spacing.sm,
@@ -109,10 +106,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    meterTrack: {
-      ...meterStyles(tokens).track,
-      backgroundColor: surfaces.card,
-    },
-    meterFill: meterStyles(tokens).fill,
+    meterTrack: meterStyles(tokens, tokens.color.surface.background).track,
+    meterFill: meterStyles(tokens, tokens.color.surface.background).fill,
   });
 }

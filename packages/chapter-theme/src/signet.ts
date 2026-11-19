@@ -49,10 +49,10 @@ export type { SignetPalette };
  * ship. `--background` is also the generator's `background` parameter.
  */
 export const SIGNET_FILL_SURFACES = {
-  "--background": "#050505",
-  "--surface-1": "#1A1A1A",
-  "--card": "#262626",
-  "--popover": "#313131",
+  "--background": "#0B0A0D",
+  "--surface-1": "#151419",
+  "--card": "#1F1D25",
+  "--popover": "#2A2830",
 } as const;
 
 /**
@@ -90,7 +90,7 @@ export const HOUSE_SEED = "#DDB844";
  * only a seed outside the corpus is not caught, so widen the corpus when you
  * touch hue-specific or input-handling code.
  */
-export const SIGNET_ENGINE_VERSION = 3;
+export const SIGNET_ENGINE_VERSION = 4;
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = AA_NORMAL;
@@ -135,8 +135,8 @@ const LIFT_COARSE = 10;
  * Step 4 and no lighter, because text sits on the tint: a row that @-mentions
  * the viewer paints it behind the author's role-coloured name and the
  * timestamp. Step 5 put a green chapter's hovered Violet name at 3.70:1 and
- * the timestamp at 3.94:1; step 4, with the hover mix in `signet.css` at 15%,
- * holds every role colour and `--muted` at 4.5:1 on it, at rest and hovered
+ * the timestamp at 3.94:1; step 4, with the hover mix in `signet.css` at 15%
+ * (14% since 2026-11-19), holds every role colour and `--muted` at 4.5:1 on it, at rest and hovered
  * (`chat-contrast.spec.ts`). The cost is a weaker tint on `--card` (1.02–1.20,
  * the selected fill 1.11–1.32, was 1.25–1.40), where a selected card also
  * carries its accent border.

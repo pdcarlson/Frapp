@@ -121,7 +121,7 @@ describe("chat message rows", () => {
     // hovered or selected row, the segmented control's pick, a menu's open
     // item. Body text keeps 7:1. Secondary text is held to AA only: on the
     // 2026-11-12 ladder `--card-hover` rose to #3B3B3B and
-    // `--muted-foreground` measures 6.42:1 there (8.01:1 at the old #2C2C2C).
+    // `--muted-foreground` measured 6.42:1 there (8.01:1 at the old #2C2C2C); 7.24:1 on the 2026-11-19 #34323A.
     expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(
       BODY_TEXT,
     );

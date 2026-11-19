@@ -10,7 +10,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * and the proportion as a meter beside it, as Activity's progress line draws
  * one (`components/meter.tsx`), in the chapter accent and green once every
  * copy is done. The words say the count; the bar shows it at a glance.
- * Drawn on the page, so the groove is `trackOnPage`.
+ * Drawn on the page, so the meter is named as drawn on `--background`.
  */
 export function GroupProgress({
   who,
@@ -49,7 +49,7 @@ export function GroupProgress({
 }
 
 function createStyles(tokens: SignetTokens) {
-  const meter = meterStyles(tokens);
+  const meter = meterStyles(tokens, tokens.color.surface.background);
   return StyleSheet.create({
     line: {
       gap: tokens.spacing.xs,
@@ -58,9 +58,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    track: {
-      ...meter.trackOnPage,
-    },
+    track: meter.track,
     fill: meter.fill,
   });
 }

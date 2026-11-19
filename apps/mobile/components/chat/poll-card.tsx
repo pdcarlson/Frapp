@@ -293,10 +293,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       fontVariant: ["tabular-nums"],
     },
     meterTrack: {
-      ...meterStyles(tokens).track,
+      ...meterStyles(tokens, tokens.color.surface.popover).track,
       marginTop: tokens.spacing.xs - 2,
     },
-    meterFill: meterStyles(tokens).fill,
+    meterFill: meterStyles(tokens, tokens.color.surface.popover).fill,
     footer: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

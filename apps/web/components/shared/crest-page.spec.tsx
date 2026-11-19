@@ -1,4 +1,3 @@
-import { signetDarkTokens } from "@repo/theme/signet";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -42,8 +41,8 @@ import RouteError from "@/app/error";
  * the 260px raster on the two terminal-state routes.
  */
 
-const CREST_ASSET = "/brand/signet-emblem-B.png";
-const CREST = /signet-emblem-B\.png/;
+const CREST_ASSET = "/brand/signet-emblem-B";
+const CREST = /signet-emblem-B-glyph\.png/;
 
 /**
  * Every `.tsx` under `apps/web`, walked rather than globbed.
@@ -127,17 +126,18 @@ describe("the crest", () => {
     },
   );
 
-  it("is drawn on the ladder step nearest the mark's field, so the tile edge does not show", () => {
-    // The raster's field is `#1A1A1A`, and since the 2026-11-12 surface ladder
-    // (#3826) so is `--surface-1`, so the tile edge measures 1.00:1. (Between
-    // 2026-11-05 and then the page painted `--card`, the nearest step.) That is
-    // what lets the board's `opacity:.9` wash be dropped.
-    expect(signetDarkTokens.color.surface.surface1).toBe("#1A1A1A");
+  it("draws the field-less glyph, so no tile edge shows on the violet card", () => {
+    // The full tile's field is a neutral `#1A1A1A`. Through 2026-11-19 the
+    // page painted the ladder step nearest it so the tile's edge vanished; the
+    // violet 2026-11-19 ladder has no neutral step, and the field read as a
+    // faint square on `--card` (#5695). The glyph raster is the crest alone on
+    // transparent, so there is no field to match on any ladder.
     const { container } = render(<NotFound />);
-    expect(container.querySelector("main")?.className).toMatch(
-      /\bbg-surface-1\b/,
-    );
-    expect(container.querySelector("img")?.className).not.toMatch(/\bopacity-/);
+    const crest = container.querySelector("img")!;
+    expect(crest.getAttribute("src")).toMatch(/signet-emblem-B-glyph\.png/);
+    expect(crest.className).not.toMatch(/\brounded-/);
+    expect(crest.className).not.toMatch(/\bopacity-/);
+    expect(container.querySelector("main")?.className).toMatch(/\bbg-card\b/);
   });
 
   it("is the only crest art in apps/web", () => {

@@ -93,6 +93,7 @@ export function SemesterStrip({
                 <ProgressRing
                   size={GAUGE_SIZE}
                   stroke={GAUGE_STROKE}
+                  on={pageSurfaces(tokens).card}
                   progress={gauge.progress}
                   color={
                     gauge.progress >= 1

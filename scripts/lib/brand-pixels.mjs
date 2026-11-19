@@ -617,6 +617,14 @@ export const SYNCED = [
     ],
   },
   {
+    // The crest alone on transparent, for the 404 and error pages (#5695).
+    // They paint `--card`, and since the violet 2026-11-19 ladder no surface
+    // step matches the full tile's neutral `#1A1A1A` field, so the tile's edge
+    // showed as a square. The glyph has no field to show.
+    canonical: "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png",
+    targets: ["apps/web/public/brand/signet-emblem-B-glyph.png"],
+  },
+  {
     // The favicon Next serves at `/favicon.ico`. It is the same mark as
     // `app/icon.png` beside it, in the container older browsers and every
     // bookmark bar ask for by that fixed name.

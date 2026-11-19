@@ -46,7 +46,7 @@ const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
 
 /**
  * The remove badge's neutral fill. No ladder token fits: it sits on a disc over
- * glass, and the ladder's lightest step (`popover`, `#313131`) would barely
+ * glass, and the ladder's lightest step (`popover`, `#2A2830`) would barely
  * part from the disc, while `text.disabled` would say "unavailable". It is a
  * measured literal instead: the foreground minus on it reads 6.33:1, and the
  * badge's 2px `surface1` ring separates it from whatever is under the disc.
