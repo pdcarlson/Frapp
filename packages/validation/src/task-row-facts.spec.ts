@@ -17,13 +17,25 @@ describe("taskRowFacts", () => {
         photos: [{ kind: "reference" }, { kind: "proof" }],
         series: WEEKLY,
       }),
-    ).toEqual({ cadence: "Weekly", progress: "2 of 5", photos: "1 photo" });
+    ).toEqual({
+      cadence: "Weekly",
+      progress: "2 of 5",
+      photos: "1 photo",
+      shown: "↻ Weekly · 2 of 5 · 1 photo",
+      spoken: "repeats weekly, 2 of 5, 1 photo",
+    });
   });
 
   it("drops what a task doesn't have", () => {
     expect(
       taskRowFacts({ done: false, subtasksDone: 0, subtasksTotal: 0 }),
-    ).toEqual({ cadence: null, progress: null, photos: null });
+    ).toEqual({
+      cadence: null,
+      progress: null,
+      photos: null,
+      shown: null,
+      spoken: null,
+    });
   });
 
   it("drops everything once the task is done", () => {
@@ -35,6 +47,12 @@ describe("taskRowFacts", () => {
         photos: [{ kind: "reference" }],
         series: WEEKLY,
       }),
-    ).toEqual({ cadence: null, progress: null, photos: null });
+    ).toEqual({
+      cadence: null,
+      progress: null,
+      photos: null,
+      shown: null,
+      spoken: null,
+    });
   });
 });

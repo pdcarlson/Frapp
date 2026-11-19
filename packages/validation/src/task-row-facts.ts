@@ -10,13 +10,20 @@ import { taskRepeatCadence, type TaskSeriesLine } from "./repeat-draft";
  *
  * A finished task drops all three: its status says enough.
  */
+/** The mark before a repeating task's cadence on a row; spoken as "repeats". */
+export const TASK_REPEAT_GLYPH = "↻";
+
 export interface TaskRowFacts {
-  /** "Weekly", "Every 2 weeks"; drawn after "↻", spoken as "repeats weekly". */
+  /** "Weekly", "Every 2 weeks", bare. */
   cadence: string | null;
   /** "2 of 5" checklist items done. */
   progress: string | null;
   /** "1 photo", "3 photos": the task's reference photos. */
   photos: string | null;
+  /** The three as a row draws them: "↻ Weekly · 2 of 5 · 1 photo". */
+  shown: string | null;
+  /** The three as a screen reader hears them: "repeats weekly, 2 of 5, 1 photo". */
+  spoken: string | null;
 }
 
 /**
@@ -30,19 +37,34 @@ export function taskRowFacts(task: {
   photos?: readonly { kind: string }[] | null;
   series?: TaskSeriesLine | null;
 }): TaskRowFacts {
-  if (task.done) return { cadence: null, progress: null, photos: null };
+  if (task.done) {
+    return {
+      cadence: null,
+      progress: null,
+      photos: null,
+      shown: null,
+      spoken: null,
+    };
+  }
   const references = (task.photos ?? []).filter(
     (photo) => photo.kind === "reference",
   ).length;
+  const cadence = taskRepeatCadence(task.series);
+  const progress =
+    task.subtasksTotal > 0
+      ? `${task.subtasksDone} of ${task.subtasksTotal}`
+      : null;
+  const photos =
+    references > 0
+      ? `${references} ${references === 1 ? "photo" : "photos"}`
+      : null;
+  const join = (repeat: string | null, glue: string) =>
+    [repeat, progress, photos].filter(Boolean).join(glue) || null;
   return {
-    cadence: taskRepeatCadence(task.series),
-    progress:
-      task.subtasksTotal > 0
-        ? `${task.subtasksDone} of ${task.subtasksTotal}`
-        : null,
-    photos:
-      references > 0
-        ? `${references} ${references === 1 ? "photo" : "photos"}`
-        : null,
+    cadence,
+    progress,
+    photos,
+    shown: join(cadence ? `${TASK_REPEAT_GLYPH} ${cadence}` : null, " · "),
+    spoken: join(cadence ? `repeats ${cadence.toLowerCase()}` : null, ", "),
   };
 }

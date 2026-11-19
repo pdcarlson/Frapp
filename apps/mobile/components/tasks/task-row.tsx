@@ -126,7 +126,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
   // photos (#4003, #4635, #5119), read once with web's row (`taskRowFacts`):
   // "Due Monday · ↻ Weekly · 2 of 5 · 1 photo". The glyph is for the eye; a
   // screen reader hears "repeats weekly". A finished task drops them.
-  const { cadence, progress, photos } = taskRowFacts({
+  const facts = taskRowFacts({
     done: row.isDone,
     subtasksDone: row.subtasks.filter((subtask) => subtask.done).length,
     subtasksTotal: row.subtasks.length,
@@ -138,19 +138,12 @@ function taskFacts(row: TaskRowModel, now: Date) {
   const from = row.followedBy
     ? TASK_FOLLOWER_COPY.chip(row.followedByName)
     : null;
-  const lineOf = (repeat: string | null) =>
-    [
-      sentBack ? TASK_NEEDS_CHANGES_LABEL : null,
-      statusLine,
-      repeat,
-      progress,
-      photos,
-      from,
-    ]
+  const lineOf = (extra: string | null) =>
+    [sentBack ? TASK_NEEDS_CHANGES_LABEL : null, statusLine, extra, from]
       .filter(Boolean)
       .join(" · ") || null;
-  const subtitle = lineOf(cadence ? `↻ ${cadence}` : null);
-  const spoken = lineOf(cadence ? `repeats ${cadence.toLowerCase()}` : null);
+  const subtitle = lineOf(facts.shown);
+  const spoken = lineOf(facts.spoken);
 
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not

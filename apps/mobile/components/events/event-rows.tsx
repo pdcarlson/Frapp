@@ -27,7 +27,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the List and its next-event card went in #5310).
  *
  * The day is the heading above them ("Tomorrow", `formatDayHeading`), so a row
- * says only its time. The board's date block ("THU / 14") went with the day
+ * says only its times, start to end. The board's date block ("THU / 14") went with the day
  * headings: under a "Thursday" heading it said the day twice (#3707).
  *
  * A series row carries how often it meets after the name, muted:
@@ -93,8 +93,8 @@ function EventName({
  * one shape on both tabs (owner pick 2026-11-13, #4679; until then the row
  * was two lines of text with nothing that said it opened).
  *
- * Points move into the meta line, as web writes them ("7:00 PM · Great Room
- * · 10 points", `formatPoints`: a count read as text is written out; a chip
+ * Points move into the meta line, as web writes them ("7:00 – 9:00 PM · Great
+ * Room · 10 points", `formatPoints`: a count read as text is written out; a chip
  * says "+10 pts"), and Mandatory sits before the chevron, so a row is one
  * line of chips at most.
  */

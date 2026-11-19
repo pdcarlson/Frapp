@@ -115,8 +115,9 @@ These cause most of the iterations, so they come first.
 - **A row carries the details people decide by, the same on both apps** (Paul, 11-19: "did a better job
   of showing details"): an event its start to end and "Check-in is open", a task how it repeats, its
   checklist and photos, a study session its zone, a document its effective day. Still one row: the
-  facts sit in its muted meta line, and one app never shows a fact the other leaves off (shared readers
-  such as `taskRowFacts`, `formatTimeRange`). (11-19)
+  facts sit in its muted meta line, in the same words and order on both apps, read through one shared
+  helper (`taskRowFacts`, `formatTimeRange`, `CHECK_IN_OPEN_LABEL`). A pane too narrow to draw a fact
+  still speaks it to a screen reader. (11-19)
 - **Chat home's channel rows show no date and no message preview.** Read rows are muted gray, unread
   rows bold white with a pip (11-07, 11-11). The Messages screen's conversation rows are the exception:
   they show the last line and when it was sent, WhatsApp-style (changed in #5519, 2026-11-18;

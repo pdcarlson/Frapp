@@ -1,1 +1,0 @@
-Rows now show more at a glance: events say when they start and end and when check-in is open, tasks say how they repeat and how far along their checklist and photos are, study sessions say which zone they were in, and documents say when they take effect.

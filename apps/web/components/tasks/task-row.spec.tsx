@@ -76,6 +76,19 @@ describe("TaskRow", () => {
     ).toBeInTheDocument();
   });
 
+  it("drops them once the task is done, as the phone's row does", () => {
+    renderRow(
+      task({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        completed_at: "2026-11-19T00:00:00.000Z",
+        subtasks: [subtask(true)],
+        photos: [{ kind: "reference" }] as BoardTask["photos"],
+      }),
+    );
+    expect(screen.queryByText(/of \d|photo/)).not.toBeInTheDocument();
+  });
+
   it("says nothing more for a task without them", () => {
     renderRow(task());
     expect(screen.queryByText(/of \d|photo|↻/)).not.toBeInTheDocument();

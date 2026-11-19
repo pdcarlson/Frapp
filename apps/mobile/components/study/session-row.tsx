@@ -2,7 +2,7 @@ import { StyleSheet, Text } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { HistoryRow } from "@/components/history-row";
-import { formatHoursLabel, formatSessionRange } from "@/lib/study/format";
+import { formatDayTimeRange, formatMinutesRounded } from "@repo/formatting";
 import type { StudySessionModel } from "@/lib/study/session";
 import { isTerminal } from "@/lib/study/session";
 
@@ -32,10 +32,14 @@ export function SessionRow({ session, zoneName, isLast }: SessionRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const range = formatSessionRange(session.startTime, session.endTime);
+  // When and how long in web's row's words (2026-11-19): "Tue, Nov 3 · 7:00
+  // – 9:00 PM" and "1h 30m".
+  const range = formatDayTimeRange(session.startTime, session.endTime);
   const note = ZERO_AWARD_NOTE[session.status] ?? null;
-  const meta = [range, note].filter((part): part is string => !!part).join(" · ");
-  const duration = formatHoursLabel(session.totalForegroundMinutes);
+  const meta = [range, note]
+    .filter((part): part is string => !!part)
+    .join(" · ");
+  const duration = formatMinutesRounded(session.totalForegroundMinutes);
 
   return (
     <HistoryRow

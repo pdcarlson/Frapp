@@ -34,8 +34,9 @@ import type { BoardTask, GroupTileData } from "./board-task";
  * The Tasks page's compact list (Paul, 2026-11-18: "I had to scroll all the
  * way down"): one 40px row a task, as Linear's, Asana's and Todoist's lists
  * are, so an exec's 20 to 40 tasks fit on a screen. A row says what, who,
- * when and for how many points; everything else, and every edit, is in the
- * task's panel, which the row opens.
+ * when and for how many points, then how it repeats, its checklist and its
+ * photos as the phone's row does (`TaskFacts`, 2026-11-19); everything else,
+ * and every edit, is in the task's panel, which the row opens.
  */
 
 /** A row's hairline list, flush on the page. */
@@ -172,7 +173,7 @@ export function TaskRow({
             {TASK_DONE_LABEL}
           </Badge>
         ) : null}
-        <TaskFacts task={task} done={status === "COMPLETED"} />
+        <TaskFacts task={task} done={status === "COMPLETED"} part="spoken" />
       </button>
       {task.followed_by ? (
         <FollowerChip
@@ -182,6 +183,7 @@ export function TaskRow({
       ) : null}
       <PersonChip person={person} />
       <DueText task={task} due={due} />
+      <TaskFacts task={task} done={status === "COMPLETED"} part="shown" />
       <PointsTag points={task.point_reward} />
       {waiting && canConfirm ? (
         <Button
@@ -260,13 +262,22 @@ export function GroupTaskRow({
 
 /**
  * How it repeats, how far through its checklist it is and its reference
- * photos, after the title: "↻ Weekly · 2 of 5 · 1 photo", the facts the
- * phone's row says past its due (`taskRowFacts`, 2026-11-19). Muted and
- * after the title, so the row stays one line; the narrowest pane drops it
- * before the title, the person or the due.
+ * photos, after the due: "Due Monday · ↻ Weekly · 2 of 5 · 1 photo", the
+ * facts and order the phone's row says (`taskRowFacts`, 2026-11-19). Drawn
+ * after the due, muted, from a medium pane up; in a narrower one the row has
+ * room only for its title, person and due, so the facts are spoken with the
+ * title instead (`part="spoken"`, inside the row's button), never lost.
  */
-function TaskFacts({ task, done }: { task: BoardTask; done: boolean }) {
-  const { cadence, progress, photos } = taskRowFacts({
+function TaskFacts({
+  task,
+  done,
+  part,
+}: {
+  task: BoardTask;
+  done: boolean;
+  part: "shown" | "spoken";
+}) {
+  const facts = taskRowFacts({
     done,
     subtasksDone: (task.subtasks ?? []).filter((subtask) => subtask.done_at)
       .length,
@@ -274,19 +285,15 @@ function TaskFacts({ task, done }: { task: BoardTask; done: boolean }) {
     photos: task.photos,
     series: task.series,
   });
-  const seen = [cadence ? `↻ ${cadence}` : null, progress, photos].filter(Boolean);
-  if (seen.length === 0) return null;
-  const spoken = [
-    cadence ? `repeats ${cadence.toLowerCase()}` : null,
-    progress,
-    photos,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const line = part === "shown" ? facts.shown : facts.spoken;
+  if (!line) return null;
+  if (part === "spoken") return <span className="sr-only">{`, ${line}`}</span>;
   return (
-    <span className="hidden min-w-0 shrink truncate text-caption text-muted-foreground @xl:inline">
-      <span aria-hidden="true">{seen.join(" · ")}</span>
-      <span className="sr-only">{spoken}</span>
+    <span
+      aria-hidden="true"
+      className="hidden min-w-0 max-w-[14rem] shrink truncate text-caption text-muted-foreground @md:inline"
+    >
+      {line}
     </span>
   );
 }

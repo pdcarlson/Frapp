@@ -345,6 +345,7 @@ Store-facing wording: Paul approves it.
 
 The agenda (#5560) groups its rows under day headings written out: `Today`, `Tomorrow`, `Yesterday`, the weekday within the coming week (`Sunday`), otherwise the month and day (`November 14`, with the year outside the current one); `formatDayHeading` in `@repo/formatting`.
 A row under one says only its time (`6:48 PM`), and a repeating series, shown once as its next meeting, says how it repeats before it: `Every Sunday · 6:48 PM`, `Every other Sunday · 6:48 PM`, `Every month on the 9th · 6:48 PM` (`seriesCadenceLabel`, `@repo/hooks/event-series`).
+*(Changed 2026-11-19, Paul's "did a better job of showing details": a row says its start to end, `6:48 – 8:00 PM` (`formatTimeRange`), and a series says how it repeats after its name, muted, `Chapter · Every Sunday`, on web as the phone's row already did; while check-in is open the row says `Check-in is open` (`CHECK_IN_OPEN_LABEL`) on both apps.)*
 *(Changed in #5560 by pdcarlson, 2026-11-19: Upcoming held today through the next 14 days, later events waiting behind a `Later` disclosure with their count (#3707, #3822). The agenda reaches four weeks and then offers **Show more**.)*
 Each day heading ends with a quiet `Hours ›` (named `Hours for Today` to a screen reader), which opens the hour grid on that day; its back button reads `Events`.
 A required event says `Required` after its title, in the events hue; the grey `Mandatory` pill is gone (#5560). The Attendance filter still says `Mandatory`.

@@ -79,6 +79,20 @@ export function selectActiveZones(data: unknown): StudyZoneModel[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Every zone's name by id, turned-off ones too: a past session's row is titled
+ * with the zone it was in after an officer retires it, as web's row is
+ * (2026-11-19).
+ */
+export function selectZoneNames(data: unknown): Map<string, string> {
+  return new Map(
+    records(data)
+      .map(toZone)
+      .filter((zone): zone is StudyZoneModel => !!zone)
+      .map((zone) => [zone.id, zone.name]),
+  );
+}
+
 export function findZone(
   zones: StudyZoneModel[],
   id: string | null,

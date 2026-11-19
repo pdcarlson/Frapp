@@ -944,8 +944,9 @@ export function EventsPage() {
     // (#5560). An event that sets roles apart also says so with a badge.
     const isRequired = requiredOf(fields);
     const isTargeted = eventSetsRolesApart(fields);
-    // A series row says how it repeats where a one-time row says only its
-    // time: the day heading above already says which day.
+    // A series says how it repeats after its name, muted, as the phone's row
+    // does ("Chapter · Every Sunday"). The day heading above says which day,
+    // so the meta line starts at the time.
     const cadence = series ? seriesCadenceOf(events, event) : null;
     // Start to end, "7:00 – 9:00 PM", as the phone's row says it: a member
     // deciding whether to go wants to know when it lets out (2026-11-19).
@@ -966,11 +967,7 @@ export function EventsPage() {
         ? event.location.trim()
         : null;
     // An absent fact drops out of the line rather than reading "TBD" or "0".
-    const meta = [
-      [cadence, time].filter(Boolean).join(" · "),
-      location,
-      pointsLabel(event.point_value),
-    ]
+    const meta = [time, location, pointsLabel(event.point_value)]
       .filter(Boolean)
       .join(" · ");
     const hue = EVENT_HUE;
@@ -1011,6 +1008,11 @@ export function EventsPage() {
             <span className="flex min-w-0 items-baseline gap-2">
               <span className="truncate text-sm font-semibold text-foreground">
                 {eventName}
+                {cadence ? (
+                  <span className="font-normal text-muted-foreground">
+                    {` · ${cadence}`}
+                  </span>
+                ) : null}
               </span>
               {isRequired ? (
                 <span
