@@ -59,12 +59,19 @@ export function TaskRow({
   gate,
   lifecycleWritePending,
   selected,
+  audience = null,
   onOpen,
   onChangeStatus,
   onConfirm,
 }: {
   task: BoardTask;
   person: RowPerson;
+  /**
+   * Under My tasks, a copy of a group task names who it went to in place of
+   * the viewer's own face (#5699): it is theirs to finish, but the chapter
+   * got it too, with how far everyone is.
+   */
+  audience?: CopyAudience | null;
   /** The viewer's own task: its circle is the next step. */
   isMine: boolean;
   /** Say where it stands: no heading above it says so. */
@@ -178,7 +185,14 @@ export function TaskRow({
           className="hidden max-w-[10rem] shrink @lg:inline-flex"
         />
       ) : null}
-      <PersonChip person={person} />
+      {audience ? (
+        <>
+          <AudienceText label={audience.label} />
+          <MiniProgress done={audience.done} total={audience.total} title={task.title} />
+        </>
+      ) : (
+        <PersonChip person={person} />
+      )}
       <DueText task={task} due={due} />
       <PointsTag points={task.point_reward} />
       {waiting && canConfirm ? (
@@ -239,10 +253,7 @@ export function GroupTaskRow({
           {task.title}
         </span>
       </button>
-      <span className="hidden min-w-0 max-w-[14rem] shrink items-center gap-1.5 text-caption text-muted-foreground @lg:inline-flex">
-        <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">{label}</span>
-      </span>
+      <AudienceText label={label} />
       {task.followed_by ? (
         <FollowerChip
           name={task.followed_by_name}
@@ -253,6 +264,41 @@ export function GroupTaskRow({
       <DueText task={task} due={due} />
       <PointsTag points={task.point_reward} />
     </li>
+  );
+}
+
+/** Who a group task went to, and how far its copies are, as a row shows it. */
+export interface CopyAudience {
+  label: string;
+  done: number;
+  total: number;
+}
+
+/**
+ * Who the group task a copy belongs to went to ("Everyone", "Everyone in
+ * Exec board", "6 people") and its progress over every copy, from the
+ * `group` each task read carries; `null` for one person's own task.
+ */
+export function copyAudience(task: BoardTask): CopyAudience | null {
+  if (!task.group_id || !task.group) return null;
+  return {
+    label: taskGroupLabel({
+      audience: task.group.audience ?? "everyone",
+      target_name: task.group.target_name,
+      total: task.group.total,
+    }),
+    done: task.group.done,
+    total: task.group.total,
+  };
+}
+
+/** "Everyone" with the people glyph; shown from `@lg`, read aloud always. */
+function AudienceText({ label }: { label: string }) {
+  return (
+    <span className="inline-flex min-w-0 max-w-[14rem] shrink items-center gap-1.5 text-caption text-muted-foreground">
+      <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span className="sr-only truncate @lg:not-sr-only">{label}</span>
+    </span>
   );
 }
 

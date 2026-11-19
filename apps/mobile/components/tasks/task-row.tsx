@@ -4,7 +4,12 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   taskStatusLabel,
 } from "@repo/hooks";
-import { TASK_FOLLOWER_COPY, taskRepeatCadence } from "@repo/validation";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_FOLLOWER_COPY,
+  taskGroupLabel,
+  taskRepeatCadence,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -145,10 +150,21 @@ function taskFacts(row: TaskRowModel, now: Date) {
   const from = row.followedBy
     ? TASK_FOLLOWER_COPY.chip(row.followedByName)
     : null;
+  // A copy of a group task still says who got it, and how far they are
+  // (#5699): "Due Friday · Everyone · 14 of 20 done". Its checkbox is only
+  // this member's part, as web's My tasks row says.
+  const audience = row.group
+    ? `${taskGroupLabel({
+        audience: row.group.audience,
+        target_name: row.group.targetName,
+        total: row.group.total,
+      })} · ${TASK_AUDIENCE_COPY.progress(row.group.done, row.group.total)}`
+    : null;
   const lineOf = (repeat: string | null) =>
     [
       sentBack ? TASK_NEEDS_CHANGES_LABEL : null,
       statusLine,
+      audience,
       repeat,
       progress,
       photos,

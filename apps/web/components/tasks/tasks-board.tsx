@@ -109,7 +109,9 @@ import {
   GroupTaskRow,
   TASK_ROWS_CLASS,
   TaskRow,
+  copyAudience,
   lowerFirst,
+  type CopyAudience,
   type RowPerson,
 } from "./task-row";
 import { TaskPanel, type TaskPanelTarget } from "./task-panel";
@@ -119,14 +121,17 @@ import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FilterChip, type FilterOption } from "@/components/shared/filter-chip";
-import { SegmentedChoice } from "@/components/ui/segmented";
 import { useListLayout, type ListLayout } from "@/lib/list-layout";
 
 type Task = BoardTask;
@@ -184,11 +189,13 @@ function isOpenStatus(status: TaskStatus): boolean {
 }
 
 /**
- * Whose tasks the page shows (#4295 step 5). An officer switches between
- * their own and the chapter's board, which stays where they land, as before.
- * A member's read holds their own and, since #5473, the tasks a tier, role
- * or group they're in follows: one who follows any gets the same switch,
- * where All tasks is everything they can read. Anyone else sees My tasks.
+ * Whose tasks the page shows (#4295 step 5). Everyone opens on their own
+ * (#5578, Paul and Shawn, 2026-11-19: "it should default to my tasks, not
+ * all tasks"), as Linear opens on My issues and Asana on My tasks. An
+ * officer picks Everyone's from the View menu for the chapter's board. A
+ * member's read holds their own and, since #5473, the tasks a tier, role or
+ * group they're in follows: one who follows any gets the same choice, where
+ * Everyone's is everything they can read. Anyone else sees only their own.
  */
 type TasksView = "mine" | "all";
 /** How the chapter's board groups: its status lanes, or one group a person. */
@@ -199,7 +206,7 @@ type DueFilter = Exclude<TaskDueBucket, "earlier">;
 
 const VIEW_OPTIONS = [
   { value: "mine", label: "My tasks" },
-  { value: "all", label: "All tasks" },
+  { value: "all", label: "Everyone's" },
 ] as const;
 
 const GROUP_BY_OPTIONS = [
@@ -426,6 +433,9 @@ export function TasksBoard() {
   } | null>(null);
   // New task bumps it, which opens the add line's More (Paul, 2026-11-18).
   const [expandSignal, setExpandSignal] = useState(0);
+  // The add line shows once New task is pressed (#5578): at rest the first
+  // task is the first thing under the header, as Linear's list is.
+  const [adding, setAdding] = useState(false);
   // List groups opened past their first rows.
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -441,10 +451,9 @@ export function TasksBoard() {
   // an officer's own rows out of the chapter's board.
   const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
 
-  const [officerView, setOfficerView] = useState<TasksView>("all");
-  // Unpicked, a following member's page opens on My tasks, or on All tasks
-  // when nothing in their read is theirs, so it never opens empty.
-  const [memberPick, setMemberPick] = useState<TasksView | null>(null);
+  // Unpicked, the page opens on My tasks, or on Everyone's when nothing in
+  // the read is the viewer's, so it never opens on an empty page.
+  const [viewPick, setViewPick] = useState<TasksView | null>(null);
   // A member following someone else's task (#5473): their read holds it.
   const follows =
     !canManage &&
@@ -454,18 +463,23 @@ export function TasksBoard() {
     // keeps the officer's whole read, which this keeps from reading as a
     // follower's All tasks.
     tasks.every((task) => task.assignee_id === myUserId || !!task.followed_by);
-  const memberView: TasksView =
-    memberPick ??
-    (tasks.some((task) => task.assignee_id === myUserId) ? "mine" : "all");
+  // Until the account is known nothing reads as the viewer's, so an officer
+  // waits on My tasks (which says it is loading) rather than flash the
+  // chapter's board and jump.
+  const pickedView: TasksView =
+    viewPick ??
+    (myUserId === "" || tasks.some((task) => task.assignee_id === myUserId)
+      ? "mine"
+      : "all");
+  // Whether the View menu offers My tasks and Everyone's.
+  const canSwitchView = canManage || (permissionsKnown && follows);
   // While permissions are unknown (the read failed) the page can't tell an
   // officer from a member, so it keeps the status board it always drew,
-  // with no switch or chips, and the add row says why it isn't there.
-  const view: TasksView = canManage
-    ? officerView
+  // with no switch or filters, and the add row says why it isn't there.
+  const view: TasksView = canSwitchView
+    ? pickedView
     : permissionsKnown
-      ? follows
-        ? memberView
-        : "mine"
+      ? "mine"
       : "all";
   const [groupBy, setGroupBy] = useState<TasksGroupBy>("status");
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null);
@@ -706,9 +720,27 @@ export function TasksBoard() {
         });
       } else {
         await createTask.mutateAsync(create.body);
+        // Made on My tasks for someone else, it lands where this list doesn't
+        // show, so the toast offers the board it went to, as Linear's
+        // "Created issue" toast links to an issue outside the view.
+        const forViewer =
+          "assignee_id" in create.body &&
+          create.body.assignee_id === myUserId;
         toast({
           title: "Task created",
           description: `${create.body.title} is now assigned.`,
+          ...(view === "mine" && canSwitchView && !forViewer
+            ? {
+                action: (
+                  <ToastAction
+                    altText="Show everyone's tasks"
+                    onClick={() => setViewPick("all")}
+                  >
+                    Show everyone's
+                  </ToastAction>
+                ),
+              }
+            : {}),
         });
       }
       return true;
@@ -957,12 +989,15 @@ export function TasksBoard() {
   const addRow =
     canManage || !permissionsKnown ? (
       <Can permission="tasks:manage">
-        <AddTaskRow
-          gate={gate}
-          pending={createTask.isPending || createOpenTask.isPending}
-          onCreate={createFrom}
-          expandSignal={expandSignal}
-        />
+        <div hidden={canManage && !adding}>
+          <AddTaskRow
+            gate={gate}
+            pending={createTask.isPending || createOpenTask.isPending}
+            onCreate={createFrom}
+            expandSignal={expandSignal}
+            onDismiss={() => setAdding(false)}
+          />
+        </div>
       </Can>
     ) : null;
   // Two reads the board renders without, so neither blanks it (#1346, #1209).
@@ -1030,6 +1065,9 @@ export function TasksBoard() {
       gate,
       lifecycleWritePending,
       selected: opened?.kind === "task" && opened.id === task.id,
+      // My tasks lists the viewer's copy of a group task as theirs to do,
+      // and still says who else got it (#5699).
+      audience: view === "mine" ? copyAudience(task) : null,
       onOpen: () => setOpened({ kind: "task", id: task.id }),
       onChangeStatus: (next: TaskStatus, proof?: CompletionProof) =>
         changeStatus(task, next, proof),
@@ -1042,6 +1080,7 @@ export function TasksBoard() {
     assigneeName:
       membersByUserId.get(task.assignee_id) ??
       memberFallbackLabel(task.assignee_id),
+    audience: view === "mine" ? copyAudience(task) : null,
     myUserId,
     canManage,
     gate,
@@ -1118,34 +1157,60 @@ export function TasksBoard() {
         */
         <>
           {/*
-            View and New task are the page's actions, in its header beside
-            the X (Paul, 2026-11-19), where Linear's and Asana's sit. View is
-            one menu holding the grouping and List / Grid, as Linear's Display
-            menu holds both. Under the header, at most two rows over the
-            groups: the view switch (Asana's My tasks beside a project,
-            Linear's My issues beside the team's), then the chapter's board's
-            filter chips (Linear's Filter, as the Directory's chips draw
-            them). A member with no switch gets no rows at all.
+            View and New task are the page's actions, in the page header
+            beside the X (`page-actions.tsx`), where Linear's and Asana's sit.
+            View is the one menu for what the list shows (#5578, Paul,
+            2026-11-19), as Linear's Filter and Display sit under one
+            button: My tasks or Everyone's, then for the chapter's board its
+            grouping and the Assignee, Status and Due filters, then List or
+            Grid. It names the view it is on, so nobody wonders whose tasks
+            these are. Nothing sits between the header and the first task at
+            rest; a filter that is set draws one row of its chips, so it is
+            seen and cleared where it is.
           */}
-          {/* View and New task are the page's actions, in its header
-              (`page-actions.tsx`). */}
           <PageActions>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
                   size="toolbar"
-                  variant="secondary"
+                  variant={filtering ? "tinted" : "secondary"}
                   className="gap-1.5"
                 >
                   <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-                  View
+                  {canSwitchView
+                    ? (VIEW_OPTIONS.find((option) => option.value === view)
+                        ?.label ?? "View")
+                    : "View"}
+                  <ChevronDown
+                    className="h-3.5 w-3.5 opacity-70"
+                    aria-hidden="true"
+                  />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" collisionPadding={12}>
+                {canSwitchView ? (
+                  <>
+                    <DropdownMenuLabel>Show</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={view}
+                      onValueChange={(next) => setViewPick(next as TasksView)}
+                    >
+                      {VIEW_OPTIONS.map((option) => (
+                        <DropdownMenuRadioItem
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
                 {view === "all" && canManage ? (
                   <>
-                    <DropdownMenuLabel>Group tasks</DropdownMenuLabel>
+                    <DropdownMenuLabel>Group</DropdownMenuLabel>
                     <DropdownMenuRadioGroup
                       value={groupBy}
                       onValueChange={(next) => setGroupBy(next as TasksGroupBy)}
@@ -1159,6 +1224,36 @@ export function TasksBoard() {
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Filter</DropdownMenuLabel>
+                    <FilterSubmenu
+                      label="Assignee"
+                      anyLabel="Anyone"
+                      options={filterOptions.assignee}
+                      value={assigneeFilter}
+                      onChange={setAssigneeFilter}
+                    />
+                    <FilterSubmenu
+                      label="Status"
+                      anyLabel="Any status"
+                      options={filterOptions.status}
+                      value={statusFilter}
+                      onChange={(next) =>
+                        setStatusFilter(next as StatusFilter | null)
+                      }
+                    />
+                    <FilterSubmenu
+                      label="Due"
+                      anyLabel="Any time"
+                      options={filterOptions.due}
+                      value={dueFilter}
+                      onChange={(next) => setDueFilter(next as DueFilter | null)}
+                    />
+                    {filtering ? (
+                      <DropdownMenuItem onSelect={clearFilters}>
+                        Clear filters
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuSeparator />
                   </>
                 ) : null}
@@ -1183,60 +1278,63 @@ export function TasksBoard() {
                 type="button"
                 thing="task"
                 {...gate.controlProps()}
-                onClick={() => setExpandSignal((n) => n + 1)}
+                onClick={() => {
+                  setAdding(true);
+                  setExpandSignal((n) => n + 1);
+                }}
               />
             ) : null}
           </PageActions>
-          {canManage || (permissionsKnown && follows) ? (
-            <div className="grid gap-2">
-              <SegmentedChoice
-                label="Whose tasks"
-                options={VIEW_OPTIONS}
-                value={view}
-                onChange={canManage ? setOfficerView : setMemberPick}
-              />
-              {view === "all" && canManage ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <FilterChip
-                    label="Assignee"
-                    anyLabel="Anyone"
-                    options={filterOptions.assignee}
-                    value={assigneeFilter}
-                    onChange={setAssigneeFilter}
-                  />
-                  <FilterChip
-                    label="Status"
-                    anyLabel="Any status"
-                    options={filterOptions.status}
-                    value={statusFilter}
-                    onChange={(next) =>
-                      setStatusFilter(next as StatusFilter | null)
-                    }
-                  />
-                  <FilterChip
-                    label="Due"
-                    anyLabel="Any time"
-                    options={filterOptions.due}
-                    value={dueFilter}
-                    onChange={(next) => setDueFilter(next as DueFilter | null)}
-                  />
-                  {filtering ? (
-                    <Button
-                      type="button"
-                      size="toolbar"
-                      variant="ghost"
-                      onClick={clearFilters}
-                    >
-                      Clear filters
-                    </Button>
-                  ) : null}
-                </div>
+          {filtering ? (
+            <div
+              role="group"
+              aria-label="Filters"
+              className="flex flex-wrap items-center gap-2"
+            >
+              {assigneeFilter !== null ? (
+                <FilterChip
+                  label="Assignee"
+                  anyLabel="Anyone"
+                  options={filterOptions.assignee}
+                  value={assigneeFilter}
+                  onChange={setAssigneeFilter}
+                />
               ) : null}
+              {statusFilter !== null ? (
+                <FilterChip
+                  label="Status"
+                  anyLabel="Any status"
+                  options={filterOptions.status}
+                  value={statusFilter}
+                  onChange={(next) =>
+                    setStatusFilter(next as StatusFilter | null)
+                  }
+                />
+              ) : null}
+              {dueFilter !== null ? (
+                <FilterChip
+                  label="Due"
+                  anyLabel="Any time"
+                  options={filterOptions.due}
+                  value={dueFilter}
+                  onChange={(next) => setDueFilter(next as DueFilter | null)}
+                />
+              ) : null}
+              <Button
+                type="button"
+                size="toolbar"
+                variant="ghost"
+                onClick={clearFilters}
+              >
+                Clear filters
+              </Button>
             </div>
           ) : null}
           {/*
             Rule 2: the first action sits where the first item goes, so the
-            add line heads the list, as Todoist's quick add does.
+            add line heads the list once New task opens it, as Todoist's quick
+            add does. Hidden, not unmounted, when put away, so a half-typed
+            task is still there next time (rulebook: keep the draft).
           */}
           {addRow}
           <UpForGrabs
@@ -1485,6 +1583,7 @@ function TaskCard({
   task,
   showStatus = false,
   assigneeName,
+  audience = null,
   myUserId,
   canManage,
   gate,
@@ -1503,6 +1602,8 @@ function TaskCard({
    */
   showStatus?: boolean;
   assigneeName: string;
+  /** My tasks: a group copy names who it went to, not the viewer (#5699). */
+  audience?: CopyAudience | null;
   myUserId: string;
   /** Holds `tasks:manage`: may check off and edit anyone's subtasks. */
   canManage: boolean;
@@ -1580,7 +1681,16 @@ function TaskCard({
             <span aria-hidden="true">·</span>
           </>
         ) : null}
-        <span className="min-w-0 truncate">{assigneeName}</span>
+        {audience ? (
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <Users className="h-3 w-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">
+              {`${audience.label} · ${TASK_AUDIENCE_COPY.progress(audience.done, audience.total)}`}
+            </span>
+          </span>
+        ) : (
+          <span className="min-w-0 truncate">{assigneeName}</span>
+        )}
         {task.followed_by ? (
           <FollowerChip name={task.followed_by_name} className="ml-1" />
         ) : null}
@@ -1978,5 +2088,58 @@ function ProofBadge({ kind }: { kind?: string | null }) {
       )}
       {kind === "photo" ? "Photo required" : "Link required"}
     </Badge>
+  );
+}
+
+/** The radio value for a filter's "any" row; no option's value can be it. */
+const ANY_FILTER = "\u0000any";
+
+/**
+ * One filter inside the View menu (#5578): "Assignee · Anyone" opens a side
+ * list of the values some task has, as Linear's Filter menu nests each
+ * property's values. The list is a menu, so typing a name's first letters
+ * jumps to it, and a long roster scrolls in place.
+ */
+function FilterSubmenu({
+  label,
+  anyLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  anyLabel: string;
+  options: FilterOption[];
+  value: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  const current =
+    value === null
+      ? anyLabel
+      : (options.find((option) => option.value === value)?.label ?? anyLabel);
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <span>{label}</span>
+        <span className="ml-auto max-w-[9rem] truncate pl-4 text-muted-foreground">
+          {current}
+        </span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-80 overflow-y-auto">
+        <DropdownMenuRadioGroup
+          value={value ?? ANY_FILTER}
+          onValueChange={(next) => onChange(next === ANY_FILTER ? null : next)}
+        >
+          <DropdownMenuRadioItem value={ANY_FILTER}>
+            {anyLabel}
+          </DropdownMenuRadioItem>
+          {options.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              {option.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }

@@ -179,6 +179,61 @@ describe("TaskRow — a task a group follows (#5473)", () => {
   });
 });
 
+describe("TaskRow — a copy of a group task (#5699)", () => {
+  it("names who it went to and how far they are, not the member alone", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          dueDate: "2026-09-30",
+          groupId: "group-1",
+          group: {
+            audience: "everyone",
+            targetId: null,
+            targetName: null,
+            total: 20,
+            done: 14,
+            confirmed: 9,
+          },
+        })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
+    );
+    expect(texts(tree)).toContain("Due Sep 30 · Everyone · 14 of 20 done");
+  });
+
+  it("names the role, tier or group a copy went to", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          dueDate: "2026-09-30",
+          groupId: "group-2",
+          group: {
+            audience: "tier",
+            targetId: "t-exec",
+            targetName: "Exec board",
+            total: 4,
+            done: 1,
+            confirmed: 0,
+          },
+        })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
+    );
+    expect(texts(tree)).toContain(
+      "Due Sep 30 · Everyone in Exec board · 1 of 4 done",
+    );
+  });
+
+  it("says nothing of it on a task for one person", () => {
+    const tree = render(
+      <TaskRow row={row({ dueDate: "2026-09-30" })} now={NOW} onToggle={() => {}} />,
+    );
+    expect(texts(tree).join(" ")).not.toContain("Everyone");
+  });
+});
+
 // A task row is a list row, so it answers a press as every list row does
 // (`usePressFeedback`, through `PressableRow`): a ripple on Android and a lift
 // to the card step on iOS. Never the fade it used to give. Since 2026-11-05 the

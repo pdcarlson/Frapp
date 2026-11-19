@@ -67,6 +67,11 @@ These cause most of the iterations, so they come first.
   title and the close at every width. Until #5686 merges, `PageActions` still draws its own row, so a
   page built before then is checked again after. Only a control that needs the page's width (Points'
   window switch) stays in the body. (11-19, P8.1)
+- **A list opens on the viewer's own items, and nothing sits between the header and the first item at
+  rest.** Whose items, grouping, filters and layout are one View menu in the header, named for the view
+  it is on; a set filter shows as one row of its chips; a create row appears only after New is
+  pressed. Tasks is the first (#5578; Shawn: "it should default to my tasks, not all tasks"). (11-19,
+  P8.1)
 - **One create button, one look, everywhere.** Every "New …" action is the same shared component with
   the same icon, style and wording pattern ("New event", "New minutes", "New task"), on web and phone.
   A filled pill on one page and an outlined button on the next is a defect. On web it is
