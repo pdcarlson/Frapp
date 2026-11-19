@@ -1986,6 +1986,61 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
   });
 
+  it("gives a member who follows a task My tasks and All tasks (#5473)", async () => {
+    const user = userEvent.setup();
+    permissionsRef.current = ["members:view"];
+    // A member's read: their own, and what their tier follows.
+    tasksRef.current = [
+      ...ROWS.filter((row) => row.assignee_id === ME),
+      {
+        ...ROWS[1]!,
+        id: "followed-1",
+        title: "Book the retreat",
+        assignee_id: "u-someone-else",
+        followed_by: "tier:0f000000-0000-4000-8000-000000000001",
+        followed_by_name: "Exec board",
+      },
+    ];
+    render(<TasksBoard />);
+    // My tasks first: the followed task isn't theirs.
+    expect(screen.queryByText("Book the retreat")).toBeNull();
+
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Whose tasks" })).getByRole(
+        "radio",
+        { name: "All tasks" },
+      ),
+    );
+    expect(screen.getByText("Book the retreat")).toBeInTheDocument();
+    expect(screen.getAllByText("From Exec board").length).toBeGreaterThan(0);
+    // The chapter's filters stay an officer's.
+    expect(screen.queryByRole("button", { name: "Assignee" })).toBeNull();
+  });
+
+  it("opens a follower with nothing of their own on All tasks, and keeps a role preview on My tasks (#5473)", () => {
+    permissionsRef.current = ["members:view"];
+    const followed = {
+      ...ROWS[1]!,
+      id: "followed-2",
+      title: "Book the retreat",
+      assignee_id: "u-someone-else",
+      followed_by: "tier:0f000000-0000-4000-8000-000000000001",
+      followed_by_name: "Exec board",
+    };
+    tasksRef.current = [followed];
+    const { unmount } = render(<TasksBoard />);
+    expect(screen.getByText("Book the retreat")).toBeInTheDocument();
+    unmount();
+
+    // View as a role keeps the officer's whole read: no follower switch.
+    tasksRef.current = [...ROWS, followed];
+    render(<TasksBoard />);
+    expect(
+      screen.queryByRole("radiogroup", { name: "Whose tasks" }),
+    ).toBeNull();
+    expect(screen.queryByText("Book the retreat")).toBeNull();
+  });
+
   it("says My tasks is loading while an officer's account is unknown", async () => {
     const user = userEvent.setup();
     currentUserRef.current = undefined;
