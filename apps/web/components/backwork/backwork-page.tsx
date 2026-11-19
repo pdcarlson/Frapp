@@ -138,13 +138,13 @@ const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
 
 /*
  * Columns from a 896px page (`@4xl`; the page root is a container, #4022,
- * and the fixed columns alone take ~700px). Below it a row stacks: title and course, then one
+ * and the fixed columns alone take ~760px; the Added column fits a written-out date such as "November 6, 2025"). Below it a row stacks: title and course, then one
  * wrapping line of tag, professor, term, copy and date, with the actions on
  * the right. The meta wrapper is `@4xl:contents`, so there its children become
  * grid cells and `@4xl:order-*` puts the type tag in the first column.
  */
 const ROW_GRID =
-  "@4xl:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
+  "@4xl:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_120px_76px]";
 
 
 /**

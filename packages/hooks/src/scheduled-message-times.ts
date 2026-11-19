@@ -7,6 +7,8 @@
  * own, and what the API stores is the instant.
  */
 
+import { formatWeekdayDay } from "@repo/formatting";
+
 /** What the presets send at: 9 AM, Slack's default. */
 const SCHEDULE_PRESET_HOUR = 9;
 /** The furthest ahead the API takes a message, in days. */
@@ -77,13 +79,7 @@ export function formatScheduledFor(at: Date, now: Date): string {
   const time = formatScheduleTime(at);
   if (sameDay(at, now)) return `Today at ${time}`;
   if (sameDay(at, addDays(now, 1))) return `Tomorrow at ${time}`;
-  const day = new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
-  }).format(at);
-  return `${day} at ${time}`;
+  return `${formatWeekdayDay(at, now) ?? ""} at ${time}`;
 }
 
 /**

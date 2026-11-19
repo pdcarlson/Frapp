@@ -208,7 +208,7 @@ export function resolveDue(choice: DueChoice, now: Date): ResolvedDue {
 }
 
 /**
- * The drawn date-field label — "Fri, Aug 21".
+ * The drawn date-field label — "Friday, August 21".
  *
  * Parsed at local noon so a bare `YYYY-MM-DD` renders as its own day in every
  * zone, the same fix `lib/more/service-hours.ts` documents.

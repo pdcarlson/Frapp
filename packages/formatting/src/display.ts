@@ -1,8 +1,8 @@
 /**
  * The house date shapes: how a screen prints a day, a time or a span of them.
  *
- * Every helper here writes the date out, never abbreviated (owner rule,
- * 2026-11-07, re-stated 2026-11-19 in the UI rulebook § 6): the month and day
+ * Every helper here writes the date out, never abbreviated
+ * (`spec/ui/design-system/writing.md` § 5a): the month and day
  * ("November 6"), a weekday where the day matters ("Friday, November 6"), the
  * time after a middle dot ("Friday, November 6 · 5:00 PM"), and an en-dashed range that says the
  * day period once ("5:00 – 7:00 PM"). None prints seconds, and none prints a
@@ -39,22 +39,13 @@ function sameYear(at: Date, now: Date): boolean {
   return at.getFullYear() === now.getFullYear();
 }
 
-function monthDay(at: Date, now: Date): string {
+function monthDay(
+  at: Date,
+  now: Date,
+  month: "long" | "short" = "long",
+): string {
   return at.toLocaleDateString(undefined, {
-    month: "long",
-    day: "numeric",
-    ...(sameYear(at, now) ? {} : { year: "numeric" }),
-  });
-}
-
-/**
- * `"Nov 6"`: the one abbreviated date left, for the Messages list's last-sent
- * time, which sits at the end of a name line as a messaging app's inbox does
- * (#5519, `spec/ui/mobile/screens.md`). Nothing else takes it.
- */
-function inboxMonthDay(at: Date, now: Date): string {
-  return at.toLocaleDateString(undefined, {
-    month: "short",
+    month,
     day: "numeric",
     ...(sameYear(at, now) ? {} : { year: "numeric" }),
   });
@@ -256,7 +247,8 @@ export function formatConversationTime(
   if (days >= 0) return time(at);
   if (days === -1) return "Yesterday";
   if (days > -7) return weekdayName(at);
-  return inboxMonthDay(at, now);
+  // The inbox keeps the short date (#5519, writing.md § 5a).
+  return monthDay(at, now, "short");
 }
 
 /**
@@ -277,11 +269,7 @@ export function formatDayHeading(
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
   if (days > 1 && days < 7) return weekdayName(at);
-  return at.toLocaleDateString(undefined, {
-    month: "long",
-    day: "numeric",
-    ...(sameYear(at, now) ? {} : { year: "numeric" }),
-  });
+  return monthDay(at, now);
 }
 
 /**

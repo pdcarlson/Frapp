@@ -370,6 +370,8 @@ function createStyles(tokens: SignetTokens) {
     },
     whenRow: {
       flexDirection: "row",
+      // The written-out day can push the time pill off a narrow phone.
+      flexWrap: "wrap",
       alignItems: "center",
       gap: tokens.spacing.sm,
     },
