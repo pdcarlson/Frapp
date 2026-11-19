@@ -104,6 +104,10 @@ export function SectionCount({ count }: { count: number | string }) {
  * A {@link SectionHeader} that hasn't loaded, for a screen whose captions come
  * from its data (Notifications' Today / Earlier). A screen whose caption is
  * fixed draws the real {@link SectionHeader} in its skeleton instead.
+ *
+ * A caption heads its cards rather than sitting in one, so its bar is
+ * `flush`: one step above the page or sheet, not the step above a card
+ * (#5109).
  */
 export function SectionHeaderSkeleton({
   width = "18%",
@@ -117,6 +121,7 @@ export function SectionHeaderSkeleton({
       role={tokens.typography.role.caption}
       width={width}
       style={styles.sectionHeaderSkeleton}
+      flush
     />
   );
 }

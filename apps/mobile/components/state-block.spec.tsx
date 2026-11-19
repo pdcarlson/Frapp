@@ -36,7 +36,9 @@ import {
   SkeletonBlock,
   SkeletonLines,
   SkeletonRegion,
+  SkeletonText,
 } from "./state-block";
+import { SectionHeaderSkeleton } from "./list-section";
 
 /**
  * These pin the two rules §10 states that are easy to get wrong by copying the
@@ -86,6 +88,60 @@ function texts(tree: ReactTestRenderer): string[] {
     );
 }
 
+/** Each skeleton block's fill, in render order. */
+function blockFills(tree: ReactTestRenderer): unknown[] {
+  return tree.root
+    .findAllByType("Animated.View" as unknown as React.ComponentType)
+    .map((view) => flatten(view.props.style).backgroundColor);
+}
+
+/**
+ * #5109. On a phone screen a card is `surface1`, one step above the page,
+ * and a bar on it takes `card`. A bar straight on the page with no card
+ * under it took `card` too, two steps up, louder than what it stands for.
+ */
+describe("on a page", () => {
+  const { surface } = signetDarkTokens.color;
+
+  it("draws flush bars one step above the page", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading messages" flush>
+          <SkeletonBlock width={32} height={32} />
+          <SkeletonText
+            role={signetDarkTokens.typography.role.body}
+            width="60%"
+          />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.surface1, surface.surface1]);
+  });
+
+  it("keeps bars on a card one step above the card", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading">
+          <SkeletonBlock width="60%" height={12} />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.card]);
+  });
+
+  it("draws a section caption's bar flush, whatever its region says", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading tasks">
+          <SectionHeaderSkeleton />
+          <SkeletonBlock width="60%" height={12} />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.surface1, surface.card]);
+  });
+});
+
 /**
  * #4690. A sheet's fill is `popover`, the top of the ladder, and a sheet's
  * "step above a card" is `popover` too. So a bar drawn straight on the sheet
@@ -103,12 +159,6 @@ describe("in a sheet", () => {
     } finally {
       vi.mocked(useBottomSheetInternal).mockReturnValue(null);
     }
-  }
-
-  function blockFills(tree: ReactTestRenderer): unknown[] {
-    return tree.root
-      .findAllByType("Animated.View" as unknown as React.ComponentType)
-      .map((view) => flatten(view.props.style).backgroundColor);
   }
 
   it("draws flush rows' bars a step under the sheet, never in its own fill", () => {
