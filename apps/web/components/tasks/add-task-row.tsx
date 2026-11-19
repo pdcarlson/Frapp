@@ -7,11 +7,16 @@ import type { CreateOpenTaskBody } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import { dueEntryPassed } from "@/components/tasks/due-date-field";
 import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
+import {
+  FollowerSelect,
+  useFollowerChoices,
+} from "@/components/tasks/task-follower";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import {
   EMPTY_TASK_PHOTO_DRAFT,
@@ -23,6 +28,7 @@ import {
 } from "@/components/tasks/task-photo";
 import {
   TASK_AUDIENCE_COPY,
+  TASK_FOLLOWER_COPY,
   noTaskRepeatDraft,
   taskFirstDue,
   taskRepeatRuleOf,
@@ -51,6 +57,8 @@ type NewTaskBody = {
   proof_kind?: TaskProofKind;
   /** Repeat on this rule (#5119); the task is the series' first copy. */
   recurrence_rule?: string;
+  /** The tier, role or group it is from (#5473). */
+  followed_by?: string;
 } & TaskWhoTaskFields;
 
 /**
@@ -69,6 +77,8 @@ const EMPTY = {
   points: "",
   subtasks: [] as string[],
   repeat: noTaskRepeatDraft() as RepeatDraft,
+  /** From (#5473): a tier, role or group the officer is in, or just them. */
+  followedBy: null as string | null,
   ...EMPTY_TASK_PHOTO_DRAFT,
 };
 
@@ -200,6 +210,11 @@ export function AddTaskRow({
           ...request!.fields,
           reference_photo_paths: referencePhotoPaths,
           recurrence_rule: repeat?.ok ? (repeat.rule ?? undefined) : undefined,
+          // A repeating task can't be from a group yet; the field says so.
+          followed_by:
+            draft.followedBy && !(repeat?.ok && repeat.rule)
+              ? draft.followedBy
+              : undefined,
         },
       });
     }
@@ -208,6 +223,14 @@ export function AddTaskRow({
     setMissing({});
     titleRef.current?.focus();
   }
+
+  const followerChoices = useFollowerChoices();
+  // Up for grabs has no From: once claimed it is the claimer's own task.
+  const someone = draft.who?.kind === "someone";
+  const firstDueNow = firstDueOf(draft.due, draft.repeat.timeZone);
+  const repeatRule =
+    single && firstDueNow ? taskRepeatRuleOf(draft.repeat, firstDueNow) : null;
+  const repeating = !!(repeatRule?.ok && repeatRule.rule);
 
   const dirty =
     draft.title !== "" || draft.who !== null || draft.due !== "" || draft.points !== "";
@@ -391,6 +414,36 @@ export function AddTaskRow({
           )}
           {missing.repeat && single ? (
             <p className="text-caption text-destructive-text">{missing.repeat}</p>
+          ) : null}
+          {followerChoices.length > 0 && !someone ? (
+            <div className="grid gap-1">
+              <div className="flex items-center gap-2">
+                <Label htmlFor={`${ids}-from`} className="text-sm">
+                  {TASK_FOLLOWER_COPY.field}
+                </Label>
+                <FollowerSelect
+                  id={`${ids}-from`}
+                  value={repeating ? null : draft.followedBy}
+                  choices={followerChoices}
+                  disabled={busy || repeating}
+                  onChange={(followedBy) =>
+                    setDraft((prev) => ({ ...prev, followedBy }))
+                  }
+                  className="h-8 w-fit min-w-[10rem]"
+                />
+              </div>
+              <p className="text-caption text-muted-foreground">
+                {repeating
+                  ? TASK_FOLLOWER_COPY.noRepeat
+                  : draft.followedBy
+                    ? TASK_FOLLOWER_COPY.hint(
+                        followerChoices.find(
+                          (choice) => choice.entry === draft.followedBy,
+                        )?.name ?? TASK_FOLLOWER_COPY.deleted,
+                      )
+                    : null}
+              </p>
+            </div>
           ) : null}
           <TaskPhotoFields
             id={`${ids}-photos`}

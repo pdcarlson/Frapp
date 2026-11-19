@@ -310,3 +310,38 @@ describe("AddTaskRow for many people (#4295 step 3, 2026-11-18)", () => {
     });
   });
 });
+
+describe("AddTaskRow From (#5473)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Radix Select reads these, which jsdom lacks.
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.releasePointerCapture ??= () => undefined;
+    Element.prototype.scrollIntoView ??= () => undefined;
+  });
+
+  it("sends the role the officer picked under From, and nothing for Just you", async () => {
+    const onCreate = renderRow();
+    openMore();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Book the bus" },
+    });
+    await pickPerson(/Sam Lee/);
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "Dec 31 2099" },
+    });
+    const from = screen.getByRole("combobox", { name: "From" });
+    expect(from).toHaveTextContent("Just you");
+
+    await userEvent.click(from);
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Recruitment Chair · 2" }),
+    );
+    expect(
+      screen.getByText(/Everyone in Recruitment Chair can see this task/),
+    ).toBeInTheDocument();
+    fireEvent.click(add());
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(onCreate.mock.calls[0]![0].body.followed_by).toBe("role:role-rush");
+  });
+});

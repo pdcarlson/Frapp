@@ -55,6 +55,12 @@ export type BoardTask = {
   } | null;
   /** The Up for grabs posting it was claimed from (2026-11-18), if any. */
   open_task_id?: string | null;
+  /**
+   * The tier, role or group it is from (#5473), `tier:<id>` and the like,
+   * and that one's name now (null once deleted).
+   */
+  followed_by?: string | null;
+  followed_by_name?: string | null;
 };
 
 /**

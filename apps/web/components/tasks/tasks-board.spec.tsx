@@ -1986,6 +1986,36 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
   });
 
+  it("gives a member who follows a task My tasks and All tasks (#5473)", async () => {
+    const user = userEvent.setup();
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = [
+      ...ROWS,
+      {
+        ...ROWS[1]!,
+        id: "followed-1",
+        title: "Book the retreat",
+        assignee_id: "u-someone-else",
+        followed_by: "tier:0f000000-0000-4000-8000-000000000001",
+        followed_by_name: "Exec board",
+      },
+    ];
+    render(<TasksBoard />);
+    // My tasks first: the followed task isn't theirs.
+    expect(screen.queryByText("Book the retreat")).toBeNull();
+
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Whose tasks" })).getByRole(
+        "radio",
+        { name: "All tasks" },
+      ),
+    );
+    expect(screen.getByText("Book the retreat")).toBeInTheDocument();
+    expect(screen.getAllByText("From Exec board").length).toBeGreaterThan(0);
+    // The chapter's filters stay an officer's.
+    expect(screen.queryByRole("button", { name: "Assignee" })).toBeNull();
+  });
+
   it("says My tasks is loading while an officer's account is unknown", async () => {
     const user = userEvent.setup();
     currentUserRef.current = undefined;

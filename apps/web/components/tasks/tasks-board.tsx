@@ -90,6 +90,7 @@ import {
   actionStatus,
   canReopenOwnTask,
 } from "@repo/hooks";
+import { FollowerChip } from "@/components/tasks/task-follower";
 import { asArray, cn } from "@/lib/utils";
 import { TASKS_GROUP_PARAM, TASKS_TASK_PARAM } from "@/lib/tasks/task-links";
 import { taskDueClause } from "./task-due";
@@ -182,9 +183,11 @@ function isOpenStatus(status: TaskStatus): boolean {
 }
 
 /**
- * Whose tasks the page shows (#4295 step 5). A member's read holds only their
- * own, so they always see My tasks; an officer switches between their own and
- * the chapter's board, which stays where they land, as before.
+ * Whose tasks the page shows (#4295 step 5). An officer switches between
+ * their own and the chapter's board, which stays where they land, as before.
+ * A member's read holds their own and, since #5473, the tasks a tier, role
+ * or group they're in follows: one who follows any gets the same switch,
+ * where All tasks is everything they can read. Anyone else sees My tasks.
  */
 type TasksView = "mine" | "all";
 /** How the chapter's board groups: its status lanes, or one group a person. */
@@ -436,13 +439,21 @@ export function TasksBoard() {
   const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
 
   const [officerView, setOfficerView] = useState<TasksView>("all");
+  const [memberView, setMemberView] = useState<TasksView>("mine");
+  // A member following someone else's task (#5473): their read holds it.
+  const follows =
+    !canManage &&
+    myUserId !== "" &&
+    tasks.some((task) => !!task.followed_by && task.assignee_id !== myUserId);
   // While permissions are unknown (the read failed) the page can't tell an
   // officer from a member, so it keeps the status board it always drew,
   // with no switch or chips, and the add row says why it isn't there.
   const view: TasksView = canManage
     ? officerView
     : permissionsKnown
-      ? "mine"
+      ? follows
+        ? memberView
+        : "mine"
       : "all";
   const [groupBy, setGroupBy] = useState<TasksGroupBy>("status");
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null);
@@ -1104,12 +1115,12 @@ export function TasksBoard() {
           */}
           <div className="grid gap-2">
             <div className="flex items-center gap-2">
-              {canManage ? (
+              {canManage || (permissionsKnown && follows) ? (
                 <SegmentedChoice
                   label="Whose tasks"
                   options={VIEW_OPTIONS}
                   value={view}
-                  onChange={setOfficerView}
+                  onChange={canManage ? setOfficerView : setMemberView}
                 />
               ) : null}
               <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -1565,6 +1576,9 @@ function TaskCard({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {task.followed_by ? (
+          <FollowerChip name={task.followed_by_name} className="ml-1" />
+        ) : null}
         {/* No `·` before it either: its ↻ separates it, as the checklist's
             icon does (#5119). */}
         {taskSeriesLive(task.series) ? (
@@ -1845,6 +1859,9 @@ function GroupTaskCard({
               <Users className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span className="truncate">{label}</span>
             </span>
+            {task.followed_by ? (
+              <FollowerChip name={task.followed_by_name} className="ml-1" />
+            ) : null}
             {task.point_reward ? (
               <Badge className="ml-1">
                 {formatPointsChip(task.point_reward)}
