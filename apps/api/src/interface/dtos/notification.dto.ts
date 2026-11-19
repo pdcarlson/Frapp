@@ -4,7 +4,6 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
@@ -103,7 +102,7 @@ export class RegisterPushTokenDto {
       "Whether the phone lets Frapp's notifications show right now (the OS permission, and on Android the app's notification channel). Sent on every register so officers can see who a push reaches. Omitted by older builds, which leaves the stored value as it was.",
   })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   notifications_enabled?: boolean;
 }
 
