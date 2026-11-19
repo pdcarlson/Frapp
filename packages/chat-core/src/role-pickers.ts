@@ -71,9 +71,10 @@ export interface RolePickerRoleState {
  * One row of the card for this viewer:
  *
  * - `join`: a role they may join and don't hold;
- * - `leave`: a role they hold and may leave;
- * - `closed`: a role still in the chapter they can't join now (an officer
- *   unmarked it, or the viewer is an alum), drawn without a button.
+ * - `leave`: a role they hold and may leave (still marked, #5650);
+ * - `closed`: a role still in the chapter they can't join or leave now (an
+ *   officer unmarked it, or the viewer is an alum who doesn't hold it), drawn
+ *   without a button.
  *
  * A role deleted since the card was posted is left out.
  */

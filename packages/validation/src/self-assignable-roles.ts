@@ -75,14 +75,14 @@ export function selfAssignableRefusal(
 /**
  * The member-facing picker's words (#4958), one copy for web and the phone:
  * the onboarding step's title, the line under it and the pickers' hint, and
- * the caption under a role the member holds but can't join again (one an
- * officer stopped offering, or any picked role once they're an alum).
- * `spec/ui/design-system/writing.md` § Pick your roles.
+ * the caption under a role an alum holds, which they may leave but not join
+ * again. A role an officer stopped offering isn't listed: only an officer
+ * takes it off (#5650). `spec/ui/design-system/writing.md` § Pick your roles.
  */
 export const PICK_ROLES_COPY = {
   title: "Pick your roles",
-  lede: "Pick what you're into. Each role adds its channels to Chat, and you can leave any time.",
-  leaveOnly: "No longer open to join. You can leave it.",
+  lede: "Pick what you're into. Each role adds its channels to Chat, and you can leave it here while it's offered.",
+  leaveOnly: "Alumni don't join roles. You can leave this one.",
 } as const;
 
 export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
