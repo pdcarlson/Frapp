@@ -490,9 +490,28 @@ describe("EventsPage list", () => {
     const text = row(/chapter meeting/i).textContent ?? "";
     expect(text).toContain("Great Hall");
     expect(text).toContain("5 points");
-    expect(text).toContain("12:00 PM");
+    // Start to end, the day period said once (2026-11-19).
+    expect(text).toMatch(/12:00 – \d{1,2}:\d{2} PM/);
     expect(text).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
     expect(text).not.toMatch(/:\d\d:\d\d/);
+  });
+
+  it("says check-in is open on a row while it lasts, as the phone's row does (2026-11-19)", () => {
+    const now = Date.now();
+    eventsQuery.data = [
+      {
+        ...EVENTS[1],
+        id: "evt-now",
+        name: "Pickup Game",
+        start_time: new Date(now - 5 * 60 * 1000).toISOString(),
+        end_time: new Date(now + 55 * 60 * 1000).toISOString(),
+      },
+      EVENTS[0],
+    ];
+    render(<EventsPage />);
+
+    expect(row(/pickup game/i).textContent).toContain("Check-in is open");
+    expect(row(/chapter meeting/i).textContent).not.toContain("Check-in");
   });
 
   it("opens the details from the row itself", async () => {

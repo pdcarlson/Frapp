@@ -25,7 +25,7 @@ import { readEventPayload } from "@repo/chat-core/cards";
 import {
   can,
   CHECK_IN_MODULE_OFF_LINE,
-  checkInWindowBounds,
+  checkInOpenAt,
   isModuleEnabled,
 } from "@repo/validation";
 import {
@@ -116,14 +116,11 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   // past event cards reads nothing for them.
   const start = parseInstant(payload?.start_time);
   const end = parseInstant(payload?.end_time);
-  const bounds =
-    payload && start && end
-      ? checkInWindowBounds(start, end, payload.check_in_opens_minutes)
-      : null;
   const windowOpen =
-    !!bounds &&
-    now >= bounds.opensAt.getTime() &&
-    now <= bounds.closesAt.getTime();
+    !!payload &&
+    !!start &&
+    !!end &&
+    checkInOpenAt(start, end, payload.check_in_opens_minutes, now);
   const liveId = windowOpen && !eventsOff ? eventId : "";
   const mine = useMyAttendance(liveId);
   const eventQuery = useEvent(liveId);

@@ -1,5 +1,5 @@
 import { parseInstant } from "@repo/formatting";
-import { checkInWindowBounds } from "@repo/validation";
+import { checkInOpenAt, checkInWindowBounds } from "@repo/validation";
 
 /**
  * When check-in closes, while that is still ahead; `null` once it has passed
@@ -17,4 +17,20 @@ export function checkInClosesAt(eventEnd: unknown, now: number): Date | null {
   if (!end) return null;
   const { closesAt } = checkInWindowBounds(end, end, undefined);
   return now < closesAt.getTime() ? closesAt : null;
+}
+
+/**
+ * Whether the event takes check-ins right now (`checkInOpenAt`, the rule the
+ * API enforces): what the agenda row's "Check-in
+ * is open" reads, as the phone's event row says it (2026-11-19).
+ */
+export function checkInOpenNow(
+  eventStart: unknown,
+  eventEnd: unknown,
+  opensMinutes: unknown,
+  now: number,
+): boolean {
+  const start = parseInstant(eventStart);
+  const end = parseInstant(eventEnd);
+  return !!start && !!end && checkInOpenAt(start, end, opensMinutes, now);
 }

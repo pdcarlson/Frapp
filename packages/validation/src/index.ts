@@ -250,6 +250,7 @@ export * from "./task-audience";
 export * from "./task-follower";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
+export * from "./task-row-facts";
 // Who a suggested task names, guessed from its own words (Paul, 2026-11-18).
 export * from "./task-suggestion-guess";
 export * from "./thumbhash";

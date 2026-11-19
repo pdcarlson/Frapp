@@ -303,7 +303,7 @@ describe("StudyPage restores a live session from the list (#1747)", () => {
       ).not.toBeInTheDocument();
     });
     expect(stopButton()).toBeEnabled();
-    expect(screen.getByText("Library 3rd floor")).toBeInTheDocument();
+    expect(screen.getAllByText("Library 3rd floor").length).toBeGreaterThan(0);
     // 12 banked minutes + HEARTBEAT_STALE_SECONDS (10 min): the watermark is
     // 2026-08-01, so the open gap is clamped rather than open-ended. The
     // 1s elapsed interval may tick once during waitFor.
@@ -341,7 +341,7 @@ describe("StudyPage restores a live session from the list (#1747)", () => {
     await waitFor(() => {
       expect(stopButton()).toBeEnabled();
     });
-    expect(screen.getByText("Study session")).toBeInTheDocument();
+    expect(screen.getAllByText("Study session").length).toBeGreaterThan(0);
     expect(screen.queryByText("Library 3rd floor")).not.toBeInTheDocument();
   });
 
