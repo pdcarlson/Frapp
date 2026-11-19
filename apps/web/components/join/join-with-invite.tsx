@@ -22,6 +22,7 @@ import {
 import type { ChapterMembershipSummary } from "@repo/hooks";
 import { extractInviteToken, inviteJoinFailureReason } from "@repo/validation";
 import { AppHandoff } from "@/components/auth/app-handoff";
+import { WELCOME_PATH } from "@/lib/auth/join-visit";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { SignedInAs } from "@/components/auth/signed-in-as";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
@@ -209,7 +210,8 @@ export function JoinWithInvite({ token }: { token: string }) {
         const chapterId = redeemChapterId(result) ?? card.chapter_id;
         await selectChapter(chapterId);
         toast({ title: `Welcome to ${card.chapter_name}` });
-        router.replace("/chat");
+        // Their name and photo first, then chat (#5627).
+        router.replace(WELCOME_PATH);
         router.refresh();
       } catch (error) {
         // Already in, from another tab's join or an earlier visit: open it.

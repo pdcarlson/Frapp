@@ -49,6 +49,7 @@ import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
   CREATE_CHAPTER_PATH,
   JOIN_FROM_SIGN_IN_PATH,
+  WELCOME_PATH,
   isJoinSkipCandidate,
   shouldSkipJoinForMember,
 } from "@/lib/auth/join-visit";
@@ -297,12 +298,12 @@ function JoinWithoutInvite() {
       joined = await joinWith(extracted, onError);
     } finally {
       // A join that landed keeps the page locked: `router.replace` only starts
-      // the navigation, and this page stays mounted until `/chat` arrives.
+      // the navigation, and this page stays mounted until `/welcome` arrives.
       if (!joined) setBusy(false);
     }
   }
 
-  /** True once the member is in and the page is on its way to `/chat`. */
+  /** True once the member is in and the page is on its way to `/welcome`. */
   async function joinWith(
     extracted: string,
     onError: (copy: string) => void,
@@ -319,11 +320,9 @@ function JoinWithoutInvite() {
         await selectChapter(chapterId);
       }
 
-      toast({
-        title: "Chapter joined",
-        description: "You're in. Opening chat.",
-      });
-      router.replace("/chat");
+      toast({ title: "Chapter joined" });
+      // Their name and photo first, then chat (#5627).
+      router.replace(WELCOME_PATH);
       router.refresh();
       return true;
     } catch (error) {

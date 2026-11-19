@@ -25,7 +25,6 @@ import {
 } from "@/components/sheet-scaffold";
 import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
-import { releaseStartupSheet, requestStartupSheet } from "@/lib/startup-sheets";
 import { useFrappTheme } from "@/lib/theme";
 import {
   clearWhatsNewQuiet,
@@ -64,8 +63,6 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 /** Long enough for the launch jump into the last channel to finish sliding. */
 export const WHATS_NEW_OPEN_DELAY_MS = 800;
 
-const WHATS_NEW_SHEET = "whats-new";
-
 export function WhatsNewHost() {
   const sheet = useRef<BottomSheetModal>(null);
   const closeSheet = useSheetClose(sheet);
@@ -95,7 +92,6 @@ export function WhatsNewHost() {
     checked.current = true;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let cancelTurn: (() => void) | undefined;
     void (async () => {
       const [existingInstall, seen, tourDue] = await Promise.all([
         startWhatsNewBootRead(),
@@ -127,19 +123,12 @@ export function WhatsNewHost() {
         return;
       }
       timer = setTimeout(() => {
-        // Its turn among the sheets that open by themselves
-        // (`lib/startup-sheets.ts`), so Meet Frapp AI never stacks on it.
-        if (live) {
-          cancelTurn = requestStartupSheet(WHATS_NEW_SHEET, () =>
-            setShown({ notes: decision.show, record }),
-          );
-        }
+        if (live) setShown({ notes: decision.show, record });
       }, WHATS_NEW_OPEN_DELAY_MS);
     })();
     return () => {
       live = false;
       if (timer) clearTimeout(timer);
-      cancelTurn?.();
       // Unmounted mid-check (a sign-out, a chapter switch): the next mount
       // checks again, and nothing was recorded for a sheet never shown.
       checked.current = false;
@@ -162,10 +151,7 @@ export function WhatsNewHost() {
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
-      onDismiss={() => {
-        setShown(null);
-        releaseStartupSheet(WHATS_NEW_SHEET);
-      }}
+      onDismiss={() => setShown(null)}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView

@@ -2,38 +2,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
 import { BackHandler, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useIsMutating, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  PICK_ROLE_MUTATION_KEY,
   useCurrentUser,
-  usePickableRoles,
   useUpdateOnboarding,
   useUpdateUser,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  DISPLAY_NAME_MAX_LENGTH,
+  ONBOARDING_PROFILE_ANSWERED_EVENT,
+  ONBOARDING_YOU_COPY,
+  initialNameField,
+  needsName,
+  onboardingProfileAnsweredProperties,
+} from "@repo/validation";
+import {
   PUSH_ASK_TITLE,
   PushAskActions,
   PushAskBody,
 } from "@/components/notifications/push-ask";
-import {
-  MeetFrappAiActions,
-  MeetFrappAiBody,
-  useMeetFrappAiStep,
-} from "@/components/ai/meet-frapp-ai";
-import {
-  DISPLAY_NAME_MAX_LENGTH,
-  FRAPP_AI_COPY,
-  PICK_ROLES_COPY,
-} from "@repo/validation";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import {
   OnboardingFieldLabel,
   OnboardingTextInput,
 } from "@/components/onboarding/onboarding-field";
 import { ProfilePhoto } from "@/components/profile/profile-photo";
-import { ChatDensityOptions } from "@/components/settings/chat-density-sheet";
-import { PickRolesList } from "@/components/roles/pick-roles-list";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
@@ -41,97 +35,40 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import { initialsFor } from "@/lib/more/narrow";
 import { selectViewerProfile } from "@/lib/more/profile";
-import {
-  PROFILE_NAME_REQUIRED,
-  PROFILE_NAME_SAVE_FAILED,
-  PROFILE_STEP_SUBTITLE,
-  PROFILE_STEP_TITLE,
-  ONBOARDING_PROFILE_ANSWERED_EVENT,
-  initialNameField,
-  needsName,
-  onboardingProfileAnsweredProperties,
-  shouldOfferProfileStep,
-} from "@/lib/onboarding/profile-step";
 import { TOUR_DUE_ANYONE, markTourDue } from "@/lib/onboarding/tour";
-import {
-  DISPLAY_STEP_SUBTITLE,
-  DISPLAY_STEP_TITLE,
-} from "@/lib/onboarding/display-step";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s03, the member's first-run steps (`spec/ui/mobile/screens.md`).
+ * s03, the two screens after a member joins (`spec/ui/mobile/screens.md`,
+ * #5627; Paul's pick 2026-11-19, "Two: name, then notifications"):
  *
- * The screens right after a member joins, in up to five beats on one route,
- * all but the display beat shown only when they have something to ask:
- *
- * 1. **How the chapter sees you**, when the member has no photo or no real
- *    name yet (`lib/onboarding/profile-step.ts`). The photo is optional; the
- *    name is required only when there isn't one, and a real one comes
- *    pre-filled. Every message carries both, so a member who skips this looks
- *    like a stranger in every channel.
- * 2. **Pick your chat display**, always (#3787, Winston's decision: the
- *    member decides while setting up). The phone's current display is
- *    preselected (Cozy on a fresh phone), so Continue keeps it; a tap saves
- *    the pick on this phone at once.
- * 3. **Pick your roles**, when the chapter has a role the member can join
- *    and the read is back by the time they leave the display beat (#4958, as
- *    Discord's onboarding asks while a member joins). Each switch saves on
- *    the tap, so Continue keeps what was picked, and Continue waits while a
- *    pick is still saving so a failure is said under its row. The Directory's
- *    Add roles has the same list later.
- * 4. **Meet Frapp AI**, when the server has AI and the member has never
- *    answered it (#4790, `components/ai/meet-frapp-ai.tsx`). Continue turns
- *    it on; Not now leaves it off. Either moves on. Shown only if the read
- *    is back by the time the member leaves the beat before it (roles when
- *    shown, else display); otherwise the chat home asks once instead
- *    (`MeetFrappAiHost`).
- * 5. **Turn on notifications**, when this build can push and push isn't on
+ * 1. **How the chapter sees you**, always: the name, pre-filled when sign-in
+ *    carried a real one (Apple or Google), and an optional photo. A name that
+ *    is only the API's `Member` or the email before the `@` starts empty and
+ *    is required (`needsName` in `@repo/validation`). Web shows the same
+ *    screen after a join (`apps/web/app/(auth)/welcome`).
+ * 2. **Turn on notifications**, when this build can push and push isn't on
  *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
  *    now" comes back once, days later, on the chat home (`usePushReminder`).
  *
- * Then chat, with the first-run tour over it (`lib/onboarding/tour.ts`). The
- * static "You're in." card that used to open s03 is gone (owner brief
- * 2026-11-07): the tour's first stop says it, pointing at the real channels.
- * A member with a photo, a name and push on, Frapp AI answered (or off) and no
- * role to join sees only the display beat.
+ * The rest waits until the member wants it: chat display in Preferences,
+ * roles in the Directory's Add roles, and Meet Frapp AI at the first use of
+ * an AI feature (`useAiConsentGate`). They were three more beats here until
+ * #5627.
  *
- * Which beat comes first waits on the profile and push reads; nothing is drawn
- * until they're back, and a slow read is given up on after
- * {@link DECIDE_TIMEOUT_MS} (the profile beat is then skipped; the You tab
- * still has both).
+ * Which screen comes first waits on the push read only so the button can say
+ * where it goes; nothing is drawn until the profile and push reads are back,
+ * and a slow read is given up on after {@link DECIDE_TIMEOUT_MS}.
  *
  * Leaving PATCHes `has_completed_onboarding`, so the gate will not send the
  * member here again. One surface and one gold button pinned above the inset
- * on each beat (the #3348 screen rules).
+ * on each screen (the #3348 screen rules).
  */
 const DECIDE_TIMEOUT_MS = 4_000;
 
-type Beat = "profile" | "display" | "roles" | "ai" | "notifications";
-
-/**
- * Where Android's back goes from a beat: the one shown before it, skipping
- * any that weren't shown. `null` leaves back alone (the first beat).
- */
-function previousBeat(
-  step: Beat | "deciding",
-  shown: { profileShown: boolean; rolesShown: boolean; aiShown: boolean },
-): Beat | null {
-  const order: Beat[] = ["profile", "display", "roles", "ai", "notifications"];
-  const wasShown = (beat: Beat) =>
-    beat === "display" ||
-    (beat === "profile" && shown.profileShown) ||
-    (beat === "roles" && shown.rolesShown) ||
-    (beat === "ai" && shown.aiShown);
-  if (step === "deciding") return null;
-  for (let i = order.indexOf(step) - 1; i >= 0; i--) {
-    const beat = order[i]!;
-    if (wasShown(beat)) return beat;
-  }
-  return null;
-}
+type Beat = "you" | "notifications";
 
 export default function Welcome() {
   const { tokens } = useFrappTheme();
@@ -141,7 +78,6 @@ export default function Welcome() {
   const queryClient = useQueryClient();
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
-  const ai = useMeetFrappAiStep();
   const [leaving, setLeaving] = useState(false);
   // The guard itself, since two taps in one frame both read `leaving` false.
   const leavingRef = useRef(false);
@@ -154,30 +90,17 @@ export default function Welcome() {
     () => selectViewerProfile(userQuery.data),
     [userQuery.data],
   );
-  const offerProfile = shouldOfferProfileStep(profile);
-  // Latched when the profile beat opens, so the notifications beat's back
-  // returns to it only when it was shown. A photo chosen on it must not make
-  // it vanish under the member.
-  const [profileShown, setProfileShown] = useState(false);
-  // Latched when the AI beat opens, so the notifications beat's back returns
-  // to it only when it was shown.
-  const [aiShown, setAiShown] = useState(false);
-  // Latched when the roles beat opens, as `aiShown` is: a pick doesn't
-  // change whether it was shown.
-  const [rolesShown, setRolesShown] = useState(false);
-  const pickable = usePickableRoles();
-  // Asked only when there's a role to join; leave-only rows wait for the
-  // Directory's Add roles.
-  const offerRolesBeat = pickable.roles.some((role) => role.joinable);
-  // Whether there was a photo when the beat opened, so its event can tell a
-  // photo chosen on it from one the member already had.
+  // Whether there was a photo when the screen opened, so its event can tell
+  // a photo chosen on it from one the member already had.
   const [hadPhoto, setHadPhoto] = useState(false);
   const track = useLatestTrack();
   // `null` until typed in: the field shows the loaded name until then.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
-  const nameValue = nameDraft ?? initialNameField(profile?.displayName ?? null);
+  const nameValue =
+    nameDraft ??
+    initialNameField(profile?.displayName ?? null, profile?.email ?? null);
 
   async function finish() {
     if (leavingRef.current) return;
@@ -199,82 +122,29 @@ export default function Welcome() {
   // answer is stored before the OS dialog opens and before the PATCH, and
   // the step must stay on screen (busy) until the member has left for chat.
   const asking = step === "notifications";
-  // A role pick still saving holds the beat: leaving would unmount the list
-  // that says why a failed pick failed.
-  const savingPick = useIsMutating({ mutationKey: PICK_ROLE_MUTATION_KEY }) > 0;
-  const answering =
-    primer.isRequesting || leaving || savingName || ai.answering || savingPick;
+  const answering = primer.isRequesting || leaving || savingName;
 
   useEffect(() => {
     const timer = setTimeout(() => setWaitedOut(true), DECIDE_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, []);
 
-  // The first beat, decided once both reads are back. Latched: a photo chosen
-  // on the profile beat, or push turned on in Settings meanwhile, must not
-  // move the member to another beat under their thumb.
   const profileKnown =
     userQuery.data !== undefined || userQuery.isError || waitedOut;
   const primerKnown = primer.ready || waitedOut;
   if (step === "deciding" && profileKnown && primerKnown) {
-    if (offerProfile) {
-      setHadPhoto(!!profile?.photoUrl);
-      setProfileShown(true);
-      setStep("profile");
-    } else {
-      setStep("display");
-    }
-  }
-
-  function leaveDisplay() {
-    if (leaving) return;
-    if (offerRolesBeat) {
-      setRolesShown(true);
-      setStep("roles");
-    } else {
-      leaveRoles();
-    }
-  }
-
-  // After the roles beat, or past it when there is none.
-  function leaveRoles() {
-    if (leaving || savingPick) return;
-    if (ai.show) {
-      setAiShown(true);
-      setStep("ai");
-    } else {
-      leaveAi();
-    }
-  }
-
-  // After the AI beat, or past it when there is none.
-  function leaveAi() {
-    if (primer.showPrimer) {
-      setStep("notifications");
-    } else {
-      void finish();
-    }
-  }
-
-  async function answerAi(on: boolean) {
-    if (answering) return;
-    if (on) {
-      // A failed save keeps the member here with the reason under the line.
-      if (await ai.turnOn()) leaveAi();
-    } else {
-      await ai.notNow();
-      leaveAi();
-    }
+    setHadPhoto(!!profile?.photoUrl);
+    setStep("you");
   }
 
   // Validated on Continue, not per keystroke. A name that didn't change isn't
   // sent again; one that did is saved before the member moves on, so a
   // failure keeps them here with the reason rather than losing the name.
-  async function leaveProfile() {
+  async function leaveYou() {
     if (savingName || leaving) return;
     const name = nameValue.trim();
-    if (needsName(name)) {
-      setNameError(PROFILE_NAME_REQUIRED);
+    if (needsName(name, profile?.email ?? null)) {
+      setNameError(ONBOARDING_YOU_COPY.nameRequired);
       return;
     }
     const nameChanged = name !== (profile?.displayName ?? "").trim();
@@ -283,7 +153,7 @@ export default function Welcome() {
       try {
         await updateUser.mutateAsync({ display_name: name });
       } catch {
-        setNameError(PROFILE_NAME_SAVE_FAILED);
+        setNameError(ONBOARDING_YOU_COPY.saveFailed);
         return;
       } finally {
         setSavingName(false);
@@ -294,33 +164,33 @@ export default function Welcome() {
       onboardingProfileAnsweredProperties({
         hadPhoto,
         hasPhoto: !!profile?.photoUrl,
-        hadName: !needsName(profile?.displayName),
+        hadName: !needsName(profile?.displayName, profile?.email ?? null),
         nameChanged,
       }),
     );
-    setStep("display");
+    if (primer.showPrimer) setStep("notifications");
+    else void finish();
   }
 
-  // Android's back on a later beat returns to the one before it, as a back
-  // gesture between two screens would; it never leaves onboarding half done.
-  // Held while an answer is on its way out.
-  // The first beat leaves Android's back alone, as the old first beat did.
+  // Android's back on the notifications screen returns to the name, as a
+  // back gesture between two screens would; it never leaves onboarding half
+  // done. Held while an answer is on its way out. The first screen leaves
+  // Android's back alone.
   useEffect(() => {
-    const previous = previousBeat(step, { profileShown, rolesShown, aiShown });
-    if (previous === null) return;
+    if (step !== "notifications") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!answering) setStep(previous);
+      if (!answering) setStep("you");
       return true;
     });
     return () => sub.remove();
-  }, [step, answering, profileShown, aiShown, rolesShown]);
+  }, [step, answering]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
-  // Nothing drawn while the first beat is decided (usually a frame or two):
-  // no spinner, and no beat that the next read would swap out.
+  // Nothing drawn while the reads come back (usually a frame or two): no
+  // spinner, and no screen that the next read would swap out.
   if (step === "deciding") {
     return <View style={styles.container} testID="welcome-deciding" />;
   }
@@ -333,8 +203,8 @@ export default function Welcome() {
       style={styles.container}
       edges={["top", "right", "bottom", "left"]}
     >
-      {/* The profile beat's name field opens the keyboard, which must not
-          cover it or the pinned Continue (#3354). */}
+      {/* The name field opens the keyboard, which must not cover it or the
+          pinned Continue (#3354). */}
       <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         <ScrollView
           style={styles.flex}
@@ -350,41 +220,12 @@ export default function Welcome() {
                 <PushAskBody />
               </View>
             </>
-          ) : step === "ai" ? (
-            <>
-              <Text accessibilityRole="header" style={styles.title}>
-                {FRAPP_AI_COPY.title}
-              </Text>
-              <View style={styles.channels}>
-                <MeetFrappAiBody providers={ai.providers} error={ai.error} />
-              </View>
-            </>
-          ) : step === "roles" ? (
-            <>
-              <Text accessibilityRole="header" style={styles.title}>
-                {PICK_ROLES_COPY.title}
-              </Text>
-              <Text style={styles.subtitle}>{PICK_ROLES_COPY.lede}</Text>
-              <View style={styles.channels}>
-                <PickRolesList roles={pickable.roles} />
-              </View>
-            </>
-          ) : step === "display" ? (
-            <>
-              <Text accessibilityRole="header" style={styles.title}>
-                {DISPLAY_STEP_TITLE}
-              </Text>
-              <Text style={styles.subtitle}>{DISPLAY_STEP_SUBTITLE}</Text>
-              <View style={styles.channels}>
-                <ChatDensityOptions />
-              </View>
-            </>
           ) : (
             <>
               <Text accessibilityRole="header" style={styles.title}>
-                {PROFILE_STEP_TITLE}
+                {ONBOARDING_YOU_COPY.title}
               </Text>
-              <Text style={styles.subtitle}>{PROFILE_STEP_SUBTITLE}</Text>
+              <Text style={styles.subtitle}>{ONBOARDING_YOU_COPY.lede}</Text>
               <View style={styles.photo}>
                 <ProfilePhoto
                   photoUrl={profile?.photoUrl ?? null}
@@ -393,23 +234,25 @@ export default function Welcome() {
                 />
               </View>
               <View style={styles.nameField}>
-                <OnboardingFieldLabel>Your name</OnboardingFieldLabel>
+                <OnboardingFieldLabel>
+                  {ONBOARDING_YOU_COPY.nameLabel}
+                </OnboardingFieldLabel>
                 <OnboardingTextInput
                   value={nameValue}
                   onChangeText={(value) => {
                     setNameDraft(value);
                     setNameError(null);
                   }}
-                  placeholder="First and last name"
+                  placeholder={ONBOARDING_YOU_COPY.namePlaceholder}
                   maxLength={DISPLAY_NAME_MAX_LENGTH}
                   autoCapitalize="words"
                   autoCorrect={false}
                   autoComplete="name"
                   textContentType="name"
-                  accessibilityLabel="Your name"
+                  accessibilityLabel={ONBOARDING_YOU_COPY.nameLabel}
                   editable={!savingName && !leaving}
                   returnKeyType="done"
-                  onSubmitEditing={() => void leaveProfile()}
+                  onSubmitEditing={() => void leaveYou()}
                 />
                 {nameError ? (
                   <Text style={styles.error} accessibilityLiveRegion="polite">
@@ -422,10 +265,10 @@ export default function Welcome() {
         </ScrollView>
 
         {/*
-        One gold button per beat. On the profile beat it moves on: to the
-        notifications beat when there is one to show, else to chat. On the
-        notifications beat it asks, and Not now is the quiet line under it;
-        either answer leaves for chat, after the OS dialog closes.
+        One gold button per screen. On the name it moves on: to notifications
+        when there is one to ask, else to chat. On notifications it asks, and
+        Not now is the quiet line under it; either answer leaves for chat,
+        after the OS dialog closes.
       */}
         <View style={styles.footer}>
           {asking ? (
@@ -443,37 +286,16 @@ export default function Welcome() {
                 });
               }}
             />
-          ) : step === "ai" ? (
-            <MeetFrappAiActions
-              busy={ai.answering}
-              disabled={answering}
-              onContinue={() => void answerAi(true)}
-              onNotNow={() => void answerAi(false)}
-            />
-          ) : step === "roles" ? (
-            <OnboardingPrimaryButton
-              label={primer.showPrimer || ai.show ? "Continue" : "Go to chat"}
-              disabled={answering}
-              busy={answering}
-              onPress={leaveRoles}
-            />
-          ) : step === "display" ? (
+          ) : (
             <OnboardingPrimaryButton
               label={
-                primer.showPrimer || ai.show || offerRolesBeat
-                  ? "Continue"
-                  : "Go to chat"
+                primer.showPrimer
+                  ? ONBOARDING_YOU_COPY.continue
+                  : ONBOARDING_YOU_COPY.goToChat
               }
               disabled={answering}
               busy={answering}
-              onPress={leaveDisplay}
-            />
-          ) : (
-            <OnboardingPrimaryButton
-              label="Continue"
-              disabled={answering}
-              busy={answering}
-              onPress={() => void leaveProfile()}
+              onPress={() => void leaveYou()}
             />
           )}
         </View>

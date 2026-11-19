@@ -894,31 +894,32 @@ A member's dues screen, not the treasurer's billing overview — and **never the
 
 The due chip says **`Past due <date>`**, not `Overdue`: `OVERDUE` is the server's flagged state and includes the chapter's `wf_dues_grace` window, which a member's client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status labels reserves the backend's own labels for states the client can actually confirm.
 
-### Profile step (mobile s03)
+### Name and photo (after a join)
 
-s03's first beat, shown when the member has no photo or no real name yet (`apps/mobile/lib/onboarding/profile-step.ts`).
-The name field never pre-fills the API's `Member` stand-in.
+The first screen after a member joins, on web (`/welcome`) and the phone (s03's first screen), shown to every member (#5627). Copy in `ONBOARDING_YOU_COPY` (`packages/validation/src/onboarding-you.ts`), shared by both.
+The name field pre-fills a real name from sign-in, and never the API's `Member` stand-in or the email before the `@`.
 The name is checked when the member presses the button, not while typing.
+It was s03's first beat, shown only when the photo or the name was missing, until #5627.
 
 | State | Title | Copy |
 |---|---|---|
-| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` (the display beat always follows). |
+| Screen | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo (tap to choose on the phone; `Add photo` / `Change photo` beside it on web, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. One gold button: `Continue` on the phone when the notifications screen follows, else `Go to chat`. |
 | No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
-| Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+| Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays with what they typed. |
 
 ### Display step (onboarding)
 
-The chat display pick while setting up (#3787): the web tour's second stop and mobile s03's beat after the profile one, and for a founder, who skips both, the step after create in each setup (#4056).
+The chat display pick while setting up (#3787): the web tour's second stop and, for a founder, the step after create in each setup (#4056). It was also mobile s03's second beat until #5627.
 Copy in `apps/mobile/lib/onboarding/display-step.ts` and `apps/web/components/onboarding/display-step.ts`.
 
 | Surface | Title | Copy |
 |---|---|---|
 | Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the tour, then `Cozy`, `Compact` and `Bubbles` as one segmented control over the real messages. In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
-| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when a roles, Meet Frapp AI or notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
+| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards and a gold `Continue`, in chapter setup. |
 
 ### Pick your roles
 
-Self-assignable roles (#4958): the web tour's stop and mobile s03's beat after the display pick, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet).
+Self-assignable roles (#4958): the web tour's stop, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet). It was also a beat of mobile s03 until #5627.
 Copy in `PICK_ROLES_COPY` (`packages/validation/src/self-assignable-roles.ts`), shared by both platforms.
 
 | Where | Copy |
@@ -1261,7 +1262,7 @@ It had no states at all until the Profile & pre-auth slice, so a failed fetch re
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
-| Redeemed | `Chapter joined` | `You're in. Opening chat.` From the invite card (#5625), web toasts `Welcome to <chapter>` instead. Mobile goes to s03, which asks for the photo and name only when missing, always for the chat display, then for notifications only when push is off, and then goes to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
+| Redeemed | `Chapter joined` | No line under it since #5627 (it was `You're in. Opening chat.`). From the invite card (#5625), web toasts `Welcome to <chapter>` instead. Web then opens [§ Name and photo (after a join)](#name-and-photo-after-a-join), then chat. Mobile goes to s03, the same name and photo screen, then notifications only when push is off, and then goes to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
 | Mobile s02, the question (#3350; Paste since #5626) | `Joining a chapter?` | `If you tapped an invite link before installing Frapp, paste it here.` (`Have a different invite link? Paste it here.` when an emailed invite is offered above it), then Paste, pinned, and the quiet line `Starting a chapter?` `Create a chapter` (web's words). Paste is the system button on iOS 16 and later, whose word and mark Apple fixes. A paste with no invite in it replaces the line with `That isn't a Frapp invite. Copy the whole link, then tap Paste.`; an empty clipboard with `Nothing to paste yet. Copy the invite link, then tap Paste.` (`INVITE_PASTE_COPY` in `@repo/validation`). No field: the rows above are web `/join`'s. |
 | Mobile s01, Joining a chapter? strip (#5626) | `Joining a chapter?` | The question's line and Paste, in a quiet row above the ways in, with the same two answers to a paste that holds no invite, in the line's place. |
 | Mobile s02 invite for this account (#3782) | `You've been invited to <chapter>` | The same title and ` · `-joined line as web's (school, `from <inviter>`, role), on a row with the chapter mark, one per invite, above Paste. A tap opens the invite card on that invite, whose `‹ Back` returns to the question. Not shown when an invite link opened the screen. |

@@ -567,7 +567,7 @@ it (2026-11-07).
 | Step | Event | Recorded by |
 | --- | --- | --- |
 | 1 | `invite-redeemed` | API ([§ Feature Events](#feature-events)) |
-| 2 | `onboarding-profile-answered` (mobile only, and only for a member s03 asked for a photo or name) | Mobile client |
+| 2 | `onboarding-profile-answered` (mobile only) | Mobile client |
 | 3 | `push-prompt-answered` with `surface = primer` (mobile only, and only when the build can push and push was off) | Mobile client ([§ Push Prompt Telemetry](#push-prompt-telemetry)) |
 | 4 | `member-onboarding-completed` | API |
 | 5 | `message-sent` | API |
@@ -578,12 +578,15 @@ it (2026-11-07).
   `apps/api/src/interface/http/sign-in-method.ts`); `null` when the request
   carried no Supabase user. A closed set the server derives, never the email.
 - **`onboarding-profile-answered`** is sent once when the member leaves s03's
-  profile beat (`apps/mobile/lib/onboarding/profile-step.ts`), through
-  `AnalyticsContext` `track`. `photo` is `had` (a photo before the beat),
+  name and photo screen, which every member sees since #5627
+  (`onboardingProfileAnsweredProperties` in `@repo/validation`), through
+  `AnalyticsContext` `track`. `photo` is `had` (a photo before the screen),
   `added` (chosen on it) or `none`; `name_step` is `added` (there was no real
-  name, the `Member` stand-in or empty), `edited` (a real one was changed) or
-  `kept`. Never the name itself. A save that fails sends nothing, since the
-  member stays on the beat.
+  name: empty, the `Member` stand-in or the email before the `@`), `edited` (a
+  real one was changed) or `kept`. Never the name itself. A save that fails
+  sends nothing, since the member stays on the screen. Web's `/welcome` sends
+  none: the web client captures no product events of its own (they are
+  recorded by the API), so web's step 2 is not counted.
 - **`onboarding-tour-finished`** is sent once when the first-run tour over chat
   ends (`apps/mobile/lib/onboarding/tour.ts`): `outcome` is `done` (the last
   stop) or `skipped`, `stop` is the 1-based stop it ended on, and `stops` how

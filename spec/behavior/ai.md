@@ -227,16 +227,10 @@ How the first two gates are kept (#4308, #4790):
 Where Meet Frapp AI appears (#4790).
 Only while the server has AI: every place waits for `GET /v1/ai/consent`, which answers 404 `ai.not_available` with it off.
 
-- **In onboarding.**
-  On the phone it is a beat of s03 after the display pick and before notifications, for a member who joined, and a step of chapter setup at the same place, for the officer who created the chapter.
-  It is shown only to a member who has never answered.
-  Either answer moves on.
-- **Once on next open**, for an account that never answered: a member who joined before the screen existed, or whose onboarding read of it never came back.
-  On the phone a sheet over the chat home a moment after launch, after What's new if both are due, and never on a launch the first-run tour is due.
-  On web a dialog right after the first-run tour, standing down while any other dialog is open.
-  Continue and Not now are both answers; closing it is not, so the next open asks again.
-- **At an AI entry point**, for a member who chose Not now.
+- **At the first use of an AI feature**, for a member who hasn't turned Frapp AI on, whether they never answered or chose Not now.
   Every AI entry point calls `useAiConsentGate` (web and phone): a member with Frapp AI on goes straight through, anyone else is shown the same screen, and the feature goes ahead only on Continue.
+  A member who joined meets it here (Paul, 2026-11-19, #5627: Meet Frapp AI moves to first use of AI). Until then it was also a beat of s03 for a member who joined, and it opened by itself once (a sheet over the phone's chat home a moment after launch, a dialog on web after the first-run tour) for an account that never answered.
+- **In chapter setup**, on the phone, for the officer who created the chapter: a step after the chat display pick and before notifications, shown only to a founder who has never answered. Either answer moves on.
 - **In personal Settings**, as one Frapp AI switch, captioned with what it does.
   The companies are not named there (Paul, 2026-11-17, #5292: "that lives in the privacy policy"), and the phone's AI section links the privacy policy.
   Turning it on opens Meet Frapp AI, so the yes is given where the companies are named and the policy is linked; turning it off is immediate.

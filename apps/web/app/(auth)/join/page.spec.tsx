@@ -524,7 +524,7 @@ describe("web join — invites for the verified address (#3776)", () => {
         accept_terms_privacy: true,
       }),
     );
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/welcome"));
   });
 
   it("shows one Join, with the Terms line under it, and keeps the paste field behind a link (#5076)", async () => {
@@ -739,7 +739,7 @@ describe("web join — one join at a time (#3776)", () => {
 
     // And it stays locked once the navigation to chat has started.
     switched(true);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/welcome"));
     const after = screen.getByRole("button", { name: "Join Theta Chi Beta" });
     expect(after).toHaveProperty("disabled", true);
     fireEvent.click(after);

@@ -193,10 +193,6 @@ vi.mock("@/components/auth/terms-prompt", () => ({
 vi.mock("@/components/onboarding/onboarding-tour", () => ({
   OnboardingTour: () => null,
 }));
-// Meet Frapp AI's host has its own spec (`meet-frapp-ai-host.spec.tsx`).
-vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
-  MeetFrappAiHost: () => null,
-}));
 // Whether this member has Ask (`ask-host.tsx`); null, as for one without it,
 // unless a test says otherwise.
 const askEntry = vi.hoisted(() => ({

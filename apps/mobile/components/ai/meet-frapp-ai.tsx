@@ -42,14 +42,14 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * encouraged, not forced. The line above the buttons is what makes Continue
  * an explicit yes under Apple 5.1.2(i).
  *
- * The same body and buttons are drawn in four places:
+ * The same body and buttons are drawn in three places:
  *
- * - **Onboarding**, as a beat of s03 for a member who joined and of chapter
- *   setup for the officer who created the chapter ({@link useMeetFrappAiStep}).
- * - **Once on next open**, for an account that never answered
- *   (`meet-frapp-ai-host.tsx`).
- * - **At an AI entry point** for a member who chose Not now
- *   ({@link useAiConsentGate}), as a sheet over the feature.
+ * - **Chapter setup**, as a beat for the officer who created the chapter
+ *   ({@link useMeetFrappAiStep}).
+ * - **At the first use of an AI feature** by a member who hasn't turned it
+ *   on, whether they never answered or chose Not now
+ *   ({@link useAiConsentGate}), as a sheet over the feature. A member who
+ *   joined meets it here, not in s03 (#5627).
  * - **Settings**, when the Frapp AI switch is turned on.
  *
  * Signet gold, not the chapter accent, as the notifications step: Frapp is
