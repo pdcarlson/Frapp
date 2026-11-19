@@ -499,8 +499,10 @@ describe("DocumentsPage subscription gating", () => {
     );
     // A pointer press that leaves the button unfocused, as Safari's does.
     fireEvent.pointerDown(uploadTrigger());
-    fireEvent.click(uploadTrigger());
-    expect(uploadTrigger()).not.toHaveFocus();
+    const trigger = uploadTrigger();
+    fireEvent.click(trigger);
+    // Covered by the panel: hidden, and not focused.
+    expect(trigger).not.toHaveFocus();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     const region = screen.getByRole("region", { name: "Upload document" });
     expect(region.parentElement).toHaveAttribute("data-tool-column");
