@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import {
   useMeetingNoteTaking,
   useMeetings,
+  useMinutesRequest,
   usePermissionList,
 } from "@repo/hooks";
 import {
@@ -23,6 +24,7 @@ import {
   useStartMinutesFor,
 } from "@/lib/minutes/start-minutes";
 import { NoteTakerSheet } from "@/components/minutes/note-taker-sheet";
+import { RequestMinutesRow } from "@/components/minutes/request-minutes-row";
 
 /**
  * An event's way into its minutes, on the event's screen
@@ -39,6 +41,8 @@ import { NoteTakerSheet } from "@/components/minutes/note-taker-sheet";
  * - Someone else's unposted minutes this member may take notes on (an
  *   officer who records minutes, or a member their author added, #4935):
  *   Take notes, which opens their own notes in a sheet.
+ * - Unposted minutes anyone else the event invites can't open, once it has
+ *   ended: Request minutes, which pings whoever is writing them (#5471).
  * - Anyone else, and any chapter with the meetings module off: nothing.
  *
  * Nothing is drawn until the read answers, and the row sits last on the
@@ -59,6 +63,11 @@ export function EventMinutesRow({
   const start = useStartMinutesFor();
   const takingQuery = useMeetingNoteTaking({
     enabled: on && !!eventId && canDraft,
+    eventId,
+  });
+  // Only asked once the member is known to see no minutes of their own.
+  const requestQuery = useMinutesRequest({
+    enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
     eventId,
   });
   // Where this phone can record and holds no recording now, the row records
@@ -96,8 +105,11 @@ export function EventMinutesRow({
       </>
     );
   }
-  // Someone else may have started them; the note-taking read decides.
+  // Someone else may have started them; the note-taking read decides, and
+  // its Take notes wins over Request minutes.
   if (!minutes && canDraft && takingQuery.isPending) return null;
+  const askable = minutes ? null : requestQuery.data;
+  if (askable) return <RequestMinutesRow state={askable} />;
   if (!minutes && !canRecord) return null;
 
   const open = (id: string, record = false) =>
