@@ -505,6 +505,13 @@ export class MeetingListItemDto extends MeetingSummaryDto {
   @ApiProperty({ minimum: 0 }) action_item_count: number;
   @ApiProperty({ description: 'A recording was used for these minutes.' })
   recorded: boolean;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR.",
+  })
+  gist: string | null;
 }
 
 /** A meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */

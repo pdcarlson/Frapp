@@ -3,7 +3,8 @@ name: beta-watch
 description: >
   Run the Beta Watch routine (1 of 3): once a day, read what beta testers and production hit since
   the last run (Sentry production issues, TestFlight feedback and crashes, Google Play crashes and
-  ANRs, store reviews, the team's own Development channel in Frapp, and slow database queries),
+  ANRs, store reviews, the team's own Development channel in Frapp, slow database queries, and
+  repeated per-item requests),
   file or update one GitHub issue per real problem or team idea, and tell the owner only when
   something new needs him. Use when the scheduled "Beta Watch" routine fires, or when asked for a beta-health,
   crash-and-feedback or development-channel sweep.
@@ -64,6 +65,7 @@ App identifiers: iOS bundle and Android package are both `live.frapp.mobile`
 | Play crashes and ANRs | Expo `playstore_crashes` | Issues new or growing inside the window. |
 | Store reviews | Expo `appstore_reviews`, `playstore_reviews` | Reviews inside the window. Play only exposes about a week. |
 | Database health | Supabase `execute_sql`, same project | Slow statements and big-table scans since the last run, by the two queries [below](#database-health). |
+| Repeated requests | Sentry `search_traces` (spans), `frapp-api`, production and staging | Requests per trace and database calls per request over the run's window ([below](#database-health), "Repeated requests"). |
 | The team's Development channel | Supabase `execute_sql`, `project_id` `unttyvyfezddlyafcydh` (`frapp-prod`) | Messages posted or edited since the channel's own mark, by the one query [below](#the-teams-development-channel). |
 
 **The window** runs from your last `done` record on
@@ -192,6 +194,59 @@ A row absent from that line is new: judge it on its cumulative numbers this once
   (`COPY`, bulk `update` of `author_name` or `author_avatar_path`) are one-off; report, don't file.
 - The Supabase performance advisor (`get_advisors`) is not a source: on 2026-11-19 it listed 110
   unindexed foreign keys and did not flag the scan behind #5658.
+
+**Repeated requests (N+1).** Since [#5667](https://github.com/pdcarlson/Frapp/issues/5667) (Paul,
+2026-11-19: "average N+1 database query issue"). A chat list asked for each message's attachments
+in its own request, about seven database calls apiece, so one channel of photos queued every other
+screen behind it. Neither statistics view above sees this: each call is fast; there are just too
+many. Sentry does, because a page's API requests share its trace. Two reads over the run's window on
+`frapp-api`, both environments (staging carries the team's real use until production has members):
+
+1. Spans with `span.op:http.server`, grouped by trace and transaction, `count()` per group, sorted
+   descending. A transaction that appears **more than 10 times in one trace** is a client asking
+   per item. Look up which list the trace's page shows (the trace's root transaction on
+   `frapp-web` or `frapp-mobile`).
+2. Spans with `span.op:http.client` and a description starting `GET /rest/v1/` (or `POST /rest/v1/rpc/`),
+   grouped by transaction, `count()`, beside the `http.server` count for the same transactions.
+   The ratio is database calls per request. Every authenticated request pays a fixed 4 to 6 (the
+   auth user read, `get_request_context`, and the role and member reads), so **over 15** means a
+   loop inside one request.
+
+File each hit: title `[db] <list or route> asks once per <item>: <route>`, labels `triage`,
+`suggestion`, `area:api`, priority **P2** when a member-facing screen waits on it. Marker
+`fp=beta-watch/n+1/<transaction>`; search for it first. Name the client hook or the service loop
+that makes the calls, and the batched shape that would replace it (a read taking up to 50 ids
+answered at once, as `GET /v1/channels/{id}/messages/attachments` does; keep a read a `GET`, since
+a `POST` falls under the 30-a-minute write limit and the lapsed-subscription write lock).
+Polling (one route once a minute from one long-lived tab) is not N+1: it shows as many traces of one
+request each, not many requests in one trace.
+
+**Postgres errors.** Since 2026-11-19 (Paul, on Supabase's Postgres panel showing 337 errors in a
+day: "that's a lot of postgres errors"). 333 of them were the reminder sweeps losing their
+dispatch claims every five minutes as unique violations, which buried the four real ones. They
+never reach Sentry: Supabase sends Postgres logs elsewhere only through log drains, a paid-plan
+feature, so this read is the only one. `query_logs` on both projects, over the run's window:
+
+```sql
+select severity_text as sev, log_attributes['parsed.sql_state_code'] as code,
+       substring(event_message, 1, 200) as msg, count(*) as n,
+       min(timestamp) as first, max(timestamp) as last
+from logs
+where source = 'postgres_logs' and severity_text in ('ERROR', 'FATAL', 'PANIC')
+group by sev, code, msg order by n desc limit 25
+```
+
+- **File** a message seen 20 or more times in the window, or any `FATAL` or `PANIC` other than a
+  client disconnect. Find the code that issues it first (search `apps/api/src` and
+  `supabase/migrations/` for the constraint, relation or column it names) and say whether it is a
+  real failure or an expected outcome logged as an error. An expected one is fixed in the code
+  (insert-or-ignore, `if exists`), not filtered here: the panel is what Paul reads.
+- Title `[db] Postgres error: <constraint, relation or column> from <job or route>`, labels
+  `triage`, `suggestion`, `area:api`, **P2** when it fails a member's request, **P3** when it is
+  noise. Marker `fp=beta-watch/pg-error/<sql_state_code>/<constraint or relation>`; search first.
+- What stays out: one-off `42P01` / `42703` from someone's hand-typed query in the dashboard's SQL
+  editor (a single occurrence with no matching code), and `57014` statement timeouts already
+  covered by a slow-statement issue. Name them in the report without filing.
 
 ## What counts as a problem
 

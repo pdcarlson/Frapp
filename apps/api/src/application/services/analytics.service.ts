@@ -9,6 +9,7 @@ import {
 } from '@repo/validation';
 import {
   hashChapterIdForAnalytics,
+  hashInviteVisitForAnalytics,
   hashUserIdForAnalytics,
 } from '#domain/utils/analytics-keying';
 import {
@@ -373,15 +374,68 @@ export class AnalyticsService {
     chapterId: string,
     properties?: AnalyticsProperties,
   ): Promise<void> {
-    // Checked first, analytics configured or not, as in `track`.
-    assertContentFreeProperties({ name: eventName, properties });
+    await this.captureForChapter(
+      eventName,
+      chapterId,
+      (salt) => hashChapterIdForAnalytics(salt, chapterId),
+      withApp(properties, 'api'),
+      properties,
+    );
+  }
+
+  /**
+   * Record a step of the invite card funnel (#5663), keyed by the card
+   * visit's pseudonym rather than a user's: most steps happen before the
+   * visitor has an account, and the join that ends the funnel must land on the
+   * same distinct id as the card view that started it. The visit id is random
+   * and minted by the card, so it names no one; it is hashed anyway, so a
+   * client-chosen string never becomes a PostHog distinct id.
+   *
+   * The caller has proved the chapter (an invite token, or a redeem that
+   * just succeeded), so the chapter's opt-out applies strictly, as in
+   * {@link trackForChapter}. Personless: it carries no chapter group, so the
+   * provider sends it with `$process_person_profile: false` and no visit
+   * becomes a PostHog person.
+   *
+   * Best-effort like {@link track}.
+   */
+  async trackInviteVisit(
+    eventName: string,
+    chapterId: string,
+    visitId: string,
+    options: Pick<TrackOptions, 'properties' | 'app' | 'appVersion'> = {},
+  ): Promise<void> {
+    await this.captureForChapter(
+      eventName,
+      chapterId,
+      (salt) => hashInviteVisitForAnalytics(salt, visitId),
+      withApp(options.properties, options.app, options.appVersion),
+      options.properties,
+    );
+  }
+
+  /**
+   * The shared path of {@link trackForChapter} and {@link trackInviteVisit}:
+   * events whose distinct id isn't a user's, sent with no group (so
+   * personless), and gated strictly by a chapter the caller has proved.
+   * The caller's own properties are checked before anything else, analytics
+   * configured or not; a delivery or opt-out lookup failure is logged and
+   * swallowed.
+   */
+  private async captureForChapter(
+    eventName: string,
+    chapterId: string,
+    distinctIdFor: (salt: string) => string,
+    stamped: AnalyticsProperties | undefined,
+    ownProperties: AnalyticsProperties | undefined,
+  ): Promise<void> {
+    assertContentFreeProperties({ name: eventName, properties: ownProperties });
     if (!this.salt) return;
 
-    const distinctId = hashChapterIdForAnalytics(this.salt, chapterId);
     const event: AnalyticsEvent = {
       name: eventName,
-      distinctId,
-      properties: withApp(properties, 'api'),
+      distinctId: distinctIdFor(this.salt),
+      properties: stamped,
     };
 
     try {

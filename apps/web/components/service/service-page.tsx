@@ -307,7 +307,12 @@ export function ServiceHoursPage() {
             onCloseAutoFocus={logDialog.contentProps.onCloseAutoFocus}
             gate={gate}
             trigger={
-              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+              <Button
+                size="toolbar"
+                variant="action"
+                className="gap-2"
+                {...gate.controlProps()}
+              >
                 <Plus className="h-4 w-4" /> Log service
               </Button>
             }

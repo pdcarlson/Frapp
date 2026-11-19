@@ -51,6 +51,7 @@ import {
   UpdateMeetingDto,
   LinkMeetingEventDto,
 } from '../dtos/meeting.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 function summaryOf(meeting: Meeting): MeetingSummaryDto {
   return {
@@ -73,6 +74,7 @@ const NO_FACTS = {
   decision_count: 0,
   action_item_count: 0,
   recorded: false,
+  gist: null,
 };
 
 function dtoOf(view: MeetingView): MeetingDto {
@@ -106,6 +108,7 @@ export class MeetingController {
   constructor(private readonly meetings: MeetingService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts',
@@ -155,6 +158,7 @@ export class MeetingController {
   }
 
   @Get(':id')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'One meeting’s minutes' })
   @ApiOkResponse({ type: MeetingDto })
   async getOne(

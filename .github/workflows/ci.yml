@@ -378,6 +378,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The UI rules have little in the real tree to fire on, so lint passing
+      # doesn't show they work; this lints probes through each app's config.
+      - name: UI lint rules still fire
+        run: npm run check:ui-rules
+
       - name: Landing unit tests
         run: npm run test -w apps/landing
 

@@ -21,6 +21,7 @@ import {
   can,
   guessMeetingType,
   meetingTypeLabel,
+  minutesRowTags,
   minutesToWrite,
   startedEventIds,
   type CalendarMeeting,
@@ -31,7 +32,9 @@ import { PageActions } from "@/components/layout/page-actions";
 import { ErrorState } from "@/components/shared/async-states";
 import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -162,7 +165,7 @@ function ChapterMeetingsPage() {
     <div className="space-y-6">
       <Can permission="meetings:record">
         <PageActions>
-          <Button onClick={() => setStarting(true)}>New minutes</Button>
+          <NewButton thing="minutes" onClick={() => setStarting(true)} />
         </PageActions>
       </Can>
 
@@ -344,12 +347,15 @@ function MeetingList({
     <ul role="list" className="divide-y divide-border">
       {rows.map((row) => {
         const author = authorOf?.(row);
+        // What the minutes hold, worked out from them, as the phone's row
+        // says it (`minutesRowTags`).
+        const tags = minutesRowTags(row, author);
         return (
           <li key={row.id}>
             <Link
               href={meetingHref(row.id)}
               className={cn(
-                "flex min-h-14 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-card-hover",
+                "flex min-h-14 items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-card-hover",
                 FOCUS_RING_OFFSET,
               )}
             >
@@ -364,11 +370,30 @@ function MeetingList({
                   )}
                   {" · "}
                   {meetingDayLabel(row.event_start_time)}
-                  {author ? ` · ${MEETING_LIST_COPY.draftOf(author)}` : null}
-                  {row.status === "posted" && row.action_item_count
-                    ? ` · ${MEETING_LIST_COPY.actionItems(row.action_item_count)}`
-                    : null}
                 </span>
+                {tags.length > 0 ? (
+                  <span className="mt-1.5 flex flex-wrap gap-1.5">
+                    {tags.map((tag) => (
+                      <Badge
+                        key={tag.key}
+                        variant={
+                          tag.key === "draft"
+                            ? "warning"
+                            : tag.key === "recorded"
+                              ? "destructive"
+                              : "outline"
+                        }
+                      >
+                        {tag.label}
+                      </Badge>
+                    ))}
+                  </span>
+                ) : null}
+                {row.gist ? (
+                  <span className="mt-1.5 line-clamp-2 block text-caption text-muted-foreground">
+                    {row.gist}
+                  </span>
+                ) : null}
               </span>
             </Link>
           </li>

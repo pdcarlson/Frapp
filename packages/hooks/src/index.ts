@@ -111,6 +111,7 @@ export * from "./use-google-drive";
 export * from "./use-groups";
 export * from "./use-hidden-permissions";
 export * from "./use-important-messages";
+export * from "./use-invite-funnel";
 export * from "./use-invites";
 export * from "./use-invoices";
 export * from "./use-meetings";

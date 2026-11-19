@@ -3089,6 +3089,41 @@
         ]
       }
     },
+    "/v1/invites/funnel": {
+      "post": {
+        "operationId": "InviteDetailsController_funnelStep_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteFunnelStepDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record a step of the invite card funnel (card viewed, sign-in started, and so on), with no account needed",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/push-tokens": {
       "post": {
         "operationId": "NotificationController_registerPushToken_v1",
@@ -5121,6 +5156,55 @@
           }
         ],
         "summary": "Send a message (hot path; idempotent on client_message_id)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/messages/attachments": {
+      "get": {
+        "operationId": "ChatController_listMessagesAttachments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "message_ids",
+            "required": true,
+            "in": "query",
+            "description": "Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list.",
+            "schema": {
+              "example": "3f0c1d9e-0000-4000-8000-000000000001,3f0c1d9e-0000-4000-8000-000000000002",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attachments on several messages, with signed download URLs, keyed by message id",
         "tags": [
           "Chat"
         ]
@@ -24182,6 +24266,74 @@
           "sent_at"
         ]
       },
+      "InviteFunnelStepDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The invite token, as the join link carries it"
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A random id the card mints once per visit, so the steps of one visit form one funnel."
+          },
+          "step": {
+            "type": "string",
+            "enum": [
+              "card-viewed",
+              "sign-in-started",
+              "email-code-sent",
+              "email-code-verified",
+              "joined",
+              "join-failed",
+              "new-link-asked"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "apple",
+              "google",
+              "email",
+              "password"
+            ],
+            "description": "The way in tapped, for `sign-in-started`."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "live",
+              "expired",
+              "used",
+              "off",
+              "locked"
+            ],
+            "description": "The state the card showed, for `card-viewed`."
+          },
+          "signed_in": {
+            "type": "boolean",
+            "description": "Whether the visitor was already signed in, for `card-viewed`."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "gone",
+              "forbidden",
+              "rate_limited",
+              "offline",
+              "server",
+              "other"
+            ],
+            "description": "Why the join failed, for `join-failed`."
+          }
+        },
+        "required": [
+          "token",
+          "visit_id",
+          "step"
+        ]
+      },
       "RegisterPushTokenDto": {
         "type": "object",
         "properties": {
@@ -28331,6 +28483,11 @@
           "recorded": {
             "type": "boolean",
             "description": "A recording was used for these minutes."
+          },
+          "gist": {
+            "type": "string",
+            "nullable": true,
+            "description": "The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR."
           }
         },
         "required": [
@@ -28348,7 +28505,8 @@
           "series_rule",
           "decision_count",
           "action_item_count",
-          "recorded"
+          "recorded",
+          "gist"
         ]
       },
       "MeetingTemplateDto": {

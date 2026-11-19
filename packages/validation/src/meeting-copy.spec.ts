@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   eventMinutesLines,
+  minutesRowTags,
   guessMeetingType,
   minutesGist,
 } from "./meeting-copy";
@@ -52,13 +53,51 @@ describe("eventMinutesLines", () => {
     ).toBe("A draft, not posted yet");
   });
 
-  it("takes the TL;DR's first line, bullet off, as the gist", () => {
+  it("carries the row's gist", () => {
     expect(
-      eventMinutesLines(posted, "\n- Dues are due Friday.\n- Formal is set.")
-        .gist,
+      eventMinutesLines({ ...posted, gist: "Dues are due Friday." }).gist,
     ).toBe("Dues are due Friday.");
-    expect(eventMinutesLines(posted, "  ").gist).toBeNull();
     expect(eventMinutesLines(posted).gist).toBeNull();
+  });
+});
+
+describe("minutesRowTags", () => {
+  it("says Draft, Recorded, the counts and whose draft, in that order", () => {
+    expect(
+      minutesRowTags(
+        {
+          status: "draft",
+          recorded: true,
+          decision_count: 1,
+          action_item_count: 2,
+        },
+        "Eli's draft",
+      ).map((tag) => tag.label),
+    ).toEqual([
+      "Draft",
+      "Recorded",
+      "1 decision",
+      "2 action items",
+      "Eli's draft",
+    ]);
+  });
+
+  it("leaves out what the minutes don't hold", () => {
+    expect(
+      minutesRowTags({
+        status: "posted",
+        recorded: false,
+        decision_count: 0,
+        action_item_count: 0,
+      }),
+    ).toEqual([]);
+  });
+
+  it("takes the TL;DR's first line, bullet off, as the gist", () => {
+    expect(minutesGist("\n- Dues are due Friday.\n- Formal is set.")).toBe(
+      "Dues are due Friday.",
+    );
+    expect(minutesGist("  ")).toBeNull();
   });
 });
 

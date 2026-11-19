@@ -521,11 +521,12 @@ export function UploadDocumentPanel({
     <>
       {/*
         Compact and outlined (#5576): the page's fill goes to the files, not
-        to the button that adds one. "Upload" on the button, the full name
+        to the button that adds one. In the accent, as every page's main
+        action is (`new-button.tsx`, Paul 2026-11-19). "Upload" on the button, the full name
         for a screen reader.
       */}
       <Button
-        variant="secondary"
+        variant="action"
         size="toolbar"
         className={cn("gap-2", triggerClassName)}
         aria-label="Upload document"

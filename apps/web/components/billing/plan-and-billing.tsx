@@ -115,7 +115,7 @@ export function PlanAndBilling() {
     // own width, which the settings rail shares.
     <div className="@container space-y-10">
       {/*
-        No `PageActions` row: Create invoice is gated on both
+        No `PageActions` row: New invoice is gated on both
         `billing:manage` and the subscription, and lives in the invoice list's
         own toolbar beside the filter it shares state with.
       */}

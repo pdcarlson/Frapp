@@ -42,9 +42,7 @@ vi.mock("@/components/ask/ask-host", () => ({
 import { AppNav } from "./app-nav";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
-/** Permissions for a member who holds nothing role-gated. */
-const ORDINARY_MEMBER: readonly string[] = [];
-/** Enough to see every row, including Directory and Settings. */
+/** Enough to see every row, including Directory. */
 const OFFICER: readonly string[] = [
   "members:view",
   "billing:view",
@@ -82,7 +80,7 @@ describe("AppNav", () => {
     // Directory and Finance were two one-item sections whose headings each
     // restated the row beneath them; the board merges them into one unlabeled
     // group, so neither word may appear as a heading. The Admin group folded
-    // into the Settings row (#2946), so its heading is gone too.
+    // into Chapter settings (#2946), so its heading is gone too.
     expect(headings).toEqual(["Chapter", "Resources"]);
   });
 
@@ -104,13 +102,17 @@ describe("AppNav", () => {
     expect(screen.queryByRole("link", { name: "Billing" })).toBeNull();
   });
 
-  it("keeps officer rows to a single Settings row, last in the list", () => {
+  it("has no officer rows: Chapter settings opens from the chapter menu", () => {
+    // One door, not two (Paul, 2026-11-19): the chapter menu atop the nav
+    // holds Chapter settings (`chapter-nav-header.tsx`, where its gating is
+    // pinned), so no row in the list repeats it.
     renderNav();
     const rows = Array.from(document.querySelectorAll("nav a")).map(
       (el) => el.textContent,
     );
-    expect(rows.at(-1)).toBe("Chapter settings");
+    expect(rows.at(-1)).toBe("Directory");
     for (const gone of [
+      "Chapter settings",
       "Roles",
       "Study Zones",
       "Reports",
@@ -121,58 +123,12 @@ describe("AppNav", () => {
     }
   });
 
-  it("hides Settings from an ordinary member", () => {
-    renderNav({ permissions: ORDINARY_MEMBER });
-    expect(
-      screen.queryByRole("link", { name: "Chapter settings" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows Settings to an officer who holds only one tool's permission", () => {
-    // A treasurer's reports:export was a Reports row of its own; now it is the
-    // reason the Settings row shows at all.
-    renderNav({ permissions: ["members:view", "reports:export"] });
-    expect(
-      screen.getByRole("link", { name: "Chapter settings" }),
-    ).toBeInTheDocument();
-  });
-
-  it("drops Settings for a tools-only officer whose tools are all switched off", () => {
-    // A treasurer's only Settings destination is Reports. With the module off
-    // the row would open onto nothing, so it hides, as the Reports row did.
-    renderNav({
-      permissions: ["members:view", "reports:export"],
-      isModuleEnabled: (key: string) => key !== "reports",
-    });
-    expect(
-      screen.queryByRole("link", { name: "Chapter settings" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps Settings for a chapter-config holder whatever the modules", () => {
-    renderNav({
-      permissions: ["chapter-config:view"],
-      isModuleEnabled: () => false,
-    });
-    expect(
-      screen.getByRole("link", { name: "Chapter settings" }),
-    ).toBeInTheDocument();
-  });
-
-  it("marks Chapter settings as the page while one of its tools is open (#3837)", () => {
-    // The tools open inside Chapter settings now, so the row is the page.
-    renderNav({ pathname: "/settings" });
-    expect(
-      screen.getByRole("link", { name: "Chapter settings" }),
-    ).toHaveAttribute("aria-current", "page");
-  });
-
   it("draws no permission-gated row while permissions are unresolved (#3854)", () => {
-    // Failing open drew Chapter settings for every member on every reload,
-    // clickable, until the permission read answered and took it back.
+    // Failing open drew officer rows for every member on every reload,
+    // clickable, until the permission read answered and took them back.
     {
       const { unmount } = renderNav({ permissions: undefined });
-      for (const gated of ["Chapter settings", "Directory", "Backwork"]) {
+      for (const gated of ["Directory", "Backwork"]) {
         expect(
           screen.queryByRole("link", { name: gated }),
         ).not.toBeInTheDocument();
@@ -191,22 +147,16 @@ describe("AppNav", () => {
     // a member keeps the Directory row they hold, and the page states the outage.
     renderNav({ permissions: null });
     expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Chapter settings" }),
-    ).toBeInTheDocument();
   });
 
   it("draws the gated rows once an officer's permissions answer", () => {
     const { rerender } = renderNav({ permissions: undefined });
     expect(
-      screen.queryByRole("link", { name: "Chapter settings" }),
+      screen.queryByRole("link", { name: "Directory" }),
     ).not.toBeInTheDocument();
     rerender(
       <AppNav collapsed={false} permissions={OFFICER} pathname="/events" />,
     );
-    expect(
-      screen.getByRole("link", { name: "Chapter settings" }),
-    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
   });
 

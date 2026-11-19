@@ -1054,6 +1054,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a step of the invite card funnel (card viewed, sign-in started, and so on), with no account needed */
+        post: operations["InviteDetailsController_funnelStep_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/push-tokens": {
         parameters: {
             query?: never;
@@ -1619,6 +1636,23 @@ export interface paths {
         put?: never;
         /** Send a message (hot path; idempotent on client_message_id) */
         post: operations["ChatController_sendMessage_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/messages/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachments on several messages, with signed download URLs, keyed by message id */
+        get: operations["ChatController_listMessagesAttachments_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7408,6 +7442,34 @@ export interface components {
              */
             sent_at: string;
         };
+        InviteFunnelStepDto: {
+            /** @description The invite token, as the join link carries it */
+            token: string;
+            /**
+             * Format: uuid
+             * @description A random id the card mints once per visit, so the steps of one visit form one funnel.
+             */
+            visit_id: string;
+            /** @enum {string} */
+            step: "card-viewed" | "sign-in-started" | "email-code-sent" | "email-code-verified" | "joined" | "join-failed" | "new-link-asked";
+            /**
+             * @description The way in tapped, for `sign-in-started`.
+             * @enum {string}
+             */
+            method?: "apple" | "google" | "email" | "password";
+            /**
+             * @description The state the card showed, for `card-viewed`.
+             * @enum {string}
+             */
+            state?: "live" | "expired" | "used" | "off" | "locked";
+            /** @description Whether the visitor was already signed in, for `card-viewed`. */
+            signed_in?: boolean;
+            /**
+             * @description Why the join failed, for `join-failed`.
+             * @enum {string}
+             */
+            reason?: "gone" | "forbidden" | "rate_limited" | "offline" | "server" | "other";
+        };
         RegisterPushTokenDto: {
             /** @description Expo push token */
             token: string;
@@ -8874,6 +8936,8 @@ export interface components {
             action_item_count: number;
             /** @description A recording was used for these minutes. */
             recorded: boolean;
+            /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
+            gist: string | null;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -15157,6 +15221,36 @@ export interface operations {
             };
         };
     };
+    InviteDetailsController_funnelStep_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteFunnelStepDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     NotificationController_registerPushToken_v1: {
         parameters: {
             query?: never;
@@ -16546,6 +16640,37 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_listMessagesAttachments_v1: {
+        parameters: {
+            query: {
+                /** @description Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list. */
+                message_ids: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -84,6 +84,7 @@ import {
   KindNotificationPreferenceDto,
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
+  ListMessagesAttachmentsQueryDto,
   GetChannelMessagesQueryDto,
   ChatMessageDto,
   ForwardMessageDto,
@@ -687,6 +688,34 @@ export class ChatController {
     // the send.
     if (gif && !sent.deduplicated) this.gifs.recordShare(gif.id);
     return sent;
+  }
+
+  /**
+   * Attachments on up to 50 messages of this channel at once, keyed by message
+   * id (#5667): what a message list renders, in one request instead of one per
+   * message. Same rules as `listMessageAttachments`, applied per message. A
+   * GET so it stays a read everywhere a read is treated differently: the
+   * `read` rate limit (100 a minute, not `write`'s 30) and a chapter whose
+   * subscription lapsed, which keeps reading its chat. Three segments, so it
+   * cannot meet `:id/messages/:messageId/attachments`.
+   */
+  @Get(':id/messages/attachments')
+  @ApiOperation({
+    summary:
+      'Attachments on several messages, with signed download URLs, keyed by message id',
+  })
+  async listMessagesAttachments(
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Query() query: ListMessagesAttachmentsQueryDto,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.attachments.listAttachmentsForMessages(
+      channelId,
+      chapterId,
+      userId,
+      query.message_ids,
+    );
   }
 
   /**

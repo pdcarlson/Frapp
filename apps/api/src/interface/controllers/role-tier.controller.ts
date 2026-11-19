@@ -34,6 +34,7 @@ import {
   UpdateRoleTierDto,
 } from '../dtos/rbac.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * A chapter's tiers of roles (#4071). Reading them takes `members:view`, as
@@ -50,6 +51,7 @@ export class RoleTierController {
   constructor(private readonly tiers: RoleTierService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: "List the chapter's role tiers, highest first" })
   @ApiOkResponse({ type: RoleTierDto, isArray: true })
   async list(@CurrentChapterId() chapterId: string) {

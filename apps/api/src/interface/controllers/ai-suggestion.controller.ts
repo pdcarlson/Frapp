@@ -46,6 +46,7 @@ import {
   type PointsSuggestionEditsDto,
   type TaskSuggestionEditsDto,
 } from '../dtos/ai-suggestion.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * A request names changes for one kind; a suggested event's come first. The
@@ -81,6 +82,7 @@ export class AiSuggestionController {
   constructor(private readonly suggestions: AiSuggestionService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'The Suggested list: waiting suggestions the caller could accept, newest first',

@@ -7,11 +7,25 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   Equals,
+  IsIn,
+  IsUUID,
   ValidateBy,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { isInviteEmail, MAX_INVITE_EMAILS } from '@repo/validation';
+import {
+  INVITE_CARD_STATES,
+  INVITE_FUNNEL_STEPS,
+  INVITE_JOIN_FAILURE_REASONS,
+  INVITE_SIGN_IN_METHODS,
+  isInviteEmail,
+  MAX_INVITE_EMAILS,
+  type InviteCardState,
+  type InviteFunnelStep,
+  type InviteFunnelStepInput,
+  type InviteJoinFailureReason,
+  type InviteSignInMethod,
+} from '@repo/validation';
 import type {
   BulkEmailInviteResult,
   InviteListItem,
@@ -113,6 +127,61 @@ export class RedeemInviteDto {
     message: 'Terms of Service and Privacy Policy must be accepted',
   })
   accept_terms_privacy?: boolean;
+}
+
+/**
+ * A step of the invite card funnel (#5663), `POST /v1/invites/funnel`. The
+ * optional fields belong to one step each; the API keeps only the ones the
+ * step may carry (`inviteFunnelProperties`).
+ */
+export class InviteFunnelStepDto implements InviteFunnelStepInput {
+  @ApiProperty({ description: 'The invite token, as the join link carries it' })
+  @IsString()
+  token: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'A random id the card mints once per visit, so the steps of one visit form one funnel.',
+  })
+  @IsUUID()
+  visit_id: string;
+
+  @ApiProperty({ enum: INVITE_FUNNEL_STEPS })
+  @IsIn(INVITE_FUNNEL_STEPS)
+  step: InviteFunnelStep;
+
+  @ApiPropertyOptional({
+    enum: INVITE_SIGN_IN_METHODS,
+    description: 'The way in tapped, for `sign-in-started`.',
+  })
+  @IsOptional()
+  @IsIn(INVITE_SIGN_IN_METHODS)
+  method?: InviteSignInMethod;
+
+  @ApiPropertyOptional({
+    enum: INVITE_CARD_STATES,
+    description: 'The state the card showed, for `card-viewed`.',
+  })
+  @IsOptional()
+  @IsIn(INVITE_CARD_STATES)
+  state?: InviteCardState;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the visitor was already signed in, for `card-viewed`.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  signed_in?: boolean;
+
+  @ApiPropertyOptional({
+    enum: INVITE_JOIN_FAILURE_REASONS,
+    description: 'Why the join failed, for `join-failed`.',
+  })
+  @IsOptional()
+  @IsIn(INVITE_JOIN_FAILURE_REASONS)
+  reason?: InviteJoinFailureReason;
 }
 
 export class PreviewInviteDto {

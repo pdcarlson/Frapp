@@ -33,11 +33,14 @@ export class SupabaseChatPushDispatchRepository implements IChatPushDispatchRepo
    */
   async claim(messageId: string): Promise<ChatPushClaimOutcome> {
     const row: TablesInsert<'chat_push_dispatches'> = { message_id: messageId };
-    const { error } = await this.supabase
+    // `on conflict do nothing`, as `claimDispatch`: a claim lost to another
+    // instance returns no row instead of logging a unique-violation ERROR.
+    const { data, error } = await this.supabase
       .from('chat_push_dispatches')
-      .insert(row);
+      .upsert(row, { onConflict: 'message_id', ignoreDuplicates: true })
+      .select('message_id');
 
-    if (!error) return 'claimed';
+    if (!error) return (data ?? []).length > 0 ? 'claimed' : 'taken';
     if (error.code === PG_UNIQUE_VIOLATION) return 'taken';
     if (error.code === PG_FOREIGN_KEY_VIOLATION) return 'gone';
 

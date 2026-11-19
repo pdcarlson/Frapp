@@ -17,6 +17,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { MemberThreadDto } from '../dtos/chat.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * All threads (#4960): the caller's threads across every channel they may
@@ -34,6 +35,7 @@ export class MemberThreadController {
   constructor(private readonly threads: ChatThreadService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts',

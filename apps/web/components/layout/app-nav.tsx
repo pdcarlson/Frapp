@@ -134,8 +134,8 @@ const navIconClassName = "h-[18px] w-[18px]";
 
 /**
  * A row is the current page when its own route is open. The officer tools
- * that once kept routes of their own under the Settings row now open inside
- * Chapter settings (#3837), so no row stands for another route any more.
+ * that once kept routes of their own under Chapter settings now open inside
+ * it (#3837), so no row stands for another route any more.
  */
 function currentFor(item: NavItem, pathname: string): "page" | undefined {
   return item.href === pathname ? "page" : undefined;

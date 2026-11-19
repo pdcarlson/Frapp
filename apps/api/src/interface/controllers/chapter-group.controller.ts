@@ -34,6 +34,7 @@ import {
   SetChapterGroupMembersDto,
   UpdateChapterGroupDto,
 } from '../dtos/chapter-group.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * A chapter's groups (#4076): named sets of members with no permissions,
@@ -55,6 +56,7 @@ export class ChapterGroupController {
   constructor(private readonly groups: ChapterGroupService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       "List the chapter's groups with their members: manual ones, then pledge classes and class years that have members",

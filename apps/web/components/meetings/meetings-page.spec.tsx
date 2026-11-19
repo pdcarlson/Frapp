@@ -126,6 +126,28 @@ describe("Meetings, tied to their events", () => {
     ).toBe("/events?event=e-next");
   });
 
+  it("says what each posted minutes hold and their TL;DR's first line", () => {
+    mocks.meetings = [
+      {
+        id: "m-tldr",
+        status: "posted",
+        event_name: "Leadership Meeting",
+        event_start_time: new Date(Date.now() - 48 * HOUR).toISOString(),
+        meeting_type: "chapter",
+        other_label: null,
+        created_by: null,
+        decision_count: 2,
+        action_item_count: 0,
+        recorded: true,
+        gist: "Dues are due Friday.",
+      },
+    ];
+    render(<MeetingsPage />);
+    expect(screen.getByText("2 decisions")).toBeTruthy();
+    expect(screen.getByText(MEETING_LIST_COPY.recorded)).toBeTruthy();
+    expect(screen.getByText("Dues are due Friday.")).toBeTruthy();
+  });
+
   it("asks nothing of a member who doesn't record minutes", () => {
     mocks.permissions = [];
     render(<MeetingsPage />);

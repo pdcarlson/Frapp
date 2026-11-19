@@ -78,10 +78,18 @@ vi.mock("@/lib/select-chapter", () => ({
 }));
 
 const redeemMutateAsync = vi.fn();
+/** The invite card funnel's recorder (#5663). */
+const recordInviteStep = vi.fn();
 
+// The invite card's visit id (#5663): a fixed one, since the native module
+// isn't in a test run.
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718",
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({ mutateAsync: redeemMutateAsync }),
+  useInviteFunnel: () => recordInviteStep,
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
 }));
 
@@ -534,7 +542,8 @@ describe("join screen — the Terms line (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-1",
       accept_terms_privacy: true,
-    });
+    });    // The invite card funnel's last step (#5663).
+    expect(recordInviteStep).toHaveBeenCalledWith({ step: "joined" });
   });
 });
 
@@ -984,6 +993,12 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     expect(allText(tree.root)).toContain(
       "Asked. Paul got a notification with your name",
     );
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "card-viewed",
+      state: "expired",
+      signed_in: true,
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({ step: "new-link-asked" });
     // Back still leads to the question, to paste another.
     expect(labelled(tree.root, "Back to the choices")?.props.disabled).toBe(
       false,
@@ -1007,6 +1022,16 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     await settle();
     expect(allText(tree.root)).toContain("This invite was already used");
     expect(control(tree.root, "Join chapter")).toBeUndefined();
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "join-failed",
+      reason: "gone",
+    });
+    // The card is seen again in its new state.
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "card-viewed",
+      state: "used",
+      signed_in: true,
+    });
   });
 
   it("says a link that isn't an invite doesn't work, and takes another", async () => {
@@ -1274,6 +1299,61 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(signInWithOAuthProvider).toHaveBeenCalledWith("google");
     expect(peekRememberedInviteToken()).toBe("invite-token-51");
     expect(peekRememberedInviteThen()).toBe("join");
+    // The invite card funnel (#5663), the same steps web records.
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "card-viewed",
+      state: "live",
+      signed_in: false,
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "sign-in-started",
+      method: "google",
+    });
+  });
+
+  it("records the email way in, the code sent and verified, and a password way in (#5663)", async () => {
+    params.mockReturnValue({ token: "invite-token-57" });
+    const tree = render();
+    await settle();
+
+    act(() => {
+      control(tree.root, "Continue with email")?.props.onPress();
+    });
+    const field = (label: string) =>
+      tree.root
+        .findAllByType("TextInput" as never, { deep: true })
+        .find((input) => input.props.accessibilityLabel === label);
+    act(() => {
+      field("Email")?.props.onChangeText("winston@rpi.edu");
+    });
+    await act(async () => {
+      await control(tree.root, "Send code")?.props.onPress();
+    });
+    await settle();
+    await act(async () => {
+      field("6-digit code")?.props.onChangeText("123456");
+    });
+    await settle();
+
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "sign-in-started",
+      method: "email",
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({ step: "email-code-sent" });
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "email-code-verified",
+    });
+
+    act(() => {
+      control(tree.root, "Back")?.props.onPress();
+    });
+    act(() => {
+      labelled(tree.root, "Have a password? Sign in")?.props.onPress();
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "sign-in-started",
+      method: "password",
+    });
   });
 
   it("lets the member off a link that isn't an invite, back to sign-in, forgetting it", async () => {
