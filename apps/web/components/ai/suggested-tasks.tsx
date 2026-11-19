@@ -53,7 +53,11 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/shared/section-label";
-import { DueChip, dueEntryPassed } from "@/components/tasks/due-date-field";
+import {
+  DueChip,
+  dueChipProblem,
+  dueEntryPassed,
+} from "@/components/tasks/due-date-field";
 import { TaskForm, type TaskDraft } from "@/components/tasks/task-form";
 import { WhoPicker } from "@/components/tasks/who-picker";
 import {
@@ -66,7 +70,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { tasksTaskLink } from "@/lib/tasks/task-links";
@@ -587,6 +590,11 @@ function SuggestedTaskRow({
   const missingDue = flagged && !values.due;
   const passedDue =
     flagged && dueEntryPassed(values.due, new Date(), dueEntryOf(item.task));
+  const dueProblem = dueChipProblem({
+    value: values.due,
+    missing: missingDue,
+    passed: passedDue,
+  });
 
   if (formOpen) {
     const initialDraft: TaskDraft = {
@@ -658,7 +666,8 @@ function SuggestedTaskRow({
         One row (#5562; Paul, 2026-11-19: "can we rethink the layout"): what
         to do, then who and when as chips, with Create task and a worded
         menu on the right, the way Linear's triage rows carry their
-        properties. The phone's card has the same parts in the same order.
+        properties. The phone's card has the same parts; there Create task
+        sits under the chips, in thumb reach, so the title keeps the width.
       */}
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1 space-y-1">
@@ -721,6 +730,7 @@ function SuggestedTaskRow({
           value={values.due}
           onChange={(value) => onEdit({ due: value })}
           disabled={disabled}
+          aria-describedby={dueProblem ? `${item.id}-due` : undefined}
         />
       </div>
       {missingWho ? (
@@ -730,6 +740,16 @@ function SuggestedTaskRow({
           className="text-caption text-destructive-text"
         >
           {AI_SUGGESTION_COPY.missingWho}
+        </p>
+      ) : null}
+      {/* Said here too: the chip's own field is in its closed popover. */}
+      {dueProblem ? (
+        <p
+          id={`${item.id}-due`}
+          role="alert"
+          className="text-caption text-destructive-text"
+        >
+          {dueProblem}
         </p>
       ) : null}
     </div>
@@ -781,17 +801,15 @@ function SuggestionMenu({
             <X className="h-4 w-4" aria-hidden="true" />
             {AI_SUGGESTION_COPY.dismiss}
           </DropdownMenuItem>
-          {mayReport ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={reported}
-                onSelect={() => setReporting(true)}
-              >
-                <Flag className="h-4 w-4" aria-hidden="true" />
-                {reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
-              </DropdownMenuItem>
-            </>
+          {/*
+            Gone once sent, as on the phone, whose menu has no greyed rows:
+            a report can't be taken back or sent twice.
+          */}
+          {mayReport && !reported ? (
+            <DropdownMenuItem onSelect={() => setReporting(true)}>
+              <Flag className="h-4 w-4" aria-hidden="true" />
+              {AI_REPORT_COPY.action}
+            </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>

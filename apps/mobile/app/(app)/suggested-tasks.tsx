@@ -83,6 +83,7 @@ import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
 import { whoLabel } from "@repo/hooks/task-who-picker";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { focusReturnOf } from "@/lib/overlay";
 import { pageSurfaces } from "@/lib/surfaces";
 
 /**
@@ -829,7 +830,9 @@ function SuggestionRow({
       <View style={styles.cardHead}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={task.title}
+          accessibilityLabel={
+            lastYear ? `${task.title}. ${lastYear}` : task.title
+          }
           accessibilityHint={AI_SUGGESTION_COPY.change}
           disabled={disabled}
           onPress={onOpen}
@@ -954,7 +957,10 @@ function RowMenuButton({
       disabled={disabled}
       // 36pt drawn against the 44pt minimum.
       hitSlop={4}
-      onPress={(event) => menu.open(event.nativeEvent.pageY)}
+      // The button gets a screen reader's focus back when the menu closes.
+      onPress={(event) =>
+        menu.open(event?.nativeEvent?.pageY, focusReturnOf(event))
+      }
       style={({ pressed }) => [
         styles.more,
         pressed ? styles.pressed : null,

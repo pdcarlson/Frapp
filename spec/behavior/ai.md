@@ -1016,7 +1016,7 @@ So once a week Frapp compares the coming six weeks with the same six weeks a yea
   It dismisses the suggestion; so does "Not this year" on an event.
   Why is never stored: only that it was dismissed.
 - **Where it is on the phone.**
-  One list, titled "Suggested" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md), Suggested), holds the tasks from posted minutes and, under a "This time last year" heading, last year's events and tasks.
+  One list, titled "Suggested" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md), Suggested), holds the tasks from posted minutes and last year's tasks, one card at a time, and under a "This time last year" heading last year's events (2026-11-19: last year's tasks joined the one-at-a-time cards).
   The "This time last year" notice opens it, and Events and Tasks each show one row leading to it while something is waiting.
   "Add to calendar" opens the phone's ordinary New event form on the same template web builds.
 - **Who sees one.**

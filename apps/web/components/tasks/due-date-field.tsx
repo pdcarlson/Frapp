@@ -69,12 +69,12 @@ export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
             error={(typed) =>
               missing && !props.value
                 ? typed.trim() === ""
-                  ? "Pick a due date."
+                  ? DUE_PROBLEM.missing
                   : withoutTime
                     ? "Try a date like November 14 or Friday."
                     : "Try a date like November 14 or Friday, with a time if it has one, like Friday 5pm."
                 : passed
-                  ? "That time has already passed. Pick a later time or another day."
+                  ? DUE_PROBLEM.passed
                   : null
             }
           />
@@ -93,6 +93,29 @@ export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
     );
   },
 );
+
+const DUE_PROBLEM = {
+  missing: "Pick a due date.",
+  passed: "That time has already passed. Pick a later time or another day.",
+} as const;
+
+/**
+ * What a {@link DueChip} says is wrong, for its card to show under the chips:
+ * the chip's own field, which says it too, is only on screen while its
+ * popover is open.
+ */
+export function dueChipProblem({
+  value,
+  missing = false,
+  passed = false,
+}: {
+  value: string;
+  missing?: boolean;
+  passed?: boolean;
+}): string | null {
+  if (missing && !value) return DUE_PROBLEM.missing;
+  return passed ? DUE_PROBLEM.passed : null;
+}
 
 /**
  * A due date drawn as a property chip, "Wednesday · 5 PM", that opens the
@@ -113,6 +136,7 @@ export function DueChip({
   note,
   disabled,
   now,
+  "aria-describedby": describedBy,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -126,6 +150,8 @@ export function DueChip({
   note?: string | null;
   disabled?: boolean;
   now?: Date;
+  /** The card's line saying what is wrong ({@link dueChipProblem}). */
+  "aria-describedby"?: string;
 }) {
   const [open, setOpen] = useState(false);
   const shown = value ? formatDateEntry(value, now ?? new Date()) : null;
@@ -143,6 +169,7 @@ export function DueChip({
           }
           title={guessed && note ? note : undefined}
           aria-invalid={problem || undefined}
+          aria-describedby={problem ? describedBy : undefined}
           className={cn(
             propertyChipClass({
               guessed: guessed && !!value && !problem,

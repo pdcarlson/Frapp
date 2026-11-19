@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   meetingsEnabled: [] as boolean[],
   currentChapter: vi.fn(),
+  permissions: ["ai:use"] as string[],
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -26,7 +27,7 @@ vi.mock("@repo/hooks", () => ({
   useGroups: () => ({ data: [] }),
   useCurrentUser: () => ({ data: undefined }),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
+  useMyPermissions: () => ({ data: { permissions: mocks.permissions } }),
   useCurrentChapter: () => mocks.currentChapter(),
   useAiSuggestions: () => ({ data: { items: mocks.items.current } }),
   useAcceptAiSuggestion: () => ({ mutateAsync: mocks.accept }),
@@ -152,6 +153,7 @@ function openDue(title: string) {
 describe("SuggestedTasks (#4313)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.permissions = ["ai:use"];
     mocks.meetingsEnabled.length = 0;
     mocks.tasks.current = [];
     mocks.accept.mockResolvedValue({});
@@ -199,14 +201,13 @@ describe("SuggestedTasks (#4313)", () => {
     fireEvent.click(acceptButtons()[0]!);
 
     expect(screen.getByText("Pick who this is for.")).toBeTruthy();
-    // The date chip turns to the warning tone, and its field says why.
-    expect(
-      screen
-        .getByRole("button", { name: "Due date for Task 1" })
-        .getAttribute("aria-invalid"),
-    ).toBe("true");
-    openDue("Task 1");
-    expect(screen.getByText("Pick a due date.")).toBeTruthy();
+    // The date chip turns to the warning tone, and the card says why, with
+    // the chip's popover closed.
+    const dueChip = screen.getByRole("button", { name: "Due date for Task 1" });
+    expect(dueChip.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("Pick a due date.").id).toBe(
+      dueChip.getAttribute("aria-describedby"),
+    );
     expect(mocks.accept).not.toHaveBeenCalled();
   });
 
@@ -343,6 +344,19 @@ describe("SuggestedTasks (#4313)", () => {
       key: "Enter",
     });
     expect(screen.getByRole("menuitem", { name: "Report this" })).toBeTruthy();
+  });
+
+  it("offers no Report this to a member who can't use AI", () => {
+    mocks.permissions = [];
+    mocks.items.current = [suggestion("1")];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "More: Task 1" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Dismiss" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Report this" })).toBeNull();
   });
 
   it("dismisses without asking for anything", async () => {

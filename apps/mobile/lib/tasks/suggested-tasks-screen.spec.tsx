@@ -366,6 +366,31 @@ describe("Suggested tasks", () => {
     expect(screenText(tree)).not.toContain(AI_SUGGESTION_COPY.when);
   });
 
+  it("brings the next suggestion into the place of one decided, even the last", () => {
+    const tree = render();
+    next(tree);
+    expect(screenText(tree)).toContain(AI_SUGGESTION_COPY.position(2, 2));
+    // The second is decided and the list reads again without it.
+    state.items = [READY];
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <SuggestedTasksScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(screenText(tree)).toContain("Book the hall");
+  });
+
+  it("asks When? on a suggestion the minutes gave no day", () => {
+    state.items = [{ ...READY, task: { ...READY.task, due_date: null } }];
+    const tree = render();
+    expect(
+      byLabel(tree, `Due date for Book the hall: ${AI_SUGGESTION_COPY.when}`),
+    ).toBeDefined();
+    expect(screenText(tree)).toContain(AI_SUGGESTION_COPY.when);
+  });
+
   it("opens the task form, not a task, for one missing who or when", async () => {
     const tree = render();
     next(tree);
