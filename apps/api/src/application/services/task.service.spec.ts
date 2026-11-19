@@ -702,7 +702,7 @@ describe('TaskService', () => {
         }),
       );
       expect(
-        mockTaskRepo.createGroup.mock.calls[0]![0].assignee_ids,
+        mockTaskRepo.createGroup.mock.calls[0][0].assignee_ids,
       ).not.toContain('alum-1');
     });
 
