@@ -12,6 +12,7 @@ import {
   type MeetingContent,
   type MeetingSectionKey,
 } from "@repo/validation";
+import { localIsoDate } from "@repo/formatting";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import type { MinutesEditing } from "@/lib/minutes/use-minutes-editor";
@@ -60,11 +61,19 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import { MinutesEditor } from "./minutes-editor";
 
+// The meeting's day in whatever zone the suite runs in (CI runs it in
+// Tokyo too), and the week after it, which an action item's due offers.
+const MEETING_START = "2026-11-09T12:00:00Z";
+const MEETING_DAY = localIsoDate(new Date(MEETING_START));
+const WEEK_AFTER = localIsoDate(
+  new Date(new Date(MEETING_START).getTime() + 7 * 24 * 60 * 60 * 1000),
+);
+
 function meeting(content: Partial<MeetingContent>, sections: string[] = []) {
   return {
     id: "m1",
     event_id: "e1",
-    event_start_time: "2026-11-09T23:00:00Z",
+    event_start_time: MEETING_START,
     meeting_type: "chapter",
     other_label: null,
     updated_at: "v1",
@@ -215,7 +224,7 @@ describe("MinutesEditor", () => {
     act(() =>
       button(tree, MINUTES_EDITOR_COPY.actionItem.addDue).props.onPress(),
     );
-    expect(seen.content.action_items[0]!.due_date).toBe("2026-11-16");
+    expect(seen.content.action_items[0]!.due_date).toBe(WEEK_AFTER);
     act(() =>
       button(tree, MINUTES_EDITOR_COPY.actionItem.removeDue).props.onPress(),
     );
@@ -241,7 +250,7 @@ describe("MinutesEditor", () => {
     expect(screenText(tree)).toContain(MEETING_COPY.dateNeedsDay);
     act(() => button(tree, MINUTES_EDITOR_COPY.date.pick).props.onPress());
     expect(seen.content.dates[0]).toEqual({
-      date: "2026-11-09",
+      date: MEETING_DAY,
       text: "Installation",
     });
     expect(screenText(tree)).not.toContain(MEETING_COPY.dateNeedsDay);
