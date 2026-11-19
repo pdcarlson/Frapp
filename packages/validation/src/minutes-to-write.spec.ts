@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isMeetingLikeName, minutesToWrite } from "./minutes-to-write";
+import {
+  isMeetingLikeName,
+  minutesToWrite,
+  startedEventIds,
+} from "./minutes-to-write";
 
 const NOW = Date.parse("2026-11-19T18:00:00Z");
 const at = (iso: string) => iso;
@@ -12,6 +16,35 @@ describe("isMeetingLikeName", () => {
     expect(isMeetingLikeName("Ben Cunningham Meeting")).toBe(true);
     expect(isMeetingLikeName("Date party")).toBe(false);
     expect(isMeetingLikeName("Philanthropy 5K")).toBe(false);
+  });
+
+  it("reads a social a type word starts as no meeting", () => {
+    expect(isMeetingLikeName("Exec Board")).toBe(true);
+    expect(isMeetingLikeName("Committee chairs")).toBe(true);
+    expect(isMeetingLikeName("Weekly Chapter 11/18")).toBe(true);
+    expect(isMeetingLikeName("GBM")).toBe(true);
+    for (const social of [
+      "Chapter Formal",
+      "Chapter BBQ",
+      "Exec Board Retreat",
+      "Officer Installation Dinner",
+      "Committee Chair Social",
+    ]) {
+      expect(isMeetingLikeName(social)).toBe(false);
+    }
+  });
+});
+
+describe("startedEventIds", () => {
+  it("joins the event ids of every read, skipping rows with none", () => {
+    expect(
+      [
+        ...startedEventIds([{ event_id: "a" }, { event_id: null }], undefined, [
+          { event_id: "b" },
+          { event_id: "a" },
+        ]),
+      ].sort(),
+    ).toEqual(["a", "b"]);
   });
 });
 
@@ -59,7 +92,7 @@ describe("minutesToWrite", () => {
     { id: "far", name: "Exec", start_time: at("2026-12-25T00:00:00Z") },
   ];
 
-  it("lists meetings that ended this month with no minutes, newest first", () => {
+  it("lists meetings that ended in the last 30 days with no minutes, newest first", () => {
     const { needs } = minutesToWrite(events, new Set(["posted"]), NOW);
     expect(needs.map((event) => event.id)).toEqual(["ended", "older"]);
   });

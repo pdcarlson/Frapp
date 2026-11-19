@@ -1,8 +1,8 @@
 import { guessMeetingType } from "./meeting-copy";
 
 /**
- * Meetings, tied to their events (`spec/behavior/meetings.md` § Where
- * minutes are kept; Paul, 2026-11-19: "Build all of it"): the meetings on
+ * Meetings, tied to their events (`spec/behavior/meetings.md` § Meetings,
+ * tied to their events; Paul, 2026-11-19: "Build all of it"): the meetings on
  * the calendar that ended without minutes, and the next one coming, worked
  * out the same way on web and the phone from the events and minutes a
  * member already reads.
@@ -24,15 +24,74 @@ export const NEXT_UP_DAYS = 7;
 const ASSUMED_LENGTH_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
+/** Words a meeting's own name is made of, beside the day it falls on. */
+const MEETING_WORDS = new Set([
+  "chapter",
+  "chapters",
+  "exec",
+  "executive",
+  "e-board",
+  "eboard",
+  "board",
+  "officer",
+  "officers",
+  "cabinet",
+  "council",
+  "committee",
+  "committees",
+  "chair",
+  "chairs",
+  "general",
+  "body",
+  "gbm",
+  "gm",
+  "session",
+  "weekly",
+  "biweekly",
+  "monthly",
+  "of",
+  "the",
+  "and",
+]);
+/** Words that name a body that meets: "Recruitment Committee". */
+const BODY_ENDINGS = /\b(committee|cabinet|council)$/;
+
 /**
- * Whether an event's name reads as a meeting: one whose type it suggests
- * (Chapter, Exec, Committee), or one that says "meeting". A social or a
- * philanthropy event is not, so it never asks for minutes.
+ * Whether an event's name reads as a meeting: one that says "meeting", one
+ * made only of a meeting's own words ("Chapter", "Exec Board", "Committee
+ * chairs"), or one that names a committee ("Recruitment Committee"). A
+ * social, even one a type word starts ("Chapter Formal", "Exec Retreat"),
+ * or a philanthropy event is not, so it never asks for minutes.
  */
 export function isMeetingLikeName(name: string): boolean {
+  const text = name.trim().toLowerCase();
+  if (/\b(meetings?|mtg)\b/.test(text)) return true;
+  if (guessMeetingType(text) === "other") return false;
+  const words = text
+    .replace(/[^a-z\s-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return false;
   return (
-    guessMeetingType(name) !== "other" || /\bmeetings?\b/i.test(name.trim())
+    words.every((word) => MEETING_WORDS.has(word)) ||
+    BODY_ENDINGS.test(words.join(" "))
   );
+}
+
+/**
+ * The events that already have minutes the reader can see (posted or a
+ * draft) or notes they were added to, from the rows of each read.
+ */
+export function startedEventIds(
+  ...lists: ReadonlyArray<readonly { event_id?: string | null }[] | undefined>
+): Set<string> {
+  const started = new Set<string>();
+  for (const rows of lists) {
+    for (const row of rows ?? []) {
+      if (row.event_id) started.add(row.event_id);
+    }
+  }
+  return started;
 }
 
 function endOf(event: CalendarMeeting): number {
@@ -42,7 +101,7 @@ function endOf(event: CalendarMeeting): number {
 }
 
 /**
- * The meetings that ended in the last month with no minutes the reader can
+ * The meetings that ended in the last 30 days with no minutes the reader can
  * see or take notes on, newest first, and the next meeting in the coming
  * week that has none yet. `started` holds the event ids that already have
  * minutes (posted or a draft) or notes the reader was added to.

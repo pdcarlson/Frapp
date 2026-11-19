@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   meetings: [] as unknown[],
   events: [] as unknown[],
   taking: [] as unknown[],
+  takingReady: true,
   permissions: ["meetings:record"] as string[],
   start: vi.fn(),
   push: vi.fn(),
@@ -21,7 +22,10 @@ vi.mock("@repo/hooks", () => ({
     isSuccess: true,
     refetch: vi.fn(),
   }),
-  useMeetingNoteTaking: () => ({ data: mocks.taking }),
+  useMeetingNoteTaking: () =>
+    mocks.takingReady
+      ? { data: mocks.taking, isSuccess: true, refetch: vi.fn() }
+      : { data: undefined, isSuccess: false, refetch: vi.fn() },
   useEvents: (options?: { enabled?: boolean }) =>
     options?.enabled === false
       ? { data: undefined, isSuccess: false }
@@ -58,6 +62,7 @@ const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
 beforeEach(() => {
   mocks.permissions = ["meetings:record"];
   mocks.taking = [];
+  mocks.takingReady = true;
   mocks.meetings = [
     {
       id: "m-posted",
@@ -93,6 +98,11 @@ describe("Meetings, tied to their events", () => {
     expect(screen.getByText(MEETING_LIST_COPY.needsMinutes)).toBeTruthy();
     // A social asks for no minutes, and posted minutes aren't asked again.
     expect(screen.queryByText("Date party")).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: `${MEETING_LIST_COPY.startMinutes}: Cabinet Meeting`,
+      }),
+    ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
         name: `${MEETING_LIST_COPY.startMinutes}: Chapter Meeting`,
@@ -123,7 +133,18 @@ describe("Meetings, tied to their events", () => {
     expect(screen.queryByText(MEETING_LIST_COPY.nextUp)).toBeNull();
   });
 
-  it("says so when someone else already started them", async () => {
+  it("leaves out a meeting the viewer takes notes on, and waits for that read", () => {
+    mocks.taking = [{ meeting_id: "m-other", event_id: "e-needs" }];
+    const { unmount } = render(<MeetingsPage />);
+    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
+    unmount();
+    mocks.taking = [];
+    mocks.takingReady = false;
+    render(<MeetingsPage />);
+    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
+  });
+
+  it("says so when someone else already started them, and drops the row", async () => {
     mocks.start.mockRejectedValue({ code: "meeting.already_started" });
     render(<MeetingsPage />);
     fireEvent.click(
@@ -133,5 +154,6 @@ describe("Meetings, tied to their events", () => {
     );
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
     expect(mocks.push).not.toHaveBeenCalled();
+    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
   });
 });

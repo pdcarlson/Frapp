@@ -1,1 +1,1 @@
-Meetings now starts with the meetings that ended without minutes, each with Start minutes, and ends with the next meeting coming up, so none get forgotten.
+For officers who take minutes, Meetings on the web and Minutes on the phone now start with the meetings that ended without minutes, each with Start minutes, and end with the next meeting coming up, so none get forgotten.

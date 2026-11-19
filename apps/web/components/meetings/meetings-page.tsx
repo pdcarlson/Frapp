@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
@@ -22,6 +22,7 @@ import {
   guessMeetingType,
   meetingTypeLabel,
   minutesToWrite,
+  startedEventIds,
   type CalendarMeeting,
   type MeetingType,
 } from "@repo/validation";
@@ -33,7 +34,7 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { cn } from "@/lib/utils";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import {
   MINUTES_DRAFT,
   StartMinutesPanel,
@@ -46,7 +47,6 @@ import {
   meetingWhenLabel,
 } from "@/components/meetings/meeting-copy";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
 
 /** Keyed by chapter, so a switch never shows one chapter's minutes in another. */
 export function MeetingsPage() {
@@ -58,7 +58,7 @@ export function MeetingsPage() {
  * `/meetings` (`spec/behavior/meetings.md`): the minutes this member may
  * read, newest meeting first, tied to the calendar (Paul, 2026-11-19). For
  * someone who records minutes it opens on Needs minutes: the meetings that
- * ended this month with none, each started in one press, as Granola lists
+ * ended in the last 30 days with none, each started in one press, as Granola lists
  * the calendar's meetings with no notes. Then In progress, the unposted
  * drafts, the way a mail client keeps Drafts apart from what was sent: the
  * viewer's own, and for an officer who can edit any minutes, other
@@ -87,23 +87,69 @@ function ChapterMeetingsPage() {
   });
   // The calendar, read only by someone who can start minutes from it.
   const eventsQuery = useEvents({ enabled: canRecord });
-  const [now] = useState(() => Date.now());
+  // Moves on each minute, so a meeting that ends while the page is open
+  // leaves Next up for Needs minutes without a reload.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  // Events whose start answered "already started": someone else's draft
+  // this viewer can't read, so the list can't see it and Start can't win.
+  const [taken, setTaken] = useState<ReadonlySet<string>>(() => new Set());
   const toWrite = useMemo(() => {
-    const started = new Set<string>();
-    for (const row of meetingsQuery.data ?? []) {
-      if (row.event_id) started.add(row.event_id);
-    }
-    for (const row of takingQuery.data ?? []) {
-      if (row.event_id) started.add(row.event_id);
-    }
-    const events = Array.isArray(eventsQuery.data)
-      ? (eventsQuery.data as CalendarMeeting[])
-      : [];
-    return minutesToWrite(events, started, now);
-  }, [eventsQuery.data, meetingsQuery.data, takingQuery.data, now]);
-  // Unknown is not "none written": wait for both reads before listing any.
+    const started = startedEventIds(meetingsQuery.data, takingQuery.data);
+    for (const id of taken) started.add(id);
+    return minutesToWrite(
+      asArray<CalendarMeeting>(eventsQuery.data),
+      started,
+      now,
+    );
+  }, [eventsQuery.data, meetingsQuery.data, takingQuery.data, taken, now]);
+  // Unknown is not "none written": wait for every read before listing any.
   const showToWrite =
-    canRecord && eventsQuery.isSuccess && meetingsQuery.isSuccess;
+    canRecord &&
+    eventsQuery.isSuccess &&
+    meetingsQuery.isSuccess &&
+    takingQuery.isSuccess;
+  const router = useRouter();
+  const { toast } = useToast();
+  const start = useStartMeeting();
+  const [startingId, setStartingId] = useState<string | null>(null);
+
+  /**
+   * Starts minutes on an event that ended with none, with the type its name
+   * suggests, as the event's own Minutes row does. One at a time.
+   */
+  async function startFor(event: CalendarMeeting) {
+    if (startingId) return;
+    setStartingId(event.id);
+    try {
+      const meeting = await start.mutateAsync({
+        event_id: event.id,
+        meeting_type: guessMeetingType(event.name),
+      });
+      router.push(meetingHref(meeting.id));
+    } catch (error) {
+      if (codeOf(error) === "meeting.already_started") {
+        setTaken((current) => new Set(current).add(event.id));
+        void meetingsQuery.refetch();
+        void takingQuery.refetch();
+        toast({
+          title: MEETING_ENTRY_COPY.alreadyStartedTitle,
+          description: MEETING_ENTRY_COPY.alreadyStartedBody,
+        });
+        return;
+      }
+      toast({
+        title: MEETING_ENTRY_COPY.startFailed,
+        description: getErrorMessage(error, "Try again in a moment."),
+        variant: "destructive",
+      });
+    } finally {
+      setStartingId(null);
+    }
+  }
   const { drafts, posted } = useMemo(() => {
     const rows = meetingsQuery.data ?? [];
     return {
@@ -137,7 +183,12 @@ function ChapterMeetingsPage() {
               </SectionLabel>
               <ul role="list" className="divide-y divide-border">
                 {toWrite.needs.map((event) => (
-                  <NeedsMinutesRow key={event.id} event={event} />
+                  <NeedsMinutesRow
+                    key={event.id}
+                    event={event}
+                    starting={startingId === event.id}
+                    onStart={() => void startFor(event)}
+                  />
                 ))}
               </ul>
             </section>
@@ -244,38 +295,17 @@ function ChapterMeetingsPage() {
 
 /**
  * A meeting on the calendar that ended with no minutes: its name, type and
- * day, and Start minutes, which starts them on that event in one press with
- * the type its name suggests, as the event's own Minutes row does.
+ * day, and Start minutes.
  */
-function NeedsMinutesRow({ event }: { event: CalendarMeeting }) {
-  const router = useRouter();
-  const { toast } = useToast();
-  const start = useStartMeeting();
-  const type = guessMeetingType(event.name);
-
-  async function begin() {
-    try {
-      const meeting = await start.mutateAsync({
-        event_id: event.id,
-        meeting_type: type,
-      });
-      router.push(meetingHref(meeting.id));
-    } catch (error) {
-      if (codeOf(error) === "meeting.already_started") {
-        toast({
-          title: MEETING_ENTRY_COPY.alreadyStartedTitle,
-          description: MEETING_ENTRY_COPY.alreadyStartedBody,
-        });
-        return;
-      }
-      toast({
-        title: MEETING_ENTRY_COPY.startFailed,
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
-      });
-    }
-  }
-
+function NeedsMinutesRow({
+  event,
+  starting,
+  onStart,
+}: {
+  event: CalendarMeeting;
+  starting: boolean;
+  onStart: () => void;
+}) {
   return (
     <li className="flex min-h-14 items-center gap-3 px-2 py-2">
       <span className="min-w-0 flex-1">
@@ -283,7 +313,7 @@ function NeedsMinutesRow({ event }: { event: CalendarMeeting }) {
           {event.name}
         </span>
         <span className="block truncate text-caption text-muted-foreground">
-          {meetingTypeLabel(type)}
+          {meetingTypeLabel(guessMeetingType(event.name))}
           {" · "}
           {meetingWhenLabel(event.start_time)}
         </span>
@@ -291,9 +321,10 @@ function NeedsMinutesRow({ event }: { event: CalendarMeeting }) {
       <Button
         size="sm"
         variant="secondary"
-        disabled={start.isPending}
+        disabled={starting}
+        aria-busy={starting || undefined}
         aria-label={`${MEETING_LIST_COPY.startMinutes}: ${event.name}`}
-        onClick={() => void begin()}
+        onClick={onStart}
       >
         {MEETING_LIST_COPY.startMinutes}
       </Button>

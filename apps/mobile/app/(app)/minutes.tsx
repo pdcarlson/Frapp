@@ -19,6 +19,7 @@ import {
   meetingTypeLabel,
   meetingWhenLabel,
   minutesToWrite,
+  startedEventIds,
   type CalendarMeeting,
   type MeetingType,
 } from "@repo/validation";
@@ -76,7 +77,7 @@ import { useFrappTheme } from "@/lib/theme";
  *
  * Tied to the calendar (Paul, 2026-11-19), as web's Meetings is: for an
  * officer who records minutes the list opens on Needs minutes, the
- * meetings that ended this month with none, each started in one tap, and
+ * meetings that ended in the last 30 days with none, each started in one tap, and
  * ends on Next up, the coming meeting (`minutesToWrite`).
  */
 export default function MinutesScreen() {
@@ -101,9 +102,12 @@ function MinutesScreenBody() {
   // who can start minutes from them.
   const eventsQuery = useEvents({ enabled: on && canRecord });
   const takingQuery = useMeetingNoteTaking({ enabled: on && canRecord });
-  const refresh = useRefetchAll([meetingsQuery, eventsQuery]);
+  const refresh = useRefetchAll([meetingsQuery, eventsQuery, takingQuery]);
   const starter = useStartMinutesFor();
   const [startingId, setStartingId] = useState<string | null>(null);
+  // Events whose start answered "already started": someone else's draft
+  // this viewer can't read, so the list can't see it and Start can't win.
+  const [taken, setTaken] = useState<ReadonlySet<string>>(() => new Set());
   // What New minutes has to say (a read that failed, a recording already
   // held): shown a few seconds and read out, as the tab bar's + does.
   const [notice, setNotice] = useState<string | null>(null);
@@ -128,29 +132,27 @@ function MinutesScreenBody() {
   );
   const view = minutesListView(rows, { now, type, query });
   const toWrite = useMemo(() => {
-    const started = new Set<string>();
-    for (const meeting of rows) {
-      if (meeting.event_id) started.add(meeting.event_id);
-    }
-    for (const taking of takingQuery.data ?? []) {
-      if (taking.event_id) started.add(taking.event_id);
-    }
+    const started = startedEventIds(rows, takingQuery.data);
+    for (const id of taken) started.add(id);
     const events = Array.isArray(eventsQuery.data)
       ? (eventsQuery.data as CalendarMeeting[])
       : [];
     return minutesToWrite(events, started, now);
-  }, [rows, takingQuery.data, eventsQuery.data, now]);
-  // Unknown is not "none written": both reads answer before any is listed,
+  }, [rows, takingQuery.data, eventsQuery.data, taken, now]);
+  // Unknown is not "none written": every read answers before any is listed,
   // and a search or a type chip narrows to minutes, not the calendar.
   const showToWrite =
     on &&
     canRecord &&
     eventsQuery.isSuccess &&
     meetingsQuery.isSuccess &&
+    takingQuery.isSuccess &&
     !query.trim() &&
     type === null;
 
   async function startFor(event: CalendarMeeting) {
+    // One at a time: the row that is starting says so, the rest wait.
+    if (startingId) return;
     setStartingId(event.id);
     try {
       const meeting = await starter.start({
@@ -160,7 +162,9 @@ function MinutesScreenBody() {
       open(meeting.id);
     } catch (error) {
       if (error instanceof MinutesStartError && error.alreadyStarted) {
+        setTaken((current) => new Set(current).add(event.id));
         void meetingsQuery.refetch();
+        void takingQuery.refetch();
       }
       const text =
         error instanceof Error ? error.message : MEETING_COPY.tryAgain;
@@ -236,9 +240,6 @@ function MinutesScreenBody() {
             onRetry={() => void meetingsQuery.refetch()}
             isRetrying={meetingsQuery.isFetching}
           />
-        ) : rows.length === 0 &&
-          !(showToWrite && (toWrite.needs.length > 0 || toWrite.next)) ? (
-          <InlineNote>{MEETING_LIST_COPY.none}</InlineNote>
         ) : (
           <>
             {showToWrite && toWrite.needs.length > 0 ? (
@@ -254,16 +255,19 @@ function MinutesScreenBody() {
                         <MeetingTypeTile type={guessMeetingType(event.name)} />
                       }
                       label={event.name}
-                      description={meetingWhenLabel(event.start_time)}
+                      description={calendarLine(event)}
                       value={MEETING_LIST_COPY.startMinutes}
                       accessibilityHint={MEETING_LIST_COPY.startMinutes}
                       busy={startingId === event.id}
-                      disabled={startingId !== null}
                       onPress={() => void startFor(event)}
                     />
                   ))}
                 </ListSection>
               </>
+            ) : null}
+
+            {rows.length === 0 ? (
+              <InlineNote>{MEETING_LIST_COPY.none}</InlineNote>
             ) : null}
 
             {view.many ? (
@@ -367,7 +371,8 @@ function MinutesScreenBody() {
                       />
                     }
                     label={toWrite.next.name}
-                    description={meetingWhenLabel(toWrite.next.start_time)}
+                    description={calendarLine(toWrite.next)}
+                    value={MEETING_LIST_COPY.openEvent}
                     accessibilityHint={MEETING_LIST_COPY.openEvent}
                     onPress={() =>
                       router.push({
@@ -385,6 +390,11 @@ function MinutesScreenBody() {
       {meetingActions.sheets}
     </>
   );
+}
+
+/** A calendar meeting's line, as web's: the type its name suggests, and when. */
+function calendarLine(event: CalendarMeeting): string {
+  return `${meetingTypeLabel(guessMeetingType(event.name))} · ${meetingWhenLabel(event.start_time)}`;
 }
 
 /** A type chip's mark: a dot in the type's hue. */
