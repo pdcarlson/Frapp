@@ -1107,6 +1107,40 @@ describe("MinutesPage", () => {
       ).toHaveProperty("value", "notes");
     });
 
+    it("folds a pasted transcript into a card with View and Remove, like the phone (#5562)", async () => {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      render(<MinutesPage id="m-1" />);
+      const transcript = Array.from(
+        { length: 40 },
+        (_, at) => `00:${String(at).padStart(2, "0")} Paul: point ${at}`,
+      ).join("\n");
+      const box = screen.getByRole("textbox", { name: "Your notes" });
+      // A paste lands in a focused box, which stays open until it blurs.
+      fireEvent.focus(box);
+      fireEvent.change(box, { target: { value: transcript } });
+      expect(box).toHaveProperty("value", transcript);
+      fireEvent.blur(box);
+      expect(screen.queryByRole("textbox", { name: "Your notes" })).toBeNull();
+      expect(screen.getByText("Pasted transcript")).toBeTruthy();
+      expect(screen.getByText("160 words")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "View" }));
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", transcript);
+      fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("textbox", { name: "Your notes" }),
+        ).toHaveProperty("value", ""),
+      );
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Remove the pasted transcript?",
+      );
+    });
+
     it("puts To fill in above the minutes and redrafts with the answers, without asking", async () => {
       mocks.draft.current = {
         ...NO_DRAFT,
