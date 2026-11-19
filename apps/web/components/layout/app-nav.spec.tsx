@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const { hidden } = vi.hoisted(() => ({
@@ -67,6 +67,10 @@ function renderNav(props: Partial<React.ComponentProps<typeof AppNav>> = {}) {
 }
 
 describe("AppNav", () => {
+  afterEach(() => {
+    askEntry.current = null;
+  });
+
   it("orders the IA the way the board does", () => {
     const { container } = renderNav();
     // Headings are <p>, rows are <a>. Matching on text alone would also catch
@@ -289,9 +293,13 @@ describe("AppNav", () => {
   it("holds Ask Frapp at its foot, the crest alone in the rail (#5560)", () => {
     askEntry.current = { open: false, openWith: vi.fn() };
     const { unmount } = renderNav({ onToggleCollapsed: vi.fn() });
-    expect(screen.getByRole("button", { name: "Ask Frapp" })).toHaveTextContent(
-      "Ask Frapp",
-    );
+    const ask = screen.getByRole("button", { name: "Ask Frapp" });
+    expect(ask).toHaveTextContent("Ask Frapp");
+    // Above Collapse sidebar, at the foot.
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(
+      ask.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     unmount();
 
     // With no toggle (a forced rail) it still has its place.
@@ -306,7 +314,16 @@ describe("AppNav", () => {
     expect(
       screen.queryByRole("button", { name: "Ask Frapp" }),
     ).not.toBeInTheDocument();
-    askEntry.current = null;
+  });
+
+  it("adds no box at the foot for a member without Ask (#5560)", () => {
+    const { container } = renderNav({ onToggleCollapsed: vi.fn() });
+    const toggle = container.querySelector("[data-nav-toggle]");
+    // The toggle pins itself down, with nothing empty above it.
+    expect(toggle).toHaveClass("mt-auto");
+    expect(toggle?.previousElementSibling).toBe(
+      screen.getByRole("navigation", { name: "Primary" }),
+    );
   });
 
   it("labels the collapse toggle with its action, and names it in the rail (#4044)", () => {
