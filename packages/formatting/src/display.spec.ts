@@ -74,7 +74,9 @@ describe("house date shapes", () => {
     expect(formatDayTimeRange(FRI_5PM, "2026-11-07T09:00:00.000Z", NOW)).toBe(
       "Friday, November 6 · 5:00 PM – Saturday, November 7 · 1:00 AM",
     );
-    expect(formatDayTimeRange(FRI_5PM, null, NOW)).toBe("Friday, November 6 · 5:00 PM");
+    expect(formatDayTimeRange(FRI_5PM, null, NOW)).toBe(
+      "Friday, November 6 · 5:00 PM",
+    );
   });
 
   it("says a range without its day for a row under a day heading", () => {
