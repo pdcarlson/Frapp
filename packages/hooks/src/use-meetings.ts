@@ -58,6 +58,31 @@ export function useMeetings(options?: { enabled?: boolean; eventId?: string }) {
   });
 }
 
+/**
+ * A meeting's row from a Minutes list already loaded, or null: what the
+ * minutes page names itself with while the minutes load, so a tap from the
+ * list never opens on a blank page (Paul, 2026-11-19: "slow and poor
+ * loading states"). Read once on render; the minutes replace it.
+ */
+export function useCachedMeetingRow(
+  id: string | null | undefined,
+): MeetingSummary | null {
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  if (!id) return null;
+  const lists = queryClient.getQueriesData<MeetingSummary[]>({
+    queryKey: meetingsKey(chapterId),
+    predicate: isMeetingsList,
+  });
+  for (const [, rows] of lists) {
+    const row = Array.isArray(rows)
+      ? rows.find((candidate) => candidate.id === id)
+      : undefined;
+    if (row) return row;
+  }
+  return null;
+}
+
 /** One meeting's minutes. A 404 means they are not there for this viewer. */
 export function useMeeting(id: string | null | undefined) {
   const client = useFrappClient();

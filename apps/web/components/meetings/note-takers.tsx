@@ -166,19 +166,25 @@ export function NoteTakersList({
   recording,
   disabled,
   confirm,
+  startAdding = false,
+  onCancelAdd,
 }: {
   meetingId: string;
   state: MeetingNotesState;
   recording: MeetingRecordingState | null;
   disabled: boolean;
   confirm: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
+  /** Opened from the start box's Add a note-taker: the picker first. */
+  startAdding?: boolean;
+  /** Cancel on a picker opened that way puts the start box back as it was. */
+  onCancelAdd?: () => void;
 }) {
   const ids = useId();
   const remove = useRemoveMeetingNoteTaker();
   const add = useAddMeetingNoteTaker();
   const rosterQuery = useChapterRoster();
   const [open, setOpen] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding);
   const [pick, setPick] = useState<string>("");
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -378,6 +384,7 @@ export function NoteTakersList({
               onClick={() => {
                 setAdding(false);
                 setProblem(null);
+                onCancelAdd?.();
               }}
             >
               Cancel

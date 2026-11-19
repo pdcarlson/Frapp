@@ -111,10 +111,18 @@ export function RecordingUpload({
   disabled,
   ensureConsent,
   confirm,
+  compact = false,
 }: {
   meetingId: string;
   state: MeetingRecordingState;
   disabled: boolean;
+  /**
+   * Before anything is uploaded, only the Upload a recording button: the
+   * start box is one box and Draft minutes (Paul, 2026-11-19: "I'd rather
+   * not have 12 buttons and sections"). Once there is an upload its line
+   * shows as usual.
+   */
+  compact?: boolean;
   ensureConsent: () => Promise<boolean>;
   confirm: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
 }) {
@@ -326,7 +334,10 @@ export function RecordingUpload({
     does: "upload" | "cancel" | "stop";
   };
   let action: RowAction | null = null;
-  const uploadAction: RowAction = { label: "Upload a recording", does: "upload" };
+  const uploadAction: RowAction = {
+    label: "Upload a recording",
+    does: "upload",
+  };
   if (sending) {
     const percent =
       sending.total > 0 ? Math.floor((sending.sent / sending.total) * 100) : 0;
@@ -376,6 +387,117 @@ export function RecordingUpload({
       : 0
     : null;
 
+  const dialog = (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => !start.isPending && setOpen(next)}
+    >
+      <DialogContent>
+        <DialogHeader className="min-w-0">
+          <DialogTitle>{MEETING_RECORDING_NOTICE.heading}</DialogTitle>
+          <DialogDescription>{MEETING_RECORDING_NOTICE.rule}</DialogDescription>
+        </DialogHeader>
+        <div className="min-w-0 space-y-4 text-sm">
+          <figure className="space-y-1">
+            <figcaption className="text-caption text-muted-foreground">
+              {MEETING_RECORDING_NOTICE.scriptLabel}
+            </figcaption>
+            <blockquote className="rounded-lg border border-border px-3 py-2">
+              {MEETING_RECORDING_NOTICE.script}
+            </blockquote>
+          </figure>
+          <p className="text-muted-foreground">
+            {MEETING_RECORDING_NOTICE.whatHappens}{" "}
+            {MEETING_RECORDING_NOTICE.standards}
+          </p>
+          <div className="space-y-2">
+            <input
+              ref={fileInput}
+              id={`${ids}-file`}
+              type="file"
+              accept={MEETING_RECORDING_ACCEPT}
+              className="sr-only"
+              aria-describedby={`${ids}-file-line ${ids}-form-problem`}
+              onChange={(event) => void handleFile(event.target.files?.[0])}
+            />
+            <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={reading || start.isPending}
+                onClick={() => fileInput.current?.click()}
+              >
+                {chosen ? "Choose another file" : "Choose the recording"}
+              </Button>
+              <p
+                id={`${ids}-file-line`}
+                className="min-w-0 flex-1 basis-48 break-words text-muted-foreground"
+              >
+                {reading
+                  ? "Reading the file"
+                  : chosen
+                    ? `${chosen.file.name} · ${meetingRecordingLengthLabel(chosen.seconds)} · ${formatBytes(chosen.file.size)}`
+                    : `${MEETING_RECORDING_FORMATS_LABEL}, up to ${lengthInWords(state.max_seconds)}`}
+              </p>
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-start gap-2">
+            <span className={dashboardCheckboxHitAreaClassName}>
+              <input
+                type="checkbox"
+                className={dashboardTableCheckboxClassName}
+                checked={told}
+                onChange={(event) => {
+                  setTold(event.target.checked);
+                  setFormProblem(null);
+                }}
+              />
+            </span>
+            <span>{MEETING_RECORDING_NOTICE.confirmLabel}</span>
+          </label>
+          <p
+            id={`${ids}-form-problem`}
+            role="alert"
+            className="min-h-10 text-destructive-text"
+          >
+            {formProblem}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            disabled={start.isPending}
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={reading || start.isPending}
+            onClick={() => void handleUpload()}
+          >
+            Upload
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const idle = !sending && !problem && !interrupted && state.status === "none";
+  if (compact && idle && action) {
+    return (
+      <>
+        <Button
+          variant="secondary"
+          disabled={disabled || busy}
+          onClick={() => run(action.does)}
+        >
+          {action.label}
+        </Button>
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex min-h-[6.5rem] flex-wrap content-start items-start gap-x-3 gap-y-2">
@@ -420,97 +542,7 @@ export function RecordingUpload({
         />
       </div>
 
-      <Dialog open={open} onOpenChange={(next) => !start.isPending && setOpen(next)}>
-        <DialogContent>
-          <DialogHeader className="min-w-0">
-            <DialogTitle>{MEETING_RECORDING_NOTICE.heading}</DialogTitle>
-            <DialogDescription>
-              {MEETING_RECORDING_NOTICE.rule}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-w-0 space-y-4 text-sm">
-            <figure className="space-y-1">
-              <figcaption className="text-caption text-muted-foreground">
-                {MEETING_RECORDING_NOTICE.scriptLabel}
-              </figcaption>
-              <blockquote className="rounded-lg border border-border px-3 py-2">
-                {MEETING_RECORDING_NOTICE.script}
-              </blockquote>
-            </figure>
-            <p className="text-muted-foreground">
-              {MEETING_RECORDING_NOTICE.whatHappens}{" "}
-              {MEETING_RECORDING_NOTICE.standards}
-            </p>
-            <div className="space-y-2">
-              <input
-                ref={fileInput}
-                id={`${ids}-file`}
-                type="file"
-                accept={MEETING_RECORDING_ACCEPT}
-                className="sr-only"
-                aria-describedby={`${ids}-file-line ${ids}-form-problem`}
-                onChange={(event) => void handleFile(event.target.files?.[0])}
-              />
-              <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={reading || start.isPending}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  {chosen ? "Choose another file" : "Choose the recording"}
-                </Button>
-                <p
-                  id={`${ids}-file-line`}
-                  className="min-w-0 flex-1 basis-48 break-words text-muted-foreground"
-                >
-                  {reading
-                    ? "Reading the file"
-                    : chosen
-                      ? `${chosen.file.name} · ${meetingRecordingLengthLabel(chosen.seconds)} · ${formatBytes(chosen.file.size)}`
-                      : `${MEETING_RECORDING_FORMATS_LABEL}, up to ${lengthInWords(state.max_seconds)}`}
-                </p>
-              </div>
-            </div>
-            <label className="flex cursor-pointer items-start gap-2">
-              <span className={dashboardCheckboxHitAreaClassName}>
-                <input
-                  type="checkbox"
-                  className={dashboardTableCheckboxClassName}
-                  checked={told}
-                  onChange={(event) => {
-                    setTold(event.target.checked);
-                    setFormProblem(null);
-                  }}
-                />
-              </span>
-              <span>{MEETING_RECORDING_NOTICE.confirmLabel}</span>
-            </label>
-            <p
-              id={`${ids}-form-problem`}
-              role="alert"
-              className="min-h-10 text-destructive-text"
-            >
-              {formProblem}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              disabled={start.isPending}
-              onClick={() => setOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={reading || start.isPending}
-              onClick={() => void handleUpload()}
-            >
-              Upload
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialog}
     </div>
   );
 }
