@@ -200,6 +200,7 @@ describe('TaskService', () => {
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
       setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
 
     mockUserRepo = {

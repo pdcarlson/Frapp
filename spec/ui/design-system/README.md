@@ -30,7 +30,7 @@ complete, so add the row in the same change that adds the file.
 
 | Doc | Owns |
 | --- | --- |
-| [`principles.md`](principles.md) | The seven UI principles every screen is checked against, as yes/no checks |
+| [`principles.md`](principles.md) | The eight UI principles every screen is checked against, as yes/no checks |
 | [`foundations.md`](foundations.md) | Neutral ladder, semantic colors, type scale, radius map, spacing grid |
 | [`components.md`](components.md) | Buttons, inputs, cards, badges, sheets, tabs, and their variants |
 | [`iconography.md`](iconography.md) | Duotone icon recipe, sizing, usage |

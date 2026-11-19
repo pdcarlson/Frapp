@@ -6,10 +6,52 @@ description: >
   editing frontend code — React Native screens and typed StyleSheet token factories, React
   components, ShadCN/Radix composites, Tailwind styling, theme tokens, TanStack Query data hooks,
   or Zod form validation — anywhere under apps/mobile, apps/web, apps/landing, or
-  packages/{theme,hooks,validation}.
+  packages/{theme,hooks,validation}. Also use before designing, proposing or reviewing any screen:
+  it carries the owner's UI rulebook and the self-review every UI PR passes before it opens.
 ---
 
 # UI Development
+
+## Read this first: the rulebook and the self-review
+
+Paul, 2026-11-19: "I'M SO SO TIRED OF TELLING YOU THE SAME STUFF EVERY FUCKING TIME AND ITERATING ON
+EVERY FUCKING UI CHANGE … it's like a never ending loop of fix one problem and find 4 more that you fix
+to a mediocre level." Every thread builds its screen from its own brief, so a ruling he gave one thread
+never reached the next. These files are where his rulings now live, and every UI change follows them
+without being told:
+
+1. **Before designing, read [`rulebook.md`](rulebook.md) in full** (every ruling Paul has given, by
+   theme) and [`principles.md`](../../../spec/ui/design-system/principles.md) (the P1 to P8 checks). A
+   brief that contradicts a ruling is built only when Paul asked for it, or when Shawn, Winston or Evan
+   is deliberately trying something new as `AGENTS.md` § ADR discipline allows; either way the PR names
+   the ruling it changes and edits its line. A coordinator's brief that contradicts one by accident
+   follows the ruling.
+2. **Build on both apps in one PR**, from the shared components below, never a hand-built copy of one.
+3. **Before the PR opens, run [`review-checklist.md`](review-checklist.md)**: captures as member, chair,
+   exec and empty on web and phone; the sibling sweep (fix the pattern everywhere, never only where Paul
+   saw it); the rulebook walk; using it as a member would. Its evidence goes in the PR body.
+4. **A rule a syntax tree can see becomes lint** in `packages/eslint-config/ui-rules.js`, with the
+   remaining sites grandfathered by file in the app's eslint config (that list only shrinks).
+5. **When Paul gives a new UI ruling,** the PR that acts on it changes the spec that owns the detail and
+   adds its dated one-line entry to `rulebook.md`, so the next thread starts with it.
+
+### Shared components, by job
+
+Reach for these before writing markup. A screen that hand-builds one of these jobs fails P8.
+
+| Job | Web (`apps/web/components/`) | Phone (`apps/mobile/components/`) |
+| --- | --- | --- |
+| Page actions in the header | `layout/page-actions.tsx` `PageActions` (moves into the page header with #5686) | `screen-shell.tsx` header, `header-button.tsx` `HeaderButton` |
+| Create ("New …") | `ui/new-button.tsx` `NewButton`; other main actions `<Button variant="action">` (both land with #5686) | `ScreenShell` `createAction` (`floating-create-button.tsx`) |
+| A record or long form | `shared/panel.tsx` `Panel` (docked) | `sheet-scaffold.tsx` |
+| Row menu | `shared/row-menu.tsx`, `ui/context-menu.tsx` | `item-actions-menu.tsx`, `glass-menu.tsx` |
+| A pick from options | `ui/select.tsx`, `ui/dropdown-menu.tsx`, `shared/searchable-picker.tsx` | `option-sheet.tsx` |
+| Date and time | `ui/date-field.tsx`, `ui/time-field.tsx` | the platform picker (see `components/tasks/due-date-field.tsx`) |
+| Grouped list | `ui/table.tsx`, `shared/section-label.tsx` | `list-section.tsx` |
+| Loading, empty, error | `shared/page-skeletons.tsx`, `shared/async-states.tsx`, `shared/nested-states.tsx` | `state-block.tsx`, `card-list-skeleton.tsx` (each route's own skeleton, pinned by `screen-skeletons.spec.tsx`) |
+| Destructive confirm | `shared/confirm-dialog.tsx` `useConfirmDialog` | `lib/action-menu.ts` |
+| Kept form drafts | `useKeptFormDraft` (`@repo/hooks`) | `useKeptSheetDraft` (`lib/kept-sheet-draft.ts`) |
+| Segmented switch, filter chips | `ui/segmented.tsx`, `shared/filter-chip.tsx` | `segmented.tsx`, `filter-chips.tsx` |
 
 Where frontend code lives and the conventions that aren't obvious from reading it. For which
 tokens and typefaces are current, which reference board is visual truth, and how a cutover

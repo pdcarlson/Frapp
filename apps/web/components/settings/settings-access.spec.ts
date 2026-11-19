@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  SETTINGS_ENTRY_PERMISSIONS,
-  SETTINGS_TOOLS,
   hasSettingsDestination,
   isSettingsTabVisible,
   visibleSettingsTools,
 } from "./settings-access";
 
 /**
- * Who Settings is for (#2946). The nav's Settings row, the rail and the empty
+ * Who Settings is for (#2946). The chapter menu's link, the rail and the empty
  * state all answer from this module, so these pin its answers per seeded role
  * (`apps/api/src/domain/constants/permissions.ts`).
  */
@@ -30,29 +28,6 @@ const MEMBER = [
   "service:log",
   "polls:create",
 ];
-
-describe("SETTINGS_ENTRY_PERMISSIONS", () => {
-  it("admits exactly the holders Settings has something for", () => {
-    expect([...SETTINGS_ENTRY_PERMISSIONS].sort()).toEqual(
-      [
-        "billing:view",
-        "chapter-config:view",
-        "channels:manage",
-        "geofences:manage",
-        "groups:manage",
-        "reports:export",
-        "roles:manage",
-        "semester:rollover",
-      ].sort(),
-    );
-  });
-
-  it("covers every tool, so no tool is reachable only by URL", () => {
-    for (const tool of SETTINGS_TOOLS) {
-      expect(SETTINGS_ENTRY_PERMISSIONS).toContain(tool.permission);
-    }
-  });
-});
 
 describe("isSettingsTabVisible", () => {
   // #4076: a chair who keeps groups current needs no chapter config.

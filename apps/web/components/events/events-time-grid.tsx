@@ -6,7 +6,10 @@ import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { formatTimeOfDay, localIsoDate } from "@repo/formatting";
-import type { CalendarItem } from "@repo/hooks/calendar-tasks";
+import {
+  calendarItemDueMinute,
+  type CalendarItem,
+} from "@repo/hooks/calendar-tasks";
 import {
   attendanceFieldsOf,
   type EventAttendanceFields,
@@ -22,7 +25,10 @@ import {
   timeGridColumns,
   TWO_LINE_MIN_HEIGHT,
 } from "@repo/hooks/calendar-time-grid";
-import { CalendarTaskChip } from "@/components/events/calendar-tasks";
+import {
+  CalendarTaskBlock,
+  CalendarTaskChip,
+} from "@/components/events/calendar-tasks";
 import {
   EVENT_HUE,
   eventIdOf,
@@ -104,8 +110,9 @@ function useNow(): Date {
  * The Week and Day views (#4818), drawn the way Google Calendar, Apple
  * Calendar and Outlook draw them: an hour column at the left and a column per
  * day, each timed event a block at its start and as tall as it lasts, events
- * that overlap side by side, and a strip at the top for what has no time of
- * day (the day's tasks, and an event that lasts a whole day or more). A red
+ * that overlap side by side, a task due at a time as a slim marker at that
+ * time (#5116), and a strip at the top for what has no time of day (the
+ * day's other tasks, and an event that lasts a whole day or more). A red
  * line marks the time now in today's column. An officer presses an empty
  * hour to make an event starting then.
  */
@@ -133,7 +140,7 @@ export function EventsTimeGrid({
   const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
   const columns = useMemo(
-    () => timeGridColumns(days, events, tasksByDay),
+    () => timeGridColumns(days, events, tasksByDay, calendarItemDueMinute),
     [days, events, tasksByDay],
   );
 
@@ -220,7 +227,7 @@ export function EventsTimeGrid({
         })}
       </div>
 
-      {/* What has no time of day: tasks due, and day-long events */}
+      {/* What has no time of day: tasks due by a day, and day-long events */}
       {hasStrip ? (
         <div
           className="grid gap-px border-b border-border bg-border"
@@ -271,7 +278,7 @@ export function EventsTimeGrid({
             ))}
           </div>
 
-          {columns.map(({ day, key, placed }) => {
+          {columns.map(({ day, key, placed, placedTasks }) => {
             const isToday = key === todayKey;
             const dayLabel = day.toLocaleDateString(undefined, {
               weekday: "long",
@@ -366,6 +373,25 @@ export function EventsTimeGrid({
                         </span>
                       ) : null}
                     </button>
+                  );
+                })}
+
+                {placedTasks.map((span) => {
+                  // Only a task's minute places it; a birthday never has one.
+                  if (span.item.kind === "birthdays") return null;
+                  const { top, height } = blockGeometry(span);
+                  return (
+                    <CalendarTaskBlock
+                      key={`${span.item.key}-${key}`}
+                      item={span.item}
+                      nameOf={nameOf}
+                      style={{
+                        top,
+                        height: height - 1,
+                        left: `calc(${(span.lane / span.lanes) * 100}% + 2px)`,
+                        width: `calc(${100 / span.lanes}% - 4px)`,
+                      }}
+                    />
                   );
                 })}
 

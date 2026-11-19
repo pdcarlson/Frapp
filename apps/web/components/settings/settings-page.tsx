@@ -589,8 +589,8 @@ function SettingsPageContent() {
   }
 
   /*
-    Settings shows each viewer only what they can use (#2946). The nav's
-    Settings row admits anyone Settings holds a tab or an officer tool for
+    Settings shows each viewer only what they can use (#2946). The chapter
+    menu's Chapter settings link admits anyone Settings holds a tab or an officer tool for
     (`hasSettingsDestination`), so a treasurer who holds only reports:export
     arrives here too. Before, every setup tab rendered for everyone and the
     config-gated ones answered a non-holder with "Couldn't load chapter
@@ -774,8 +774,8 @@ function SettingsPageContent() {
 
           {/*
             **Deliberately not `renderConfigGated`.** A `roles:manage` holder
-            without `chapter-config:view` reaches this tab: the nav's Settings
-            row admits `roles:manage` on its own (`settings-access.ts`), and
+            without `chapter-config:view` reaches this tab: the chapter menu's
+            Chapter settings item admits `roles:manage` on its own (`settings-access.ts`), and
             `/roles` redirects here. This page's config read is gated on
             `chapter-config:view`, so gating the tab on it would land that
             member on "Couldn't load chapter configuration", which is what

@@ -19,11 +19,7 @@ import {
   SettingsGlyph,
   StudyGlyph,
 } from "@/components/more/more-glyphs";
-import {
-  ChatGlyph,
-  EventsGlyph,
-  TasksGlyph,
-} from "@/components/tab-glyphs";
+import { ChatGlyph, EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
 
 const ACCENT = "#F4CB63";
 const MUTED = "#78716A";
@@ -58,7 +54,7 @@ const HUB: ReadonlyArray<[string, typeof StudyGlyph, NavGlyphName]> = [
   ["Documents", DocumentsGlyph, "documents"],
   ["Directory", DirectoryGlyph, "directory"],
   ["Settings", SettingsGlyph, "settings"],
-  ["Switch chapter", ChapterGlyph, "chapter"],
+  ["Create a chapter", ChapterGlyph, "chapter"],
   ["Host check-in", HostCheckInGlyph, "hostCheckIn"],
 ];
 

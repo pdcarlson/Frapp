@@ -31,8 +31,8 @@ import { roleColor, type RoleColorHex } from "@repo/validation";
  * the glyph at full strength), and `member-avatar-color.spec.ts` holds that
  * pair at AA for every hue in the palette.
  *
- * Settings and Chapter settings share slate: they are the same kind of
- * place, one the member's and one the chapter's, and draw the same gear.
+ * Settings is slate. Chapter settings shared it, the same kind of place,
+ * until it left You for Chat home's chapter menu (2026-11-19).
  */
 export type YouDestination =
   | "study"
@@ -44,8 +44,7 @@ export type YouDestination =
   | "settings"
   | "chapter"
   | "invite"
-  | "hostCheckIn"
-  | "chapterSettings";
+  | "hostCheckIn";
 
 export const YOU_DESTINATION_HUE: Record<YouDestination, RoleColorHex> = {
   study: roleColor("periwinkle"),
@@ -58,7 +57,6 @@ export const YOU_DESTINATION_HUE: Record<YouDestination, RoleColorHex> = {
   chapter: roleColor("green"),
   invite: roleColor("lime"),
   hostCheckIn: NOTIFICATION_TILE_HUE.events,
-  chapterSettings: roleColor("slate"),
 };
 
 /** The hex a place's tile and glyph draw in. */

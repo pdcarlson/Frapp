@@ -1,0 +1,1 @@
+Every page's main buttons, like New event, New minutes, Upload and Log service, now sit in the page's own header next to its title instead of on a row of their own, and every New button looks the same.

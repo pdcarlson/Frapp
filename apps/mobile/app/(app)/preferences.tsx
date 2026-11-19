@@ -117,7 +117,7 @@ import {
  *   under ACCOUNT, and Frapp AI's caption named the companies.
  * - **No CHAPTER · ADMIN.** The drawn group (accent, chat background, study
  *   zones) moved whole to Chapter settings (`app/(app)/chapter-settings.tsx`,
- *   #4074), the chapter's side of settings off You → Admin, so this screen
+ *   #4074), the chapter's side of settings off Chat home's chapter menu, so this screen
  *   is the member's own, as web keeps the two apart.
  * - **No "Join code" row.** Canvas draws `Join code · TN7-4KQ` under CHAPTER ·
  *   ADMIN. There is no `join_code` anywhere on chapters; joining runs through

@@ -5,7 +5,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
 import {
-  MEETING_COPY,
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   MINUTES_REQUEST_COPY,
@@ -124,7 +123,7 @@ describe("EventMinutesRow", () => {
 
   it.each([
     ["posted", MEETING_ENTRY_COPY.posted],
-    ["draft", MEETING_COPY.draftBadge],
+    ["draft", MEETING_ENTRY_COPY.draft],
   ])("opens %s minutes the viewer may read", (status, value) => {
     state.permissions = [];
     state.meetings = [{ id: "m1", status }];
@@ -136,6 +135,25 @@ describe("EventMinutesRow", () => {
       pathname: "/minutes-details",
       params: { id: "m1" },
     });
+  });
+
+  it("says where the minutes stand, what they hold, and their TL;DR's first line, as web does", () => {
+    state.permissions = [];
+    state.meetings = [
+      {
+        id: "m1",
+        status: "posted",
+        posted_at: "2026-11-18T12:00:00Z",
+        decision_count: 2,
+        action_item_count: 3,
+        gist: "Dues are due Friday.",
+      } as never,
+    ];
+    const text = screenText(render());
+    expect(text).toMatch(
+      /Posted \w+, November 18 · 2 decisions · 3 action items/,
+    );
+    expect(text).toContain("Dues are due Friday.");
   });
 
   it("offers Take notes on someone else's draft, to a member they added (#4935)", () => {
@@ -220,7 +238,11 @@ describe("EventMinutesRow", () => {
     });
 
     it("offers Request minutes on unposted minutes the member can't open", async () => {
-      state.ask.mockResolvedValue({ ...state.request, requested: true, pinged: true });
+      state.ask.mockResolvedValue({
+        ...state.request,
+        requested: true,
+        pinged: true,
+      });
       const tree = render();
       expect(screenText(tree)).toContain(MINUTES_REQUEST_COPY.request);
       expect(screenText(tree)).toContain(MINUTES_REQUEST_COPY.notPosted);

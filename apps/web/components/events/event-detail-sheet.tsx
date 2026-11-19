@@ -1,23 +1,23 @@
 "use client";
 
 import {
+  agendaCheckOffOpen,
   can,
   checkInZoneLine,
+  describeAttendance,
+  EVENT_FORM_ROW_LABELS,
   deleteOffersSeriesChoice,
   readEventAgenda,
   readEventAttachments,
   SERIES_SCOPE_COPY,
 } from "@repo/validation";
+import type React from "react";
 import { useMemo } from "react";
+import type { EventFormGlyphName } from "@repo/theme/event-form-glyphs";
+import { EventFormGlyph } from "@/components/events/event-form-rows";
 import { AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
-import {
-  PointsGlyph,
-  RolesGlyph,
-  ScheduleGlyph,
-  StudyZonesGlyph,
-} from "@/components/events/chapter-ops-glyphs";
 import {
   useActiveChapterId,
   useDeleteEvent,
@@ -34,12 +34,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useRefetchAfterOutage } from "@/lib/hooks/use-refetch-after-outage";
 import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
-import {
-  EVENT_ATTENDANCE_LABELS,
-  attendanceFieldsOf,
-  attendanceFromEvent,
-} from "@repo/validation";
-import { Badge } from "@/components/ui/badge";
+import { attendanceFieldsOf, attendanceFromEvent } from "@repo/validation";
 import { IconButton } from "@/components/ui/icon-button";
 import {
   SubscriptionNotice,
@@ -226,7 +221,6 @@ export function EventDetailSheet({
   const attendance = attendanceFromEvent(
     attendanceFieldsOf(resolvedEvent ?? {}),
   );
-  const isMandatory = attendance.everyone === "required";
   // Excuses (`spec/behavior/events.md` § Excuses): offered to a member the
   // event requires, by their roles; received by its creator, and decided by
   // them or any `events:update` holder.
@@ -242,6 +236,20 @@ export function EventDetailSheet({
     seriesRule ?? resolvedEvent?.recurrence_rule,
     resolvedEvent?.start_time,
   );
+  // The series' next meeting after this one (the list is soonest first and
+  // holds this one), or the first still ahead when this one isn't in it.
+  const nextOccurrence = useMemo(() => {
+    if (!series || series.length === 0) return null;
+    const here = series.findIndex((occurrence) => occurrence.id === eventId);
+    if (here >= 0) return series[here + 1] ?? null;
+    const from = Date.parse(String(resolvedEvent?.start_time ?? ""));
+    return (
+      series.find(
+        (occurrence) =>
+          Date.parse(String(occurrence.start_time ?? "")) > from,
+      ) ?? null
+    );
+  }, [series, eventId, resolvedEvent?.start_time]);
   const schedule = formatDayTimeRange(
     resolvedEvent?.start_time,
     resolvedEvent?.end_time,
@@ -457,196 +465,154 @@ export function EventDetailSheet({
             <SubscriptionNotice gate={gate} feature="editing events" />
           ) : null}
 
-          <div className="mt-5 grid gap-3">
-            {/*
-              Every viewer's own check-in, first because it is the one thing
-              on the sheet a member can act on. Officers check in too, so they
-              get it as well as the roster below.
-            */}
-            {eventId && !usingPreviewData ? (
-              <MyCheckIn
-                eventId={eventId}
-                start={resolvedEvent?.start_time}
-                end={resolvedEvent?.end_time}
-                opensMinutes={resolvedEvent?.check_in_opens_minutes}
-                pointValue={resolvedEvent?.point_value}
-                eventUnavailable={eventUnavailable}
-                zone={zoneState}
-                eventPending={checkInReadPending}
-              />
-            ) : null}
-            {/* Keyed by event: the sheet switches series occurrences in
-                place, and a half-typed reason must not carry over. */}
-            {eventId && !usingPreviewData && !eventUnavailable ? (
-              <MyExcuse
-                key={`excuse-${eventId}`}
-                eventId={eventId}
-                required={requiredOfViewer}
-                start={resolvedEvent?.start_time}
-                end={resolvedEvent?.end_time}
-                opensMinutes={resolvedEvent?.check_in_opens_minutes}
-                writeAsk={excuseAsk?.eventId === eventId ? excuseAsk.count : 0}
-              />
-            ) : null}
-            {eventId &&
-            !usingPreviewData &&
-            !eventUnavailable &&
-            (createdByViewer || can("events:update", permissions)) ? (
-              <ExcuseReview
-                key={`excuses-${eventId}`}
-                eventId={eventId}
-                viewerId={viewerId}
-                canUpdateEvents={can("events:update", permissions)}
-              />
-            ) : null}
-            <div className="rounded-lg border border-border p-3">
-              <p className="mb-2 flex items-center gap-1 text-caption text-muted-foreground">
-                <RolesGlyph className="h-3.5 w-3.5" />
-                Who&apos;s coming
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={isMandatory ? "destructive" : "secondary"}>
-                  {attendance.everyone === "not_invited"
-                    ? "Only the roles below"
-                    : `${EVENT_ATTENDANCE_LABELS[attendance.everyone]} for everyone`}
-                </Badge>
-                {cadence ? <Badge variant="outline">{cadence}</Badge> : null}
-              </div>
-              {Object.keys(attendance.roles).length > 0 ? (
-                <ul className="mt-2 grid gap-1">
-                  {Object.entries(attendance.roles).map(([id, status]) => (
-                    <li
-                      key={id}
-                      className="flex items-center justify-between gap-3 text-sm"
-                    >
-                      <span className="truncate">
-                        {roleNameById.get(id) ??
-                          (rolesQuery.isSuccess ? "Removed role" : "Role")}
-                      </span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {EVENT_ATTENDANCE_LABELS[status]}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="mt-3">
-                <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
-                  <StudyZonesGlyph className="h-3.5 w-3.5" />
-                  Check-in zone
-                </p>
-                {hasCheckInZone ? (
-                  <p className="text-sm">{checkInZoneLine(checkInZoneName)}</p>
-                ) : checkInZoneIsMalformed ? (
-                  <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>
-                      This event&apos;s zone is incomplete, so every check-in is
-                      rejected. Edit the event to finish or clear it.
-                    </div>
-                  </div>
-                ) : zoneState === "code" ? (
-                  <p className="text-sm text-muted-foreground">
-                    No zone. An officer&apos;s screen is showing the code, so
-                    members scan it to check in
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No zone, so members can check in from anywhere
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border p-3">
-              <p className="mb-2 text-caption text-muted-foreground">
-                Schedule
-              </p>
-              {/*
-              One line for when, the mobile event header's shape, in place of
-              "Starts:" and "Ends:" lines. A fact the event does not have drops
-              out rather than reading "TBD" or "0 points".
-            */}
-              <div className="space-y-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                  <p>{schedule ?? "Not set"}</p>
-                </div>
-                {location ? (
-                  <div className="flex items-start gap-2">
-                    <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <p>{location}</p>
-                  </div>
-                ) : null}
-                {points ? (
-                  <div className="flex items-start gap-2">
-                    <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                    <p>{points}</p>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            {/*
-              The series right under the meeting it opened, ahead of the long
-              attendance roster (#3707): the list shows a repeating event once,
-              so this is where its other dates live.
-            */}
-            {series && series.length > 1 ? (
-              <section
-                aria-labelledby="event-series-label"
-                className="rounded-lg border border-border p-3"
-              >
-                <p
-                  id="event-series-label"
-                  className="mb-1 text-caption text-muted-foreground"
-                >
-                  Upcoming in this series
-                </p>
-                <ul role="list" className="grid gap-0.5">
-                  {series.map((occurrence) => {
-                    const occurrenceId =
-                      typeof occurrence.id === "string" ? occurrence.id : "";
-                    const isOpen = occurrenceId === eventId;
-                    const when =
-                      formatDayTime(occurrence.start_time) ?? "Date not set";
-                    return (
-                      <li key={occurrenceId || when}>
+          {/*
+            Details first, then the agenda, then attendance (Paul
+            2026-11-19: "details should come first, followed by the agenda
+            and the attendance"). The details are the event form's own rows
+            read back (`EVENT_FORM_ROWS`, the same marks and words), so the
+            page reads as the form that made it, the way Notion Calendar's
+            and Linear's detail views do. The sections after them each get a
+            heading and a rule, one look for all of them.
+          */}
+          <div className="mt-4 flex flex-col [&>*+*]:mt-5 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-5">
+            <section aria-label="Details" className="grid gap-2">
+              <dl className="grid gap-0.5">
+                <DetailRow glyph="when" label={EVENT_FORM_ROW_LABELS.when}>
+                  {schedule ?? "Not set"}
+                </DetailRow>
+                {/* A meeting whose rule can't be read (its series head
+                    isn't loaded) still says it's in one, and still links on,
+                    as the phone's does. */}
+                {cadence || (series?.length ?? 0) > 1 ? (
+                  <DetailRow
+                    glyph="repeat"
+                    label={EVENT_FORM_ROW_LABELS.repeat}
+                  >
+                    <span>{cadence ?? "Part of a series"}</span>
+                    {/*
+                      The series as one link to its next meeting, not a list
+                      of every date (Paul 2026-11-19: "don't need to see all
+                      the upcoming series events"): the calendar holds the
+                      rest, and this is the one an officer reaches for next.
+                    */}
+                    {nextOccurrence && onSelectOccurrence ? (
+                      <>
+                        <span aria-hidden="true" className="text-muted-foreground">
+                          {" · "}
+                        </span>
                         <button
                           type="button"
-                          aria-current={isOpen ? "true" : undefined}
-                          disabled={isOpen || !onSelectOccurrence}
-                          onClick={() => onSelectOccurrence?.(occurrence)}
+                          onClick={() => onSelectOccurrence(nextOccurrence)}
                           className={cn(
-                            "flex min-h-9 w-full items-center rounded-md px-2 text-left text-sm transition-colors pointer-coarse:min-h-11",
-                            isOpen
-                              ? "bg-accent-subtle font-semibold text-accent-text"
-                              : "hover:bg-card-hover",
+                            "rounded-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
                             FOCUS_RING_OFFSET,
                           )}
                         >
-                          {when}
+                          Next {formatDayTime(nextOccurrence.start_time) ?? ""}
                         </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ) : null}
-
-            {description ? (
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-1 text-caption text-muted-foreground">
-                  Description
-                </p>
-                {/* Same fix as the minutes block below: the source is a
-                  multi-line Textarea, so preserve line breaks instead of
-                  collapsing them. */}
-                <p className="whitespace-pre-wrap break-words text-sm">
-                  {description}
-                </p>
-              </div>
-            ) : null}
+                      </>
+                    ) : null}
+                  </DetailRow>
+                ) : null}
+                {location ? (
+                  <DetailRow
+                    glyph="location"
+                    label={EVENT_FORM_ROW_LABELS.location}
+                  >
+                    {location}
+                  </DetailRow>
+                ) : null}
+                <DetailRow
+                  glyph="attendance"
+                  label={EVENT_FORM_ROW_LABELS.attendance}
+                >
+                  {describeAttendance(
+                    attendance,
+                    (id) =>
+                      roleNameById.get(id) ??
+                      (rolesQuery.isSuccess ? "Removed role" : undefined),
+                  )}
+                </DetailRow>
+                {points ? (
+                  <DetailRow glyph="points" label={EVENT_FORM_ROW_LABELS.points}>
+                    {points}
+                  </DetailRow>
+                ) : null}
+                {/*
+                  Every viewer's own check-in, in its row: the one thing in
+                  the details a member acts on, so its button sits right
+                  there. Officers check in too, so they get it as well as the
+                  roster below.
+                */}
+                <DetailRow
+                  glyph="checkIn"
+                  label={EVENT_FORM_ROW_LABELS.checkIn}
+                  align="start"
+                >
+                  {eventId && !usingPreviewData ? (
+                    <MyCheckIn
+                      eventId={eventId}
+                      start={resolvedEvent?.start_time}
+                      end={resolvedEvent?.end_time}
+                      opensMinutes={resolvedEvent?.check_in_opens_minutes}
+                      pointValue={resolvedEvent?.point_value}
+                      eventUnavailable={eventUnavailable}
+                      zone={zoneState}
+                      eventPending={checkInReadPending}
+                    />
+                  ) : null}
+                  {/* Where it can be made from, under the window. */}
+                  {hasCheckInZone ? (
+                    <p className="text-caption text-muted-foreground">
+                      {checkInZoneLine(checkInZoneName)}
+                    </p>
+                  ) : checkInZoneIsMalformed ? (
+                    <div className="mt-1 flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        This event&apos;s zone is incomplete, so every check-in
+                        is rejected. Edit the event to finish or clear it.
+                      </div>
+                    </div>
+                  ) : zoneState === "code" ? (
+                    <p className="text-caption text-muted-foreground">
+                      No zone. An officer&apos;s screen is showing the code, so
+                      members scan it to check in.
+                    </p>
+                  ) : (
+                    <p className="text-caption text-muted-foreground">
+                      No zone, so members can check in from anywhere.
+                    </p>
+                  )}
+                </DetailRow>
+                {description ? (
+                  <DetailRow
+                    glyph="description"
+                    label={EVENT_FORM_ROW_LABELS.description}
+                    align="start"
+                  >
+                    {/* The source is a multi-line field, so its line breaks
+                        stay. */}
+                    <p className="whitespace-pre-wrap break-words">
+                      {description}
+                    </p>
+                  </DetailRow>
+                ) : null}
+              </dl>
+              {/* Keyed by event: the sheet switches series occurrences in
+                  place, and a half-typed reason must not carry over. */}
+              {eventId && !usingPreviewData && !eventUnavailable ? (
+                <MyExcuse
+                  key={`excuse-${eventId}`}
+                  eventId={eventId}
+                  required={requiredOfViewer}
+                  start={resolvedEvent?.start_time}
+                  end={resolvedEvent?.end_time}
+                  opensMinutes={resolvedEvent?.check_in_opens_minutes}
+                  writeAsk={excuseAsk?.eventId === eventId ? excuseAsk.count : 0}
+                />
+              ) : null}
+            </section>
 
             {eventId && !usingPreviewData ? (
               // Keyed by meeting: a half-typed item, or a change still
@@ -665,29 +631,16 @@ export function EventDetailSheet({
                   typeof resolvedEvent?.end_time === "string" &&
                   Date.parse(resolvedEvent.end_time) > now
                 }
+                checkOffOpen={agendaCheckOffOpen(
+                  resolvedEvent?.start_time,
+                  new Date(now),
+                )}
                 documentsOn={documentsOn}
               />
             ) : null}
 
-            {eventId && !usingPreviewData ? (
-              <EventMinutes eventId={eventId} eventName={eventName} />
-            ) : null}
-
-            {notes ? (
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-1 text-caption text-muted-foreground">
-                  {meetingsOn ? "Notes" : "Meeting minutes"}
-                </p>
-                {/* Same plain-text convention as chat's TextRenderer (#369 owns
-                  a real markdown renderer if that lands later) — preserve the
-                  line breaks admins typed instead of collapsing them. */}
-                <p className="whitespace-pre-wrap break-words text-sm">
-                  {notes}
-                </p>
-              </div>
-            ) : null}
-
             {/*
+              Attendance: the excuses waiting on a decision, then the roster.
               The roster is `events:update` on the server, so it mounts only
               for a viewer who holds it: mounted for a member, its read 403'd
               and the sheet said "Your role can't do this" where their own
@@ -695,29 +648,96 @@ export function EventDetailSheet({
               permissions load, so it never mounts and fires that read first.
             */}
             {eventId && !usingPreviewData ? (
-              <Can
-                permission="events:update"
-                offlineFallback={(retry) => (
-                  <PermissionsOfflineSurface
-                    description="Reconnect to see who checked in to this event."
-                    onRetry={retry}
+              <div className="grid gap-3 empty:hidden">
+                {/* The event's creator receives its excuses; an
+                    events:update holder may decide them too. */}
+                {!eventUnavailable &&
+                (createdByViewer || can("events:update", permissions)) ? (
+                  <ExcuseReview
+                    key={`excuses-${eventId}`}
+                    eventId={eventId}
+                    viewerId={viewerId}
+                    canUpdateEvents={can("events:update", permissions)}
                   />
-                )}
-              >
-                <AttendancePanel
-                  // Keyed by meeting: opening another one from the series
-                  // list starts its roster fresh, filter included.
-                  key={eventId}
-                  eventId={eventId}
-                  eventStart={resolvedEvent?.start_time}
-                  eventEnd={resolvedEvent?.end_time}
-                />
-              </Can>
+                ) : null}
+                <Can
+                  permission="events:update"
+                  offlineFallback={(retry) => (
+                    <PermissionsOfflineSurface
+                      description="Reconnect to see who checked in to this event."
+                      onRetry={retry}
+                    />
+                  )}
+                >
+                  <AttendancePanel
+                    // Keyed by meeting: opening another one from the series
+                    // starts its roster fresh, filter included.
+                    key={eventId}
+                    eventId={eventId}
+                    eventStart={resolvedEvent?.start_time}
+                    eventEnd={resolvedEvent?.end_time}
+                  />
+                </Can>
+              </div>
+            ) : null}
+
+            {eventId && !usingPreviewData ? (
+              <EventMinutes eventId={eventId} eventName={eventName} />
+            ) : null}
+
+            {notes ? (
+              <section aria-label={meetingsOn ? "Notes" : "Meeting minutes"}>
+                <h3 className="mb-1 text-sm font-semibold">
+                  {meetingsOn ? "Notes" : "Meeting minutes"}
+                </h3>
+                {/* Same plain-text convention as chat's TextRenderer (#369
+                  owns a real markdown renderer if that lands later):
+                  preserve the line breaks admins typed. */}
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {notes}
+                </p>
+              </section>
             ) : null}
           </div>
         </PanelBody>
         {confirmDialog}
       </PanelContent>
     </Panel>
+  );
+}
+
+/**
+ * One read-only detail, laid out as the event form's row
+ * (`event-form-rows.tsx`): the same mark and label column, so the page and
+ * the form that made it line up.
+ */
+function DetailRow({
+  glyph,
+  label,
+  align = "center",
+  children,
+}: {
+  glyph: EventFormGlyphName;
+  label: string;
+  align?: "center" | "start";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid min-h-9 grid-cols-[1rem_minmax(4.5rem,6.5rem)_minmax(0,1fr)] gap-x-2.5 py-1",
+        align === "center" ? "items-center" : "items-start",
+      )}
+    >
+      <EventFormGlyph
+        name={glyph}
+        className={cn(
+          "text-muted-foreground",
+          align === "start" && "mt-0.5",
+        )}
+      />
+      <dt className="truncate text-sm text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm text-foreground">{children}</dd>
+    </div>
   );
 }

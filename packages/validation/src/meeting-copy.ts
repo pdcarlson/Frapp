@@ -119,10 +119,112 @@ export const MEETING_ENTRY_COPY = {
   startFailed: "Couldn't start the minutes",
 } as const;
 
+/** The longest the event card's gist runs before it is cut. */
+const MINUTES_GIST_MAX = 140;
+
+/**
+ * An event's minutes in two lines (the event's Minutes card, web and phone):
+ * where they stand and what they hold, then the TL;DR's first line, which
+ * the list row carries as `gist`.
+ */
+export function eventMinutesLines(minutes: {
+  status: "draft" | "posted";
+  posted_at: string | null;
+  decision_count: number;
+  action_item_count: number;
+  gist?: string | null;
+}): { status: string; gist: string | null } {
+  const stand =
+    minutes.status === "posted"
+      ? minutes.posted_at
+        ? `${MEETING_ENTRY_COPY.posted} ${meetingDayLabel(minutes.posted_at)}`
+        : MEETING_ENTRY_COPY.posted
+      : MEETING_ENTRY_COPY.draft;
+  const status = [
+    stand,
+    minutes.decision_count
+      ? MEETING_LIST_COPY.decisions(minutes.decision_count)
+      : null,
+    minutes.action_item_count
+      ? MEETING_LIST_COPY.actionItems(minutes.action_item_count)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return { status, gist: minutes.gist ?? null };
+}
+
+/** One tag on a Minutes list row, and which kind of chip draws it. */
+export interface MinutesRowTag {
+  key: "draft" | "recorded" | "decisions" | "actionItems" | "byline";
+  label: string;
+}
+
+/**
+ * A Minutes list row's tags, worked out from the minutes and never typed,
+ * in the order both apps draw them (#5680): Draft, Recorded, how many
+ * decisions and action items, and whose draft it is when it isn't the
+ * viewer's own.
+ */
+export function minutesRowTags(
+  row: {
+    status: string;
+    recorded: boolean;
+    decision_count: number;
+    action_item_count: number;
+  },
+  byline?: string | null,
+): MinutesRowTag[] {
+  const tags: (MinutesRowTag | null)[] = [
+    row.status === "draft"
+      ? { key: "draft", label: MEETING_COPY.draftBadge }
+      : null,
+    row.recorded
+      ? { key: "recorded", label: MEETING_LIST_COPY.recorded }
+      : null,
+    row.decision_count > 0
+      ? {
+          key: "decisions",
+          label: MEETING_LIST_COPY.decisions(row.decision_count),
+        }
+      : null,
+    row.action_item_count > 0
+      ? {
+          key: "actionItems",
+          label: MEETING_LIST_COPY.actionItems(row.action_item_count),
+        }
+      : null,
+    byline ? { key: "byline", label: byline } : null,
+  ];
+  return tags.filter((tag): tag is MinutesRowTag => tag !== null);
+}
+
+/** The TL;DR's first line, its bullet taken off and cut to a line or two. */
+export function minutesGist(tldr: string | null | undefined): string | null {
+  const first = (tldr ?? "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*\u2022]\s+)?/, "").trim())
+    .find(Boolean);
+  if (!first) return null;
+  if (first.length <= MINUTES_GIST_MAX) return first;
+  const cut = first.slice(0, MINUTES_GIST_MAX);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > MINUTES_GIST_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
+}
+
 /** The list of a chapter's minutes. */
 export const MEETING_LIST_COPY = {
   title: "Minutes",
-  drafts: "Drafts",
+  /**
+   * Meetings, tied to their events (Paul, 2026-11-19): meetings on the
+   * calendar that ended with no minutes, drafts, then what was posted, with
+   * the next meeting at the foot.
+   */
+  needsMinutes: "Needs minutes",
+  startMinutes: "Start minutes",
+  nextUp: "Next up",
+  openEvent: "Open event",
+  drafts: "In progress",
   posted: "Minutes",
   none: "Minutes show here once a secretary posts them.",
   loadFailedTitle: "Couldn't load the minutes",
@@ -130,7 +232,6 @@ export const MEETING_LIST_COPY = {
   /** A draft that isn't the reader's own names whose it is. */
   draftOf: (name: string) => `${name}'s draft`,
   /** The list's grouping and finding (#5290). */
-  yourDrafts: "Your drafts",
   search: "Search minutes",
   allTypes: "All",
   types: "Meeting types",
@@ -185,11 +286,11 @@ export const MEETING_COPY = {
   tryAgain: "Try again in a moment.",
   /**
    * Where the chapter doesn't draft minutes from notes, the phone's note is
-   * the minutes' Summary (#5288); the other sections are written on the web
-   * until the phone has a section editor (#4412).
+   * the minutes' Summary (#5288); the line under it opens the section editor
+   * for the rest (#4412).
    */
   summaryPlaceholder: "Type what was said and decided.",
-  restOnWeb: "The TL;DR, decisions and action items are added on the web.",
+  editAllSections: "Add the TL;DR, decisions and action items",
   /**
    * The TL;DR's box (#5523): a draft fills it; without drafting the
    * minute-taker writes it, as they write the Summary.

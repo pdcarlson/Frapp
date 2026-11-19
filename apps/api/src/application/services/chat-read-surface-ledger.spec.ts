@@ -250,6 +250,14 @@ const HTTP_LEDGER: Record<string, Entry> = {
       test: 'refuses to hand out URLs for a message whose sender the caller has blocked',
     },
   },
+  // #5667: the batch form of the route above, one request per message list.
+  ChatController_listMessagesAttachments_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_ATTACHMENT_SERVICE_SPEC,
+      test: 'withholds the files of a sender the caller has blocked, and signs nothing for them',
+    },
+  },
   ChatController_resolveAuthorAvatars_v1: {
     status: 'not-hidden',
     why: 'Imported archive authors only (`sender_id: null`). Blocks are keyed on `users.id`, so there is nobody to have blocked.',
@@ -649,11 +657,11 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     ],
   },
   'application/services/invite.service.ts': {
-    calls: 2,
+    calls: 3,
     entries: [
       {
         status: 'not-hidden',
-        why: 'A push naming the member who joined, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
+        why: 'Notifications naming the member who joined (to the inviter and the officer roster) and the member who asked for a new invite (to its sender) (#5625). A notice that merely names a member is not hidden.',
       },
     ],
   },

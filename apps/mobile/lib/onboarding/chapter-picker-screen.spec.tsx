@@ -14,10 +14,11 @@ import { flatStyle } from "@/test/flat-style";
 import { drawnText } from "@/test/screen-text";
 
 /**
- * The chapter picker, opened from You (`app/(app)/(tabs)/you.tsx`). It draws
- * `‹ You` like every screen opened from a You row (navigation.md § Back
- * rows), but only when You's row says it opened it: a link has sign-in
- * anchored under it, so "something to go back to" doesn't mean You. The row
+ * The chapter picker, opened from Chat home's chapter menu
+ * (`components/chat/chapter-menu.tsx`). It draws `‹ Chat` like every screen
+ * opened from Chat home (navigation.md § Back rows), but only when the menu
+ * says it opened it: a link has sign-in anchored under it, so "something to
+ * go back to" doesn't mean Chat. The row
  * goes back rather than opening You again, and holds while a switch runs. The
  * chapter that's open now is marked, and a tap on it selects it again like any
  * row, since the mark reads a token claim that can lag the server. Whether a
@@ -91,7 +92,7 @@ function moreRow(root: Node): Node | undefined {
     .findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Back to You",
+        node.props.accessibilityLabel === "Back to Chat",
     )
     .at(0);
 }
@@ -151,24 +152,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   chapters = [TAU_NU, ETA];
   selectChapter.mockResolvedValue(true);
-  // Something is under the picker either way: the You tab, or sign-in,
+  // Something is under the picker either way: the Chat tab, or sign-in,
   // which `(auth)/_layout.tsx` anchors under a screen a link opens.
   vi.mocked(router.canGoBack).mockReturnValue(true);
-  // As You's Switch chapter row opens it.
-  vi.mocked(useLocalSearchParams).mockReturnValue({ from: "you" });
+  // As Chat home's chapter menu opens it.
+  vi.mocked(useLocalSearchParams).mockReturnValue({ from: "chat" });
 });
 
-describe("chapter picker, opened from You", () => {
-  it("draws ‹ You, which goes back to the tabs underneath", () => {
+describe("chapter picker, opened from Chat", () => {
+  it("draws ‹ Chat, which goes back to the tabs underneath", () => {
     const tree = render();
     const back = moreRow(tree.root)!;
     const column = tree.root.findByType("ScrollView" as never);
 
-    expect(drawnText(back)).toBe("You");
+    expect(drawnText(back)).toBe("Chat");
     // House gold (`gold.askText`), not the chapter's accent, as all of
     // `(auth)` is.
     expect(backArrowColor(back)).toBe(signetDarkTokens.color.gold.askText);
-    // At the top of the column, where every screen opened from You puts its
+    // At the top of the column, where every screen opened from Chat puts its
     // row and title, rather than floating above a centred list.
     expect(
       Object.assign({}, ...column.props.contentContainerStyle).justifyContent,
@@ -194,7 +195,7 @@ describe("chapter picker, opened from You", () => {
     ).toBe("center");
   });
 
-  it("holds ‹ You while a switch is in flight", async () => {
+  it("holds ‹ Chat while a switch is in flight", async () => {
     const settle = pendingSwitch();
     const tree = render();
     expect(moreRow(tree.root)?.props.disabled).toBe(false);
@@ -394,7 +395,7 @@ describe("chapter picker, opened from You", () => {
     refetchChapters.mockImplementationOnce(() => {
       chapters = [];
     });
-    // A link opened it: no ‹ You, so before the refetch Sign out was the
+    // A link opened it: no ‹ Chat, so before the refetch Sign out was the
     // only way off.
     vi.mocked(useLocalSearchParams).mockReturnValue({});
     const tree = render();

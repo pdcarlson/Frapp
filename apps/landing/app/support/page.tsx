@@ -25,7 +25,7 @@ const sections = [
   {
     heading: "2. Signing in and joining a chapter",
     paragraphs: [
-      "Members join a chapter through an invite link or code issued by a chapter officer. Invites expire 24 hours after they are created; if yours has expired or was already used, ask an officer for a new one.",
+      "Members join a chapter through an invite link or code issued by a chapter officer. Personal invites expire 7 days after they are created; if yours has expired or was already used, open it anyway and tap Ask for a new link, or ask an officer directly.",
       "If an invite says the chapter is not accepting new members, the chapter's subscription is inactive. Only a chapter officer can restore it; the same invite works again once they do.",
     ],
   },

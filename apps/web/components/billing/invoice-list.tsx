@@ -2,7 +2,7 @@
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Loader2, Plus } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import {
   useCreateInvoice,
   useCurrentUser,
@@ -17,6 +17,7 @@ import { STATUS_LABELS, can, statusLabel } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { ExportMenu } from "@/components/shared/export-menu";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
@@ -491,14 +492,7 @@ export function InvoiceList({ id }: { id?: string }) {
           <Can permission="billing:manage">
             <Dialog {...createDialog.dialogProps}>
               <DialogTrigger asChild>
-                <Button
-                  size="toolbar"
-                  className="gap-2"
-                  {...gate.controlProps()}
-                >
-                  <Plus className="h-4 w-4" />
-                  Create invoice
-                </Button>
+                <NewButton thing="invoice" {...gate.controlProps()} />
               </DialogTrigger>
               <DialogContent
                 className="sm:max-w-lg"
@@ -714,7 +708,7 @@ export function InvoiceList({ id }: { id?: string }) {
           One line where the rows go (empty-states plan rule 7, `writing.md`
           §4). A miss offers the way back; an officer with nothing billed yet
           gets the first invoice from the line itself, the same gated dialog
-          the toolbar's Create invoice opens.
+          the toolbar's New invoice opens.
         */
         statusFilter === "all" && !search.trim() ? (
           canManage ? (

@@ -105,6 +105,31 @@ describe("EventMinutes", () => {
     ).toBe("/meetings/m-1");
   });
 
+  it("says where the minutes stand, what they hold, and their TL;DR's first line", () => {
+    mocks.meetings.current = {
+      isPending: false,
+      isError: false,
+      data: [
+        {
+          id: "m-1",
+          status: "posted",
+          event_id: "e-1",
+          posted_at: "2026-11-18T12:00:00Z",
+          decision_count: 2,
+          action_item_count: 3,
+          gist: "Dues are due Friday.",
+        },
+      ],
+    };
+    render(<EventMinutes eventId="e-1" eventName="Chapter" />);
+    expect(
+      screen.getByText(
+        /^Posted \w+, November 18 · 2 decisions · 3 action items$/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Dues are due Friday.")).toBeTruthy();
+  });
+
   it("offers no Write minutes when the read failed", () => {
     mocks.permissions.current = ["meetings:record"];
     mocks.meetings.current = { isPending: false, isError: true, data: [] };
@@ -199,7 +224,9 @@ describe("EventMinutes", () => {
     it("reads Requested once the member has asked, with nothing to press", () => {
       mocks.request.current = askable(true);
       render(<EventMinutes eventId="e-1" eventName="Chapter" />);
-      expect(screen.getByText("Not posted yet. You asked for them.")).toBeTruthy();
+      expect(
+        screen.getByText("Not posted yet. You asked for them."),
+      ).toBeTruthy();
       const button = screen.getByRole("button", { name: "Minutes requested" });
       expect((button as HTMLButtonElement).disabled).toBe(true);
     });
@@ -210,7 +237,9 @@ describe("EventMinutes", () => {
       const { rerender } = render(
         <EventMinutes eventId="e-1" eventName="Chapter" />,
       );
-      expect(screen.queryByRole("button", { name: "Request minutes" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Request minutes" }),
+      ).toBeNull();
       mocks.taking.current = {
         isPending: false,
         data: [
@@ -225,7 +254,9 @@ describe("EventMinutes", () => {
       };
       rerender(<EventMinutes eventId="e-1" eventName="Chapter" />);
       expect(screen.getByRole("link", { name: "Take notes" })).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Request minutes" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Request minutes" }),
+      ).toBeNull();
     });
 
     it("offers nothing once the minutes are posted and readable", () => {
@@ -236,7 +267,9 @@ describe("EventMinutes", () => {
       };
       mocks.request.current = askable(false);
       render(<EventMinutes eventId="e-1" eventName="Chapter" />);
-      expect(screen.queryByRole("button", { name: "Request minutes" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Request minutes" }),
+      ).toBeNull();
       expect(screen.getByRole("link", { name: "Open minutes" })).toBeTruthy();
     });
   });

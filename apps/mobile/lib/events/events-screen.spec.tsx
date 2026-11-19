@@ -410,7 +410,7 @@ describe("Calendar states", () => {
     query = { isPending: true, isError: false, isFetching: false };
     const tree = render();
 
-    expect(screenText(tree)).toContain("Choose a chapter from You");
+    expect(screenText(tree)).toContain("then Switch chapter");
     expect(skeletons(tree)).toHaveLength(0);
   });
 
@@ -1337,6 +1337,24 @@ describe("Tasks on the Calendar", () => {
     ];
   }
 
+  it("leads a task due at a time with its time (#5116)", () => {
+    const at5 = new Date(MOUNTED_AT);
+    at5.setHours(17, 0, 0, 0);
+    tasks = [
+      {
+        id: "t-timed",
+        title: "Book the bus",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: localIsoDate(MOUNTED_AT),
+        due_at: at5.toISOString(),
+        status: "TODO",
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("5 PM · To do");
+  });
+
   it("lists the day's tasks under its events, with where they stand", () => {
     withTasks();
     const tree = render();
@@ -1737,6 +1755,40 @@ describe("Calendar day screen", () => {
     const tree = renderDay(today());
     expect(screenText(tree)).toContain("All day");
     expect(screenText(tree)).toContain("Clean the kitchen");
+  });
+
+  it("draws a task due at a time at that time, not in the All day strip (#5116)", () => {
+    const day = today();
+    const at5 = new Date(day);
+    at5.setHours(17, 0, 0, 0);
+    tasks = [
+      {
+        id: "t-timed",
+        title: "Book the bus",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: localIsoDate(day),
+        due_at: at5.toISOString(),
+        status: "TODO",
+      },
+    ];
+    const tree = renderDay(day);
+    expect(screenText(tree)).not.toContain("All day");
+    const [marker] = tree.root.findAll(
+      (node) =>
+        node.props.testID === "time-grid-task-task:t-timed" &&
+        typeof node.props.style !== "undefined",
+    );
+    expect(marker).toBeDefined();
+    expect(marker!.props.accessibilityLabel).toBe(
+      "Book the bus, due 5 PM, your task, to do",
+    );
+    const style = StyleSheet.flatten(
+      typeof marker!.props.style === "function"
+        ? marker!.props.style({ pressed: false })
+        : marker!.props.style,
+    );
+    expect(style.top).toBe(17 * 48);
   });
 
   it("says when a block's event is mandatory", () => {

@@ -9,7 +9,10 @@ import {
 } from "react-native";
 import { localIsoDate, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
-import type { CalendarItem } from "@repo/hooks/calendar-tasks";
+import {
+  calendarItemDueMinute,
+  type CalendarItem,
+} from "@repo/hooks/calendar-tasks";
 import {
   blockGeometry,
   endsWithinDay,
@@ -23,6 +26,7 @@ import {
 } from "@repo/hooks/calendar-time-grid";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  CalendarTaskBlock,
   CalendarTaskChip,
   type CalendarTaskMenuFor,
 } from "@/components/events/calendar-tasks";
@@ -53,8 +57,9 @@ function longDay(day: Date): string {
  * (`apps/web/components/events/events-time-grid.tsx`) and as Google
  * Calendar's phone app draws it: an hour gutter at the left, each timed event
  * a block at its start and as tall as it lasts, events that overlap side by
- * side (`@repo/hooks/calendar-time-grid`, which web reads too), and an All
- * day strip for the day's tasks and any event of a whole day or more. A red
+ * side (`@repo/hooks/calendar-time-grid`, which web reads too), a task due at
+ * a time as a slim marker at that time (#5116), and an All day strip for the
+ * day's other tasks and any event of a whole day or more. A red
  * line marks the time now when the day is today. A member who can create
  * events taps an hour that isn't over to open New event starting then
  * (`calendarHourStart`).
@@ -97,8 +102,8 @@ export function EventsTimeGrid({
   const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
   // The shared layout lays out a range of days; this grid asks for one.
-  const { key, allDay, tasks, placed } = useMemo(
-    () => timeGridColumns([day], events, tasksByDay)[0]!,
+  const { key, allDay, tasks, placed, placedTasks } = useMemo(
+    () => timeGridColumns([day], events, tasksByDay, calendarItemDueMinute)[0]!,
     [day, events, tasksByDay],
   );
   const isToday = key === todayKey;
@@ -300,6 +305,26 @@ export function EventsTimeGrid({
                     </Text>
                   ) : null}
                 </Pressable>
+              );
+            })}
+
+            {placedTasks.map((span) => {
+              // Only a task's minute places it; a birthday never has one.
+              if (span.item.kind === "birthdays") return null;
+              const { top, height } = blockGeometry(span);
+              return (
+                <CalendarTaskBlock
+                  key={span.item.key}
+                  item={span.item}
+                  onOpenTask={onOpenTask}
+                  menuFor={taskMenuFor}
+                  placement={{
+                    top,
+                    height: height - 1,
+                    left: `${(span.lane / span.lanes) * 100}%`,
+                    width: `${100 / span.lanes}%`,
+                  }}
+                />
               );
             })}
 

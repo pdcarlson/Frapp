@@ -32,11 +32,14 @@ export function confirmAlert({
   title,
   body,
   confirmLabel,
+  cancelLabel = "Cancel",
   destructive = false,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
+  /** The way out that changes nothing: "Keep editing" over unsaved words. */
+  cancelLabel?: string;
   destructive?: boolean;
 }): Promise<boolean> {
   return new Promise((resolve) => {
@@ -44,7 +47,7 @@ export function confirmAlert({
       title,
       body,
       [
-        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+        { text: cancelLabel, style: "cancel", onPress: () => resolve(false) },
         {
           text: confirmLabel,
           style: destructive ? "destructive" : "default",

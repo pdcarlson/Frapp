@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { EventAgendaItem, EventAttachment } from "@repo/validation";
 
@@ -68,6 +69,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 
 import {
+  AgendaDraftList,
   EventAgendaSection,
   EventAttachmentsSection,
   EventMeetingLists,
@@ -144,9 +146,9 @@ describe("EventAgendaSection", () => {
       screen.getByRole("textbox", { name: "Add an agenda item" }),
       "  New   business {Enter}",
     );
-    await user.click(
-      screen.getByRole("button", { name: 'Move "Rush recap" up' }),
-    );
+    // The grip moves its row: dragged, or its arrow keys.
+    screen.getByRole("button", { name: "Reorder Rush recap" }).focus();
+    await user.keyboard("{ArrowUp}");
     await user.click(
       screen.getByRole("button", { name: 'Remove "Treasurer report"' }),
     );
@@ -162,13 +164,73 @@ describe("EventAgendaSection", () => {
     expect(at(runs, 3)).toEqual([at(agenda, 1)]);
   });
 
+  it("keeps focus on the moved row's grip, and says where it went", async () => {
+    const user = userEvent.setup();
+    function Held() {
+      const [items, setItems] = useState(agenda);
+      return (
+        <EventAgendaSection
+          agenda={items}
+          canEdit
+          onChange={(update) => setItems(update)}
+        />
+      );
+    }
+    render(<Held />);
+    screen.getByRole("button", { name: "Reorder Treasurer report" }).focus();
+    await user.keyboard("{ArrowDown}");
+    const grip = screen.getByRole("button", {
+      name: "Reorder Treasurer report",
+    });
+    expect(grip).toHaveFocus();
+    expect(screen.getByText("Treasurer report, 2 of 2")).toBeInTheDocument();
+    // A second press still reaches it: nothing further down to go.
+    await user.keyboard("{ArrowUp}");
+    expect(
+      screen.getByRole("button", { name: "Reorder Treasurer report" }),
+    ).toHaveFocus();
+  });
+
+  it("moves a row dragged by its grip past its neighbour's middle", () => {
+    // Each row 40px tall, stacked from the top: the second's middle is 60.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const index = this.parentElement
+          ? Array.from(this.parentElement.children).indexOf(this)
+          : 0;
+        const top = index * 40;
+        return {
+          top,
+          bottom: top + 40,
+          height: 40,
+          left: 0,
+          right: 300,
+          width: 300,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    const onChange = vi.fn();
+    render(<EventAgendaSection agenda={agenda} canEdit onChange={onChange} />);
+    const grip = screen.getByRole("button", {
+      name: "Reorder Treasurer report",
+    });
+    fireEvent.pointerDown(grip, { pointerId: 1, button: 0, clientY: 20 });
+    fireEvent.pointerMove(grip, { pointerId: 1, clientY: 70 });
+    fireEvent.pointerUp(grip, { pointerId: 1, clientY: 70 });
+    rect.mockRestore();
+    const runs = applied(onChange, agenda);
+    expect(at(runs, 0).map((item) => item.id)).toEqual(["a2", "a1"]);
+  });
+
   it("applies a move to the list as it stands when the update runs", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<EventAgendaSection agenda={agenda} canEdit onChange={onChange} />);
-    await user.click(
-      screen.getByRole("button", { name: 'Move "Rush recap" up' }),
-    );
+    screen.getByRole("button", { name: "Reorder Rush recap" }).focus();
+    await user.keyboard("{ArrowUp}");
     // A newer item landed first in the meantime.
     const newer = [{ id: "n", text: "New", done: false }, ...agenda];
     expect(at(applied(onChange, newer), 0).map((item) => item.id)).toEqual([
@@ -176,6 +238,57 @@ describe("EventAgendaSection", () => {
       "a2",
       "a1",
     ]);
+  });
+});
+
+describe("checking items off (Paul 2026-11-19)", () => {
+  it("holds the checkboxes until the meeting starts, and says so once", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <EventAgendaSection
+        agenda={agenda}
+        canEdit
+        checkOffOpen={false}
+        onChange={onChange}
+      />,
+    );
+    const box = screen.getByRole("checkbox", { name: "Treasurer report" });
+    expect(box).toBeDisabled();
+    expect(
+      screen.getAllByText("Items can be checked off once the meeting starts."),
+    ).toHaveLength(1);
+    await user.click(box);
+    expect(onChange).not.toHaveBeenCalled();
+    // The list itself can still be written before the start.
+    expect(
+      screen.getByRole("textbox", { name: "Add an agenda item" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Reorder Rush recap" }),
+    ).toBeEnabled();
+  });
+
+  it("counts what is done once it has started", () => {
+    render(
+      <EventAgendaSection agenda={agenda} canEdit checkOffOpen onChange={vi.fn()} />,
+    );
+    expect(screen.getByText("1 of 2 done")).toBeInTheDocument();
+  });
+
+  it("draws the event form's list with no checkboxes", () => {
+    render(
+      <AgendaDraftList
+        agenda={agenda}
+        onChange={vi.fn()}
+        draft=""
+        onDraftChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Add an agenda item" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -359,6 +472,7 @@ describe("EventMeetingLists", () => {
         lists={{ agenda, attachments }}
         canEdit
         upcoming={false}
+        checkOffOpen
         documentsOn
       />,
     );
@@ -377,6 +491,7 @@ describe("EventMeetingLists", () => {
         lists={{ agenda, attachments }}
         canEdit
         upcoming={false}
+        checkOffOpen
         documentsOn
       />,
     );
@@ -424,6 +539,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming
+        checkOffOpen
         documentsOn
       />,
     );
@@ -443,6 +559,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming
+        checkOffOpen
         documentsOn
       />,
     );
@@ -463,6 +580,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming={false}
+        checkOffOpen
         documentsOn
       />,
     );
@@ -473,6 +591,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit={false}
         upcoming
+        checkOffOpen
         documentsOn
       />,
     );

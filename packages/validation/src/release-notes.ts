@@ -137,6 +137,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Search settings from the top of Chapter settings and Settings, or from search, and it takes you straight to the setting you meant, even if you call it something else.",
       "Each suggested task is now one tidy card with who and when as chips, Create task, and a ⋯ menu for changing, dismissing or reporting it, shown one at a time with \"1 of 8\" on the web and your phone.",
       "A role an officer gives you now stays until an officer takes it off; you can still leave the roles you picked while they're offered.",
+      "Officers who invite members or manage roles can filter the Directory to see who has the phone app with notifications on, who turned them off, and who only uses the web.",
+      "An event's Minutes now says when they were posted, how many decisions and action items they hold, and the first line of the TL;DR, so you can see what happened before opening them.",
+      "For officers who take minutes, Meetings on the web and Minutes on the phone now start with the meetings that ended without minutes, each with Start minutes, and end with the next meeting coming up, so none get forgotten.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
@@ -147,6 +150,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "An invite link opened on a phone now walks you through getting the app first, then opens your invite in it, so you sign in once.",
       "New members whose chapter has no default channel or #general now open on a channel they can post in, not the audit log.",
       "A profile, a new channel or an event form opened from chat now opens in the chat itself, so the page beside it stays in view.",
+      "You can give a task to a whole tier like Exec board, and mark a task as from a tier, role or group so everyone in it can follow how it's going.",
     ],
     phone: [
       "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",

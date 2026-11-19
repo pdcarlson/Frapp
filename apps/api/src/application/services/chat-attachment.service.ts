@@ -462,8 +462,8 @@ export class ChatAttachmentService {
    * Access is the ordinary channel check, so a message in a channel the caller
    * cannot read answers 403/404 exactly as its own read does.
    *
-   * **This route is the only way to a chat file**, and the block mask depends on
-   * that. The `chat` bucket is private with no `storage.objects` policy, and
+   * **This route and its batch form, `listAttachmentsForMessages`, are the only
+   * way to a chat file**, and the block mask depends on that. The `chat` bucket is private with no `storage.objects` policy, and
    * `chat_message_attachments` has RLS on with no policy, so a client cannot list
    * or fetch an attachment except through a URL minted here.
    * `chat-read-surface-ledger.spec.ts` fails on any migration that would open
@@ -506,16 +506,79 @@ export class ChatAttachmentService {
     }
 
     const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
-    if (rows.length === 0) return [];
+    return this.withSignedUrls(rows, { messageId, channelId });
+  }
 
-    // Previews sign in the same batch as the originals: one provider round
-    // trip either way. A preview that is missing (its upload failed, or it was
-    // never sent) simply fails to sign, and the reader draws the original.
-    const previews = previewObjects(rows);
-    const urls = await this.signChatObjects([...rows, ...previews], {
-      messageId,
+  /**
+   * The batch form of {@link listMessageAttachments} (#5667): every listed
+   * message's attachments, keyed by message id, with one access check, one
+   * block-list read, one attachment read and one signing call for all of them.
+   *
+   * Chat rendered one `listMessageAttachments` request per message with files,
+   * and each request cost about seven database and provider calls, so a channel
+   * of photos queued its own burst on the database. The rules are the single
+   * route's, applied per message: a deleted message, a message outside this
+   * channel or chapter, and a message whose sender the caller has blocked get
+   * no files. Each answers with an empty list rather than the single route's
+   * 404, which tells the caller nothing more than the 404 would, and lets the
+   * client fill every message it asked about.
+   *
+   * Every requested id is a key of the answer, so a client can tell "no files"
+   * from "not asked".
+   */
+  async listAttachmentsForMessages(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    messageIds: readonly string[],
+  ): Promise<Record<string, ChatMessageAttachmentWithUrl[]>> {
+    await this.channelAccess.assertChannelAccess(channelId, chapterId, userId);
+
+    const ids = [...new Set(messageIds)];
+    const result: Record<string, ChatMessageAttachmentWithUrl[]> =
+      Object.fromEntries(ids.map((id) => [id, []]));
+    if (ids.length === 0) return result;
+
+    // A block list that cannot be read throws here, as on the single route:
+    // files are withheld rather than served unchecked.
+    const [rows, blockedUserIds] = await Promise.all([
+      this.attachmentRepo.findByMessages(channelId, ids, chapterId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
+    const blocked = new Set(blockedUserIds);
+    const visible = rows
+      .filter((row) => !isFromBlockedSender(row.sender_id, blocked))
+      // The sender only decides the mask; it is not part of the answer.
+      .map((row) => {
+        const { sender_id, ...attachment } = row;
+        void sender_id;
+        return attachment;
+      });
+
+    const signed = await this.withSignedUrls(visible, {
       channelId,
+      messages: ids.length,
     });
+    for (const row of signed) {
+      result[row.message_id]?.push(row);
+    }
+    return result;
+  }
+
+  /**
+   * Signs `rows` and their photo previews in one batch and returns each row
+   * with its URLs, leaving out a row whose original could not be signed.
+   * Previews sign in the same batch as the originals: one provider round trip
+   * either way. A preview that is missing (its upload failed, or it was never
+   * sent) simply fails to sign, and the reader draws the original.
+   */
+  private async withSignedUrls(
+    rows: readonly ChatMessageAttachment[],
+    context: Record<string, unknown>,
+  ): Promise<ChatMessageAttachmentWithUrl[]> {
+    if (rows.length === 0) return [];
+    const previews = previewObjects(rows);
+    const urls = await this.signChatObjects([...rows, ...previews], context);
     return rows.flatMap((row) => {
       const downloadUrl = urls.get(objectKey(row));
       if (!downloadUrl) return [];

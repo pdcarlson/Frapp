@@ -14,6 +14,7 @@ import {
   MinLength,
   ValidateIf,
   ValidateNested,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { MaxJsonLength } from '../decorators/max-json-length.decorator';
@@ -63,6 +64,7 @@ import {
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
 } from '#domain/constants/list-query-limits';
+import { splitIdList } from './id-list-query';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
@@ -1214,6 +1216,30 @@ export class ResolveAuthorAvatarsDto {
   })
   @IsArray()
   @ArrayMaxSize(MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST)
+  @IsUUID(undefined, { each: true })
+  message_ids: string[];
+}
+
+/**
+ * Server cap on one batched attachments request (#5667). Clients chunk at
+ * this size (`ATTACHMENT_REQUEST_CHUNK_SIZE` in `@repo/hooks`). With at most
+ * 10 attachments a message, a full request stays under PostgREST's 1000-row
+ * read cap.
+ */
+const MAX_ATTACHMENT_MESSAGES_PER_REQUEST = 50;
+
+export class ListMessagesAttachmentsQueryDto {
+  @ApiProperty({
+    type: String,
+    description:
+      'Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list.',
+    example:
+      '3f0c1d9e-0000-4000-8000-000000000001,3f0c1d9e-0000-4000-8000-000000000002',
+  })
+  @Transform(({ value }: { value: unknown }) => splitIdList(value))
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_ATTACHMENT_MESSAGES_PER_REQUEST)
   @IsUUID(undefined, { each: true })
   message_ids: string[];
 }

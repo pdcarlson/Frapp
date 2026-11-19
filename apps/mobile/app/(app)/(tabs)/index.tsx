@@ -75,6 +75,9 @@ import { channelPreviewLine } from "@repo/chat-core/channel-preview";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { useAnchoredMenu } from "@/components/anchored-menu";
+import { ChapterMenu, chapterMenuAnchor } from "@/components/chat/chapter-menu";
+import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
@@ -493,6 +496,10 @@ export default function ChatHomeScreen() {
     [memberNames],
   );
   const filterMenu = useChannelFilterMenu();
+  // The chapter name atop the screen opens the chapter menu: Chapter settings
+  // and Switch chapter, as web's chapter row does (Paul, 2026-11-19).
+  const chapterMenu = useAnchoredMenu();
+  const showChapterSettings = chapterSettingsAccess(permissions).any;
   const titleOf = useCallback(
     (channel: ChannelSummary) =>
       displayChannelName(channel, viewerId, memberNames),
@@ -826,10 +833,26 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
+      // Always a menu, even before the chapter's name is known: with no
+      // chapter claim, or a chapter the API now refuses, Switch chapter in
+      // it is the member's way out (the picker's empty state offers joining).
+      titleMenu={{
+        open: chapterMenu.visible,
+        accessibilityLabel: chapterName
+          ? `Chapter menu (currently ${chapterName})`
+          : "Chapter menu",
+        onOpen: (frame) => chapterMenu.open(chapterMenuAnchor(tokens, frame)),
+        onClose: chapterMenu.close,
+      }}
       refresh={refresh}
       overlay={{
-        open: filterMenu.visible,
-        content: (
+        open: filterMenu.visible || chapterMenu.visible,
+        content: chapterMenu.visible ? (
+          <ChapterMenu
+            menu={chapterMenu}
+            showChapterSettings={showChapterSettings}
+          />
+        ) : (
           <ChannelFilterMenu
             menu={filterMenu}
             unreadOnly={preferences.filters.unreadOnly}

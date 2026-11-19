@@ -9,7 +9,6 @@ import {
   Link2,
   ChevronDown,
   Pencil,
-  Plus,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -63,6 +62,8 @@ import {
 import { ToastAction } from "@/components/ui/toast";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
+import { PageActions } from "@/components/layout/page-actions";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
@@ -1117,69 +1118,39 @@ export function TasksBoard() {
         */
         <>
           {/*
-            At most two toolbar rows over the groups, even in the Tasks
-            column beside a widened chat (down to 375px). The first: an officer's view switch
-            (Asana's My tasks beside a project, Linear's My issues beside the
-            team's), then View and New task at the trailing edge, where
-            Linear's and Asana's sit. View is one menu holding the grouping and
-            List / Grid, as Linear's Display menu holds both. The second: the
-            chapter's board's filter chips (Linear's Filter, as the
-            Directory's chips draw them).
+            View and New task are the page's actions, in its header beside
+            the X (Paul, 2026-11-19), where Linear's and Asana's sit. View is
+            one menu holding the grouping and List / Grid, as Linear's Display
+            menu holds both. Under the header, at most two rows over the
+            groups: the view switch (Asana's My tasks beside a project,
+            Linear's My issues beside the team's), then the chapter's board's
+            filter chips (Linear's Filter, as the Directory's chips draw
+            them). A member with no switch gets no rows at all.
           */}
-          <div className="grid gap-2">
-            <div className="flex items-center gap-2">
-              {canManage || (permissionsKnown && follows) ? (
-                <SegmentedChoice
-                  label="Whose tasks"
-                  options={VIEW_OPTIONS}
-                  value={view}
-                  onChange={canManage ? setOfficerView : setMemberPick}
-                />
-              ) : null}
-              <div className="ml-auto flex shrink-0 items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      size="toolbar"
-                      variant="secondary"
-                      className="gap-1.5"
-                    >
-                      <SlidersHorizontal
-                        className="h-4 w-4"
-                        aria-hidden="true"
-                      />
-                      View
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" collisionPadding={12}>
-                    {view === "all" && canManage ? (
-                      <>
-                        <DropdownMenuLabel>Group tasks</DropdownMenuLabel>
-                        <DropdownMenuRadioGroup
-                          value={groupBy}
-                          onValueChange={(next) =>
-                            setGroupBy(next as TasksGroupBy)
-                          }
-                        >
-                          {GROUP_BY_OPTIONS.map((option) => (
-                            <DropdownMenuRadioItem
-                              key={option.value}
-                              value={option.value}
-                            >
-                              {option.label}
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                        <DropdownMenuSeparator />
-                      </>
-                    ) : null}
-                    <DropdownMenuLabel>Layout</DropdownMenuLabel>
+          {/* View and New task are the page's actions, in its header
+              (`page-actions.tsx`). */}
+          <PageActions>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="toolbar"
+                  variant="secondary"
+                  className="gap-1.5"
+                >
+                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                  View
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" collisionPadding={12}>
+                {view === "all" && canManage ? (
+                  <>
+                    <DropdownMenuLabel>Group tasks</DropdownMenuLabel>
                     <DropdownMenuRadioGroup
-                      value={layout}
-                      onValueChange={(next) => setLayout(next as ListLayout)}
+                      value={groupBy}
+                      onValueChange={(next) => setGroupBy(next as TasksGroupBy)}
                     >
-                      {LAYOUT_OPTIONS.map((option) => (
+                      {GROUP_BY_OPTIONS.map((option) => (
                         <DropdownMenuRadioItem
                           key={option.value}
                           value={option.value}
@@ -1188,60 +1159,81 @@ export function TasksBoard() {
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {canManage ? (
-                  <Button
-                    type="button"
-                    size="toolbar"
-                    className="gap-1.5"
-                    {...gate.controlProps()}
-                    onClick={() => setExpandSignal((n) => n + 1)}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    New task
-                  </Button>
+                    <DropdownMenuSeparator />
+                  </>
                 ) : null}
-              </div>
-            </div>
-            {view === "all" && canManage ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <FilterChip
-                  label="Assignee"
-                  anyLabel="Anyone"
-                  options={filterOptions.assignee}
-                  value={assigneeFilter}
-                  onChange={setAssigneeFilter}
-                />
-                <FilterChip
-                  label="Status"
-                  anyLabel="Any status"
-                  options={filterOptions.status}
-                  value={statusFilter}
-                  onChange={(next) =>
-                    setStatusFilter(next as StatusFilter | null)
-                  }
-                />
-                <FilterChip
-                  label="Due"
-                  anyLabel="Any time"
-                  options={filterOptions.due}
-                  value={dueFilter}
-                  onChange={(next) => setDueFilter(next as DueFilter | null)}
-                />
-                {filtering ? (
-                  <Button
-                    type="button"
-                    size="toolbar"
-                    variant="ghost"
-                    onClick={clearFilters}
-                  >
-                    Clear filters
-                  </Button>
-                ) : null}
-              </div>
+                <DropdownMenuLabel>Layout</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={layout}
+                  onValueChange={(next) => setLayout(next as ListLayout)}
+                >
+                  {LAYOUT_OPTIONS.map((option) => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {canManage ? (
+              <NewButton
+                type="button"
+                thing="task"
+                {...gate.controlProps()}
+                onClick={() => setExpandSignal((n) => n + 1)}
+              />
             ) : null}
-          </div>
+          </PageActions>
+          {canManage || (permissionsKnown && follows) ? (
+            <div className="grid gap-2">
+              <SegmentedChoice
+                label="Whose tasks"
+                options={VIEW_OPTIONS}
+                value={view}
+                onChange={canManage ? setOfficerView : setMemberPick}
+              />
+              {view === "all" && canManage ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <FilterChip
+                    label="Assignee"
+                    anyLabel="Anyone"
+                    options={filterOptions.assignee}
+                    value={assigneeFilter}
+                    onChange={setAssigneeFilter}
+                  />
+                  <FilterChip
+                    label="Status"
+                    anyLabel="Any status"
+                    options={filterOptions.status}
+                    value={statusFilter}
+                    onChange={(next) =>
+                      setStatusFilter(next as StatusFilter | null)
+                    }
+                  />
+                  <FilterChip
+                    label="Due"
+                    anyLabel="Any time"
+                    options={filterOptions.due}
+                    value={dueFilter}
+                    onChange={(next) => setDueFilter(next as DueFilter | null)}
+                  />
+                  {filtering ? (
+                    <Button
+                      type="button"
+                      size="toolbar"
+                      variant="ghost"
+                      onClick={clearFilters}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {/*
             Rule 2: the first action sits where the first item goes, so the
             add line heads the list, as Todoist's quick add does.

@@ -233,8 +233,8 @@ export function AccountMenu({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           {/*
-           * The member's own settings, not the chapter's: the nav row for
-           * those is "Chapter settings" (`nav-config.ts`).
+           * The member's own settings, not the chapter's: the chapter menu's
+           * "Chapter settings" is the chapter's (`chapter-nav-header.tsx`).
            */}
           <Link href={PERSONAL_SETTINGS_PATH} onClick={onNavigate}>
             <Settings className="h-4 w-4" aria-hidden="true" />

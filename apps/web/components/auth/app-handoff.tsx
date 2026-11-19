@@ -41,10 +41,16 @@ const INSTALL_HINT = {
 export function AppHandoff({
   platform,
   token,
+  hero,
   onContinueInBrowser,
 }: {
   platform: NativePlatform;
   token: string;
+  /**
+   * The invite card (#5625), drawn above the steps so the chapter is the
+   * first thing on the page; the steps then sit under a plain heading.
+   */
+  hero?: React.ReactNode;
   onContinueInBrowser: () => void;
 }) {
   const { app, installUrl } = useAppInstall(platform);
@@ -54,18 +60,32 @@ export function AppHandoff({
     </Button>
   );
   const footer = (
-    <Button type="button" variant="link" onClick={onContinueInBrowser}>
-      Continue in the browser
-    </Button>
+    <p>
+      Not on your phone?{" "}
+      <Button
+        type="button"
+        variant="link"
+        className="h-auto px-0"
+        onClick={onContinueInBrowser}
+      >
+        Join on the web instead
+      </Button>
+    </p>
   );
 
   if (installUrl === null) {
     return (
       <AuthScreen
-        title={`Join in the ${app.name} app`}
-        subtitle="Your invite opens in the app, so you sign in once and land in your chapter."
+        title={hero ? undefined : `Join in the ${app.name} app`}
+        hero={hero}
+        subtitle={
+          hero
+            ? undefined
+            : "Your invite opens in the app, so you sign in once and land in your chapter."
+        }
         footer={footer}
       >
+        {hero ? <HandoffHeading appName={app.name} /> : null}
         {openLink}
         <div className="mt-6">
           <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
@@ -80,10 +100,14 @@ export function AppHandoff({
   const hint = INSTALL_HINT[installSource(installUrl)];
   return (
     <AuthScreen
-      title={`Join in the ${app.name} app`}
-      subtitle="Two steps, then you sign in once and land in your chapter."
+      title={hero ? undefined : `Join in the ${app.name} app`}
+      hero={hero}
+      subtitle={
+        hero ? undefined : "Two steps, then you sign in once and land in your chapter."
+      }
       footer={footer}
     >
+      {hero ? <HandoffHeading appName={app.name} /> : null}
       <ol className="flex flex-col gap-6">
         <HandoffStep
           number={1}
@@ -106,6 +130,15 @@ export function AppHandoff({
         </HandoffStep>
       </ol>
     </AuthScreen>
+  );
+}
+
+/** Above the steps when the invite card heads the page (#5625). */
+function HandoffHeading({ appName }: { appName: string }) {
+  return (
+    <p className="mb-5 text-base text-muted-foreground">
+      Join in the {appName} app, so you sign in once and land in your chapter.
+    </p>
   );
 }
 

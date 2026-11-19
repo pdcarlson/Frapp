@@ -91,7 +91,7 @@ export function UploadMenu({
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
-            variant="secondary"
+            variant="action"
             size="toolbar"
             className={canUpload ? "-ml-px rounded-l-none px-2" : "gap-2"}
             aria-label={

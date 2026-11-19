@@ -745,7 +745,7 @@ export default function CreateChapter() {
                 <View style={styles.stack}>
                   <Text style={styles.body}>
                     Send each person their own link. A link lets one person in
-                    and lasts 24 hours.
+                    and lasts 7 days.
                   </Text>
                   <InviteLinksCard
                     shared={invite.shared}

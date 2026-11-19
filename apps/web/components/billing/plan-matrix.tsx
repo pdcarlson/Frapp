@@ -59,7 +59,7 @@ import { ProChip } from "@/components/billing/pro-chip";
  *
  * So the filter is "does a member have somewhere to go", and the maintained
  * answer to that in `apps/web` is the nav: a module key on a nav item is a
- * surface, and so is one on an officer tool behind the Settings row
+ * surface, and so is one on an officer tool inside Chapter settings
  * (`SETTINGS_TOOLS`, where Reports and Study Zones went when the Admin group
  * folded into Settings in #2946). Deriving beats a hand-kept list, which
  * would drift the first time a module shipped.
@@ -159,7 +159,9 @@ export function PlanMatrix({ onPaidPlan = false }: { onPaidPlan?: boolean }) {
         id="plan-matrix-heading"
         className={`${EYEBROW} text-muted-foreground`}
       >
-        {onPaidPlan ? "What your plan includes" : "What the subscription unlocks"}
+        {onPaidPlan
+          ? "What your plan includes"
+          : "What the subscription unlocks"}
       </h2>
       <div className="overflow-hidden rounded-lg border border-border">
         {/*

@@ -330,8 +330,8 @@ A message thread (#3785) opened from the channel shows the same background behin
 - **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md).
   They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations.
   This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
-- **System DM on invite accept.**
-  When a member accepts an invite, the inviter receives a `kind="system_audit"` message in their DM channel with that member — `"Alex Chen accepted your invite."` This is the same server-originated system-message pattern as the audit bridge, but targeted to a DM rather than `#chapter-audit`.
+- **No system messages in DMs.**
+  A DM holds only what its two members wrote. Invite accepted used to arrive as a Frapp `system_audit` line in a DM between the inviter and the new member, a conversation neither had started; since #5625 (Paul, 2026-11-19: "not the biggest fan of these DMs") it is a notification to the inviter ([`notifications.md`](../notifications.md)).
 
 ## Channel list previews
 
@@ -584,6 +584,10 @@ Both renderers apply it, from `packages/chat-core/src/markdown-parse-budget.ts`.
   An empty body with at least one attachment is a valid send.
 - **Attachments are fetched, not embedded in the message.**
   `GET /v1/channels/{id}/messages/{messageId}/attachments` returns the rows with a one-hour signed download URL each, batched into as few `getSignedDownloadUrls` calls as the attachments' buckets require (#1231) rather than one per row.
+  A message list asks for many messages at once: `GET /v1/channels/{id}/messages/attachments?message_ids=<id>,<id>,…` takes up to 50 message ids and answers each one's attachments keyed by its id, in one access check, one read and one signing call (#5667).
+  Clients batch every row that mounts together into it and keep each message's own cache entry.
+  Its rules are the single route's, applied per message: a message that is deleted, outside this channel or chapter, or from a sender the caller has blocked maps to an empty list rather than a 404.
+  It is a `GET` so it counts as a read for the rate limit and stays readable when a chapter's subscription lapses, as the single route does.
   They are a separate read for two reasons that point the same way: every bucket is private so a URL has to be minted per request and cannot be cached with the message, and the message cache is fed partly by Realtime rows, which cannot carry a join.
   `chat_messages.metadata.attachment_count` — a count, never a copy of the data — rides on the row so a client knows whether the call is worth making; without it a file-only message would render as an empty bubble for everyone except its sender.
 - **An image opens in a viewer, not as a download** (#2874).
@@ -832,7 +836,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   - **Rows deleted before #1575 still hold their `payload`** until the cleanup migration `20261112060000_clear_deleted_message_payloads.sql` runs, which waits on Paul's approval as a data deletion.
     The API never serves it, but a member who can read the channel can still read it straight from `chat_messages` under its read policy (`chat_messages_select`, which does not filter `is_deleted`), and an unpin of such a row sends it in the Realtime UPDATE echo.
     Remove this bullet once the migration has run on production.
-  - The purge runs **after** the row is flagged, and is best-effort: flagging the message stops the API minting _new_ download URLs (`GET /v1/channels/:id/messages/:messageId/attachments` 404s a deleted message).
+  - The purge runs **after** the row is flagged, and is best-effort: flagging the message stops the API minting _new_ download URLs (`GET /v1/channels/:id/messages/:messageId/attachments` 404s a deleted message, and the batched `GET /v1/channels/:id/messages/attachments` answers it with no files).
     A signed URL issued **before** the delete stays valid for the rest of its hour-long TTL regardless — deletion of the bytes is what ends that, and the purge is best-effort, so a Storage failure leaves the object readable to anyone already holding a URL.
     Failures are logged per bucket and never roll back the delete or fail the request.
   - **An object still referenced by an undeleted message is kept.**
@@ -1580,7 +1584,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   Nothing they send reaches the blocker.
 
 - **A member cannot block themselves, nor the system actor.**
-  Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken.
+  Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken.
   (A poll and its tally are _not_ in that set: `poll` is not a server-only kind, so they are authored by the member who created the poll.)
 - **Blocking is reversible, and the unblock affordance is durable.**
   The blocked-members list is the one place a block can always be undone (mobile: Settings → Blocked members; web: Settings → Blocked members, the personal page on the account menu, `/preferences?section=blocked`); a tombstone in a thread the member may never reopen is not sufficient.
@@ -1782,7 +1786,7 @@ A member with no receipt for a channel has never opened it, so **every** message
 - **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently).
   A `system_audit` row the audit mirror wrote, keyed `client_message_id = 'audit:<id>'` (`auditMirrorClientId`), is a log line, not a message to anyone.
   It never pushes either, whatever level the member set: `decidePush` refuses a mirror row ahead of every preference ([`../notifications.md`](../notifications.md#chat-notification-preferences)).
-  The server's other `system_audit` notices (a poll closing, an invite accepted, the chapter welcome) are addressed to members and still count.
+  The server's other `system_audit` notices (a poll closing, the chapter welcome) are addressed to members and still count.
 
 Mention count is the subset of that same set which mentions the viewer, plus every message-thread reply in the channel that mentions them and is newer than both the channel's cursor and their read of that thread (§ Messages → Message threads).
 A thread reply is never in the unread set itself.
@@ -2554,7 +2558,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
   Mobile caches each photo on disk by its storage path rather than its signed URL, so the API re-signing a photo doesn't download it again; a new photo is a new path, so it is never served stale.
   A 1:1 DM shows the other participant; a group DM keeps a chapter-supplied title and otherwise summarises participants.
   A sender that cannot be resolved — a deleted account, whose membership row `anonymize_user` purges — degrades to a truncated id rather than a blank name, and an empty stored `display_name` counts as unresolved because the column is `NOT NULL DEFAULT ''`.
-  The system actor (`SYSTEM_SENDER_ID`: the welcome, the audit bridge, a poll's closing notice, an invite-accept DM) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347).
+  The system actor (`SYSTEM_SENDER_ID`: the welcome, the audit bridge, a poll's closing notice) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347).
   Before that it fell through to the truncated id and read "Member 000000".
 - **The name is deliberately not joined onto the message.**
   Messages reach the cache four ways, and the live one is a `postgres_changes` echo of the `chat_messages` row, which cannot carry a join.

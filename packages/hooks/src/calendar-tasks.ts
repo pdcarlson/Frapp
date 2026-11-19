@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { formatClockShort, localIsoDate, parseInstant } from "@repo/formatting";
 import { taskNeedsSignOff } from "@repo/validation";
 import {
   TASK_CONFIRMED_LABEL,
@@ -26,6 +27,10 @@ import { useViewerUserId } from "./use-user";
  * A due date is a calendar date (`tasks.due_date` is a `date` column), so a
  * task sits on that day for every viewer, with no time zone shift. Every
  * task has one: the column is `NOT NULL`, so there is no "no due date" case.
+ *
+ * A task due at a time (`tasks.due_at`, #4003) sits on that moment's local
+ * day instead, as the Tasks page files it (`taskDueBucket`), and says its
+ * time; the Week and Day hour grids draw it at that time (#5116).
  */
 
 /**
@@ -128,8 +133,17 @@ interface CalendarTaskBase {
   /** Unique across the calendar. */
   key: string;
   title: string;
-  /** The due day, `YYYY-MM-DD`, the same key the calendar files events by. */
+  /**
+   * The due day, `YYYY-MM-DD`, the same key the calendar files events by:
+   * the local day of `dueAt` when the task has a time.
+   */
   day: string;
+  /** The due moment (`due_at`) for a task due at a time, else `null`. */
+  dueAt: string | null;
+  /** `dueAt` in minutes from the local day's midnight, for the hour grid. */
+  dueMinute: number | null;
+  /** `dueAt` as a due field writes it ("5 PM", "9:30 AM"). */
+  timeLabel: string | null;
   state: CalendarTaskState;
 }
 
@@ -233,6 +247,41 @@ function groupState(assignees: CalendarTaskAssignee[]): CalendarTaskState {
   return worst;
 }
 
+type DueTimeFields = Pick<
+  CalendarTaskBase,
+  "dueAt" | "dueMinute" | "timeLabel"
+>;
+
+const NO_TIME: DueTimeFields = {
+  dueAt: null,
+  dueMinute: null,
+  timeLabel: null,
+};
+
+/**
+ * A task's due moment on this device's clock: its local day, its minute of
+ * that day and its time as the Tasks rows write it (`formatClockShort`: "5 PM"
+ * on a 12-hour clock, "17" on a 24-hour one, as the grid's hours read).
+ * `null` for a task with no time, or one whose time can't be read, which
+ * falls back to its due day.
+ */
+function dueTimeOf(
+  dueAt: string | null,
+): { day: string; fields: DueTimeFields } | null {
+  const at = dueAt ? parseInstant(dueAt) : null;
+  if (!at) return null;
+  return {
+    day: localIsoDate(at),
+    fields: {
+      // One spelling per moment, so two copies of a task due at the same
+      // time group together however the API wrote the offset.
+      dueAt: at.toISOString(),
+      dueMinute: at.getHours() * 60 + at.getMinutes(),
+      timeLabel: formatClockShort(at),
+    },
+  };
+}
+
 /**
  * The calendar's tasks from a `GET /v1/tasks` body. A row that can't be
  * drawn honestly (no id, title, due date or known status) is dropped. A task
@@ -256,7 +305,8 @@ export function selectCalendarTasks(
     const createdBy = str(row, "created_by");
     const status = calendarTaskState(row);
     if (!id || !title || !due || !status || !assigneeId) continue;
-    const day = due.slice(0, 10);
+    const time = dueTimeOf(str(row, "due_at"));
+    const day = time?.day ?? due.slice(0, 10);
 
     if (assigneeId === viewerUserId) {
       items.push({
@@ -265,6 +315,7 @@ export function selectCalendarTasks(
         taskId: id,
         title,
         day,
+        ...(time ? time.fields : NO_TIME),
         state: status.state,
         label: status.label,
         createdBy,
@@ -273,7 +324,9 @@ export function selectCalendarTasks(
     }
     if (createdBy !== viewerUserId) continue;
 
-    const groupKey = `${day}\u0000${title.trim().toLowerCase()}`;
+    // The same task handed to many is one item per moment: the same title
+    // and day at another time is another task.
+    const groupKey = `${day}\u0000${time?.fields.dueAt ?? ""}\u0000${title.trim().toLowerCase()}`;
     let group = groups.get(groupKey);
     if (!group) {
       group = {
@@ -281,6 +334,7 @@ export function selectCalendarTasks(
         key: `assigned:${day}:${id}`,
         title,
         day,
+        ...(time ? time.fields : NO_TIME),
         state: "confirmed",
         assignees: [],
         doneCount: 0,
@@ -330,9 +384,29 @@ function itemStateOrder(item: CalendarItem): number {
 }
 
 /**
+ * Birthdays first, then the tasks due at a time by their minute, then the
+ * tasks due by the end of the day, as the Tasks views order a day
+ * (`spec/behavior/tasks.md`, #4003).
+ */
+function timedOrder(item: CalendarItem): number {
+  if (item.kind === "birthdays") return -1;
+  return item.dueMinute ?? MINUTES_IN_DAY;
+}
+
+const MINUTES_IN_DAY = 24 * 60;
+
+/** A task's minute of its day when it is due at a time, else `null`. */
+export function calendarItemDueMinute(item: CalendarItem): number | null {
+  return item.kind === "birthdays" ? null : item.dueMinute;
+}
+
+/**
  * The items shown, by day, in the order a day lists them: birthdays, then
- * the viewer's own tasks before what they assigned, each most in need of
- * attention first (overdue, open, waiting, confirmed), then by title.
+ * the tasks due at a time, earliest first (#5116), then the tasks due by the
+ * end of the day, the order the Tasks views give a day
+ * (`spec/behavior/tasks.md`). Within each, the viewer's own before what they
+ * assigned, each most in need of attention first (overdue, open, waiting,
+ * confirmed), then by title.
  */
 export function calendarTasksByDay(
   items: readonly CalendarItem[],
@@ -348,6 +422,7 @@ export function calendarTasksByDay(
   for (const bucket of map.values()) {
     bucket.sort(
       (first, second) =>
+        timedOrder(first) - timedOrder(second) ||
         KIND_ORDER[first.kind] - KIND_ORDER[second.kind] ||
         itemStateOrder(first) - itemStateOrder(second) ||
         first.title.localeCompare(second.title),
@@ -358,12 +433,16 @@ export function calendarTasksByDay(
 
 /**
  * The words a task item says to a screen reader, and on web as its title:
- * "Dues form, your task, overdue" / "Dues form, assigned by you, 4 of 12 done".
+ * "Dues form, your task, overdue" / "Dues form, assigned by you, 4 of 12 done",
+ * with its time after the title when it has one ("Dues form, due 5 PM, …").
  */
 export function calendarTaskAccessibleLabel(item: CalendarTask): string {
+  const title = item.timeLabel
+    ? `${item.title}, due ${item.timeLabel}`
+    : item.title;
   return item.kind === "mine"
-    ? `${item.title}, your task, ${item.label.toLowerCase()}`
-    : `${item.title}, assigned by you, ${item.progress.toLowerCase()}`;
+    ? `${title}, your task, ${item.label.toLowerCase()}`
+    : `${title}, assigned by you, ${item.progress.toLowerCase()}`;
 }
 
 /** The calendar's tasks for the signed-in member, from the shared tasks query. */

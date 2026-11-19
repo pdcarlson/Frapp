@@ -12,6 +12,38 @@ export const LEGAL_ACCEPTANCE_LABEL =
   "I'm 18 or older and agree to the Terms of Service and Privacy Policy.";
 
 /**
+ * The youngest a member may be (#2261). Paul chose 17 on 2026-11-19, with
+ * Frapp AI asking anyone who opens it to confirm they're 18 (Google Cloud's
+ * terms bar generative AI in services for people under 18, ADR-28). The two
+ * ship together in #5627, so this stays 18 until that check exists.
+ */
+export const MINIMUM_AGE = 18;
+
+/**
+ * The one line under the join screens' buttons that replaced the checkbox
+ * (#5625, Paul 2026-11-19: "one line under the sign-in buttons, no
+ * checkbox"), the way Discord's and Slack's invite pages read. In pieces, so
+ * each app can make "Terms" and "Privacy Policy" links while the words stay
+ * these. Tapping a button under it is the acceptance, so every join from a
+ * screen showing it sends `accept_terms_privacy`.
+ */
+export function termsLine(action: "continuing" | "joining") {
+  return {
+    lead: `By ${action} you agree to the `,
+    terms: "Terms",
+    middle: " and ",
+    privacy: "Privacy Policy",
+    tail: ` and confirm you're ${MINIMUM_AGE} or older.`,
+  } as const;
+}
+
+/** The line as plain text, for an accessibility label or a test. */
+export function termsLineText(action: "continuing" | "joining"): string {
+  const line = termsLine(action);
+  return `${line.lead}${line.terms}${line.middle}${line.privacy}${line.tail}`;
+}
+
+/**
  * The 403 the API answers with when a caller who hasn't accepted the current
  * Terms tries to join or create a chapter without the checkbox (#2302). It
  * throws both; `isTermsRequiredError` in `@repo/hooks` recognises either.

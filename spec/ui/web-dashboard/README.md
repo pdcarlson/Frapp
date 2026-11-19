@@ -83,11 +83,12 @@ The caller's effective permission set is loaded per chapter via `GET /v1/users/m
 Controls inside a screen gate through `<Can>` or the `can()` / `canAny()` / `canAll()` helpers, which live in `@repo/validation` ([`packages/validation/src/permissions.ts`](../../../packages/validation/src/permissions.ts)) rather than in `apps/web`, because `apps/mobile` needs the same gate and the wildcard `*` rule has to match the server's `PermissionsGuard`: a per-app copy is how that drifts.
 
 A Chat anchor of two rows, Chat and Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn, 2026-11-12;
-[§ Chat](#chat)), two member sections (Chapter, Resources), and one unlabeled group holding Directory and Chapter settings (Billing left it for Chapter settings' Plan and billing row in [#3827](https://github.com/pdcarlson/Frapp/issues/3827)).
+[§ Chat](#chat)), two member sections (Chapter, Resources), and one unlabeled group holding Directory (Billing left it for Chapter settings' Plan and billing row in [#3827](https://github.com/pdcarlson/Frapp/issues/3827)).
+Chapter settings has no row: it opens from the chapter menu atop the nav, the crest and chapter name, which leads with Chapter settings, then Join another chapter (and the member's chapters to switch between, when there is more than one). _(Paul, 2026-11-19: one place, not a menu item and a row. The row sat in this group from #2946 to then. The phone matches: [`../mobile/navigation.md`](../mobile/navigation.md).)_
 Activity leads the Chapter section: it is the inbox for the rows under it ([§ Activity](#activity)).
 There is no Polls row: polls live in the channel where they were made, and the chapter-wide `/polls` list, which could only show the older REST poll shape no client creates any more, was retired ([#3871](https://github.com/pdcarlson/Frapp/issues/3871), Shawn, 2026-11-09).
-Officer setup and officer tools sit behind the Chapter settings row; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
-The row was named Settings until 2026-11-10: it is the chapter's, and a member's own settings are a separate page on the account menu ([§ Two doors](#two-doors-chapter-settings-and-your-settings), [#3856](https://github.com/pdcarlson/Frapp/issues/3856)).
+Officer setup and officer tools sit behind Chapter settings; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
+It was named Settings until 2026-11-10: it is the chapter's, and a member's own settings are a separate page on the account menu ([§ Two doors](#two-doors-chapter-settings-and-your-settings), [#3856](https://github.com/pdcarlson/Frapp/issues/3856)).
 
 | Section | Item | Route | Module | Permission |
 | --- | --- | --- | --- | --- |
@@ -103,9 +104,8 @@ The row was named Settings until 2026-11-10: it is the chapter's, and a member's
 | Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`; hidden from a viewer without `chapter_docs:upload` while there are no documents: [`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)) |
 | Resources | Backwork | `/backwork` | `backwork` | `backwork:upload` or `backwork:admin`, the pair the API gates browsing on at controller level (upload needs `backwork:upload` specifically) |
 | _(unlabeled)_ | Directory | `/members` | — | `members:view` |
-| _(unlabeled)_ | Chapter settings | `/settings` | — | shown when Chapter settings holds a tab or a tool for the viewer ([`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what) § Who sees what) |
 
-**Behind the Chapter settings row.**
+**Behind Chapter settings.** The chapter menu's Chapter settings item shows when Chapter settings holds a tab or a tool for the viewer ([`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what) § Who sees what).
 These were the Admin group's rows until #2946, and each has one stated path.
 The four tools keep the permission and module gate each had as a row.
 The Roles tab opens a little wider than its row did: it also admits `chapter-config:view`, since anyone who could open Settings before could see it.
@@ -144,9 +144,9 @@ Five structural facts the table alone does not carry:
   No section is officer-only any more: `protected-nav-item.spec.tsx` fails if every row of a section is hidden from an ordinary member, because that is the Admin group coming back.
 - **Chapter settings is gated on "has anything here".**
   An ungated entry point sent members without `chapter-config:view` to a screen that could not load, which is the fail-fast rule in [`../design-system/README.md`](../design-system/README.md) §5 inverted.
-  The row shows only when Settings holds a tab or a tool whose module is on for the viewer (`hasSettingsDestination`, `apps/web/components/settings/settings-access.ts`, applied through `NavItem.showWhen`).
-  A treasurer whose only tool is Reports loses the row when the chapter switches Reports off, as the Reports row used to hide.
-  The chapter switcher's "Chapter settings" link asks the same question, since it is another door into Settings, and so does the top bar's "Settings ›" crumb on the officer tools, which shows only when this row does (`page-title.ts`).
+  The chapter menu's Chapter settings item, its one door since 2026-11-19, shows only when Settings holds a tab or a tool whose module is on for the viewer (`hasSettingsDestination`, `apps/web/components/settings/settings-access.ts`).
+  A treasurer whose only tool is Reports loses the item when the chapter switches Reports off, as the Reports row used to hide.
+  Until 2026-11-19 a nav row asked the same question through `NavItem.showWhen`; both went with the row.
 - **Profile left the nav** for the account menu (below).
   It is about the viewer, not the chapter, so it did not belong among chapter surfaces.
   It held two chapter-scoped cards until 2026-11-10: Notifications (#564), because `notification_preferences` is keyed `(user_id, chapter_id, category)`, and Blocked members (#2313), because a chat block is per-chapter too.
@@ -376,7 +376,9 @@ A route that departs from it says why under [Surface decisions](#surface-decisio
   A line that reports state stays, moved onto the page surface: the Reports preview's row count and partial-export note are state, not a card describing itself.
   A `<Card>` paints `--card`, one rung up the ladder.
   Where the board frames a block it draws a hairline frame, never a `Card`: billing's plan panel is `--surface-1` at radius 16, and its plan matrix a radius-14 frame on the page surface.
-- **One toolbar row** carries the route's filters, search and primary action, pushed to the trailing edge ([`page-actions.tsx`](../../../apps/web/components/layout/page-actions.tsx)); a route with none draws no row and its body starts at the top of the pane.
+- **A page's actions are in its header** (Paul, 2026-11-19: "what if the new minutes button goes up to the Minutes section header next to the x?", then "across the board"). Its create button, an upload, a menu, and its search and filter when they fit as buttons (Events') render through [`page-actions.tsx`](../../../apps/web/components/layout/page-actions.tsx) into the tool page header between the title and the X, as Linear's, Notion's and Slack's side panels hold a view's actions in its title row. Below 1056px the header shows only when a page put actions in it, as one pinned row of them (the title is in the top bar there). Controls that need the page's width, a segmented window choice or a search field with filter chips beside it, stay a row in the body. A route with no actions draws no header row below 1056px and its body starts at the top of the pane.
+  Every "New ..." button is one [`NewButton`](../../../apps/web/components/ui/new-button.tsx) ("+ New event", "+ New minutes"), and a main action with its own verb (Log service, Upload, Adjust points) takes the same Button `action` variant ([`components.md`](../design-system/components.md) §3); in a header narrower than 26rem NewButton drops to its +.
+  Changed 2026-11-19 (Paul): it was one toolbar row at the top of the body carrying the route's filters, search and primary action, pushed to the trailing edge.
   The controls sit at the toolbar height: 36 to a mouse, 44 to a finger (Button's `toolbar` size and the toolbar recipes in `table-controls.ts`, [`components.md`](../design-system/components.md) §3).
   A list row's secondary actions (Edit, Delete, an icon) take Button's neutral `ghost` variant.
 - **Lists are flush.**
@@ -608,7 +610,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Between the tool page and chat a **divider** sets chat's width: it starts at 375px (until #5575, 50/50 between the thread and the page), drags, moves with the arrow keys (Home and End to the limits, Enter or a double-click to reset), is remembered in a cookie read on the server (`frapp_chat_width`, pixels, so the panel keeps its width as the window changes and the page takes the rest), and never lets chat or the page drop below **375px**, the width the thread is tested at ([`split-divider.tsx`](../../../apps/web/components/layout/split-divider.tsx)).
   While chat and a tool are both open the **member column closes on its own** and the people button opens the list in a popover under it (2026-11-15, #4593; a Panel until then); the member's own show-or-hide choice is kept for chat alone.
   **Every tool page can be closed from itself** (Paul, 2026-11-11): before, only a tool with a nav row of its own could be closed, by clicking the row again, and the Settings tools, Profile and the personal Settings page had none, so a member who opened Chat admin beside chat could not get rid of it.
-  From 1056px up the tool page has a 48px header lined up with chat's channel header, its title on the left and a close button on the right ([`tool-page-header.tsx`](../../../apps/web/components/layout/tool-page-header.tsx));
+  From 1056px up the tool page has a 48px header lined up with chat's channel header, its title on the left, the page's actions, and a close button on the right ([`tool-page-header.tsx`](../../../apps/web/components/layout/tool-page-header.tsx));
   Escape inside the page closes it too, except from a text field or when a dialog or menu inside used the key;
   and dragging the divider to an edge closes that side, chat at the right edge and the page at the left (the other way round until #5575), the way VS Code's and Figma's panels snap shut.
   The side stops at its 375px floor and fades once the pointer is past half of it, so the member sees what letting go will do; dragging back cancels, and a close keeps the split from before the drag.
@@ -831,7 +833,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   The navigator's header has a quiet **Today** once anything moved off today (a picked day, another month or week), which brings the month or week and the agenda back to today; picking today does too.
   **Hours ›**: each day heading ends with a quiet Hours button that swaps the agenda for the hour grid (below) on that day, three days on a wide pane and one on a narrow one, with an **Events** back button that returns to the agenda on the same day. With three days a column heading's **Open <day>** shows that day alone, whose hours are the keyboard's way to make an event. The grid wears the kinds too: event blocks and chips the sky wash with a sky edge (the required treatment for a required one, never the accent, which marks today), task chips the green ring, birthdays the rose square. The hour grid is to be rebuilt in step 3 of #5560.
   The event's detail sheet heads its title with the same 4px sky bar, and `Required` in sky when it requires the viewer.
-  The toolbar recedes to the title row's trailing side: search, Filter, Subscribe, and New event, still the one primary action and still gated, drawn in accent text with a 1px accent edge at 35% and no fill.
+  The toolbar recedes to the title row's trailing side: search, Filter, Subscribe, and New event, still the one primary action and still gated, drawn in accent text with a 1px accent edge at 35% and no fill. Since 2026-11-19 they are in the page header beside the X, and that look is every page's main action (the Button `action` variant).
 - **Events: the row is the control**, as on the Directory: it opens `EventDetailSheet`, with no trailing "View details" button.
   It keeps the 44px height of the first row shape above, because its meta line wraps under the name on a phone.
   **Reworked 2026-11-09 ([#3822](https://github.com/pdcarlson/Frapp/issues/3822), Paul):** the list has no checkboxes by default.
@@ -869,6 +871,8 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   Toggles under the month (Events, My tasks, Assigned by me, Birthdays) switch each kind and double as the key; they appear only for kinds the viewer has and are remembered per browser as the kinds hidden, so a kind added later starts on.
   On the compact month a day carries a ring after its event dots when anything is due, and the picked day lists its tasks after its events.
   Rules and words: `@repo/hooks/calendar-tasks`, which mobile's Calendar reads too.
+  **A task due at a time** ([#5116](https://github.com/frapplive/Frapp/issues/5116), Shawn, 2026-11-15) sits on that moment's local day and says its time in the viewer's clock ("5 PM", or "17" on a 24-hour clock, as the Tasks rows write it): its agenda row's line under the title starts with it, its card reads "Due Thursday, November 20 at 5 PM", and the hour grid draws it as a slim marker at that time (half an hour tall, ending at midnight for a task due in the day's last half hour), sharing lanes with the events it overlaps, the way Google Calendar draws a timed task; a task with no time stays in the All day strip.
+  A day's timed tasks list first, by time, then its untimed ones, as [`tasks.md`](../../behavior/tasks.md) orders a day; one task an officer handed to many at two different times is two rows. On the grid an assigned task's marker still names who it went to or how many are done.
   *(Changed in [#5560](https://github.com/pdcarlson/Frapp/issues/5560) by pdcarlson, 2026-11-19: tasks are agenda rows in the Tasks hue, above; the layer toggles became the colour key, which switches Tasks as one kind; the hour grid's All day strip still draws the chips.)*
   **Birthdays too** ([#4959](https://github.com/pdcarlson/Frapp/issues/4959), Shawn, 2026-11-14): every birthday a member shares with the chapter ([`members.md` § Profiles](../../behavior/members.md#profiles)) is an all-day item on its day each year, listed before the day's tasks, from `GET /v1/members/birthdays`.
   It draws a cake and the member's name with no fill and nothing to open, as Google Calendar draws its birthdays calendar; on the compact month its day carries a muted dot.
@@ -887,7 +891,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   The add row heads To do in both, on the status board (elsewhere it heads the page, below).
   Changed in [#4582](https://github.com/pdcarlson/Frapp/pull/4582) by shawnatomklein-eng, 2026-11-12: the framed tiles above are the default Grid, and List adds flush rows beside them.
 - **Tasks: My tasks and All tasks** ([#4295](https://github.com/frapplive/Frapp/issues/4295) step 5, [#3617](https://github.com/frapplive/Frapp/issues/3617); rules in [`tasks.md` § Views](../../behavior/tasks.md#views)).
-  At most two toolbar rows sit over the groups, even in a narrow Tasks column beside chat (down to 375px when chat is widened) (2026-11-18; it was one wrapping row, which broke into three there). The first: an officer's **My tasks / All tasks** switch leads it ([`components.md` § Segmented control](../design-system/components.md#segmented-control)), as Asana's My tasks sits beside a project and Linear's My issues beside the team's; **View** and **New task** keep the trailing edge. View is one menu holding All tasks' grouping (**By status / By person**) and **List / Grid**, as Linear's Display menu holds both. The second row, on All tasks, holds the **Assignee**, **Status** and **Due** filter chips ([`components.md` § 4](../design-system/components.md#4-inputs-and-selection)), as Linear's Filter.
+  **View** and **New task** are the page's actions, in its header beside the X (2026-11-19). At most two toolbar rows sit over the groups, even in a narrow Tasks column beside chat (down to 375px when chat is widened) (2026-11-18; it was one wrapping row, which broke into three there). The first is an officer's **My tasks / All tasks** switch ([`components.md` § Segmented control](../design-system/components.md#segmented-control)), as Asana's My tasks sits beside a project and Linear's My issues beside the team's; until 2026-11-19 View and New task kept its trailing edge. View is one menu holding All tasks' grouping (**By status / By person**) and **List / Grid**, as Linear's Display menu holds both. The second row, on All tasks, holds the **Assignee**, **Status** and **Due** filter chips ([`components.md` § 4](../design-system/components.md#4-inputs-and-selection)), as Linear's Filter.
   A member's page has no chips, and no switch unless they follow another member's task ([`tasks.md` § Following a task](../../behavior/tasks.md#following-a-task), #5473), when it gets the same switch over what they can read: it is My tasks, grouped Today, This week, Later and Waiting on an officer, drawn as lanes in Grid and stacked in List like the status columns.
   The add row heads To do on the status board, and heads the page under any other grouping.
 - **Service hours opens on yours** ([#4669](https://github.com/pdcarlson/Frapp/issues/4669), Shawn, 2026-11-12).
@@ -901,7 +905,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   Who appears on the board is the endpoint's call, members who have left included; whether they should is open in [#811](https://github.com/pdcarlson/Frapp/issues/811) and [#543](https://github.com/pdcarlson/Frapp/issues/543).
 - **Study: the running timer is the route's one framed block**, a hairline frame on `--surface-1` at radius 14 (the plan panel's recipe), because it is the focal element.
   Starting a session and the history are flush.
-- **Study zones are a flush list** with quiet row actions, and New study zone sits in `PageActions` beside the settings gear.
+- **Study zones are a flush list** with quiet row actions, and New study zone (a `NewButton`) sits on the Zones section's label row, since Study zones is a Settings section rather than a page with a header of its own.
 - **Denied copy names the role, never the permission key**: "Your role can't see every poll." was the shape, not `polls:view_all`.
 - **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Fri, Nov 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), never a numeric date with seconds.
   Both apps' task due lines read the same helpers through `@repo/hooks`' `taskDueLine`, and both chat event cards read `formatEventWindow` ("Tonight · 6:00 – 7:00 PM"), since #4135 (2026-11-12).
@@ -928,7 +932,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
 Decided by Paul, 2026-11-10 ([#3856](https://github.com/pdcarlson/Frapp/issues/3856), asked for by Winston and Shawn; epic [#4068](https://github.com/pdcarlson/Frapp/issues/4068) decision 1).
 The web app has two settings places and their names say whose each is, the split Discord draws between User Settings and Server Settings and Slack between Preferences and workspace settings:
 
-- **Chapter settings** is the nav row (`/settings`): officer setup and officer tools, shown to whoever it holds something for.
+- **Chapter settings** is the chapter menu's item (`/settings`; a nav row until 2026-11-19): officer setup and officer tools, shown to whoever it holds something for.
 - **Settings** is the member's own page (`/preferences`, [`components/personal-settings/`](../../../apps/web/components/personal-settings/personal-settings-page.tsx)), opened from the account menu on the avatar and shown to every member.
   It took every settings block off `/profile`, which keeps the profile itself.
 
@@ -1392,7 +1396,7 @@ The **mark** is the exception, because [`../brand-identity.md`](../brand-identit
 The mirror half is `/profile`: it renders *inside* a chapter, so its s15 identity header takes the accent roles rather than the house family the board happens to draw it in.
 
 **The reference wins on visuals and not on the data model.** s02 draws a six-cell row for a shared chapter code;
-[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use 24-hour invite tokens, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
+[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use invite tokens that last 7 days, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
 So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and keeps one token field that accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`).
 `apps/mobile/app/(auth)/join.tsx` had already made that call in its own docstring; both surfaces now record it, so neither can drift.
 

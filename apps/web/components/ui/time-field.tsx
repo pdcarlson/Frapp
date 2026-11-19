@@ -13,6 +13,7 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { eventLengthLabel } from "@repo/validation";
 
 /** The list's step: Google Calendar and Outlook both offer quarter hours. */
 const STEP_MINUTES = 15;
@@ -265,13 +266,10 @@ function rotateFrom(from: string, span: number): string[] {
   );
 }
 
-/** `30 min`, `1 hr`, `1.5 hrs`: how long from `from` to `to`, past midnight too. */
+/**
+ * `30 min`, `1 hr`, `1.5 hrs`: how long from `from` to `to`, past midnight
+ * too, in the words the event form's length chips use (`eventLengthLabel`).
+ */
 export function durationLabel(from: string, to: string): string {
-  const minutes = timeSpanMinutes(from, to);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = minutes / 60;
-  const shown = Number.isInteger(hours)
-    ? `${hours}`
-    : hours.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
-  return `${shown} ${hours === 1 ? "hr" : "hrs"}`;
+  return eventLengthLabel(timeSpanMinutes(from, to));
 }

@@ -12,36 +12,23 @@ import {
   useRouter,
 } from "expo-router";
 import * as Linking from "expo-linking";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  isDeadInviteError,
-  joinErrorCopy,
   pendingInviteDetail,
   pendingInviteTitle,
-  redeemChapterId,
   useDeleteAccount,
-  useInvitePreview,
-  useJoinTermsCheckbox,
   usePendingInvites,
-  useRedeemInvite,
 } from "@repo/hooks";
 import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
 import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
 import { chapterInitials } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
-import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { BackRow } from "@/components/back-row";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
+import { JoinWithInvite } from "@/components/onboarding/join-with-invite";
 import {
   OnboardingFieldLabel,
   OnboardingTextInput,
@@ -63,66 +50,48 @@ import {
   extractInviteToken,
   extractInviteTokenFromQuery,
   peekInviteTokenFromLink,
+  peekRememberedInviteThen,
   peekRememberedInviteToken,
   rememberInviteToken,
   takeInviteTokenFromLink,
+  useRememberedInviteToken,
 } from "@/lib/onboarding/invite-token";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
-import { useSelectChapter } from "@/lib/select-chapter";
-import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { pageSurfaces } from "@/lib/surfaces";
 
 /**
- * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350).
+ * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350), and
+ * the invite card (#5625).
  *
- * Where an account with no chapter lands. It asks one question with two large
- * answers: "I have an invite" opens the invite step here, and "I'm starting our
- * chapter" opens `/create-chapter`. An invite link that opened the app skips
- * the question and lands on the confirm step.
+ * An invite link, or an invite remembered across a sign-in or a relaunch,
+ * opens the invite card (`JoinWithInvite`), signed in or not: the chapter
+ * first, then one tap that signs in and joins. Web `/join` shows the same
+ * card. Signed out with no invite, the screen sends the member to sign-in.
  *
- * One surface, like s01 (#3349), with a card only for the one object on the
- * confirm step. Every view shows the account it is signed in as, with Sign
- * out beside it (#3782), and Delete account sits in the Account menu in the
- * top corner, because this is the only screen a zero-membership account can
- * reach (Apple 5.1.1(v), #2295).
+ * Signed in with no invite, it asks one question with two large answers: "I
+ * have an invite" opens the invite step here, and "I'm starting our chapter"
+ * opens `/create-chapter`. The question also offers each pending invite
+ * emailed to the account's verified address (`GET /v1/invites/mine`, #3782),
+ * as web `/join` does (#3776). Tapping one opens the card on that invite.
  *
- * Signed in and not opened by an invite link, the question also offers each
- * pending invite emailed to the account's verified address (`GET
- * /v1/invites/mine`, #3782), as web `/join` does (#3776). Tapping one opens
- * the confirm step on that invite, so Terms and Join run as for any other.
+ * One surface, like s01 (#3349). Every signed-in view shows the account it is
+ * signed in as, with Sign out beside it (#3782), and Delete account sits in
+ * the Account menu in the top corner, because this is the only screen a
+ * zero-membership account can reach (Apple 5.1.1(v), #2295).
  *
  * The invite step is one field that also accepts a pasted URL; the canvas draws
  * six cells for a shared code, but joining is single-use invite tokens
  * (`spec/behavior/onboarding.md` wins over the drawing for the data model).
- *
- * Nothing joins from the field itself. Continue opens a confirm step, and an
- * opened invite link lands there directly (#3352): "Join FIJI Tau Nu?" over
- * one card for the chapter (its mark, name and school, who sent the invite and
- * the role it grants, read by `POST /v1/invites/preview` without using the
- * invite up), the Terms checkbox when it's needed, and Join chapter pinned at
- * the bottom. A preview that fails leaves a card for the bare invite, which
- * can still be joined; a dead invite (410), found by the preview or by the redeem, says so and disables Join.
+ * Nothing joins from the field itself: Continue opens the card.
  */
 
 type JoinView = "choose" | "invite" | "confirm";
 
 export const JOIN_CHOICE_TITLE = "How are you getting in?";
 export const JOIN_INVITE_TITLE = "Join with an invite";
-export const JOIN_CONFIRM_TITLE = "Join with this invite?";
-
-/** The confirm step's title once the invite's chapter is known. */
-export function confirmTitle(chapterName: string): string {
-  return `Join ${chapterName}?`;
-}
-
-/** How the confirm card names an invite it can't read: its last four characters. */
-export function inviteTail(token: string): string {
-  return token.slice(-4);
-}
 
 type InviteParams = {
   token?: string | string[];
@@ -162,12 +131,8 @@ export default function JoinChapter() {
   // no chapter, never for a member opening Join from the picker.
   const gateDestination = useAuthGateDestination();
   const { signOut: signOutToSignIn, signingOut } = useOnboardingSignOut();
-  const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
-  // When to show the Terms checkbox, and what a refused join means for it,
-  // is shared with web `/join` (#2302).
-  const terms = useJoinTermsCheckbox({ enabled: status === "authenticated" });
-  const selectChapter = useSelectChapter();
+  const rememberedInvite = useRememberedInviteToken();
   const params = useLocalSearchParams<InviteParams>();
   const deepLinkUrl = Linking.useURL();
 
@@ -189,14 +154,9 @@ export default function JoinChapter() {
   // offer's confirm step, so a pasted invite isn't lost to a look at an offer.
   const [tokenBeforeOffer, setTokenBeforeOffer] = useState("");
   const [error, setError] = useState<string | null>(null);
-  /**
-   * An invite the redeem itself found dead (410), with the sentence to show:
-   * a preview read a minute earlier can still say it was live.
-   */
-  const [deadRedeem, setDeadRedeem] = useState<{
-    token: string;
-    copy: string;
-  } | null>(null);
+  // A join, or the open of a chapter the member is already in, running on the
+  // card: it holds the screen like a deletion does.
+  const [inviteBusy, setInviteBusy] = useState(false);
 
   // Every invite the effect below has applied. A route param stays set for
   // the life of the screen, so every re-run sees it again; only one never
@@ -211,10 +171,7 @@ export default function JoinChapter() {
   // it, so a link opened meanwhile waits for it to end (`stepBack` holds the
   // same way).
   const holdLinks =
-    redeemInvite.isPending ||
-    redeemInvite.isSuccess ||
-    deleteAccount.isPending ||
-    deleteAccount.isSuccess;
+    inviteBusy || deleteAccount.isPending || deleteAccount.isSuccess;
 
   useEffect(() => {
     if (holdLinks) return;
@@ -223,6 +180,7 @@ export default function JoinChapter() {
       params.token,
       params.invite,
       params.code,
+      rememberedInvite,
     ]);
     if (inputs === handledInputs.current) return;
     handledInputs.current = inputs;
@@ -246,11 +204,16 @@ export default function JoinChapter() {
         : null;
     if (!fresh && (fromLink ?? fromParams)) return;
     if (fresh) appliedInvites.current.add(fresh);
-    // Only a fresh invite is remembered, for the signed-out bounce onto
-    // sign-in. One taken back out of memory stays out, or it would fill the
-    // field and skip the question on every later visit until a redeem.
-    if (fresh) rememberInviteToken(fresh);
-    const next = fresh ?? consumeRememberedInviteToken();
+    // A fresh invite is remembered until it is joined or declined: through
+    // a sign-in on the card, and a relaunch (`invite-token.ts`). A remembered
+    // one (read back after a sign-in, or from the phone after a relaunch)
+    // opens the card again. The same invite coming back in the route (this
+    // screen mounting again after the sign-in it started) keeps its join
+    // mark, so the card still carries on with it.
+    if (fresh && fresh !== peekRememberedInviteToken()) {
+      rememberInviteToken(fresh);
+    }
+    const next = fresh ?? rememberedInvite;
     if (next) {
       // A link just opened wins over whatever the field holds: the confirm
       // step hides the field, so a kept value would be joined unseen. A
@@ -263,7 +226,14 @@ export default function JoinChapter() {
       // the field, so it goes straight to the confirm step.
       setView("confirm");
     }
-  }, [deepLinkUrl, holdLinks, params.code, params.invite, params.token]);
+  }, [
+    deepLinkUrl,
+    holdLinks,
+    params.code,
+    params.invite,
+    params.token,
+    rememberedInvite,
+  ]);
 
   // `isSuccess`, not just `isPending`: TanStack clears `isPending` in the same
   // render that runs `onSuccess`, but `handleSignOut` then awaits a real
@@ -273,35 +243,16 @@ export default function JoinChapter() {
   // as "deletion didn't finish, running it again is safe" after it in fact
   // finished.
   const deleting = deleteAccount.isPending || deleteAccount.isSuccess;
-  // Redemption and deletion each lock the whole screen. Deleting must lock it
-  // because navigating away unmounts this screen, and a per-call `mutate`
-  // callback does not fire after unmount — the account would be erased with
-  // `handleSignOut` never running, leaving a live session on a deleted account.
-  // Redeeming must lock it because burning a single-use invite and then
-  // deleting the account strands the membership it just created.
-  // `isSuccess` on the redeem side too: `handleJoin` awaits `selectChapter`
-  // (a POST plus a session refresh) *after* `mutateAsync` resolves and before
-  // it navigates. Without it every control re-enables for those round trips —
-  // the exact window where a delete would strand the membership the redeem
-  // just created.
-  //
-  // This cannot strand the screen, and the reason is worth keeping: a
-  // successful redeem always reaches `router.replace`, because everything
-  // between the two is total. `selectChapter` catches its own failures and
-  // returns a boolean rather than throwing (`lib/select-chapter.ts`),
-  // `successHaptic` swallows its own failures (`lib/haptics.ts`), and
-  // `consumeRememberedInviteToken` / `redeemChapterId` are pure. If any of
-  // those grows a throw path, the catch would leave `isSuccess` true on a
-  // mounted screen and lock every control — including this one.
-  // A sign-out in flight locks it too: nothing should start under a session
-  // that is going away.
-  const submitting =
-    redeemInvite.isPending || redeemInvite.isSuccess || deleting || signingOut;
-  // The primary button's spinner stays tied to redemption alone. `submitting`
-  // disables it during a deletion too, but showing its spinner then would tell
-  // the user a join is running when what is running is the deletion of their
-  // account.
-  const redeeming = redeemInvite.isPending;
+  // A join on the card and a deletion each lock the whole screen. Deleting
+  // must lock it because navigating away unmounts this screen, and a
+  // per-call `mutate` callback does not fire after unmount — the account
+  // would be erased with `handleSignOut` never running, leaving a live
+  // session on a deleted account. Joining must lock it because burning a
+  // single-use invite and then deleting the account strands the membership
+  // it just created; the card holds `inviteBusy` through `selectChapter` and
+  // the navigation after the redeem for the same reason. A sign-out in flight
+  // locks it too: nothing should start under a session that is going away.
+  const submitting = inviteBusy || deleting || signingOut;
   // A deletion in flight keeps the menu open, so "Deleting account…" stays on
   // screen until sign-out takes the user away. The menu's own close controls
   // are locked for the same window.
@@ -364,22 +315,6 @@ export default function JoinChapter() {
 
   // Read before the redirect below: hooks run on every render.
   const invite = extractInviteToken(token);
-  // Signed-in only: a signed-out render is about to redirect, and the token
-  // would go out with no session.
-  const preview = useInvitePreview(
-    status === "authenticated" && view === "confirm" ? invite : null,
-  );
-  const chapter = preview.data ?? null;
-  // A dead link can't be joined, so the step says so and disables Join,
-  // whether the preview or the redeem found it dead.
-  const deadCopy =
-    preview.isError && isDeadInviteError(preview.error)
-      ? joinErrorCopy(preview.error)
-      : deadRedeem && deadRedeem.token === invite
-        ? deadRedeem.copy
-        : null;
-  const deadInvite = deadCopy !== null;
-  const stepBlocked = submitting || (view === "confirm" && deadInvite);
   // Whether an invite link (or a param, or one remembered across the sign-in
   // bounce) is about to be applied by the effect above, read at render
   // without taking it, so the very first render of a link-opened visit
@@ -396,7 +331,7 @@ export default function JoinChapter() {
   const inviteIncoming =
     fromParamsNow !== null ||
     peekInviteTokenFromLink(deepLinkUrl ?? Linking.getLinkingURL()) !== null ||
-    peekRememberedInviteToken() !== null;
+    rememberedInvite !== null;
   const arrivedWithInvite = appliedLinkInvite || inviteIncoming;
   // Invites emailed to this account, offered on the question (#3782). Not
   // read while signed out, nor when a link brought one.
@@ -405,7 +340,18 @@ export default function JoinChapter() {
   );
   const offers = Array.isArray(pendingInvites.data) ? pendingInvites.data : [];
 
-  if (status === "unauthenticated") {
+  // The invite the card shows before the effect above has applied it: the
+  // first render of a link-opened visit, or one signed out.
+  const incomingInvite =
+    invite ??
+    fromParamsNow ??
+    peekInviteTokenFromLink(deepLinkUrl ?? Linking.getLinkingURL()) ??
+    rememberedInvite;
+  const onCard =
+    view === "confirm" ||
+    (status !== "authenticated" && incomingInvite !== null);
+
+  if (status === "unauthenticated" && incomingInvite === null) {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
@@ -467,45 +413,14 @@ export default function JoinChapter() {
     setView("confirm");
   }
 
-  async function handleJoin() {
-    // A second tap can land before the button disables.
+  /** Another link, pasted on the card's not-an-invite screen. */
+  function handleOtherInvite(next: string) {
     if (submitting) return;
-    const extracted = extractInviteToken(token);
-    if (!extracted) {
-      // Only reachable if the field was cleared under a confirm step.
-      setView("invite");
-      setError("Paste the invite your officer sent, or open the invite link.");
-      return;
-    }
-
-    if (terms.blocker) {
-      setError(terms.blocker);
-      return;
-    }
-
+    rememberInviteToken(next);
+    setToken(next);
     setError(null);
-    try {
-      const result = await redeemInvite.mutateAsync(
-        terms.redeemBody(extracted),
-      );
-      consumeRememberedInviteToken();
-      // The member is in: the one tap setup gives a chapter going live, so
-      // joining one feels like it landed. Best effort, and silent where the
-      // device can't (`lib/haptics.ts`).
-      successHaptic();
-      const chapterId = redeemChapterId(result);
-      if (chapterId) {
-        await selectChapter(chapterId);
-      }
-      router.replace("/welcome");
-    } catch (caught) {
-      terms.onJoinError(caught);
-      if (isDeadInviteError(caught)) {
-        setDeadRedeem({ token: extracted, copy: joinErrorCopy(caught) });
-        return;
-      }
-      setError(joinErrorCopy(caught));
-    }
+    setFromOffer(false);
+    setView("confirm");
   }
 
   const accountButton = (
@@ -528,10 +443,11 @@ export default function JoinChapter() {
 
   // The board's s02 `‹ Back` row, in house gold (`BackRow`), with the
   // Account menu at its far end. The question has nothing to step back to,
-  // so it draws Account alone, in the same place.
+  // so it draws Account alone, in the same place. Signed out, the card has
+  // neither: nothing is behind it, and there is no account yet.
   const header = (
     <View style={styles.header}>
-      {view !== "choose" ? (
+      {status !== "authenticated" ? null : view !== "choose" ? (
         <BackRow
           house
           label="Back"
@@ -580,99 +496,126 @@ export default function JoinChapter() {
             menuVisible ? "no-hide-descendants" : "auto"
           }
         >
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.container}
-            keyboardShouldPersistTaps="handled"
-          >
-            {header}
+          {onCard && incomingInvite ? (
+            <JoinWithInvite
+              key={incomingInvite}
+              token={incomingInvite}
+              // The mark belongs to the invite it was remembered with.
+              then={
+                rememberedInvite === incomingInvite
+                  ? peekRememberedInviteThen()
+                  : null
+              }
+              header={header}
+              accountLine={
+                status === "authenticated" ? (
+                  <SignedInAs
+                    signOut={signOutToSignIn}
+                    signingOut={signingOut}
+                    disabled={submitting}
+                  />
+                ) : undefined
+              }
+              onBusyChange={setInviteBusy}
+              onOtherInvite={handleOtherInvite}
+            />
+          ) : (
+            <>
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.container}
+                keyboardShouldPersistTaps="handled"
+              >
+                {header}
 
-            {/*
+                {/*
               The account this screen is signed in as, with Sign out, on
               every view (#3782). In the column, under the header, so the
               pinned button never covers it.
             */}
-            <View style={styles.accountLine}>
-              <SignedInAs
-                signOut={signOutToSignIn}
-                signingOut={signingOut}
-                disabled={submitting}
-              />
-            </View>
-
-            {view === "choose" ? (
-              // At the top, like the other two views, so the title doesn't
-              // jump from mid-screen to the top on the first tap. No line
-              // under it: the two answers already say how a member gets in.
-              <Animated.View
-                key="choose"
-                entering={entering}
-                style={styles.stepBody}
-              >
-                <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
-
-                {offers.length > 0 ? (
-                  // Invites emailed to this account, above the two answers
-                  // (#3782). Each opens the confirm step on its invite.
-                  <View style={styles.choices}>
-                    {offers.map((offer) => (
-                      <ChoiceRow
-                        key={offer.token}
-                        title={pendingInviteTitle(offer.chapter_name)}
-                        body={pendingInviteDetail(offer)}
-                        accessibilityHint="Opens the invite to join."
-                        disabled={submitting}
-                        dimmed={submitting}
-                        leading={
-                          // The title names the chapter, so a screen reader
-                          // skips the mark.
-                          <View
-                            accessibilityElementsHidden
-                            importantForAccessibility="no-hide-descendants"
-                          >
-                            <ChapterMarkTile
-                              text={
-                                offer.mark_text ??
-                                chapterInitials(offer.chapter_name)
-                              }
-                              accent={normalizeAccentInput(offer.accent_color)}
-                              size={44}
-                            />
-                          </View>
-                        }
-                        onPress={() => {
-                          handlePickOffer(offer.token);
-                        }}
-                      />
-                    ))}
-                  </View>
-                ) : null}
-
-                <View style={styles.choices}>
-                  <ChoiceRow
-                    title="I have an invite"
-                    body="Use the link your officer sent."
+                <View style={styles.accountLine}>
+                  <SignedInAs
+                    signOut={signOutToSignIn}
+                    signingOut={signingOut}
                     disabled={submitting}
-                    dimmed={submitting}
-                    onPress={() => {
-                      setAccountOpen(false);
-                      setView("invite");
-                    }}
-                  />
-                  <ChoiceRow
-                    title="I'm starting our chapter"
-                    body="Set it up, then invite everyone."
-                    accessibilityHint="Opens chapter setup."
-                    disabled={submitting}
-                    dimmed={submitting}
-                    onPress={() => {
-                      setAccountOpen(false);
-                      router.push("/create-chapter");
-                    }}
                   />
                 </View>
 
-                {/*
+                {view === "choose" ? (
+                  // At the top, like the other two views, so the title doesn't
+                  // jump from mid-screen to the top on the first tap. No line
+                  // under it: the two answers already say how a member gets in.
+                  <Animated.View
+                    key="choose"
+                    entering={entering}
+                    style={styles.stepBody}
+                  >
+                    <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
+
+                    {offers.length > 0 ? (
+                      // Invites emailed to this account, above the two answers
+                      // (#3782). Each opens the confirm step on its invite.
+                      <View style={styles.choices}>
+                        {offers.map((offer) => (
+                          <ChoiceRow
+                            key={offer.token}
+                            title={pendingInviteTitle(offer.chapter_name)}
+                            body={pendingInviteDetail(offer)}
+                            accessibilityHint="Opens the invite to join."
+                            disabled={submitting}
+                            dimmed={submitting}
+                            leading={
+                              // The title names the chapter, so a screen reader
+                              // skips the mark.
+                              <View
+                                accessibilityElementsHidden
+                                importantForAccessibility="no-hide-descendants"
+                              >
+                                <ChapterMarkTile
+                                  text={
+                                    offer.mark_text ??
+                                    chapterInitials(offer.chapter_name)
+                                  }
+                                  accent={normalizeAccentInput(
+                                    offer.accent_color,
+                                  )}
+                                  size={44}
+                                />
+                              </View>
+                            }
+                            onPress={() => {
+                              handlePickOffer(offer.token);
+                            }}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+
+                    <View style={styles.choices}>
+                      <ChoiceRow
+                        title="I have an invite"
+                        body="Use the link your officer sent."
+                        disabled={submitting}
+                        dimmed={submitting}
+                        onPress={() => {
+                          setAccountOpen(false);
+                          setView("invite");
+                        }}
+                      />
+                      <ChoiceRow
+                        title="I'm starting our chapter"
+                        body="Set it up, then invite everyone."
+                        accessibilityHint="Opens chapter setup."
+                        disabled={submitting}
+                        dimmed={submitting}
+                        onPress={() => {
+                          setAccountOpen(false);
+                          router.push("/create-chapter");
+                        }}
+                      />
+                    </View>
+
+                    {/*
                   For someone already in a chapter who signed in with another
                   account than the one they joined with. Not when an invite
                   link or an emailed invite brought them: those are the
@@ -680,176 +623,75 @@ export default function JoinChapter() {
                   read settles, so it never shows and then vanishes; a read
                   that failed still shows it, since it is the way out.
                 */}
-                {gateDestination === "join" &&
-                !arrivedWithInvite &&
-                !pendingInvites.isPending &&
-                offers.length === 0 ? (
-                  <OtherAccountLine
-                    onPress={() => void signOutToSignIn()}
-                    disabled={submitting || signingOut}
-                    busy={signingOut}
-                  />
-                ) : null}
-              </Animated.View>
-            ) : view === "invite" ? (
-              <Animated.View
-                key="invite"
-                entering={entering}
-                style={styles.stepBody}
-              >
-                <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
-                <Text style={styles.subtitle}>
-                  Paste the invite link or code your officer sent.
-                </Text>
-
-                <OnboardingFieldLabel>Invite</OnboardingFieldLabel>
-                <OnboardingTextInput
-                  value={token}
-                  onChangeText={(value) => {
-                    setToken(value);
-                    setError(null);
-                  }}
-                  placeholder="Paste invite or link"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  // A filled field came from a link, or back from the confirm
-                  // step; the next step is Continue, not typing, so the
-                  // keyboard stays down.
-                  autoFocus={token.length === 0}
-                  textContentType="none"
-                  accessibilityLabel="Invite token"
-                  editable={!submitting}
-                  returnKeyType="next"
-                  onSubmitEditing={handleContinue}
-                  style={styles.inviteInput}
-                />
-
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-                <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
-              </Animated.View>
-            ) : (
-              <Animated.View
-                key="confirm"
-                entering={entering}
-                style={styles.stepBody}
-              >
-                <Text style={styles.title}>
-                  {chapter
-                    ? confirmTitle(chapter.chapter_name)
-                    : JOIN_CONFIRM_TITLE}
-                </Text>
-
-                {chapter ? (
-                  // One object, so one card: the chapter this invite joins.
-                  <View style={styles.inviteCard}>
-                    <View style={styles.chapterRow}>
-                      {/* The name beside it says who this is, so a screen
-                          reader skips the mark. */}
-                      <View
-                        accessibilityElementsHidden
-                        importantForAccessibility="no-hide-descendants"
-                      >
-                        <ChapterMarkTile
-                          text={
-                            chapter.mark_text ??
-                            chapterInitials(chapter.chapter_name)
-                          }
-                          accent={normalizeAccentInput(chapter.accent_color)}
-                          size={44}
-                        />
-                      </View>
-                      <View style={styles.chapterText}>
-                        <Text style={styles.inviteCardTitle}>
-                          {chapter.chapter_name}
-                        </Text>
-                        <Text style={styles.inviteCardDetail}>
-                          {chapter.university}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.cardRule} />
-                    {chapter.invited_by ? (
-                      <Text style={styles.inviteCardDetail}>
-                        Invited by {chapter.invited_by}
-                      </Text>
+                    {gateDestination === "join" &&
+                    !arrivedWithInvite &&
+                    !pendingInvites.isPending &&
+                    offers.length === 0 ? (
+                      <OtherAccountLine
+                        onPress={() => void signOutToSignIn()}
+                        disabled={submitting || signingOut}
+                        busy={signingOut}
+                      />
                     ) : null}
-                    {chapter.role ? (
-                      <Text style={styles.inviteCardDetail}>
-                        Joining as {chapter.role}
-                      </Text>
+                  </Animated.View>
+                ) : view === "invite" ? (
+                  <Animated.View
+                    key="invite"
+                    entering={entering}
+                    style={styles.stepBody}
+                  >
+                    <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
+                    <Text style={styles.subtitle}>
+                      Paste the invite link or code your officer sent.
+                    </Text>
+
+                    <OnboardingFieldLabel>Invite</OnboardingFieldLabel>
+                    <OnboardingTextInput
+                      value={token}
+                      onChangeText={(value) => {
+                        setToken(value);
+                        setError(null);
+                      }}
+                      placeholder="Paste invite or link"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      // A filled field came from a link, or back from the confirm
+                      // step; the next step is Continue, not typing, so the
+                      // keyboard stays down.
+                      autoFocus={token.length === 0}
+                      textContentType="none"
+                      accessibilityLabel="Invite token"
+                      editable={!submitting}
+                      returnKeyType="next"
+                      onSubmitEditing={handleContinue}
+                      style={styles.inviteInput}
+                    />
+
+                    {error ? (
+                      <Text style={styles.errorText}>{error}</Text>
                     ) : null}
-                  </View>
-                ) : (
-                  // The invite itself, while the preview loads or when it
-                  // can't be read.
-                  <View style={styles.inviteCard}>
-                    <View style={styles.chapterRow}>
-                      <View style={styles.chapterText}>
-                        <Text style={styles.inviteCardTitle}>
-                          Chapter invite
-                        </Text>
-                        <Text style={styles.inviteCardDetail}>
-                          {invite ? (
-                            <>
-                              Ending in{" "}
-                              <Text style={styles.inviteCardTail}>
-                                {inviteTail(invite)}
-                              </Text>
-                              {" · "}
-                            </>
-                          ) : null}
-                          Works once
-                        </Text>
-                      </View>
-                      {preview.isPending && preview.fetchStatus !== "idle" ? (
-                        <ActivityIndicator
-                          color={tokens.color.gold.house}
-                          accessibilityLabel="Reading the invite"
-                        />
-                      ) : null}
-                    </View>
-                  </View>
-                )}
 
-                {deadCopy ? (
-                  <Text style={styles.errorText}>{deadCopy}</Text>
+                    <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+                  </Animated.View>
                 ) : null}
+              </ScrollView>
 
-                {terms.needed && !deadInvite ? (
-                  <TermsAcceptance
-                    accepted={terms.accepted}
-                    onAcceptedChange={(next) => {
-                      terms.setAccepted(next);
-                      setError(null);
-                    }}
-                    disabled={submitting}
-                  />
-                ) : null}
-
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
-              </Animated.View>
-            )}
-          </ScrollView>
-
-          {/*
-            The step forward, pinned above the keyboard and the inset, on both
-            invite views (#3348 screen rules). Inside the underlay so the
-            Account menu hides it from a screen reader too.
+              {/*
+            The step forward, pinned above the keyboard and the inset
+            (#3348 screen rules). Inside the underlay so the Account menu
+            hides it from a screen reader too.
           */}
-          {view === "choose" ? null : (
-            <View style={styles.footer}>
-              <OnboardingPrimaryButton
-                label={view === "invite" ? "Continue" : "Join chapter"}
-                disabled={stepBlocked}
-                busy={redeeming}
-                onPress={() => {
-                  if (view === "invite") handleContinue();
-                  else void handleJoin();
-                }}
-              />
-            </View>
+              {view === "invite" ? (
+                <View style={styles.footer}>
+                  <OnboardingPrimaryButton
+                    label="Continue"
+                    disabled={submitting}
+                    onPress={handleContinue}
+                  />
+                </View>
+              ) : null}
+            </>
           )}
         </View>
 
@@ -904,7 +746,6 @@ export default function JoinChapter() {
 }
 
 function createStyles(tokens: SignetTokens) {
-  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: {
@@ -973,41 +814,6 @@ function createStyles(tokens: SignetTokens) {
       width: "100%",
       maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
-    },
-    inviteCard: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: surfaces.card,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-      gap: tokens.spacing.xs,
-    },
-    chapterRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-    },
-    chapterText: {
-      flex: 1,
-      gap: 2,
-    },
-    cardRule: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: tint(tokens.color.text.foreground, 0.08),
-      marginVertical: tokens.spacing.xs,
-    },
-    inviteCardTitle: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
-    inviteCardDetail: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    inviteCardTail: {
-      fontFamily: MONO_FONT_FAMILY,
-      color: tokens.color.text.foreground,
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,

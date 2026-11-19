@@ -74,6 +74,11 @@ const state = vi.hoisted(() => ({
   chapters: { data: [] as unknown[], isError: false },
 }));
 
+// The invite card's visit id (#5663): a fixed one, since the native module
+// isn't in a test run.
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718",
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({

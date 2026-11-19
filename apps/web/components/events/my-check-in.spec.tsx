@@ -182,7 +182,7 @@ describe("<MyCheckIn />", () => {
     mutateAsync.mockResolvedValue({});
     renderBlock();
 
-    expect(screen.getByText("Check-in is open")).toBeInTheDocument();
+    expect(screen.getByText("Open now")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /check in/i }));
 
     await waitFor(() =>
@@ -196,7 +196,7 @@ describe("<MyCheckIn />", () => {
   it("says to scan the officer's code instead of offering Check in once it is required", () => {
     renderBlock("code");
 
-    expect(screen.getByText("Check-in is open")).toBeInTheDocument();
+    expect(screen.getByText("Open now")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Point your phone's camera at the code on the officer's screen to check in.",
@@ -329,14 +329,14 @@ describe("<MyCheckIn />", () => {
     renderBlock();
 
     expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
-    expect(screen.queryByText("Check-in is open")).toBeNull();
+    expect(screen.queryByText("Open now")).toBeNull();
   });
 
   it("still says the window when the own-row read is paused offline", () => {
     mine.value = { data: undefined, isPending: true, fetchStatus: "paused" };
     renderBlock();
 
-    expect(screen.getByText("Check-in is open")).toBeInTheDocument();
+    expect(screen.getByText("Open now")).toBeInTheDocument();
   });
 
   it("says tomorrow, lower-case, as mobile does, for a window opening tomorrow", () => {
@@ -344,7 +344,7 @@ describe("<MyCheckIn />", () => {
     renderBlock();
 
     expect(
-      screen.getByText(/^Check-in opens tomorrow · 6:50\sPM$/),
+      screen.getByText(/^Opens tomorrow · 6:50\sPM$/),
     ).toBeInTheDocument();
   });
 
@@ -352,7 +352,7 @@ describe("<MyCheckIn />", () => {
     clock.now = new Date(2026, 10, 9, 12, 0).getTime();
     renderBlock();
 
-    expect(screen.getByText(/^Check-in opens 6:50\sPM$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Opens 6:50\sPM$/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
   });
 });

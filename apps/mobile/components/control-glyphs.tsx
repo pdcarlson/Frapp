@@ -122,6 +122,23 @@ export function PencilGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/**
+ * Edit details, a thing's facts rather than its words: web draws Lucide's
+ * `SlidersHorizontal` beside Edit minutes' `Pencil` in the minutes' ⋯ menu.
+ */
+export function SlidersGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3" {...detail} />
+      <Path d="M14 2v4M8 10v4M16 18v4" {...detail} />
+    </Frame>
+  );
+}
+
 /** Copy: web draws Lucide's `Copy` for the same intent. */
 export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });

@@ -65,7 +65,7 @@ export function InviteLinksCard({
         <View style={styles.copy}>
           <Text style={styles.title}>A new link for each person</Text>
           <Text style={styles.detail}>
-            {`${webAppHost()}, good for 24 hours`}
+            {`${webAppHost()}, good for 7 days`}
           </Text>
         </View>
       </View>

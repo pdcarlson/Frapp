@@ -9,7 +9,7 @@
  * route here, and every suite in this directory picks it up.
  *
  * Not derived from `nav-config.ts`: that list deliberately omits `/profile` and
- * `/preferences`, and reaches the officer tools only through the Settings row, so it answers a
+ * `/preferences`, and Chapter settings, which opens from the chapter menu, so it answers a
  * different question again.
  */
 

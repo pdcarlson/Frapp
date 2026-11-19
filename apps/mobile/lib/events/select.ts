@@ -151,31 +151,9 @@ export function selectAllEventRows(data: unknown): EventRow[] {
 }
 
 /**
- * The name most of a series' meetings carry (a tie goes to the soonest
- * meeting's), or `null` when none of them is among `rows`. s07 tells an
- * occurrence renamed on its own ("This event only") apart from it.
- */
-export function selectSeriesName(
-  rows: readonly EventRow[],
-  key: string,
-): string | null {
-  // Map keeps first-insertion order and `rows` come soonest first, so the
-  // first name to reach the top count is the soonest meeting's.
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    if (eventSeriesKey(row) !== key) continue;
-    counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
-  }
-  let best: string | null = null;
-  for (const [name, count] of counts) {
-    if (best === null || count > (counts.get(best) ?? 0)) best = name;
-  }
-  return best;
-}
-
-/**
  * The other upcoming occurrences of the series `event` belongs to, soonest
- * first, for s07's "Also on" list (#3707). Empty for a one-time event.
+ * first; s07's Repeat row links the next one after the meeting on screen.
+ * Empty for a one-time event.
  */
 export function selectSeriesOccurrences(
   rows: readonly EventRow[],

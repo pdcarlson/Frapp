@@ -28,6 +28,7 @@ import {
 import { INT4_MAX } from '#domain/constants/field-limits';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { splitIdList } from './id-list-query';
 
 const SEMESTERS = ['Spring', 'Summer', 'Fall', 'Winter'] as const;
 const ASSIGNMENT_TYPES = [
@@ -395,24 +396,6 @@ export class MergeBackworkTaxonomyResponseDto {
     description: 'Count of resources reassigned from source to target',
   })
   reassigned: number;
-}
-
-/**
- * One comma-separated value, or the key repeated: both arrive as a list.
- * Lowercased, because Postgres answers with lowercase ids and the service
- * matches them back by string, and de-duplicated, so 50 copies of one id
- * don't mint 50 links. A part that isn't a string passes through for
- * `@IsUUID` to refuse.
- */
-function splitIdList(value: unknown): unknown[] {
-  const parts: unknown[] = Array.isArray(value) ? value : [value];
-  const ids = parts
-    .flatMap((part) => (typeof part === 'string' ? part.split(',') : [part]))
-    .map((part) =>
-      typeof part === 'string' ? part.trim().toLowerCase() : part,
-    )
-    .filter((part) => part !== '');
-  return [...new Set(ids)];
 }
 
 export class BackworkDownloadUrlsQueryDto {
