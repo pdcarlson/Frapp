@@ -72,7 +72,7 @@ import {
   type AskAccess,
   type ChatCatchUpPoint,
 } from "@repo/validation";
-import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up-sheet";
+import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import type { SendOptions } from "@/lib/chat/use-chat-channel";
 import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
@@ -545,10 +545,9 @@ export function MessageThreadScreen({
     startCatchUp({
       kind: "thread",
       channelId,
-      channelName: openChannel?.channel.name ?? null,
       rootId,
     });
-  }, [startCatchUp, channelId, openChannel, rootId]);
+  }, [startCatchUp, channelId, rootId]);
   const [offerDismissed, setOfferDismissed] = useState(false);
 
   // Unblock from a tombstone, as s05 offers it; the thread is read again so
@@ -997,12 +996,14 @@ export function MessageThreadScreen({
             ) : null}
           </View>
 
+          {catchUp.block}
           {catchUp.waiting ? (
             <CatchUpStrip
               line={CHAT_CATCH_UP_COPY.resume_line}
               action={CHAT_CATCH_UP_COPY.resume_action}
               onAction={catchUp.resume}
               onDismiss={catchUp.drop}
+              dismissLabel={CHAT_CATCH_UP_COPY.close}
             />
           ) : canSummarize &&
             !catchUp.active &&

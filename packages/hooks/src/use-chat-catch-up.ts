@@ -7,7 +7,9 @@ import {
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_MAX_UNREAD,
   can,
+  chatCatchUpSince,
   type ChatCatchUp,
+  type ChatCatchUpRange,
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
 import {
@@ -33,6 +35,46 @@ export type ChatCatchUpTarget =
   | { thread_root_id: string }
   | { since: string }
   | { unread: { count: number; as_of: string } };
+
+/**
+ * What a member asked to have summarized, as both clients' summary blocks
+ * hold it (web `catch-up-panel.tsx`, mobile `catch-up.tsx`).
+ */
+export type CatchUpScope =
+  | {
+      kind: "channel";
+      channelId: string;
+      /**
+       * The stretch that was new when the member opened the channel, or null
+       * when there was none (or it is not known).
+       */
+      unread: { count: number; as_of: string } | null;
+    }
+  | { kind: "thread"; channelId: string; rootId: string };
+
+/** The stretches a scope offers, in the order the range control shows them. */
+export function catchUpRangesFor(
+  scope: CatchUpScope,
+): readonly ChatCatchUpRange[] {
+  if (scope.kind === "thread") return [];
+  return scope.unread ? ["unread", "day", "week"] : ["day", "week"];
+}
+
+/** The stretch a new summary starts on: what was new, else the last day. */
+export function catchUpFirstRange(scope: CatchUpScope): ChatCatchUpRange {
+  return scope.kind === "channel" && scope.unread ? "unread" : "day";
+}
+
+/** The request for a scope and a picked stretch. */
+export function catchUpTargetFor(
+  scope: CatchUpScope,
+  range: ChatCatchUpRange,
+  now: Date = new Date(),
+): ChatCatchUpTarget {
+  if (scope.kind === "thread") return { thread_root_id: scope.rootId };
+  if (range === "unread" && scope.unread) return { unread: scope.unread };
+  return { since: chatCatchUpSince(range === "week" ? "week" : "day", now) };
+}
 
 /** One request and what came back for it. */
 export interface ChatCatchUpRun {
