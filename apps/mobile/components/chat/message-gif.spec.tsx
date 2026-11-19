@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import * as Sentry from "@sentry/react-native";
 import { Pressable } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MessageGif } from "@repo/chat-core/types";
@@ -132,5 +133,48 @@ describe("MessageGifImage (#4657)", () => {
     act(() => t.root.findByType(Pressable).props.onPress());
     expect(animation.start).toHaveBeenCalledTimes(1);
     expect(then).toHaveBeenCalledWith(undefined, expect.any(Function));
+  });
+
+  it("handles a pause that rejects when Reduce Motion goes on", () => {
+    const t = render();
+    const gone = Promise.reject(
+      new Error(
+        "ViewNotFound<UIView>: Unable to find the 'ImageView' view with tag '4468'",
+      ),
+    );
+    const then = vi.spyOn(gone, "then");
+    animation.stop.mockImplementationOnce(() => gone);
+    reduceMotion = true;
+    act(() => t.update(ui()));
+    expect(animation.stop).toHaveBeenCalledTimes(1);
+    expect(then).toHaveBeenCalledWith(undefined, expect.any(Function));
+  });
+
+  it("reports a play that fails for any other reason", async () => {
+    reduceMotion = true;
+    const t = render();
+    const failure = new Error("Argument type mismatch");
+    animation.start.mockImplementationOnce(() => Promise.reject(failure));
+    vi.mocked(Sentry.captureException).mockClear();
+    await act(async () => t.root.findByType(Pressable).props.onPress());
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ level: "warning" }),
+    );
+  });
+
+  it("does not report a view that is gone", async () => {
+    reduceMotion = true;
+    const t = render();
+    animation.start.mockImplementationOnce(() =>
+      Promise.reject(
+        new Error(
+          "ViewNotFound<UIView>: Unable to find the 'ImageView' view with tag '4032'",
+        ),
+      ),
+    );
+    vi.mocked(Sentry.captureException).mockClear();
+    await act(async () => t.root.findByType(Pressable).props.onPress());
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 });

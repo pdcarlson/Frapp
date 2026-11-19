@@ -1,9 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import * as Sentry from "@sentry/react-native";
 import { gifBoxSize, type MessageGif } from "@repo/chat-core/types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
+
+/**
+ * A play or pause the native side refused. The call looks the view up by tag
+ * on the main thread, so a row the list unmounted or recycled since then
+ * rejects with "ViewNotFound: Unable to find the 'ImageView' view": there is
+ * nothing left to play or pause, and that one is dropped. Anything else is
+ * reported, since the GIF may now disagree with its badge.
+ */
+function reportAnimationError(error: unknown) {
+  if (error instanceof Error && error.message.includes("ViewNotFound")) return;
+  Sentry.captureException(error, {
+    level: "warning",
+    fingerprint: ["expo-image", "gif-animation"],
+  });
+}
 
 /** A GIF's box in the thread: at most 240pt wide or 180pt tall. */
 const GIF_MAX = { width: 240, height: 180 };
@@ -48,12 +64,8 @@ export function MessageGifImage({
     applied.current = playing;
     const handle = image.current;
     if (!handle) return;
-    // The native call looks the view up by tag on the main thread. A row the
-    // list has unmounted or recycled since then rejects with
-    // "ViewNotFound: Unable to find the 'ImageView' view"; there is nothing
-    // left to play or pause, so the rejection is dropped, not left unhandled.
     (playing ? handle.startAnimating() : handle.stopAnimating()).catch(
-      () => {},
+      reportAnimationError,
     );
   }, [playing]);
 
