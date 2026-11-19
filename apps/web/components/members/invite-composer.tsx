@@ -57,7 +57,7 @@ export async function copyWhenReady(text: Promise<string>): Promise<void> {
  * The two ways to invite someone, shared by the Members panel and the web
  * setup wizard: type their email addresses and send, or copy a join link to
  * paste anywhere. Nothing here shows a token. Each send or copy mints fresh
- * single-use invites (24 hours), so nothing is minted before a press.
+ * single-use invites (7 days), so nothing is minted before a press.
  *
  * `role` is the role name to invite as; leave it undefined for the chapter's
  * default. `roleControl` sits left of Send when the caller lets the sender

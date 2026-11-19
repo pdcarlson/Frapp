@@ -162,7 +162,7 @@ describe("the invite card, signed out (#5625)", () => {
     );
 
     await waitFor(() => expect(h.auth.signInWithOAuth).toHaveBeenCalled());
-    const { options } = h.auth.signInWithOAuth.mock.calls[0][0];
+    const { options } = h.auth.signInWithOAuth.mock.calls[0]![0];
     const next = new URL(options.redirectTo).searchParams.get("next");
     expect(next).toBe("/join?token=tok-1&then=join");
   });
@@ -178,7 +178,7 @@ describe("the invite card, signed out (#5625)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
 
     await screen.findByText("Check your email");
-    const { options } = h.auth.signInWithOtp.mock.calls[0][0];
+    const { options } = h.auth.signInWithOtp.mock.calls[0]![0];
     expect(new URL(options.emailRedirectTo).searchParams.get("next")).toBe(
       "/join?token=tok-1&then=join",
     );
@@ -360,7 +360,7 @@ describe("a dead link (#5625)", () => {
       screen.getByRole("button", { name: "Continue with Google" }),
     );
     await waitFor(() => expect(h.auth.signInWithOAuth).toHaveBeenCalled());
-    const { options } = h.auth.signInWithOAuth.mock.calls[0][0];
+    const { options } = h.auth.signInWithOAuth.mock.calls[0]![0];
     expect(new URL(options.redirectTo).searchParams.get("next")).toBe(
       "/join?token=tok-1&then=ask",
     );

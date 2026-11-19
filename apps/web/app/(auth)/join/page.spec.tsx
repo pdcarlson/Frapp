@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 /**
  * `/join` with no invite in the link: the emailed invites and the paste
@@ -88,11 +82,6 @@ const searchParams = vi.hoisted(() => ({
 }));
 /** `usePhonePlatform`'s answer: the phone this browser runs on (#4002). */
 const STORE_APP = { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" };
-const STAGING_APP = {
-  id: "live.frapp.mobile.staging",
-  scheme: "frapp-staging",
-  name: "Frapp Staging",
-};
 const device = vi.hoisted(() => ({
   phone: null as "ios" | "android" | null,
   // The store app, as on app.frapp.live (`nativeAppForOrigin`).
@@ -121,7 +110,6 @@ vi.mock("@/lib/providers/network-provider", () => ({
 import type { ComponentProps } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FrappClientProvider } from "@repo/hooks";
-import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import JoinPage from "./page";
 
 /** Answers `GET /v1/users/me/legal-acceptance`; `undefined` never answers. */
@@ -222,7 +210,6 @@ describe("web join — no invite in the link", () => {
         .getAttribute("href"),
     ).toBe("/chat?setup=chapter");
   });
-
 });
 
 describe("web join — a member already in a chapter (#3850)", () => {

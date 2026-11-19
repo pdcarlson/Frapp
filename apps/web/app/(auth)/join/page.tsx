@@ -57,7 +57,7 @@ import {
  *
  * **Where the transcription stops, and why.** s02 draws a six-cell row for a
  * shared chapter code. `spec/behavior/onboarding.md` §Invite Token Rules
- * specifies single-use opaque tokens that expire after 24 hours, and
+ * specifies single-use opaque tokens that expire after 7 days, and
  * `spec/ui/README.md`'s precedence rule puts behavior above UI on what the
  * product *does* — so the chrome transfers and the input model does not. This
  * is the same call `apps/mobile/app/(auth)/join.tsx` already records in its own

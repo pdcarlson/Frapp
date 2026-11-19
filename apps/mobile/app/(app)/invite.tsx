@@ -189,7 +189,7 @@ function InviteBody({ focused }: { focused: boolean }) {
           <Text style={styles.label}>Or share a link</Text>
           <Text style={styles.body}>
             Paste it in a group chat, or send it from your mail app. A link lets
-            one person in and lasts 24 hours.
+            one person in and lasts 7 days.
           </Text>
           <InviteLinksCard
             tile={{

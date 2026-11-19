@@ -5,6 +5,8 @@ import { Loader2 } from "lucide-react";
 import {
   cooldownCopy,
   describeEmailSendError,
+  EMAIL_CODE_COPY,
+  EMAIL_CODE_LENGTH,
   EMAIL_RESEND_COOLDOWN_SECONDS,
   emailCooldownSeconds,
 } from "@repo/hooks/auth-error-copy";
@@ -14,18 +16,6 @@ import { Input } from "@/components/ui/input";
 import { magicLinkRedirectUrl } from "@/lib/auth/redirect";
 import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-
-/** GoTrue's email code is six digits unless a project changed it. */
-export const EMAIL_CODE_LENGTH = 6;
-
-export const EMAIL_CODE_COPY = {
-  sendLabel: "Send code",
-  sentTitle: "Check your email",
-  sent: (email: string) =>
-    `We sent a ${EMAIL_CODE_LENGTH}-digit code to ${email}. Enter it here, or tap the link in the email.`,
-  wrongCode: "That code didn't work. Use the newest email, or send a new code.",
-  invalidEmail: "Enter the email you use for school or your chapter.",
-} as const;
 
 /**
  * Continue with email on the invite card (#5625): one address, then the
@@ -267,7 +257,7 @@ export function EmailCodeSignIn({
           }}
           disabled={verifying}
         >
-          Use a different email
+          {EMAIL_CODE_COPY.differentEmail}
         </Button>
         <Button
           type="button"
@@ -277,7 +267,9 @@ export function EmailCodeSignIn({
           onClick={() => void send()}
           disabled={verifying || sending || cooldown > 0}
         >
-          {cooldown > 0 ? `Send again in ${cooldown}s` : "Send a new code"}
+          {cooldown > 0
+            ? EMAIL_CODE_COPY.sendAgainIn(cooldown)
+            : EMAIL_CODE_COPY.sendAgain}
         </Button>
       </div>
     </form>

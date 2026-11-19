@@ -86,6 +86,13 @@ type AuthSessionContextValue = {
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
   /**
+   * Signs in with the six-digit code from the same email a magic link sends
+   * (#5625), so the invite card never has to leave the app. Needs the Auth
+   * email template to print `{{ .Token }}`; until it does, the link is the
+   * way in.
+   */
+  verifyEmailCode: (input: { email: string; code: string }) => Promise<void>;
+  /**
    * Sends the sign-up confirmation email again, for a password account that
    * was never confirmed (`email_not_confirmed`, #3833). Its link opens the app
    * through the same `frapp:///?` redirect as a magic link, so opening it on
@@ -605,6 +612,27 @@ export function AuthSessionProvider({
     [supabase],
   );
 
+  const verifyEmailCode = useCallback(
+    async ({ email, code }: { email: string; code: string }) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: "email",
+      });
+      if (error) {
+        reportAuthFailure({
+          flow: "email_code_verify",
+          screen: "/join",
+          error,
+        });
+        throw error;
+      }
+    },
+    [supabase],
+  );
+
   const resendConfirmation = useCallback(
     async ({ email }: { email: string }) => {
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
@@ -757,6 +785,7 @@ export function AuthSessionProvider({
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      verifyEmailCode,
       resendConfirmation,
       signInWithOAuthProvider,
       signOut,
@@ -774,6 +803,7 @@ export function AuthSessionProvider({
       signOut,
       status,
       userId,
+      verifyEmailCode,
     ],
   );
 
