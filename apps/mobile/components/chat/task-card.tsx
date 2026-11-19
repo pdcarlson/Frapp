@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import { useState } from "react";
+import { useRouter } from "expo-router";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import {
-  canEditCardTask,
   canReadCardTask,
   isSentBack,
-  readEditableCardTask,
   readLiveTask,
   taskDueLine,
   subtaskProgress,
@@ -23,18 +21,14 @@ import {
 } from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
+import { editFactsOfLive, taskEditable } from "@/lib/tasks/task-edit";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { MarkDoneSheet } from "@/components/tasks/mark-done-sheet";
 import {
   SendBackSheet,
   sendBackDraftKey,
 } from "@/components/tasks/send-back-sheet";
 import { TaskProof } from "@/components/tasks/task-photos";
-import {
-  editTargetOfCardTask,
-  type TaskEditTarget,
-} from "@/lib/tasks/create-task";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -74,8 +68,9 @@ import { useCardWrite } from "./use-card-write";
  * off the stored status (#1051), and a `tasks:manage` holder confirms or
  * sends back a completion, never confirming their own (#1056); a
  * `tasks:manage` holder also
- * gets Edit on an unconfirmed task (`canEditCardTask`, #4512), which opens the
- * board's Edit task sheet. The writes are the shared
+ * gets Edit on a task the task screen will edit (`taskEditable`, #4512), which
+ * pushes the task's screen in its edit mode (`edit=1`, #5514), where the task
+ * is changed in place. The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
  *
  * Photos and proof (#4635): the card shows the task's reference photos and,
@@ -98,6 +93,7 @@ export function TaskCard({
   ...frame
 }: ChatCardFrameProps & { payload: TaskPayload }) {
   const { tokens } = useFrappTheme();
+  const router = useRouter();
   const now = useNowDate();
 
   // `!!viewerId`: a missing viewer must never match a missing assignee id.
@@ -129,19 +125,15 @@ export function TaskCard({
         canManage,
       });
 
-  // An officer's Edit (#4512), the board's rule (`canEditCardTask`): a
-  // tasks:manage holder until the task is confirmed. It opens the board's
-  // edit sheet (#4296), mounted for the edit and gone once it closes, so its
-  // fields start from the task as it stands.
+  // An officer's Edit (#4512): the task screen's own rule (`taskEditable`),
+  // read off the live task, so the card never opens an edit the screen
+  // won't draw: a tasks:manage holder until the task is confirmed, on a task
+  // with an assignee and a day (not one up for grabs). It pushes the task's
+  // screen in its edit mode (#5514), where each field saves as it is left.
   const editable =
-    !tasksOff && canEditCardTask({ live, canManage })
-      ? readEditableCardTask(liveQuery.data)
-      : null;
-  const editRef = useRef<BottomSheetModal>(null);
-  const [editing, setEditing] = useState<TaskEditTarget | null>(null);
-  useEffect(() => {
-    if (editing) editRef.current?.present();
-  }, [editing]);
+    !tasksOff &&
+    live !== null &&
+    taskEditable(editFactsOfLive(live), canManage);
 
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
@@ -309,9 +301,14 @@ export function TaskCard({
               disabled={disabled}
               accessibilityHint={
                 hint ??
-                "Changes the task's title, assignee, due date or points."
+                "Opens the task to change its title, assignee, due date or points."
               }
-              onPress={() => setEditing(editTargetOfCardTask(editable))}
+              onPress={() =>
+                router.push({
+                  pathname: "/task-details",
+                  params: { id: payload.task_id, edit: "1" },
+                })
+              }
             />
           ) : null}
         </CardActions>
@@ -363,18 +360,6 @@ export function TaskCard({
             }
           }}
           onClosed={() => setSendingBack(false)}
-        />
-      ) : null}
-      {editing ? (
-        <NewTaskSheet
-          key={editing.id}
-          ref={editRef}
-          now={now}
-          editing={editing}
-          // Kept past a close and this screen (#4872): Edit on the same task
-          // again opens on what was typed, over the task as it is now.
-          keptDraft={`task-edit:${editing.id}`}
-          onClosed={() => setEditing(null)}
         />
       ) : null}
       {refusal ? (

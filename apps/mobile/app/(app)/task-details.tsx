@@ -1,8 +1,14 @@
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Alert,
+  Keyboard,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   TASK_ACTION_LABELS,
@@ -41,7 +47,7 @@ import {
 } from "@/components/control-glyphs";
 import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
 import { TaskProof } from "@/components/tasks/task-photos";
-import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import { TaskEditForm } from "@/components/tasks/task-edit-form";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import {
   TaskActionBar,
@@ -58,7 +64,7 @@ import { goBackTo } from "@/lib/href";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
-import { editTargetOfRow, type TaskEditTarget } from "@/lib/tasks/create-task";
+import { taskEditDraftName, useTaskEdit } from "@/lib/tasks/use-task-edit";
 import {
   confirmBarLabel,
   confirmTaskDelete,
@@ -118,6 +124,22 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * and, on a group task, Delete for everyone. Each shows only to a viewer the
  * API lets use it (`taskScreenControls`).
  *
+ * ## Edit, in place
+ *
+ * The pencil turns the screen into its own editor (#5514; Paul's rule, no
+ * pop-up sheets), as Apple Reminders and Things 3 edit a to-do where it is:
+ * the facts and the description become the title, due day and time, points
+ * and notes fields, with what Mark done needs, the photos and who it is for
+ * under them (`TaskEditForm`). Each field saves itself as it is left, through
+ * `PATCH /v1/tasks/:id` as web's task panel saves, and on a group task's copy
+ * with `scope: "group"`, so every copy not yet confirmed changes
+ * (`useTaskEdit`); Who hands over that one copy. The bar becomes one accent
+ * Done, which saves what is still being typed, waits on every save on its
+ * way, and puts the screen back. What doesn't save as the screen goes is
+ * kept for the task's next edit (`task-edit:<id>`). A row's long-press
+ * Edit, and chat's task card's, push this screen with `edit=1`, and
+ * Reassign with `who=1`, which opens Assign to's picker over it.
+ *
  * ## Confirm and Send back
  *
  * On a member's completion waiting on the viewer's sign-off (#5513), Confirm
@@ -147,11 +169,16 @@ export default function TaskDetailsScreen() {
   const params = useLocalSearchParams<{
     id?: string | string[];
     select?: string | string[];
+    edit?: string | string[];
+    who?: string | string[];
   }>();
   const taskId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
-  // `select=1`: a row's long-press Remove people (#5492).
-  const startSelecting =
-    (Array.isArray(params.select) ? params.select[0] : params.select) === "1";
+  const flag = (value: string | string[] | undefined) =>
+    (Array.isArray(value) ? value[0] : value) === "1";
+  // `select=1`: a row's long-press Remove people (#5492). `edit=1`: its
+  // Edit, or chat's task card's; `who=1`: its Reassign (#5514).
+  const startSelecting = flag(params.select);
+  const arrival = flag(params.who) ? "who" : flag(params.edit) ? "edit" : null;
 
   const taskQuery = useTask(taskId);
   const row = useMemo(
@@ -162,13 +189,13 @@ export default function TaskDetailsScreen() {
     [taskQuery.data],
   );
 
-  // An edit kept past this screen (#4872) goes with its task: one deleted
-  // since has no sheet to open it in.
+  // An edit left unsaved past this screen (#4872) goes with its task: one
+  // deleted since has no screen to edit it on.
   const taskGone =
     !taskQuery.isPending &&
     taskQuery.isError &&
     statusOf(taskQuery.error) === 404;
-  useDropKeptSheetDraft(taskId ? `task-edit:${taskId}` : null, taskGone);
+  useDropKeptSheetDraft(taskId ? taskEditDraftName(taskId) : null, taskGone);
 
   if (!taskId) {
     return (
@@ -200,7 +227,12 @@ export default function TaskDetailsScreen() {
   }
 
   return (
-    <TaskScreen row={row} styles={styles} startSelecting={startSelecting} />
+    <TaskScreen
+      row={row}
+      styles={styles}
+      startSelecting={startSelecting}
+      arrival={arrival}
+    />
   );
 }
 
@@ -208,11 +240,14 @@ function TaskScreen({
   row,
   styles,
   startSelecting: selectOnArrival,
+  arrival,
 }: {
   row: TaskRowModel;
   styles: ReturnType<typeof createStyles>;
   /** Open in Remove people's select mode, once Who has it can show. */
   startSelecting: boolean;
+  /** Open in edit mode (`edit`), or there on Assign to (`who`). */
+  arrival: "edit" | "who" | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -338,19 +373,61 @@ function TaskScreen({
     ]);
   };
 
-  // Edit: the board's Edit task sheet, opened on this copy. One sheet per
-  // edit, mounted for it and gone once it closes, so its fields start from
-  // the task as it stands.
-  const editRef = useRef<BottomSheetModal>(null);
-  const [openedAt] = useState(() => new Date());
-  const [editing, setEditing] = useState<TaskEditTarget | null>(null);
+  // Edit, in place (#5514): the pencil turns the screen into its editor,
+  // and Done puts it back once what is still typed has saved. Only while
+  // the viewer may edit: a confirm landing meanwhile ends it.
+  const edit = useTaskEdit(row);
+  const { begin: beginEdit, discard: discardEdit, commitAll } = edit;
+  const [editMode, setEditMode] = useState(false);
+  const editing = editMode && controls.edit;
+  const [finishing, setFinishing] = useState(false);
+  const [whoOnArrival, setWhoOnArrival] = useState(false);
+  const startEdit = useCallback(() => {
+    setSelecting(false);
+    setPicked(new Set());
+    beginEdit();
+    setEditMode(true);
+  }, [beginEdit]);
+  // Confirmed meanwhile (here, on web, by another officer): edit mode ends,
+  // and what was still typed goes with it, since the API would refuse it.
+  const canEdit = controls.edit;
   useEffect(() => {
-    if (editing) editRef.current?.present();
-  }, [editing]);
-  const startEdit = () => {
-    const target = editTargetOfRow(row);
-    if (target) setEditing(target);
+    if (!editMode || canEdit) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the task's read moved under the screen (confirmed elsewhere); edit mode follows it
+    setEditMode(false);
+    discardEdit();
+  }, [editMode, canEdit, discardEdit]);
+  const finishEdit = async () => {
+    if (finishing) return;
+    Keyboard.dismiss();
+    setFinishing(true);
+    const saved = await commitAll();
+    setFinishing(false);
+    // A field that didn't save keeps its draft and says why.
+    if (saved) setEditMode(false);
   };
+  // Arrived from a row's Edit or Reassign, or chat's card: edit mode once,
+  // and the params cleared so a return here doesn't reopen it. A task the
+  // viewer can't edit clears them too, and opens as it reads.
+  const arrivedEditing = useRef(false);
+  useEffect(() => {
+    if (!arrival || arrivedEditing.current) return;
+    arrivedEditing.current = true;
+    router.setParams({ edit: undefined, who: undefined });
+    if (!canEdit) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot route param, cleared above, opens edit mode once
+    startEdit();
+    setWhoOnArrival(arrival === "who");
+  }, [arrival, canEdit, startEdit, router]);
+  // What an edit's last save said outlasts edit mode, until the next thing
+  // the member does here.
+  const { dismiss: dismissEdit } = edit;
+  const afterEdit =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A) => {
+      dismissEdit();
+      run(...args);
+    };
 
   // Delete, after the platform alert, then back to the board.
   const deleteTask = useDeleteTask();
@@ -505,8 +582,13 @@ function TaskScreen({
     () => taskHistory(row, nameInLine, new Date()),
     [row, nameInLine],
   );
-  const notice =
-    toggles.refusal ?? review.refusal?.text ?? toggles.notice ?? deleteFailed;
+  const notice = editing
+    ? edit.failure
+    : (toggles.refusal ??
+      review.refusal?.text ??
+      toggles.notice ??
+      deleteFailed ??
+      edit.failure);
   const pending = toggles.pendingId === row.id;
   // More and the pill's words as the layout counts them, so neither changes
   // while Send back is held out of More.
@@ -525,7 +607,9 @@ function TaskScreen({
     <View style={styles.frame}>
       <ScreenShell
         back={BACK_TO_TASKS}
-        title={row.title}
+        // In edit mode the title is the first field, so the heading names
+        // the mode instead of saying the title twice.
+        title={editing ? "Edit task" : row.title}
         // An officer types steps in the checklist's field, low on the page:
         // the body rises with the keyboard, and a tap on a step's × while it
         // is up works on the first tap.
@@ -539,7 +623,17 @@ function TaskScreen({
           />
         </View>
 
-        {due || points || from ? (
+        {editing ? (
+          <TaskEditForm
+            row={row}
+            edit={edit}
+            people={{ nameOf, avatarFor, tintFor: avatarTintFor }}
+            openWho={whoOnArrival}
+            onWhoOpened={() => setWhoOnArrival(false)}
+          />
+        ) : null}
+
+        {!editing && (due || points || from) ? (
           <View style={styles.facts}>
             {due ? (
               <Fact
@@ -583,7 +677,7 @@ function TaskScreen({
 
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-        {row.description ? (
+        {!editing && row.description ? (
           <Text style={styles.description} selectable>
             {row.description}
           </Text>
@@ -604,7 +698,10 @@ function TaskScreen({
         <TaskProof
           task={{
             id: row.id,
-            photos: row.photos,
+            // In edit mode the reference photos are the picker's, above.
+            photos: editing
+              ? row.photos.filter((photo) => photo.kind !== "reference")
+              : row.photos,
             proofLink: row.proofLink,
             sentBackReason: row.sentBackReason,
             completionNote: row.completionNote,
@@ -647,10 +744,23 @@ function TaskScreen({
           </View>
         ) : null}
 
-        {barShown || selecting ? <TaskActionBarSpacer /> : null}
+        {barShown || selecting || editing ? <TaskActionBarSpacer /> : null}
       </ScreenShell>
 
-      {selecting ? (
+      {editing ? (
+        <TaskActionBar>
+          <TaskBarPill
+            label="Done"
+            hint="Saves what you're typing and closes edit mode."
+            glyph={(ink) => <CheckGlyph color={ink} />}
+            fill={accent}
+            ink={tokens.color.gold.onHouse}
+            // Held while a save is out: Done waits on them all.
+            busy={finishing || edit.saving}
+            onPress={() => void finishEdit()}
+          />
+        </TaskActionBar>
+      ) : selecting ? (
         <TaskActionBar>
           <TaskBarIcon label="Cancel" onPress={stopSelecting}>
             <CloseGlyph color={tokens.color.text.foreground} />
@@ -675,7 +785,7 @@ function TaskScreen({
               fill={accent}
               ink={tokens.color.gold.onHouse}
               busy={pending}
-              onPress={() => void toggles.toggle(row)}
+              onPress={afterEdit(() => void toggles.toggle(row))}
             />
           ) : null}
           {controls.confirm ? (
@@ -688,7 +798,7 @@ function TaskScreen({
               // Its own send reads busy, not dimmed.
               disabled={review.disabled && review.confirmingId !== row.id}
               busy={review.confirmingId === row.id}
-              onPress={() => review.confirm(row)}
+              onPress={afterEdit(() => review.confirm(row))}
             />
           ) : null}
           {sendBackRound ? (
@@ -699,7 +809,7 @@ function TaskScreen({
                 "Opens a sheet for the reason it goes back to its assignee."
               }
               disabled={review.disabled}
-              onPress={() => review.sendBack(row)}
+              onPress={afterEdit(() => review.sendBack(row))}
             >
               <UndoGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
@@ -707,7 +817,7 @@ function TaskScreen({
           {editRound ? (
             <TaskBarIcon
               label="Edit task"
-              hint="Opens a sheet to change this task."
+              hint="Changes this task here, a field at a time."
               onPress={startEdit}
             >
               <PencilGlyph color={tokens.color.text.foreground} />
@@ -717,20 +827,20 @@ function TaskScreen({
             <TaskBarIcon
               label="Remove people"
               hint="Pick members to take out of this task."
-              onPress={startSelecting}
+              onPress={afterEdit(startSelecting)}
             >
               <MinusGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}
           {showMore ? (
-            <TaskBarIcon label="More" onPress={openMore}>
+            <TaskBarIcon label="More" onPress={afterEdit(openMore)}>
               <MoreGlyph color={tokens.color.text.foreground} />
             </TaskBarIcon>
           ) : null}
         </TaskActionBar>
       ) : null}
 
-      {toggles.undo ? (
+      {toggles.undo && !editing ? (
         <UndoBar
           key={toggles.undo.key}
           message={toggles.undo.message}
@@ -742,19 +852,6 @@ function TaskScreen({
 
       <MarkDoneHost toggle={toggles} />
       {review.host}
-
-      {editing ? (
-        <NewTaskSheet
-          key={editing.id}
-          ref={editRef}
-          now={openedAt}
-          editing={editing}
-          // Kept past a close and this screen (#4872): Edit on the same task
-          // again opens on what was typed, over the task as it is now.
-          keptDraft={`task-edit:${editing.id}`}
-          onClosed={() => setEditing(null)}
-        />
-      ) : null}
     </View>
   );
 }

@@ -401,10 +401,12 @@ describe("taskMenuKeys (#5492)", () => {
     ]);
   });
 
-  it("gives an officer on a group's copy Remove people and Delete for everyone, and no Reassign", () => {
+  it("gives an officer on a group's copy Remove people, Delete for everyone, and Reassign for that copy (#5514)", () => {
     expect(keysFor({ group_id: "g1" }, "officer", true)).toEqual([
       "markDone",
       "edit",
+      // Hands over this one copy: the instance edit takes `assignee_id`.
+      "reassign",
       "removePeople",
       "duplicate",
       "delete",

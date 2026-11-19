@@ -40,10 +40,8 @@ import { useStartTask } from "@/lib/tasks/use-start-task";
 import { useTaskReview } from "@/lib/tasks/use-task-review";
 import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
 import {
-  editTargetOfRow,
   taskCreatedLine,
   taskDuplicateOf,
-  type TaskEditTarget,
   type TaskPrefill,
 } from "@/lib/tasks/create-task";
 import {
@@ -78,8 +76,8 @@ import {
  *   (`confirmInMenu`); a refusal is the platform's alert.
  * - Start is the assignee's To do → In progress (`useStartTask`), as chat's
  *   task card and the task screen's More offer it.
- * - Edit and Reassign open the board's edit sheet (New task in edit mode),
- *   Reassign with Assign to's picker over it.
+ * - Edit and Reassign push the task's screen in its edit mode (`edit=1`,
+ *   #5514), Reassign with Assign to's picker open over it (`who=1`).
  * - Remove people opens the task's screen in its select mode (`select=1`).
  * - Duplicate opens New task filled in from the task (`taskDuplicateOf`).
  * - Delete asks the task screen's question (`confirmTaskDelete`) and sends
@@ -115,18 +113,6 @@ export function useTaskMenu({
   const menu = useItemMenu();
 
   const rowById = useTaskRowById();
-
-  // Edit and Reassign: one sheet per edit, gone once it closes, so its
-  // fields start from the task as it stands (the task screen's way).
-  const editRef = useRef<BottomSheetModal>(null);
-  const [editing, setEditing] = useState<{
-    target: TaskEditTarget;
-    who: boolean;
-    at: Date;
-  } | null>(null);
-  useEffect(() => {
-    if (editing) editRef.current?.present();
-  }, [editing]);
 
   // Duplicate: New task, one sheet per press.
   const duplicateRef = useRef<BottomSheetModal>(null);
@@ -216,12 +202,15 @@ export function useTaskMenu({
               ) : (
                 <PersonGlyph color={color} />
               ),
-            run: () => {
-              const target = editTargetOfRow(row);
-              if (target) {
-                setEditing({ target, who: key === "reassign", at: new Date() });
-              }
-            },
+            // The task's screen, edited in place there (#5514).
+            run: () =>
+              router.push({
+                pathname: "/task-details",
+                params:
+                  key === "edit"
+                    ? { id: row.id, edit: "1" }
+                    : { id: row.id, who: "1" },
+              }),
           };
         case "removePeople":
           return {
@@ -344,19 +333,6 @@ export function useTaskMenu({
     <>
       {menu.element}
       {review.host}
-      {editing ? (
-        <NewTaskSheet
-          key={`${editing.target.id}-${editing.at.getTime()}`}
-          ref={editRef}
-          now={editing.at}
-          editing={editing.target}
-          openOnWho={editing.who}
-          // The task screen's kept edit (#4872): the same task's Edit there
-          // opens on what was typed here.
-          keptDraft={`task-edit:${editing.target.id}`}
-          onClosed={() => setEditing(null)}
-        />
-      ) : null}
       {duplicating ? (
         <NewTaskSheet
           key={`duplicate-${duplicating.key}`}
