@@ -1286,6 +1286,37 @@ describe('ScheduledJobsService', () => {
       );
     });
 
+    it("tells a group task's followers once for the group, not once per copy (#5473)", async () => {
+      const copy = (id: string, assignee: string) => ({
+        ...TASK,
+        id,
+        assignee_id: assignee,
+        due_date: '2026-08-04',
+        group_id: 'group-9',
+        followed_by: 'tier:0f000000-0000-4000-8000-000000000001',
+      });
+      findIncompleteTasksDueBetween.mockResolvedValue([
+        copy('copy-1', 'user-1'),
+        copy('copy-2', 'user-2'),
+      ]);
+      followerRecipients.mockResolvedValue(['exec-2']);
+      // The dispatch table's unique key, as claimDispatch meets it.
+      const claimed = new Set<string>();
+      claimDispatch.mockImplementation((_c, _t, id, threshold, due) => {
+        const key = `${id}:${threshold}:${due}`;
+        if (claimed.has(key)) return Promise.resolve(false);
+        claimed.add(key);
+        return Promise.resolve(true);
+      });
+
+      await service.sweepTaskReminders(MORNING);
+
+      const to = notifyUser.mock.calls.map(([id]) => id);
+      expect(to.filter((id) => id === 'exec-2')).toHaveLength(1);
+      expect(claimed.has('group-9:OVERDUE:2026-08-04')).toBe(true);
+      expect(to).toEqual(expect.arrayContaining(['user-1', 'user-2']));
+    });
+
     // Removing a member leaves tasks.created_by pointing at them; they must
     // not keep receiving that chapter's task titles.
     it('does not notify an assigner who has left the chapter', async () => {

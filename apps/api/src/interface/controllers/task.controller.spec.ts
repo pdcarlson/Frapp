@@ -460,6 +460,17 @@ describe('TaskController', () => {
       ) as string[];
       expect(required).toEqual([SystemPermissions.TASKS_MANAGE]);
     });
+
+    it('keeps Confirm and Send back to tasks:manage, whoever can read the task (#5473)', () => {
+      for (const handler of [
+        TaskController.prototype.confirmCompletion,
+        TaskController.prototype.rejectCompletion,
+      ]) {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, handler) as string[],
+        ).toEqual([SystemPermissions.TASKS_MANAGE]);
+      }
+    });
   });
 
   describe('updateStatus', () => {

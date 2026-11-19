@@ -220,16 +220,6 @@ export const TASK_REVIEW_PUSH_THREAD = 'tasks:review';
 const SUBMITTED_REPLY_MAX = 60;
 
 /**
- * What the officer who assigned a task reads when it is marked done (#4635
- * proof): the person and the action lead, because their action is the news,
- * then what came with it and what is asked. "Shawn Klein submitted: Clean his
- * room" / "1 photo · Confirm to award 10 points".
- *
- * A task with no points and no proof was Done as marked, so it "finished"
- * and asks for nothing; a send-back's second try "resubmitted" and quotes the
- * reply, the thing that changed.
- */
-/**
  * A task a member's group follows was marked done (#5473): what they hear
  * when they can't confirm it. It tells them, and asks nothing: "Sam
  * finished: Book the venue" / "From Exec board · An officer confirms it".
@@ -252,6 +242,16 @@ export function taskFollowedFinishedCopy(
   };
 }
 
+/**
+ * What the officer who assigned a task reads when it is marked done (#4635
+ * proof): the person and the action lead, because their action is the news,
+ * then what came with it and what is asked. "Shawn Klein submitted: Clean his
+ * room" / "1 photo · Confirm to award 10 points".
+ *
+ * A task with no points and no proof was Done as marked, so it "finished"
+ * and asks for nothing; a send-back's second try "resubmitted" and quotes the
+ * reply, the thing that changed.
+ */
 export function taskSubmittedCopy(
   name: string,
   task: {

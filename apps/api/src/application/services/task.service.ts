@@ -403,7 +403,8 @@ export class TaskService {
 
   /**
    * A short-lived link to one of a task's photos, for whoever may read the
-   * task (its assignee or a `tasks:manage` holder; the controller checks).
+   * task (its assignee, a `tasks:manage` holder, or for a reference photo a
+   * member of its following group, #5473; the controller checks).
    */
   async getPhotoDownloadUrl(
     taskId: string,
@@ -912,13 +913,18 @@ export class TaskService {
   /**
    * A task as one reader sees it (#5473): whole for its assignee and a
    * `tasks:manage` holder; for a follower, without its proof (the proof
-   * photos and link), which stays between the assignee and the officers.
+   * photos and link), the assignee's reply or an officer's send-back
+   * reason, which stay between the assignee and the officers.
    */
   asReadBy<T extends TaskView>(view: T, userId: string, isAdmin: boolean): T {
     if (isAdmin || view.assignee_id === userId) return view;
+    // The assignee's reply and an officer's send-back reason are theirs too
+    // (§ Photos, § Admin Confirmation): shown to the assignee and officers.
     return {
       ...view,
       proof_link: null,
+      completion_note: null,
+      sent_back_reason: null,
       ...(view.photos
         ? { photos: view.photos.filter((photo) => photo.kind === 'reference') }
         : {}),
@@ -1355,20 +1361,20 @@ export class TaskService {
       throw new BadRequestException(TASK_AUDIENCE_COPY.noPhotos);
     }
     const { followed_by, ...rest } = input;
-    if (followed_by !== undefined) {
-      // Every copy, confirmed ones too: the group follows as one task.
-      const next = await this.checkedFollowerEdit(
-        task,
-        chapterId,
-        actorId,
-        followed_by,
-      );
-      if (next !== task.followed_by) {
-        await this.taskRepo.setGroupFollower(chapterId, groupId, next);
+    // Checked first, written last: an edit refused below changes nothing.
+    // Every copy, confirmed ones too: the group follows as one task.
+    const nextFollower =
+      followed_by === undefined
+        ? undefined
+        : await this.checkedFollowerEdit(task, chapterId, actorId, followed_by);
+    const writeFollower = async () => {
+      if (nextFollower !== undefined && nextFollower !== task.followed_by) {
+        await this.taskRepo.setGroupFollower(chapterId, groupId, nextFollower);
       }
-      if (Object.values(rest).every((value) => value === undefined)) {
-        return this.findById(id, chapterId);
-      }
+    };
+    if (Object.values(rest).every((value) => value === undefined)) {
+      await writeFollower();
+      return this.findById(id, chapterId);
     }
     input = rest;
     const open = (
@@ -1404,6 +1410,7 @@ export class TaskService {
       });
     }
     if (failures.length > 0) throw failures[0];
+    await writeFollower();
     return this.findById(id, chapterId);
   }
 
@@ -1572,6 +1579,13 @@ export class TaskService {
   ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) throw new NotFoundException('Task not found');
+    // A group follows as one task (#5473): who it is from changes on every
+    // copy with `scope: "group"`, never on one member's copy.
+    if (task.group_id && input.followed_by !== undefined) {
+      throw new BadRequestException(
+        'Change who a group task is from on every copy, with scope "group"',
+      );
+    }
     const updated = await this.applyEdit(task, chapterId, actorId, input);
     const [view] = await this.withSubtasks(chapterId, [
       toDisplayStatus(updated),
@@ -2083,10 +2097,13 @@ export class TaskService {
    * notified rather than every `tasks:manage` holder in the chapter — the
    * same "notify the creator, not a fan-out" rule the OVERDUE sweep already
    * uses (`scheduled-jobs.service.ts`'s `notifyTaskOverdue`), so completing
-   * one task never turns into an unbounded broadcast to every officer.
+   * one task never turns into a broadcast to every officer. A followed task
+   * (#5473) also tells its following tier, role or group, which its creator
+   * chose and is in; that is the widest it goes.
    *
-   * No-ops when the creator is the one who just completed it (self-assigned
-   * task, nothing to tell them) or has since left the chapter.
+   * The creator's push no-ops when the creator is the one who just completed
+   * it (self-assigned task, nothing to tell them) or has since left the
+   * chapter.
    */
   private async notifyTaskCompleted(
     task: Task,
@@ -2147,12 +2164,25 @@ export class TaskService {
     if (recipients.length === 0) return;
     const [name, confirmers, names] = await Promise.all([
       this.displayNameOf(task.assignee_id),
-      this.audiences
-        .canConfirm(chapterId, recipients)
-        .catch(() => new Set<string>()),
-      this.followerNames(chapterId, [task]).catch(
-        () => new Map<string, string>(),
-      ),
+      // A failed read sends the informational push to everyone, and says so.
+      this.audiences.canConfirm(chapterId, recipients).catch((error) => {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-followers-confirmers',
+          message: `could not read who may confirm task ${task.id}`,
+          error,
+        });
+        return new Set<string>();
+      }),
+      this.followerNames(chapterId, [task]).catch((error) => {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-followers-name',
+          message: `could not read who task ${task.id} is from`,
+          error,
+        });
+        return new Map<string, string>();
+      }),
     ]);
     const who = name ?? 'A member';
     const followerName = names.get(task.followed_by ?? '') ?? null;
@@ -2180,6 +2210,9 @@ export class TaskService {
                   ...taskFollowedFinishedCopy(who, task, followerName),
                   priority: 'NORMAL',
                   category: 'tasks',
+                  // A group task's copies finish one by one: they stack in
+                  // one pile on iOS, as the review pushes do.
+                  threadId: `task-follow-${task.group_id ?? task.id}`,
                   data: { target: { screen: 'tasks', taskId: task.id } },
                 },
             task.id,

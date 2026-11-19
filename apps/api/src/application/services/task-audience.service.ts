@@ -4,6 +4,7 @@ import {
   TASK_FOLLOWER_COPY,
   TASK_PEOPLE_MAX,
   parseTaskFollower,
+  taskFollowerEntry,
   type TaskFollowerKind,
 } from '@repo/validation';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -347,19 +348,46 @@ export class TaskAudienceService {
   /**
    * The active members of the tier, role or group a task names in
    * `followed_by` (#5473), read now; nobody for one since deleted or an
-   * entry that doesn't parse. Same members {@link followEntriesOf} admits.
+   * entry that doesn't parse. Worked out as {@link followEntriesOf} grants
+   * entries (the roles in each member's `role_ids`, their tiers, the groups
+   * that open a channel; nobody holding the Alumni role), so whoever hears
+   * about a followed task can open it.
    */
   async followerIds(chapterId: string, entry: string): Promise<string[]> {
     const parsed = parseTaskFollower(entry);
     if (!parsed) return [];
-    const reader = await this.reader(chapterId);
     if (parsed.kind === 'group') {
-      const group = (await this.groupRepo.findByChapter(chapterId)).find(
-        (row) => row.id === parsed.id,
-      );
+      const group = await this.groupRepo.findById(parsed.id, chapterId);
       if (!group || !groupKindOpensChannels(group.kind)) return [];
+      const [reader, ids] = await Promise.all([
+        this.reader(chapterId),
+        this.groupRepo.findMemberIds(chapterId, parsed.id),
+      ]);
+      return [...new Set(ids)].filter((id) => reader.activeIds.has(id));
     }
-    return reader.eligible({ kind: parsed.kind, id: parsed.id });
+    const [members, alumniRoleId, roles] = await Promise.all([
+      this.memberRepo.findByChapter(chapterId),
+      this.rbac.getAlumniRoleId(chapterId),
+      this.roleRepo.findByChapter(chapterId),
+    ]);
+    const roleIds = new Set(
+      roles
+        .filter((role) =>
+          parsed.kind === 'role'
+            ? role.id === parsed.id
+            : role.tier_id === parsed.id,
+        )
+        .map((role) => role.id.toLowerCase()),
+    );
+    const alumni = alumniRoleId?.toLowerCase() ?? null;
+    const ids = new Set<string>();
+    for (const member of members) {
+      if (member.chapter_id && member.chapter_id !== chapterId) continue;
+      const held = (member.role_ids ?? []).map((id) => id.toLowerCase());
+      if (alumni && held.includes(alumni)) continue;
+      if (held.some((id) => roleIds.has(id))) ids.add(member.user_id);
+    }
+    return [...ids];
   }
 
   /**
@@ -380,11 +408,13 @@ export class TaskAudienceService {
         'followed_by is a tier, role or group: "tier:<id>", "role:<id>" or "group:<id>"',
       );
     }
-    const stored = `${parsed.kind}:${parsed.id}`;
+    const stored = taskFollowerEntry(parsed.kind, parsed.id);
     const exists = await this.followerExists(chapterId, parsed.kind, parsed.id);
     if (!exists) {
+      // Gone, another chapter's, or one that means the whole chapter (the
+      // Everyone role, its tier) or opens nothing (a class year).
       throw new BadRequestException(
-        `That ${parsed.kind} isn't in this chapter`,
+        `That ${parsed.kind} can't be what a task is from. Pick one of this chapter's tiers, roles or groups.`,
       );
     }
     if (!(await this.followEntriesOf(chapterId, userId)).includes(stored)) {
@@ -412,10 +442,21 @@ export class TaskAudienceService {
         const group = await this.groupRepo.findById(id, chapterId);
         return !!group && groupKindOpensChannels(group.kind);
       }
-      case 'tier':
-        return (await this.tierRepo.findByChapter(chapterId)).some(
-          (tier) => tier.id === id,
+      case 'tier': {
+        // Not the tier holding the Everyone role: that would be the
+        // chapter, as the Everyone role is.
+        const [tiers, roles] = await Promise.all([
+          this.tierRepo.findByChapter(chapterId),
+          this.roleRepo.findByChapter(chapterId),
+        ]);
+        return (
+          tiers.some((tier) => tier.id === id) &&
+          !roles.some(
+            (role) =>
+              role.tier_id === id && role.system_key === SystemRoleKeys.MEMBER,
+          )
         );
+      }
     }
   }
 

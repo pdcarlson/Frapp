@@ -52,6 +52,8 @@ export interface SweepTaskRow {
   due_at?: string | null;
   /** The tier, role or group following it (#5473), told when it's overdue. */
   followed_by?: string | null;
+  /** The group task it is a copy of (#4295 step 3), read for #5473. */
+  group_id?: string | null;
 }
 
 export interface SweepPollRow {

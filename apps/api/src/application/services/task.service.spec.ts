@@ -371,7 +371,7 @@ describe('TaskService', () => {
         'a tier of no chapter',
         'admin-1',
         'tier:bbbbbbbb-0000-4000-8000-000000000001',
-        "That tier isn't in this chapter",
+        "can't be what a task is from",
       ],
       ['an entry that is not one', 'admin-1', 'exec board', 'followed_by is'],
     ])('refuses %s, writing nothing', async (_, creator, entry, message) => {
@@ -560,6 +560,220 @@ describe('TaskService', () => {
       await expect(
         service.update('task-1', 'ch-1', 'user-1', { followed_by: FOLLOWER }),
       ).rejects.toThrow("you're in");
+    });
+
+    it('lets a group follow a task: its members read it live and hear when it is done', async () => {
+      const GROUP = 'bbbbbbbb-0000-4000-8000-0000000000c1';
+      const entry = `group:${GROUP}`;
+      const inGroup = new Set(['user-2']);
+      mockRbac.getChannelAccessHolder.mockImplementation((_c, m, withGroups) =>
+        Promise.resolve(
+          accessHolderFromRoles(
+            [],
+            withGroups && m && inGroup.has(m.user_id) ? [GROUP] : [],
+          ),
+        ),
+      );
+      holds['user-2'] = ['role-1'];
+      mockMemberRepo.findByChapter.mockResolvedValue(
+        Object.entries(holds).map(([id, roles]) => member(id, roles)),
+      );
+      mockGroupRepo.findById.mockResolvedValue({
+        id: GROUP,
+        name: 'Social committee',
+        kind: 'manual',
+      } as never);
+      mockGroupRepo.findMemberIds.mockImplementation(() =>
+        Promise.resolve([...inGroup]),
+      );
+      try {
+        const task = { assignee_id: 'user-1', followed_by: entry };
+        expect(await service.mayRead(task, 'ch-1', 'user-2', false)).toBe(true);
+        expect(
+          await service.followerRecipients(
+            { ...task, id: 't', created_by: 'admin-1' },
+            'ch-1',
+          ),
+        ).toEqual(['user-2']);
+        // Taken out of the group: no read, no push.
+        inGroup.delete('user-2');
+        expect(await service.mayRead(task, 'ch-1', 'user-2', false)).toBe(
+          false,
+        );
+        expect(
+          await service.followerRecipients(
+            { ...task, id: 't', created_by: 'admin-1' },
+            'ch-1',
+          ),
+        ).toEqual([]);
+        // A class year opens nothing, so it follows nothing.
+        inGroup.add('user-2');
+        mockGroupRepo.findById.mockResolvedValue({
+          id: GROUP,
+          name: 'Class of 2027',
+          kind: 'class_year',
+        } as never);
+        expect(
+          await service.followerRecipients(
+            { ...task, id: 't', created_by: 'admin-1' },
+            'ch-1',
+          ),
+        ).toEqual([]);
+      } finally {
+        delete holds['user-2'];
+      }
+    });
+
+    it("pushes the tier's role holders only, as it reads, and refuses the Everyone tier", async () => {
+      const MEMBERS = 'aaaaaaaa-0000-4000-8000-000000000009';
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        execRole,
+        {
+          id: 'role-everyone',
+          chapter_id: 'ch-1',
+          name: 'Member',
+          tier_id: MEMBERS,
+          permissions: [],
+          system_key: 'MEMBER',
+        },
+      ] as never);
+      mockTierRepo.findByChapter.mockResolvedValue([
+        { id: EXEC, name: 'Exec board' },
+        { id: MEMBERS, name: 'Members' },
+      ] as never);
+      expect(
+        await service.followerRecipients(
+          {
+            id: 't',
+            assignee_id: 'user-1',
+            created_by: 'someone',
+            followed_by: FOLLOWER,
+          },
+          'ch-1',
+        ),
+      ).toEqual(['admin-1', 'exec-2']);
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          title: 'Book the venue',
+          assignee_id: 'user-1',
+          followed_by: `tier:${MEMBERS}`,
+          created_by: 'admin-1',
+          due_date: '2099-03-15',
+        }),
+      ).rejects.toThrow("can't be what a task is from");
+    });
+
+    it('refuses a tier nobody holds a role in, and reads a tier holding Everyone as the chapter', async () => {
+      const EMPTY = 'aaaaaaaa-0000-4000-8000-000000000008';
+      const ALL = 'aaaaaaaa-0000-4000-8000-000000000007';
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        execRole,
+        { id: 'role-unheld', name: 'Historian', tier_id: EMPTY },
+        {
+          id: 'role-everyone',
+          name: 'Member',
+          tier_id: ALL,
+          system_key: 'MEMBER',
+        },
+      ] as never);
+      mockTierRepo.findByChapter.mockResolvedValue([
+        { id: EMPTY, name: 'Chairs' },
+        { id: ALL, name: 'Members' },
+      ] as never);
+      const base = {
+        chapter_id: 'ch-1',
+        title: 'Fill out the form',
+        audience: 'everyone' as const,
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+      };
+      await expect(
+        service.create({ ...base, audience_tier_id: EMPTY }),
+      ).rejects.toThrow('Nobody holds a role in that tier yet');
+      mockTaskRepo.createGroup.mockResolvedValue([
+        { ...baseTask, id: 'c1', assignee_id: 'admin-1', group_id: 'g1' },
+      ]);
+      await service.create({ ...base, audience_tier_id: ALL });
+      expect(mockTaskRepo.createGroup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // Alumni left out; everyone else, holder or not.
+          assignee_ids: expect.arrayContaining(['admin-1', 'exec-2', 'user-1']),
+        }),
+      );
+      expect(
+        mockTaskRepo.createGroup.mock.calls[0]![0].assignee_ids,
+      ).not.toContain('alum-1');
+    });
+
+    it('never tells the creator twice when they are in the following group', async () => {
+      const inProgress: Task = {
+        ...baseTask,
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        followed_by: FOLLOWER,
+        status: TaskStatus.IN_PROGRESS,
+      };
+      mockTaskRepo.findById.mockResolvedValue(inProgress);
+      mockTaskRepo.updateIfMatches.mockResolvedValue({
+        ...inProgress,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      });
+      mockRbac.findUserIdsWithPermissions.mockResolvedValue(['admin-1']);
+      await service.updateStatus(
+        'task-1',
+        'ch-1',
+        'user-1',
+        false,
+        TaskStatus.COMPLETED,
+      );
+      const to = mockNotificationService.notifyUser.mock.calls.map(
+        ([id]) => id,
+      );
+      expect(to.filter((id) => id === 'admin-1')).toHaveLength(1);
+      expect(to).toContain('exec-2');
+    });
+
+    it("keeps a follower's read free of the reply and the send-back reason", () => {
+      const view = service.asReadBy(
+        {
+          ...asView(baseTask),
+          assignee_id: 'user-1',
+          completion_note: 'Paid with my own card',
+          sent_back_reason: 'Wrong vendor',
+          proof_link: 'https://example.test/receipt',
+          photos: [],
+        },
+        'exec-2',
+        false,
+      );
+      expect(view).toMatchObject({
+        completion_note: null,
+        sent_back_reason: null,
+        proof_link: null,
+      });
+    });
+
+    it("refuses one copy's own follower, and changes nothing when a group edit is refused", async () => {
+      const copy: Task = { ...baseTask, group_id: 'g1', followed_by: null };
+      mockTaskRepo.findById.mockResolvedValue(copy);
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', { followed_by: FOLLOWER }),
+      ).rejects.toThrow('scope "group"');
+
+      // Every copy confirmed: the title can't change, so neither does who
+      // it is from.
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        { ...copy, points_awarded: true },
+      ]);
+      await expect(
+        service.updateGroup('task-1', 'ch-1', 'admin-1', {
+          followed_by: FOLLOWER,
+          title: 'New title',
+        }),
+      ).rejects.toThrow('Every copy is already confirmed');
+      expect(mockTaskRepo.setGroupFollower).not.toHaveBeenCalled();
     });
   });
 
