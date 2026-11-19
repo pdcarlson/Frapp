@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   permissions: { current: [] as string[] },
   taking: { current: { isPending: false, data: [] as unknown[] } },
   request: { current: { isLoading: false, data: null as unknown } },
+  detail: { current: { data: undefined as unknown } },
   ask: vi.fn(),
   start: vi.fn(),
   push: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@repo/hooks", () => ({
   useMeetings: () => ({ ...mocks.meetings.current, refetch: vi.fn() }),
+  useMeeting: () => mocks.detail.current,
   useMyPermissions: () => ({
     data: { permissions: mocks.permissions.current },
   }),
@@ -50,6 +52,7 @@ beforeEach(() => {
   mocks.permissions.current = [];
   mocks.taking.current = { isPending: false, data: [] };
   mocks.request.current = { isLoading: false, data: null };
+  mocks.detail.current = { data: undefined };
   mocks.ask.mockReset();
   mocks.start.mockReset();
   mocks.push.mockReset();
@@ -103,6 +106,34 @@ describe("EventMinutes", () => {
     expect(
       screen.getByRole("link", { name: "Open minutes" }).getAttribute("href"),
     ).toBe("/meetings/m-1");
+  });
+
+  it("says where the minutes stand, what they hold, and their TL;DR's first line", () => {
+    mocks.meetings.current = {
+      isPending: false,
+      isError: false,
+      data: [
+        {
+          id: "m-1",
+          status: "posted",
+          event_id: "e-1",
+          posted_at: "2026-11-18T20:00:00Z",
+          decision_count: 2,
+          action_item_count: 3,
+        },
+      ],
+    };
+    mocks.detail.current = {
+      data: { content: { tldr: "- Dues are due Friday.\n- Formal is set." } },
+    };
+    render(<EventMinutes eventId="e-1" eventName="Chapter" />);
+    expect(
+      screen.getByText(
+        /^Posted \w+, November 18 · 2 decisions · 3 action items$/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Dues are due Friday.")).toBeTruthy();
+    expect(screen.queryByText(/Formal is set/)).toBeNull();
   });
 
   it("offers no Write minutes when the read failed", () => {

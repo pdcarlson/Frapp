@@ -5,7 +5,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
 import {
-  MEETING_COPY,
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   MINUTES_REQUEST_COPY,
@@ -37,6 +36,7 @@ const state = vi.hoisted(() => ({
     requested: boolean;
   },
   ask: vi.fn(),
+  detail: undefined as unknown,
 }));
 vi.mock("@/lib/minutes/recorder/session", () => ({
   useMeetingRecorder: () => ({
@@ -61,6 +61,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: state.takingPending,
   }),
   useMinutesRequest: () => ({ data: state.request, isLoading: false }),
+  useMeeting: () => ({ data: state.detail }),
   useRequestMinutes: () => ({ mutateAsync: state.ask, isPending: false }),
 }));
 vi.mock("@/components/minutes/note-taker-sheet", () => ({
@@ -107,6 +108,7 @@ beforeEach(() => {
   state.recorderState = { phase: "idle", refusal: null };
   state.takingPending = false;
   state.request = null;
+  state.detail = undefined;
 });
 
 describe("EventMinutesRow", () => {
@@ -124,7 +126,7 @@ describe("EventMinutesRow", () => {
 
   it.each([
     ["posted", MEETING_ENTRY_COPY.posted],
-    ["draft", MEETING_COPY.draftBadge],
+    ["draft", MEETING_ENTRY_COPY.draft],
   ])("opens %s minutes the viewer may read", (status, value) => {
     state.permissions = [];
     state.meetings = [{ id: "m1", status }];
@@ -136,6 +138,28 @@ describe("EventMinutesRow", () => {
       pathname: "/minutes-details",
       params: { id: "m1" },
     });
+  });
+
+  it("says where the minutes stand, what they hold, and their TL;DR's first line, as web does", () => {
+    state.permissions = [];
+    state.meetings = [
+      {
+        id: "m1",
+        status: "posted",
+        posted_at: "2026-11-18T20:00:00Z",
+        decision_count: 2,
+        action_item_count: 3,
+      } as never,
+    ];
+    state.detail = {
+      content: { tldr: "- Dues are due Friday.\n- Formal is set." },
+    };
+    const text = screenText(render());
+    expect(text).toMatch(
+      /Posted \w+, November 18 · 2 decisions · 3 action items/,
+    );
+    expect(text).toContain("Dues are due Friday.");
+    expect(text).not.toContain("Formal is set");
   });
 
   it("offers Take notes on someone else's draft, to a member they added (#4935)", () => {
