@@ -96,7 +96,7 @@ describe("PickRolesSection (#4958)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("captions a held role that can't be joined again, and still leaves it", async () => {
+  it("captions an alum's held role, which they can't join again, and still leaves it", async () => {
     h.roles = [
       {
         id: "im",
@@ -108,7 +108,7 @@ describe("PickRolesSection (#4958)", () => {
     ];
     render(<PickRolesSection />);
     expect(
-      screen.getByText("No longer open to join. You can leave it."),
+      screen.getByText("Alumni don't join roles. You can leave this one."),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "Leave Intramurals" }));
     await waitFor(() =>

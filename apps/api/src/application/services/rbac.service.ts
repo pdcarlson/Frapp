@@ -389,7 +389,7 @@ export class RbacService {
   /**
    * `POST /v1/roles/:id/join` and `/leave` (#4958): the caller adds a
    * self-assignable role to their own roles, or takes it off. The role must be
-   * marked and safe, checked here for the refusal's words and again by
+   * marked and safe both ways (#5650), checked here for the refusal's words and again by
    * `self_assign_role` under the role's lock, which answers for a role
    * unmarked, changed or deleted in between (409, reload).
    *
@@ -406,12 +406,13 @@ export class RbacService {
     join: boolean,
   ): Promise<{ role_ids: string[] }> {
     const role = await this.roleInChapter(roleId, chapterId);
-    // Joining needs the role marked and safe. Leaving needs only a role with
-    // no key outside the tiers, so a member who picked it can drop it after
-    // an officer unmarks it or gives it a permission (#4958 review).
-    const allowed = join
-      ? role.self_assignable === true && !selfAssignableRefusal(role)
-      : !role.system_key && !role.tier_id;
+    // Both ways need the role marked, and safe, which the database's
+    // constraint keeps every marked role. A role an officer gave, or one an
+    // officer has stopped offering, stays until an officer takes it off
+    // (Paul, 2026-11-19, #5650; until then leaving took any unkeyed role
+    // outside the tiers, #4958).
+    const allowed =
+      role.self_assignable === true && !selfAssignableRefusal(role);
     if (!allowed) {
       throw new ForbiddenException({
         code: NOT_SELF_ASSIGNABLE_CODE,
