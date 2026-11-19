@@ -227,7 +227,7 @@ export function AddTaskRow({
   const followerChoices = useFollowerChoices();
   // Up for grabs has no From: once claimed it is the claimer's own task.
   const someone = draft.who?.kind === "someone";
-  const firstDueNow = firstDueOf(draft.due, draft.repeat.timeZone);
+  const firstDueNow = taskFirstDue(draft.due, draft.repeat.timeZone);
   const repeatRule =
     single && firstDueNow ? taskRepeatRuleOf(draft.repeat, firstDueNow) : null;
   const repeating = !!(repeatRule?.ok && repeatRule.rule);
