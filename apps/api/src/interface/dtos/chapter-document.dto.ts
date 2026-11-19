@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -149,6 +150,61 @@ export class ConfirmDocumentUploadDto {
 
   @WhoCanSee(FILE_WHO_CAN_SEE)
   who_can_see?: string[] | null;
+}
+
+/**
+ * Rename or refile one document (`PATCH /v1/documents/:id`, #5563). Send
+ * either or both. `folder: null` files it at the top level, outside every
+ * folder; left out, the folder stays as it is.
+ */
+export class UpdateDocumentDto {
+  @ApiPropertyOptional({
+    description:
+      "New title. Refused for a file added by its Google Drive link, which keeps Drive's name.",
+    maxLength: DOCUMENT_TITLE_MAX_LENGTH,
+  })
+  // `null` is not a title; `@IsOptional` would let it through as one.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(DOCUMENT_TITLE_MAX_LENGTH)
+  title?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Folder name to move it into; null for no folder. A name the chapter has no folder for makes one, as an upload does.',
+    maxLength: 100,
+  })
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(100)
+  folder?: string | null;
+}
+
+/** Files one move takes (`POST /v1/documents/move`): a screen of selected rows. */
+export const DOCUMENT_MOVE_MAX = 200;
+
+/** Refile many documents into one folder (`POST /v1/documents/move`, #5563). */
+export class MoveDocumentsDto {
+  @ApiProperty({ type: [String], maxItems: DOCUMENT_MOVE_MAX })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_MOVE_MAX)
+  @IsUUID('all', { each: true })
+  document_ids: string[];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Folder name to move them into; null for no folder.',
+    maxLength: 100,
+  })
+  @ValidateIf((_object, value) => value !== null)
+  @IsString()
+  @MaxLength(100)
+  folder: string | null;
 }
 
 export class SetDocumentAccessDto {

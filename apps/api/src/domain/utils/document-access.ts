@@ -86,10 +86,19 @@ export function isOwnUpload(
   >,
   userId: string,
 ): boolean {
-  return (
-    document.uploaded_by === userId &&
-    (document.drive_file_id === null || document.drive_link_status !== null)
-  );
+  return document.uploaded_by === userId && !isDriveFolderCopy(document);
+}
+
+/**
+ * A copy from the chapter's connected Drive folder (#5157): Drive owns its
+ * name, folder and existence, and whoever connected the folder is filed as
+ * its uploader without owning it. A file added by its own link (#5434) has a
+ * `drive_link_status` and is not one.
+ */
+export function isDriveFolderCopy(
+  document: Pick<ChapterDocument, 'drive_file_id' | 'drive_link_status'>,
+): boolean {
+  return document.drive_file_id !== null && document.drive_link_status === null;
 }
 
 /**

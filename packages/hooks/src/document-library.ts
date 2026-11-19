@@ -10,9 +10,10 @@ import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
  * All of it runs on the client, as web `/backwork`'s does (`backwork-library.ts`):
  * `GET /v1/documents` returns the chapter's whole library in one response, so
  * a keystroke or a filter re-ranks what is already in memory instead of asking
- * the server again, and it works offline over what is loaded. A chapter files
- * far fewer documents than PostgREST's 1,000-row `max_rows`, the cap that bit
- * backwork (#3525); past it the page says it is showing only part.
+ * the server again, and it works offline over what is loaded. The API reads
+ * the library in pages, so a chapter past PostgREST's 1,000-row `max_rows`
+ * gets every file (#5585; until then the response was cut at the cap, which
+ * hid Shawn's oldest imported files).
  */
 
 /**
@@ -21,18 +22,6 @@ import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
  * (`BACKWORK_LIST_CAP` is this constant).
  */
 export const POSTGREST_MAX_ROWS = 1000;
-
-/**
- * A documents response this long is treated as truncated.
- * @alias The documents list reads its cap under its own name; it is the
- * PostgREST row cap above, so knip lets the pair be.
- */
-export const DOCUMENT_LIST_CAP = POSTGREST_MAX_ROWS;
-
-/** The capped-list status line, both apps (`writing.md` § Chapter Documents (dashboard)). */
-export const DOCUMENT_CAP_NOTICE = `Showing the newest ${DOCUMENT_LIST_CAP.toLocaleString(
-  "en-US",
-)} documents. Search and filters look only at these for now.`;
 
 /** The delete confirm, both apps: title, body and confirm label. */
 export function deleteDocumentTitle(title: string): string {

@@ -17,6 +17,7 @@ import {
   canSeeDocument,
   canSeeFolder,
   folderListsByName,
+  isDriveFolderCopy,
   isOwnUpload,
   listsInPlay,
   tiersAListKeeps,
@@ -338,6 +339,111 @@ export class ChapterDocumentService {
   }
 
   /**
+   * Renames or refiles one document (`PATCH /documents/:id`, #5563): its
+   * uploader, or a member who manages documents, among those who see it, as
+   * for who sees it (`setDocumentAccess`). A copy from the connected Drive
+   * folder is Drive's to rename and move: the next pass would undo either.
+   * A file added by its link keeps Drive's name (the next copy brings it
+   * back) but can be filed anywhere. Moving into a folder takes what filing
+   * an upload there takes (`checkedFiling`), and a folder named that doesn't
+   * exist yet is made, as an upload makes it.
+   */
+  async updateDocument(
+    id: string,
+    chapterId: string,
+    userId: string,
+    change: { title?: string; folder?: string | null },
+  ): Promise<ChapterDocument> {
+    if (change.title === undefined && change.folder === undefined) {
+      throw new BadRequestException('Send a new title or folder');
+    }
+    const document = await this.visibleDocument(id, chapterId, userId);
+    await this.assertMayRefile([document], chapterId, userId);
+
+    const patch: { title?: string; folder?: string | null } = {};
+    if (change.title !== undefined) {
+      const title = change.title.trim();
+      if (title === '') {
+        throw new BadRequestException('A file needs a name');
+      }
+      if (title !== document.title) {
+        if (document.drive_link_status !== null) {
+          throw new ConflictException(
+            'This file keeps its name from Google Drive. Rename it in Drive, and Documents follows.',
+          );
+        }
+        patch.title = title;
+      }
+    }
+    if (change.folder !== undefined) {
+      const folder = normalizeFolderName(change.folder);
+      if (folder !== document.folder) {
+        await this.checkedFiling(chapterId, userId, folder, undefined);
+        if (folder !== null) await this.ensureFolder(folder, chapterId);
+        patch.folder = folder;
+      }
+    }
+    if (Object.keys(patch).length === 0) return document;
+
+    const updated = await this.documentRepo.updateFiling(id, chapterId, patch);
+    if (!updated) throw new NotFoundException(NOT_FOUND_DOCUMENT);
+    return updated;
+  }
+
+  /**
+   * Refiles many documents into one folder (`POST /documents/move`, #5563),
+   * all or none: every one must be a file the caller sees and may refile
+   * (`updateDocument`'s rules), or nothing moves.
+   */
+  async moveDocuments(
+    ids: string[],
+    chapterId: string,
+    userId: string,
+    folder: string | null,
+  ): Promise<ChapterDocument[]> {
+    const unique = [...new Set(ids)];
+    const documents = await this.visibleTo(
+      chapterId,
+      userId,
+      await this.documentRepo.findByIds(unique, chapterId),
+    );
+    if (documents.length !== unique.length) {
+      throw new NotFoundException(NOT_FOUND_DOCUMENT);
+    }
+    await this.assertMayRefile(documents, chapterId, userId);
+    const target = normalizeFolderName(folder);
+    await this.checkedFiling(chapterId, userId, target, undefined);
+    if (target !== null) await this.ensureFolder(target, chapterId);
+    return this.documentRepo.moveMany(unique, chapterId, target);
+  }
+
+  /**
+   * Refiling is for a file's uploader or someone who manages documents, and
+   * never for a copy from the connected Drive folder.
+   */
+  private async assertMayRefile(
+    documents: ChapterDocument[],
+    chapterId: string,
+    userId: string,
+  ): Promise<void> {
+    if (documents.some(isDriveFolderCopy)) {
+      throw new ConflictException(
+        "This file comes from the chapter's Google Drive folder. Rename or move it in Google Drive, and Documents follows.",
+      );
+    }
+    if (documents.every((doc) => isOwnUpload(doc, userId))) return;
+    if (
+      !(await this.rbac.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.CHAPTER_DOCS_MANAGE,
+      ]))
+    ) {
+      throw new ForbiddenException(
+        'Only whoever uploaded a file, or someone who manages documents, can rename or move it',
+      );
+    }
+  }
+
+  /**
    * Moves a held Drive copy into the folder Drive put it in (#5220): sync
    * left it where it was because more people may see that folder. Only for
    * a member who manages documents (the route's permission) and sees both
@@ -647,10 +753,7 @@ export class ChapterDocumentService {
     // the next sync (`spec/behavior/chapter-docs.md` § Google Drive folder).
     // A file added by its own link is the chapter's to drop: deleting it
     // unlinks it (its link row goes with it), and Drive is untouched.
-    if (
-      document.drive_file_id !== null &&
-      document.drive_link_status === null
-    ) {
+    if (isDriveFolderCopy(document)) {
       throw new ConflictException(
         "This file comes from the chapter's Google Drive folder. Remove it in Google Drive.",
       );
