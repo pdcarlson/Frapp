@@ -10,7 +10,13 @@ describe('ChapterGroupController (#4076)', () => {
   let service: jest.Mocked<
     Pick<
       ChapterGroupService,
-      'list' | 'create' | 'update' | 'setMembers' | 'remove'
+      | 'list'
+      | 'create'
+      | 'update'
+      | 'setMembers'
+      | 'addMember'
+      | 'removeMember'
+      | 'remove'
     >
   >;
 
