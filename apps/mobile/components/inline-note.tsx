@@ -8,7 +8,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The one line a list shows where its rows would be when there are none to
  * show: nothing scheduled, nothing on your plate, a search that matched
  * nothing. It replaces the centered empty card for those cases, so the screen
- * keeps its layout (the points card above Tasks stays put) and says the fact
+ * keeps its layout (the points line above Tasks stays put) and says the fact
  * in a sentence. Mobile's half of web's `components/shared/inline-note.tsx`;
  * `components.md` §10 records the one-line state.
  *

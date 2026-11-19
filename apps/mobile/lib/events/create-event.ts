@@ -183,7 +183,7 @@ export function defaultEventStart(now: Date): Date {
 }
 
 /**
- * Where an event made from the Calendar header's + starts (#5113): on the
+ * Where an event made from the Calendar's + starts (#5113; the floating + since #5570): on the
  * day the member picked, at the usual hour. Today, once that hour has
  * passed, starts at the next quarter hour rather than rolling to tomorrow as
  * the sheet's own default does, since the form refuses a start that has
