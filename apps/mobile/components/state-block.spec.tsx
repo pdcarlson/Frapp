@@ -70,7 +70,9 @@ function flatten(style: unknown): Record<string, unknown> {
 
 /** The outermost View's resolved style — the card chrome. */
 function cardStyle(tree: ReactTestRenderer): Record<string, unknown> {
-  const [card] = tree.root.findAllByType("View" as unknown as React.ComponentType);
+  const [card] = tree.root.findAllByType(
+    "View" as unknown as React.ComponentType,
+  );
   return flatten(card.props.style);
 }
 
@@ -78,7 +80,9 @@ function texts(tree: ReactTestRenderer): string[] {
   return tree.root
     .findAllByType("Text" as unknown as React.ComponentType)
     .flatMap((node) =>
-      node.children.filter((child): child is string => typeof child === "string"),
+      node.children.filter(
+        (child): child is string => typeof child === "string",
+      ),
     );
 }
 
@@ -136,7 +140,7 @@ describe("in a sheet", () => {
   });
 
   it("drops the state cards' fill and keeps their edge", () => {
-    const lines = inSheet(() => render(<SkeletonLines lines={2} showTile />));
+    const lines = inSheet(() => render(<SkeletonLines lines={3} />));
     expect(cardStyle(lines).backgroundColor).toBe("transparent");
     expect(cardStyle(lines).borderColor).toBe(
       signetDarkTokens.color.border.hairline,
@@ -225,9 +229,7 @@ describe("the glyph tiles", () => {
         .find((node) => ["⌕", "!"].includes(String(node.props.children)));
       const tile = glyph?.parent;
       expect(tile?.props.accessibilityElementsHidden).toBe(true);
-      expect(tile?.props.importantForAccessibility).toBe(
-        "no-hide-descendants",
-      );
+      expect(tile?.props.importantForAccessibility).toBe("no-hide-descendants");
     }
   });
 });
@@ -312,21 +314,19 @@ describe("SkeletonLines", () => {
   });
 
   it("draws every shape as a SkeletonBlock, so the shimmer lands once", () => {
-    const tree = render(<SkeletonLines lines={3} showTile />);
+    const tree = render(<SkeletonLines lines={4} />);
     const blocks = tree.root.findAllByType(SkeletonBlock);
 
     expect(blocks).toHaveLength(4);
-    // What each block draws, not what it was passed: §10's control-sized tile
-    // takes the control radius, text lines the chip radius (TODO-DESIGN: 6).
+    // What each block draws, not what it was passed: text lines take the
+    // chip radius (TODO-DESIGN: 6).
     const drawn = blocks.map((block) =>
       flatten(
         block.findByType("Animated.View" as unknown as React.ComponentType)
           .props.style,
       ),
     );
-    expect(drawn[0]!.borderRadius).toBe(signetDarkTokens.radius.control);
-    expect(drawn[0]!.width).toBe(signetDarkTokens.touch.minimum);
-    for (const line of drawn.slice(1)) {
+    for (const line of drawn) {
       expect(line.borderRadius).toBe(signetDarkTokens.radius.chip);
     }
   });
@@ -334,7 +334,7 @@ describe("SkeletonLines", () => {
   // The card centres its contents (the empty and error stacks), but a
   // skeleton stands in for rows, which start at the left edge.
   it("left-aligns its blocks inside the centred card", () => {
-    const tree = render(<SkeletonLines lines={2} showTile />);
+    const tree = render(<SkeletonLines lines={2} />);
     const [, stack] = tree.root.findAllByType(
       "View" as unknown as React.ComponentType,
     );
@@ -555,7 +555,7 @@ describe("SkeletonBlock's pulse", () => {
     vi.mocked(withRepeat).mockClear();
     const tree = render(
       <NavigationContext.Provider value={navigation as never}>
-        <SkeletonLines lines={4} showTile />
+        <SkeletonLines lines={5} />
       </NavigationContext.Provider>,
     );
     const opacities = () =>
@@ -580,4 +580,3 @@ describe("SkeletonBlock's pulse", () => {
     expect(opacities()).toEqual([1, 1, 1, 1, 1]);
   });
 });
-

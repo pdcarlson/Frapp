@@ -252,8 +252,23 @@ describe("app stack", () => {
       // #3723) only hands off to the thread: neither draws a screen.
       .filter((name) => !["(tabs)", "ask", "chat"].includes(name));
 
+    // A route that only re-exports a screen kept outside `app/` (so its
+    // spec can sit beside it, as the member profile's does, #5568) is read
+    // through to that screen's file.
+    const screenSource = (route: string): string => {
+      const own = readFileSync(join(appGroup, `${route}.tsx`), "utf8");
+      if (/<[A-Z]/.test(own)) return own;
+      const reexported = [...own.matchAll(/from "@\/(components\/[^"]+)"/g)];
+      return [
+        own,
+        ...reexported.map((match) =>
+          readFileSync(join(appGroup, "..", "..", `${match[1]}.tsx`), "utf8"),
+        ),
+      ].join("\n");
+    };
+
     for (const name of pushed) {
-      const source = readFileSync(join(appGroup, `${name}.tsx`), "utf8");
+      const source = screenSource(name);
       const edges = [...source.matchAll(/edges=\{\[([^\]]*)\]\}/g)].map(
         (match) => match[1],
       );

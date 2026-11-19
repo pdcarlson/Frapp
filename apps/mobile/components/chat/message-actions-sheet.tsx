@@ -98,7 +98,7 @@ import { messageMenuHeight } from "@/lib/chat/message-menu-room";
  * **Block is one step in, not on the menu.** It is a rare, heavy action that
  * sat as a red row on every long-press of someone else's message. It now
  * lives on the report form and its "Report sent" screen, and on the member's
- * profile (`member-detail-sheet.tsx`), which keeps it reachable for App Store
+ * profile (`member-profile-screen.tsx`), which keeps it reachable for App Store
  * Guideline 1.2 without putting it in front of every reaction.
  *
  * **Quick reactions come first.** The thread draws no reaction control on a

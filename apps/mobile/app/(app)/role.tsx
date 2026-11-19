@@ -74,7 +74,7 @@ type Failure = { permission: string; message: string } | null;
  *
  * Name, color, @mention and moving a role between tiers stay on web with
  * the rest of a role's setup; giving a member a role is the Directory's
- * member sheet, as it has been (#3676).
+ * member profile, as it has been (#3676).
  */
 export default function RoleScreen() {
   const { tokens } = useFrappTheme();
@@ -87,7 +87,10 @@ export default function RoleScreen() {
   const { rolesQuery, tiersQuery, roles, words } = data;
   const role = roles.find((candidate) => candidate.id === roleId) ?? null;
 
-  if ((rolesQuery.isError && rolesQuery.data === undefined) || (tiersQuery.isError && tiersQuery.data === undefined)) {
+  if (
+    (rolesQuery.isError && rolesQuery.data === undefined) ||
+    (tiersQuery.isError && tiersQuery.data === undefined)
+  ) {
     return (
       <ScreenShell back={BACK_TO_ROLES} title="Role">
         <ErrorState
@@ -247,7 +250,8 @@ function PickableSwitch({
   const value = wanted ?? role.self_assignable;
   const refusal = selfAssignableRefusal(role);
   const description =
-    failure ?? (refusal ? refusalOnPhone(refusal) : SELF_ASSIGNABLE_SWITCH_DESCRIPTION);
+    failure ??
+    (refusal ? refusalOnPhone(refusal) : SELF_ASSIGNABLE_SWITCH_DESCRIPTION);
 
   async function save(next: boolean) {
     setWanted(next);
@@ -281,9 +285,7 @@ function PickableSwitch({
           <Toggle
             value={value}
             disabled={
-              Boolean(lockedReason) ||
-              inFlight ||
-              (refusal !== null && !value)
+              Boolean(lockedReason) || inFlight || (refusal !== null && !value)
             }
             onValueChange={(next) => void save(next)}
             accessibilityLabel={`Non-chapter business for ${role.name}`}
@@ -424,8 +426,7 @@ function OverrideList({
               override === null
                 ? null
                 : `Set for this role. ${tier.name} has it ${tierHas ? "on" : "off"}.`;
-            const locked =
-              Boolean(lockedReason) || pending === row.permission;
+            const locked = Boolean(lockedReason) || pending === row.permission;
             return (
               <ListRow
                 key={row.permission}

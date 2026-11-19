@@ -147,7 +147,7 @@ export default function MessagesScreen() {
   const leaveChannel = useLeaveChannel();
   const reopenDm = useGetOrCreateDm();
   // A tap on a member opens the thread as soon as the DM exists; this screen
-  // already watches `["channels"]` (the member sheet's Message does the same).
+  // already watches `["channels"]` (the member profile's Message does the same).
   const startDm = useGetOrCreateDm({ awaitRefetch: false });
   const rosterQuery = useChapterRoster();
   const blockList = useBlockedUserIds();
@@ -157,7 +157,7 @@ export default function MessagesScreen() {
   // The member whose DM is being opened, so no second start runs meanwhile,
   // and a count of picks: any later pick (another row, another member) or
   // leaving the screen bumps it, so a slow start that lands after it opens
-  // nothing (web's search and the member sheet guard the same way). A tab is
+  // nothing (web's search and the member profile guard the same way). A tab is
   // never unmounted, so leaving is a blur: switching tabs or pushing a screen.
   const startingRef = useRef<string | null>(null);
   const pickSeq = useRef(0);
@@ -251,7 +251,7 @@ export default function MessagesScreen() {
     ],
   );
   // Why no members are listed, so a search with none never reads as "nobody
-  // matches": the block list isn't read yet (as the member sheet's Message
+  // matches": the block list isn't read yet (as the member profile's Message
   // row says it), or the roster couldn't be read. Web's search says the same.
   const rosterFailed = rosterQuery.isError && rosterQuery.data === undefined;
   let heldNote: string | null = null;
