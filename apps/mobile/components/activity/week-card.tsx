@@ -87,6 +87,7 @@ export function WeekCard({
               stroke={RING_STROKE}
               progress={summary.progress}
               color={closed ? success : accentPrimary}
+              on={pageSurfaces(tokens).card}
               testID="activity-week-ring"
             >
               {summary.total > 0 ? (
@@ -251,7 +252,7 @@ const LINE_SLOP = 4;
 
 function createStyles(tokens: SignetTokens) {
   const surfaces = pageSurfaces(tokens);
-  const meter = meterStyles(tokens);
+  const meter = meterStyles(tokens, surfaces.card);
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.card,

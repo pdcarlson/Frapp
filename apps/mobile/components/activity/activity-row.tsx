@@ -31,7 +31,8 @@ import {
   type ItemMenuHandle,
 } from "@/components/item-actions-menu";
 import { MemberAvatar } from "@/components/member-avatar";
-import { meterStyles } from "@/components/meter";
+import { meterGrooveOn, meterStyles } from "@/components/meter";
+import { pageSurfaces } from "@/lib/surfaces";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonText } from "@/components/state-block";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
@@ -309,9 +310,8 @@ function ActivityRowDetail({
  * Google Forms' response count and GitHub's "2 of 3 approvals" are the
  * comparables: a count where the list is, the detail one tap away.
  *
- * The groove is `meterStyles`' `trackOnPage`: these rows sit on the screen's
- * floor, where the usual recess would vanish; on a card it is the recess
- * again. A finished
+ * The groove follows what the row sits on (`meterGrooveOn`): the screen's
+ * floor, or a page card when `onCard`. A finished
  * count closes in the success hue, as the week card's lines do. Decoration:
  * the row's label says the count.
  */
@@ -567,7 +567,7 @@ function askTinted(
 function createActivityRowStyles(tokens: SignetTokens) {
   // The frame the Calendar's rows share (`leadRowStyles`).
   const lead = leadRowStyles(tokens);
-  const meter = meterStyles(tokens);
+  const meter = meterStyles(tokens, tokens.color.surface.background);
   return StyleSheet.create({
     row: {
       ...lead.row,
@@ -597,11 +597,13 @@ function createActivityRowStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.xs,
     },
     progressTrack: {
-      ...meter.trackOnPage,
+      ...meter.track,
       width: 160,
       flexShrink: 1,
     },
-    progressTrackOnCard: { backgroundColor: meter.track.backgroundColor },
+    progressTrackOnCard: {
+      backgroundColor: meterGrooveOn(tokens, pageSurfaces(tokens).card),
+    },
     faceStack: {
       flexDirection: "row",
       alignItems: "center",

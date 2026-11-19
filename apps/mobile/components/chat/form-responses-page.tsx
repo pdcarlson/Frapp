@@ -400,8 +400,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.sm,
     },
     // Each question's summary and each person's answers sit on a card, as
-    // web's are inside its raised panel, so the meter's `--background` groove
-    // (`meterStyles`) recedes against it rather than vanishing into the page.
+    // web's are inside its raised panel, so the meter (`meterStyles`, named as
+    // drawn on `--card`) recedes against it rather than vanishing into the page.
     panel: {
       gap: tokens.spacing.sm,
       padding: tokens.spacing.md,
@@ -435,10 +435,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       fontVariant: ["tabular-nums"],
     },
     meterTrack: {
-      ...meterStyles(tokens).track,
+      ...meterStyles(tokens, tokens.color.surface.card).track,
       marginTop: tokens.spacing.xs,
     },
-    meterFill: meterStyles(tokens).fill,
+    meterFill: meterStyles(tokens, tokens.color.surface.card).fill,
     textAnswer: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,

@@ -1,5 +1,3 @@
-import { signetDarkTokens } from "@repo/theme/signet";
-import { contrastRatio, parseHex } from "@repo/color";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -43,8 +41,8 @@ import RouteError from "@/app/error";
  * the 260px raster on the two terminal-state routes.
  */
 
-const CREST_ASSET = "/brand/signet-emblem-B.png";
-const CREST = /signet-emblem-B\.png/;
+const CREST_ASSET = "/brand/signet-emblem-B";
+const CREST = /signet-emblem-B-glyph\.png/;
 
 /**
  * Every `.tsx` under `apps/web`, walked rather than globbed.
@@ -128,30 +126,18 @@ describe("the crest", () => {
     },
   );
 
-  it("is drawn on the ladder step nearest the mark's field, so the tile edge does not show", () => {
-    // The raster's field is `#1A1A1A`. From the 2026-11-12 surface ladder
-    // (#3826) until 2026-11-19 so was `--surface-1` (1.00:1); on the
-    // 2026-11-19 violet ladder the nearest step is `--card` (`#1F1D25`),
-    // 1.045:1 off the field (`--surface-1` is 1.053:1). (Between 2026-11-05 and 2026-11-12 the
-    // page painted `--card`, the nearest step then.) That is what lets the
-    // board's `opacity:.9` wash be dropped.
-    const field = "#1A1A1A";
-    const steps = Object.values(signetDarkTokens.color.surface);
-    const nearest = steps.reduce((a, b) =>
-      contrastRatio(parseHex(a)!, parseHex(field)!) <=
-      contrastRatio(parseHex(b)!, parseHex(field)!)
-        ? a
-        : b,
-    );
-    expect(nearest).toBe(signetDarkTokens.color.surface.card);
-    expect(
-      contrastRatio(parseHex(nearest)!, parseHex(field)!),
-    ).toBeLessThan(1.05);
+  it("draws the field-less glyph, so no tile edge shows on the violet card", () => {
+    // The full tile's field is a neutral `#1A1A1A`. Through 2026-11-19 the
+    // page painted the ladder step nearest it so the tile's edge vanished; the
+    // violet 2026-11-19 ladder has no neutral step, and the field read as a
+    // faint square on `--card` (#5695). The glyph raster is the crest alone on
+    // transparent, so there is no field to match on any ladder.
     const { container } = render(<NotFound />);
-    expect(container.querySelector("main")?.className).toMatch(
-      /\bbg-card\b/,
-    );
-    expect(container.querySelector("img")?.className).not.toMatch(/\bopacity-/);
+    const crest = container.querySelector("img")!;
+    expect(crest.getAttribute("src")).toMatch(/signet-emblem-B-glyph\.png/);
+    expect(crest.className).not.toMatch(/\brounded-/);
+    expect(crest.className).not.toMatch(/\bopacity-/);
+    expect(container.querySelector("main")?.className).toMatch(/\bbg-card\b/);
   });
 
   it("is the only crest art in apps/web", () => {

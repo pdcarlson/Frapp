@@ -32,7 +32,7 @@ Rationale: a faintly violet near-black with gentle steps, **1.08 / 1.10 / 1.15**
 - **Text contrast** rose on every step but the base (table in §4).
 - **`--control-edge`** went from `.42` to `.40`, still the lowest alpha that clears 3:1 on every seat (§3).
 - **The Accent tab's preview** resolves against `--popover`, not `--card`: on the darker card some accents were kept that no label ink reads at AA on (`settings-contrast.spec.ts`).
-- **The 404 and error pages** paint `--card`, now the step nearest the mark's `#1A1A1A` field (1.05:1).
+- **The 404 and error pages** paint `--card` and draw the crest glyph raster (`signet-emblem-B-glyph.png`, crest alone on transparent) instead of the full tile. No violet step matches the tile's neutral `#1A1A1A` field, so the tile read as a faint square; the glyph has no field to show.
 - Not moved: the native splash and `app.json`'s background (`#0A0A0A` / `#1A1A1A`, they change only with a new store build, [#4392](https://github.com/pdcarlson/Frapp/issues/4392)), and the text tones.
 
 *Was, for the history below (the 2026-11-12 ladder):* `#050505` / `#1A1A1A` / `#262626` / `#313131`, with `--card-hover` `#3B3B3B`, the skeleton highlight `#3C3C3C` and an 8% hairline.
