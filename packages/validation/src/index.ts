@@ -93,6 +93,8 @@ export * from "./event-edit";
 // Absence excuses for required events: the late window and reason limit the
 // API enforces and the apps read (#3735).
 export * from "./event-excuse";
+// The event form's rows: order, words and values both apps draw (#5561).
+export * from "./event-form-rows";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,

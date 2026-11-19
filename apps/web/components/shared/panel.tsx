@@ -211,6 +211,7 @@ function DockedPanel({
   dock,
   className,
   onCloseAutoFocus,
+  onKeyDown,
   children,
 }: {
   dock: PanelDock;
@@ -221,6 +222,8 @@ function DockedPanel({
    * block closed the form) calls `preventDefault()` and focuses it itself.
    */
   onCloseAutoFocus?: (event: Event) => void;
+  /** The content's own keys (the event form's Ctrl+Enter), as a sheet's. */
+  onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
   children: React.ReactNode;
 }) {
   const ref = React.useRef<HTMLElement>(null);
@@ -321,6 +324,7 @@ function DockedPanel({
       data-docked-panel=""
       tabIndex={-1}
       onKeyDown={(event) => {
+        onKeyDown?.(event);
         if (event.key !== "Escape" || event.defaultPrevented) return;
         const target = event.target as HTMLElement;
         if (target.closest("input, textarea, select, [contenteditable]"))
@@ -374,6 +378,7 @@ export const PanelContent = React.forwardRef<
         dock={dock}
         className={className}
         onCloseAutoFocus={props.onCloseAutoFocus}
+        onKeyDown={props.onKeyDown}
       >
         {props.children}
       </DockedPanel>

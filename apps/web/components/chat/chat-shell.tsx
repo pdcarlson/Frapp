@@ -3420,13 +3420,13 @@ export function ChatShell({
         </div>
       </div>
       {/*
-        Ask Frapp's bar (#5476), at the foot of the list when chat has the
-        page to itself. The thread's composer owns the bottom of the channel,
-        and asks there through `@Frapp`; beside a tool page the bar is at the
-        bottom of the page instead (`dashboard-shell.tsx`).
+        Ask Frapp's bar (#5476) below `lg`, at the foot of the list when chat
+        has the page to itself. From `lg` up it lives in the sidebar's foot
+        (`app-nav.tsx`, #5560). The thread's composer owns the bottom of the
+        channel, and asks there through `@Frapp`.
       */}
       {toolBeside ? null : (
-        <AskBar compact className="mx-2 mb-3 mt-1 w-auto shrink-0" />
+        <AskBar compact className="mx-2 mb-3 mt-1 w-auto shrink-0 lg:hidden" />
       )}
     </>
   );
