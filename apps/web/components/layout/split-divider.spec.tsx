@@ -66,15 +66,15 @@ describe("SplitDivider (#3779, chat on the right since #5575)", () => {
     // Home is chat's narrowest, End its widest (window splitter).
     const [min, max] = [onChange.mock.calls[0]![0], onChange.mock.calls[1]![0]];
     expect(min).toBe(PANE_FLOOR);
-    // The page keeps its floor past the divider's 1px.
-    expect(row - 1 - max).toBeGreaterThanOrEqual(PANE_FLOOR);
+    // The page keeps its floor (the divider nets no width).
+    expect(row - max).toBeGreaterThanOrEqual(PANE_FLOOR);
   });
 
   it("moves from the width on screen when the saved one is wider than the row allows", () => {
     // Saved at 800 on a wide window; this row leaves chat at most 624.
     const { divider, onChange } = setup(800, 1000);
     fireEvent.keyDown(divider, { key: "ArrowRight" });
-    expect(onChange.mock.calls[0]![0]).toBe(1000 - 1 - PANE_FLOOR - 24);
+    expect(onChange.mock.calls[0]![0]).toBe(1000 - PANE_FLOOR - 24);
   });
 
   it("resets to the default width on a double-click", () => {
@@ -164,14 +164,15 @@ describe("shell layout constants and cookies (#3779, #5575)", () => {
   });
 
   it("gives the tool page at 1440px the width it has alone at 820px", () => {
-    // The full nav and its hairline, the divider, then the default panel.
-    const tool = 1440 - 241 - 1 - DEFAULT_CHAT_WIDTH;
+    // The full nav (border-box, hairline included), then the default panel;
+    // the divider nets no width.
+    const tool = 1440 - 240 - DEFAULT_CHAT_WIDTH;
     expect(tool).toBeGreaterThanOrEqual(820);
   });
 
   it("pins chat at its floor on a row too narrow for both floors", () => {
     expect(chatWidthBounds(700)).toEqual({ min: PANE_FLOOR, max: PANE_FLOOR });
-    expect(clampChatWidth(900, 1000)).toBe(1000 - 1 - PANE_FLOOR);
+    expect(clampChatWidth(900, 1000)).toBe(1000 - PANE_FLOOR);
   });
 
   it("reads chat as open unless closed, and a foreign width as the default", () => {

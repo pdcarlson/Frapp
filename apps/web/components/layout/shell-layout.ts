@@ -84,7 +84,8 @@ export function isFullWidthToolRoute(pathname: string | null): boolean {
 
 /**
  * The chat panel's widths a row of `rowWidth` pixels allows: the panel at
- * least `PANE_FLOOR`, and the tool page beside it (past the divider's 1px)
+ * least `PANE_FLOOR`, and the tool page beside it (the divider's `w-2 -mx-1`
+ * takes no width of its own)
  * at least `PANE_FLOOR`. On a row too narrow for both, both bounds are the
  * floor.
  */
@@ -94,7 +95,7 @@ export function chatWidthBounds(rowWidth: number): {
 } {
   return {
     min: PANE_FLOOR,
-    max: Math.max(PANE_FLOOR, Math.floor(rowWidth - 1 - PANE_FLOOR)),
+    max: Math.max(PANE_FLOOR, Math.floor(rowWidth - PANE_FLOOR)),
   };
 }
 

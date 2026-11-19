@@ -445,11 +445,12 @@ export function DashboardShell({
       ? {
           // The side panel keeps the member's width and the tool page takes
           // the rest (#5575). CSS holds both floors: chat never below 375,
-          // and never so wide that the tool page (`min-w-[375px]`, past the
-          // divider's 1px) drops below 375, whatever width was saved.
+          // and never so wide that the tool page (`min-w-[375px]`; the
+          // divider's `w-2 -mx-1` nets no width) drops below 375, whatever
+          // width was saved.
           flex: `0 1 ${chatWidth}px`,
           minWidth: PANE_FLOOR,
-          maxWidth: `calc(100% - ${PANE_FLOOR + 1}px)`,
+          maxWidth: `calc(100% - ${PANE_FLOOR}px)`,
         }
       : {}),
   };

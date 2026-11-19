@@ -689,7 +689,7 @@ describe("DashboardShell", () => {
       const tool = container.querySelector("[data-tool-column]")!;
       expect(tool).toHaveClass("min-[1056px]:min-w-[375px]");
       expect(chatPanel(container)!.style.minWidth).toBe("375px");
-      expect(chatPanel(container)!.style.maxWidth).toBe("calc(100% - 376px)");
+      expect(chatPanel(container)!.style.maxWidth).toBe("calc(100% - 375px)");
     });
 
     it("gives the tool the main column and chat a side panel on the right (#5575)", () => {
