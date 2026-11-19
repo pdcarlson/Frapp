@@ -35,10 +35,10 @@ import {
   NoChapterState,
   SkeletonBlock,
   SkeletonLines,
+  SkeletonOnCard,
   SkeletonRegion,
   SkeletonText,
 } from "./state-block";
-import { SectionHeaderSkeleton } from "./list-section";
 
 /**
  * These pin the two rules §10 states that are easy to get wrong by copying the
@@ -129,16 +129,18 @@ describe("on a page", () => {
     expect(fills).toEqual([surface.card]);
   });
 
-  it("draws a section caption's bar flush, whatever its region says", () => {
+  it("draws a card frame's bars inside a flush region a step above the card", () => {
     const fills = blockFills(
       render(
-        <SkeletonRegion label="Loading tasks">
-          <SectionHeaderSkeleton />
-          <SkeletonBlock width="60%" height={12} />
+        <SkeletonRegion label="Loading" flush>
+          <SkeletonOnCard>
+            <SkeletonBlock width="60%" height={12} />
+          </SkeletonOnCard>
+          <SkeletonBlock width="40%" height={12} />
         </SkeletonRegion>,
       ),
     );
-    expect(fills).toEqual([surface.surface1, surface.card]);
+    expect(fills).toEqual([surface.card, surface.surface1]);
   });
 });
 

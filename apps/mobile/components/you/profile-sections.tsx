@@ -326,7 +326,11 @@ export function ProfileSkeleton() {
   const { caption, headline } = tokens.typography.role;
 
   return (
-    <SkeletonRegion label="Loading your profile" style={styles.skeletonStack}>
+    <SkeletonRegion
+      label="Loading your profile"
+      style={styles.skeletonStack}
+      flush
+    >
       <View style={styles.identity}>
         <SkeletonBlock
           width={PROFILE_PHOTO_SIZE}

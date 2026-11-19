@@ -210,10 +210,24 @@ const SkeletonPulseContext = createContext<SharedValue<number> | null>(null);
  * Whether the blocks inside sit straight on their ground, a screen's page or
  * a sheet's own fill (`true`), rather than on a card (`false`, the default).
  * A block can't tell which from where it is drawn, so its caller says:
- * {@link SkeletonRegion}'s `flush`, a block's own `flush`, or
- * {@link SkeletonLines} in a sheet, where its card drops its fill.
+ * {@link SkeletonRegion}'s `flush`, {@link SkeletonOnCard} for a card frame
+ * inside a flush region, or {@link SkeletonLines} in a sheet, where its card
+ * drops its fill.
  */
 const SkeletonGroundContext = createContext(false);
+
+/**
+ * A card frame's bars inside a `flush` {@link SkeletonRegion}: they sit on
+ * the card, so they take the step above it again (`CardListSkeleton`'s card,
+ * Activity's week and semester cards).
+ */
+export function SkeletonOnCard({ children }: { children: ReactNode }) {
+  return (
+    <SkeletonGroundContext.Provider value={false}>
+      {children}
+    </SkeletonGroundContext.Provider>
+  );
+}
 
 type SkeletonBlockProps = {
   width: DimensionValue;
@@ -222,11 +236,6 @@ type SkeletonBlockProps = {
   radius?: number;
   /** Outer layout only (a margin, `alignSelf`), never the block's own look. */
   style?: StyleProp<ViewStyle>;
-  /**
-   * This block sits straight on its ground whatever its region says: a
-   * section caption above the cards it heads (`SectionHeaderSkeleton`).
-   */
-  flush?: boolean;
 };
 
 /**
@@ -256,13 +265,11 @@ function PulsedBlock({
   height,
   radius,
   style,
-  flush: ownFlush,
   opacity,
 }: SkeletonBlockProps & { opacity: SharedValue<number> }) {
   const { tokens } = useFrappTheme();
   const surfaces = useRaisedSurfaces();
-  const groundFlush = useContext(SkeletonGroundContext);
-  const flush = ownFlush ?? groundFlush;
+  const flush = useContext(SkeletonGroundContext);
   const styles = createStyles(tokens);
   const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
@@ -304,11 +311,12 @@ function PulsedBlock({
  * `ScreenShell`'s content gap so the frames inside sit where their real
  * counterparts land.
  *
- * `flush` is for rows that sit straight on their ground, with no card frame
- * under them: a sheet's member or thread list (#4690), a screen's chat list or
- * thread (#5109). Their bars take the card
- * step for where they are drawn, `--surface-1` on a page and `--card` in a
- * sheet, instead of the one above a card.
+ * `flush` is for a region whose bars sit straight on their ground, with no
+ * card frame under them: a sheet's member or thread list (#4690), or a
+ * screen's rows split by hairlines, captions and lines on the page (#5109).
+ * Their bars take the card step for where they are drawn, `--surface-1` on a
+ * page and `--card` in a sheet, instead of the one above a card. A card frame
+ * inside such a region wraps its bars in {@link SkeletonOnCard}.
  */
 export function SkeletonRegion({
   label,
@@ -363,14 +371,11 @@ export function SkeletonText({
   width,
   lineHeight,
   style,
-  flush,
 }: {
   role: SignetTypeRole;
   width: DimensionValue;
   lineHeight?: number;
   style?: StyleProp<ViewStyle>;
-  /** Overrides the region's ground for this line ({@link SkeletonBlock}). */
-  flush?: boolean;
 }) {
   const box =
     lineHeight ??
@@ -381,7 +386,6 @@ export function SkeletonText({
       <SkeletonBlock
         width="100%"
         height={Math.round(role.size * FIGTREE_CAP_HEIGHT_EM)}
-        flush={flush}
       />
     </View>
   );

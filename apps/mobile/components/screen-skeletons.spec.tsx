@@ -274,6 +274,57 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
   });
 });
 
+/**
+ * #5109. A bar is one step above what it sits on. On a phone screen that is
+ * `surface1` for a bar straight on the page and `card` for one inside a card,
+ * so a loading screen is no louder than the content it stands for.
+ */
+describe("Skeleton bars take the step above their own ground", () => {
+  const { surface } = tokens.color;
+  const fills = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType("Animated.View" as never)
+      .map((view) => flatten(view.props.style).backgroundColor);
+
+  it.each([
+    ["ThreadSkeleton", <ThreadSkeleton key="t" />],
+    ["ChannelListSkeleton", <ChannelListSkeleton key="ch" />],
+    ["EventsCalendarSkeleton", <EventsCalendarSkeleton key="e" />],
+    ["NotificationListSkeleton", <NotificationListSkeleton key="n" />],
+    ["ProfileSkeleton", <ProfileSkeleton key="p" />],
+  ])("%s: every bar on the page takes surface1", (_, node) => {
+    const all = fills(render(node));
+    expect(all.length).toBeGreaterThan(0);
+    expect(new Set(all)).toEqual(new Set([surface.surface1]));
+  });
+
+  it("CardListSkeleton: the card's bars take card, the rest surface1", () => {
+    const withCard = fills(
+      render(
+        <CardListSkeleton
+          label="Loading"
+          card={<BalanceCardSkeleton />}
+          summary
+        />,
+      ),
+    );
+    const cardOnly = fills(
+      render(
+        <SkeletonRegion label="Loading">
+          <BalanceCardSkeleton />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(cardOnly.length).toBeGreaterThan(0);
+    expect(withCard.slice(0, cardOnly.length)).toEqual(
+      cardOnly.map(() => surface.card),
+    );
+    expect(new Set(withCard.slice(cardOnly.length))).toEqual(
+      new Set([surface.surface1]),
+    );
+  });
+});
+
 describe("Screen skeletons sit on their screen's frames", () => {
   const views = (tree: ReactTestRenderer) =>
     tree.root.findAllByType("View" as never).map((v) => flatten(v.props.style));

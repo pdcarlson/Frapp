@@ -83,7 +83,7 @@ export default function CalendarDayScreen() {
     if (!chapterId) return <NoChapterState noun="events" />;
     if (eventsQuery.isPending) {
       return (
-        <SkeletonRegion label="Loading the day">
+        <SkeletonRegion label="Loading the day" flush>
           <SkeletonBlock width="100%" height={480} />
         </SkeletonRegion>
       );
