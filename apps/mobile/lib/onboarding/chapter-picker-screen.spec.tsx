@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Platform } from "react-native";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, fontFamilyFor, tint } from "@/lib/theme";
 import { mixHex } from "@/components/tinted-control";
 import { flatStyle } from "@/test/flat-style";
@@ -361,7 +361,7 @@ describe("chapter picker, opened from You", () => {
 
     const gold = signetDarkTokens.color.gold;
     const join = rowFor(tree.root, "Join or start a chapter");
-    const held = mixHex(gold.askBorder, 0.15, gold.askFill);
+    const held = mixHex(gold.askBorder, ACCENT_SUBTLE_HOVER_MIX, gold.askFill);
     expect(flatStyle(join.props.style)).toMatchObject({
       backgroundColor: gold.askFill,
       borderColor: gold.askBorder,

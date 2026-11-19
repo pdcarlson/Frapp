@@ -167,6 +167,12 @@ const oklch = (hex: string) => {
  * themselves rather than its own step 9. Every lifted fill lands at
  * 3.54–3.60:1 on `--popover`, every hover at 3.00–3.04:1, and every label is
  * black.
+ *
+ * The 2026-11-19 violet ladder (engine version 4) moved it once more. Its
+ * `--popover` is darker (`#2A2830`), so `#4B2E2E` left and every other lift
+ * lands a little darker; on the `#0B0A0D` floor the generator swaps in its own
+ * step 9 for `#003087`, `#4B0082` and `#4B1A7E` before the lift. Every label
+ * is still black.
  */
 const LIFTED_FILLS: Record<
   string,

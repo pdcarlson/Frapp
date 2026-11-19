@@ -48,7 +48,7 @@ What moved with it: the accent engine takes its tint (`accent-subtle-bg`) from s
 
 **On the phone a card is one step above the page (2026-11-13, [#4682](https://github.com/pdcarlson/Frapp/issues/4682)).** The table above gives `--card` to "cards and list rows", and on web that is one step up, because a card there sits on a `--surface-1` panel. A phone screen has no panel: a card sits straight on `--background`, so `--card` put it two steps up (1.35:1), and once the steps were spread apart every card on the phone jumped off the page. The owner's read of the real screens on 2026-11-12, about the Up next card and then "this surface color across mobile": "it's almost too much contrast to me". So on a phone screen:
 
-- **A card, a grouped list, a state card and a header's round button take `--surface-1`**, one step above the page (1.17:1), with the same hairline. The page stays `--background`.
+- **A card, a grouped list, a state card and a header's round button take `--surface-1`**, one step above the page (1.08:1 since 2026-11-19, 1.17:1 before), with the same hairline. The page stays `--background`.
 - **What needs its own edge inside a card takes `--card`**: a neutral lead tile, a document's preview, a skeleton's bars, a chip or a text field or a button drawn on the card, and a row while it is held. A chip or a field on the page itself stays `--surface-1`, the input step.
 - **A skeleton's bars drawn straight on the page take `--surface-1`**, one step up, as a card does: rows split by hairlines, section captions, the calendar's grid, chat's channel list and thread, a profile's name lines. Only bars inside a card take `--card`. *(Settled 2026-11-19, [#5109](https://github.com/frapplive/Frapp/issues/5109): until then every bar took `--card`, so bars on the page sat two steps up, louder than the content they stand for. A screen's `SkeletonRegion` says its bars sit on the page with `flush`, and a card frame inside such a region wraps its bars in `SkeletonOnCard`. Tasks and the minutes screens are not on it yet: [#5606](https://github.com/frapplive/Frapp/issues/5606).)*
 - **A row on the page lifts to `--surface-1` while held**, one step, where it lifted two.
@@ -87,13 +87,15 @@ It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things move
 
 Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque border tuned for one surface breaks on every other step of the ladder, while an alpha hairline tracks whatever it sits on.
 
-**A control's edge clears 3:1** (WCAG 2.2 SC 1.4.11, the boundary that identifies a component), on its own fill and on every seat it sits on. Decided 2026-11-12 in [#4389](https://github.com/pdcarlson/Frapp/issues/4389), a follow-up to the owner's legibility ask in [#3826](https://github.com/pdcarlson/Frapp/issues/3826). Controls drew `--input` until then: 1.14:1 for a field inside a dialog, 1.79:1 on the page. A field's fill is `--surface-1`, only about 1.15:1 from the seat around it, so the edge is what tells a member where to click. `.40` is the lowest alpha that clears everywhere (`.42` on the 2026-11-12 ladder). The alpha composites over the control's own fill, because the background paints under the border:
+**A control's edge clears 3:1** (WCAG 2.2 SC 1.4.11, the boundary that identifies a component), on its own fill and on every seat it sits on. Decided 2026-11-12 in [#4389](https://github.com/pdcarlson/Frapp/issues/4389), a follow-up to the owner's legibility ask in [#3826](https://github.com/pdcarlson/Frapp/issues/3826). Controls drew `--input` until then: 1.14:1 for a field inside a dialog, 1.79:1 on the page. A field's fill is `--surface-1`, only about 1.08 to 1.10:1 from the seat around it, so the edge is what tells a member where to click. `.40` is the lowest alpha that clears everywhere (`.42` on the 2026-11-12 ladder). The alpha composites over the control's own fill, because the background paints under the border:
 
 | Control (fill) | Edge | On `--background` | On `--surface-1` | On `--card` | On `--popover` | On its fill |
 |---|---|---|---|---|---|---|
-| Field (`--surface-1`) | `#7A7A7A` | 4.75 | 4.05 | 3.53 | **3.03** | 4.05 |
-| Secondary button (`--card`) | `#818181` | 5.23 | 4.47 | 3.88 | 3.34 | 3.88 |
-| Switch, off (`--popover`) | `#888888` | 5.75 | 4.91 | 4.27 | 3.67 | 3.67 |
+| Field (`--surface-1`) | `#737275` | 4.13 | 3.83 | 3.48 | **3.04** | 3.83 |
+| Secondary button (`--card`) | `#79777C` | 4.47 | 4.15 | 3.77 | 3.29 | 3.77 |
+| Switch, off (`--popover`) | `#7F7E83` | 4.91 | 4.55 | 4.14 | 3.61 | 3.61 |
+
+Measured on the 2026-11-19 ladder at `.40`. On the 2026-11-12 ladder at `.42` the field's edge was `#7A7A7A` (4.75 / 4.05 / 3.53 / 3.03), the Secondary button's `#818181` and the switch's `#888888`.
 
 `--input` keeps its `.14` because its other users want a quiet edge: a done or placeholder checkbox sits below an open one, and a mockup frame or upload well sits below the content in it. Raising the one shared token would have inverted those. Mobile's off toggle keeps its `--input` track too: on iOS and Android the switch's thumb identifies it.
 
@@ -110,7 +112,7 @@ Rejected: keeping `.14` on controls and relying on the label and placeholder, as
 | `--muted` | `#A8A8A8` | Muted text — placeholders, timestamps, metadata |
 | `--disabled` | `#6B6B6B` | Disabled text |
 
-Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral, matching the surface ladder: cream text on the graphite ladder reads yellow. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
+Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral: cream text on a near-black ladder reads yellow, and neutral text sits cleanly on the faint violet of the 2026-11-19 ladder. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
 
 **Every text tone clears its floor on every surface** (2026-11-09, at the owner's request, [#3826](https://github.com/pdcarlson/Frapp/issues/3826): "it looks very dim… you have to squint… it's not even white, the letters", and worse on an external monitor than on a laptop). `--foreground` and `--muted-foreground` clear 7:1 and `--muted` clears 4.5:1 against all four ladder steps, as the table shows. Until then the ladder was `#EBEBEB` / `#A3A3A3` / `#737373` / `#525252`. `--muted-foreground`, the secondary tone on about 540 web call sites (event lines, nav labels, section eyebrows), measured 6.6–7.9:1, and `--muted` (about 30 sites: timestamps, placeholders) 3.5–4.2:1, under the 4.5:1 gate ([`README.md`](README.md) §6) on every step. Lifting those two is most of the fix for "the dashboard looks dim"; the surface ladder's own imperceptible steps were the rest, spread apart on 2026-11-12 (§2). `--disabled` is deliberately under AA (WCAG exempts disabled controls) and stays a clear step under `--muted`.
 
@@ -198,7 +200,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 
 - Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
 - Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground`, `--foreground` on hover. The one exception is a place's hue, below. (Until 2026-11-12 mobile's You tab rows and Up next strip drew theirs a step dimmer, in `--muted`; both sit in a lead tile now, [`../mobile/patterns.md` § Rows](../mobile/patterns.md#rows).)
-- Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.194:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
+- Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads even on `--popover` (1.15:1 since 2026-11-19, in the ladder's tint; 1.194:1 when first set) ([`components.md`](components.md) §2).
 - Numbers and stats (points, hours, counts, timers): `--foreground`.
 - Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.
 - Done states (a completed task, a past event): a muted fill or check, never the accent; finished work is the quietest thing on a list.

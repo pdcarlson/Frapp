@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Signet design tokens — the dark-first neutral graphite system.
+ * Signet design tokens — the dark-first violet near-black system.
  *
  * This stylesheet is what BOTH web surfaces ship — `apps/web` since the #920
  * shell cutover, `apps/landing` since its token cutover (#2366). A surface
@@ -245,7 +245,7 @@
      * on it can fall under 4.5:1 (#2604), so it is only ever the
      * momentary pointer-down shade, never a held state
      * (accent-engine.md §8).
-     * `--accent-subtle-hover` is the Tinted hover: 15% of the way from
+     * `--accent-subtle-hover` is the Tinted hover: 14% of the way from
      * the subtle step toward accent-7, which lands between two steps
      * rather than on a named one. (Until the 2026-11-12 surface ladder,
      * #3826, the subtle step was accent-3 and this mix was 22%, which

@@ -76,14 +76,18 @@ describe("every ladder step is a gentle step up (2026-11-19)", () => {
     ["--card", SURFACE.card],
     ["--popover", SURFACE.popover],
   ] as const;
-  it.each(LADDER.slice(1).map((step, i) => [LADDER[i]![0], step[0], LADDER[i]![1], step[1]]))(
-    "%s to %s",
-    (_lower, _upper, lower, upper) => {
-      expect(luminance(upper)).toBeGreaterThan(luminance(lower));
-      expect(ratio(upper, lower)).toBeGreaterThanOrEqual(LADDER_STEP_FLOOR);
-      expect(ratio(upper, lower)).toBeLessThanOrEqual(INDISTINGUISHABLE);
-    },
-  );
+  it.each(
+    LADDER.slice(1).map((step, i) => [
+      LADDER[i]![0],
+      step[0],
+      LADDER[i]![1],
+      step[1],
+    ]),
+  )("%s to %s", (_lower, _upper, lower, upper) => {
+    expect(luminance(upper)).toBeGreaterThan(luminance(lower));
+    expect(ratio(upper, lower)).toBeGreaterThanOrEqual(LADDER_STEP_FLOOR);
+    expect(ratio(upper, lower)).toBeLessThanOrEqual(INDISTINGUISHABLE);
+  });
 });
 
 describe("a state cannot elevate above the step it renders in", () => {
@@ -215,7 +219,7 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
     // and since 2026-11-09 it is also the quiet fill under text. `--muted` is
     // the one the 2026-11-12 ladder (#3826) had to lift for: at `#9E9E9E` it
     // fell to 4.18:1 here. The 7:1 reading floor is the four ladder steps';
-    // on this state fill the gate is AA (`--muted-foreground` 6.42:1).
+    // on this state fill the gate is AA (`--muted-foreground` 7.24:1 on the 2026-11-19 ladder, 6.42:1 on the 2026-11-12 one).
     expect(ratio(tone, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
@@ -227,7 +231,9 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
     // the 2026-11-12 ladder (#3826) it lands *under* the card rest fill, so
     // the hover would step down instead: the same defect, the other way.
     const alphaOverBackground = applyAlpha("#ffffff", 0.06, SURFACE.background);
-    expect(luminance(alphaOverBackground)).toBeLessThan(luminance(SURFACE.card));
+    expect(luminance(alphaOverBackground)).toBeLessThan(
+      luminance(SURFACE.card),
+    );
   });
 });
 

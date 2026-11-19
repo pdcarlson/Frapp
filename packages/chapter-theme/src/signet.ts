@@ -135,8 +135,8 @@ const LIFT_COARSE = 10;
  * Step 4 and no lighter, because text sits on the tint: a row that @-mentions
  * the viewer paints it behind the author's role-coloured name and the
  * timestamp. Step 5 put a green chapter's hovered Violet name at 3.70:1 and
- * the timestamp at 3.94:1; step 4, with the hover mix in `signet.css` at 15%,
- * holds every role colour and `--muted` at 4.5:1 on it, at rest and hovered
+ * the timestamp at 3.94:1; step 4, with the hover mix in `signet.css` at 15%
+ * (14% since 2026-11-19), holds every role colour and `--muted` at 4.5:1 on it, at rest and hovered
  * (`chat-contrast.spec.ts`). The cost is a weaker tint on `--card` (1.02–1.20,
  * the selected fill 1.11–1.32, was 1.25–1.40), where a selected card also
  * carries its accent border.

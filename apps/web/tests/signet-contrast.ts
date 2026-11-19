@@ -7,7 +7,7 @@ import {
   HOUSE_SEED,
   signetAccentSemanticVars,
 } from "@repo/chapter-theme";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Shared fixtures for the Signet contrast guards.
@@ -290,4 +290,8 @@ export function accentRolesFor(seed: string) {
  * guards green.
  */
 export const accentFour = (roles: Record<string, string>) =>
-  mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.14);
+  mixHex(
+    roles["--accent-subtle"]!,
+    roles["--accent-border"]!,
+    ACCENT_SUBTLE_HOVER_MIX,
+  );

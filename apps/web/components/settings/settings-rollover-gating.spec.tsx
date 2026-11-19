@@ -297,7 +297,7 @@ describe("the accent save sends the colour the preview shows", () => {
     expect(saveButton()).toBeEnabled();
     expect(saveButton()).not.toHaveAccessibleDescription();
     expect(hexNeeded()).toBeNull();
-    expect(screen.queryByText(/hard to read on the card/i)).toBeNull();
+    expect(screen.queryByText(/hard to read on menus and dialogs/i)).toBeNull();
     expect(screen.queryByText(/under the 4\.5:1 minimum/i)).toBeNull();
   });
 

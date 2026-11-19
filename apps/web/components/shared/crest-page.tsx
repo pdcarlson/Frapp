@@ -44,7 +44,10 @@ import { cn } from "@/lib/utils";
  *    `#111111`, where the field read as a 1.085:1 square (assets.md, #2580),
  *    so the page painted `--card` (`#171717`), 1.03:1 off the field. The
  *    2026-11-12 surface ladder (#3826) put `--surface-1` back on `#1A1A1A`,
- *    so the page is `--surface-1` again, 1.00:1 off the field.
+ *    so the page was `--surface-1` again, 1.00:1 off the field. The violet
+ *    2026-11-19 ladder has no neutral step: `--card` (`#1F1D25`) is nearest,
+ *    1.045:1 off the field, but the field stays neutral against a violet page,
+ *    so a faint tile edge can show. Flagged in that PR for the owner's look.
  * 2. **Radius 24 rounds onto 20.** `foundations.md` §8 locks the map at a 20
  *    ceiling and calls an off-map radius "a defect, exactly as a raw hex value
  *    is". `signet-mark.tsx` already rounds its 30px chip from 9 onto the

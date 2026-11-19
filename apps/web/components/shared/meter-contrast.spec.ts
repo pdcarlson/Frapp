@@ -100,7 +100,7 @@ describe("the fix that would itself have been a defect", () => {
     // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
     // ladder surface (and since #2586 until its hover does too), so no seed's
     // fill sits at the wash's luminance any more: the worst case is
-    // 2.73:1 on the 2026-11-19 ladder (`#4B1A7E`'s `#9B70D9` at 2.65:1 on the
+    // 2.73:1 on the 2026-11-19 ladder with engine v4 (`#4B1A7E`'s `#9B70D9` at 2.65:1 on the
     // 2026-11-12 ladder, #3826;
     // `#BF0A30`'s `#D83144` at 2.52:1 on the 2026-11-05 ladder, `#800000`'s
     // `#F42F22` at 2.68:1 before it). The collision is gone, but `bg-input` is
@@ -147,7 +147,7 @@ describe("why the track recedes instead of rising", () => {
     }
   });
 
-  it("grooves on every container above the floor, --surface-1 included", () => {
+  it("grooves on every container above the floor except --surface-1", () => {
     // On the 2026-11-05 ladder one step from the floor was 1.049:1, not a
     // usable groove, and this test recorded `--surface-1` as the one container
     // the recipe could not serve. The 2026-11-12 ladder (#3826) put every step

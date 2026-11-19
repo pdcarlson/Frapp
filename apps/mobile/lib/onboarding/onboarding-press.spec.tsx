@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
 import { FrappClientProvider, type ChapterDirectoryResult } from "@repo/hooks";
 import { FrappThemeProvider, tint } from "@/lib/theme";
 import { mixHex } from "@/components/tinted-control";
@@ -263,7 +263,11 @@ const PRIMARY: Kind = {
 };
 // The tinted control's pressed step (`components/tinted-control.ts`) in
 // house gold, the picker's (#4811).
-const TINTED_HELD = mixHex(color.gold.askBorder, 0.15, color.gold.askFill);
+const TINTED_HELD = mixHex(
+  color.gold.askBorder,
+  ACCENT_SUBTLE_HOVER_MIX,
+  color.gold.askFill,
+);
 const TINTED: Kind = {
   ripple: TINTED_HELD,
   held: { backgroundColor: TINTED_HELD },

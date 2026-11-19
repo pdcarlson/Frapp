@@ -159,9 +159,10 @@ describe("the step indicator's track", () => {
     // hover too (#2586) and lifted the dark fills further, then `#800000`'s
     // `#F42F22` at 3.844 and 4.701 until the neutral ladder and engine v2
     // (2026-11-05) lifted `#800000` too, then `#BF0A30`'s `#D83144` at 3.527 and
-    // 4.188 until the 2026-11-12 ladder (#3826) raised every fill's floor; now
-    // `#4B1A7E`'s `#9B70D9`. The 2026-11-19 ladder's brighter hairline (12%)
-    // narrows the border track's figure. The ranking is the same throughout, and on
+    // 4.188 until the 2026-11-12 ladder (#3826) raised every fill's floor, then
+    // `#4B1A7E`'s `#9B70D9` until engine v4 (2026-11-19) re-lifted the corpus
+    // on the violet ladder, whose brighter hairline (12%) also narrows the
+    // border track's figure. The ranking is the same throughout, and on
     // `--background` the fill clears the 3:1 non-text floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
     expect(worstOnBorder).toBeCloseTo(3.772, 2);
