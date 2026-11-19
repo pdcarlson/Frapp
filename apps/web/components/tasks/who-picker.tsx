@@ -516,7 +516,13 @@ export function WhoPickerBody({
       <ul aria-label="Roles and groups">
         {chapterRow ? <li>{chapterRow}</li> : null}
         {directory.tiers.map((tier) =>
-          section(tierKey(tier), tier.name, tier.roles, tier.set),
+          section(
+            tierKey(tier),
+            tier.name,
+            tier.roles,
+            // A tier of one role is that role: no second row for it.
+            tier.roles.length > 1 ? tier.set : null,
+          ),
         )}
         {section(GROUPS_KEY, GROUPS_HEADING, directory.groups)}
       </ul>
