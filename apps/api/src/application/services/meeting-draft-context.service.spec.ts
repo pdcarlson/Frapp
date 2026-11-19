@@ -390,6 +390,42 @@ describe('MeetingDraftContextService (#5477)', () => {
     ]);
   });
 
+  it('keeps a series\u2019 history when it is now filed as unlabeled Other', async () => {
+    const unlabeled = { meeting_type: 'other' as const, other_label: null };
+    const { service, meetings } = setup({
+      // Filed as Chapter before names stopped guessing Chapter.
+      earlier: [minutes('chapter-filed', 'evt-c', '2026-11-03')],
+      events: [event('evt-c')],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...unlabeled },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(meetings.listPostedBefore.mock.calls[0][3]).toBeNull();
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from chapter-filed',
+    ]);
+  });
+
+  it('reads a labeled Other meeting\u2019s earlier minutes from any series', async () => {
+    const housing = { meeting_type: 'other' as const, other_label: 'Housing' };
+    const { service } = setup({
+      earlier: [minutes('housing', 'evt-h', '2026-11-04', housing)],
+      events: [event('evt-h', { parent_event_id: 'series-2' })],
+    });
+    const context = await service.contextFor(
+      CHAPTER,
+      { ...TONIGHT, ...housing },
+      SECRETARY,
+      ROSTER,
+    );
+    expect(context.background?.carried.map((item) => item.text)).toEqual([
+      'Do the thing from housing',
+    ]);
+  });
+
   it('reads nothing for a one-off unlabeled Other meeting', async () => {
     const unlabeled = { meeting_type: 'other' as const, other_label: null };
     const { service } = setup({

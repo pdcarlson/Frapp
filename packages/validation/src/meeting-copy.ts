@@ -90,7 +90,9 @@ export function guessMeetingType(eventName: string): MeetingType {
   const name = eventName.toLowerCase();
   if (/\bexec|executive|e-board|eboard|officer/.test(name)) return "exec";
   if (/committee|\bchair/.test(name)) return "committee";
-  if (/\bchapter\b|\bgeneral meeting\b|\bgm\b/.test(name)) return "chapter";
+  if (/\bchapters?\b|\bgeneral (body )?meeting\b|\bgb?m\b/.test(name)) {
+    return "chapter";
+  }
   return "other";
 }
 

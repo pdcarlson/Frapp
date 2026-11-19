@@ -9,11 +9,14 @@ describe("guessMeetingType", () => {
     expect(guessMeetingType("Chapter meeting")).toBe("chapter");
     expect(guessMeetingType("Sunday GM")).toBe("chapter");
     expect(guessMeetingType("General meeting")).toBe("chapter");
+    expect(guessMeetingType("General Body Meeting")).toBe("chapter");
+    expect(guessMeetingType("GBM")).toBe("chapter");
   });
 
   it("leaves a name that says no type as Other, never Chapter", () => {
     expect(guessMeetingType("Ben Cunningham Meeting")).toBe("other");
     expect(guessMeetingType("Weekly meeting")).toBe("other");
     expect(guessMeetingType("")).toBe("other");
+    expect(guessMeetingType("Team BM retro")).toBe("other");
   });
 });
