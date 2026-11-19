@@ -346,8 +346,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
     }
     // A task from minutes names them by id (#5562), so its screens read the
     // meeting's name as it is now.
-    const meetingId =
-      input.source?.type === 'meeting' ? input.source.id : null;
+    const meetingId = input.source?.type === 'meeting' ? input.source.id : null;
     // "Someone in…" posts one task up for grabs (2026-11-18); the result is
     // the posting's id.
     if (task.audience === TASK_AUDIENCE_SOMEONE) {
