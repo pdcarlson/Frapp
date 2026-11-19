@@ -587,11 +587,13 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("banner")).not.toContainElement(bar);
     const column = container.querySelector("[data-tool-column]") as HTMLElement;
     expect(column).toContainElement(bar);
-    // The page reserves room, so its last row scrolls clear of the bar.
+    // Below `lg`, where it floats, the page reserves room so its last row
+    // scrolls clear of the bar; from `lg` up it sits in the sidebar (#5560).
+    expect(bar.parentElement!.className).toContain("lg:hidden");
     page = container.querySelector("[data-tool-page]") as HTMLElement;
-    expect(page.className).toContain("pb-24");
+    expect(page.className).toContain("max-lg:pb-24");
     // And tells a control it pins to its own bottom how far to rise.
-    expect(page.className).toContain("[--ask-bar-room:4.5rem]");
+    expect(page.className).toContain("max-lg:[--ask-bar-room:4.5rem]");
     expect(page).not.toContainElement(bar);
   });
 
@@ -1251,7 +1253,7 @@ describe("DashboardShell", () => {
       expect(document.cookie).toContain("frapp_chat_split=0.500");
     });
 
-    it("floats Ask Frapp's bar on the home view too, for a member with Ask (#5476)", () => {
+    it("keeps Ask Frapp in the sidebar's foot, not over the home view (#5560)", () => {
       setWindowWidth(1440);
       mockPathname.value = "/chat";
       askEntry.current = { open: false, openWith: vi.fn() };
@@ -1259,8 +1261,12 @@ describe("DashboardShell", () => {
         <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
       );
       const home = container.querySelector("[data-chapter-home]")!;
-      const bar = screen.getByRole("button", { name: "Ask Frapp anything" });
-      expect(home.parentElement).toContainElement(bar);
+      expect(home.parentElement).not.toContainElement(
+        screen.queryByRole("button", { name: "Ask Frapp anything" }),
+      );
+      const nav = screen.getByRole("navigation", { name: "Primary" });
+      const sidebarAsk = screen.getByRole("button", { name: "Ask Frapp" });
+      expect(nav.parentElement).toContainElement(sidebarAsk);
     });
 
     it("draws the chapter mark on the home view", () => {

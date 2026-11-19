@@ -24,8 +24,9 @@ import { AskInChannelBridge } from "@/components/ask/ask-in-channel";
 import { useIsRolePreviewActive } from "@/lib/stores/role-preview-store";
 
 /**
- * Ask Frapp's front door on web: a floating Ask bar at the bottom of the page,
- * the phone's bar on web (`ask-bar.tsx`; #5476, Paul's pick of 2026-11-18).
+ * Ask Frapp's front door on web: the Ask bar, the phone's bar on web
+ * (`ask-bar.tsx`; #5476, Paul's pick of 2026-11-18), at the sidebar's foot
+ * from `lg` up and floating at the bottom of the page below it (#5560).
  *
  * The door moved twice before. A button in the chat composer (#4702) read as
  * out of place to Paul once it shipped; then the top bar's field asked as well
@@ -98,11 +99,7 @@ export function AskHost({ children }: { children: ReactNode }) {
         <AskEntryContext.Provider value={entry}>
           {children}
           {has ? (
-            <AskCard
-              open={open}
-              onOpenChange={setOpen}
-              returnFocus={opener}
-            />
+            <AskCard open={open} onOpenChange={setOpen} returnFocus={opener} />
           ) : null}
         </AskEntryContext.Provider>
       </AskInChannelBridge>
