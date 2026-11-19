@@ -202,7 +202,12 @@ vi.mock("@/components/tasks/who-picker-sheet", async () => {
   };
 });
 vi.mock("@/lib/tasks/use-who-directory", () => ({
-  useWhoDirectory: () => ({ directory: {}, people: {}, sets: {} }),
+  useWhoDirectory: () => ({
+    directory: {},
+    people: {},
+    sets: {},
+    followers: [],
+  }),
 }));
 vi.mock("@/components/tasks/mark-done-sheet", async () => {
   const { createElement } = await import("react");

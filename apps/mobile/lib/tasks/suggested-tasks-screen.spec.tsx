@@ -103,7 +103,12 @@ vi.mock("@/lib/tasks/use-who-directory", async () => {
     viewerUserId: "user-1",
   });
   return {
-    useWhoDirectory: () => ({ directory, people: "ready", sets: "ready" }),
+    useWhoDirectory: () => ({
+      directory,
+      people: "ready",
+      sets: "ready",
+      followers: [],
+    }),
   };
 });
 

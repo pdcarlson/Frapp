@@ -35,6 +35,7 @@ import {
 } from "@repo/hooks";
 import { formatPointsChip, formatRelativeDayTime } from "@repo/formatting";
 import {
+  TASK_FOLLOWER_COPY,
   TASK_SERIES_SCOPE_COPY,
   taskGroupLabel,
   taskSeriesLive,
@@ -368,7 +369,16 @@ export function taskHistory(
   );
   // No name: the read has no `completed_by`, and an officer may mark a
   // member's task done for them.
-  if (row.isDone) add("done", "Marked done", row.completedAt);
+  // "Submitted to Exec board" when a group follows it (#5473), as web's
+  // review header says it.
+  if (row.isDone) {
+    add(
+      "done",
+      "Marked done",
+      row.completedAt,
+      row.followedBy ? TASK_FOLLOWER_COPY.submittedTo(row.followedByName) : null,
+    );
+  }
   add("sent-back", "Sent back", row.sentBackAt, row.sentBackReason);
   // A completion that needed no sign-off is confirmed as it is marked done:
   // its one line is Marked done.

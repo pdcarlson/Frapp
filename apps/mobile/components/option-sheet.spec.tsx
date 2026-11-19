@@ -176,3 +176,34 @@ describe("OptionSheet rows with a second line (#5318)", () => {
     expect(onDismiss).toHaveBeenCalled();
   });
 });
+
+describe("OptionSheet sections (#5473)", () => {
+  const sectioned: SheetOption[] = [
+    { value: null, label: "Just you" },
+    { value: "tier:a", label: "Exec board · 4", heading: "Tiers" },
+    { value: "role:b", label: "President · 1", heading: "Roles" },
+    { value: "role:c", label: "Treasurer · 1" },
+  ];
+
+  it("draws a heading above the row that starts a section", () => {
+    const { tree } = render(sectioned, null);
+    const headers = tree.root
+      .findAll(
+        (node) =>
+          node.props.accessibilityRole === "header" && node.type === Text,
+      )
+      .map((node) => node.props.children);
+    expect(headers).toEqual(["Tiers", "Roles"]);
+  });
+
+  it("counts a heading as a row when sizing to content", () => {
+    const rows = Array.from({ length: MAX_ROWS_SIZED_TO_CONTENT }, (_, i) => ({
+      value: String(i),
+      label: `Row ${i}`,
+    }));
+    expect(fitsContent(rows)).toBe(true);
+    expect(fitsContent([{ ...rows[0]!, heading: "Tiers" }, ...rows.slice(1)])).toBe(
+      false,
+    );
+  });
+});

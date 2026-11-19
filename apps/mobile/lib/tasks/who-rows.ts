@@ -10,13 +10,14 @@ import {
   GROUPS_HEADING,
   WHO_PICKER_COPY,
   allRoles,
+  allTierSets,
   tierKey,
   whoMatches,
   type WhoDirectory,
   type WhoPerson,
   type WhoSet,
 } from "@repo/hooks/task-who-picker";
-import type { TaskWho } from "@repo/validation";
+import { TASK_AUDIENCE_COPY, type TaskWho } from "@repo/validation";
 
 /** Which tab the picker shows. */
 export type WhoTab = "people" | "sets";
@@ -33,7 +34,13 @@ export type WhoRow =
       open?: boolean;
     }
   | { kind: "person"; key: string; person: WhoPerson; nested?: boolean }
-  | { kind: "set"; key: string; set: WhoSet; open: boolean };
+  | {
+      kind: "set";
+      key: string;
+      /** A tier picked whole reads "Everyone in Exec board" (#5473). */
+      set: WhoSet;
+      open: boolean;
+    };
 
 /**
  * The picker's rows for a tab, or for a search across people, roles and
@@ -49,8 +56,15 @@ export function whoRows(
     /** Roles and groups whose members are shown, by `role:id` / `group:id`. */
     expanded: ReadonlySet<string>;
     openTiers: ReadonlySet<string>;
+    /**
+     * Offer a tier whole (#5473), as web's picker does. Off for a suggested
+     * task, whose payload has no tier field yet, so a tier pick there would
+     * send nobody. On when absent.
+     */
+    tiers?: boolean;
   },
 ): WhoRow[] {
+  const tiers = options.tiers ?? true;
   const searching = normalizeWords(options.search).length > 0;
   const personRow = (person: WhoPerson, prefix = "", nested = false): WhoRow => ({
     kind: "person",
@@ -79,9 +93,11 @@ export function whoRows(
     const people = directory.people.filter((person) =>
       whoMatches(person.name, options.search),
     );
-    const sets = [...allRoles(directory), ...directory.groups].filter((set) =>
-      whoMatches(set.name, options.search),
-    );
+    const sets = [
+      ...(tiers ? allTierSets(directory).map(wholeTier) : []),
+      ...allRoles(directory),
+      ...directory.groups,
+    ].filter((set) => whoMatches(set.name, options.search));
     return [
       ...(people.length > 0
         ? [
@@ -111,18 +127,30 @@ export function whoRows(
     const open = options.openTiers.has(key);
     rows.push({
       kind: "heading",
-      key: `tier:${key}`,
+      key: `h:tier:${key}`,
       label: tier.name,
       tierKey: key,
       open,
     });
-    if (open) rows.push(...tier.roles.flatMap(setRows));
+    if (!open) continue;
+    // The tier as a whole first (#5473): everyone holding a role in it, as
+    // Slack's user groups sit above their members. A tier of one role is
+    // that role, so it gets no second row.
+    if (tiers && tier.set && tier.roles.length > 1) {
+      rows.push(...setRows(wholeTier(tier.set)));
+    }
+    rows.push(...tier.roles.flatMap(setRows));
   }
   if (directory.groups.length > 0) {
     rows.push({ kind: "heading", key: "h:groups", label: GROUPS_HEADING });
     rows.push(...directory.groups.flatMap(setRows));
   }
   return rows;
+}
+
+/** A tier as a pick, named as the picker lists it: "Everyone in Exec board". */
+function wholeTier(set: WhoSet): WhoSet {
+  return { ...set, name: TASK_AUDIENCE_COPY.everyoneIn(set.name) };
 }
 
 /**

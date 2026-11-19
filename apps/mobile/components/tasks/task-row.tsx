@@ -4,7 +4,7 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   taskStatusLabel,
 } from "@repo/hooks";
-import { taskRepeatCadence } from "@repo/validation";
+import { TASK_FOLLOWER_COPY, taskRepeatCadence } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -132,6 +132,11 @@ function taskFacts(row: TaskRowModel, now: Date) {
   // Monday · ↻ Weekly". The glyph is for the eye; a screen reader hears
   // "repeats weekly".
   const cadence = row.isDone ? null : taskRepeatCadence(row.series);
+  // The tier, role or group it is from, last (#5473): "Due Friday · From
+  // Exec board", as web's row carries the chip.
+  const from = row.followedBy
+    ? TASK_FOLLOWER_COPY.chip(row.followedByName)
+    : null;
   const lineOf = (repeat: string | null) =>
     [
       sentBack ? TASK_NEEDS_CHANGES_LABEL : null,
@@ -139,6 +144,7 @@ function taskFacts(row: TaskRowModel, now: Date) {
       repeat,
       progress,
       photos,
+      from,
     ]
       .filter(Boolean)
       .join(" · ") || null;

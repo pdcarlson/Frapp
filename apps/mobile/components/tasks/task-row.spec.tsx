@@ -61,6 +61,8 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     createdAt: null,
     groupId: null,
     meetingId: null,
+    followedBy: null,
+    followedByName: null,
     group: null,
     openTaskId: null,
     series: null,
@@ -143,6 +145,37 @@ describe("TaskRow — the overdue colour", () => {
     expect(styleOfText(tree, "Due Sep 30").color).toBe(
       signetDarkTokens.color.text.mutedForeground,
     );
+  });
+});
+
+describe("TaskRow — a task a group follows (#5473)", () => {
+  it("says who it is from at the end of its line, and to a screen reader", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          dueDate: "2026-09-30",
+          followedBy: "tier:t-exec",
+          followedByName: "Exec board",
+        })}
+        now={NOW}
+        onToggle={() => {}}
+        onOpen={() => {}}
+      />,
+    );
+    expect(texts(tree)).toContain("Due Sep 30 · From Exec board");
+    const labelled = tree.root.findAll(
+      (node) =>
+        typeof node.props?.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.includes("From Exec board"),
+    );
+    expect(labelled.length).toBeGreaterThan(0);
+  });
+
+  it("says nothing of it on a task from its creator alone", () => {
+    const tree = render(
+      <TaskRow row={row({ dueDate: "2026-09-30" })} now={NOW} onToggle={() => {}} />,
+    );
+    expect(texts(tree).join(" ")).not.toContain("From");
   });
 });
 

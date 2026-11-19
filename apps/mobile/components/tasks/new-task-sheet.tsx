@@ -53,6 +53,7 @@ import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
 import { TaskPhotoPicker } from "@/components/tasks/task-photos";
 import { TaskRepeatField } from "@/components/tasks/repeat-field";
+import { FollowerField } from "@/components/tasks/task-follower";
 import {
   AssigneeRow,
   PointsField,
@@ -229,6 +230,8 @@ type KeptTask = {
   pickedPhotos: PendingTaskPhoto[];
   /** How it repeats (#5119); absent in a draft kept before Repeat. */
   repeat?: RepeatDraft;
+  /** The tier, role or group it is from (#5473); absent before From. */
+  followedBy?: string | null;
 };
 
 /** Who a kept draft holds, read from a draft kept before `who` too. */
@@ -357,6 +360,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [repeatOpen, setRepeatOpen] = useState(
       () => !!opening?.repeat && opening.repeat.preset !== "NONE",
     );
+    // From (#5473): a tier, role or group the officer is in, or just them.
+    const [followedBy, setFollowedBy] = useState<string | null>(
+      () => opening?.followedBy ?? prefill?.followedBy ?? null,
+    );
     const kept = useKeptSheetDraft<KeptTask>(
       keptName,
       {
@@ -370,6 +377,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         proofKind,
         pickedPhotos,
         repeat,
+        followedBy,
       },
       JSON.stringify([
         title,
@@ -382,6 +390,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         proofKind,
         pickedPhotos.map(({ image }) => image.uri),
         repeat,
+        followedBy,
       ]),
       opening,
     );
@@ -481,7 +490,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     );
     const repeatRule =
       showRepeat && firstDue ? taskRepeatRuleOf(repeat, firstDue) : null;
-    const body = withRepeat(validateNewTask(draft, at), repeatRule);
+    // From (#5473), for a task made from the Tasks screen or the quick
+    // actions: not a chat's card or a suggestion, whose routes carry none,
+    // nor a task up for grabs, which is the claimer's own once claimed. A
+    // repeating task can't have one yet; the field says so.
+    const fromOffered = offerGroups && !suggestion && !postToChannel;
+    const followerChoices = fromOffered ? whoRead.followers : [];
+    const repeating = !!(repeatRule?.ok && repeatRule.rule);
+    const sentFollower =
+      fromOffered && !upForGrabs && !repeating ? followedBy : null;
+    const body = withFollower(
+      withRepeat(validateNewTask(draft, at), repeatRule),
+      sentFollower,
+    );
     const timePassed = dueTimePassed(draft, at);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit =
@@ -502,6 +523,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setPhotoProblem(null);
       setRepeat(noTaskRepeatDraft());
       setRepeatOpen(false);
+      setFollowedBy(null);
     }, [clearKept]);
 
     /** Add photos from the library, several at once, up to the room left. */
@@ -970,6 +992,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               </Text>
             ) : null}
 
+            {fromOffered && !upForGrabs ? (
+              <FollowerField
+                value={sentFollower}
+                choices={followerChoices}
+                onChange={setFollowedBy}
+                disabled={pending}
+                repeating={repeating}
+              />
+            ) : null}
+
             {timePassed ? (
               <Text style={styles.error}>{TASK_FORM_COPY.timePassed}</Text>
             ) : null}
@@ -1017,11 +1049,20 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           people={whoRead.people}
           sets={whoRead.sets}
           single={!offerGroups}
+          tiers={!suggestion}
         />
       </>
     );
   },
 );
+
+/** The validated task with its From (#5473), when it has one. */
+function withFollower(
+  task: ValidatedNewTask | null,
+  followedBy: string | null,
+): ValidatedNewTask | null {
+  return task && followedBy ? { ...task, followed_by: followedBy } : task;
+}
 
 /** The validated task with the Repeat's rule, when it repeats (#5119). */
 function withRepeat(
