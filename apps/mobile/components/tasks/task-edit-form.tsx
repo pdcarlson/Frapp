@@ -101,12 +101,20 @@ export function TaskEditForm({
       >
         <TextInput
           {...textProps("title")}
+          // Wraps so a long title reads whole in place (#5562), still one
+          // line of text: Return closes the keyboard, a line break is a space.
+          multiline
+          submitBehavior="blurAndSubmit"
+          onChangeText={(text: string) =>
+            edit.type("title", text.replace(/\s*[\r\n]+\s*/g, " "))
+          }
           accessibilityLabel="Task title"
           placeholder="Collect ride-share forms"
           placeholderTextColor={tokens.color.text.muted}
           maxLength={TASK_TITLE_MAX_LENGTH}
           style={[
             styles.field,
+            styles.titleText,
             focused === "title" ? styles.fieldFocused : null,
           ]}
         />
@@ -272,6 +280,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
     ringActive: fieldStyles.ringActive,
     field: fieldStyles.field,
     fieldFocused: fieldStyles.fieldFocused,
+    titleText: fieldStyles.fieldMultilineText,
     multiline: {
       ...fieldStyles.fieldMultilineText,
       minHeight: tokens.touch.minimum * 2,
