@@ -117,6 +117,19 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 // The list has its own spec; here only where the page puts it.
+// Coming up's tracking reads events and tasks of its own (its spec covers
+// it); here the dates draw as plain tiles.
+vi.mock("@/components/meetings/coming-up-dates", async () => {
+  const { DatesView } = await import("./minutes-read");
+  return {
+    ComingUpDates: ({
+      dates,
+    }: {
+      dates: React.ComponentProps<typeof DatesView>["dates"];
+    }) => <DatesView dates={dates} />,
+  };
+});
+
 vi.mock("@/components/ai/suggested-tasks", () => ({
   SuggestedTasks: ({ source }: { source: { type: string; id: string } }) => (
     <div data-testid="suggested-tasks">{`${source.type}:${source.id}`}</div>

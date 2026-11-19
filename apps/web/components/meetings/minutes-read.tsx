@@ -154,8 +154,20 @@ export function TldrBlock({
   );
 }
 
-/** Coming up: each day the meeting named as a calendar tile. */
-export function DatesView({ dates }: { dates: readonly MeetingDateItem[] }) {
+/**
+ * Coming up: each day the meeting named as a calendar tile. `below` draws
+ * under a date's words (what tracks it, #5672) and `trailing` at its right
+ * edge (its ⋯ menu).
+ */
+export function DatesView({
+  dates,
+  below,
+  trailing,
+}: {
+  dates: readonly MeetingDateItem[];
+  below?: (item: MeetingDateItem, index: number) => ReactNode;
+  trailing?: (item: MeetingDateItem, index: number) => ReactNode;
+}) {
   return (
     <ul role="list" className="grid gap-2 sm:grid-cols-2">
       {dates.map((item, index) => {
@@ -183,7 +195,13 @@ export function DatesView({ dates }: { dates: readonly MeetingDateItem[] }) {
                 {tile.line}
               </span>
               <span className="sr-only">, {meetingDueLabel(item.date)}</span>
+              {below?.(item, index)}
             </span>
+            {trailing ? (
+              <span className="ml-auto shrink-0 self-start">
+                {trailing(item, index)}
+              </span>
+            ) : null}
           </li>
         );
       })}

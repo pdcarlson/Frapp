@@ -89,6 +89,7 @@ import {
 } from "@/components/minutes/drafting-steps";
 import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
+import { ComingUpDates } from "@/components/minutes/coming-up-dates";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
 import { MinutesEditor } from "@/components/minutes/minutes-editor";
 import {
@@ -850,6 +851,13 @@ function LoadedMinutes({
         viewerId={viewerId}
         tasks={actionTasks}
         onSectionLayout={(key, y) => sectionY.current.set(key, y)}
+        renderDates={(dates) => (
+          <ComingUpDates
+            meetingId={meeting.id}
+            dates={dates}
+            viewerId={viewerId}
+          />
+        )}
       />
     </View>
   );
