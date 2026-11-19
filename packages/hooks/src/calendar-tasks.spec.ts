@@ -235,6 +235,15 @@ describe("tasks due at a time (#5116)", () => {
     });
   });
 
+  it("files a task by its due moment's local day, not the day it was written with", () => {
+    // Written as Nov 12 on a device a zone away; here the moment is Nov 13.
+    const [item] = selectCalendarTasks(
+      [task({ due_date: "2026-11-12", due_at: at(13, 0, 30) })],
+      ME,
+    );
+    expect(item).toMatchObject({ day: "2026-11-13", dueMinute: 30 });
+  });
+
   it("falls back to the due day when the time can't be read", () => {
     const [item] = selectCalendarTasks(
       [task({ due_date: "2026-11-12", due_at: "not a time" })],
@@ -281,7 +290,7 @@ describe("tasks due at a time (#5116)", () => {
     ]);
   });
 
-  it("lists a day's untimed tasks first, then the timed ones by time", () => {
+  it("lists a day's timed tasks first by time, then the untimed ones, as Tasks does", () => {
     const items = selectCalendarTasks(
       [
         task({ id: "1", title: "Late", due_at: at(12, 20) }),
@@ -300,9 +309,9 @@ describe("tasks due at a time (#5116)", () => {
       "2026-11-12",
     );
     expect(day?.map((item) => item.title)).toEqual([
-      "Anytime",
       "Early, assigned",
       "Late",
+      "Anytime",
     ]);
   });
 

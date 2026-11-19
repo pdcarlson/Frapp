@@ -1,11 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  formatDueTimeLabel,
-  localIsoDate,
-  parseInstant,
-} from "@repo/formatting";
+import { formatClockShort, localIsoDate, parseInstant } from "@repo/formatting";
 import { taskNeedsSignOff } from "@repo/validation";
 import {
   TASK_CONFIRMED_LABEL,
@@ -264,26 +260,24 @@ const NO_TIME: DueTimeFields = {
 
 /**
  * A task's due moment on this device's clock: its local day, its minute of
- * that day and its time as words. `null` for a task with no time, or one
- * whose time can't be read, which falls back to its due day.
+ * that day and its time as the Tasks rows write it (`formatClockShort`: "5 PM"
+ * on a 12-hour clock, "17" on a 24-hour one, as the grid's hours read).
+ * `null` for a task with no time, or one whose time can't be read, which
+ * falls back to its due day.
  */
 function dueTimeOf(
   dueAt: string | null,
 ): { day: string; fields: DueTimeFields } | null {
   const at = dueAt ? parseInstant(dueAt) : null;
   if (!at) return null;
-  const hours = at.getHours();
-  const minutes = at.getMinutes();
   return {
     day: localIsoDate(at),
     fields: {
       // One spelling per moment, so two copies of a task due at the same
       // time group together however the API wrote the offset.
       dueAt: at.toISOString(),
-      dueMinute: hours * 60 + minutes,
-      timeLabel: formatDueTimeLabel(
-        `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
-      ),
+      dueMinute: at.getHours() * 60 + at.getMinutes(),
+      timeLabel: formatClockShort(at),
     },
   };
 }
@@ -389,11 +383,17 @@ function itemStateOrder(item: CalendarItem): number {
   return item.kind === "birthdays" ? 0 : STATE_ORDER[item.state];
 }
 
-/** Untimed items first, then timed ones by their minute. */
+/**
+ * Birthdays first, then the tasks due at a time by their minute, then the
+ * tasks due by the end of the day, as the Tasks views order a day
+ * (`spec/behavior/tasks.md`, #4003).
+ */
 function timedOrder(item: CalendarItem): number {
-  const minute = calendarItemDueMinute(item);
-  return minute === null ? -1 : minute;
+  if (item.kind === "birthdays") return -1;
+  return item.dueMinute ?? MINUTES_IN_DAY;
 }
+
+const MINUTES_IN_DAY = 24 * 60;
 
 /** A task's minute of its day when it is due at a time, else `null`. */
 export function calendarItemDueMinute(item: CalendarItem): number | null {
@@ -402,10 +402,11 @@ export function calendarItemDueMinute(item: CalendarItem): number | null {
 
 /**
  * The items shown, by day, in the order a day lists them: birthdays, then
- * the tasks with no time (the viewer's own before what they assigned, each
- * most in need of attention first: overdue, open, waiting, confirmed, then
- * by title), then the tasks due at a time, earliest first (#5116), as a
- * calendar lists a day's all-day items above its timed ones.
+ * the tasks due at a time, earliest first (#5116), then the tasks due by the
+ * end of the day, the order the Tasks views give a day
+ * (`spec/behavior/tasks.md`). Within each, the viewer's own before what they
+ * assigned, each most in need of attention first (overdue, open, waiting,
+ * confirmed), then by title.
  */
 export function calendarTasksByDay(
   items: readonly CalendarItem[],

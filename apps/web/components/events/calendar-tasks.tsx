@@ -317,7 +317,8 @@ function TaskChip({
  * A task due at a time on the hour grid (#5116): a slim marker at that
  * time, the way Google Calendar draws a timed task: its ring, then its time,
  * then as much of its title as fits (a narrow lane beside an event keeps the
- * time; who it went to is on its card and in its label). Where it sits is the grid's (`timeGridColumns`);
+ * time), and for one the viewer assigned, who it went to or how many are
+ * done, as the strip's chip says. Where it sits is the grid's (`timeGridColumns`);
  * `style` places it. It opens the task's card, as the strip's chip does.
  */
 export function CalendarTaskBlock({
@@ -329,6 +330,7 @@ export function CalendarTaskBlock({
   nameOf: (userId: string) => string;
   style: CSSProperties;
 }) {
+  const trailing = assignedTrailing(item, nameOf);
   return (
     <CalendarTaskPopover item={item} nameOf={nameOf}>
       <button
@@ -356,6 +358,11 @@ export function CalendarTaskBlock({
         >
           {item.title}
         </span>
+        {trailing ? (
+          <span className="max-w-[40%] shrink-0 truncate tabular-nums text-muted-foreground">
+            {trailing}
+          </span>
+        ) : null}
       </button>
     </CalendarTaskPopover>
   );
