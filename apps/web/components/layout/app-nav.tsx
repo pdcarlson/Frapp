@@ -30,9 +30,9 @@ import { useAskEntry } from "@/components/ask/ask-host";
  * inside the mobile drawer (`variant="drawer"`), with the chapter row on top,
  * always expanded, and no toggle.
  *
- * **Collapsing is a preference**, and also what the shell does while chat and
- * a tool are open side by side on a window too narrow for the full nav
- * (`shell-layout.ts`). The rail never appears in the drawer.
+ * **Collapsing is a preference**, never forced: the full nav fits beside
+ * chat and a tool from the side-by-side width up (`shell-layout.ts`, #5575).
+ * The rail never appears in the drawer.
  *
  * Section headings are derived, never declared — a heading renders only when at
  * least one of its items survives the permission, module and setup gates, so a

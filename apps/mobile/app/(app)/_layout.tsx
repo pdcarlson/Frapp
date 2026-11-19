@@ -128,6 +128,9 @@ export default function AppLayout() {
         name="directory"
         options={{ title: SCREEN_TITLES.directory }}
       />
+      {/* A member's profile, pushed from the Directory and from chat
+          (#5568): the screen that replaced the member sheet. */}
+      <Stack.Screen name="member" options={{ title: SCREEN_TITLES.member }} />
       <Stack.Screen name="invite" options={{ title: SCREEN_TITLES.invite }} />
       {/* Presents the Ask sheet for a `frapp://ask` link, or pops to Chat
           home for a member without Ask. */}

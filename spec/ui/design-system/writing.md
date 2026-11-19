@@ -1123,7 +1123,7 @@ The delete confirmation is one wording for both clients, so it lives in `package
 
 ### Edit roles (mobile s13)
 
-The role editor behind the directory member sheet's Roles row, the one place on mobile roles are edited.
+The role editor behind the directory member profile's Roles row, the one place on mobile roles are edited.
 Who gets it, and what it changes, is owned by [`../mobile/screens.md`](../mobile/screens.md) s13.
 
 | State | Title | Description | Home |
@@ -1140,13 +1140,13 @@ When the officer has already opened someone else, a failed save still alerts, an
 
 ### Start a DM (mobile s13)
 
-The directory member sheet's Message action (#2773).
+The directory member profile's Message action (#2773).
 The behavior is owned by [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Direct Messages, and who it is offered for by [`../mobile/screens.md`](../mobile/screens.md) s13.
 Web's member sheet has its own Message button with older failure copy; bringing it onto these strings through a shared module is #2791.
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-detail-sheet.tsx` |
+| The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-profile-screen.tsx` |
 | Start failed | `Couldn't message <name>` | `The conversation couldn't be opened. Check your connection and try again.` (an alert) | mobile `lib/directory/start-dm.ts` (`startDmFailedTitle`, `START_DM_FAILED_BODY`) |
 | Block list loading, or a read in flight (a retry included) | — | `Message` · `Checking your block list first.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_CHECKING_BLOCK_LIST`) |
 | Block list read failed, waiting for the network | — | `Message` · `Couldn't check your block list first. Retries when you're back online.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_BLOCK_LIST_UNCHECKED`), with `BLOCK_LIST_WAITING_FOR_NETWORK` from `block-copy` |

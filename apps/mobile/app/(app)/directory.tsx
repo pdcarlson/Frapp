@@ -50,15 +50,11 @@ import {
 } from "@/components/floating-create-button";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";
-import { ListLayoutToggle } from "@/components/list-layout-toggle";
-import { GridLine as GridLineRow, toGridChunks } from "@/components/grid-line";
-import { useListLayout } from "@/lib/list-layout";
 import { screenTitleStyle } from "@/components/screen-shell";
 import {
   ThemedRefreshControl,
   useRefetchAll,
 } from "@/components/pull-to-refresh";
-import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { ActivesFilterSheet } from "@/components/directory/actives-filter-sheet";
 import { PickRolesSheet } from "@/components/roles/pick-roles-sheet";
 import { usePickableRoles } from "@repo/hooks";
@@ -97,15 +93,18 @@ import { ScreenReady } from "@/lib/sentry/screen-ready";
  * (`spec/ui/mobile/patterns.md`), with the title, chips and search field riding
  * in `ListHeaderComponent` so the chrome still matches.
  *
- * ## Rows open a member detail sheet, not a route
+ * ## Rows push the member's profile
  *
- * Canvas draws a chevron on each row, and a new route file is not an option:
- * the route layouts are frozen (`spec/ui/mobile/navigation.md` § Hotspot
- * freeze). `MemberDetailSheet` reaches the same fields
- * `spec/behavior/members.md`'s detail view specifies (name, email, role,
- * joined date) via a `@gorhom/bottom-sheet`, the pattern `new-task-sheet.tsx`
- * established, without one. Still no chevron drawn: TODO-DESIGN tracks the
- * affordance, not the behavior.
+ * A row pushes `/member` (`components/directory/member-profile-screen.tsx`),
+ * as iOS Contacts and Slack's member directory push a person's page (#5568,
+ * Paul 2026-11-19). It was a full-height bottom sheet until then.
+ *
+ * ## One layout, quiet chips (#5568)
+ *
+ * Rows only: the List | Grid round (#4175) came out with Paul's ban on view
+ * switchers (`spec/ui/design-system/README.md` § 2, 2026-11-17). The chips
+ * above the list draw their quiet selected state, so the colour on the
+ * screen is the members' own (their faces and initials), not the filter.
  *
  * ## `useMembers()` here is not the over-fetch #986 objected to
  *
@@ -139,7 +138,7 @@ import { ScreenReady } from "@/lib/sentry/screen-ready";
  * tab's trailing chip is Filters, and web's Alumni tab has no sort either
  * (#4088). Alumni rows still name their class, since `GET /v1/alumni` returns
  * it. Read-only on the list; an officer holding `roles:manage` sets both from
- * the member sheet a row opens (#3991), or on web.
+ * the member profile a row opens (#3991), or on web.
  *
  * ## Actives filters (#3971)
  *
@@ -163,8 +162,6 @@ export default function DirectoryScreen() {
   // that member's name takes in chat (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
   const canInvite = can("members:invite", usePermissionList());
-  const detailSheetRef = useRef<BottomSheetModal>(null);
-  const [selected, setSelected] = useState<DirectoryRow | null>(null);
   const activesFilterSheetRef = useRef<BottomSheetModal>(null);
   const pickRolesSheetRef = useRef<BottomSheetModal>(null);
   const pickable = usePickableRoles();
@@ -172,7 +169,6 @@ export default function DirectoryScreen() {
     useState<ActivesFilter>(NO_ACTIVES_FILTER);
 
   const [tab, setTab] = useState<Tab>("actives");
-  const layout = useListLayout("directory");
   const [query, setQuery] = useState("");
   // Keeps typing responsive without a debounce timer of our own: the query only
   // re-runs once React has caught up with the keystrokes.
@@ -291,10 +287,6 @@ export default function DirectoryScreen() {
       }),
     [listData, classNames, inFraternalOrder, pledgeClasses],
   );
-  const gridLines = useMemo(
-    () => (layout === "grid" ? toGridLines(rows) : []),
-    [layout, rows],
-  );
   // Counted, not selected: `selectDirectoryRows` maps and sorts, and sorting to
   // read a `.length` would run a full `localeCompare` sort over both lists on
   // every keystroke. `null` until the query succeeds, so a populated tab never
@@ -318,8 +310,6 @@ export default function DirectoryScreen() {
 
   const header = (
     <View style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}>
-      {/* List or Grid (#4175) at the title row's trailing end: one pick for
-          both tabs and for a search, kept on this phone. */}
       <View style={styles.titleRow}>
         <Text accessibilityRole="header" style={styles.title}>
           Directory
@@ -333,10 +323,10 @@ export default function DirectoryScreen() {
               accessibilityHint="Pick the Non-chapter business roles you want, like intramurals."
               label="Add roles"
               on={false}
+              quiet
               onPress={() => pickRolesSheetRef.current?.present()}
             />
           ) : null}
-          {chapterId ? <ListLayoutToggle screen="directory" /> : null}
         </View>
       </View>
 
@@ -354,6 +344,7 @@ export default function DirectoryScreen() {
         <FilterChips
           accessibilityLabel="Actives or alumni"
           scroll
+          quiet
           selected={tab}
           onSelect={(value) => setTab((value as Tab) ?? "actives")}
           chips={[
@@ -376,6 +367,7 @@ export default function DirectoryScreen() {
                     : "Filters"
                 }
                 on={filtersOpen}
+                quiet
                 onPress={() => setFiltersOpen((open) => !open)}
               />
             ) : (
@@ -395,6 +387,7 @@ export default function DirectoryScreen() {
                       : "Filters"
                   }
                   on={activesFilterCount > 0}
+                  quiet
                   onPress={() => activesFilterSheetRef.current?.present()}
                 />
                 {orderOffered ? (
@@ -411,6 +404,7 @@ export default function DirectoryScreen() {
                     // reading only the chapter's word looks like a third tab.
                     label={`Sort: ${orderTerm}`}
                     on={sortByOrder}
+                    quiet
                     onPress={() => setSortByOrder((on) => !on)}
                   />
                 ) : null}
@@ -535,15 +529,9 @@ export default function DirectoryScreen() {
         <View style={styles.listFrame}>
           <PinnedBackRow back={BACK_TO_YOU} />
           <ScreenReady ready={!chapterId || !activeQuery.isPending} />
-          <FlatList<DirectoryRow | GridLine>
-            // Grid hands the list lines of tiles rather than setting
-            // `numColumns`: a mounted list can't change its column count, and
-            // remounting it would tear down the header under the toggle the
-            // member just pressed (and the search field's focus with it).
-            data={layout === "grid" ? gridLines : rows}
-            keyExtractor={(item) =>
-              isGridLine(item) ? `line:${item.key}` : item.userId
-            }
+          <FlatList<DirectoryRow>
+            data={rows}
+            keyExtractor={(item) => item.userId}
             ListHeaderComponent={header}
             ListEmptyComponent={
               // The skeleton stands in for the rows themselves, so it takes no
@@ -564,28 +552,18 @@ export default function DirectoryScreen() {
                 <View style={styles.emptyWrap}>{renderBody()}</View>
               )
             }
-            renderItem={({ item }) => {
-              const open = (row: DirectoryRow) => {
-                setSelected(row);
-                detailSheetRef.current?.present();
-              };
-              if (isGridLine(item)) {
-                return (
-                  <GridLineView
-                    line={item}
-                    avatarTintFor={avatarTintFor}
-                    onOpen={open}
-                  />
-                );
-              }
-              return (
-                <MemberRow
-                  row={item}
-                  avatarTint={avatarTintFor(item.userId)}
-                  onPress={() => open(item)}
-                />
-              );
-            }}
+            renderItem={({ item }) => (
+              <MemberRow
+                row={item}
+                avatarTint={avatarTintFor(item.userId)}
+                onPress={() =>
+                  router.push({
+                    pathname: "/member",
+                    params: { userId: item.userId },
+                  })
+                }
+              />
+            )}
             contentContainerStyle={[
               styles.content,
               // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
@@ -601,11 +579,6 @@ export default function DirectoryScreen() {
             refreshControl={<ThemedRefreshControl refresh={refresh} />}
           />
         </View>
-        <MemberDetailSheet
-          ref={detailSheetRef}
-          member={selected}
-          onDismiss={() => setSelected(null)}
-        />
         <PickRolesSheet ref={pickRolesSheetRef} roles={pickable.roles} />
         <ActivesFilterSheet
           ref={activesFilterSheetRef}
@@ -631,8 +604,8 @@ export default function DirectoryScreen() {
 }
 
 /**
- * A row's and a tile's accessible name, one wording for both layouts: who,
- * their presence and custom status when known, then the meta line.
+ * A row's accessible name: who, their presence and custom status when known,
+ * then the meta line.
  */
 export function memberPressLabel(
   row: DirectoryRow,
@@ -646,47 +619,6 @@ export function memberPressLabel(
   ]
     .filter(Boolean)
     .join(", ");
-}
-
-/** One line of the Grid layout (#4175): up to `GRID_COLUMNS` members. */
-export interface GridLine {
-  key: string;
-  rows: DirectoryRow[];
-}
-
-export function isGridLine(item: DirectoryRow | GridLine): item is GridLine {
-  return "rows" in item;
-}
-
-export function toGridLines(rows: readonly DirectoryRow[]): GridLine[] {
-  return toGridChunks(rows).map((chunk) => ({
-    key: chunk[0]!.userId,
-    rows: chunk,
-  }));
-}
-
-/** A line of member tiles, padded short as every grid's is (`GridLine`). */
-export function GridLineView({
-  line,
-  avatarTintFor,
-  onOpen,
-}: {
-  line: GridLine;
-  avatarTintFor: (userId: string) => MemberAvatarTint | null;
-  onOpen: (row: DirectoryRow) => void;
-}) {
-  return (
-    <GridLineRow filled={line.rows.length}>
-      {line.rows.map((row) => (
-        <MemberTile
-          key={row.userId}
-          row={row}
-          avatarTint={avatarTintFor(row.userId)}
-          onPress={() => onOpen(row)}
-        />
-      ))}
-    </GridLineRow>
-  );
 }
 
 /**
@@ -755,69 +687,6 @@ export function MemberRow({
   );
 }
 
-/**
- * One member in the Grid layout (#4175): the face larger, the name and the
- * row's meta line under it, centered. It shows everything the row does, so
- * the grid trades density for faces and loses no fact; the label carries the
- * same words the row's does.
- */
-export function MemberTile({
-  row,
-  avatarTint,
-  onPress,
-}: {
-  row: DirectoryRow;
-  avatarTint?: MemberAvatarTint | null;
-  onPress?: () => void;
-}) {
-  const presence = usePresenceOf(row.userId);
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const feedback = usePressFeedback();
-
-  return (
-    <Pressable
-      accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={onPress ? memberPressLabel(row, presence) : undefined}
-      onPress={onPress}
-      android_ripple={onPress ? feedback.ripple : undefined}
-      style={({ pressed }) => [
-        styles.tile,
-        onPress ? feedback.lift(pressed) : null,
-      ]}
-    >
-      <AvatarWithPresence
-        status={presence.status}
-        avatarSize={TILE_AVATAR_SIZE}
-        ring={tokens.color.surface.background}
-        style={styles.tileAvatarWrap}
-      >
-        <MemberAvatar
-          uri={row.avatarUrl}
-          initials={row.initials}
-          size={TILE_AVATAR_SIZE}
-          tint={avatarTint}
-          style={styles.tileAvatar}
-          textStyle={styles.tileAvatarText}
-        />
-      </AvatarWithPresence>
-      <Text style={styles.tileName} numberOfLines={1}>
-        {row.displayName}
-      </Text>
-      {presence.line ? (
-        <Text style={styles.tileStatusLine} numberOfLines={1}>
-          {presence.line}
-        </Text>
-      ) : null}
-      {row.meta ? (
-        <Text style={styles.tileMeta} numberOfLines={2}>
-          {row.meta}
-        </Text>
-      ) : null}
-    </Pressable>
-  );
-}
-
 /** Name widths, cycled, so the placeholder roster doesn't read as a grid. */
 const SKELETON_NAME_WIDTHS = [
   "46%",
@@ -879,8 +748,6 @@ function countMembers(data: unknown): number {
 
 /** The member row's avatar, which its skeleton draws at the same size. */
 const AVATAR_SIZE = 40;
-/** The Grid layout's face size (#4175); its columns are `GRID_COLUMNS`. */
-const TILE_AVATAR_SIZE = 56;
 
 function createStyles(tokens: SignetTokens) {
   const avatarSize = AVATAR_SIZE;
@@ -909,7 +776,7 @@ function createStyles(tokens: SignetTokens) {
     },
     // ScreenShell's own title style: this screen draws its own header only
     // because its body is a FlatList.
-    // Shrinks before the List/Grid toggle beside it does (#4175).
+    // Shrinks before the Add roles chip beside it does.
     title: { ...screenTitleStyle(tokens), flexShrink: 1 },
     row: {
       flexDirection: "row",
@@ -947,15 +814,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     // The status line reads before the meta line: mutedForeground, one
-    // step up the ladder, as the member sheet and web draw it.
+    // step up the ladder, as the member profile and web draw it.
     rowStatusLine: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-    },
-    tileStatusLine: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      textAlign: "center",
     },
     titleRow: {
       flexDirection: "row",
@@ -967,47 +829,6 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
-    },
-    // A tile is the row's grid twin: hairline-bordered, on the page surface,
-    // not a card, so the grid reads as the same list laid out wider.
-    tile: {
-      flex: 1,
-      alignItems: "center",
-      gap: tokens.spacing.xs,
-      paddingVertical: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.sm,
-      marginBottom: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      borderRadius: tokens.radius.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.color.border.hairline,
-    },
-    tileAvatar: {
-      width: TILE_AVATAR_SIZE,
-      height: TILE_AVATAR_SIZE,
-      borderRadius: avatarRadius(TILE_AVATAR_SIZE),
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    // The space under the face sits on the wrapper, not the avatar, so the
-    // wrapper is the face's size and the dot pins to the face's corner.
-    tileAvatarWrap: {
-      marginBottom: tokens.spacing.xs,
-    },
-    tileAvatarText: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.mutedForeground,
-    },
-    tileName: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-      textAlign: "center",
-    },
-    tileMeta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      textAlign: "center",
     },
     emptyWrap: {
       paddingTop: tokens.spacing.md,

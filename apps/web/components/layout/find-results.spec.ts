@@ -83,7 +83,11 @@ describe("buildFindResults", () => {
       channels: [],
       payload: {
         events: [
-          { id: "e1", name: "Cabinet meeting", start_time: "2026-11-09T19:00:00" },
+          {
+            id: "e1",
+            name: "Cabinet meeting",
+            start_time: "2026-11-09T19:00:00",
+          },
         ],
       },
       now: NOW,
@@ -114,7 +118,11 @@ describe("backworkHint", () => {
 
   it("leaves out what it does not know", () => {
     expect(
-      backworkHint({ department_id: "unknown", course_number: "101" }, codes, NOW),
+      backworkHint(
+        { department_id: "unknown", course_number: "101" },
+        codes,
+        NOW,
+      ),
     ).toBe("101");
     expect(backworkHint({}, codes, NOW)).toBeUndefined();
   });

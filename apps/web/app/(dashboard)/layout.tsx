@@ -8,11 +8,11 @@ import {
 } from "@/components/layout/nav-collapse";
 import {
   CHAT_OPEN_COOKIE,
-  CHAT_SPLIT_COOKIE,
   CHAT_VIEW_COOKIE,
+  CHAT_WIDTH_COOKIE,
   parseChatOpen,
   parseChatView,
-  parseToolShare,
+  parseChatWidth,
 } from "@/components/layout/shell-prefs";
 import {
   CHAT_MEMBERS_HIDDEN_COOKIE,
@@ -36,10 +36,10 @@ export default async function DashboardLayout({
     cookieStore.get(NAV_COLLAPSED_COOKIE)?.value,
   );
   // The same for the chat panel the shell hosts (#3779): open or closed, the
-  // divider's position, which list it shows (#3774), and its member column.
+  // side panel's width beside a tool (#5575), which list it shows (#3774), and its member column.
   const chatOpen = parseChatOpen(cookieStore.get(CHAT_OPEN_COOKIE)?.value);
   const chatView = parseChatView(cookieStore.get(CHAT_VIEW_COOKIE)?.value);
-  const toolShare = parseToolShare(cookieStore.get(CHAT_SPLIT_COOKIE)?.value);
+  const chatWidth = parseChatWidth(cookieStore.get(CHAT_WIDTH_COOKIE)?.value);
   const membersHidden = parseMembersHidden(
     cookieStore.get(CHAT_MEMBERS_HIDDEN_COOKIE)?.value,
   );
@@ -76,7 +76,7 @@ export default async function DashboardLayout({
           defaultNavCollapsed={navCollapsed}
           defaultChatOpen={chatOpen}
           defaultChatView={chatView}
-          defaultToolShare={toolShare}
+          defaultChatWidth={chatWidth}
           defaultMembersHidden={membersHidden}
         >
           {children}

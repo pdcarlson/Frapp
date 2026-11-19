@@ -1029,7 +1029,7 @@ This keeps ephemerality real — there's no third path that lets a sender unilat
 - Past 12 readers a search field sits above the groups: every typed word must start a word of the name (split on spaces, hyphens, apostrophes and periods), ignoring case and accents.
   No match reads "No one named “…”".
 - On mobile the list is a tall sheet from the thread header's members button, shown on every channel but a 1:1 DM, with the same groups and search.
-  Since #3917 (2026-11-11) its rows carry web's presence dot, offline fade and custom status line, and the member profile sheet carries the dot on its avatar and the line under the name.
+  Since #3917 (2026-11-11) its rows carry web's presence dot, offline fade and custom status line, and the member profile carries the dot on its avatar and the line under the name.
 - A row opens that member's profile on both clients (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)), as § Opening a member's profile says.
 
 **Online/offline presence:**
@@ -1039,7 +1039,7 @@ This keeps ephemerality real — there's no third path that lets a sender unilat
   Web re-publishes activity at most every ~30 seconds, the phone every 2 minutes while open.
   _(Corrected 2026-11-11, #3917: this line said a ~30s heartbeat marked a silent member offline, which nothing does.)_
 - Online status is visible in the member list sidebar and in DM conversations.
-  The web **Directory** (`/members`) and the web channel member list (§ Member list above) render it, and so do the phone's channel Members sheet and member profile sheet (#3917, 2026-11-11); the DM view does not yet.
+  The web **Directory** (`/members`) and the web channel member list (§ Member list above) render it, and so do the phone's channel Members sheet and member profile (#3917, 2026-11-11); the DM view does not yet.
 - Statuses: Online, Idle (app open but inactive for >5 minutes), Offline, plus the two a member can pick (#3845): Do Not Disturb, and Invisible, which everyone else sees as Offline. § Member-set status below.
 
 **Two presence topics, deliberately.**
@@ -1048,7 +1048,7 @@ They answer different questions and must not be merged:
 | Topic                          | Scope                                  | Read by                                                                                                                                                                                                                     |
 | ------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `chat:channel:<channelId>`     | Who has _this channel_ open            | The push worker, via service role, to suppress pushes to members already looking (ADR-10), except in an announcements channel                                                                                             |
-| `presence:chapter:<chapterId>` | Who is present in the _chapter_ at all | The web Directory, Chat's member list on both apps, the phone's member profile sheet, and the API's `ChapterPresenceReader` for `@here` (§ Role mentions; one service-role join per read, same config as the push worker's) |
+| `presence:chapter:<chapterId>` | Who is present in the _chapter_ at all | The web Directory, Chat's member list on both apps, the phone's member profile, and the API's `ChapterPresenceReader` for `@here` (§ Role mentions; one service-role join per read, same config as the push worker's) |
 
 The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`.
 Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
@@ -1405,7 +1405,7 @@ Its `open` entries are the known gaps, server and client, each with its tracking
 **The mobile app consumes the member half**: a long-press anywhere on someone else's message or card (a poll, an event, a task, a rush candidate, or any other card kind mobile draws) — its text, a photo, a reaction chip — or the "Message actions" accessibility action opens Report, and the report form offers Block (Block for every sender who can be blocked at all — not the system actor or an imported row nobody has linked (§ Linking a member's Discord history) — unless a block attempt this session already came back as the API's 404 `Member not found`.
 A sender the cached roster does not list still gets Block: that is what a brand-new member looks like, and the long-press re-reads the roster);
 the thread tombstones a blocked member's messages, quotes and reactions, and holds unmaskable rows while the list is **loading or unavailable**, per § The masking contract (`packages/chat-core/src/blocks.ts`, which both clients classify through);
-and Settings → Blocked members and the directory's member sheet can undo a block.
+and Settings → Blocked members and the directory's member profile can undo a block.
 **The web dashboard applies the same list** (#2313): the `/chat` timeline tombstones, holds, and hides quotes and reactions through the same classifier, with the tombstone's Unblock (`apps/web/components/chat/`), and `/profile` → Blocked members is web's durable undo (`apps/web/components/profile/blocked-members-card.tsx`).
 A web message offers Report and Block from its action bar's More menu (#2687), by the same rules as mobile's sheet (`canReportMessage` and `canBlockSender` in `packages/chat-core/src/message-actions.ts`), with the report form a dialog (`apps/web/components/chat/report-message-dialog.tsx`) that offers Block once the report is in.
 **It also renders the officer queue**: Chat Admin's Reported messages section (`apps/web/components/chat-admin/chat-reports-card.tsx`, gated on `members:view` and `channels:manage` like the routes), with the evidence snapshot, the status tabs, Mark reviewed / Dismiss, and the report-scoped Remove below (Mark actioned where the message no longer exists).
@@ -1957,7 +1957,7 @@ The list opens only on text the member typed: text put in the box for them (an e
 Web's inline editor offers the same list as its composer and, like this one, opens it only once the member changes the text (`components.md` §11 § Editing (web)).
 
 **Opening a member's profile.**
-On both clients, clicking or tapping a message author's name or photo, an `@` chip that names one member, or a row of the channel's member list opens that member's profile, read by `users.id` through `GET /v1/members/by-user/{userId}` (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)). On mobile that is the same sheet the Directory opens. On web it is a small profile popout beside what was clicked, with that sheet behind its View profile (below).
+On both clients, clicking or tapping a message author's name or photo, an `@` chip that names one member, or a row of the channel's member list opens that member's profile, read by `users.id` through `GET /v1/members/by-user/{userId}` (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)). On mobile that is the same screen the Directory opens, pushed over the thread (a sheet until #5568, 2026-11-19). On web it is a small profile popout beside what was clicked, with that sheet behind its View profile (below).
 Which member, if any, is the shared answer in `packages/chat-core/src/profile-targets.ts`:
 
 - **An author** opens unless the row has no member behind it: Frapp's own posts (`SYSTEM_SENDER_ID`), an imported author nobody has linked (`sender_id` null), and a sender the roster no longer lists, whose profile read would only 404 (`authorProfileUserId`).
@@ -2550,7 +2550,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
   On both clients a message author's avatar is their profile photo from that roster (`avatar_url`, signed by the API), else initials of the resolved name (#732, mobile #2884);
   a row with a `sender_id`, a linked imported row included, draws only the member, never its Discord snapshot, and only an imported author nobody has linked draws their Discord avatar (`resolveAuthorAvatar`, #2878).
   On web a DM row in the channel list still draws initials only.
-  Mobile draws the photo on every member avatar: message rows, the channel member sheet, the `@` picker, a 1:1 DM's row on Messages, the Directory and its member sheet (`MemberAvatar`, initials under the photo so a loading or failed photo never leaves a blank circle).
+  Mobile draws the photo on every member avatar: message rows, the channel member sheet, the `@` picker, a 1:1 DM's row on Messages, the Directory and its member profile (`MemberAvatar`, initials under the photo so a loading or failed photo never leaves a blank circle).
   Mobile caches each photo on disk by its storage path rather than its signed URL, so the API re-signing a photo doesn't download it again; a new photo is a new path, so it is never served stale.
   A 1:1 DM shows the other participant; a group DM keeps a chapter-supplied title and otherwise summarises participants.
   A sender that cannot be resolved — a deleted account, whose membership row `anonymize_user` purges — degrades to a truncated id rather than a blank name, and an empty stored `display_name` counts as unresolved because the column is `NOT NULL DEFAULT ''`.

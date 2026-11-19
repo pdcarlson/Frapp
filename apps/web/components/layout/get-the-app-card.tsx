@@ -54,9 +54,9 @@ export function GetTheAppCard() {
           {GET_THE_APP_TITLE}
         </p>
         <p className="mt-0.5 text-caption text-muted-foreground">
-          Chat, events and check-in on your phone, with notifications. The
-          app is in beta, so if the store says it isn&apos;t available yet,
-          keep using Frapp here.
+          Chat, events and check-in on your phone, with notifications. The app
+          is in beta, so if the store says it isn&apos;t available yet, keep
+          using Frapp here.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {/* The staging app has no store listing (TestFlight, internal track). */}

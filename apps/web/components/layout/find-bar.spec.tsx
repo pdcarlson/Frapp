@@ -24,25 +24,27 @@ const {
   permissionList,
   debounced,
 } = vi.hoisted(() => ({
-    push: vi.fn(),
-    searchQuery: {
-      current: {
-        data: undefined as unknown,
-        isFetching: false,
-        isError: false,
-        dataUpdatedAt: 1,
-      },
+  push: vi.fn(),
+  searchQuery: {
+    current: {
+      data: undefined as unknown,
+      isFetching: false,
+      isError: false,
+      dataUpdatedAt: 1,
     },
-    channelsQuery: { current: { data: [] as unknown[] } },
-    departmentsQuery: { current: { data: [] as unknown[] } },
-    departmentsOptions: { current: undefined as { enabled?: boolean } | undefined },
-    moduleGate: {
-      current: undefined as ((key: string) => boolean) | undefined,
-    },
-    permissionList: { current: [] as string[] },
-    // `null` passes the live value through; a string pins the debounced one.
-    debounced: { current: null as string | null },
-  }));
+  },
+  channelsQuery: { current: { data: [] as unknown[] } },
+  departmentsQuery: { current: { data: [] as unknown[] } },
+  departmentsOptions: {
+    current: undefined as { enabled?: boolean } | undefined,
+  },
+  moduleGate: {
+    current: undefined as ((key: string) => boolean) | undefined,
+  },
+  permissionList: { current: [] as string[] },
+  // `null` passes the live value through; a string pins the debounced one.
+  debounced: { current: null as string | null },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
@@ -78,7 +80,9 @@ import { FIND_PLACEHOLDER } from "./find-dialog";
 function searchPayload() {
   return {
     payload: {
-      members: [{ user_id: "u1", display_name: "Ada Lovelace", email: "ada@x.co" }],
+      members: [
+        { user_id: "u1", display_name: "Ada Lovelace", email: "ada@x.co" },
+      ],
       messages: [
         {
           id: "m1",
@@ -457,7 +461,9 @@ describe("FindBar", () => {
         ]),
       );
       // Only heights split by pointer; padding never does (§9).
-      expect(classes.filter((c) => /^pointer-coarse:p[xytrbl]?-/.test(c))).toEqual([]);
+      expect(
+        classes.filter((c) => /^pointer-coarse:p[xytrbl]?-/.test(c)),
+      ).toEqual([]);
     }
   });
 
@@ -544,7 +550,11 @@ describe("FindBar", () => {
   it("says it stopped looking even when it has results to show", async () => {
     channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
     searchQuery.current = searchState({
-      data: { ...searchPayload(), timedOut: true, timedOutSources: ["messages"] },
+      data: {
+        ...searchPayload(),
+        timedOut: true,
+        timedOutSources: ["messages"],
+      },
       dataUpdatedAt: 6000,
     });
     const user = userEvent.setup();
@@ -553,7 +563,9 @@ describe("FindBar", () => {
 
     expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
     expect(
-      within(screen.getByRole("listbox")).getByText(/stopped looking in messages/i),
+      within(screen.getByRole("listbox")).getByText(
+        /stopped looking in messages/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -586,7 +598,8 @@ describe("FindBar", () => {
 
   it("emits search-completed with the find-bar surface", async () => {
     // `spec/behavior/observability.md` § Search Telemetry.
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 4000,
@@ -616,7 +629,8 @@ describe("FindBar", () => {
     // `observability.md` cites this as the proof that the raw query is never
     // sent: `"query"` is not a forbidden key, so the shared gate alone would
     // let a property holding the raw text through.
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 5000,
@@ -658,7 +672,8 @@ describe("FindBar", () => {
   });
 
   it("counts a search once, not again when the dialog reopens on it", async () => {
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 7000,
@@ -688,7 +703,8 @@ describe("FindBar", () => {
   });
 
   it("measures the trimmed query", async () => {
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 9000,

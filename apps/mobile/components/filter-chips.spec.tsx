@@ -75,6 +75,41 @@ describe("Chip on a card", () => {
   });
 });
 
+// #5568: a list's filter row lights its chip without the accent, so the
+// rows it filters read louder than it does; a form's chip keeps the accent.
+describe("Quiet chips", () => {
+  const texts = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "Text");
+
+  it("lights the selected chip neutral, with foreground text", () => {
+    const tree = render(
+      <FilterChips quiet chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
+    );
+    const [all, minutes] = chips(tree);
+    const on = flatten(all!.props.style({ pressed: false }));
+    expect(on.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(on.borderColor).toBe(signetDarkTokens.color.border.control);
+    expect(on.backgroundColor).not.toBe("#8E4EC6");
+    expect(flatten(texts(tree)[0]!.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    // The rest stay idle.
+    expect(
+      flatten(minutes!.props.style({ pressed: false })).backgroundColor,
+    ).toBe(signetDarkTokens.color.surface.surface1);
+  });
+
+  it("keeps the accent on a chip that is not quiet", () => {
+    const tree = render(
+      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
+    );
+    const [all] = chips(tree);
+    expect(flatten(all!.props.style({ pressed: false })).backgroundColor).toBe(
+      "#8E4EC6",
+    );
+  });
+});
+
 describe("FilterChips", () => {
   it("offers a chip's long press as a named screen-reader action (#3934)", () => {
     const onLongPress = vi.fn();

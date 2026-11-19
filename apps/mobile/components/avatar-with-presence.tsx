@@ -12,7 +12,7 @@ export function presenceDotSize(avatarSize: number): number {
  * A member's avatar with their presence dot on its bottom-right corner
  * (#4633): the phone's one copy of web's `AvatarPresenceDot`
  * (`apps/web/components/members/presence-dot.tsx`), used by the Directory's
- * row and tile, the member sheet, the channel member sheet and the You tab.
+ * row, the member profile's title row, the channel member sheet and the You tab.
  *
  * `status: null` draws no dot: the honest answer before chapter presence has
  * synced, never a stand-in Offline. Read it with `usePresenceOf(userId)`

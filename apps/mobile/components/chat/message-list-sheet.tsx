@@ -365,7 +365,7 @@ function createStyles(tokens: SignetTokens) {
     scroll: {
       flex: 1,
     },
-    // The member sheet's recipe: the side inset is the body's, so the title
+    // A record sheet's recipe: the side inset is the body's, so the title
     // and the rows line up.
     body: {
       paddingHorizontal: tokens.spacing.lg,
