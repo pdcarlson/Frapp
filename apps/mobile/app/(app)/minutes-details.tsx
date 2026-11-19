@@ -1,14 +1,25 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  Text,
+  View,
+  type ScrollView,
+} from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import * as Clipboard from "expo-clipboard";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
 import {
   useAiSuggestions,
-  useEvent,
+  useCurrentUser,
+  useDeleteMeeting,
   useMeeting,
+  useMeetingActionItemTasks,
   useMeetingDraft,
   useMeetingRecording,
   useMemberDisplayNames,
+  usePermissionList,
   usePostMeeting,
   type MeetingMinutes,
 } from "@repo/hooks";
@@ -19,19 +30,39 @@ import {
   MEETING_LIST_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
+  MINUTES_READ_COPY,
+  can,
   isMeetingContentEmpty,
   meetingDayLabel,
   meetingTypeLabel,
   meetingWhenLabel,
+  minutesJumps,
+  minutesReadSections,
   readMeetingContent,
+  type MeetingSectionKey,
   type MeetingType,
-  eventLimitsAudience,
   isBetaOffModule,
 } from "@repo/validation";
 import type { BackTarget } from "@/components/back-row";
 import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
-import { MinutesBody } from "@/components/minutes/minutes-body";
+import {
+  CalendarPlusGlyph,
+  LinkGlyph,
+  ListGlyph,
+  MoreGlyph,
+  PencilGlyph,
+  PersonGlyph,
+  TrashGlyph,
+} from "@/components/control-glyphs";
+import { HeaderButton } from "@/components/header-button";
+import {
+  useItemMenu,
+  type ItemMenuAction,
+} from "@/components/item-actions-menu";
+import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
+import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
+import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
 import {
   NotesPanel,
   type NotesPanelHandle,
@@ -48,16 +79,17 @@ import {
 } from "@/components/minutes/summary-note";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { ScreenShell } from "@/components/screen-shell";
+import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   ErrorState,
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
-import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
+import { confirmAlert } from "@/lib/minutes/meetings-on";
 import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
 import {
   recorderBusy,
@@ -72,12 +104,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the Minutes list.
  *
  * **Everyone reads.** The page is the minutes as a document: the event's
- * name, what kind of meeting and when, then each section.
+ * name, one line saying what kind of meeting and when, a jump bar to each
+ * section, then the read view both apps share (#5562, `MinutesBody`). The
+ * ⋯ beside the back row holds the same items, in the same order, as web's
+ * (Edit details, Mark who was there, Copy link, Open event, Transcript,
+ * Delete minutes; Paul, 2026-11-19: "make sure we keep the MOBILE AND WEB
+ * UIs in sync").
  *
  * **An officer who may edit a draft takes and finishes it here, as a note**
  * (Paul, 2026-11-17: "I don't want a pop-up sheet for everything"; #5288,
- * Granola's note is the model). From the top: the event's name, its chips
- * (when, type, check-ins, who reads it), then the officer's notes typed on
+ * Granola's note is the model). From the top: the event's name, its line
+ * (type, when, draft), then the officer's notes typed on
  * the page and saved as they type, with the keyboard able to stay up while
  * it records. Where the chapter drafts from notes they are the officer's
  * notes and the draft fills the minutes in; where it doesn't they are the
@@ -185,6 +222,23 @@ function LoadedMinutes({
 
   const isDraft = meeting.status === "draft";
   const finishing = isDraft && meeting.can_edit;
+  const viewerId =
+    (useCurrentUser().data as { id?: string } | undefined)?.id ?? null;
+  // Naming the event, moving it and marking who came are the events rule,
+  // as on web.
+  const canEditEvents = can("events:update", usePermissionList());
+  const remove = useDeleteMeeting();
+  const detailsSheetRef = useRef<BottomSheetModal>(null);
+  const attendanceSheetRef = useRef<BottomSheetModal>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  // Where the body and each of its sections sit, for the jump bar.
+  const bodyY = useRef(0);
+  const sectionY = useRef(new Map<MeetingSectionKey, number>());
+  const jumpBarHeight = useRef(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menu = useItemMenu();
+  const [openedAt] = useState(() => Date.now());
   // Offered where the server has AI and the president has drafting on, which
   // is what the draft routes check; with either off the button would only
   // meet a refusal.
@@ -240,6 +294,16 @@ function LoadedMinutes({
     [meeting.content],
   );
   const empty = isMeetingContentEmpty(content);
+  const actionTasksQuery = useMeetingActionItemTasks(meeting.id, {
+    enabled: !isDraft && content.action_items.length > 0,
+  });
+  const actionTasks = useMemo(
+    () =>
+      new Map(
+        (actionTasksQuery.data ?? []).map((entry) => [entry.index, entry]),
+      ),
+    [actionTasksQuery.data],
+  );
   // Without drafting the note is the minutes' Summary, typed and posted here
   // (#5288); the other sections still come from the web. Only once the AI
   // reads have answered that drafting is off: while they load, or when one
@@ -250,12 +314,6 @@ function LoadedMinutes({
     !notesOffered;
   const rest = useMemo(() => ({ ...content, summary: "" }), [content]);
   const writtenHere = summaryShown && summaryWritten;
-
-  // Who reads the minutes is who the event invites.
-  const eventQuery = useEvent(meeting.event_id ?? "");
-  const checkedIn = meeting.attendees
-    ? meeting.attendees.present.length + meeting.attendees.late.length
-    : 0;
 
   const meetingRefresh = useCallback(() => refetch(), [refetch]);
   const refresh = useRefetchAll([
@@ -295,6 +353,124 @@ function LoadedMinutes({
     meeting.meeting_type as MeetingType,
     meeting.other_label,
   );
+
+  function say(line: string) {
+    setNotice(line);
+    AccessibilityInfo.announceForAccessibility(line);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 2500);
+  }
+
+  async function copyLink() {
+    try {
+      await Clipboard.setStringAsync(
+        `${webAppOrigin()}/meetings/${meeting.id}`,
+      );
+      say(MINUTES_READ_COPY.linkCopied);
+    } catch {
+      say("Couldn't copy the link");
+    }
+  }
+
+  async function handleDelete() {
+    const yes = await confirmAlert({
+      title: "Delete these minutes?",
+      body: isDraft
+        ? "The draft is gone for good. The event stays on the calendar."
+        : "Nobody can read them after this. The event stays on the calendar.",
+      confirmLabel: MINUTES_READ_COPY.menu.delete,
+      destructive: true,
+    });
+    if (!yes) return;
+    try {
+      await remove.mutateAsync(meeting.id);
+      router.back();
+    } catch (error) {
+      setProblem(errorCopy(error, "Couldn't delete the minutes."));
+    }
+  }
+
+  const openEvent = () => {
+    if (!meeting.event_id) return;
+    router.push({
+      pathname: "/event-details",
+      params: { id: meeting.event_id },
+    });
+  };
+  // Marking by hand waits for the meeting to end, as on web: a member
+  // marked while check-in is open could no longer check in themselves.
+  const ended =
+    Date.parse(meeting.event_end_time ?? meeting.event_start_time) <= openedAt;
+  const canBackfill = !!meeting.event_id && canEditEvents && ended;
+  const hasTranscript = !!meeting.transcript?.trim() || !!transcript;
+
+  // The ⋯ menu (#5562): web's items, in web's order. Edit minutes joins
+  // them once the phone has its editor.
+  const words = MINUTES_READ_COPY.menu;
+  const menuActions = (): ItemMenuAction[] => [
+    ...(meeting.can_edit
+      ? [
+          {
+            key: "details",
+            label: words.editDetails,
+            glyph: (color: string) => <PencilGlyph color={color} />,
+            run: () => detailsSheetRef.current?.present(),
+          },
+        ]
+      : []),
+    ...(canBackfill
+      ? [
+          {
+            key: "attendance",
+            label: words.attendance,
+            glyph: (color: string) => <PersonGlyph color={color} />,
+            run: () => attendanceSheetRef.current?.present(),
+          },
+        ]
+      : []),
+    {
+      key: "copy",
+      label: words.copyLink,
+      glyph: (color: string) => <LinkGlyph color={color} />,
+      run: () => void copyLink(),
+    },
+    ...(meeting.event_id
+      ? [
+          {
+            key: "event",
+            label: words.openEvent,
+            glyph: (color: string) => <CalendarPlusGlyph color={color} />,
+            run: openEvent,
+          },
+        ]
+      : []),
+    ...(hasTranscript
+      ? [
+          {
+            key: "transcript",
+            label: words.transcript,
+            glyph: (color: string) => <ListGlyph color={color} />,
+            run: openTranscript,
+          },
+        ]
+      : []),
+    ...(meeting.can_delete
+      ? [
+          {
+            key: "delete",
+            label: words.delete,
+            destructive: true,
+            glyph: (color: string) => <TrashGlyph color={color} />,
+            run: () => void handleDelete(),
+          },
+        ]
+      : []),
+  ];
+  // Built on the press, so the sheets' refs are read then, not while drawing.
+  const openMenu = () =>
+    menu
+      .handleFor({ title: meeting.event_name, actions: menuActions() })
+      ?.open();
 
   // The one thing at the bottom (Paul, 2026-11-17): the recorder's controls
   // while it records or needs the officer, else Post once the minutes have
@@ -359,30 +535,68 @@ function LoadedMinutes({
     // Typed on the note, or nothing written yet: the note is the page.
     (summaryShown && isMeetingContentEmpty(rest)) ||
     (finishing && empty && !!notes);
+  const shownContent = summaryShown ? rest : content;
   const body = bodyHidden ? null : (
-    <MinutesBody
-      meeting={meeting}
-      content={summaryShown ? rest : content}
-      nameFor={names.nameFor}
-    />
+    <View
+      onLayout={(event) => {
+        bodyY.current = event.nativeEvent.layout.y;
+      }}
+    >
+      <MinutesBody
+        meeting={meeting}
+        content={shownContent}
+        nameFor={names.nameFor}
+        viewerId={viewerId}
+        tasks={actionTasks}
+        onSectionLayout={(key, y) => sectionY.current.set(key, y)}
+      />
+    </View>
   );
-  const audience = eventQuery.data
-    ? eventLimitsAudience(eventQuery.data)
-      ? MEETING_COPY.audienceInvited
-      : MEETING_COPY.audienceEveryone
-    : null;
+  // The jump bar, pinned over the minutes as they scroll (#5562). Only on
+  // minutes being read: an officer finishing a draft has the note instead.
+  const jumps =
+    bodyHidden || finishing
+      ? []
+      : minutesJumps(
+          minutesReadSections(meeting.sections, shownContent),
+          shownContent,
+        );
+  const meta = [
+    `${type} meeting, ${meetingWhenLabel(meeting.event_start_time)}`,
+    isDraft
+      ? MEETING_COPY.draftBadge
+      : MEETING_COPY.posted(meetingDayLabel(meeting.posted_at)),
+  ].join(" · ");
 
   return (
     <>
       <ScreenShell
         back={BACK_TO_MINUTES}
+        backAction={
+          <HeaderButton
+            label={words.label}
+            hint="Opens what you can do with these minutes."
+            onPress={openMenu}
+          >
+            <MoreGlyph color={tokens.color.text.foreground} />
+          </HeaderButton>
+        }
         title={meeting.event_name}
+        // One line instead of a row of chips (#5562): what kind, when, and
+        // whether it is posted.
+        subtitle={meta}
+        scrollRef={scrollRef}
         refresh={refresh}
         keyboardShouldPersistTaps="handled"
         avoidKeyboard={finishing}
         footer={
-          footer || problem ? (
+          footer || problem || notice ? (
             <>
+              {notice ? (
+                <Text accessibilityLiveRegion="polite" style={styles.meta}>
+                  {notice}
+                </Text>
+              ) : null}
               {problem ? (
                 <Text
                   accessibilityLiveRegion="polite"
@@ -396,24 +610,33 @@ function LoadedMinutes({
           ) : undefined
         }
       >
-        <View style={styles.chips}>
-          {isDraft ? (
-            <StatusChip
-              label={MEETING_COPY.draftBadge}
-              hue={tokens.color.semantic.warning}
-            />
-          ) : (
-            <HairlineChip
-              label={MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}
-            />
-          )}
-          <HairlineChip label={meetingWhenLabel(meeting.event_start_time)} />
-          <HairlineChip label={`${type} meeting`} />
-          {checkedIn > 0 ? (
-            <HairlineChip label={MEETING_COPY.checkedIn(checkedIn)} />
-          ) : null}
-          {audience ? <HairlineChip label={audience} /> : null}
-        </View>
+        {jumps.length > 0 ? (
+          <StickyHeader>
+            <View
+              onLayout={(event) => {
+                jumpBarHeight.current = event.nativeEvent.layout.height;
+              }}
+            >
+              <MinutesJumpBar
+                jumps={jumps}
+                onJump={(jump) => {
+                  const y = sectionY.current.get(jump.key);
+                  if (y === undefined) return;
+                  scrollRef.current?.scrollTo({
+                    y: Math.max(
+                      0,
+                      bodyY.current +
+                        y -
+                        jumpBarHeight.current -
+                        tokens.spacing.sm,
+                    ),
+                    animated: true,
+                  });
+                }}
+              />
+            </View>
+          </StickyHeader>
+        ) : null}
 
         {recorderShown ? <RecorderStage row={recorder} steps={steps} /> : null}
 
@@ -487,6 +710,31 @@ function LoadedMinutes({
       </ScreenShell>
       {recorder.sheets}
       {consentSheet}
+      {menu.element}
+      {meeting.can_edit ? (
+        <MinutesDetailsSheet
+          ref={detailsSheetRef}
+          meeting={meeting}
+          canEditEvent={canEditEvents}
+          getVersion={async () => (await refetch())?.updated_at ?? null}
+          onSaved={() => {
+            void refetch();
+            say(MINUTES_READ_COPY.details.saved);
+          }}
+          onOpenEvent={openEvent}
+        />
+      ) : null}
+      {canBackfill && meeting.event_id ? (
+        <MarkAttendanceSheet
+          ref={attendanceSheetRef}
+          eventId={meeting.event_id}
+          attendees={meeting.attendees}
+          onMarked={(line) => {
+            void refetch();
+            say(line);
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -510,12 +758,6 @@ function MinutesSkeleton() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    chips: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      alignItems: "center",
-      gap: tokens.spacing.xs,
-    },
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

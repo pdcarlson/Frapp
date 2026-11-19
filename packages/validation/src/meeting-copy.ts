@@ -201,10 +201,6 @@ export const MEETING_COPY = {
   removeDate: "Remove date",
   addDate: "Add a date",
   saveFailed: "Not saved yet. It tries again as you type.",
-  /** The note's chips (#5288). */
-  checkedIn: (count: number) => `${count} checked in`,
-  audienceEveryone: "Everyone",
-  audienceInvited: "Invited only",
   suggestedTasks: "Suggested tasks",
 } as const;
 

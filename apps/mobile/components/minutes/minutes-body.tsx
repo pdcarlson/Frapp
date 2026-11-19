@@ -1,57 +1,95 @@
-import { StyleSheet, Text, View } from "react-native";
-import type { MeetingMinutes } from "@repo/hooks";
+import { useState, type ReactNode } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
+import type { MeetingActionItemTask, MeetingMinutes } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   MEETING_COPY,
   MEETING_LIST_COPY,
+  MINUTES_PREVIEW,
+  MINUTES_READ_COPY,
   meetingDueLabel,
-  meetingSectionHasContent,
   meetingSectionLabel,
   meetingTabledFromLabel,
   meetingVoteLine,
+  minutesActionRows,
+  minutesDateTile,
+  minutesReadSections,
+  minutesTopics,
   parseMinutesNotes,
-  shownMeetingSections,
   type MeetingContent,
   type MeetingSectionKey,
+  type MinutesJump,
+  type MinutesNoteLine,
 } from "@repo/validation";
+import { CheckGlyph, DisclosureGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { Segmented } from "@/components/segmented";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Minutes as a member reads them (`spec/behavior/meetings.md` § Reading
- * minutes): each section the chapter's template keeps, in the template's
- * order, plus any section that has words in it. Web's read view is in
- * `minutes-page.tsx`; both pick sections with `shownMeetingSections` and say
- * a vote and a due day the same way.
+ * minutes; #5562, Paul 2026-11-19: "Scrolling through the minutes, nothing
+ * stands out"). Each kind of thing has its own shape, so a scroll says what
+ * it is before a word is read: the TL;DR is a card with the full summary
+ * folded under it, dates are calendar tiles, decisions lead with a bold
+ * headline, action items are a checklist with the reader's own first, the
+ * notes are topics that open in place, and attendance is a row.
  *
- * A document to read, so it is set as one: an eyebrow over each section and
- * body text under it, no cards. A section with nothing written is left out,
- * never drawn as an empty heading.
+ * Web's `minutes-read.tsx` draws the same blocks in the same order with the
+ * same words, all from `@repo/validation`'s `minutes-read.ts`, so switching
+ * between the two never feels like two systems (Paul, 2026-11-19).
  */
 export function MinutesBody({
   meeting,
   content,
   nameFor,
+  viewerId = null,
+  tasks,
+  onSectionLayout,
 }: {
   meeting: MeetingMinutes;
   content: MeetingContent;
   nameFor: (userId: string) => string | null;
+  /** The reader, whose own action items come first. */
+  viewerId?: string | null;
+  /** The tasks the action items became, by their place in the list. */
+  tasks?: ReadonlyMap<number, MeetingActionItemTask>;
+  /** Where each section sits in the body, for the jump bar. */
+  onSectionLayout?: (key: MeetingSectionKey, y: number) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const sections = shownMeetingSections(meeting.sections, content).filter(
-    (key) => hasSomething(key, meeting, content),
-  );
+  const sections = minutesReadSections(meeting.sections, content);
+  const attendance =
+    attendeeGroups(meeting).length > 0 ||
+    meeting.sections.includes("attendees");
 
-  if (sections.length === 0) {
+  if (sections.length === 0 && !attendance) {
     return <Text style={styles.quiet}>{MEETING_COPY.nothingWritten}</Text>;
   }
 
   return (
-    <>
+    <View style={styles.body}>
+      {sections.length === 0 ? (
+        <Text style={styles.quiet}>{MEETING_COPY.nothingWritten}</Text>
+      ) : null}
       {sections.map((key) => (
-        <View key={key} style={styles.section}>
+        <View
+          key={key}
+          style={styles.section}
+          onLayout={(event: LayoutChangeEvent) =>
+            onSectionLayout?.(key, event.nativeEvent.layout.y)
+          }
+        >
           <Text
             accessibilityRole="header"
             style={[eyebrowStyle(tokens), styles.heading]}
@@ -60,14 +98,62 @@ export function MinutesBody({
           </Text>
           <Section
             sectionKey={key}
-            meeting={meeting}
             content={content}
             nameFor={nameFor}
-            styles={styles}
+            viewerId={viewerId}
+            tasks={tasks ?? EMPTY_TASKS}
           />
         </View>
       ))}
-    </>
+      {attendance ? (
+        <OpenRow
+          label={MINUTES_READ_COPY.attendance}
+          detail={attendanceDetail(meeting)}
+        >
+          <Attendees meeting={meeting} nameFor={nameFor} />
+        </OpenRow>
+      ) : null}
+    </View>
+  );
+}
+
+const EMPTY_TASKS: ReadonlyMap<number, MeetingActionItemTask> = new Map();
+
+/**
+ * The jump bar (#5562): one stop per section a member scrolls for, with how
+ * many it holds, pinned over the minutes as they scroll.
+ */
+export function MinutesJumpBar({
+  jumps,
+  onJump,
+}: {
+  jumps: readonly MinutesJump[];
+  onJump: (jump: MinutesJump) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  if (jumps.length === 0) return null;
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      accessibilityLabel={MINUTES_READ_COPY.jumpLabel}
+      contentContainerStyle={styles.jumps}
+    >
+      {jumps.map((jump) => (
+        <Pressable
+          key={jump.key}
+          accessibilityRole="button"
+          accessibilityLabel={`${jump.label}, ${jump.count}`}
+          onPress={() => onJump(jump)}
+          hitSlop={4}
+          style={({ pressed }) => [styles.jump, pressed && styles.pressed]}
+        >
+          <Text style={styles.jumpLabel}>{jump.label}</Text>
+          <Text style={styles.jumpCount}>{jump.count}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -81,125 +167,484 @@ function attendeeGroups(meeting: MeetingMinutes) {
   ].filter((group) => group.ids.length > 0);
 }
 
-function hasSomething(
-  key: MeetingSectionKey,
-  meeting: MeetingMinutes,
-  content: MeetingContent,
-): boolean {
-  if (key === "attendees") return attendeeGroups(meeting).length > 0;
-  return meetingSectionHasContent(content, key);
+/** "12 attended", or "Not taken" when nobody was marked. */
+function attendanceDetail(meeting: MeetingMinutes): string {
+  const a = meeting.attendees;
+  if (!a || attendeeGroups(meeting).length === 0) {
+    return MINUTES_READ_COPY.attendanceNone;
+  }
+  return MINUTES_READ_COPY.attended(a.present.length + a.late.length);
 }
 
-type Styles = ReturnType<typeof createStyles>;
+function Attendees({
+  meeting,
+  nameFor,
+}: {
+  meeting: MeetingMinutes;
+  nameFor: (userId: string) => string | null;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const groups = attendeeGroups(meeting);
+  if (groups.length === 0) {
+    return (
+      <Text style={styles.quiet}>
+        {meeting.attendees
+          ? MEETING_COPY.attendeesNone
+          : MEETING_COPY.attendeesGone}
+      </Text>
+    );
+  }
+  return (
+    <>
+      {groups.map((group) => (
+        <View key={group.label}>
+          <Text style={styles.meta}>
+            {group.label}, {group.ids.length}
+          </Text>
+          <Text style={styles.text}>
+            {group.ids
+              .map((userId) => memberLabel(nameFor(userId), userId))
+              .sort((a, b) => a.localeCompare(b))
+              .join(", ")}
+          </Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
+/** The first `preview` of a list, all of it once asked. */
+function usePreview<T>(items: readonly T[], preview: number) {
+  const [open, setOpen] = useState(false);
+  const cut = items.length > preview + 1;
+  return {
+    shown: cut && !open ? items.slice(0, preview) : items,
+    cut,
+    open,
+    toggle: () => setOpen((value) => !value),
+  };
+}
+
+/** "Show all 27" under a list cut to its first few, and "Show fewer" back. */
+function ShowAll({
+  open,
+  total,
+  onToggle,
+  label,
+}: {
+  open: boolean;
+  total: number;
+  onToggle: () => void;
+  label?: string;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      onPress={onToggle}
+      hitSlop={8}
+      style={styles.linkButton}
+    >
+      <Text style={[styles.link, { color: accent }]}>
+        {open
+          ? MINUTES_READ_COPY.showFewer
+          : (label ?? MINUTES_READ_COPY.showAll(total))}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** A row that opens in place: a topic of the notes, or Attendance. */
+function OpenRow({
+  label,
+  detail,
+  children,
+}: {
+  label: string;
+  detail?: string;
+  children: ReactNode;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.openRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={detail ? `${label}, ${detail}` : label}
+        onPress={() => setOpen((value) => !value)}
+        style={({ pressed }) => [styles.openHead, pressed && styles.pressed]}
+      >
+        <DisclosureGlyph
+          color={tokens.color.text.muted}
+          size={16}
+          direction={open ? "down" : "right"}
+        />
+        <Text style={[styles.topic, styles.flex]}>{label}</Text>
+        {detail ? <Text style={styles.meta}>{detail}</Text> : null}
+      </Pressable>
+      {open ? <View style={styles.openBody}>{children}</View> : null}
+    </View>
+  );
+}
 
 function Section({
   sectionKey,
-  meeting,
   content,
   nameFor,
-  styles,
+  viewerId,
+  tasks,
 }: {
   sectionKey: MeetingSectionKey;
-  meeting: MeetingMinutes;
   content: MeetingContent;
   nameFor: (userId: string) => string | null;
-  styles: Styles;
+  viewerId: string | null;
+  tasks: ReadonlyMap<number, MeetingActionItemTask>;
 }) {
-  if (sectionKey === "attendees") {
-    return (
-      <>
-        {attendeeGroups(meeting).map((group) => (
-          <View key={group.label}>
-            <Text style={styles.meta}>
-              {group.label}, {group.ids.length}
-            </Text>
-            <Text style={styles.text}>
-              {group.ids
-                .map((userId) => memberLabel(nameFor(userId), userId))
-                .sort((a, b) => a.localeCompare(b))
-                .join(", ")}
-            </Text>
-          </View>
-        ))}
-      </>
-    );
+  switch (sectionKey) {
+    case "tldr":
+      return <TldrCard tldr={content.tldr} summary={content.summary} />;
+    case "summary":
+      return <Paragraph text={content.summary} />;
+    case "dates":
+      return <Dates dates={content.dates} />;
+    case "decisions":
+      return <Decisions decisions={content.decisions} />;
+    case "action_items":
+      return (
+        <ActionChecklist
+          items={content.action_items}
+          nameFor={nameFor}
+          viewerId={viewerId}
+          tasks={tasks}
+        />
+      );
+    case "tabled":
+      return <Tabled items={content.tabled} />;
+    case "discussion_log":
+      return <Topics text={content.discussion_log} />;
+    case "announcements":
+      return (
+        <Lines
+          text={content.announcements}
+          preview={MINUTES_PREVIEW.announcements}
+        />
+      );
+    case "attendees":
+      return null;
+    default:
+      return <Lines text={content[sectionKey]} />;
   }
-  if (sectionKey === "decisions") {
-    return (
-      <>
-        {content.decisions.map((decision, index) => (
-          <View key={index} style={styles.item}>
-            <Text style={styles.bullet}>{"•"}</Text>
-            <View style={styles.itemText}>
-              <Text style={styles.text}>{decision.text}</Text>
-              {decision.vote ? (
-                <Text style={styles.meta}>
-                  {meetingVoteLine(decision.vote)}
-                </Text>
+}
+
+function Paragraph({ text }: { text: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return <Text style={styles.text}>{text}</Text>;
+}
+
+/** The TL;DR as the page's lead, the full summary folded under it. */
+function TldrCard({ tldr, summary }: { tldr: string; summary: string }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const [open, setOpen] = useState(false);
+  const hasSummary = summary.trim().length > 0;
+  return (
+    <View style={styles.card}>
+      <NoteLines lines={parseMinutesNotes(tldr, { outline: false })} />
+      {hasSummary && open ? (
+        <Text style={styles.mutedText}>{summary}</Text>
+      ) : null}
+      {hasSummary ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          onPress={() => setOpen((value) => !value)}
+          hitSlop={8}
+          style={styles.linkButton}
+        >
+          <Text style={[styles.link, { color: accent }]}>
+            {open
+              ? MINUTES_READ_COPY.hideSummary
+              : MINUTES_READ_COPY.readSummary}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** Coming up: each day the meeting named as a calendar tile. */
+function Dates({ dates }: { dates: MeetingContent["dates"] }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.list}>
+      {dates.map((item, index) => {
+        const tile = minutesDateTile(item.date);
+        return (
+          <View
+            key={`${item.date}-${index}`}
+            accessible
+            accessibilityLabel={`${item.text}, ${tile.weekday}, ${meetingDueLabel(item.date)}`}
+            style={styles.dateRow}
+          >
+            <View
+              style={[styles.tile, { backgroundColor: tint(accent, 0.16) }]}
+            >
+              <Text style={[styles.tileMonth, { color: accent }]}>
+                {tile.month}
+              </Text>
+              <Text style={[styles.tileDay, { color: accent }]}>
+                {tile.day}
+              </Text>
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.strong}>{item.text}</Text>
+              <Text style={styles.meta}>
+                {tile.weekday ? `${tile.weekday}, ` : ""}
+                {meetingDueLabel(item.date)}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Decisions lead with their headline in bold, the detail grey under it. */
+function Decisions({ decisions }: { decisions: MeetingContent["decisions"] }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const list = usePreview(decisions, MINUTES_PREVIEW.decisions);
+  return (
+    <View style={styles.list}>
+      {list.shown.map((decision, index) => (
+        <View
+          key={index}
+          style={[styles.decision, { borderLeftColor: accent }]}
+        >
+          <Text style={decision.headline ? styles.strong : styles.text}>
+            {decision.headline || decision.text}
+          </Text>
+          {decision.headline ? (
+            <Text style={styles.mutedText}>{decision.text}</Text>
+          ) : null}
+          {decision.vote ? (
+            <Text style={styles.meta}>{meetingVoteLine(decision.vote)}</Text>
+          ) : null}
+        </View>
+      ))}
+      {list.cut ? (
+        <ShowAll
+          open={list.open}
+          total={decisions.length}
+          onToggle={list.toggle}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The action items as a checklist, ticked as each item's task is done; the
+ * reader's own first, then the ones with a due day. Mine narrows to the
+ * reader's own. The boxes only show: an item is checked off by doing its
+ * task.
+ */
+function ActionChecklist({
+  items,
+  nameFor,
+  viewerId,
+  tasks,
+}: {
+  items: MeetingContent["action_items"];
+  nameFor: (userId: string) => string | null;
+  viewerId: string | null;
+  tasks: ReadonlyMap<number, MeetingActionItemTask>;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const rows = minutesActionRows(items, viewerId);
+  const mineCount = rows.filter((row) => row.mine).length;
+  const [filter, setFilter] = useState<"mine" | "all">(
+    mineCount > 0 ? "mine" : "all",
+  );
+  const filtered =
+    filter === "mine" && mineCount > 0 ? rows.filter((row) => row.mine) : rows;
+  const list = usePreview(filtered, MINUTES_PREVIEW.action_items);
+  const done = [...tasks.values()].filter((task) => task.done).length;
+  return (
+    <View style={styles.list}>
+      {mineCount > 0 || done > 0 ? (
+        <View style={styles.checklistBar}>
+          {mineCount > 0 ? (
+            <Segmented
+              dense
+              accessibilityLabel={MINUTES_READ_COPY.mine}
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "mine", label: MINUTES_READ_COPY.mine },
+                { value: "all", label: MINUTES_READ_COPY.all(rows.length) },
+              ]}
+            />
+          ) : (
+            <View />
+          )}
+          {done > 0 ? (
+            <Text style={styles.meta}>{MINUTES_READ_COPY.done(done)}</Text>
+          ) : null}
+        </View>
+      ) : null}
+      {list.shown.map(({ item, index, mine }) => {
+        const task = tasks.get(index);
+        const isDone = task?.done ?? false;
+        const meta = [
+          mine ? MINUTES_READ_COPY.yours : null,
+          item.owner_user_id
+            ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
+            : MINUTES_READ_COPY.nobodyNamed,
+          item.due_date
+            ? MINUTES_READ_COPY.due(meetingDueLabel(item.due_date))
+            : null,
+          task?.group && !isDone
+            ? `${task.group.done} of ${task.group.total} done`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return (
+          <View
+            key={index}
+            accessible
+            accessibilityLabel={`${isDone ? "Done: " : ""}${item.text}. ${meta}`}
+            style={styles.item}
+          >
+            <View
+              style={[
+                styles.box,
+                isDone && { backgroundColor: accent, borderColor: accent },
+              ]}
+            >
+              {isDone ? (
+                <CheckGlyph color={tokens.color.surface.background} size={12} />
               ) : null}
             </View>
+            <View style={styles.flex}>
+              <Text style={isDone ? styles.mutedText : styles.text}>
+                {item.text}
+              </Text>
+              <Text style={styles.meta}>{meta}</Text>
+            </View>
           </View>
-        ))}
-      </>
-    );
-  }
-  if (sectionKey === "action_items") {
-    return (
-      <>
-        {content.action_items.map((item, index) => {
-          const meta = [
-            item.owner_user_id
-              ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
-              : null,
-            item.due_date ? `Due ${meetingDueLabel(item.due_date)}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return (
-            <View key={index} style={styles.item}>
-              <Text style={styles.bullet}>{"•"}</Text>
-              <View style={styles.itemText}>
-                <Text style={styles.text}>{item.text}</Text>
-                {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-              </View>
-            </View>
-          );
-        })}
-      </>
-    );
-  }
-  // What was put off (#5522), each with where it was first tabled when an
-  // earlier meeting did, as web's TabledView draws it.
-  if (sectionKey === "tabled") {
-    return (
-      <>
-        {content.tabled.map((item, index) => {
-          const from = meetingTabledFromLabel(item);
-          return (
-            <View key={index} style={styles.item}>
-              <Text style={styles.bullet}>{"•"}</Text>
-              <View style={styles.itemText}>
-                <Text style={styles.text}>{item.text}</Text>
-                {from ? <Text style={styles.meta}>{from}</Text> : null}
-              </View>
-            </View>
-          );
-        })}
-      </>
-    );
-  }
-  // The summary is a paragraph, as on web.
-  if (sectionKey === "summary") {
-    return <Text style={styles.text}>{content.summary}</Text>;
-  }
-  // The notes come as an outline: a topic over its "- " points, drawn the
-  // way web draws them (`minutes-page.tsx` LinesView). Other sections read
-  // line by line, with no topics.
+        );
+      })}
+      {list.cut ? (
+        <ShowAll
+          open={list.open}
+          total={filtered.length}
+          onToggle={list.toggle}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** What was put off (#5522), each with where it was first tabled. */
+function Tabled({ items }: { items: MeetingContent["tabled"] }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
   return (
     <View style={styles.lines}>
-      {parseMinutesNotes(content[sectionKey], {
-        outline: sectionKey === "discussion_log",
-      }).map((line, index) => {
+      {items.map((item, index) => {
+        const from = meetingTabledFromLabel(item);
+        return (
+          <View key={index} style={styles.item}>
+            <Text style={styles.bullet}>{"•"}</Text>
+            <View style={styles.flex}>
+              <Text style={styles.text}>{item.text}</Text>
+              {from ? <Text style={styles.meta}>{from}</Text> : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** The notes as topics that open in place, the first few then Show all. */
+function Topics({ text }: { text: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const topics = minutesTopics(text);
+  const list = usePreview(topics, MINUTES_PREVIEW.topics);
+  const only = topics[0];
+  if (topics.length === 1 && only && only.title === null) {
+    return <NoteLines lines={only.lines} />;
+  }
+  return (
+    <View style={styles.list}>
+      {list.shown.map((topic, index) =>
+        topic.title === null ? (
+          <NoteLines key={index} lines={topic.lines} />
+        ) : (
+          <OpenRow
+            key={`${topic.title}-${index}`}
+            label={topic.title}
+            detail={
+              topic.lines.length > 0
+                ? MINUTES_READ_COPY.points(topic.lines.length)
+                : undefined
+            }
+          >
+            <NoteLines lines={topic.lines} />
+          </OpenRow>
+        ),
+      )}
+      {list.cut ? (
+        <ShowAll
+          open={list.open}
+          total={topics.length}
+          onToggle={list.toggle}
+          label={MINUTES_READ_COPY.allTopics(topics.length)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** A section read line by line; with `preview`, the first few then Show all. */
+function Lines({ text, preview }: { text: string; preview?: number }) {
+  const lines = parseMinutesNotes(text, { outline: false });
+  const list = usePreview(lines, preview ?? lines.length);
+  return (
+    <>
+      <NoteLines lines={list.shown} />
+      {list.cut ? (
+        <ShowAll open={list.open} total={lines.length} onToggle={list.toggle} />
+      ) : null}
+    </>
+  );
+}
+
+/** Outline lines, drawn the way web's `minutes-read.tsx` draws them. */
+function NoteLines({ lines }: { lines: readonly MinutesNoteLine[] }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.lines}>
+      {lines.map((line, index) => {
         if (line.kind === "topic") {
           return (
             <Text
@@ -218,7 +663,7 @@ function Section({
               style={[styles.item, line.depth ? styles.subItem : null]}
             >
               <Text style={styles.bullet}>{line.depth ? "◦" : "•"}</Text>
-              <View style={styles.itemText}>
+              <View style={styles.flex}>
                 <Text style={styles.text}>{line.text}</Text>
               </View>
             </View>
@@ -238,7 +683,11 @@ function Section({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const body = typeRole(tokens.typography.role.body);
   return StyleSheet.create({
+    body: {
+      gap: tokens.spacing.xl,
+    },
     section: {
       gap: tokens.spacing.sm,
     },
@@ -246,33 +695,45 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     text: {
-      ...typeRole(tokens.typography.role.body),
+      ...body,
       color: tokens.color.text.foreground,
     },
+    strong: {
+      ...body,
+      color: tokens.color.text.foreground,
+      fontWeight: "600",
+    },
+    mutedText: {
+      ...body,
+      color: tokens.color.text.mutedForeground,
+    },
     quiet: {
-      ...typeRole(tokens.typography.role.body),
+      ...body,
       color: tokens.color.text.mutedForeground,
     },
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
+    list: {
+      gap: tokens.spacing.md,
+    },
     item: {
       flexDirection: "row",
       gap: tokens.spacing.sm,
     },
     bullet: {
-      ...typeRole(tokens.typography.role.body),
+      ...body,
       color: tokens.color.text.muted,
     },
-    itemText: {
+    flex: {
       flex: 1,
     },
     lines: {
       gap: tokens.spacing.xs,
     },
     topic: {
-      ...typeRole(tokens.typography.role.body),
+      ...body,
       color: tokens.color.text.foreground,
       fontWeight: "600",
     },
@@ -281,6 +742,108 @@ function createStyles(tokens: SignetTokens) {
     },
     subItem: {
       paddingLeft: tokens.spacing.lg,
+    },
+    card: {
+      gap: tokens.spacing.sm,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      backgroundColor: tokens.color.surface.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+    },
+    linkButton: {
+      alignSelf: "flex-start",
+      minHeight: 32,
+      justifyContent: "center",
+    },
+    link: {
+      ...typeRole(tokens.typography.role.label),
+    },
+    dateRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    tile: {
+      width: 48,
+      paddingVertical: tokens.spacing.xs,
+      alignItems: "center",
+      borderRadius: tokens.radius.control,
+    },
+    tileMonth: {
+      ...typeRole(tokens.typography.role.caption),
+      fontWeight: "600",
+      letterSpacing: 0.8,
+    },
+    tileDay: {
+      ...typeRole(tokens.typography.role.title),
+      fontWeight: "700",
+    },
+    decision: {
+      gap: 2,
+      borderLeftWidth: 2,
+      paddingLeft: tokens.spacing.md,
+    },
+    checklistBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
+    },
+    box: {
+      width: 18,
+      height: 18,
+      marginTop: 3,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 4,
+      borderWidth: 1.5,
+      borderColor: tokens.color.border.control,
+    },
+    openRow: {
+      borderRadius: tokens.radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+    },
+    openHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: 44,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+    },
+    openBody: {
+      gap: tokens.spacing.sm,
+      paddingHorizontal: tokens.spacing.md,
+      paddingBottom: tokens.spacing.md,
+    },
+    pressed: {
+      opacity: 0.6,
+    },
+    jumps: {
+      gap: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.sm,
+    },
+    jump: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      minHeight: 32,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.chip,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+    },
+    jumpLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.foreground,
+    },
+    jumpCount: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

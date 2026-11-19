@@ -208,7 +208,20 @@ function DetailsForm({
                   id={`${ids}-start`}
                   type="datetime-local"
                   value={start}
-                  onChange={(next) => setStart(next.target.value)}
+                  onChange={(next) => {
+                    const value = next.target.value;
+                    // The meeting keeps its length when its start moves, as
+                    // on the phone.
+                    const moved = Date.parse(value) - Date.parse(start);
+                    if (end && Number.isFinite(moved)) {
+                      setEnd(
+                        isoToLocalInput(
+                          new Date(Date.parse(end) + moved).toISOString(),
+                        ),
+                      );
+                    }
+                    setStart(value);
+                  }}
                 />
               </div>
               <div className="grid min-w-0 gap-1">
