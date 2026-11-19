@@ -1,4 +1,5 @@
 import { config as reactInternalConfig } from "@repo/eslint-config/react-internal";
+import { mobileUiSyntax } from "@repo/eslint-config/ui-rules";
 
 /** @type {import("eslint").Linter.Config[]} */
 export default [
@@ -33,6 +34,10 @@ export default [
       // `expo export --platform web`. This closes that hole.
       "no-restricted-syntax": [
         "error",
+        // The owner's UI rulings a syntax tree can check
+        // (packages/eslint-config/ui-rules.js). They share this one entry
+        // because a second config object setting the rule would replace it.
+        ...mobileUiSyntax,
         {
           selector:
             "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication|expo-audio|expo-speech-recognition|@react-native-google-signin\\/google-signin)($|\\/)/]",
@@ -92,10 +97,7 @@ export default [
                 "Import via @/lib/minutes/recorder/device. The recorder needs the store build's background-recording service and microphone string, so it is absent in Expo Go and on web.",
             },
             {
-              group: [
-                "expo-speech-recognition",
-                "expo-speech-recognition/*",
-              ],
+              group: ["expo-speech-recognition", "expo-speech-recognition/*"],
               message:
                 "Import via @/lib/dictation/speech. The package reads its native module at import, which crashes Expo Go, and on web it would run the browser's recogniser, which Ask doesn't offer.",
             },
