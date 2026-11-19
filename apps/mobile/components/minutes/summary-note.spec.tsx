@@ -36,6 +36,7 @@ function minutes(summary: string, updatedAt: string) {
 }
 
 const reload = vi.fn();
+const editAll = vi.fn();
 let note: React.RefObject<SummaryNoteHandle | null>;
 function render(summary = "", updatedAt = "v1") {
   let tree!: ReactTestRenderer;
@@ -46,6 +47,7 @@ function render(summary = "", updatedAt = "v1") {
           ref={note}
           meeting={minutes(summary, updatedAt)}
           reload={reload}
+          onEditAll={editAll}
         />
       </FrappThemeProvider>,
     );
@@ -87,7 +89,12 @@ describe("SummaryNote", () => {
         content: { summary: "Dues are 82% in." },
       },
     });
-    expect(screenText(tree)).toContain(MEETING_COPY.restOnWeb);
+  });
+
+  it("opens the section editor for the rest of the minutes (#4412)", () => {
+    const tree = render("Dues are in.");
+    act(() => pressable(tree, MEETING_COPY.editAllSections).props.onPress());
+    expect(editAll).toHaveBeenCalledTimes(1);
   });
 
   it("answers the version to post, saving what is still waiting first", async () => {

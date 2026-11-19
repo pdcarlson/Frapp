@@ -245,11 +245,11 @@ export const MEETING_COPY = {
   tryAgain: "Try again in a moment.",
   /**
    * Where the chapter doesn't draft minutes from notes, the phone's note is
-   * the minutes' Summary (#5288); the other sections are written on the web
-   * until the phone has a section editor (#4412).
+   * the minutes' Summary (#5288); the line under it opens the section editor
+   * for the rest (#4412).
    */
   summaryPlaceholder: "Type what was said and decided.",
-  restOnWeb: "The TL;DR, decisions and action items are added on the web.",
+  editAllSections: "Add the TL;DR, decisions and action items",
   /**
    * The TL;DR's box (#5523): a draft fills it; without drafting the
    * minute-taker writes it, as they write the Summary.

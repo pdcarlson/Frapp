@@ -531,6 +531,8 @@ vi.mock("expo-web-browser", () => ({
 vi.mock("expo-router/react-navigation", () => ({
   NavigationContext: React.createContext(undefined),
   NavigationRouteContext: React.createContext(undefined),
+  // Asks before leaving unsaved posted minutes (#4412); a no-op off a stack.
+  usePreventRemove: () => undefined,
 }));
 
 vi.mock("expo-font", () => ({

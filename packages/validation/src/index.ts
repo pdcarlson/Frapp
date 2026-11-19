@@ -141,6 +141,8 @@ export * from "./member-nudge";
 export * from "./mentions";
 export * from "./message-link";
 export * from "./message-text";
+// The minutes' section editor, shared by the web and the phone (#4412).
+export * from "./minutes-edit";
 // Minutes drafted first: start, drafting and review, in both apps' words.
 export * from "./minutes-flow";
 // How both apps lay minutes out to read, and the words of its ⋯ menu (#5562).

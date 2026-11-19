@@ -9,6 +9,7 @@ import {
   MEETING_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
+  MINUTES_EDITOR_COPY,
   MINUTES_FLOW_COPY,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -51,6 +52,9 @@ const state = vi.hoisted(() => ({
   controls: 0,
   summaryProps: null as Record<string, unknown> | null,
   summaryFlush: vi.fn(),
+  summaryStale: false,
+  // What the screen last told the navigator about leaving (#4412).
+  preventRemove: false,
   event: undefined as Record<string, unknown> | undefined,
   permissions: [] as string[],
   menu: null as {
@@ -58,6 +62,8 @@ const state = vi.hoisted(() => ({
     actions: { key: string; label: string }[];
   } | null,
   remove: vi.fn(),
+  update: vi.fn(),
+  updatePending: false,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -101,6 +107,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => ({ data: { id: "u1" } }),
   usePermissionList: () => state.permissions,
   useDeleteMeeting: () => ({ mutateAsync: state.remove, isPending: false }),
+  useUpdateMeeting: () => ({
+    mutateAsync: state.update,
+    isPending: state.updatePending,
+  }),
   useMeetingActionItemTasks: () => ({ data: [] }),
 }));
 vi.mock("@/components/item-actions-menu", () => ({
@@ -121,6 +131,18 @@ vi.mock("@/components/minutes/minutes-details-sheet", async () => {
 vi.mock("@/components/minutes/mark-attendance-sheet", async () => {
   const { forwardRef } = await import("react");
   return { MarkAttendanceSheet: forwardRef(() => null) };
+});
+vi.mock("@/lib/tasks/use-who-directory", () => ({
+  useWhoDirectory: () => ({
+    directory: {},
+    people: "ready",
+    sets: "ready",
+    followers: [],
+  }),
+}));
+vi.mock("@/components/tasks/who-picker-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return { WhoPickerSheet: forwardRef(() => null) };
 });
 vi.mock("@/lib/ai/availability", () => ({
   useAiSurfaces: () => state.surfaces,
@@ -178,14 +200,30 @@ vi.mock("@/components/minutes/notes-panel", async () => {
     }),
   };
 });
+vi.mock("expo-router/react-navigation", async () => {
+  const { createContext } = await import("react");
+  return {
+    NavigationContext: createContext(undefined),
+    NavigationRouteContext: createContext(undefined),
+    usePreventRemove: (prevent: boolean) => {
+      state.preventRemove = prevent;
+    },
+  };
+});
 vi.mock("@/components/minutes/summary-note", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   return {
     SummaryNote: forwardRef(function SummaryNote(
       props: Record<string, unknown>,
-      ref: React.Ref<{ flush: () => Promise<string | null> }>,
+      ref: React.Ref<{
+        flush: () => Promise<string | null>;
+        isStale: () => boolean;
+      }>,
     ) {
-      useImperativeHandle(ref, () => ({ flush: state.summaryFlush }));
+      useImperativeHandle(ref, () => ({
+        flush: state.summaryFlush,
+        isStale: () => state.summaryStale,
+      }));
       state.summaryProps = props;
       return React.createElement("SummaryNote");
     }),
@@ -300,10 +338,21 @@ beforeEach(() => {
   state.notesProps = null;
   state.othersWrote = false;
   state.summaryProps = null;
+  state.summaryStale = false;
+  state.preventRemove = false;
   state.event = undefined;
   state.draftPending = false;
   state.refetch.mockImplementation(async () => ({ data: state.meeting }));
   state.post.mockResolvedValue({});
+  state.updatePending = false;
+  state.update.mockImplementation(
+    async ({ body }: { body: { content: Record<string, unknown> } }) =>
+      meeting({
+        ...(state.meeting ?? {}),
+        content: body.content,
+        updated_at: "v2",
+      }),
+  );
   confirm.mockResolvedValue(true);
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({ id: "m1" });
 });
@@ -594,6 +643,7 @@ describe("Minutes on the phone", () => {
       });
       expect(state.menu?.actions.map((action) => action.label)).toEqual([
         "Edit details",
+        "Edit minutes",
         "Mark who was there",
         "Copy link",
         "Open event",
@@ -775,5 +825,373 @@ describe("Minutes on the phone", () => {
 
     state.error = { status: 500 };
     expect(screenText(render())).toContain(MEETING_COPY.loadFailedTitle);
+  });
+});
+
+describe("Edit minutes on the phone (#4412)", () => {
+  /** Opens the ⋯ menu and presses one of its items. */
+  async function fromMenu(tree: ReactTestRenderer, label: string) {
+    act(() => {
+      tree.root
+        .findAll(
+          (node) =>
+            node.props.accessibilityLabel === "More" &&
+            typeof node.props.onPress === "function",
+        )[0]!
+        .props.onPress();
+    });
+    const action = state.menu?.actions.find((item) => item.label === label);
+    state.menu = null;
+    expect(action).toBeDefined();
+    await act(async () => (action as unknown as { run: () => void }).run());
+  }
+  const field = (tree: ReactTestRenderer, label: string) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "TextInput" &&
+        node.props.accessibilityLabel === label,
+    )[0];
+  const hasBody = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "MinutesBody")
+      .length > 0;
+
+  it("offers Edit minutes after Edit details, and not while a draft is written", () => {
+    state.draft = { status: "drafting" };
+    const tree = render();
+    act(() => {
+      tree.root
+        .findAll(
+          (node) =>
+            node.props.accessibilityLabel === "More" &&
+            typeof node.props.onPress === "function",
+        )[0]!
+        .props.onPress();
+    });
+    expect(state.menu?.actions.map((action) => action.label)).not.toContain(
+      "Edit minutes",
+    );
+    state.menu = null;
+  });
+
+  it("turns the screen into the section editor, and a draft saves as typing rests", async () => {
+    vi.useFakeTimers();
+    try {
+      state.draft = { status: "applied", notes: "budget passed" };
+      const tree = render();
+      await fromMenu(tree, "Edit minutes");
+      expect(hasBody(tree)).toBe(false);
+      // Only the section with words, and Add a section for the rest.
+      expect(field(tree, "Summary")?.props.value).toBe("Budget passed 12-3.");
+      expect(button(tree, MINUTES_FLOW_COPY.review.addSection)).toBeDefined();
+      expect(screenText(tree)).not.toContain(
+        MINUTES_FLOW_COPY.review.banner("notes"),
+      );
+
+      act(() =>
+        field(tree, "Summary")!.props.onChangeText(
+          "Budget passed 12-3. Dues next.",
+        ),
+      );
+      expect(state.update).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(1200));
+      expect(state.update).toHaveBeenCalledWith({
+        id: "m1",
+        body: {
+          expected_updated_at: "v1",
+          content: expect.objectContaining({
+            summary: "Budget passed 12-3. Dues next.",
+          }),
+        },
+      });
+      expect(screenText(tree)).toContain(MINUTES_EDITOR_COPY.saved);
+
+      // Done goes back to reading.
+      await act(async () =>
+        button(tree, MINUTES_EDITOR_COPY.done).props.onPress(),
+      );
+      expect(hasBody(tree)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds a decision with a vote count and an action item, dropping empty rows on save", async () => {
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T01:00:00.000Z",
+      sections: ["summary", "decisions", "action_items"],
+    });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    // Written by hand, the template's sections are laid out to fill in.
+    act(() => button(tree, MINUTES_EDITOR_COPY.decision.add).props.onPress());
+    act(() =>
+      field(tree, MINUTES_EDITOR_COPY.decision.label(1))!.props.onChangeText(
+        "Dues rise to $250",
+      ),
+    );
+    act(() =>
+      button(tree, MINUTES_EDITOR_COPY.decision.addVote).props.onPress(),
+    );
+    act(() =>
+      field(tree, MINUTES_EDITOR_COPY.decision.for)!.props.onChangeText("12"),
+    );
+    act(() => button(tree, MINUTES_EDITOR_COPY.actionItem.add).props.onPress());
+    // A posted edit waits for Save: nothing has gone out.
+    expect(state.update).not.toHaveBeenCalled();
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.save).props.onPress(),
+    );
+    expect(state.update).toHaveBeenCalledTimes(1);
+    const sent = state.update.mock.calls[0]![0].body.content;
+    expect(sent.decisions).toEqual([
+      {
+        text: "Dues rise to $250",
+        headline: null,
+        vote: { for: 12, against: 0, abstain: 0 },
+      },
+    ]);
+    expect(sent.action_items).toEqual([]);
+    expect(hasBody(tree)).toBe(true);
+    expect(screenText(tree)).toContain(MINUTES_EDITOR_COPY.savedToast);
+  });
+
+  it("Cancel on posted minutes puts them back and saves nothing", async () => {
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T01:00:00.000Z",
+    });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Something else"));
+    act(() => button(tree, MINUTES_EDITOR_COPY.cancel).props.onPress());
+    expect(state.update).not.toHaveBeenCalled();
+    expect(hasBody(tree)).toBe(true);
+  });
+
+  it("keeps every word typed when the save is stale, and offers their version", async () => {
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T01:00:00.000Z",
+    });
+    state.update.mockRejectedValue({ code: "meeting.stale" });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Mine, typed here"));
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.save).props.onPress(),
+    );
+    expect(field(tree, "Summary")?.props.value).toBe("Mine, typed here");
+    expect(screenText(tree)).toContain(MEETING_COPY.stale);
+    expect(button(tree, MEETING_COPY.loadTheirs)).toBeDefined();
+  });
+
+  it("posts from the editor, saving what is typed first", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() =>
+      field(tree, "Summary")!.props.onChangeText(
+        "Budget passed 12-3, 2 abstained.",
+      ),
+    );
+    state.refetch.mockImplementation(async () => ({
+      data: meeting({ updated_at: "v2" }),
+    }));
+    await act(async () => button(tree, MEETING_COPY.post).props.onPress());
+    expect(state.update).toHaveBeenCalledTimes(1);
+    expect(state.post).toHaveBeenCalledWith({
+      id: "m1",
+      expectedUpdatedAt: "v2",
+    });
+    expect(hasBody(tree)).toBe(true);
+  });
+
+  it("writes the minutes by hand from the start box, with the template laid out", async () => {
+    state.draft = { status: "none" };
+    state.meeting = meeting({
+      content: EMPTY_MEETING_CONTENT,
+      sections: ["tldr", "summary", "decisions", "action_items"],
+    });
+    const tree = render();
+    await act(async () =>
+      button(tree, MINUTES_FLOW_COPY.start.byHand).props.onPress(),
+    );
+    expect(field(tree, "TL;DR")).toBeDefined();
+    expect(field(tree, "Summary")).toBeDefined();
+    expect(button(tree, MINUTES_EDITOR_COPY.decision.add)).toBeDefined();
+    expect(button(tree, MINUTES_EDITOR_COPY.actionItem.add)).toBeDefined();
+  });
+
+  it("opens the editor from the Summary note's line, saving the note first", async () => {
+    state.surfaces = { available: true, meetingNotes: false, ready: true };
+    state.summaryFlush.mockResolvedValue("v1");
+    const tree = render();
+    await act(async () => (state.summaryProps!.onEditAll as () => void)());
+    expect(state.summaryFlush).toHaveBeenCalled();
+    expect(field(tree, "Summary")).toBeDefined();
+    // The note steps aside while the editor has the Summary.
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "SummaryNote"),
+    ).toHaveLength(0);
+  });
+
+  it("doesn't open the editor over a stale Summary note, nor say the save failed", async () => {
+    state.surfaces = { available: true, meetingNotes: false, ready: true };
+    state.summaryFlush.mockResolvedValue(null);
+    state.summaryStale = true;
+    const tree = render();
+    await act(async () => (state.summaryProps!.onEditAll as () => void)());
+    expect(field(tree, "Summary")).toBeUndefined();
+    expect(screenText(tree)).not.toContain(MEETING_COPY.saveFailed);
+  });
+
+  it("Done keeps the editor while a Coming up line has no day, and says so", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    state.meeting = meeting({ sections: ["summary", "dates"] });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() =>
+      button(tree, MINUTES_FLOW_COPY.review.addSection).props.onPress(),
+    );
+    await act(async () =>
+      (
+        state.menu!.actions.find(
+          (item) => item.label === "Coming up",
+        ) as unknown as {
+          run: () => void;
+        }
+      ).run(),
+    );
+    act(() => button(tree, MEETING_COPY.addDate).props.onPress());
+    act(() =>
+      field(tree, `${MEETING_COPY.dateWhat} 1`)!.props.onChangeText(
+        "Formal at the lodge",
+      ),
+    );
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.done).props.onPress(),
+    );
+    expect(hasBody(tree)).toBe(false);
+    expect(field(tree, `${MEETING_COPY.dateWhat} 1`)?.props.value).toBe(
+      "Formal at the lodge",
+    );
+    expect(screenText(tree)).toContain(MEETING_COPY.dateNeedsDay);
+    expect(state.update).not.toHaveBeenCalled();
+  });
+
+  it("holds a draft's autosave while a draft from notes is being written", async () => {
+    vi.useFakeTimers();
+    try {
+      state.draft = { status: "applied", notes: "budget passed" };
+      const tree = render();
+      await fromMenu(tree, "Edit minutes");
+      act(() => field(tree, "Summary")!.props.onChangeText("Budget passed."));
+      state.draft = { status: "drafting", requested_at: "t1" };
+      act(() => field(tree, "Summary")!.props.onChangeText("Budget passed!"));
+      await act(async () => vi.advanceTimersByTime(1200));
+      expect(state.update).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves the editor's typing before a draft is asked for, and stops the ask when it can't", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Typed, not saved"));
+    const getVersion = state.notesProps!.getVersion as () => Promise<
+      string | null
+    >;
+    await act(async () => {
+      await getVersion();
+    });
+    expect(state.update).toHaveBeenCalledTimes(1);
+    expect(state.update.mock.invocationCallOrder[0]).toBeLessThan(
+      state.refetch.mock.invocationCallOrder.at(-1)!,
+    );
+
+    act(() => field(tree, "Summary")!.props.onChangeText("More, not saved"));
+    state.update.mockRejectedValue(new Error("offline"));
+    let version: string | null = "unset";
+    await act(async () => {
+      version = await getVersion();
+    });
+    expect(version).toBeNull();
+  });
+
+  it("asks before leaving a draft whose words can't be sent, and not otherwise", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Saves as it goes"));
+    // A draft that can still send its words on the way out leaves freely.
+    expect(state.preventRemove).toBe(false);
+    state.update.mockRejectedValue({ code: "meeting.stale" });
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.done).props.onPress(),
+    );
+    expect(screenText(tree)).toContain(MEETING_COPY.stale);
+    expect(state.preventRemove).toBe(true);
+  });
+
+  it("sends a draft's waiting words as the screen goes", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Typed, then left"));
+    expect(state.update).not.toHaveBeenCalled();
+    await act(async () => tree.unmount());
+    expect(state.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content: expect.objectContaining({ summary: "Typed, then left" }),
+        }),
+      }),
+    );
+  });
+
+  it("keeps the typing and says so when their version can't be loaded", async () => {
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T01:00:00.000Z",
+    });
+    state.update.mockRejectedValue({ code: "meeting.stale" });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    act(() => field(tree, "Summary")!.props.onChangeText("Mine, typed here"));
+    await act(async () =>
+      button(tree, MINUTES_EDITOR_COPY.save).props.onPress(),
+    );
+    // Offline: the read fails and TanStack hands back the copy it held.
+    state.refetch.mockImplementation(async () => ({
+      data: state.meeting,
+      isError: true,
+    }));
+    await act(async () =>
+      button(tree, MEETING_COPY.loadTheirs).props.onPress(),
+    );
+    expect(field(tree, "Summary")?.props.value).toBe("Mine, typed here");
+    expect(screenText(tree)).toContain(MINUTES_EDITOR_COPY.loadFailed);
+  });
+
+  it("takes a newer version that arrives while nothing is typed", async () => {
+    state.draft = { status: "applied", notes: "budget passed" };
+    state.meeting = meeting({ updated_at: "2026-11-10T08:00:00.000Z" });
+    const tree = render();
+    await fromMenu(tree, "Edit minutes");
+    state.meeting = meeting({
+      updated_at: "2026-11-10T09:00:00.000Z",
+      content: { ...WRITTEN, summary: "Their newer summary." },
+    });
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <MinutesDetailsScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(field(tree, "Summary")?.props.value).toBe("Their newer summary.");
   });
 });
