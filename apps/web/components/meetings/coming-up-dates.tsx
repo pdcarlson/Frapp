@@ -9,14 +9,13 @@ import {
   useComingUpTracking,
   useCreateTask,
   useMemberDisplayNames,
-  useMyPermissions,
 } from "@repo/hooks";
 import {
   COMING_UP_COPY,
-  can,
   comingUpChips,
   comingUpCopyText,
   comingUpEventTimes,
+  comingUpIsAhead,
   comingUpMenu,
   suggestTaskOwner,
   type ComingUpMenuAction,
@@ -56,24 +55,24 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * and menu, from the same `@repo/validation` words (`coming-up-tracking.ts`).
  */
 export function ComingUpDates({
-  meetingId,
   dates,
   viewerId,
 }: {
-  meetingId: string;
   dates: readonly MeetingDateItem[];
   viewerId: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const tracking = useComingUpTracking(meetingId, dates);
+  const { tracking, canCreateEvents, canManageTasks } =
+    useComingUpTracking(dates);
   const names = useMemberDisplayNames();
   const roster = useChapterRoster();
-  const permissions = useMyPermissions().data?.permissions ?? [];
-  const canCreateEvents = can("events:create", permissions);
-  const canManageTasks = can("tasks:manage", permissions);
   const createTask = useCreateTask();
-  const [eventFor, setEventFor] = useState<MeetingDateItem | null>(null);
+  const [eventFor, setEventFor] = useState<{
+    item: MeetingDateItem;
+    start: Date;
+    end: Date;
+  } | null>(null);
   const [taskFor, setTaskFor] = useState<MeetingDateItem | null>(null);
 
   async function act(
@@ -85,7 +84,8 @@ export function ComingUpDates({
       const event = tracking[index]?.event;
       if (event) router.push(`/events?event=${event.id}`);
     } else if (action === "addToCalendar") {
-      setEventFor(item);
+      const times = comingUpEventTimes(item.date);
+      if (times) setEventFor({ item, ...times });
     } else if (action === "makeTask") {
       setTaskFor(item);
     } else {
@@ -93,12 +93,11 @@ export function ComingUpDates({
         await navigator.clipboard.writeText(comingUpCopyText(item));
         toast({ title: COMING_UP_COPY.copied });
       } catch {
-        toast({ title: "Couldn't copy the date", variant: "destructive" });
+        toast({ title: COMING_UP_COPY.copyFailed, variant: "destructive" });
       }
     }
   }
 
-  const eventTimes = eventFor ? comingUpEventTimes(eventFor.date) : null;
   const guessedOwner = taskFor
     ? suggestTaskOwner(taskFor.text, roster.data ?? [])
     : null;
@@ -161,6 +160,7 @@ export function ComingUpDates({
             <DropdownMenuContent align="end">
               {comingUpMenu({
                 hasEvent: !!tracking[index]?.event,
+                upcoming: comingUpIsAhead(item.date),
                 canCreateEvents,
                 canManageTasks,
               }).map((entry) => (
@@ -176,7 +176,7 @@ export function ComingUpDates({
         )}
       />
 
-      {eventFor && eventTimes ? (
+      {eventFor ? (
         <EventEditorDialog
           open
           onOpenChange={(open) => {
@@ -187,9 +187,9 @@ export function ComingUpDates({
           mode="create"
           event={null}
           usingPreviewData={false}
-          initialName={eventFor.text}
-          initialStartAt={isoToLocalInput(eventTimes.start.toISOString())}
-          initialEndAt={isoToLocalInput(eventTimes.end.toISOString())}
+          initialName={eventFor.item.text}
+          initialStartAt={isoToLocalInput(eventFor.start.toISOString())}
+          initialEndAt={isoToLocalInput(eventFor.end.toISOString())}
           onSaved={() => setEventFor(null)}
         />
       ) : null}

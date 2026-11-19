@@ -13,15 +13,14 @@ import {
   useChapterRoster,
   useComingUpTracking,
   useMemberDisplayNames,
-  usePermissionList,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   COMING_UP_COPY,
-  can,
   comingUpChips,
   comingUpCopyText,
   comingUpEventTimes,
+  comingUpIsAhead,
   comingUpMenu,
   suggestTaskOwner,
   type ComingUpMenuAction,
@@ -67,23 +66,19 @@ const GLYPHS: Record<ComingUpMenuAction, (color: string) => React.ReactNode> = {
  * menu in the same order, from `@repo/validation`'s `coming-up-tracking.ts`.
  */
 export function ComingUpDates({
-  meetingId,
   dates,
   viewerId,
 }: {
-  meetingId: string;
   dates: MeetingContent["dates"];
   viewerId: string | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const tracking = useComingUpTracking(meetingId, dates);
+  const { tracking, canCreateEvents, canManageTasks } =
+    useComingUpTracking(dates);
   const names = useMemberDisplayNames();
   const roster = useChapterRoster();
-  const permissions = usePermissionList();
-  const canCreateEvents = can("events:create", permissions);
-  const canManageTasks = can("tasks:manage", permissions);
   const itemMenu = useItemMenu();
 
   const [eventFor, setEventFor] = useState<{
@@ -112,13 +107,14 @@ export function ComingUpDates({
       }
     } else if (action === "addToCalendar") {
       const times = comingUpEventTimes(item.date);
+      if (!times) return;
       setEventFor({
         key,
         template: {
           ...emptyEventDraft(),
           name: item.text,
-          start: times?.start ?? null,
-          end: times?.end ?? null,
+          start: times.start,
+          end: times.end,
         },
       });
     } else if (action === "makeTask") {
@@ -138,10 +134,15 @@ export function ComingUpDates({
         },
       });
     } else {
-      void Clipboard.setStringAsync(comingUpCopyText(item)).then(() => {
-        selectionHaptic();
-        AccessibilityInfo.announceForAccessibility(COMING_UP_COPY.copied);
-      });
+      void Clipboard.setStringAsync(comingUpCopyText(item)).then(
+        () => {
+          selectionHaptic();
+          AccessibilityInfo.announceForAccessibility(COMING_UP_COPY.copied);
+        },
+        () => {
+          AccessibilityInfo.announceForAccessibility(COMING_UP_COPY.copyFailed);
+        },
+      );
     }
   }
 
@@ -193,6 +194,7 @@ export function ComingUpDates({
         trailing={(item, index) => {
           const actions: ItemMenuAction[] = comingUpMenu({
             hasEvent: !!tracking[index]?.event,
+            upcoming: comingUpIsAhead(item.date),
             canCreateEvents,
             canManageTasks,
           }).map((entry) => ({
@@ -236,7 +238,6 @@ export function ComingUpDates({
           key={taskFor.key}
           ref={taskRef}
           prefill={taskFor.prefill}
-          offerGroups
           onClosed={() => setTaskFor(null)}
         />
       ) : null}

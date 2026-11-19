@@ -4,8 +4,8 @@ import {
   comingUpCopyText,
   comingUpEventTimes,
   comingUpMenu,
+  comingUpIsAhead,
   comingUpTracking,
-  localDayOf,
 } from "./coming-up-tracking";
 
 const noon = (day: string) => new Date(`${day}T12:00:00`).toISOString();
@@ -16,77 +16,60 @@ const task = (
     title: string;
     due_date: string;
     assignee_id: string;
-    meeting_id: string | null;
     group_id: string | null;
-    status: string;
   }>,
 ) => ({
   id: "t",
   title: "Something else",
   due_date: "2026-11-21",
   assignee_id: "u1",
-  meeting_id: null,
   group_id: null,
-  status: "TODO",
   ...over,
 });
 
 describe("comingUpTracking", () => {
   const dates = [
     { date: "2026-12-06", text: "Winter formal at the Hilton" },
-    { date: "2026-11-21", text: "Dues due to the treasurer" },
+    { date: "2026-11-21", text: "Dues to the treasurer" },
   ];
 
-  it("finds the event on that day whose name reads like the date", () => {
+  it("finds the event on that day that shares the date's words", () => {
     const [formal, dues] = comingUpTracking(dates, {
-      meetingId: "m1",
       events: [
         { id: "e0", name: "Chapter Meeting", start_time: noon("2026-12-06") },
-        { id: "e1", name: "Winter Formal", start_time: noon("2026-12-06") },
+        { id: "e1", name: "Formal", start_time: noon("2026-12-06") },
         { id: "e2", name: "Winter Formal", start_time: noon("2026-12-07") },
+        { id: "e3", name: "Treasurer office hours", start_time: "nope" },
       ],
       tasks: [],
     });
-    expect(formal.event?.id).toBe("e1");
-    expect(dues.event).toBeNull();
+    expect(formal!.event?.id).toBe("e1");
+    expect(dues!.event).toBeNull();
   });
 
-  it("takes a task made from these minutes for the day, or one that reads alike", () => {
+  it("takes a task due that day about the same thing, however it is worded", () => {
     const [, dues] = comingUpTracking(dates, {
-      meetingId: "m1",
       events: [],
       tasks: [
-        task({ id: "a", title: "Collect dues", meeting_id: "m1" }),
-        task({ id: "b", title: "Dues due to the treasurer" }),
-        task({ id: "c", title: "Book the band" }),
-        task({
-          id: "d",
-          title: "Collect dues",
-          meeting_id: "m1",
-          due_date: "2026-11-22",
-        }),
+        task({ id: "a", title: "Collect dues from brothers" }),
+        task({ id: "b", title: "Order pledge pins" }),
+        task({ id: "c", title: "Dues", due_date: "2026-11-22" }),
       ],
     });
-    expect(dues.tasks.map((t) => t.id)).toEqual(["a", "b"]);
+    expect(dues!.tasks.map((t) => t.id)).toEqual(["a"]);
   });
 
-  it("counts a task for everyone once", () => {
+  it("counts a task for several people once, with how many it went to", () => {
     const [, dues] = comingUpTracking(dates, {
-      meetingId: "m1",
       events: [],
       tasks: [
-        task({ id: "a", meeting_id: "m1", group_id: "g" }),
-        task({ id: "b", meeting_id: "m1", group_id: "g", assignee_id: "u2" }),
+        task({ id: "a", title: "Pay dues", group_id: "g" }),
+        task({ id: "b", title: "Pay dues", group_id: "g", assignee_id: "u2" }),
+        task({ id: "c", title: "Pay dues", group_id: "g", assignee_id: "u3" }),
       ],
     });
-    expect(dues.tasks).toHaveLength(1);
-  });
-});
-
-describe("localDayOf", () => {
-  it("reads the viewer's day", () => {
-    expect(localDayOf(noon("2026-12-06"))).toBe("2026-12-06");
-    expect(localDayOf("nope")).toBe("");
+    expect(dues!.tasks).toHaveLength(1);
+    expect(dues!.tasks[0]!.people).toBe(3);
   });
 });
 
@@ -108,6 +91,7 @@ describe("comingUpChips", () => {
     title: "Dues",
     due_date: "2026-12-04",
     assignee_id: "u2",
+    people: 1,
   };
   const nameFor = (id: string) => (id === "u2" ? "Jake" : null);
 
@@ -128,41 +112,69 @@ describe("comingUpChips", () => {
       ),
     ).toEqual([{ key: "task", label: "2 tasks" }]);
     expect(comingUpChips({ event: null, tasks: [] }, nameFor)).toEqual([]);
+    expect(
+      comingUpChips({ event: null, tasks: [{ ...made, people: 12 }] }, nameFor),
+    ).toEqual([{ key: "task", label: "Task · 12 people" }]);
   });
 });
 
 describe("comingUpMenu", () => {
-  const labels = (input: Parameters<typeof comingUpMenu>[0]) =>
-    comingUpMenu(input).map((item) => item.label);
+  const labels = (over: Partial<Parameters<typeof comingUpMenu>[0]>) =>
+    comingUpMenu({
+      hasEvent: false,
+      upcoming: true,
+      canCreateEvents: false,
+      canManageTasks: false,
+      ...over,
+    }).map((item) => item.label);
+  const officer = { canCreateEvents: true, canManageTasks: true };
 
   it("offers an officer the calendar, a task and the copy, in that order", () => {
-    expect(
-      labels({ hasEvent: false, canCreateEvents: true, canManageTasks: true }),
-    ).toEqual(["Add to calendar", "Make a task", "Copy date"]);
-    expect(
-      labels({ hasEvent: true, canCreateEvents: true, canManageTasks: true }),
-    ).toEqual(["Open the event", "Make a task", "Copy date"]);
+    expect(labels(officer)).toEqual([
+      "Add to calendar",
+      "Make a task",
+      "Copy date",
+    ]);
+    expect(labels({ ...officer, hasEvent: true })).toEqual([
+      "Open the event",
+      "Make a task",
+      "Copy date",
+    ]);
   });
 
   it("leaves a member the event, when there is one, and the copy", () => {
-    expect(
-      labels({
-        hasEvent: false,
-        canCreateEvents: false,
-        canManageTasks: false,
-      }),
-    ).toEqual(["Copy date"]);
-    expect(
-      labels({ hasEvent: true, canCreateEvents: false, canManageTasks: false }),
-    ).toEqual(["Open the event", "Copy date"]);
+    expect(labels({})).toEqual(["Copy date"]);
+    expect(labels({ hasEvent: true })).toEqual(["Open the event", "Copy date"]);
+  });
+
+  it("offers nothing to make for a day already gone", () => {
+    expect(labels({ ...officer, upcoming: false })).toEqual(["Copy date"]);
   });
 });
 
 describe("comingUpEventTimes", () => {
+  const now = new Date(2026, 10, 19, 15, 7);
+
   it("starts at 7 PM that day, for an hour", () => {
-    const times = comingUpEventTimes("2026-12-06")!;
+    const times = comingUpEventTimes("2026-12-06", now)!;
     expect(times.start).toEqual(new Date(2026, 11, 6, 19));
     expect(times.end).toEqual(new Date(2026, 11, 6, 20));
-    expect(comingUpEventTimes("soon")).toBeNull();
+  });
+
+  it("starts at the next quarter hour today once 7 PM has gone, and not at all for a past day", () => {
+    const late = new Date(2026, 10, 19, 20, 7);
+    expect(comingUpEventTimes("2026-11-19", late)!.start).toEqual(
+      new Date(2026, 10, 19, 20, 15),
+    );
+    expect(comingUpEventTimes("2026-11-18", now)).toBeNull();
+    expect(comingUpEventTimes("soon", now)).toBeNull();
+  });
+});
+
+describe("comingUpIsAhead", () => {
+  it("counts today as ahead", () => {
+    const now = new Date(2026, 10, 19, 23, 30);
+    expect(comingUpIsAhead("2026-11-19", now)).toBe(true);
+    expect(comingUpIsAhead("2026-11-18", now)).toBe(false);
   });
 });

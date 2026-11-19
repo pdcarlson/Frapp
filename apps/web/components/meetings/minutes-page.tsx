@@ -1032,7 +1032,6 @@ function Minutes({
                   </p>
                 ) : key === "dates" ? (
                   <ComingUpDates
-                    meetingId={meeting.id}
                     dates={view.content.dates}
                     viewerId={viewer?.id ?? null}
                   />

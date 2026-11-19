@@ -852,11 +852,7 @@ function LoadedMinutes({
         tasks={actionTasks}
         onSectionLayout={(key, y) => sectionY.current.set(key, y)}
         renderDates={(dates) => (
-          <ComingUpDates
-            meetingId={meeting.id}
-            dates={dates}
-            viewerId={viewerId}
-          />
+          <ComingUpDates dates={dates} viewerId={viewerId} />
         )}
       />
     </View>
