@@ -563,6 +563,36 @@ describe("useMessageAttachments", () => {
     expect(result.current[1]!.fetchStatus).toBe("idle");
   });
 
+  it("drops a cancelled row from a batch not yet sent, and still answers its neighbour", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { "m-1": [file("a-1", "m-1")] },
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-1", "m-2", true),
+      ],
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+    // Before the batch's tick: the second row's query is cancelled.
+    await queryClient.cancelQueries({
+      queryKey: ["channels", "chan-1", "messages", "m-2", "attachments"],
+    });
+
+    await waitFor(() => expect(result.current[0]!.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        mockGet.mock.calls[0]![1] as {
+          params: { query: { message_ids: string } };
+        }
+      ).params.query.message_ids,
+    ).toEqual("m-1");
+    expect(result.current[1]!.isSuccess).toBe(false);
+  });
+
   it("sends each channel's messages under that channel", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: {}, error: null });
 

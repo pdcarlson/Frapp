@@ -920,7 +920,8 @@ export function useMessageAttachments(
     // Batched: every row that mounts in the same tick shares one request
     // (#5667). One request per message cost ~7 database calls each, so a
     // channel of photos queued the whole API behind it.
-    queryFn: () => attachmentBatcherFor(client).load(channelId, messageId),
+    queryFn: ({ signal }) =>
+      loadMessageAttachments(client, channelId, messageId, signal),
   });
 }
 
@@ -945,9 +946,10 @@ interface AttachmentWaiter {
  * viewer's `refetchOnMount: false` join work exactly as before; only the
  * network call is shared.
  *
- * Not tied to a caller's abort signal: one row unmounting must not cancel the
- * request its neighbours are waiting on. A request that fails rejects only the
- * messages in its own chunk.
+ * A caller's abort signal cancels only that caller: its promise rejects, and
+ * a message nobody waits on any more drops out of a batch not yet sent, but a
+ * request already sent runs on, because its neighbours are waiting on it. A
+ * request that fails rejects only the messages in its own chunk.
  */
 function createAttachmentBatcher(client: FrappClient) {
   /** channel id → message id → everyone waiting on that message. */
@@ -995,16 +997,48 @@ function createAttachmentBatcher(client: FrappClient) {
   };
 
   return {
-    load(channelId: string, messageId: string): Promise<MessageAttachment[]> {
+    load(
+      channelId: string,
+      messageId: string,
+      signal?: AbortSignal,
+    ): Promise<MessageAttachment[]> {
       return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
         let forChannel = pending.get(channelId);
         if (!forChannel) {
           forChannel = new Map();
           pending.set(channelId, forChannel);
         }
-        const waiters = forChannel.get(messageId) ?? [];
-        waiters.push({ resolve, reject });
-        forChannel.set(messageId, waiters);
+        const channelWaiters = forChannel;
+        const waiters = channelWaiters.get(messageId) ?? [];
+        const waiter: AttachmentWaiter = {
+          resolve: (rows) => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve(rows);
+          },
+          reject: (error) => {
+            signal?.removeEventListener("abort", onAbort);
+            reject(error);
+          },
+        };
+        function onAbort() {
+          const index = waiters.indexOf(waiter);
+          if (index !== -1) waiters.splice(index, 1);
+          // Unsent and now unwanted: leave it out of the batch.
+          if (
+            waiters.length === 0 &&
+            pending.get(channelId) === channelWaiters
+          ) {
+            channelWaiters.delete(messageId);
+          }
+          reject(signal!.reason);
+        }
+        signal?.addEventListener("abort", onAbort, { once: true });
+        waiters.push(waiter);
+        channelWaiters.set(messageId, waiters);
         if (!scheduled) {
           scheduled = true;
           // A macrotask, not a microtask: rows of one list mount in one commit
@@ -1020,6 +1054,16 @@ const attachmentBatchers = new WeakMap<
   FrappClient,
   ReturnType<typeof createAttachmentBatcher>
 >();
+
+/** One message's attachments, through the client's batcher. */
+function loadMessageAttachments(
+  client: FrappClient,
+  channelId: string,
+  messageId: string,
+  signal: AbortSignal,
+): Promise<MessageAttachment[]> {
+  return attachmentBatcherFor(client).load(channelId, messageId, signal);
+}
 
 function attachmentBatcherFor(client: FrappClient) {
   let batcher = attachmentBatchers.get(client);
