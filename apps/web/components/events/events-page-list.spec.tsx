@@ -1,20 +1,24 @@
 import { act, render, screen, within } from "@testing-library/react";
 import { selectCalendarBirthdays } from "@repo/hooks/calendar-birthdays";
+import { selectCalendarTasks } from "@repo/hooks/calendar-tasks";
+import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
+import { localIsoDate } from "@repo/formatting";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /*
- * The flushed list (`spec/ui/web-dashboard/README.md` § Page grammar): no
- * wrapper card or table, a section label that follows the Time filter, rows
- * under written-out day headings, one row per repeating series, a two-week
- * horizon with Later behind it, the filters behind one Filter button, bulk
+ * The Events agenda (#5560, `spec/ui/web-dashboard/README.md` § Chapter ops):
+ * no wrapper card or table, a section label that follows the Time filter,
+ * days under written-out headings holding events, tasks and birthdays in
+ * their kinds' hues, one row per repeating series, a navigator and a colour
+ * key that is the filter, the filters behind one Filter button, bulk
  * selection behind Select, and no badge or meta clause standing in for an
  * absent value (#3822).
  */
 
 const DAY = 24 * 60 * 60 * 1000;
-// Relative to the suite's clock, so the rows sit inside the two-week horizon
+// Relative to the suite's clock, so the rows sit inside the agenda's window
 // whenever it runs. Local noon two and three days out.
 function daysOut(days: number, hour = 12): string {
   const at = new Date();
@@ -88,6 +92,7 @@ vi.mock("@repo/hooks", async () => {
     // whatever it answers (#4132).
     useRequiredOfViewer: () => requiredOfViewer.current,
     useCalendarBirthdays: () => birthdaysRef.current,
+    useCalendarTasks: () => tasksRef.current,
     useRoles: () => ({ data: [], isError: false }),
     // The editor itself, opened by the draft cases (#4593).
     ...eventTypeHooks([]),
@@ -154,9 +159,21 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 
 // The page's URL; no `?event=` unless a test sets one.
 const searchRef = vi.hoisted(() => ({ current: new URLSearchParams() }));
-// The calendar's birthday items (#4959), as `useCalendarBirthdays` serves them.
+// The agenda's birthday items (#4959), as `useCalendarBirthdays` serves them.
 const birthdaysRef = vi.hoisted(() => ({
   current: [] as import("@repo/hooks/calendar-birthdays").CalendarBirthday[],
+}));
+// The agenda's tasks (#4144), as `useCalendarTasks` serves them.
+const tasksRef = vi.hoisted(() => ({
+  current: {
+    items: [] as import("@repo/hooks/calendar-tasks").CalendarTask[],
+  },
+}));
+// The pane's measured width: `null` (unmeasured, as in jsdom) draws the wide
+// layout; a test sets `true` for the narrow one beside chat.
+const narrowRef = vi.hoisted(() => ({ current: null as boolean | null }));
+vi.mock("@/lib/use-is-narrow", () => ({
+  useIsNarrow: () => [() => undefined, narrowRef.current],
 }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => searchRef.current,
@@ -197,6 +214,8 @@ beforeEach(() => {
   permissionsRef.current = ["events:create", "events:update", "members:view"];
   searchRef.current = new URLSearchParams();
   birthdaysRef.current = [];
+  tasksRef.current = { items: [] };
+  narrowRef.current = null;
 });
 
 describe("EventsPage ?event=<id> (Activity's Open in Events, #3897)", () => {
@@ -243,7 +262,7 @@ describe("EventsPage list", () => {
     ).toBeNull();
   });
 
-  it("keeps one toolbar row: the view toggle, search, one Filter button, New event", () => {
+  it("keeps the toolbar to search, one Filter button and a quiet New event, with no switcher", () => {
     const { container } = render(<EventsPage />);
 
     // The route's h1 is the top bar's (`top-bar.tsx`), not the page's.
@@ -258,11 +277,15 @@ describe("EventsPage list", () => {
     expect(
       scope.getByRole("button", { name: "Filter events" }),
     ).toBeInTheDocument();
-    const view = scope.getByRole("radiogroup", { name: "View" });
-    expect(within(view).getByRole("radio", { name: "List" })).toBeChecked();
-    expect(
-      within(view).getByRole("radio", { name: "Calendar" }),
-    ).not.toBeChecked();
+    // No List | Calendar, no Month | Week | Day, no chip row (#5560).
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByRole("button", { name: "My tasks" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Assigned by me" })).toBeNull();
+    // Still the one primary action, outlined in the accent, not filled.
+    expect(newEvent.className).toContain("border-primary/35");
+    expect(newEvent.className).toContain("text-primary");
+    expect(newEvent.className).not.toMatch(/(^| )bg-primary( |$)/);
     // No native select anywhere on the page (#3822).
     expect(container.querySelector("select")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
@@ -294,7 +317,7 @@ describe("EventsPage list", () => {
     expect(screen.getByText("2 events")).toBeInTheDocument();
   });
 
-  it("groups rows under written-out day headings", () => {
+  it("groups rows under written-out day headings, Today always first", () => {
     render(<EventsPage />);
 
     const meetingDay = new Date(EVENTS[0]!.start_time).toLocaleDateString(
@@ -304,7 +327,10 @@ describe("EventsPage list", () => {
     expect(
       screen.getByRole("heading", { level: 3, name: meetingDay }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(2);
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings).toHaveLength(3);
+    expect(headings[0]).toHaveTextContent("Today");
+    expect(screen.getByText("Nothing today.")).toBeInTheDocument();
   });
 
   it("shows a repeating series once, as its next meeting, saying how it repeats", async () => {
@@ -354,38 +380,46 @@ describe("EventsPage list", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps what starts after the next two weeks behind Later", async () => {
+  it("reaches four weeks out, and Show more reaches past them", async () => {
     const user = userEvent.setup();
     eventsQuery.data = [
       EVENTS[1],
-      { ...EVENTS[0], id: "far", name: "Formal", start_time: daysOut(30) },
+      { ...EVENTS[0], id: "far", name: "Formal", start_time: daysOut(40) },
     ];
     render(<EventsPage />);
 
-    const upcoming = within(screen.getByRole("region", { name: "Upcoming" }));
-    expect(upcoming.getAllByText("1 event")).toHaveLength(2);
+    expect(screen.getByText("1 event")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^formal/i })).toBeNull();
-    const later = screen.getByRole("button", { name: /later/i });
-    expect(later).toHaveAttribute("aria-expanded", "false");
 
-    await user.click(later);
-    expect(later).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "Show more" }));
     expect(
       screen.getByRole("button", { name: /^formal/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   });
 
-  it("says the next two weeks are clear when only Later holds events", () => {
-    eventsQuery.data = [{ ...EVENTS[1], start_time: daysOut(30) }];
+  it("says Nothing this week over a quiet week, then carries on to what comes after", () => {
+    eventsQuery.data = [{ ...EVENTS[1], start_time: daysOut(10) }];
     render(<EventsPage />);
 
+    expect(screen.getByText("Nothing today.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing this week.")).toBeInTheDocument();
     expect(
-      screen.getByText("Nothing in the next two weeks."),
+      screen.getByRole("button", { name: /^study night/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /later/i })).toBeInTheDocument();
   });
 
-  it("badges and filters Mandatory by what the event asks of this viewer, not its default (#4132)", async () => {
+  it("carries on past the four weeks to the next day that has anything", () => {
+    eventsQuery.data = [{ ...EVENTS[1], start_time: daysOut(60) }];
+    render(<EventsPage />);
+
+    expect(screen.getByText("Nothing this week.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^study night/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("marks and filters Required by what the event asks of this viewer, not its default (#4132)", async () => {
     // A viewer whose roles turn both defaults around: Study Night (optional
     // for everyone) is required of them, Chapter Meeting (required by
     // default) isn't.
@@ -394,10 +428,10 @@ describe("EventsPage list", () => {
     render(<EventsPage />);
 
     expect(
-      within(row(/study night/i)).getByText("Mandatory"),
+      within(row(/study night/i)).getByText("Required"),
     ).toBeInTheDocument();
     expect(
-      within(row(/chapter meeting/i)).queryByText("Mandatory"),
+      within(row(/chapter meeting/i)).queryByText("Required"),
     ).not.toBeInTheDocument();
 
     await openFilters(user);
@@ -406,23 +440,28 @@ describe("EventsPage list", () => {
     expect(row(/study night/i)).toBeInTheDocument();
   });
 
-  it("badges a mandatory event in words, quietly", () => {
+  it("draws a required event loudest: a fuller sky fill, a sky edge and the word Required", () => {
     render(<EventsPage />);
 
-    const meeting = within(row(/chapter meeting/i));
-    expect(meeting.getByText("Mandatory")).toBeInTheDocument();
-    // The hairline kind, not a red pill on every row (#3822), and never the
-    // accent (components.md §5).
-    expect(meeting.getByText("Mandatory").className).toContain(
-      "text-muted-foreground",
-    );
-    expect(meeting.getByText("Mandatory").className).not.toContain(
-      "text-destructive-text",
-    );
-    expect(meeting.getByText("Mandatory").className).not.toContain(
-      "text-accent-text",
-    );
-    expect(meeting.queryByText("WEEKLY")).toBeNull();
+    // The wash and edge span the whole row, its selection slot inside: the
+    // required row at 22% with a 60% sky edge, a plain one at 9% and no edge.
+    const requiredStyle = row(/^chapter meeting/i).getAttribute("style") ?? "";
+    expect(requiredStyle).toMatch(/background-color:[^;]*22%/);
+    expect(requiredStyle).toMatch(/border-color:[^;]*60%/);
+    const plainStyle = row(/^study night/i).getAttribute("style") ?? "";
+    expect(plainStyle).toMatch(/background-color:[^;]*9%/);
+    expect(plainStyle).not.toMatch(/22%|60%|border-color/);
+
+    const meeting = screen.getByRole("button", { name: /^chapter meeting/i });
+    const study = screen.getByRole("button", { name: /^study night/i });
+    expect(meeting).toHaveAttribute("data-required", "true");
+    expect(study).not.toHaveAttribute("data-required");
+    const required = within(meeting).getByText("Required");
+    // The events hue, never the accent or red; the grey pill is gone.
+    expect(required.getAttribute("style")).toContain("color");
+    expect(required.className).not.toContain("text-destructive-text");
+    expect(within(meeting).queryByText("Mandatory")).toBeNull();
+    expect(within(meeting).queryByText("WEEKLY")).toBeNull();
   });
 
   it("leaves an absent value absent: no Optional badge, no TBD, no 0 points", () => {
@@ -527,7 +566,7 @@ describe("EventsPage list", () => {
     );
   });
 
-  it("counts Time on the Filter button only in the list, the view it applies to", async () => {
+  it("counts Time on the Filter button", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
 
@@ -537,60 +576,44 @@ describe("EventsPage list", () => {
     expect(
       screen.getByRole("button", { name: "Filter events, 1 on" }),
     ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("radio", { name: "Calendar" }));
-    expect(
-      screen.getByRole("button", { name: "Filter events" }),
-    ).toBeInTheDocument();
   });
 
-  it("selects only what's on screen: Later's rows only while it's open", async () => {
+  it("selects only what's on screen: a row the colour key hides drops out", async () => {
     const user = userEvent.setup();
-    eventsQuery.data = [
-      EVENTS[1],
-      { ...EVENTS[0], id: "far", name: "Formal", start_time: daysOut(30) },
-    ];
     render(<EventsPage />);
 
     await user.click(screen.getByRole("button", { name: "Select" }));
     await user.click(
       screen.getByRole("checkbox", { name: /select all visible events/i }),
     );
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
-
-    const later = screen.getByRole("button", { name: /later/i });
-    await user.click(later);
-    expect(
-      screen.getByRole("checkbox", { name: /select formal/i }),
-    ).not.toBeChecked();
-    await user.click(screen.getByRole("checkbox", { name: /select formal/i }));
     expect(screen.getByText("2 selected")).toBeInTheDocument();
 
-    // Collapsed, Formal is off screen: the count drops it.
-    await user.click(later);
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
-  });
-
-  it("keeps Select's Done when no row is on screen", async () => {
-    const user = userEvent.setup();
-    eventsQuery.data = [{ ...EVENTS[1], start_time: daysOut(30) }];
-    render(<EventsPage />);
-
-    const later = screen.getByRole("button", { name: /later/i });
-    await user.click(later);
-    await user.click(screen.getByRole("button", { name: "Select" }));
-    await user.click(
-      screen.getByRole("checkbox", { name: /select study night/i }),
-    );
-    await user.click(later);
-
+    await user.click(screen.getByRole("button", { name: /^events, \d/i }));
     expect(screen.getByText("0 selected")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     ).toBeDisabled();
+
+    // Back on, the ticks come back with the rows.
+    await user.click(screen.getByRole("button", { name: /^events, \d/i }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  });
+
+  it("keeps Select's Done when no row is on screen", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select study night/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /^events, \d/i }));
+
+    expect(screen.getByText("0 selected")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Done" }));
     // Out of the mode; with no row on screen there's nothing to Select.
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
     expect(screen.getByText("0 events")).toBeInTheDocument();
   });
 
@@ -708,40 +731,17 @@ describe("EventsPage empty states", () => {
     expect(screen.getByText("2 events")).toBeInTheDocument();
   });
 
-  it("opens a chapter with no events on the calendar, on no card", () => {
+  it("shows a chapter with no events its agenda, on no card", () => {
     eventsQuery.data = [];
     const { container } = render(<EventsPage />);
 
-    expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
-    expect(
-      screen.getByText("Pick a day to schedule the first event."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing today.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
     expect(
       screen.queryByRole("heading", { name: /no events yet/i }),
     ).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
-  });
-
-  it("waits for the events read before picking a view", () => {
-    // Picked on the loading render, `events` would be [] and every chapter,
-    // events or not, would open on the calendar and stay there.
-    eventsQuery.data = undefined;
-    const { rerender } = render(<EventsPage />);
-
-    eventsQuery.data = EVENTS;
-    rerender(<EventsPage />);
-
-    expect(screen.getByRole("radio", { name: "List" })).toBeChecked();
-  });
-
-  it("stays on the calendar once the first event arrives", () => {
-    eventsQuery.data = [];
-    const { rerender } = render(<EventsPage />);
-
-    eventsQuery.data = EVENTS;
-    rerender(<EventsPage />);
-
-    expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
   });
 
   it("says the phone's words when the events fail to load (#4135)", () => {
@@ -749,17 +749,6 @@ describe("EventsPage empty states", () => {
     eventsQuery.isError = true;
     render(<EventsPage />);
     expect(screen.getByText("Couldn't load events")).toBeInTheDocument();
-  });
-
-  it("says so in one line if the list is opened anyway", async () => {
-    const user = userEvent.setup();
-    eventsQuery.data = [];
-    render(<EventsPage />);
-
-    await user.click(screen.getByRole("radio", { name: "List" }));
-
-    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
   });
 
   it("offers no create control to a role with events:create but not members:view, which the API refuses", () => {
@@ -774,14 +763,12 @@ describe("EventsPage empty states", () => {
     ).toBeNull();
   });
 
-  it("gives a member the calendar without a create control", () => {
+  it("gives a member the agenda without a create control", () => {
     permissionsRef.current = ["members:view"];
     eventsQuery.data = [];
     render(<EventsPage />);
 
-    expect(
-      screen.getByText("Nothing on the calendar yet."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Nothing today.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /new event/i })).toBeNull();
     expect(
       screen.queryByRole("button", { name: /^create event on/i }),
@@ -789,56 +776,7 @@ describe("EventsPage empty states", () => {
   });
 });
 
-describe("EventsPage view memory", () => {
-  it("opens on the view this person last chose, across a reload", async () => {
-    const user = userEvent.setup();
-    const first = render(<EventsPage />);
-
-    await user.click(screen.getByRole("radio", { name: "Calendar" }));
-    first.unmount();
-
-    render(<EventsPage />);
-    expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
-  });
-
-  it("waits for the viewer before picking a view, so a stored Calendar never flashes the list", () => {
-    window.localStorage.setItem("frapp.events.view.user-1", "calendar");
-    viewerRef.current = { userId: null, isLoading: true };
-    const { rerender } = render(<EventsPage />);
-
-    // Events are in, the viewer isn't: no list painted to jump away from.
-    expect(screen.queryByRole("radio", { name: "List" })).toBeNull();
-    expect(screen.queryByRole("region", { name: "Upcoming" })).toBeNull();
-
-    viewerRef.current = { userId: "user-1", isLoading: false };
-    rerender(<EventsPage />);
-    expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
-  });
-
-  it("lets a stored List win over an empty chapter's calendar", () => {
-    window.localStorage.setItem("frapp.events.view.user-1", "list");
-    eventsQuery.data = [];
-    render(<EventsPage />);
-
-    expect(screen.getByRole("radio", { name: "List" })).toBeChecked();
-    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
-  });
-});
-
-describe("EventsPage calendar", () => {
-  it("renders flush, with no card title or description", async () => {
-    const user = userEvent.setup();
-    const { container } = render(<EventsPage />);
-
-    await user.click(screen.getByRole("radio", { name: "Calendar" }));
-
-    expect(screen.queryByText("Chapter Calendar")).toBeNull();
-    expect(screen.queryByText(/click a date to schedule/i)).toBeNull();
-    expect(cardFilledContainers(container)).toEqual([]);
-  });
-});
-
-describe("EventsPage calendar birthdays (#4959)", () => {
+describe("EventsPage agenda kinds, navigator and key (#5560)", () => {
   function withBirthdayToday() {
     const today = new Date();
     birthdaysRef.current = selectCalendarBirthdays(
@@ -855,40 +793,465 @@ describe("EventsPage calendar birthdays (#4959)", () => {
     );
   }
 
-  it("draws a shared birthday and offers a Birthdays toggle that hides it", async () => {
-    withBirthdayToday();
-    const user = userEvent.setup();
-    render(<EventsPage />);
-    await user.click(screen.getByRole("radio", { name: "Calendar" }));
-
-    expect(screen.getAllByTitle("Dana Lowe's birthday").length).toBeGreaterThan(
-      0,
+  /** Tasks due today: one of the viewer's, one handed to three members. */
+  function withTasksToday() {
+    const due = localIsoDate(new Date());
+    const base = { due_date: due, points_awarded: false, confirmed_at: null };
+    const items = selectCalendarTasks(
+      [
+        {
+          ...base,
+          id: "t-mine",
+          title: "Dues form",
+          assignee_id: "user-1",
+          created_by: "officer",
+          status: "COMPLETED",
+          points_awarded: true,
+        },
+        ...["m1", "m2", "m3"].map((member) => ({
+          ...base,
+          id: `t-${member}`,
+          title: "Service log",
+          assignee_id: member,
+          created_by: "user-1",
+          status: "TODO",
+        })),
+      ],
+      "user-1",
     );
-    const toggle = screen.getByRole("button", { name: "Birthdays" });
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    tasksRef.current = { items };
+  }
 
-    await user.click(toggle);
-    expect(screen.queryByTitle("Dana Lowe's birthday")).toBeNull();
-    expect(
-      JSON.parse(
-        window.localStorage.getItem("frapp.events.calendar-layers.user-1")!,
-      ),
-    ).toEqual({ hidden: ["birthdays"] });
+  const today = () => localIsoDate(new Date());
+  const dayOf = (iso: string) => localIsoDate(new Date(iso));
+  const markOf = (element: HTMLElement) =>
+    within(element).getByTestId("agenda-mark").getAttribute("data-hue");
+  const dotHue = (day: string, kind: string) =>
+    screen.getByTestId(`events-dot-${day}-${kind}`).getAttribute("data-hue");
+
+  it("interleaves a day's events, tasks and birthdays, events first", () => {
+    withBirthdayToday();
+    withTasksToday();
+    eventsQuery.data = [{ ...EVENTS[1], start_time: new Date().toISOString() }];
+    render(<EventsPage />);
+
+    const todayGroup = screen.getByRole("group", { name: "Today" });
+    const kinds = within(todayGroup)
+      .getAllByRole("listitem")
+      .map((item) =>
+        item.querySelector("[data-kind]")?.getAttribute("data-kind"),
+      );
+    expect(kinds).toEqual(["events", "tasks", "tasks", "birthdays"]);
+    expect(screen.queryByText("Nothing today.")).toBeNull();
   });
 
-  it("shows birthdays to a member whose saved toggles predate them", async () => {
+  it("colours each row as its day's dot and its key swatch", () => {
     withBirthdayToday();
-    window.localStorage.setItem(
-      "frapp.events.calendar-layers.user-1",
-      JSON.stringify(["events", "mine", "assigned"]),
+    withTasksToday();
+    render(<EventsPage />);
+
+    const event = screen.getByRole("button", { name: /^study night/i });
+    const eventDay = dayOf(EVENTS[1]!.start_time);
+    expect(markOf(event)).toBe(CALENDAR_KIND_HUE.events);
+    expect(dotHue(eventDay, "events")).toBe(CALENDAR_KIND_HUE.events);
+
+    const task = screen.getByRole("button", { name: /^dues form/i });
+    expect(markOf(task)).toBe(CALENDAR_KIND_HUE.tasks);
+    expect(dotHue(today(), "tasks")).toBe(CALENDAR_KIND_HUE.tasks);
+
+    const birthday = screen
+      .getByText("Dana Lowe's birthday")
+      .closest("[data-kind]") as HTMLElement;
+    expect(markOf(birthday)).toBe(CALENDAR_KIND_HUE.birthdays);
+    expect(dotHue(today(), "birthdays")).toBe(CALENDAR_KIND_HUE.birthdays);
+
+    for (const kind of ["events", "tasks", "birthdays"] as const) {
+      expect(
+        screen
+          .getByTestId(`events-key-swatch-${kind}`)
+          .getAttribute("data-hue"),
+      ).toBe(CALENDAR_KIND_HUE[kind]);
+    }
+    // Three different hues, none of them the same.
+    expect(new Set(Object.values(CALENDAR_KIND_HUE)).size).toBe(3);
+  });
+
+  it("draws one row per task handed to many, with its progress, and fills a done task's ring", () => {
+    withTasksToday();
+    render(<EventsPage />);
+
+    const group = screen.getAllByRole("button", { name: /^service log/i });
+    expect(group).toHaveLength(1);
+    expect(group[0]).toHaveTextContent("0 of 3 done");
+    const mine = screen.getByRole("button", { name: /^dues form/i });
+    expect(within(mine).getByTestId("agenda-mark")).toHaveAttribute(
+      "data-done",
+      "true",
     );
+    expect(within(mine).getByText("Dues form").className).toContain(
+      "line-through",
+    );
+  });
+
+  it("switches a kind off from its key, hiding rows and dots, and remembers it", async () => {
+    withBirthdayToday();
+    const user = userEvent.setup();
+    const first = render(<EventsPage />);
+
+    const toggle = screen.getByRole("button", { name: /^birthdays, \d/i });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Dana Lowe's birthday")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByText("Dana Lowe's birthday")).toBeNull();
+    expect(screen.queryByTestId(`events-dot-${today()}-birthdays`)).toBeNull();
+    // Hidden, the count still says what it holds back.
+    expect(toggle).toHaveTextContent("1");
+    expect(
+      JSON.parse(
+        window.localStorage.getItem("frapp.events.hidden-kinds.user-1")!,
+      ),
+    ).toEqual({ hidden: ["birthdays"] });
+
+    first.unmount();
+    render(<EventsPage />);
+    expect(screen.queryByText("Dana Lowe's birthday")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^birthdays, \d/i }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("draws today and the picked day apart: the accent disc and a ring", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<EventsPage />);
+    // The navigator and agenda sit on the page surface, on no card.
+    expect(cardFilledContainers(container)).toEqual([]);
+
+    const navigator = screen.getByRole("complementary", { name: "Navigator" });
+    const todayButton = navigator.querySelector("[data-today]") as HTMLElement;
+    expect(todayButton.querySelector("span")?.className).toContain(
+      "bg-primary",
+    );
+    expect(navigator.querySelector("[data-picked]")).toBeNull();
+
+    const meetingDay = new Date(EVENTS[0]!.start_time);
+    if (meetingDay.getMonth() !== new Date().getMonth()) {
+      await user.click(screen.getByRole("button", { name: "Next month" }));
+    }
+    const picked = within(navigator).getByRole("button", {
+      name: new RegExp(
+        `^${meetingDay.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`,
+      ),
+    });
+    await user.click(picked);
+    expect(picked).toHaveAttribute("aria-pressed", "true");
+    const ring = picked.querySelector("span")!.className;
+    expect(ring).toContain("ring-foreground");
+    expect(ring).not.toContain("bg-primary");
+  });
+
+  it("re-anchors on a picked day it isn't showing, saying when it's empty", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(screen.getByRole("radio", { name: "Calendar" }));
 
-    expect(screen.getAllByTitle("Dana Lowe's birthday").length).toBeGreaterThan(
-      0,
+    // Tomorrow holds nothing: the agenda starts there.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const navigator = screen.getByRole("complementary", { name: "Navigator" });
+    if (tomorrow.getMonth() !== new Date().getMonth()) {
+      await user.click(screen.getByRole("button", { name: "Next month" }));
+    }
+    await user.click(
+      within(navigator).getByRole("button", {
+        name: new RegExp(
+          `^${tomorrow.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`,
+        ),
+      }),
     );
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings[0]).toHaveTextContent("Tomorrow");
+    expect(screen.getByText("Nothing tomorrow.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^chapter meeting/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("scrolls to a picked day the agenda already lists, without re-anchoring", async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    const meetingDay = new Date(EVENTS[0]!.start_time);
+    if (meetingDay.getMonth() !== new Date().getMonth()) {
+      await user.click(screen.getByRole("button", { name: "Next month" }));
+    }
+    const navigator = screen.getByRole("complementary", { name: "Navigator" });
+    await user.click(
+      within(navigator).getByRole("button", {
+        name: new RegExp(
+          `^${meetingDay.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`,
+        ),
+      }),
+    );
+    expect(scrolled).toHaveBeenCalled();
+    expect(scrolled.mock.contexts[0]).toHaveAttribute(
+      "id",
+      `events-day-${localIsoDate(meetingDay)}`,
+    );
+    // Today still leads: the agenda didn't move.
+    expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(
+      "Today",
+    );
+  });
+
+  /** Presses `day` in the wide navigator, turning its month as needed. */
+  async function pickInNavigator(
+    user: ReturnType<typeof userEvent.setup>,
+    day: Date,
+  ) {
+    const shown = screen.getByRole("complementary", { name: "Navigator" });
+    if (day.getMonth() !== new Date().getMonth()) {
+      await user.click(
+        within(shown).getByRole("button", {
+          name: day < new Date() ? "Previous month" : "Next month",
+        }),
+      );
+    }
+    await user.click(
+      within(shown).getByRole("button", {
+        name: new RegExp(
+          `^${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`,
+        ),
+      }),
+    );
+  }
+
+  const fromToday = (days: number) => {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + days);
+    return day;
+  };
+
+  it("gathers unfinished tasks due before today under Overdue, above Today, counted as Tasks", () => {
+    const due = (days: number) => localIsoDate(fromToday(days));
+    tasksRef.current = {
+      items: selectCalendarTasks(
+        [
+          {
+            id: "late",
+            title: "Fix the door",
+            assignee_id: "user-1",
+            created_by: "officer",
+            due_date: due(-3),
+            status: "OVERDUE",
+          },
+          {
+            id: "done",
+            title: "Old form",
+            assignee_id: "user-1",
+            created_by: "officer",
+            due_date: due(-2),
+            status: "COMPLETED",
+            points_awarded: true,
+          },
+        ],
+        "user-1",
+      ),
+    };
+    render(<EventsPage />);
+
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings[0]).toHaveTextContent("Overdue");
+    expect(headings[1]).toHaveTextContent("Today");
+    const overdue = screen.getByRole("group", { name: "Overdue" });
+    expect(
+      within(overdue).getByRole("button", { name: /^fix the door/i }),
+    ).toHaveTextContent("Overdue");
+    expect(within(overdue).queryByText("Old form")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^tasks, \d/i }),
+    ).toHaveAccessibleName("Tasks, 1");
+  });
+
+  it("carries Past back to the last day with anything, and says when there is none", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = [
+      ...EVENTS,
+      { ...EVENTS[1], id: "old", name: "Retreat", start_time: daysOut(-60) },
+    ];
+    render(<EventsPage />);
+    await openFilters(user);
+    await pick(user, "Time", "Past");
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.getByRole("button", { name: /^retreat/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+  });
+
+  it("heads Past with a picked day, saying when it's empty", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await openFilters(user);
+    await pick(user, "Time", "Past");
+    await user.keyboard("{Escape}");
+
+    await pickInNavigator(user, fromToday(-1));
+    expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(
+      "Yesterday",
+    );
+    expect(screen.getByText("Nothing yesterday.")).toBeInTheDocument();
+  });
+
+  it("keeps a Show more span when a day is picked, and Today brings the agenda home", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = [
+      EVENTS[1],
+      { ...EVENTS[0], id: "far", name: "Formal", start_time: daysOut(40) },
+    ];
+    render(<EventsPage />);
+    const navigator = screen.getByRole("complementary", { name: "Navigator" });
+    // At home there is no Today to press.
+    expect(
+      within(navigator).queryByRole("button", { name: "Today" }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    await pickInNavigator(user, fromToday(1));
+    expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(
+      "Tomorrow",
+    );
+    // Re-anchored on tomorrow, the reach Show more gave holds.
+    expect(
+      screen.getByRole("button", { name: /^formal/i }),
+    ).toBeInTheDocument();
+
+    await user.click(within(navigator).getByRole("button", { name: "Today" }));
+    expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(
+      "Today",
+    );
+    expect(
+      within(navigator).queryByRole("button", { name: "Today" }),
+    ).toBeNull();
+  });
+
+  it("re-anchors on today when today is picked from elsewhere", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await pickInNavigator(user, fromToday(1));
+    expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(
+      "Tomorrow",
+    );
+    await pickInNavigator(user, fromToday(0));
+    expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(
+      "Today",
+    );
+  });
+
+  it("opens one day of the hour grid from a column heading, whose hours are tabbable", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await user.click(screen.getByRole("button", { name: "Hours for Today" }));
+    expect(
+      screen.getAllByRole("button", { name: /^create event on/i })[0],
+    ).toHaveAttribute("tabindex", "-1");
+
+    const tomorrow = fromToday(1).toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    await user.click(screen.getByRole("button", { name: `Open ${tomorrow}` }));
+    const hours = screen.getAllByRole("button", { name: /^create event on/i });
+    expect(hours).toHaveLength(24);
+    expect(hours[0]).not.toHaveAttribute("tabindex");
+  });
+
+  it("puts a week strip over the agenda on a narrow pane, stepping a week", async () => {
+    narrowRef.current = true;
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    expect(
+      screen.queryByRole("complementary", { name: "Navigator" }),
+    ).toBeNull();
+    const strip = screen.getByRole("region", { name: "Pick a day" });
+    const days = within(strip)
+      .getAllByRole("button")
+      .filter((button) => button.hasAttribute("aria-pressed"));
+    expect(days).toHaveLength(7);
+    expect(days[0]).toHaveAttribute("aria-current", "date");
+    // The key sits under the strip, as one row.
+    expect(
+      screen.getByRole("group", { name: "Show on Events" }),
+    ).toBeInTheDocument();
+
+    await user.click(within(strip).getByRole("button", { name: "Next week" }));
+    expect(strip.querySelector("[aria-current='date']")).toBeNull();
+
+    // The toolbar is one row of glyphs and New event: no text buttons.
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Filter events" }),
+    ).toHaveAttribute("title", "Filter events");
+    expect(
+      screen.getByRole("button", {
+        name: "Subscribe to chapter events in your calendar",
+      }),
+    ).not.toHaveTextContent("Subscribe");
+    await user.click(screen.getByRole("button", { name: "Search events" }));
+    const field = screen.getByRole("searchbox", { name: /search events/i });
+    expect(field).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Search events" }));
+    await user.type(
+      screen.getByRole("searchbox", { name: /search events/i }),
+      "chap",
+    );
+    await user.tab();
+    // Holding text, it stays a field.
+    expect(screen.getByRole("searchbox")).toHaveValue("chap");
+    await user.clear(screen.getByRole("searchbox"));
+
+    // Hours shows the one day here.
+    await user.click(screen.getByRole("button", { name: "Hours for Today" }));
+    expect(
+      screen.getAllByRole("button", { name: /^create event on/i }).length,
+    ).toBe(24);
+  });
+
+  it("opens a day's Hours on the hour grid and comes back to the agenda", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    const meetingDay = new Date(EVENTS[0]!.start_time).toLocaleDateString(
+      undefined,
+      { weekday: "long" },
+    );
+    await user.click(
+      screen.getByRole("button", { name: `Hours for ${meetingDay}` }),
+    );
+    expect(screen.queryByRole("region", { name: "Upcoming" })).toBeNull();
+    // Three days from that one, its event a block on the grid.
+    expect(
+      screen.getAllByRole("button", { name: /^create event on/i }).length,
+    ).toBe(24 * 3);
+    expect(
+      screen.getByRole("button", { name: /^view chapter meeting/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Events" }));
+    expect(
+      screen.getByRole("region", { name: "Upcoming" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 3, name: meetingDay }),
+    ).toBeInTheDocument();
   });
 });
 

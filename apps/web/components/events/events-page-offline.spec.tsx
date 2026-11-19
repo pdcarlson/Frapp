@@ -140,14 +140,16 @@ describe("EventsPage offline read path (#1621)", () => {
 });
 
 describe("EventsPage offline write gating (#1753)", () => {
-  it("disables calendar day-create with the reason on the control", async () => {
+  it("disables the hour grid's create with the reason on the control", async () => {
     // The calendar hand-wired `!allowed` / `noticeId` instead of
     // `controlProps()`, so the first attempt at this gate left day numbers
     // with a dangling aria-describedby and no title.
     networkState.isOffline = true;
     render(<EventsPage />);
 
-    await userEvent.click(screen.getByRole("radio", { name: /calendar/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hours for Today" }),
+    );
     const dayCreate = screen.getAllByRole("button", {
       name: /create event on/i,
     })[0];

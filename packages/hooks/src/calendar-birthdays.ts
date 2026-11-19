@@ -7,12 +7,12 @@ import { birthdayDateInYear } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
- * Birthdays on the Events calendar (#4959): every birthday a member shares
- * with the chapter, as an all-day item on its day each year, in the same
- * per-day lists as tasks so the month, the compact month, Week and Day's
- * all-day row and the phone all draw it. Like Google Calendar's and
- * Facebook's birthdays, it reads apart from an event (a cake, no fill) and has
- * its own toggle, "Birthdays", beside Events and the task kinds.
+ * Birthdays on Events (#4959): every birthday a member shares with the
+ * chapter, as an all-day item on its day each year, in the same per-day lists
+ * as tasks so web's agenda and hour grid and the phone's Calendar all draw it.
+ * Like Google Calendar's and Facebook's birthdays, it reads apart from an
+ * event (on web a rose square, #5560) and the web colour key's "Birthdays"
+ * hides it.
  *
  * Fed by `GET /v1/members/birthdays`, which lists only birthdays their
  * members chose to share, month and day only: a member who keeps theirs to

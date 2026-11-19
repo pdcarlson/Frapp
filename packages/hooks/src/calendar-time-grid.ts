@@ -157,15 +157,17 @@ export function layoutDay<T>(spans: readonly TimedSpan<T>[]): PlacedSpan<T>[] {
   return placed;
 }
 
-/** The days a Week or Day view shows, from `first`, each at local midnight. */
+/**
+ * `day` moved by `count` calendar days, at local midnight: by the calendar,
+ * not by 24 hours, so a daylight-saving change never lands it on 11 PM.
+ */
+export function addDays(day: Date, count: number): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + count);
+}
+
+/** The days the hour grid shows, from `first`, each at local midnight. */
 export function consecutiveDays(first: Date, count: number): Date[] {
-  const days: Date[] = [];
-  for (let index = 0; index < count; index += 1) {
-    days.push(
-      new Date(first.getFullYear(), first.getMonth(), first.getDate() + index),
-    );
-  }
-  return days;
+  return Array.from({ length: count }, (_, index) => addDays(first, index));
 }
 
 /** `date` at local midnight. */

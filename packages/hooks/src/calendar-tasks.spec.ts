@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_CALENDAR_LAYERS,
+  calendarKindOf,
   calendarTaskAccessibleLabel,
   calendarTasksByDay,
-  parseCalendarLayers,
+  parseHiddenCalendarKinds,
   selectCalendarTasks,
-  serializeCalendarLayers,
+  serializeHiddenCalendarKinds,
   type CalendarAssignedTask,
-  type CalendarLayer,
+  type CalendarKind,
 } from "./calendar-tasks";
 
 const ME = "user-me";
@@ -154,34 +155,36 @@ describe("calendarTasksByDay", () => {
   });
 });
 
-describe("stored layers since birthdays (#4959)", () => {
-  it("shows birthdays to a member whose list predates them", () => {
-    expect(parseCalendarLayers('["events","mine","assigned"]')).toEqual(
-      ALL_CALENDAR_LAYERS,
+describe("colour key kinds (#5560)", () => {
+  it("files own and assigned tasks as Tasks, and birthdays as Birthdays", () => {
+    const [mine, assigned] = selectCalendarTasks(
+      [task(), task({ assignee_id: "m1", created_by: ME })],
+      ME,
     );
+    expect(calendarKindOf(mine!)).toBe("tasks");
+    expect(calendarKindOf(assigned!)).toBe("tasks");
+    expect(
+      calendarKindOf({
+        kind: "birthdays",
+        key: "b",
+        title: "Dana",
+        userId: "u",
+        day: "2026-11-12",
+      }),
+    ).toBe("birthdays");
   });
 
-  it("stores what's hidden, so a layer added later starts on", () => {
-    const shown = new Set<CalendarLayer>(["events", "assigned", "birthdays"]);
-    const raw = serializeCalendarLayers(shown);
-    expect(JSON.parse(raw)).toEqual({ hidden: ["mine"] });
-    expect(parseCalendarLayers(raw)).toEqual(shown);
-  });
-
-  it("keeps birthdays hidden once a member hides them", () => {
-    const shown = new Set<CalendarLayer>(["events", "mine", "assigned"]);
-    expect(parseCalendarLayers(serializeCalendarLayers(shown))).toEqual(shown);
-  });
-});
-
-describe("parseCalendarLayers", () => {
-  it("reads back known layers and refuses junk", () => {
-    expect(parseCalendarLayers('["mine","nope"]')).toEqual(
-      new Set(["mine", "birthdays"]),
+  it("stores what's hidden and reads it back, dropping junk", () => {
+    const hidden = new Set<CalendarKind>(["birthdays", "tasks"]);
+    const raw = serializeHiddenCalendarKinds(hidden);
+    expect(JSON.parse(raw)).toEqual({ hidden: ["tasks", "birthdays"] });
+    expect(parseHiddenCalendarKinds(raw)).toEqual(hidden);
+    expect(parseHiddenCalendarKinds('{"hidden":["mine","events"]}')).toEqual(
+      new Set(["events"]),
     );
-    expect(parseCalendarLayers("[]")).toEqual(new Set(["birthdays"]));
-    expect(parseCalendarLayers("{")).toBeNull();
-    expect(parseCalendarLayers(null)).toBeNull();
+    expect(parseHiddenCalendarKinds('["events"]')).toBeNull();
+    expect(parseHiddenCalendarKinds("{")).toBeNull();
+    expect(parseHiddenCalendarKinds(null)).toBeNull();
   });
 });
 

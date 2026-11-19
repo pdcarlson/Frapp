@@ -9,6 +9,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { googleCalendarFootnote } from "@repo/hooks";
+import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -51,7 +52,12 @@ import { useCalendarLinkActions } from "@/lib/events/calendar-link-actions";
  * calendar of Frapp's own in the account, and a Disconnect beside Reset link.
  * Connected, the row opens Google Calendar and says which account.
  */
-export function CalendarSubscribeMenu() {
+export function CalendarSubscribeMenu({
+  iconOnly = false,
+}: {
+  /** The glyph alone, for a narrow toolbar beside chat (#5560). */
+  iconOnly?: boolean;
+} = {}) {
   const [open, setOpen] = useState(false);
   const { link, apps, copyLink, resetLink, resetting, confirmDialog } =
     useCalendarLinkActions({ enabled: open });
@@ -65,16 +71,26 @@ export function CalendarSubscribeMenu() {
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
-          <Button
-            size="toolbar"
-            variant="secondary"
-            className="shrink-0 gap-2"
-            aria-label="Subscribe to chapter events in your calendar"
-          >
-            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
-            Subscribe
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          {iconOnly ? (
+            <IconButton
+              variant="secondary"
+              className="shrink-0"
+              label="Subscribe to chapter events in your calendar"
+            >
+              <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+            </IconButton>
+          ) : (
+            <Button
+              size="toolbar"
+              variant="secondary"
+              className="shrink-0 gap-2"
+              aria-label="Subscribe to chapter events in your calendar"
+            >
+              <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+              Subscribe
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          )}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-72">
           <p className="px-2 pt-1.5 pb-1 text-sm text-muted-foreground">

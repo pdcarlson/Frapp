@@ -1,7 +1,7 @@
 /**
- * Repeating events as an Events list shows them: one row per series, and a
- * two-week horizon (#3707). Web's Events page collapses a series and draws
- * the horizon with it. The phone has no list since #5310: its Calendar and
+ * Repeating events as an Events list shows them: one row per series (#3707).
+ * Web's Events agenda collapses a series (#5560; its two-week horizon and
+ * Later fold went with it). The phone has no list since #5310: its Calendar and
  * an event's page read only a series' cadence (`seriesCadenceOf`), as web's
  * rows and event page do too.
  *
@@ -40,9 +40,6 @@ export type EventListEntry<T> = {
    */
   series: T[] | null;
 };
-
-/** Today through the end of the fourteenth day after it (#3707). */
-const EVENT_HORIZON_DAYS = 14;
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
@@ -109,40 +106,6 @@ export function collapseSeries<T extends SeriesEventLike>(
     if (members[0] === event) entries.push({ event, series: members });
   }
   return entries;
-}
-
-/**
- * The first instant past the horizon: local midnight starting the fifteenth
- * day after `now`'s, so "today through the next 14 days" holds whole days.
- */
-export function horizonEnd(
-  now: number,
-  days: number = EVENT_HORIZON_DAYS,
-): number {
-  const end = new Date(now);
-  end.setHours(0, 0, 0, 0);
-  end.setDate(end.getDate() + days + 1);
-  return end.getTime();
-}
-
-/**
- * Splits entries at the horizon. An entry whose start can't be read stays in
- * `soon`: it may be close, and hiding it behind Later would lose it.
- */
-export function splitByHorizon<T extends SeriesEventLike>(
-  entries: readonly EventListEntry<T>[],
-  now: number,
-  days: number = EVENT_HORIZON_DAYS,
-): { soon: EventListEntry<T>[]; later: EventListEntry<T>[] } {
-  const end = horizonEnd(now, days);
-  const soon: EventListEntry<T>[] = [];
-  const later: EventListEntry<T>[] = [];
-  for (const entry of entries) {
-    const start = startMs(entry.event);
-    if (start !== null && start >= end) later.push(entry);
-    else soon.push(entry);
-  }
-  return { soon, later };
 }
 
 /**

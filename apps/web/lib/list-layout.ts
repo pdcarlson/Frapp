@@ -3,10 +3,9 @@ import { useViewerUserId } from "@repo/hooks";
 
 /**
  * List or Grid, for a screen that offers both (#4175): the last one this
- * person picked on this browser, per screen. Kept the way the Events page
- * keeps List/Calendar (`lib/events/events-view.ts`, #3822): in localStorage
- * under the user's id, not on the server, so a laptop and a phone each keep
- * their own.
+ * person picked on this browser, per screen. Kept in localStorage under the
+ * user's id, not on the server, so a laptop and a phone each keep their own,
+ * as the Events colour key keeps its kinds (`lib/events/events-view.ts`).
  *
  * Per screen, not one switch for the whole app: a member who wants the
  * Directory as faces may still want Tasks as rows, and Finder and Google

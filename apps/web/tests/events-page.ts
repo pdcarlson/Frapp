@@ -7,7 +7,7 @@ import { idleMutation, loadedEmpty } from "./settings-harness";
  *
  * `events-gating`, `events-page-offline`, `events-page-bulk-actions` and
  * `events-page-list` each hand-rolled the same ~50-line hook map for
- * `EventsPage` (its toolbar's Subscribe menu, the calendar's tasks and
+ * `EventsPage` (its toolbar's Subscribe menu, the agenda's tasks and
  * birthdays, the editor's event types), and `event-editor-dialog` the same
  * event-type list. A hook the page starts calling had to be added to every
  * copy, and the copies had already started to differ by accident.
@@ -85,7 +85,7 @@ export async function eventsPageHooks(overrides: Record<string, unknown> = {}) {
     readGoogleCalendarReturn: () => null,
     GOOGLE_CALENDAR_RETURN_PARAMS: [],
     useActiveChapterId: () => "chap-1",
-    useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+    useCalendarTasks: () => ({ items: [] }),
     useCalendarBirthdays: () => [],
     useChapterRoster: () => ({ data: [] }),
     useCurrentChapter: () => ({

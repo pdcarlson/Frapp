@@ -12,7 +12,7 @@ import {
 } from "react";
 import { OpenLinkedEvent } from "./open-linked-event";
 import { CalendarSubscribeMenu } from "./calendar-subscribe-menu";
-import { ChevronDown, ListFilter, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListFilter, Plus } from "lucide-react";
 import {
   RolesGlyph,
   SearchGlyph,
@@ -30,11 +30,33 @@ import {
 import {
   ALL_CALENDAR_LAYERS,
   calendarTasksByDay,
-  type CalendarLayer,
+  type CalendarItem,
+  type CalendarKind,
 } from "@repo/hooks/calendar-tasks";
-import { startOfDay } from "@repo/hooks/calendar-time-grid";
+import { addDays } from "@repo/hooks/calendar-time-grid";
+import { consecutiveDays, startOfDay } from "@repo/hooks/calendar-time-grid";
+import { calendarKindOf } from "@repo/hooks/calendar-tasks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { CalendarLayerToggles } from "@/components/events/calendar-tasks";
+import {
+  AGENDA_ROW_CLASS,
+  AgendaBirthdayRow,
+  AgendaMarkSlot,
+  AgendaTaskRow,
+} from "@/components/events/calendar-tasks";
+import {
+  KindKey,
+  MiniMonth,
+  WeekStrip,
+} from "@/components/events/events-navigator";
+import {
+  calendarEventFacts,
+  EventsTimeGrid,
+} from "@/components/events/events-time-grid";
+import {
+  EVENT_HUE,
+  eventIdOf,
+  eventKindStyle,
+} from "@/components/events/event-kind";
 // A subpath, like `error-copy`: pure functions a test's `@repo/hooks` mock
 // must not swallow.
 import {
@@ -43,7 +65,6 @@ import {
   isSeriesEvent,
   seriesCadenceOf,
   seriesHeadOf,
-  splitByHorizon,
   type EventListEntry,
 } from "@repo/hooks/event-series";
 import {
@@ -52,11 +73,11 @@ import {
   canAll,
   EVENT_CREATE_PERMISSIONS,
   eventSetsRolesApart,
-  EVENTS_COPY,
   eventsCount,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
@@ -65,7 +86,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { SegmentedChoice } from "@/components/ui/segmented";
-import { EYEBROW } from "@/components/ui/typography";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
@@ -99,7 +119,6 @@ import {
   useKeptDraftKeys,
   writeKeptPanel,
 } from "@repo/hooks/kept-drafts";
-import { EventsCalendar } from "@/components/events/events-calendar";
 import { pointsLabel } from "@/components/events/event-labels";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -111,19 +130,22 @@ import {
   localIsoDate,
   parseInstant,
 } from "@repo/formatting";
+import {
+  AGENDA_SPAN_DAYS,
+  buildAgenda,
+  dateOfKey,
+  kindsByDay,
+  type AgendaDay,
+  type AgendaRow,
+} from "@/lib/events/agenda";
+import { useIsNarrow } from "@/lib/use-is-narrow";
 import { checkInClosesAt } from "@/components/events/check-in-close";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import {
   calendarCreateStart,
-  readCalendarLayers,
-  readCalendarView,
-  readEventsView,
-  writeCalendarLayers,
-  writeCalendarView,
-  writeEventsView,
-  type CalendarView,
-  type EventsView,
+  readHiddenKinds,
+  writeHiddenKinds,
 } from "@/lib/events/events-view";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { cn, getErrorMessage } from "@/lib/utils";
@@ -154,15 +176,10 @@ const CADENCE_OPTIONS = [
   { value: "one-time", label: "One-time" },
 ] as const satisfies readonly { value: CadenceFilter; label: string }[];
 
-const VIEW_OPTIONS = [
-  { value: "list", label: "List" },
-  { value: "calendar", label: "Calendar" },
-] as const satisfies readonly { value: EventsView; label: string }[];
-
 /*
- * The list's section label follows the Time filter. The card title it replaces
- * read "Upcoming & Recent Events" whatever the filter said, so under Past it
- * named events the list was not showing.
+ * The agenda's section label follows the Time filter. The card title it
+ * replaced read "Upcoming & Recent Events" whatever the filter said, so under
+ * Past it named events the list was not showing.
  */
 const TIME_FILTER_LABELS: Record<TimeFilter, string> = {
   upcoming: "Upcoming",
@@ -170,41 +187,22 @@ const TIME_FILTER_LABELS: Record<TimeFilter, string> = {
   all: "All events",
 };
 
-function eventIdOf(event: EventRow): string {
-  return String(event.id ?? event.name ?? "unknown-event");
-}
-
 function startMsOf(event: EventRow): number | null {
   return parseInstant(event.start_time)?.getTime() ?? null;
 }
 
 /**
- * Consecutive entries on the same local day, under that day's written-out
- * heading (`formatDayHeading`: Today, Tomorrow, Sunday, November 14). The
- * entries arrive sorted, so a day is one run.
+ * At this pane width or wider the navigator is a small month beside the
+ * agenda; narrower (beside chat, where the pane can be 375px) it is a week
+ * strip over it. Measured on the page, not the viewport (#4022).
  */
-function groupByDay(
-  entries: readonly Entry[],
-  now: Date,
-): { key: string; heading: string; entries: Entry[] }[] {
-  const groups: { key: string; heading: string; entries: Entry[] }[] = [];
-  for (const entry of entries) {
-    const start = parseInstant(entry.event.start_time);
-    const key = start ? localIsoDate(start) : "no-date";
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) {
-      last.entries.push(entry);
-      continue;
-    }
-    groups.push({
-      key,
-      heading: start
-        ? (formatDayHeading(entry.event.start_time, now) ?? "Date not set")
-        : "Date not set",
-      entries: [entry],
-    });
-  }
-  return groups;
+const NAVIGATOR_BESIDE_AT = 720;
+
+/** "Nothing today.", "Nothing on Monday.": a day the agenda shows empty. */
+function nothingOn(heading: string): string {
+  if (heading === "Today" || heading === "Tomorrow" || heading === "Yesterday")
+    return `Nothing ${heading.toLowerCase()}.`;
+  return `Nothing on ${heading}.`;
 }
 
 /** The editor a page was left with open (#4593). */
@@ -229,27 +227,21 @@ export function EventsPage() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
-  const { userId, isLoading: userLoading } = useFrappUser();
+  const { userId } = useFrappUser();
   const [query, setQuery] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
-  // `null` until both the events read and the viewer resolve. The page opens
-  // where this person last left it on this browser (#3822); without a stored
-  // choice, a chapter with no events opens on the calendar, where the first
-  // one gets made, and every other chapter opens on the list. Set once, so
-  // creating that first event doesn't jump the officer from the calendar to
-  // the list under their cursor.
-  const [view, setView] = useState<EventsView | null>(null);
   const [attendanceFilter, setAttendanceFilter] =
     useState<AttendanceFilter>("all");
   const [recurrenceFilter, setRecurrenceFilter] =
     useState<CadenceFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Beside chat the search is a glyph until pressed (#5560); it stays a
+  // field while it holds text.
+  const [searchOpen, setSearchOpen] = useState(false);
   // Bulk actions live behind Select (#3822): the default list has no
   // checkboxes.
   const [selecting, setSelecting] = useState(false);
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
-  // What starts past the two-week horizon waits behind "Later" (#3707).
-  const [laterOpen, setLaterOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   // The chat card's Can't make it opens the sheet with the line open (#4660):
   // one ask for one event, counted so a repeat ask reaches a sheet already
@@ -303,14 +295,32 @@ export function EventsPage() {
       ? left
       : null;
   });
-  // Lifted here (not local to EventsCalendar) because the calendar unmounts
-  // when the list is showing — see EventsCalendar's own comment.
-  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() =>
-    startOfDay(new Date()),
-  );
-  // Month, Week or Day (#4818); `null` until read from this browser.
-  const [storedCalendarView, setStoredCalendarView] =
-    useState<CalendarView | null>(null);
+  // The day the agenda starts on, `null` for today, so a page left open past
+  // midnight moves with it. A day picked on the navigator that the agenda
+  // isn't showing re-anchors it there (#5560).
+  const [anchorKey, setAnchorKey] = useState<string | null>(null);
+  // The day last picked on the navigator: its ring.
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  // How many days the agenda reaches; "Show more" adds four weeks.
+  const [spanDays, setSpanDays] = useState(AGENDA_SPAN_DAYS);
+  // The month the navigator shows and the week strip's first day, `null`
+  // for today's.
+  const [navMonth, setNavMonth] = useState<Date | null>(null);
+  const [stripStartKey, setStripStartKey] = useState<string | null>(null);
+  // A day heading's Hours opens the hour grid on that day; `null` is the
+  // agenda.
+  const [hoursDay, setHoursDay] = useState<Date | null>(null);
+  // A column heading's Open narrows the grid to that one day.
+  const [hoursSingle, setHoursSingle] = useState(false);
+  // The day heading to bring into view, counted so picking the same day
+  // again scrolls again.
+  const [scrollTarget, setScrollTarget] = useState<{
+    key: string;
+    count: number;
+  } | null>(null);
+  const [layoutRef, narrowMeasured] =
+    useIsNarrow<HTMLDivElement>(NAVIGATOR_BESIDE_AT);
+  const narrow = narrowMeasured === true;
   const eventsQuery = useEvents();
   const autoAbsent = useAutoAbsent();
   // The bulk action posts auto-absent, which is `events:update` and paid-ops
@@ -403,78 +413,35 @@ export function EventsPage() {
     ? seriesHeadOf(activeSeriesKey, events)
     : null;
 
-  // Offline, a viewer that isn't cached never loads (its query pauses), so
-  // the page picks without it rather than hold the skeleton until reconnect.
-  if (
-    view === null &&
-    eventsQuery.data !== undefined &&
-    (!userLoading || isOffline)
-  ) {
-    setView(
-      readEventsView(userId) ?? (events.length === 0 ? "calendar" : "list"),
-    );
-  }
-
-  function chooseView(next: EventsView) {
-    setView(next);
-    writeEventsView(userId, next);
-  }
-
-  // Read with the viewer, like the List/Calendar choice; Month until then
-  // and for anyone who never picked.
-  if (storedCalendarView === null && userId) {
-    setStoredCalendarView(readCalendarView(userId) ?? "month");
-  }
-  const calendarView: CalendarView = storedCalendarView ?? "month";
-  function chooseCalendarView(next: CalendarView) {
-    setStoredCalendarView(next);
-    writeCalendarView(userId, next);
-  }
-
-  // Tasks on the calendar (#4144): the viewer's own on their due day, and
-  // the ones they assigned with where each stands. What shows is a toggle
-  // per kind, remembered on this browser like the view; `null` until read.
+  // Tasks and birthdays on the agenda (#4144, #4959): the viewer's own tasks
+  // on their due day, the ones they assigned, and members' shared birthdays.
   const calendarTasks = useCalendarTasks();
   const rosterQuery = useChapterRoster();
-  const [storedLayers, setStoredLayers] = useState<Set<CalendarLayer> | null>(
+  const todayStart = startOfDay(new Date(nowTick));
+  const todayKey = localIsoDate(todayStart);
+  const anchor = (anchorKey ? dateOfKey(anchorKey) : null) ?? todayStart;
+  const calendarBirthdays = useCalendarBirthdays(anchor);
+  // The colour key's kinds switched off, remembered per user on this
+  // browser (#5560); `null` until read, which shows everything.
+  const [storedHidden, setStoredHidden] = useState<Set<CalendarKind> | null>(
     null,
   );
-  const [layersReadFor, setLayersReadFor] = useState<string | null>(null);
-  if (userId && layersReadFor !== userId) {
-    setLayersReadFor(userId);
-    setStoredLayers(readCalendarLayers(userId));
+  const [hiddenReadFor, setHiddenReadFor] = useState<string | null>(null);
+  if (userId && hiddenReadFor !== userId) {
+    setHiddenReadFor(userId);
+    setStoredHidden(readHiddenKinds(userId));
   }
-  const shownLayers: ReadonlySet<CalendarLayer> =
-    storedLayers ?? ALL_CALENDAR_LAYERS;
-  // Members' shared birthdays (#4959), all-day on their day, with a toggle.
-  const calendarBirthdays = useCalendarBirthdays(calendarAnchor);
-  const hasBirthdays = calendarBirthdays.length > 0;
-  const offeredLayers = useMemo(() => {
-    const offered = new Set<CalendarLayer>();
-    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned && !hasBirthdays) {
-      return offered;
-    }
-    offered.add("events");
-    if (calendarTasks.hasMine) offered.add("mine");
-    if (calendarTasks.hasAssigned) offered.add("assigned");
-    if (hasBirthdays) offered.add("birthdays");
-    return offered;
-  }, [calendarTasks.hasMine, calendarTasks.hasAssigned, hasBirthdays]);
-  function toggleLayer(layer: CalendarLayer) {
-    const next = new Set(shownLayers);
-    if (next.has(layer)) next.delete(layer);
-    else next.add(layer);
-    setStoredLayers(next);
-    writeCalendarLayers(userId, next);
-  }
-  const tasksByDay = useMemo(
-    () =>
-      calendarTasksByDay(
-        [...calendarTasks.items, ...calendarBirthdays],
-        shownLayers,
-      ),
-    [calendarTasks.items, calendarBirthdays, shownLayers],
+  const hiddenKinds: ReadonlySet<CalendarKind> = useMemo(
+    () => storedHidden ?? new Set(),
+    [storedHidden],
   );
+  function toggleKind(kind: CalendarKind) {
+    const next = new Set(hiddenKinds);
+    if (next.has(kind)) next.delete(kind);
+    else next.add(kind);
+    setStoredHidden(next);
+    writeHiddenKinds(userId, next);
+  }
   const nameOf = useMemo(() => {
     const names = new Map(
       (rosterQuery.data ?? []).map((member) => [
@@ -489,11 +456,10 @@ export function EventsPage() {
   }, [rosterQuery.data, userId]);
 
   const requiredOf = useRequiredOfViewer();
-  // Shared by both views: search text, attendance policy, cadence. Time
-  // (upcoming/past/all) is deliberately NOT here — it's a list-view concept
-  // ("what's coming up"), and applying it to the calendar would silently
-  // empty out every day outside today's window the moment an officer
-  // navigates to a past or far-future month.
+
+  // Search text, attendance policy, cadence. Time (upcoming/past/all) is
+  // not here: the navigator's dots and the hour grid show every day's
+  // events, whatever the agenda's window.
   const matchesNonTimeFilters = useCallback(
     (event: EventRow) => {
       const queryLower = query.trim().toLowerCase();
@@ -503,8 +469,7 @@ export function EventsPage() {
       // rule, so reading `recurrence_rule` alone filed every generated
       // occurrence as one-time.
       const isRecurring = isSeriesEvent(event);
-      // Required of this viewer, as the row's Mandatory badge and the
-      // calendar say (#4132).
+      // Required of this viewer, as the row says (#4132).
       const isMandatory = requiredOf(attendanceFieldsOf(event));
 
       if (
@@ -536,8 +501,36 @@ export function EventsPage() {
     [events, matchesNonTimeFilters],
   );
 
-  // Soonest first, except Past, which reads back from the latest. A start
-  // that can't be read sorts last.
+  // Tasks and birthdays the search and filters leave: search matches their
+  // titles, and the attendance and cadence filters, which only an event can
+  // answer, leave none.
+  const agendaItems = useMemo<CalendarItem[]>(() => {
+    if (attendanceFilter !== "all" || recurrenceFilter !== "all") return [];
+    const queryLower = query.trim().toLowerCase();
+    const byDay = calendarTasksByDay(
+      [...calendarTasks.items, ...calendarBirthdays],
+      ALL_CALENDAR_LAYERS,
+    );
+    return [...byDay.values()]
+      .flat()
+      .filter(
+        (item) => !queryLower || item.title.toLowerCase().includes(queryLower),
+      );
+  }, [
+    calendarTasks.items,
+    calendarBirthdays,
+    query,
+    attendanceFilter,
+    recurrenceFilter,
+  ]);
+
+  // Upcoming lists from the agenda's first day on, Past back from now, All
+  // everything. Soonest first, except Past, which reads back from the
+  // latest. A start that can't be read sorts last.
+  const anchorMs = anchor.getTime();
+  // The day after the anchor, by the calendar: 24 hours lands on 11 PM or
+  // 1 AM across a daylight-saving change.
+  const dayAfterAnchorMs = addDays(anchor, 1).getTime();
   const filteredEvents = useMemo(() => {
     const now = nowTick;
     const inWindow = calendarEvents.filter((event) => {
@@ -547,9 +540,8 @@ export function EventsPage() {
       // hidden under "past": it may still be ahead, and hiding it everywhere
       // would lose the row rather than mis-sort it.
       if (start === null) return timeFilter === "upcoming";
-      if (timeFilter === "upcoming" && start < now) return false;
-      if (timeFilter === "past" && start >= now) return false;
-      return true;
+      if (timeFilter === "upcoming") return start >= anchorMs;
+      return start < Math.min(now, dayAfterAnchorMs);
     });
     const direction = timeFilter === "past" ? -1 : 1;
     return inWindow.sort((a, b) => {
@@ -559,19 +551,120 @@ export function EventsPage() {
       if (bStart === null) return -1;
       return (aStart - bStart) * direction;
     });
-  }, [calendarEvents, timeFilter, nowTick]);
+  }, [calendarEvents, timeFilter, nowTick, anchorMs, dayAfterAnchorMs]);
 
   // One row per repeating series, its next meeting (#3707); meetings that
-  // already happened stay rows of their own. Under Upcoming, what starts past
-  // the two-week horizon waits behind Later.
-  const { soonEntries, laterEntries } = useMemo(() => {
-    const entries = collapseSeries(filteredEvents, nowTick);
-    if (timeFilter !== "upcoming") {
-      return { soonEntries: entries, laterEntries: [] as Entry[] };
+  // already happened stay rows of their own.
+  const agendaEntries = useMemo(
+    () => collapseSeries(filteredEvents, nowTick),
+    [filteredEvents, nowTick],
+  );
+
+  const agenda = useMemo(
+    () =>
+      buildAgenda({
+        entries: agendaEntries,
+        items: agendaItems,
+        startOf: (event: EventRow) => event.start_time,
+        keyOf: eventIdOf,
+        anchor,
+        direction: timeFilter === "past" ? -1 : 1,
+        spanDays,
+        // Today always heads Upcoming and All; under Past, a picked day does.
+        forceAnchor: timeFilter !== "past" || anchorKey !== null,
+        eventsBeforeAnchor: timeFilter === "all",
+        overdueBefore: timeFilter === "upcoming" ? todayKey : undefined,
+        hidden: hiddenKinds,
+      }),
+    // `anchor` is derived from `anchorKey` and today, both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      agendaEntries,
+      agendaItems,
+      anchorKey,
+      todayKey,
+      timeFilter,
+      spanDays,
+      hiddenKinds,
+    ],
+  );
+
+  // The hour grid's tasks and birthdays by day, less what the key hides.
+  const gridItemsByDay = useMemo(
+    () =>
+      calendarTasksByDay(
+        agendaItems.filter((item) => !hiddenKinds.has(calendarKindOf(item))),
+        ALL_CALENDAR_LAYERS,
+      ),
+    [agendaItems, hiddenKinds],
+  );
+
+  // The navigator's dots: every day's kinds, the same rows the agenda would
+  // list there, less what the key switched off.
+  const dotsByDay = useMemo(
+    () =>
+      kindsByDay(
+        calendarEvents,
+        (event: EventRow) => event.start_time,
+        agendaItems,
+        hiddenKinds,
+      ),
+    [calendarEvents, agendaItems, hiddenKinds],
+  );
+
+  // Brings a picked day's heading into view once it has rendered.
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const node = document.getElementById(`events-day-${scrollTarget.key}`);
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "start", behavior: "smooth" });
     }
-    const { soon, later } = splitByHorizon(entries, nowTick);
-    return { soonEntries: soon, laterEntries: later };
-  }, [filteredEvents, nowTick, timeFilter]);
+  }, [scrollTarget]);
+
+  /**
+   * Shows `day` on the agenda: scrolls to its heading when the agenda lists
+   * anything there, else starts the agenda on it, so its heading shows,
+   * saying so when it's empty. Today always brings the agenda back to
+   * today. The span Show more reached stays.
+   */
+  function showDayOnAgenda(day: Date) {
+    const key = localIsoDate(day);
+    if (key === todayKey) {
+      if (anchorKey !== null) setAnchorKey(null);
+    } else if (!agenda.dayKeys.has(key)) {
+      setAnchorKey(key);
+    }
+    setScrollTarget((target) => ({ key, count: (target?.count ?? 0) + 1 }));
+  }
+
+  /** The navigator's Today: its month or week, and the agenda, back home. */
+  function goToToday() {
+    setNavMonth(null);
+    setStripStartKey(null);
+    setPickedKey(null);
+    if (hoursDay) {
+      setHoursDay(todayStart);
+      return;
+    }
+    showDayOnAgenda(todayStart);
+  }
+
+  function pickDay(day: Date) {
+    setPickedKey(localIsoDate(day));
+    // On the hour grid, a picked day moves the grid there.
+    if (hoursDay) {
+      setHoursDay(startOfDay(day));
+      return;
+    }
+    showDayOnAgenda(day);
+  }
+
+  function leaveHours() {
+    const day = hoursDay;
+    setHoursDay(null);
+    setHoursSingle(false);
+    if (day) showDayOnAgenda(day);
+  }
 
   const calendarCreateDefaults = useMemo(() => {
     if (!calendarCreateDay) return null;
@@ -583,15 +676,18 @@ export function EventsPage() {
     };
   }, [calendarCreateDay]);
 
-  // What a select-all reaches: the rows on screen, Later's only when open.
-  const visibleEventIds = [
-    ...soonEntries,
-    ...(laterOpen ? laterEntries : []),
-  ].map((entry) => eventIdOf(entry.event));
-  // Only what is on screen counts: a row a filter, a search or a closed
-  // Later hides keeps its tick for when it comes back, but the count and the
-  // bulk action never reach it, so nothing is marked that the officer can't
-  // see.
+  // What a select-all reaches: the event rows on screen.
+  const visibleEventIds = agenda.blocks.flatMap((block) =>
+    block.type === "day"
+      ? block.day.rows.flatMap((row) =>
+          row.kind === "events" ? [eventIdOf(row.entry.event)] : [],
+        )
+      : [],
+  );
+  // Only what is on screen counts: a row a filter, a search, the colour key
+  // or the agenda's window hides keeps its tick for when it comes back, but
+  // the count and the bulk action never reach it, so nothing is marked that
+  // the officer can't see.
   const visibleIdSet = new Set(visibleEventIds);
   const selectedIdSet = new Set(selectedEventIds);
   const selectedVisibleIds = selectedEventIds.filter((eventId) =>
@@ -765,29 +861,20 @@ export function EventsPage() {
     );
   }
 
-  // Events are in but the viewer isn't yet, so the stored view can't be read:
-  // hold the skeleton rather than paint the list and jump to the calendar
-  // when the viewer lands.
-  if (view === null && eventsQuery.data !== undefined) {
-    return <EventsPageSkeleton />;
-  }
-
   const eventWriteControls = eventWriteGate.controlProps();
   const searchText = query.trim();
-  const currentView = view ?? "list";
   // The attendance and cadence filters narrow by kind. Time alone narrows by
   // when, and its miss gets its own line, since the default (Upcoming) hides
   // every past event without the officer having touched a filter.
   const narrowedByKind =
     attendanceFilter !== "all" || recurrenceFilter !== "all";
   const hasEvents = events.length > 0;
-  // Filters away from their defaults, for the Filter button's count. Time
-  // counts only on the list, the one view it applies to.
+  // Filters away from their defaults, for the Filter button's count.
   const activeFilterCount =
-    (currentView === "list" && timeFilter !== "upcoming" ? 1 : 0) +
+    (timeFilter !== "upcoming" ? 1 : 0) +
     (attendanceFilter !== "all" ? 1 : 0) +
     (recurrenceFilter !== "all" ? 1 : 0);
-  const shownCount = soonEntries.length + (laterOpen ? laterEntries.length : 0);
+  const shownCount = visibleEventIds.length;
   const nowDate = new Date(nowTick);
 
   // The popover's Clear: every filter back to its default.
@@ -804,8 +891,7 @@ export function EventsPage() {
     setRecurrenceFilter("all");
   }
 
-  // A day from the month starts at the default hour; an hour from the Week
-  // or Day view starts then.
+  // An hour of the hour grid starts then.
   function openCreate(day: Date | null, startHour?: number) {
     const start = day ? calendarCreateStart(day, startHour) : null;
     setEditorMode("create");
@@ -829,9 +915,9 @@ export function EventsPage() {
     editorDialog.setOpen(true);
   }
 
-  // Any meeting of a series opens with its series, from a list row, a past
-  // row or the calendar: the sheet then has the head's rule (a generated
-  // meeting carries none) and the series' upcoming meetings.
+  // Any meeting of a series opens with its series, from an agenda row, a
+  // past row or the hour grid: the sheet then has the head's rule (a
+  // generated meeting carries none) and the series' upcoming meetings.
   function openDetails(event: EventRow, linked = { excuse: false }) {
     setExcuseAsk((ask) =>
       linked.excuse
@@ -843,15 +929,15 @@ export function EventsPage() {
     setDetailSheetOpen(true);
   }
 
-  function renderRow(entry: Entry): ReactNode {
+  function renderEventRow(entry: Entry): ReactNode {
     const { event, series } = entry;
     const eventId = eventIdOf(event);
     const eventName = String(event.name ?? "Untitled event");
     const fields = attendanceFieldsOf(event);
-    // "Mandatory" means required of this viewer, by default or by a role of
-    // theirs, as the phone says it (#4132, `spec/behavior/events.md`). An
-    // event that sets roles apart also says so with its own badge.
-    const isMandatory = requiredOf(fields);
+    // Required of this viewer, by default or by a role of theirs, as the
+    // phone says it (#4132, `spec/behavior/events.md`): the loudest row
+    // (#5560). An event that sets roles apart also says so with a badge.
+    const isRequired = requiredOf(fields);
     const isTargeted = eventSetsRolesApart(fields);
     // A series row says how it repeats where a one-time row says only its
     // time: the day heading above already says which day.
@@ -872,11 +958,15 @@ export function EventsPage() {
     ]
       .filter(Boolean)
       .join(" · ");
+    const hue = EVENT_HUE;
     return (
       <li
-        key={eventId}
+        key={`event:${eventId}`}
+        // The wash and a required event's edge span the whole row, its
+        // selection slot inside the box.
+        style={isSelected ? undefined : eventKindStyle(isRequired)}
         className={cn(
-          "flex items-center gap-1",
+          "flex items-center gap-1 rounded-md border border-transparent transition-[filter] hover:brightness-125",
           // Fill means state, never striping.
           isSelected && "bg-popover",
         )}
@@ -884,89 +974,176 @@ export function EventsPage() {
         {/*
           The row is the control: it opens the event's details. Its accessible
           name is its own text, so it always says exactly what the row shows.
+          Its kind is its colour: a sky bar and wash, as the navigator's dot
+          and the colour key draw events.
         */}
         <button
           type="button"
+          data-kind="events"
+          data-required={isRequired || undefined}
           onClick={() => openDetails(event)}
-          className={cn(
-            "flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition-colors @xl:flex-row @xl:items-center @xl:gap-3",
-            !isSelected && "hover:bg-card-hover hover:text-foreground",
-            FOCUS_RING_OFFSET,
-          )}
+          className={cn(AGENDA_ROW_CLASS, "min-w-0 flex-1", FOCUS_RING_OFFSET)}
         >
-          <span className="flex min-w-0 max-w-full flex-col @xl:flex-1">
-            <span className="truncate text-sm font-semibold">{eventName}</span>
+          <AgendaMarkSlot>
+            <span
+              data-testid="agenda-mark"
+              data-hue={hue}
+              className="w-1 self-stretch rounded-full"
+              style={{ backgroundColor: hue }}
+            />
+          </AgendaMarkSlot>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate text-sm font-semibold text-foreground">
+                {eventName}
+              </span>
+              {isRequired ? (
+                <span
+                  className="shrink-0 text-caption font-semibold"
+                  style={{ color: hue }}
+                >
+                  Required
+                </span>
+              ) : null}
+            </span>
             {meta ? (
               <span className="truncate text-caption text-muted-foreground">
                 {meta}
               </span>
             ) : null}
           </span>
-          {isMandatory || isTargeted ? (
-            <span className="flex shrink-0 flex-wrap items-center gap-1.5">
-              {isMandatory ? (
-                // The hairline kind (`components.md` §5's quiet metadata):
-                // a red pill on every row of a chapter whose meetings are all
-                // required drowned the list (#3822).
-                <Badge variant="outline">Mandatory</Badge>
-              ) : null}
-              {isTargeted ? (
-                <Badge variant="outline" className="gap-1">
-                  <RolesGlyph className="h-3.5 w-3.5" />
-                  By role
-                </Badge>
-              ) : null}
-            </span>
+          {isTargeted ? (
+            <Badge variant="outline" className="shrink-0 gap-1">
+              <RolesGlyph className="h-3.5 w-3.5" />
+              By role
+            </Badge>
           ) : null}
         </button>
-        {/*
-          The selection column is reserved whenever this viewer can bulk-mark,
-          in or out of Select, so entering the mode or checking a row moves
-          nothing (#3822).
-        */}
-        {canMarkAttendance ? (
-          <span className="flex w-11 shrink-0 items-center justify-center">
-            {selecting ? (
-              <label className={dashboardCheckboxHitAreaClassName}>
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${eventName}`}
-                  className={dashboardTableCheckboxClassName}
-                  checked={isSelected}
-                  onChange={(change) =>
-                    toggleEventSelection(eventId, change.target.checked)
-                  }
-                />
-              </label>
-            ) : null}
-          </span>
-        ) : null}
+        {selectionCell(
+          selecting ? (
+            <label className={dashboardCheckboxHitAreaClassName}>
+              <input
+                type="checkbox"
+                aria-label={`Select ${eventName}`}
+                className={dashboardTableCheckboxClassName}
+                checked={isSelected}
+                onChange={(change) =>
+                  toggleEventSelection(eventId, change.target.checked)
+                }
+              />
+            </label>
+          ) : null,
+        )}
       </li>
     );
   }
 
-  function renderDays(entries: readonly Entry[], idPrefix: string): ReactNode {
-    return groupByDay(entries, nowDate).map((group) => {
-      const headingId = `${idPrefix}-${group.key}`;
-      return (
-        <div key={group.key} role="group" aria-labelledby={headingId}>
+  /*
+   * The selection column is reserved whenever this viewer can bulk-mark, in
+   * or out of Select and on every kind of row, so entering the mode or
+   * checking a row moves nothing (#3822).
+   */
+  function selectionCell(content: ReactNode): ReactNode {
+    return canMarkAttendance ? (
+      <span className="flex w-11 shrink-0 items-center justify-center">
+        {content}
+      </span>
+    ) : null;
+  }
+
+  function renderAgendaRow(row: AgendaRow<EventRow>): ReactNode {
+    if (row.kind === "events") return renderEventRow(row.entry);
+    return (
+      <li key={row.key} className="flex items-center gap-1">
+        <div className="min-w-0 flex-1">
+          {row.kind === "tasks" ? (
+            <AgendaTaskRow item={row.task} nameOf={nameOf} />
+          ) : (
+            <AgendaBirthdayRow item={row.birthday} />
+          )}
+        </div>
+        {selectionCell(null)}
+      </li>
+    );
+  }
+
+  function renderDay(day: AgendaDay<EventRow>): ReactNode {
+    const heading = day.date
+      ? (formatDayHeading(day.date, nowDate) ?? "Date not set")
+      : "Date not set";
+    const headingId = `events-day-${day.key}-label`;
+    const dayDate = day.date;
+    return (
+      <div
+        key={day.key}
+        id={`events-day-${day.key}`}
+        role="group"
+        aria-labelledby={headingId}
+        className="scroll-mt-4"
+      >
+        <div className="flex items-center gap-2 px-2 pb-1 pt-3">
           <h3
             id={headingId}
-            className="px-2 pb-1 pt-3 text-caption font-semibold text-foreground"
+            className="min-w-0 flex-1 text-caption font-semibold text-foreground"
           >
-            {group.heading}
+            {heading}
           </h3>
-          {/*
+          {dayDate ? (
+            // Quiet: the hour grid is a way in, not a second view.
+            <button
+              type="button"
+              aria-label={`Hours for ${heading}`}
+              onClick={() => {
+                setPickedKey(day.key);
+                setHoursSingle(false);
+                setHoursDay(dayDate);
+              }}
+              className={cn(
+                "flex min-h-7 items-center gap-0.5 rounded-md px-1.5 text-caption font-semibold text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:min-h-11",
+                FOCUS_RING_OFFSET,
+              )}
+            >
+              Hours
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+        {day.rows.length === 0 ? (
+          <p className="px-2 pb-1 text-caption text-muted-foreground">
+            {nothingOn(heading)}
+          </p>
+        ) : (
+          /*
             `role="list"` restored explicitly: `display:flex` on an `<li>`
             drops its list-item box, and WebKit then stops exposing the list.
-          */}
-          <ul role="list" className={denseListClassName}>
-            {group.entries.map(renderRow)}
+          */
+          <ul role="list" className={cn(denseListClassName, "space-y-1")}>
+            {day.rows.map(renderAgendaRow)}
           </ul>
-        </div>
-      );
-    });
+        )}
+      </div>
+    );
   }
+
+  const navigatorMonth = navMonth ?? todayStart;
+  // The navigator's Today shows only once something has moved off today.
+  const showTodayButton =
+    anchorKey !== null ||
+    pickedKey !== null ||
+    stripStartKey !== null ||
+    (navMonth !== null &&
+      (navMonth.getFullYear() !== todayStart.getFullYear() ||
+        navMonth.getMonth() !== todayStart.getMonth()));
+  const stripStart =
+    (stripStartKey ? dateOfKey(stripStartKey) : null) ?? todayStart;
+  const kindKey = (
+    <KindKey
+      hidden={hiddenKinds}
+      counts={agenda.counts}
+      onToggle={toggleKind}
+      compact={narrow}
+    />
+  );
 
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
@@ -974,39 +1151,74 @@ export function EventsPage() {
     // (`@xl`, 576px), not the viewport's.
     <div className="@container space-y-4">
       {/*
-        One toolbar row (board `1f` pin 2): the List/Calendar toggle leads, as
-        the page's primary control, then search and the one Filter button
-        beside it, then Subscribe (#3322), which goes with them because it
-        acts on the calendar as a whole; New event holds the trailing edge, as
-        every route's actions do. The route's title is in the top bar
-        (`top-bar.tsx`).
-
-        `PageActions` renders its children as direct flex items, so a phone can
-        reorder them: there the first line keeps the view toggle and New event,
-        and search, Filter and Subscribe drop to their own row under it
-        (`order-last w-full`).
+        The toolbar recedes to the title row's trailing side (#5560): search,
+        the one Filter button, Subscribe (#3322), and New event, the page's one
+        primary action, outlined in the accent rather than filled, so the
+        agenda is what the eye lands on. The route's title is in the top bar
+        (`top-bar.tsx`). On a narrow pane (beside chat, the width that swaps
+        the month for the week strip) search, Filter and Subscribe are glyphs,
+        so the whole toolbar is one row; search opens into its field when
+        pressed and closes again on Escape or blur while empty.
       */}
-      <PageActions className="justify-between gap-x-3 gap-y-2">
-        <SegmentedChoice
-          label="View"
-          options={VIEW_OPTIONS}
-          value={currentView}
-          onChange={chooseView}
-        />
-        <div className="order-last flex w-full min-w-0 items-center gap-2 @xl:order-none @xl:mr-auto @xl:w-auto">
-          <div className="relative min-w-0 flex-1 @xl:w-56 @xl:flex-none">
+      <PageActions className={cn("gap-x-2 gap-y-2", narrow && "flex-nowrap")}>
+        {narrow && !searchOpen && !query ? (
+          <IconButton
+            variant="secondary"
+            className="shrink-0"
+            label="Search events"
+            onClick={() => setSearchOpen(true)}
+          >
+            <SearchGlyph className="h-4 w-4" />
+          </IconButton>
+        ) : (
+          <div
+            className={cn(
+              "relative min-w-0 flex-1",
+              !narrow && "basis-full @xl:max-w-56 @xl:basis-auto",
+            )}
+          >
             <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
               type="search"
               value={query}
+              autoFocus={narrow && searchOpen}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !query) setSearchOpen(false);
+              }}
+              onBlur={() => {
+                if (!query) setSearchOpen(false);
+              }}
               placeholder="Search events"
               aria-label="Search events by name or location"
               className={dashboardToolbarSearchClassName}
             />
           </div>
-          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <PopoverTrigger asChild>
+        )}
+        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <PopoverTrigger asChild>
+            {narrow ? (
+              <IconButton
+                variant="secondary"
+                className="relative shrink-0"
+                label={
+                  activeFilterCount > 0
+                    ? `Filter events, ${activeFilterCount} on`
+                    : "Filter events"
+                }
+              >
+                <ListFilter className="h-4 w-4" aria-hidden="true" />
+                {activeFilterCount > 0 ? (
+                  <Badge
+                    variant="default"
+                    aria-hidden="true"
+                    className="absolute -right-1.5 -top-1.5 h-4 min-w-4 justify-center px-1"
+                  >
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
+              </IconButton>
+            ) : (
               <Button
                 size="toolbar"
                 variant="secondary"
@@ -1025,55 +1237,54 @@ export function EventsPage() {
                   </Badge>
                 ) : null}
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto min-w-72 space-y-4">
-              {currentView === "list" ? (
-                <FilterRow label="Time">
-                  <SegmentedChoice
-                    label="Time"
-                    options={TIME_OPTIONS}
-                    value={timeFilter}
-                    onChange={setTimeFilter}
-                    fill
-                  />
-                </FilterRow>
-              ) : null}
-              <FilterRow label="Attendance">
-                <SegmentedChoice
-                  label="Attendance"
-                  options={ATTENDANCE_OPTIONS}
-                  value={attendanceFilter}
-                  onChange={setAttendanceFilter}
-                  fill
-                />
-              </FilterRow>
-              <FilterRow label="Cadence">
-                <SegmentedChoice
-                  label="Cadence"
-                  options={CADENCE_OPTIONS}
-                  value={recurrenceFilter}
-                  onChange={setRecurrenceFilter}
-                  fill
-                />
-              </FilterRow>
-              <div className="flex justify-end">
-                <Button
-                  size="toolbar"
-                  variant="ghost"
-                  disabled={activeFilterCount === 0}
-                  onClick={clearFilters}
-                >
-                  Clear
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
-          <CalendarSubscribeMenu />
-        </div>
+            )}
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-auto min-w-72 space-y-4">
+            <FilterRow label="Time">
+              <SegmentedChoice
+                label="Time"
+                options={TIME_OPTIONS}
+                value={timeFilter}
+                onChange={setTimeFilter}
+                fill
+              />
+            </FilterRow>
+            <FilterRow label="Attendance">
+              <SegmentedChoice
+                label="Attendance"
+                options={ATTENDANCE_OPTIONS}
+                value={attendanceFilter}
+                onChange={setAttendanceFilter}
+                fill
+              />
+            </FilterRow>
+            <FilterRow label="Cadence">
+              <SegmentedChoice
+                label="Cadence"
+                options={CADENCE_OPTIONS}
+                value={recurrenceFilter}
+                onChange={setRecurrenceFilter}
+                fill
+              />
+            </FilterRow>
+            <div className="flex justify-end">
+              <Button
+                size="toolbar"
+                variant="ghost"
+                disabled={activeFilterCount === 0}
+                onClick={clearFilters}
+              >
+                Clear
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+        <CalendarSubscribeMenu iconOnly={narrow} />
         <Can allOf={EVENT_CREATE_PERMISSIONS}>
           <Button
             size="toolbar"
-            className="gap-2"
+            variant="ghost"
+            className="gap-2 border-primary/35 text-primary hover:bg-primary/10 hover:text-primary"
             {...eventWriteControls}
             onClick={() => openCreate(null)}
           >
@@ -1106,200 +1317,260 @@ export function EventsPage() {
         />
       ) : null}
 
-      {currentView === "list" ? (
-        /*
-          The section stays at zero: its label and count, then one line where
-          the rows would be (`components.md` §10). A miss says which kind of
-          miss it is and offers the way back out; "No events yet" over a
-          chapter whose events are all past would say something false
-          (`writing.md` §7).
-        */
-        <section aria-labelledby="events-list-label">
-          {/*
-            The list header. Select swaps its trailing controls in place, and
-            the select-all sits in the rows' reserved selection column, so
-            nothing above or beside the rows moves (#3822). Notify assignees
-            and Archive selected were removed rather than wired (#336): events
-            have no assignee concept and no archive state.
-          */}
-          <div className="flex min-h-9 items-center gap-1 pointer-coarse:min-h-11">
-            <div className="min-w-0 flex-1 px-2">
-              <SectionLabel
-                id="events-list-label"
-                count={
-                  selecting
-                    ? `${selectedVisibleIds.length} selected`
-                    : eventsCount(soonEntries.length)
-                }
-              >
-                {TIME_FILTER_LABELS[timeFilter]}
-              </SectionLabel>
-            </div>
-            {/*
-              Once in Select, its controls stay until Done, even when no row
-              is on screen (Later collapsed, a search emptied the list), so
-              the mode always has a way out.
-            */}
-            {canMarkAttendance && (selecting || shownCount > 0) ? (
-              selecting ? (
-                <>
-                  <Button
-                    size="toolbar"
-                    variant="secondary"
-                    {...eventWriteGate.controlProps(
-                      autoAbsent.isPending || selectedVisibleIds.length === 0,
-                    )}
-                    onClick={() => void markSelectedAttendanceComplete()}
+      <div
+        ref={layoutRef}
+        // Until the pane is measured it draws the wide layout, which wraps:
+        // the agenda keeps at least 320px and drops under the navigator
+        // rather than squeezing past a 375px pane (beside-chat floor).
+        className={cn(
+          "flex gap-6",
+          narrow ? "flex-col gap-3" : "flex-wrap items-start",
+        )}
+      >
+        {narrow ? (
+          <div className="space-y-1">
+            <WeekStrip
+              start={stripStart}
+              onToday={showTodayButton ? goToToday : undefined}
+              onStartChange={(next) =>
+                setStripStartKey(
+                  localIsoDate(next) === todayKey ? null : localIsoDate(next),
+                )
+              }
+              todayKey={todayKey}
+              pickedKey={pickedKey}
+              dots={dotsByDay}
+              onPick={pickDay}
+            />
+            {kindKey}
+          </div>
+        ) : (
+          // Beside the agenda, and stays in view while it scrolls.
+          <aside
+            aria-label="Navigator"
+            className="sticky top-0 w-[260px] shrink-0 space-y-3"
+          >
+            <MiniMonth
+              month={navigatorMonth}
+              onToday={showTodayButton ? goToToday : undefined}
+              onMonthChange={setNavMonth}
+              todayKey={todayKey}
+              pickedKey={pickedKey}
+              dots={dotsByDay}
+              onPick={pickDay}
+            />
+            {kindKey}
+          </aside>
+        )}
+
+        <div className={cn("min-w-0 flex-1", !narrow && "basis-80")}>
+          {hoursDay ? (
+            /*
+              The hour grid (#4818), reached from a day heading's Hours: that
+              day and the two after it, or the day alone on a narrow pane.
+              Back returns to the agenda on the same day.
+            */
+            <section aria-labelledby="events-hours-label" className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="toolbar"
+                  className="gap-1 px-2"
+                  onClick={leaveHours}
+                >
+                  <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+                  Events
+                </Button>
+                <h2
+                  id="events-hours-label"
+                  className="min-w-0 flex-1 truncate text-sm font-semibold"
+                >
+                  {formatDayHeading(hoursDay, nowDate) ?? "Hours"}
+                </h2>
+              </div>
+              <EventsTimeGrid
+                days={consecutiveDays(hoursDay, narrow || hoursSingle ? 1 : 3)}
+                events={hiddenKinds.has("events") ? [] : calendarEvents}
+                tasksByDay={gridItemsByDay}
+                nameOf={nameOf}
+                factsOf={(event) => calendarEventFacts(event, requiredOf)}
+                onSelectEvent={(event) => openDetails(event)}
+                // A column's heading opens that day alone, whose hours are
+                // the keyboard's way to make an event at one.
+                onOpenDay={(day) => {
+                  setHoursDay(startOfDay(day));
+                  setHoursSingle(true);
+                }}
+                onCreateAt={(day, hour) => openCreate(day, hour)}
+                canCreate={canCreateEvents}
+                createDisabled={Boolean(eventWriteControls.disabled)}
+                createDescribedBy={eventWriteControls["aria-describedby"]}
+                createTitle={eventWriteControls.title}
+              />
+            </section>
+          ) : (
+            /*
+              One agenda (#5560): the days in order from the anchor, each
+              day's events, tasks and birthdays together. A miss among the
+              events says which kind of miss it is and offers the way back
+              out (`writing.md` §7); the days under it still list the rest.
+            */
+            <section aria-labelledby="events-list-label">
+              {/*
+                The agenda's header. Select swaps its trailing controls in
+                place, and the select-all sits in the rows' reserved selection
+                column, so nothing above or beside the rows moves (#3822).
+                Notify assignees and Archive selected were removed rather than
+                wired (#336): events have no assignee concept and no archive
+                state.
+              */}
+              <div className="flex min-h-9 items-center gap-1 pointer-coarse:min-h-11">
+                <div className="min-w-0 flex-1 px-2">
+                  <SectionLabel
+                    id="events-list-label"
+                    count={
+                      selecting
+                        ? `${selectedVisibleIds.length} selected`
+                        : eventsCount(shownCount)
+                    }
                   >
-                    Mark attendance complete
-                  </Button>
+                    {TIME_FILTER_LABELS[timeFilter]}
+                  </SectionLabel>
+                </div>
+                {/*
+                  Once in Select, its controls stay until Done, even when no
+                  row is on screen (a search emptied the agenda), so the mode
+                  always has a way out.
+                */}
+                {canMarkAttendance && (selecting || shownCount > 0) ? (
+                  selecting ? (
+                    <>
+                      <Button
+                        size="toolbar"
+                        variant="secondary"
+                        {...eventWriteGate.controlProps(
+                          autoAbsent.isPending ||
+                            selectedVisibleIds.length === 0,
+                        )}
+                        onClick={() => void markSelectedAttendanceComplete()}
+                      >
+                        Mark attendance complete
+                      </Button>
+                      <Button
+                        size="toolbar"
+                        variant="ghost"
+                        onClick={stopSelecting}
+                      >
+                        Done
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="toolbar"
+                      variant="ghost"
+                      onClick={() => setSelecting(true)}
+                    >
+                      Select
+                    </Button>
+                  )
+                ) : null}
+                {canMarkAttendance && (selecting || shownCount > 0) ? (
+                  <span className="flex w-11 shrink-0 items-center justify-center">
+                    {selecting && shownCount > 0 ? (
+                      <label className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          aria-label="Select all visible events"
+                          className={dashboardTableCheckboxClassName}
+                          checked={allVisibleSelected}
+                          onChange={(change) =>
+                            toggleAllVisibleEvents(change.target.checked)
+                          }
+                        />
+                      </label>
+                    ) : null}
+                  </span>
+                ) : null}
+              </div>
+              {filteredEvents.length === 0 ? (
+                searchText ? (
+                  <InlineNote className="px-2">
+                    {stateMicrocopy.events.noSearchMatches}{" "}
+                    <InlineNoteAction onClick={() => setQuery("")}>
+                      Clear search
+                    </InlineNoteAction>
+                  </InlineNote>
+                ) : hasEvents && narrowedByKind ? (
+                  <InlineNote className="px-2">
+                    {stateMicrocopy.events.noFilterMatches}{" "}
+                    <InlineNoteAction onClick={clearKindFilters}>
+                      Clear filters
+                    </InlineNoteAction>
+                  </InlineNote>
+                ) : hasEvents ? (
+                  <InlineNote className="px-2">
+                    {timeFilter === "past"
+                      ? stateMicrocopy.events.noPast
+                      : stateMicrocopy.events.noUpcoming}{" "}
+                    <InlineNoteAction onClick={() => setTimeFilter("all")}>
+                      Show all events
+                    </InlineNoteAction>
+                  </InlineNote>
+                ) : (
+                  <InlineNote className="px-2">
+                    {stateMicrocopy.events.empty}
+                  </InlineNote>
+                )
+              ) : null}
+              {agenda.blocks.map((block) =>
+                block.type === "day" ? (
+                  renderDay(block.day)
+                ) : block.type === "overdue" ? (
+                  <div
+                    key="overdue"
+                    id="events-day-overdue"
+                    role="group"
+                    aria-labelledby="events-day-overdue-label"
+                  >
+                    <h3
+                      id="events-day-overdue-label"
+                      className="px-2 pb-1 pt-3 text-caption font-semibold text-destructive-text"
+                    >
+                      Overdue
+                    </h3>
+                    <ul
+                      role="list"
+                      className={cn(denseListClassName, "space-y-1")}
+                    >
+                      {block.rows.map(renderAgendaRow)}
+                    </ul>
+                  </div>
+                ) : (
+                  <p
+                    key="quiet-week"
+                    className="px-2 pt-3 text-caption text-muted-foreground"
+                  >
+                    {stateMicrocopy.events.nothingThisWeek}
+                  </p>
+                ),
+              )}
+              {agenda.hasMore ? (
+                <div className="px-2 pt-3">
                   <Button
                     size="toolbar"
                     variant="ghost"
-                    onClick={stopSelecting}
+                    onClick={() =>
+                      setSpanDays((days) => days + AGENDA_SPAN_DAYS)
+                    }
                   >
-                    Done
+                    Show more
                   </Button>
-                </>
-              ) : (
-                <Button
-                  size="toolbar"
-                  variant="ghost"
-                  onClick={() => setSelecting(true)}
-                >
-                  Select
-                </Button>
-              )
-            ) : null}
-            {canMarkAttendance && (selecting || shownCount > 0) ? (
-              <span className="flex w-11 shrink-0 items-center justify-center">
-                {selecting && shownCount > 0 ? (
-                  <label className={dashboardCheckboxHitAreaClassName}>
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible events"
-                      className={dashboardTableCheckboxClassName}
-                      checked={allVisibleSelected}
-                      onChange={(change) =>
-                        toggleAllVisibleEvents(change.target.checked)
-                      }
-                    />
-                  </label>
-                ) : null}
-              </span>
-            ) : null}
-          </div>
-          {filteredEvents.length === 0 ? (
-            searchText ? (
-              <InlineNote className="px-2">
-                {stateMicrocopy.events.noSearchMatches}{" "}
-                <InlineNoteAction onClick={() => setQuery("")}>
-                  Clear search
-                </InlineNoteAction>
-              </InlineNote>
-            ) : hasEvents && narrowedByKind ? (
-              <InlineNote className="px-2">
-                {stateMicrocopy.events.noFilterMatches}{" "}
-                <InlineNoteAction onClick={clearKindFilters}>
-                  Clear filters
-                </InlineNoteAction>
-              </InlineNote>
-            ) : hasEvents ? (
-              <InlineNote className="px-2">
-                {timeFilter === "past"
-                  ? stateMicrocopy.events.noPast
-                  : stateMicrocopy.events.noUpcoming}{" "}
-                <InlineNoteAction onClick={() => setTimeFilter("all")}>
-                  Show all events
-                </InlineNoteAction>
-              </InlineNote>
-            ) : (
-              <InlineNote className="px-2">
-                {stateMicrocopy.events.empty}
-              </InlineNote>
-            )
-          ) : (
-            <>
-              {soonEntries.length === 0 ? (
-                <InlineNote className="px-2">
-                  {stateMicrocopy.events.noneSoon}
-                </InlineNote>
-              ) : (
-                renderDays(soonEntries, "events-day")
-              )}
-              {laterEntries.length > 0 ? (
-                <div className="mt-4">
-                  <button
-                    type="button"
-                    aria-expanded={laterOpen}
-                    aria-controls="events-later"
-                    onClick={() => setLaterOpen((open) => !open)}
-                    className={cn(
-                      "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left pointer-coarse:min-h-11 hover:bg-card-hover",
-                      FOCUS_RING_OFFSET,
-                    )}
-                  >
-                    <span className={`${EYEBROW} text-muted-foreground`}>
-                      {EVENTS_COPY.later}
-                    </span>
-                    <span className="text-caption text-muted tabular-nums">
-                      {eventsCount(laterEntries.length)}
-                    </span>
-                    <ChevronDown
-                      aria-hidden="true"
-                      className={cn(
-                        "ml-auto h-4 w-4 text-muted-foreground transition-transform",
-                        laterOpen && "rotate-180",
-                      )}
-                    />
-                  </button>
-                  {laterOpen ? (
-                    <div id="events-later">
-                      {renderDays(laterEntries, "events-later-day")}
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
-            </>
+            </section>
           )}
-        </section>
-      ) : (
-        /*
-          Flush, with no card, title or description: the calendar names its
-          own month, and a day number and an event chip say what they do.
-        */
-        <EventsCalendar
-          events={
-            // Off only while its toggle is there to turn it back on: a
-            // member whose tasks are all gone loses the chips, not events.
-            shownLayers.has("events") || !offeredLayers.has("events")
-              ? calendarEvents
-              : []
-          }
-          tasksByDay={tasksByDay}
-          nameOf={nameOf}
-          layerToggles={
-            offeredLayers.size > 0 ? (
-              <CalendarLayerToggles
-                offered={offeredLayers}
-                shown={shownLayers}
-                onToggle={toggleLayer}
-              />
-            ) : null
-          }
-          anchor={calendarAnchor}
-          onAnchorChange={setCalendarAnchor}
-          view={calendarView}
-          onViewChange={chooseCalendarView}
-          canCreate={canCreateEvents}
-          chapterHasEvents={hasEvents}
-          createDisabled={eventWriteControls.disabled}
-          createDescribedBy={eventWriteControls["aria-describedby"]}
-          createTitle={eventWriteControls.title}
-          onSelectEvent={(event) => openDetails(event)}
-          onCreateOnDay={openCreate}
-        />
-      )}
+        </div>
+      </div>
 
       {/* `/events?event=<id>` opens that event's sheet (`eventDeepLink`). In its
           own boundary: it reads the URL, which must not hold back the page. */}
