@@ -183,6 +183,15 @@ describe("WhoPicker", () => {
     );
   });
 
+  it("offers no tier whole where the caller can't send one (a suggested task)", async () => {
+    render(<WhoPicker value={null} onChange={() => undefined} tiers={false} />);
+    await openPicker();
+    await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
+    expect(
+      screen.queryByRole("checkbox", { name: /Everyone in Exec board/ }),
+    ).toBeNull();
+  });
+
   it("shows an empty role greyed, as Nobody yet, and won't pick it", async () => {
     render(<Harness />);
     await openPicker();

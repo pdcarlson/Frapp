@@ -651,6 +651,8 @@ function SuggestedTaskRow({
         <div className="min-w-32 max-w-56 flex-1">
           <WhoPicker
             allow="any"
+            // A suggestion's payload has no tier field yet (#5473).
+            tiers={false}
             label={`Assignee for ${task.title}`}
             placeholder={AI_SUGGESTION_COPY.who}
             className="w-full"

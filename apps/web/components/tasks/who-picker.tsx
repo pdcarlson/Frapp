@@ -118,6 +118,11 @@ export interface WhoPickerProps {
   /** A trigger of the caller's own (Up for grabs' Assign). */
   trigger?: ReactElement;
   "aria-describedby"?: string;
+  /**
+   * Offer a tier whole (#5473). Off for a suggested task, whose payload has
+   * no tier field yet, so a tier pick there would send nobody.
+   */
+  tiers?: boolean;
 }
 
 /**
@@ -146,6 +151,7 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
       align = "start",
       trigger,
       "aria-describedby": describedBy,
+      tiers = true,
     },
     ref,
   ) {
@@ -204,6 +210,7 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
               if (allow !== "any") setOpen(false);
             }}
             allow={allow}
+            tiers={tiers}
             directory={directory}
             loading={loading}
             failed={failed}
@@ -241,6 +248,7 @@ export function WhoPickerBody({
   value,
   onChange,
   allow,
+  tiers = true,
   directory,
   loading,
   failed,
@@ -250,6 +258,8 @@ export function WhoPickerBody({
   value: TaskWho | null;
   onChange: (next: TaskWho | null) => void;
   allow: WhoPickerAllow;
+  /** Offer a tier whole (#5473); see {@link WhoPickerProps.tiers}. */
+  tiers?: boolean;
   directory: WhoDirectory;
   loading: boolean;
   failed: boolean;
@@ -309,7 +319,7 @@ export function WhoPickerBody({
     whoMatches(person.name, query),
   );
   const allSets = [
-    ...allTierSets(directory),
+    ...(tiers ? allTierSets(directory) : []),
     ...allRoles(directory),
     ...directory.groups,
   ];
@@ -521,7 +531,7 @@ export function WhoPickerBody({
             tier.name,
             tier.roles,
             // A tier of one role is that role: no second row for it.
-            tier.roles.length > 1 ? tier.set : null,
+            tiers && tier.roles.length > 1 ? tier.set : null,
           ),
         )}
         {section(GROUPS_KEY, GROUPS_HEADING, directory.groups)}
