@@ -363,7 +363,7 @@ function invalidateTask(
  * `tasks:manage` holder and only the caller's own rows to everyone else. A
  * surface drawn as a personal board therefore has to filter by assignee itself.
  */
-export function useTasks() {
+export function useTasks(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   // No chapter-scoped read without a chapter to scope it to (#4094).
@@ -372,7 +372,7 @@ export function useTasks() {
     queryKey: taskKeys.lists(chapterId),
     queryFn: ({ signal }) => readAllTaskPages(client, signal),
     staleTime: 30_000,
-    enabled: scope === "chapter",
+    enabled: scope === "chapter" && (options.enabled ?? true),
   });
 }
 

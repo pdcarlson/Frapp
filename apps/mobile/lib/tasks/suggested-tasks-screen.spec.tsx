@@ -45,33 +45,52 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
       state.readEvent(options.queryKey),
   }),
 }));
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useAiSuggestions: (options?: unknown) => {
-    state.source = options;
-    return {
-      data: state.isPending
-        ? undefined
-        : { items: state.items, has_more: false },
-      isPending: state.isPending,
-      isError: state.isError,
-      isFetching: false,
-      refetch: vi.fn(),
-    };
-  },
-  useMeetings: () => ({
-    data: [{ id: "m1", event_name: "Chapter meeting" }],
-  }),
-  useMemberDisplayNames: () => ({
-    nameFor: (id: string) => (id === "u1" ? "Ana Ruiz" : null),
-  }),
-  // The chapter's open tasks, to spot a suggestion that is one of them (#5562).
-  useTasks: () => ({ data: state.tasks }),
-  useActiveChapterId: () => "chapter-1",
-  useFrappClient: () => ({ GET: vi.fn() }),
-  useAcceptAiSuggestion: () => ({ mutateAsync: state.accept }),
-  useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
-}));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  const { useState } = await import("react");
+  const { similarTask } = await import("@repo/validation");
+  return {
+    ...actual,
+    useAiSuggestions: (options?: unknown) => {
+      state.source = options;
+      return {
+        data: state.isPending
+          ? undefined
+          : { items: state.items, has_more: false },
+        isPending: state.isPending,
+        isError: state.isError,
+        isFetching: false,
+        refetch: vi.fn(),
+      };
+    },
+    useMeetings: () => ({
+      data: [{ id: "m1", event_name: "Chapter meeting" }],
+    }),
+    useMemberDisplayNames: () => ({
+      nameFor: (id: string) => (id === "u1" ? "Ana Ruiz" : null),
+    }),
+    // The chapter's open tasks, to spot a suggestion that is one of them
+    // (#5562): the hook's own reading of `state.tasks`, without the read.
+    useSimilarTasks: (items: { id: string; task: { title: string } }[]) => {
+      const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+      const existing = actual.readExistingTasks(state.tasks);
+      return {
+        twinOf: (id: string) => {
+          const item = items.find((row) => row.id === id);
+          return !item || kept.has(id)
+            ? null
+            : similarTask(item.task.title, existing);
+        },
+        keep: (id: string) => setKept((previous) => new Set(previous).add(id)),
+        known: true,
+      };
+    },
+    useActiveChapterId: () => "chapter-1",
+    useFrappClient: () => ({ GET: vi.fn() }),
+    useAcceptAiSuggestion: () => ({ mutateAsync: state.accept }),
+    useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
+  };
+});
 const ai = vi.hoisted(() => ({ available: true as boolean | undefined }));
 // The chapter as the Assign to picker reads it (`use-who-directory.ts`).
 vi.mock("@/lib/tasks/use-who-directory", async () => {
@@ -384,7 +403,7 @@ describe("A suggestion that reads like an existing task (#5562)", () => {
     due_at: null,
   };
 
-  it("sets the two side by side and takes Already a task as a dismissal", async () => {
+  it("sets the two side by side and records Already a task as that task", async () => {
     state.tasks = [HALL];
     const tree = render();
     const text = screenText(tree);
@@ -393,6 +412,10 @@ describe("A suggestion that reads like an existing task (#5562)", () => {
     expect(text).toContain(SIMILAR_TASK_COPY.existing);
     expect(text).toContain("Hall: book it");
     expect(text).toContain("In progress");
+    // A plain Dismiss is still one tap away.
+    expect(
+      byLabel(tree, `${AI_SUGGESTION_COPY.dismiss}: Book the hall`),
+    ).toBeDefined();
     // Nothing creates it until the officer says which it is.
     expect(
       byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`),
@@ -401,10 +424,11 @@ describe("A suggestion that reads like an existing task (#5562)", () => {
     await act(async () =>
       byLabel(tree, `${SIMILAR_TASK_COPY.same}: Book the hall`).props.onPress(),
     );
-    expect(state.dismiss).toHaveBeenCalledWith({
+    expect(state.accept).toHaveBeenCalledWith({
       id: "s1",
-      reason: "already_doing",
+      task: { existing_task_id: "t-hall" },
     });
+    expect(state.dismiss).not.toHaveBeenCalled();
   });
 
   it("opens the existing task from its side", () => {

@@ -6,15 +6,16 @@
  *
  * Words, not a model: two titles match when most of the words that carry
  * meaning are the same ("Book the hall for formal" and "Formal: book hall").
- * Both apps call it on the tasks the officer can already see, so the card
- * shows the two side by side and offers Already a task or Create anyway.
+ * Both apps call it on the tasks the officer can already see
+ * (`@repo/hooks`' `useSimilarTasks`), so the card shows the two side by side
+ * and offers Already a task, which records the existing task as the
+ * suggestion's, or Create anyway.
  */
 
 /** Words that say nothing about which task it is. */
 const FILLER = new Set([
   "a",
   "about",
-  "after",
   "all",
   "an",
   "and",
@@ -23,7 +24,6 @@ const FILLER = new Set([
   "as",
   "at",
   "be",
-  "before",
   "by",
   "can",
   "each",
@@ -42,8 +42,6 @@ const FILLER = new Set([
   "must",
   "my",
   "need",
-  "no",
-  "not",
   "of",
   "on",
   "or",
@@ -77,7 +75,8 @@ export function taskTitleWords(title: string): Set<string> {
     .toLowerCase()
     .replace(/[’']s\b/g, "")
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word.length > 1 && !FILLER.has(word))
+    // A lone digit stays: "round 1" and "round 2" are two tasks.
+    .filter((word) => (word.length > 1 || /\d/.test(word)) && !FILLER.has(word))
     .map((word) =>
       word.length > 3 && word.endsWith("s") && !word.endsWith("ss")
         ? word.slice(0, -1)
@@ -104,46 +103,15 @@ export function taskTitleLikeness(a: string, b: string): number {
 }
 
 /** Likeness at or above which a suggestion reads as an existing task. */
-export const SIMILAR_TASK_THRESHOLD = 0.75;
+// Above three of four words: "Book hall for spring formal" and "Book hall for
+// fall formal" share three of four and are two tasks.
+export const SIMILAR_TASK_THRESHOLD = 0.8;
 
 export interface SimilarTaskCandidate {
   id: string;
   title: string;
   /** A finished task is history, not the same work again. */
   status?: string | null;
-}
-
-/** A task off the task list, as much of it as the comparison shows. */
-export interface ExistingTask extends SimilarTaskCandidate {
-  status: string;
-  due_date: string | null;
-  due_at: string | null;
-}
-
-/**
- * The rows of the task list read as candidates. The list's read is typed
- * loosely (`useTasks`), so a row without an id and a title is skipped rather
- * than trusted.
- */
-export function existingTasks(rows: unknown): ExistingTask[] {
-  if (!Array.isArray(rows)) return [];
-  const tasks: ExistingTask[] = [];
-  for (const row of rows as unknown[]) {
-    if (!row || typeof row !== "object") continue;
-    const { id, title, status, due_date, due_at } = row as Record<
-      string,
-      unknown
-    >;
-    if (typeof id !== "string" || typeof title !== "string") continue;
-    tasks.push({
-      id,
-      title,
-      status: typeof status === "string" ? status : "TODO",
-      due_date: typeof due_date === "string" ? due_date : null,
-      due_at: typeof due_at === "string" ? due_at : null,
-    });
-  }
-  return tasks;
 }
 
 /**
@@ -177,4 +145,9 @@ export const SIMILAR_TASK_COPY = {
   /** Keeps the suggestion, to create as usual. */
   different: "Create anyway",
   openExisting: "Open the existing task",
+  /** Said once Already a task is recorded. */
+  linked: "Noted as a task you already have",
+  linkFailed: "Couldn't note it as a task you already have",
+  /** Create all, when a look-alike is waiting on the officer's word. */
+  acceptReady: (count: number) => `Create the ${count} that are ready`,
 } as const;

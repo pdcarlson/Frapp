@@ -13,11 +13,11 @@ import {
   useFrappClient,
   useMeetings,
   useMemberDisplayNames,
-  useTasks,
-  taskDueLine,
+  existingTaskLine,
+  useSimilarTasks,
   type AiSuggestion,
   type AiSuggestionDismissReason,
-  type TaskStatus,
+  type ExistingTask,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -29,13 +29,9 @@ import {
   LAST_YEAR_COPY,
   SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
-  existingTasks,
   lastYearEventLine,
   lastYearTaskLine,
   meetingDueLabel,
-  similarTask,
-  statusLabel,
-  type ExistingTask,
 } from "@repo/validation";
 import {
   useAiReport,
@@ -111,7 +107,8 @@ import { pageSurfaces } from "@/lib/surfaces";
  *
  * A suggestion that reads like an open task (`similar-task.ts`) sets the two
  * side by side and asks which it is, as web's card does: **Already a task**
- * dismisses it, **Create anyway** brings back the usual row.
+ * records the existing task as the suggestion's, so its action item follows
+ * it; **Create anyway** brings back the usual row; Dismiss stays.
  */
 
 /** Which of a row's answers is being sent. */
@@ -216,18 +213,9 @@ function SuggestedTasks() {
   }, [planFor]);
   // Said once an event was added from a suggestion, where the row was.
   const [added, setAdded] = useState(false);
-  // Suggestions the officer said are not the existing task they look like.
-  const [keptAnyway, setKeptAnyway] = useState<ReadonlySet<string>>(new Set());
-  // The tasks this officer can see, to spot a suggestion that is one of them.
-  const tasksQuery = useTasks();
-  const twins = useMemo(() => {
-    const existing = existingTasks(tasksQuery.data);
-    return new Map(
-      tasks.map((item) => [item.id, similarTask(item.task.title, existing)]),
-    );
-  }, [tasks, tasksQuery.data]);
-  const twinOf = (item: Waiting) =>
-    keptAnyway.has(item.id) ? null : (twins.get(item.id) ?? null);
+  // The open task each suggestion reads like, from the tasks this officer
+  // can see (#5562).
+  const similar = useSimilarTasks(tasks);
 
   const groups = useMemo(() => {
     const bySource = new Map<string, Waiting[]>();
@@ -268,6 +256,22 @@ function SuggestedTasks() {
     setBusy({ id: item.id, doing: "accept" });
     try {
       await accept.mutateAsync({ id: item.id });
+    } catch (error) {
+      fail(item, error);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Already a task: the suggestion is that task, and its item follows it. */
+  async function linkRow(item: Waiting, existing: ExistingTask) {
+    setGone(null);
+    setBusy({ id: item.id, doing: "already" });
+    try {
+      await accept.mutateAsync({
+        id: item.id,
+        task: { existing_task_id: existing.id },
+      });
     } catch (error) {
       fail(item, error);
     } finally {
@@ -371,11 +375,9 @@ function SuggestedTasks() {
           ? () => void dismissRow(item, "already_doing")
           : undefined
       }
-      existing={twinOf(item)}
-      onSameTask={() => void dismissRow(item, "already_doing")}
-      onDifferentTask={() =>
-        setKeptAnyway((previous) => new Set(previous).add(item.id))
-      }
+      existing={similar.twinOf(item.id)}
+      onSameTask={(existing) => void linkRow(item, existing)}
+      onDifferentTask={() => similar.keep(item.id)}
       onOpenExisting={(id) =>
         router.push({ pathname: "/task-details", params: { id } })
       }
@@ -659,7 +661,7 @@ function SuggestionRow({
   onAlreadyDoing?: () => void;
   /** The open task this suggestion reads like, until the officer says. */
   existing: ExistingTask | null;
-  onSameTask: () => void;
+  onSameTask: (existing: ExistingTask) => void;
   onDifferentTask: () => void;
   onOpenExisting: (id: string) => void;
   report: RowReport;
@@ -674,8 +676,9 @@ function SuggestionRow({
         busy={busy}
         disabled={disabled}
         problem={problem}
-        onSame={onSameTask}
+        onSame={() => onSameTask(existing)}
         onDifferent={onDifferentTask}
+        onDismiss={onDismiss}
         onOpenExisting={() => onOpenExisting(existing.id)}
         report={report}
         styles={styles}
@@ -775,6 +778,7 @@ function SimilarTaskRow({
   problem,
   onSame,
   onDifferent,
+  onDismiss,
   onOpenExisting,
   report,
   styles,
@@ -786,18 +790,13 @@ function SimilarTaskRow({
   problem: string | null;
   onSame: () => void;
   onDifferent: () => void;
+  onDismiss: () => void;
   onOpenExisting: () => void;
   report: RowReport;
   styles: Styles;
 }) {
   const { task } = item;
-  const due = taskDueLine(
-    existing.due_at ?? existing.due_date,
-    existing.status as TaskStatus,
-  );
-  const where = [statusLabel("task", existing.status), due?.text]
-    .filter(Boolean)
-    .join(" · ");
+  const where = existingTaskLine(existing);
   return (
     <View style={styles.card}>
       <Text style={styles.meta}>{SIMILAR_TASK_COPY.heading}</Text>
@@ -843,6 +842,11 @@ function SimilarTaskRow({
           label: SIMILAR_TASK_COPY.different,
           doing: "keep",
           onPress: onDifferent,
+        }}
+        quiet={{
+          label: AI_SUGGESTION_COPY.dismiss,
+          doing: "dismiss",
+          onPress: onDismiss,
         }}
         styles={styles}
       />

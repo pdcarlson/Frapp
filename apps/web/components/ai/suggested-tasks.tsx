@@ -18,12 +18,12 @@ import {
   useDismissAiSuggestion,
   useMeetings,
   useMembers,
-  useTasks,
-  taskDueLine,
+  existingTaskLine,
+  useSimilarTasks,
   type AiSuggestion,
   type AiSuggestionDismissReason,
   type AiSuggestionSourceRef,
-  type TaskStatus,
+  type ExistingTask,
   type TaskSuggestionEdits,
 } from "@repo/hooks";
 import {
@@ -38,11 +38,7 @@ import {
   LAST_YEAR_COPY,
   SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
-  existingTasks,
   lastYearTaskLine,
-  similarTask,
-  statusLabel,
-  type ExistingTask,
 } from "@repo/validation";
 
 import { Button } from "@/components/ui/button";
@@ -93,9 +89,10 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * A suggestion that reads like a task the chapter already has open (#5562,
  * `similar-task.ts`) says so before it can be created twice: the card sets
  * the two side by side and asks which it is, the way Linear and Jira show
- * likely duplicates as an issue is filed. Already a task dismisses it; Create
+ * likely duplicates as an issue is filed. Already a task records the
+ * existing task as the suggestion's, so the action item follows it; Create
  * anyway brings back the usual card. Until one is pressed, Create all leaves
- * it out.
+ * it out, and it waits for the task list to be read at all.
  */
 
 /** `AI_SUGGESTION_DECIDE_MAX` on the API: decisions one request may carry. */
@@ -218,16 +215,9 @@ export function SuggestedTasks({
   const [busyId, setBusyId] = useState<string | null>(null);
   // The card whose Create task is on its way, to say so on its button.
   const [creatingId, setCreatingId] = useState<string | null>(null);
-  // Suggestions the officer said are not the existing task they look like.
-  const [keptAnyway, setKeptAnyway] = useState<ReadonlySet<string>>(new Set());
-  // The tasks this officer can see, to spot a suggestion that is one of them.
-  const tasksQuery = useTasks();
-  const twins = useMemo(() => {
-    const existing = existingTasks(tasksQuery.data);
-    return new Map(
-      items.map((item) => [item.id, similarTask(item.task.title, existing)]),
-    );
-  }, [items, tasksQuery.data]);
+  // The open task each suggestion reads like, from the tasks this officer
+  // can see (#5562).
+  const similar = useSimilarTasks(items);
 
   const [index, setIndex] = useState(0);
 
@@ -273,12 +263,11 @@ export function SuggestedTasks({
   // button creates cards the officer may never have brought up, and a guess
   // is only saved from the card that showed it.
   const saidOf = (item: WaitingSuggestion) => rowValues(item, edits[item.id]);
-  const twinOf = (item: WaitingSuggestion) =>
-    keptAnyway.has(item.id) ? null : (twins.get(item.id) ?? null);
+  const twinOf = (item: WaitingSuggestion) => similar.twinOf(item.id);
   // A row open in the form is decided there, with what was typed into it,
   // and one that looks like an existing task waits for the officer's word.
   const ready = items.filter((item) => {
-    if (item.id === formFor || twinOf(item)) return false;
+    if (item.id === formFor || !similar.known || twinOf(item)) return false;
     const values = saidOf(item);
     return values.who && values.due;
   });
@@ -320,6 +309,29 @@ export function SuggestedTasks({
     } finally {
       setBusyId(null);
       setCreatingId(null);
+    }
+  }
+
+  /** Already a task: the suggestion is that task, and its item follows it. */
+  async function linkRow(item: WaitingSuggestion, existing: ExistingTask) {
+    setBusyId(item.id);
+    try {
+      await accept.mutateAsync({
+        id: item.id,
+        task: { existing_task_id: existing.id },
+      });
+      toast({
+        title: SIMILAR_TASK_COPY.linked,
+        description: existing.title,
+      });
+    } catch (error) {
+      toast({
+        title: SIMILAR_TASK_COPY.linkFailed,
+        description: suggestionRefusalLine(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -471,10 +483,8 @@ export function SuggestedTasks({
             : undefined
         }
         existing={twinOf(current)}
-        onSameTask={() => void dismissRow(current, "already_doing")}
-        onDifferentTask={() =>
-          setKeptAnyway((previous) => new Set(previous).add(current.id))
-        }
+        onSameTask={(existing) => void linkRow(current, existing)}
+        onDifferentTask={() => similar.keep(current.id)}
         onOpenForm={() => setFormFor(current.id)}
         onCloseForm={() => setFormFor(null)}
         acceptWith={async (task) => {
@@ -498,7 +508,9 @@ export function SuggestedTasks({
               ? AI_SUGGESTION_COPY.accepting
               : ready.length === items.length
                 ? AI_SUGGESTION_COPY.acceptAll(ready.length)
-                : AI_SUGGESTION_COPY.acceptReady(ready.length)}
+                : items.some(twinOf)
+                  ? SIMILAR_TASK_COPY.acceptReady(ready.length)
+                  : AI_SUGGESTION_COPY.acceptReady(ready.length)}
           </Button>
         </div>
       ) : null}
@@ -543,7 +555,7 @@ function SuggestedTaskRow({
   onAlreadyDoing?: () => void;
   /** The open task this suggestion reads like, until the officer says. */
   existing: ExistingTask | null;
-  onSameTask: () => void;
+  onSameTask: (existing: ExistingTask) => void;
   onDifferentTask: () => void;
   onOpenForm: () => void;
   onCloseForm: () => void;
@@ -613,8 +625,10 @@ function SuggestedTaskRow({
         item={item}
         existing={existing}
         disabled={disabled}
-        onSame={onSameTask}
+        pending={pending}
+        onSame={() => onSameTask(existing)}
         onDifferent={onDifferentTask}
+        onDismiss={onDismiss}
       />
     );
   }
@@ -725,26 +739,24 @@ function SimilarTaskCard({
   item,
   existing,
   disabled,
+  pending,
   onSame,
   onDifferent,
+  onDismiss,
 }: {
   item: WaitingSuggestion;
   existing: ExistingTask;
   disabled: boolean;
+  pending: boolean;
   onSame: () => void;
   onDifferent: () => void;
+  onDismiss: () => void;
 }) {
   const { task } = item;
-  const due = taskDueLine(
-    existing.due_at ?? existing.due_date,
-    existing.status as TaskStatus,
-  );
-  const where = [statusLabel("task", existing.status), due?.text]
-    .filter(Boolean)
-    .join(" · ");
+  const where = existingTaskLine(existing);
   return (
     <div
-      aria-busy={disabled || undefined}
+      aria-busy={pending || undefined}
       className="space-y-3 rounded-[14px] border border-border p-4"
     >
       <p className="text-caption font-medium text-muted-foreground">
@@ -784,6 +796,16 @@ function SimilarTaskCard({
           name={task.title}
           target={{ subject: "ai_suggestion", subjectId: item.id }}
         />
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={`Dismiss ${task.title}`}
+          title="Dismiss"
+          disabled={disabled}
+          onClick={onDismiss}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
         <Button
           size="sm"
           variant="secondary"

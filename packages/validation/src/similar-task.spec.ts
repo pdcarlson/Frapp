@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  existingTasks,
-  similarTask,
-  taskTitleLikeness,
-  taskTitleWords,
-} from "./similar-task";
+import { similarTask, taskTitleLikeness, taskTitleWords } from "./similar-task";
 
 describe("similar tasks (#5562)", () => {
   it("reads the words that say which task it is", () => {
@@ -22,19 +17,35 @@ describe("similar tasks (#5562)", () => {
         "Email alumni about homecoming",
         "Send homecoming email to alumni",
       ),
-    ).toBeGreaterThanOrEqual(0.75);
+    ).toBeGreaterThanOrEqual(0.8);
   });
 
   it("does not match tasks that only share a word", () => {
     expect(taskTitleLikeness("Book the hall", "Book the DJ")).toBe(0);
     expect(taskTitleLikeness("Order shirts", "Order pizza for rush")).toBe(0);
+    // The word that says which one is the one that differs.
+    expect(
+      taskTitleLikeness(
+        "Book hall for spring formal",
+        "Book hall for fall formal",
+      ),
+    ).toBeLessThan(0.8);
+    expect(
+      taskTitleLikeness("Order shirts round 1", "Order shirts round 2"),
+    ).toBeLessThan(0.8);
+    expect(
+      taskTitleLikeness(
+        "Clean the house before formal",
+        "Clean the house after formal",
+      ),
+    ).toBeLessThan(0.8);
     // "about" says nothing about which task it is.
     expect(
       taskTitleLikeness(
         "Email alumni about homecoming",
         "Email alumni about formal",
       ),
-    ).toBeLessThan(0.75);
+    ).toBeLessThan(0.8);
   });
 
   it("holds down a short title inside a much longer one", () => {
@@ -43,7 +54,7 @@ describe("similar tasks (#5562)", () => {
         "Plan rush week",
         "Plan rush week budget, venue, food, shirts, flyers and schedule",
       ),
-    ).toBeLessThan(0.75);
+    ).toBeLessThan(0.8);
   });
 
   it("picks the closest open task and skips finished ones", () => {
@@ -60,31 +71,5 @@ describe("similar tasks (#5562)", () => {
     expect(similarTask("Book the hall for formal", tasks)?.id).toBe("same");
     expect(similarTask("Call the caterer", tasks)).toBeNull();
     expect(similarTask("Book the hall for formal", [tasks[0]!])).toBeNull();
-  });
-
-  it("reads the task list's rows, skipping ones without an id and title", () => {
-    expect(
-      existingTasks([
-        {
-          id: "a",
-          title: "Order shirts",
-          status: "TODO",
-          due_date: "2026-11-21",
-          due_at: null,
-        },
-        { id: "b" },
-        null,
-        "row",
-      ]),
-    ).toEqual([
-      {
-        id: "a",
-        title: "Order shirts",
-        status: "TODO",
-        due_date: "2026-11-21",
-        due_at: null,
-      },
-    ]);
-    expect(existingTasks(undefined)).toEqual([]);
   });
 });
