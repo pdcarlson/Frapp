@@ -375,8 +375,12 @@ describe('InviteService', () => {
     const expiresAt = new Date(createCall.expires_at!);
     const now = new Date();
     expect(expiresAt.getTime()).toBeGreaterThan(now.getTime());
+    // Seven days (Paul 2026-11-19, #5625), not the old 24 hours.
+    expect(expiresAt.getTime() - now.getTime()).toBeGreaterThan(
+      7 * 24 * 60 * 60 * 1000 - 5000,
+    );
     expect(expiresAt.getTime() - now.getTime()).toBeLessThanOrEqual(
-      24 * 60 * 60 * 1000 + 5000,
+      7 * 24 * 60 * 60 * 1000 + 5000,
     );
     expect(result.token).toBe(createCall.token);
   });
@@ -1018,6 +1022,107 @@ describe('InviteService', () => {
       await expect(service.preview('preview-token')).rejects.toBeInstanceOf(
         GoneException,
       );
+    });
+
+    describe('details, the card before sign-in (#5625)', () => {
+      it('answers a live invite with the card and state live', async () => {
+        await expect(service.details('preview-token')).resolves.toEqual({
+          chapter_name: 'FIJI Tau Nu',
+          university: 'Rensselaer Polytechnic Institute',
+          mark_text: 'FIJI',
+          accent_color: '#5b2c83',
+          invited_by: 'Paul Carlson',
+          role: null,
+          expires_at: LIVE_UNTIL,
+          state: 'live',
+        });
+        expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['expired', invite({ expires_at: '2020-01-01T00:00:00.000Z' }), 'expired'],
+        ['used', invite({ used_at: '2024-01-02' }), 'used'],
+        [
+          'revoked',
+          invite({ used_at: '2024-01-02', revoked_at: '2024-01-02' }),
+          'off',
+        ],
+      ])(
+        'still names the chapter and sender for a %s invite',
+        async (_label, found, state) => {
+          mockInviteRepo.findByToken.mockResolvedValue(found);
+          await expect(service.details('preview-token')).resolves.toMatchObject(
+            {
+              chapter_name: 'FIJI Tau Nu',
+              invited_by: 'Paul Carlson',
+              state,
+            },
+          );
+        },
+      );
+
+      it('never calls a chapter link used, however many joined with it', async () => {
+        mockInviteRepo.findByToken.mockResolvedValue(
+          invite({ reusable: true, used_at: null }),
+        );
+        expect((await service.details('preview-token')).state).toBe('live');
+      });
+
+      it('answers 404 for an unknown token or a gone chapter', async () => {
+        mockInviteRepo.findByToken.mockResolvedValueOnce(null);
+        await expect(service.details('nope')).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+        mockChapterRepo.findById.mockResolvedValueOnce(null);
+        await expect(service.details('preview-token')).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      });
+
+      describe('askForNewLink', () => {
+        const dead = invite({ expires_at: '2020-01-01T00:00:00.000Z' });
+
+        beforeEach(() => {
+          mockInviteRepo.findByToken.mockResolvedValue(dead);
+          mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+          mockUserRepo.findById.mockImplementation(async (id) =>
+            id === 'asker'
+              ? userFixture({ id: 'asker', display_name: 'Jake Morris' })
+              : userFixture({ id: 'user-1', display_name: 'Paul Carlson' }),
+          );
+        });
+
+        it("tells the sender, by the asker's name, which chapter it was for", async () => {
+          await service.askForNewLink('preview-token', 'asker');
+          expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+            'ch-1',
+            [dead.created_by],
+            expect.objectContaining({
+              title: 'Jake Morris asked for a new invite',
+              body: expect.stringContaining('FIJI Tau Nu'),
+              category: 'members',
+            }),
+          );
+        });
+
+        it('refuses a link that still works', async () => {
+          mockInviteRepo.findByToken.mockResolvedValue(invite());
+          await expect(
+            service.askForNewLink('preview-token', 'asker'),
+          ).rejects.toBeInstanceOf(ConflictException);
+          expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+        });
+
+        it('refuses someone already in the chapter', async () => {
+          mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+            { id: 'm-1' } as never,
+          );
+          await expect(
+            service.askForNewLink('preview-token', 'asker'),
+          ).rejects.toBeInstanceOf(ConflictException);
+          expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+        });
+      });
     });
   });
 

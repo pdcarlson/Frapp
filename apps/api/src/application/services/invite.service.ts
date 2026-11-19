@@ -140,6 +140,21 @@ export function inviteStatus(invite: Invite, now = new Date()): InviteStatus {
   return 'pending';
 }
 
+/**
+ * An invite's state as its link tells it (#5625). A chapter link is never
+ * `used`: any number of people join with it until it expires or is turned off.
+ */
+function linkState(
+  invite: Invite,
+  described: { refused: boolean },
+  now: Date,
+): InviteLinkState {
+  if (invite.revoked_at || described.refused) return 'off';
+  if (invite.used_at && !invite.reusable) return 'used';
+  if (new Date(invite.expires_at) <= now) return 'expired';
+  return 'live';
+}
+
 /** One row of `GET /v1/invites`: the stored invite plus its status. */
 function toListItem(invite: Invite, now: Date): InviteListItem {
   return {
@@ -176,6 +191,28 @@ export interface InviteListItem {
  * that a link someone forwards doesn't work forever.
  */
 export const CHAPTER_LINK_DAYS = 7;
+
+/**
+ * How long a personal invite works (Paul 2026-11-19, #5625: "7 days", up from
+ * 24 hours). A link texted on a Friday night was dead by Sunday; a week
+ * matches the chapter link and Discord's default, and an officer can still
+ * revoke one sooner.
+ */
+export const INVITE_DAYS = 7;
+
+/**
+ * Whether an invite link can still be used, as the invite screen tells it
+ * before anyone signs in (`POST /v1/invites/details`, #5625). `off` covers a
+ * revoked invite and one its sender can no longer grant: neither can be
+ * joined, and both are answered the same way, by asking the sender for a new
+ * link.
+ */
+export type InviteLinkState = 'live' | 'expired' | 'used' | 'off';
+
+/** What the invite screen shows for a link, dead or alive (#5625). */
+export interface InviteDetails extends InvitePreview {
+  state: InviteLinkState;
+}
 
 export interface BulkEmailInviteResult {
   /** The new invites, as `GET /v1/invites` lists them. */
@@ -274,7 +311,7 @@ export class InviteService {
   ): Partial<Invite> {
     const expiresAt = new Date();
     expiresAt.setHours(
-      expiresAt.getHours() + (reusable ? CHAPTER_LINK_DAYS * 24 : 24),
+      expiresAt.getHours() + (reusable ? CHAPTER_LINK_DAYS : INVITE_DAYS) * 24,
     );
 
     return {
@@ -839,6 +876,66 @@ export class InviteService {
     // refusal, rather than offering a Join that can't work.
     if (described.refused) throw inviteRoleOutOfReach();
     return described.preview;
+  }
+
+  /**
+   * What an invite link shows before anyone signs in (#5625): the chapter, who
+   * sent it, the role, and whether it still works. Unlike {@link preview} it
+   * answers for a dead link too, so the screen can still name the chapter and
+   * the sender to ask for a new one, and it needs no account: the token is an
+   * unguessable secret, and whoever holds it could join with it while it
+   * works. Not found (404) only for a token that never existed or whose
+   * chapter is gone.
+   */
+  async details(token: string, now = new Date()): Promise<InviteDetails> {
+    const invite = await this.inviteRepo.findByToken(token);
+    if (!invite) throw new NotFoundException('Invite not found');
+    const described = await this.describe(invite);
+    if (!described) throw new NotFoundException('Invite not found');
+    return { ...described.preview, state: linkState(invite, described, now) };
+  }
+
+  /**
+   * "Ask for a new link" from a dead invite (#5625): tells the invite's sender,
+   * by push and in the app, who is asking and for which chapter, so they can
+   * send a fresh one. Signed-in only, so the sender sees a real name. A live
+   * invite needs no asking (409, use it), and neither does someone already in
+   * the chapter (409). A sender who has since left the chapter is not told
+   * (`notifyMembers` reaches members only); the caller hears it as sent.
+   */
+  async askForNewLink(token: string, userId: string): Promise<void> {
+    const invite = await this.inviteRepo.findByToken(token);
+    if (!invite) throw new NotFoundException('Invite not found');
+    const [described, membership, asker] = await Promise.all([
+      this.describe(invite),
+      this.memberRepo.findByUserAndChapter(userId, invite.chapter_id),
+      this.userRepo.findById(userId),
+    ]);
+    if (!described) throw new NotFoundException('Invite not found');
+    if (membership) {
+      throw new ConflictException({
+        code: 'invite.already_member',
+        message: "You're already in this chapter.",
+      });
+    }
+    if (linkState(invite, described, new Date()) === 'live') {
+      throw new ConflictException({
+        code: 'invite.still_live',
+        message: 'This invite still works. Use it to join.',
+      });
+    }
+    const name = asker?.display_name?.trim() || 'Someone';
+    await this.notificationService.notifyMembers(
+      invite.chapter_id,
+      [invite.created_by],
+      {
+        title: `${name} asked for a new invite`,
+        body: `The link you sent them to ${described.preview.chapter_name} no longer works. Send a new one from Invite members.`,
+        priority: 'NORMAL',
+        category: 'members',
+        data: { target: { screen: 'members' }, memberUserId: userId },
+      },
+    );
   }
 
   /**

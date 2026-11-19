@@ -59,3 +59,13 @@ export const ThrottleFanOutWrite = () =>
  */
 export const ThrottleExpensiveRead = () =>
   Throttle({ read: { limit: 20, ttl: MINUTE_MS } });
+
+/**
+ * 120/min — a lookup by an unguessable token that needs no account, counted
+ * per address because there is no user to count it by. Higher than the
+ * default `write` bucket rather than lower: a whole pledge class opens the
+ * chapter link at once on one campus network (#5625), and the token, not the
+ * rate, is what keeps a guess from finding anything.
+ */
+export const ThrottlePublicTokenRead = () =>
+  Throttle({ write: { limit: 120, ttl: MINUTE_MS } });

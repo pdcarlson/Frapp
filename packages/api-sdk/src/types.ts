@@ -923,6 +923,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/ask-for-new-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask a dead invite's sender for a new link
+         * @description Notifies whoever sent the invite, by name, that the caller wants a new link (#5625). 409 when the invite still works or the caller is already in the chapter; 404 for an unknown invite.
+         */
+        post: operations["InviteController_askForNewLink_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/redeem": {
         parameters: {
             query?: never;
@@ -992,6 +1012,23 @@ export interface paths {
          * @description Not found (404) for an invite the list leaves out for the caller (#4546).
          */
         delete: operations["InviteController_revoke_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** An invite link's chapter, sender, role and whether it still works, with no account needed */
+        post: operations["InviteDetailsController_details_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7257,6 +7294,23 @@ export interface components {
         InvitableRolesDto: {
             /** @description Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names. */
             role_ids: string[];
+        };
+        InviteDetailsResponseDto: {
+            chapter_name: string;
+            university: string;
+            /** @description The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421). */
+            mark_text: string | null;
+            accent_color: string | null;
+            /** @description The inviter's display name, or null when it can't be read. */
+            invited_by: string | null;
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
+            role: string | null;
+            expires_at: string;
+            /**
+             * @description Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role). Only `live` can be joined.
+             * @enum {string}
+             */
+            state: "live" | "expired" | "used" | "off";
         };
         RegisterPushTokenDto: {
             /** @description Expo push token */
@@ -14776,6 +14830,36 @@ export interface operations {
             };
         };
     };
+    InviteController_askForNewLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInviteDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     InviteController_redeem_v1: {
         parameters: {
             query?: never;
@@ -14874,6 +14958,45 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteDetailsController_details_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInviteDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteDetailsResponseDto"];
+                };
+            };
+            /** @description No such invite, or its chapter is gone */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

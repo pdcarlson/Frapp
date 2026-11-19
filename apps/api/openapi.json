@@ -2807,6 +2807,47 @@
         ]
       }
     },
+    "/v1/invites/ask-for-new-link": {
+      "post": {
+        "description": "Notifies whoever sent the invite, by name, that the caller wants a new link (#5625). 409 when the invite still works or the caller is already in the chapter; 404 for an unknown invite.",
+        "operationId": "InviteController_askForNewLink_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewInviteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask a dead invite's sender for a new link",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/redeem": {
       "post": {
         "operationId": "InviteController_redeem_v1",
@@ -2960,6 +3001,51 @@
           }
         ],
         "summary": "Revoke an invite",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
+    "/v1/invites/details": {
+      "post": {
+        "operationId": "InviteDetailsController_details_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewInviteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteDetailsResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such invite, or its chapter is gone"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "An invite link's chapter, sender, role and whether it still works, with no account needed",
         "tags": [
           "Invites"
         ]
@@ -23824,6 +23910,59 @@
         },
         "required": [
           "role_ids"
+        ]
+      },
+      "InviteDetailsResponseDto": {
+        "type": "object",
+        "properties": {
+          "chapter_name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "mark_text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421)."
+          },
+          "accent_color": {
+            "type": "string",
+            "nullable": true
+          },
+          "invited_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "The inviter's display name, or null when it can't be read."
+          },
+          "role": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "live",
+              "expired",
+              "used",
+              "off"
+            ],
+            "description": "Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role). Only `live` can be joined."
+          }
+        },
+        "required": [
+          "chapter_name",
+          "university",
+          "mark_text",
+          "accent_color",
+          "invited_by",
+          "role",
+          "expires_at",
+          "state"
         ]
       },
       "RegisterPushTokenDto": {

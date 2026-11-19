@@ -71,6 +71,8 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "A calendar app fetches a member's .ics feed; the 256-bit token in the query is the credential, checked in the service.",
   'GoogleCalendarCallbackController.callback':
     "Google's OAuth redirect; connects nothing, only sends the browser back to where the sign-in started, whose signed-in member finishes it.",
+  'InviteDetailsController.details':
+    "The card an invite link opens on, before anyone signs in (#5625); the unguessable invite token in the body is the credential, and it shows only the chapter, sender, role and whether the link works.",
   'DevLogController.post':
     'Posts to the dev-log channel; guarded by DevLogTokenGuard (a shared secret), not a user session.',
 };
@@ -93,6 +95,8 @@ const USER_ROUTES: Record<string, string> = {
   'InviteController.redeem':
     'Joins a chapter by invite token; the invite names the chapter.',
   'InviteController.listMine': 'Invites addressed to the caller.',
+  'InviteController.askForNewLink':
+    "Asks a dead invite's sender for a new link; the caller is in no chapter the invite names yet.",
   'NotificationController.registerPushToken': "The caller's own device token.",
   'NotificationController.removePushToken': "The caller's own device token.",
   'NotificationController.getPreferences':

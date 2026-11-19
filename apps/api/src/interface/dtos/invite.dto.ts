@@ -22,6 +22,8 @@ import type {
   InviteStatus,
 } from '../../application/services/invite.service';
 import type {
+  InviteDetails,
+  InviteLinkState,
   InvitePreview,
   PendingInvite,
 } from '../../application/services/invite.service';
@@ -155,6 +157,19 @@ export class InvitePreviewResponseDto implements InvitePreview {
 
   @ApiProperty()
   expires_at: string;
+}
+
+/** `InviteDetails` in `invite.service.ts`: the invite screen's card (#5625). */
+export class InviteDetailsResponseDto
+  extends InvitePreviewResponseDto
+  implements InviteDetails
+{
+  @ApiProperty({
+    enum: ['live', 'expired', 'used', 'off'],
+    description:
+      'Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role). Only `live` can be joined.',
+  })
+  state: InviteLinkState;
 }
 
 /** One row of `GET /v1/invites/mine` (`PendingInvite`, #3776). */
