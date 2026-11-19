@@ -46,6 +46,7 @@ import {
   type InviteAddresses,
 } from "@/components/members/invite-composer";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
+import { ChapterLinkSection } from "@/components/members/chapter-link-section";
 import { getErrorMessage, cn } from "@/lib/utils";
 import { parseChapterRoles, toRoleOptions } from "@repo/hooks/chapter-roles";
 import { EVERYONE_ROLE_NAME } from "@repo/validation";
@@ -508,6 +509,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
               ) : null}
             </div>
             <SubscriptionNotice gate={gate} feature="sending invites" />
+
+            <ChapterLinkSection
+              gate={gate}
+              revokeGate={revokeGate}
+              paused={hasLiveDataError}
+            />
 
             <section aria-labelledby="invite-list-label" className="space-y-2">
               <SectionLabel

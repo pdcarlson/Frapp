@@ -1,7 +1,8 @@
 /**
  * Which channel Chat opens on when nothing named one: the member's last
  * channel, else the chapter's default channel (`is_default`, set by an
- * officer), else `#general`, else the first row (owner, 2026-11-05: "Mobile
+ * officer), else `#general`, else the first channel the member can post in,
+ * else the first row (owner, 2026-11-05: "Mobile
  * opens up to the last channel you were in. like discord"; 2026-11-06: the
  * chapter picks a default, members do not).
  *
@@ -31,7 +32,21 @@ export type LandingChannel = {
   hidden?: boolean;
   /** The chapter's default channel, from `GET /v1/channels`. */
   is_default?: boolean;
+  /** `#chapter-audit`, which only Frapp posts in. */
+  is_audit_log?: boolean;
+  /** False where the member can read but not post. */
+  can_post?: boolean;
 };
+
+/**
+ * Somewhere to start talking. A chapter brought over from Discord often has
+ * no `#general` and no default yet, and the first row is then the oldest
+ * channel, `#chapter-audit` (2026-11-19: a new member's first screen was the
+ * audit log).
+ */
+function canTalkIn(channel: LandingChannel): boolean {
+  return !channel.is_audit_log && channel.can_post !== false;
+}
 
 /** The remembered channel, when it is still listed and not hidden. */
 export function lastChannelLandingId(
@@ -53,6 +68,7 @@ export function landingChannelId(
     lastChannelLandingId(listed, lastChannelId) ??
     listed.find((channel) => channel.is_default)?.id ??
     listed.find((channel) => channel.name === "general")?.id ??
+    listed.find(canTalkIn)?.id ??
     listed[0]?.id ??
     null
   );

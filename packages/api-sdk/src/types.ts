@@ -848,6 +848,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/chapter-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The chapter's shareable invite link, if it has one (#3353)
+         * @description One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.
+         */
+        get: operations["InviteController_getChapterLink_v1"];
+        put?: never;
+        /**
+         * Make the chapter's shareable invite link, turning off the one before it (#3353)
+         * @description 403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.
+         */
+        post: operations["InviteController_createChapterLink_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/batch": {
         parameters: {
             query?: never;
@@ -7171,6 +7195,12 @@ export interface components {
             used_at: string | null;
             revoked_at: string | null;
             created_at: string;
+            /** @description True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined. */
+            reusable: boolean;
+        };
+        ChapterLinkResponseDto: {
+            /** @description The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into. */
+            link: components["schemas"]["InviteListItemDto"] | null;
         };
         BatchCreateInvitesDto: {
             /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
@@ -14576,6 +14606,62 @@ export interface operations {
                 "application/json": components["schemas"]["CreateInviteDto"];
             };
         };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_getChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterLinkResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_createChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             201: {
                 headers: {

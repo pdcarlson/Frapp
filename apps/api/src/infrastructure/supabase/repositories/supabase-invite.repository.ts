@@ -60,6 +60,20 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data || [];
   }
 
+  async findChapterLink(chapterId: string): Promise<Invite | null> {
+    const { data, error } = await this.supabase
+      .from('invites')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('reusable', true)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async findPendingByEmail(email: string, now: Date): Promise<Invite[]> {
     // Narrowed in SQL, decided in code. The `ilike` bounds the read to this
     // address (case-insensitively: addresses are stored as typed), but it is

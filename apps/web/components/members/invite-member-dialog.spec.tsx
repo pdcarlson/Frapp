@@ -21,8 +21,12 @@ const {
   mockRefetchRoles,
   mockRefetchInvites,
   mockInvitableRoleIds,
+  mockChapterLink,
+  mockCreateChapterLink,
   activeChapterId,
 } = vi.hoisted(() => ({
+  mockChapterLink: vi.fn((): unknown => null),
+  mockCreateChapterLink: vi.fn(),
   activeChapterId: { current: "chapter-1" as string | null },
   mockRefetchRoles: vi.fn(),
   mockRefetchInvites: vi.fn(),
@@ -70,6 +74,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateInvite: () => ({ mutateAsync: mockCreateInvite, isPending: false }),
   useEmailInvites: () => ({ mutateAsync: mockEmailInvites, isPending: false }),
   useRevokeInvite: () => ({ mutateAsync: mockRevoke, isPending: false }),
+  useChapterLink: () => ({ data: mockChapterLink() }),
+  useCreateChapterLink: () => ({
+    mutateAsync: mockCreateChapterLink,
+    isPending: false,
+  }),
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: ["billing:manage"] },
@@ -118,6 +127,7 @@ function primeHooks() {
   });
   mockOrgConfig.mockReturnValue({ data: {}, isError: false });
   mockInvites.mockReturnValue([INVITE]);
+  mockChapterLink.mockReturnValue(null);
 }
 
 /**
@@ -774,5 +784,90 @@ describe("InviteMemberDialog keeps its draft (#4593)", () => {
     land({ invites: [], failed: [] });
     await waitFor(() => expect(screen.queryByText("a@school.edu")).toBeNull());
     expect(mockEmailInvites).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #3353, Paul 2026-11-19: "One chapter link, 7 days".
+describe("InviteMemberDialog chapter link", () => {
+  const LINK = {
+    ...INVITE,
+    id: "link-1",
+    token: "chapter-token",
+    email: null,
+    role: "Everyone",
+    reusable: true,
+    expires_at: "2026-11-26T12:00:00.000Z",
+  };
+  const section = () =>
+    within(screen.getByRole("region", { name: "Chapter link" }));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+  });
+
+  it("makes a link and copies it in one press", async () => {
+    mockCreateChapterLink.mockResolvedValue(LINK);
+    await openDialog();
+    await userEvent.click(
+      section().getByRole("button", { name: /make a chapter link/i }),
+    );
+
+    expect(mockCreateChapterLink).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=chapter-token`,
+      ),
+    );
+    expect(mockToast).toHaveBeenCalledWith({ title: "Chapter link copied" });
+  });
+
+  it("shows the live link with when it stops working, to copy or turn off", async () => {
+    mockChapterLink.mockReturnValue(LINK);
+    await openDialog();
+
+    expect(
+      section().getByText(/works until thursday, november 26/i),
+    ).toBeInTheDocument();
+    await userEvent.click(section().getByRole("button", { name: "Copy link" }));
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=chapter-token`,
+      ),
+    );
+
+    await userEvent.click(
+      section().getByRole("button", { name: "More for the chapter link" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /turn off link/i }),
+    );
+    expect(mockRevoke).toHaveBeenCalledWith("link-1");
+  });
+
+  it("offers a new one once the last expired", async () => {
+    mockChapterLink.mockReturnValue({ ...LINK, status: "expired" });
+    await openDialog();
+
+    expect(
+      section().getByRole("button", { name: /make a chapter link/i }),
+    ).toBeEnabled();
+    expect(
+      section().getByText(/expired thursday, november 26/i),
+    ).toBeInTheDocument();
+  });
+
+  it("is blocked with the other invites inside the grace window", async () => {
+    chapter.pastDue();
+    await openDialog();
+
+    expect(
+      section().getByRole("button", { name: /make a chapter link/i }),
+    ).toBeDisabled();
   });
 });

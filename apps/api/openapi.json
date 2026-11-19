@@ -2599,6 +2599,80 @@
         ]
       }
     },
+    "/v1/invites/chapter-link": {
+      "get": {
+        "description": "One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.",
+        "operationId": "InviteController_getChapterLink_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterLinkResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter's shareable invite link, if it has one (#3353)",
+        "tags": [
+          "Invites"
+        ]
+      },
+      "post": {
+        "description": "403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.",
+        "operationId": "InviteController_createChapterLink_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteListItemDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Make the chapter's shareable invite link, turning off the one before it (#3353)",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/batch": {
       "post": {
         "operationId": "InviteController_createBatch_v1",
@@ -23527,6 +23601,10 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "reusable": {
+            "type": "boolean",
+            "description": "True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined."
           }
         },
         "required": [
@@ -23538,7 +23616,26 @@
           "expires_at",
           "used_at",
           "revoked_at",
-          "created_at"
+          "created_at",
+          "reusable"
+        ]
+      },
+      "ChapterLinkResponseDto": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "nullable": true,
+            "description": "The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InviteListItemDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "link"
         ]
       },
       "BatchCreateInvitesDto": {

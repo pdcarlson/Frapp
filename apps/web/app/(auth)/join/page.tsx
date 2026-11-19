@@ -409,7 +409,7 @@ function JoinPageContent() {
     return (
       <AuthScreen
         title="Join your chapter"
-        subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+        subtitle="Enter the invite link or code your officer sent."
       >
         <div role="status" aria-busy="true" aria-live="polite">
           <span className="sr-only">Verifying your session…</span>
@@ -423,7 +423,7 @@ function JoinPageContent() {
     return (
       <AuthScreen
         title="Join your chapter"
-        subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+        subtitle="Enter the invite link or code your officer sent."
       >
         {isOffline ? (
           <OfflineState
@@ -453,7 +453,7 @@ function JoinPageContent() {
         />
       }
       title="Join your chapter"
-      subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+      subtitle="Enter the invite link or code your officer sent."
       footer={JOIN_FOOTER}
     >
       {openChatMembership ? (
@@ -642,7 +642,7 @@ export default function JoinPage() {
       fallback={
         <AuthScreen
           title="Join your chapter"
-          subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+          subtitle="Enter the invite link or code your officer sent."
           footer={JOIN_FOOTER}
         >
           <div role="status" aria-busy="true" aria-live="polite">
