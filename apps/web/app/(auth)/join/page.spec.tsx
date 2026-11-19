@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 /**
  * #2302. A user who hasn't accepted the current Terms can't join without
@@ -83,17 +89,20 @@ const searchParams = vi.hoisted(() => ({
   current: new URLSearchParams(),
 }));
 /** `usePhonePlatform`'s answer: the phone this browser runs on (#4002). */
+const STORE_APP = { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" };
+const STAGING_APP = {
+  id: "live.frapp.mobile.staging",
+  scheme: "frapp-staging",
+  name: "Frapp Staging",
+};
 const device = vi.hoisted(() => ({
   phone: null as "ios" | "android" | null,
+  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+  app: null as { id: string; scheme: string; name: string } | null,
 }));
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
-  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
-  useNativeApp: () => ({
-    id: "live.frapp.mobile",
-    scheme: "frapp",
-    name: "Frapp",
-  }),
+  useNativeApp: () => device.app,
 }));
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: signOut,
@@ -167,6 +176,10 @@ beforeEach(() => {
   pending.isLoading = false;
   searchParams.current = new URLSearchParams();
   device.phone = null;
+  device.app = STORE_APP;
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("web join — an invite link opened on a phone (#4002)", () => {
@@ -199,12 +212,10 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
 
     expect(await screen.findByText("Join in the Frapp app")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Open in the app" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Open in Frapp" }).getAttribute("href"),
     ).toBe("frapp://join?token=abc");
     expect(
-      screen
-        .getByRole("link", { name: "Get Frapp on the App Store" })
-        .getAttribute("href"),
+      screen.getByRole("link", { name: "Get Frapp" }).getAttribute("href"),
     ).toBe("https://apps.apple.com/app/id6812025642");
     await waitFor(() => expect(sessionUser).toHaveBeenCalled());
     expect(replace).not.toHaveBeenCalled();
@@ -249,15 +260,99 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     renderPage();
 
     expect(
-      (
-        await screen.findByRole("link", { name: "Open in the app" })
-      ).getAttribute("href"),
-    ).toBe("intent://join?token=abc#Intent;scheme=frapp;package=live.frapp.mobile;end");
+      (await screen.findByRole("link", { name: "Open in Frapp" })).getAttribute(
+        "href",
+      ),
+    ).toBe(
+      "intent://join?token=abc#Intent;scheme=frapp;package=live.frapp.mobile;end",
+    );
+    expect(
+      screen.getByRole("link", { name: "Get Frapp" }).getAttribute("href"),
+    ).toBe("https://play.google.com/store/apps/details?id=live.frapp.mobile");
+  });
+
+  it("walks a beta tester through getting Frapp Staging, then opening the invite (2026-11-19)", async () => {
+    device.phone = "ios";
+    device.app = STAGING_APP;
+    vi.stubEnv(
+      "NEXT_PUBLIC_IOS_INSTALL_URL",
+      "https://testflight.apple.com/join/AbCd1234",
+    );
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    expect(
+      await screen.findByText("Join in the Frapp Staging app"),
+    ).toBeTruthy();
+    const [getStep, openStep] = screen.getAllByRole("listitem");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(
+      within(getStep!)
+        .getByRole("link", { name: "Get Frapp Staging" })
+        .getAttribute("href"),
+    ).toBe("https://testflight.apple.com/join/AbCd1234");
+    expect(within(getStep!).getByText(/Opens TestFlight/)).toBeTruthy();
+    expect(
+      within(openStep!)
+        .getByRole("link", { name: "Open in Frapp Staging" })
+        .getAttribute("href"),
+    ).toBe("frapp-staging://join?token=abc");
+  });
+
+  it("walks an Android tester through Play's tester page, then the intent link", async () => {
+    device.phone = "android";
+    device.app = STAGING_APP;
+    vi.stubEnv(
+      "NEXT_PUBLIC_ANDROID_INSTALL_URL",
+      "https://play.google.com/apps/internaltest/4701234567890",
+    );
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    const getLink = await screen.findByRole("link", {
+      name: "Get Frapp Staging",
+    });
+    expect(getLink.getAttribute("href")).toBe(
+      "https://play.google.com/apps/internaltest/4701234567890",
+    );
+    expect(screen.getByText(/Opens Google Play's tester page/)).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: "Get Frapp on Google Play" })
+        .getByRole("link", { name: "Open in Frapp Staging" })
         .getAttribute("href"),
-    ).toBe("https://play.google.com/store/apps/details?id=live.frapp.mobile");
+    ).toBe(
+      "intent://join?token=abc#Intent;scheme=frapp-staging;package=live.frapp.mobile.staging;end",
+    );
+  });
+
+  it("tells a non-tester to use the browser when the store listing is the fallback", async () => {
+    device.phone = "ios";
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    expect(
+      await screen.findByText(/if the store says it isn't available yet/),
+    ).toBeTruthy();
+  });
+
+  it("offers only Open in the app for Frapp Staging before its install link is set", async () => {
+    device.phone = "ios";
+    device.app = STAGING_APP;
+    vi.stubEnv("NEXT_PUBLIC_IOS_INSTALL_URL", "");
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    expect(
+      (
+        await screen.findByRole("link", { name: "Open in Frapp Staging" })
+      ).getAttribute("href"),
+    ).toBe("frapp-staging://join?token=abc");
+    expect(screen.queryByRole("link", { name: /^Get / })).toBeNull();
+    expect(screen.queryByRole("listitem")).toBeNull();
   });
 
   it("offers the app to a signed-in account with no chapter", async () => {
@@ -308,7 +403,9 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     // Bare `/chat` would loop an account with an emailed invite: the wizard
     // gate would find the invite and send it straight back to this page.
     expect(
-      screen.getByRole("link", { name: "Create a chapter" }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: "Create a chapter" })
+        .getAttribute("href"),
     ).toBe("/chat?setup=chapter");
   });
 
@@ -802,7 +899,9 @@ describe("web join — Already in a chapter? (replaced /new-account)", () => {
   it("offers a quiet way to switch accounts to someone with no chapter and no invite", async () => {
     renderPage();
     await screen.findByLabelText("Invite");
-    expect(screen.getByText("Already in a chapter?", { exact: false })).toBeTruthy();
+    expect(
+      screen.getByText("Already in a chapter?", { exact: false }),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
   });
 

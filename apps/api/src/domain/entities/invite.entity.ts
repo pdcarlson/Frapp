@@ -24,4 +24,10 @@ export interface Invite {
    * works when shared by hand.
    */
   email_failed_at: string | null;
+  /**
+   * The chapter link (#3353): many people join with it until it expires or
+   * an officer turns it off, so a redeem leaves `used_at` null. False for
+   * every other invite, which works once.
+   */
+  reusable: boolean;
 }

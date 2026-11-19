@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useMeeting } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { AI_SUGGESTION_COPY } from "@repo/validation";
+import { AI_SUGGESTION_COPY, taskSeriesLine } from "@repo/validation";
 import {
   SkeletonBlock,
   SkeletonRegion,
@@ -11,6 +11,9 @@ import {
 } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import type { TaskRowModel } from "@/lib/tasks/board";
+import { repeatFirstDue } from "@/lib/tasks/task-edit";
+import { RepeatGlyph } from "@/components/tasks/repeat-field";
 
 /**
  * The facts row both task screens draw under their chip (#5492, #5570): a
@@ -110,6 +113,32 @@ export function TaskMinutesFact({ meetingId }: { meetingId: string }) {
   );
 }
 
+/**
+ * How a copy of a repeating task repeats (#5119), on a line of its own under
+ * the facts row, as web's task panel says it: the repeat mark and "Every
+ * Monday · next Nov 24". Nothing for a task with no live series.
+ */
+export function TaskRepeatFact({ row }: { row: TaskRowModel }) {
+  const { tokens } = useFrappTheme();
+  const styles = createTaskFactStyles(tokens);
+  const first = repeatFirstDue(row);
+  const line = first ? taskSeriesLine(row.series, first, { next: true }) : null;
+  if (!line) return null;
+  return (
+    <View
+      style={styles.lineFact}
+      accessible
+      accessibilityLabel={`Repeats: ${line}`}
+    >
+      <Text style={styles.factLabel}>Repeats</Text>
+      <View style={styles.repeatLine}>
+        <RepeatGlyph color={tokens.color.text.mutedForeground} size={14} />
+        <Text style={styles.factValue}>{line}</Text>
+      </View>
+    </View>
+  );
+}
+
 /** The facts' styles, and `factLabel` for a fact on a line of its own. */
 export function createTaskFactStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -125,6 +154,11 @@ export function createTaskFactStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs,
     },
     lineFact: {
+      gap: tokens.spacing.xs,
+    },
+    repeatLine: {
+      flexDirection: "row",
+      alignItems: "center",
       gap: tokens.spacing.xs,
     },
     factLabel: {

@@ -692,7 +692,7 @@ async function evictOldestTails(
     Recency alone would evict the channel a cold load actually lands on.
 
     The shell opens on the member's last channel, else the chapter default,
-    else `#general`, else the first row (`landingChannelId` in `@repo/hooks`,
+    else `#general`, else the first channel to post in, else the first row (`landingChannelId` in `@repo/hooks`,
     the rule both sides read). The last channel is usually the newest tail anyway, but a member
     who reads `#general` and then three other channels in another tab makes
     `#general` the oldest tail, and a device with no last channel would

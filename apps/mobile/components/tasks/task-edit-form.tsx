@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
+import {
+  TASK_SERIES_SCOPE_COPY,
+  TASK_TITLE_MAX_LENGTH,
+  taskRepeatSummary,
+  taskSeriesLine,
+} from "@repo/validation";
 import { localIsoDate, suggestedDueTime } from "@repo/formatting";
 import type { MemberAvatarTint } from "@repo/hooks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -11,6 +16,7 @@ import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { TaskPhotoPicker } from "@/components/tasks/task-photos";
+import { TaskRepeatField } from "@/components/tasks/repeat-field";
 import {
   AssigneeRow,
   PointsField,
@@ -21,6 +27,9 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 import {
   dueDraftOf,
   referencePhotos,
+  repeatDraftOf,
+  repeatEditable,
+  repeatFirstDue,
   TASK_EDIT_COPY,
 } from "@/lib/tasks/task-edit";
 import type { TaskEditing } from "@/lib/tasks/use-task-edit";
@@ -44,6 +53,10 @@ interface TaskEditPeople {
  * date and time pickers, the photo picker). Apple Reminders and Things 3
  * edit a to-do in place the same way, a field at a time with nothing to
  * Save.
+ *
+ * On a copy of a repeating task (#5119) Repeat sits under the time, as on
+ * New task, saved with Done; each save asks "This task only" or "All
+ * upcoming tasks" where web's panel does (`useTaskEdit`).
  *
  * On a group task's copy the title, notes, due, points and proof change
  * every copy not yet confirmed, Who hands over this copy alone, and the
@@ -73,6 +86,9 @@ export function TaskEditForm({
   // under the officer mid-edit.
   const [openedAt] = useState(() => new Date());
   const isGroup = row.groupId !== null;
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  const storedRepeat = repeatDraftOf(row);
+  const repeat = edit.drafts.repeat ?? storedRepeat;
 
   const due = edit.drafts.due ?? dueDraftOf(row);
   const shown = {
@@ -149,6 +165,20 @@ export function TaskEditForm({
         </View>
       ) : null}
 
+      {repeat ? (
+        <RepeatEditField
+          row={row}
+          draft={repeat}
+          picked={edit.drafts.repeat !== null}
+          open={repeatOpen}
+          onOpenChange={setRepeatOpen}
+          onChange={edit.pickRepeat}
+          disabled={edit.saving}
+          fieldStyle={styles.box}
+          noteStyle={styles.note}
+        />
+      ) : null}
+
       <View
         style={[
           styles.ring,
@@ -216,6 +246,59 @@ export function TaskEditForm({
         <Text style={styles.note}>{TASK_EDIT_COPY.group}</Text>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * Repeat on a copy of a live series (#5119): what it is ("Every Monday ·
+ * next Nov 24"), opening the control. Only the copy still to come changes
+ * it; an overdue or done copy says to change it from the next.
+ */
+function RepeatEditField({
+  row,
+  draft,
+  picked,
+  open,
+  onOpenChange,
+  onChange,
+  disabled,
+  fieldStyle,
+  noteStyle,
+}: {
+  row: TaskRowModel;
+  draft: NonNullable<ReturnType<typeof repeatDraftOf>>;
+  /** The officer changed it this visit; else it is the series as saved. */
+  picked: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (next: typeof draft) => void;
+  disabled: boolean;
+  fieldStyle: object;
+  noteStyle: object;
+}) {
+  const editable = repeatEditable(row);
+  const first = repeatFirstDue(row, draft.timeZone);
+  const summary = !first
+    ? null
+    : !picked
+      ? taskSeriesLine(row.series, first, { next: true })
+      : taskRepeatSummary(draft, first);
+  return (
+    <>
+      <TaskRepeatField
+        draft={draft}
+        first={first}
+        summary={summary}
+        open={open && editable}
+        onOpenChange={onOpenChange}
+        onChange={onChange}
+        disabled={disabled || !editable}
+        fieldStyle={fieldStyle}
+      />
+      {editable ? null : (
+        <Text style={noteStyle}>{TASK_SERIES_SCOPE_COPY.repeatFromNext}</Text>
+      )}
+    </>
   );
 }
 

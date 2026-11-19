@@ -1029,11 +1029,11 @@ What needs stating is where the board describes a product this codebase does not
 
 ### Get the app (phones)
 
-On an iPhone or an Android phone (`phonePlatform` in `@repo/validation`), every dashboard page shows a strip between the top bar and `<main>` that points at the app ([`get-the-app-card.tsx`](../../../apps/web/components/layout/get-the-app-card.tsx), #4002): **Get the app** (the platform's store listing) and **Open the app** (`frapp://` on iOS;
+On an iPhone or an Android phone (`phonePlatform` in `@repo/validation`), every dashboard page shows a strip between the top bar and `<main>` that points at the app ([`get-the-app-card.tsx`](../../../apps/web/components/layout/get-the-app-card.tsx), #4002): **Get the app** (the environment's install link, [`lib/app-install.ts`](../../../apps/web/lib/app-install.ts): the TestFlight or Play tester link during the beta, the store listing when none is set, hidden for Frapp Staging until its link is set) and **Open the app** (`frapp://` on iOS;
 Chrome's `intent:` on Android, which opens Play when the app is missing), and a close button.
 Closing it hides it for good in that browser (`localStorage`, [`lib/get-the-app.ts`](../../../apps/web/lib/get-the-app.ts)); with storage blocked it stays hidden until the page reloads.
 It never shows in the app's own in-app browser: the app marks the dashboard pages it opens with `?from=app` (the setup list's web-only steps), and the card stays away for that tab's session.
-During the beta both store listings open for testers only (TestFlight, and Play internal testing), so the card says that if the store shows Frapp as unavailable, keep using it here.
+During the beta the store listings open for testers only, so the card still says that if the store shows Frapp as unavailable, keep using it here; with an install link set, Get the app goes to TestFlight's or Play's tester page instead (2026-11-19).
 Until closed it takes about 120px of a phone's height above chat or the page.
 It is per browser, not per account, because it is about this phone.
 Tablets and desktops never see it.

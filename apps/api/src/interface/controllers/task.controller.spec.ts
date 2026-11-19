@@ -9,12 +9,14 @@ import { RbacService } from '../../application/services/rbac.service';
 import { OpenTaskService } from '../../application/services/open-task.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
   CreateTaskDto,
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
 } from '../dtos/task.dto';
+
+const FOLLOWER = 'role:0f000000-0000-4000-8000-000000000001';
 
 describe('TaskController', () => {
   let controller: TaskController;
@@ -33,6 +35,17 @@ describe('TaskController', () => {
       rejectCompletion: jest.fn(),
       delete: jest.fn(),
       getPhotoDownloadUrl: jest.fn(),
+      // Who may read a task (#5473): its assignee, an officer, or a member
+      // of the group following it, here `role:followers`.
+      mayRead: jest.fn((task, _chapterId, userId, isAdmin) =>
+        Promise.resolve(
+          isAdmin ||
+            task.assignee_id === userId ||
+            (userId === 'follower-1' && task.followed_by === FOLLOWER),
+        ),
+      ),
+      asReadBy: jest.fn(TaskService.prototype.asReadBy),
+      followEntriesOf: jest.fn().mockResolvedValue([]),
     } as any;
 
     taskSeriesService = { update: jest.fn(), delete: jest.fn() };
@@ -79,7 +92,9 @@ describe('TaskController', () => {
         userId,
         true,
         {},
+        [],
       );
+      expect(taskService.followEntriesOf).not.toHaveBeenCalled();
       expect(result).toBe(mockTasks);
     });
 
@@ -89,13 +104,17 @@ describe('TaskController', () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
       taskService.list.mockResolvedValue([]);
 
+      taskService.followEntriesOf.mockResolvedValue([FOLLOWER]);
+
       await controller.list(chapterId, userId, {});
 
+      // A member's board also holds what their groups follow (#5473).
       expect(taskService.list).toHaveBeenCalledWith(
         chapterId,
         userId,
         false,
         {},
+        [FOLLOWER],
       );
     });
 
@@ -124,6 +143,7 @@ describe('TaskController', () => {
           after: { created_at: before, id: beforeId },
           limit: 200,
         },
+        [],
       );
       expect(taskService.list).toHaveBeenNthCalledWith(
         2,
@@ -134,6 +154,7 @@ describe('TaskController', () => {
           after: { created_at: before, id: beforeId },
           limit: 50,
         },
+        [],
       );
     });
   });
@@ -178,11 +199,42 @@ describe('TaskController', () => {
         controller.getOne(chapterId, userId, taskId),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it("gives a following group's member the task without its proof (#5473)", async () => {
+      taskService.findById.mockResolvedValue({
+        id: 'task-1',
+        assignee_id: 'user-1',
+        followed_by: FOLLOWER,
+        proof_link: 'https://example.test/proof',
+        photos: [
+          { id: 'ref', kind: 'reference' },
+          { id: 'proof', kind: 'proof' },
+        ],
+      } as any);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+
+      const read = await controller.getOne('chapter-1', 'follower-1', 'task-1');
+
+      expect(read.proof_link).toBeNull();
+      expect(read.photos?.map((photo) => photo.id)).toEqual(['ref']);
+      await expect(
+        controller.getOne('chapter-1', 'user-2', 'task-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('getPhotoUrl (#4635)', () => {
-    const task = { id: 'task-1', assignee_id: 'user-1' } as any;
     const PHOTO_ID = '0c000000-0000-4000-8000-000000000001';
+    const REFERENCE_ID = '0c000000-0000-4000-8000-000000000002';
+    const task = {
+      id: 'task-1',
+      assignee_id: 'user-1',
+      followed_by: FOLLOWER,
+      photos: [
+        { id: REFERENCE_ID, kind: 'reference' },
+        { id: PHOTO_ID, kind: 'proof' },
+      ],
+    } as any;
 
     it('signs a photo for the assignee', async () => {
       taskService.findById.mockResolvedValue(task);
@@ -207,6 +259,25 @@ describe('TaskController', () => {
         controller.getPhotoUrl('chapter-1', 'user-2', 'task-1', PHOTO_ID),
       ).rejects.toThrow(ForbiddenException);
       expect(taskService.getPhotoDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it("signs a follower's reference photo, never a proof photo (#5473)", async () => {
+      taskService.findById.mockResolvedValue(task);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+      taskService.getPhotoDownloadUrl.mockResolvedValue({ url: 'https://v' });
+
+      await expect(
+        controller.getPhotoUrl('chapter-1', 'follower-1', 'task-1', PHOTO_ID),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        controller.getPhotoUrl(
+          'chapter-1',
+          'follower-1',
+          'task-1',
+          REFERENCE_ID,
+        ),
+      ).resolves.toEqual({ url: 'https://v' });
+      expect(taskService.getPhotoDownloadUrl).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -235,6 +306,8 @@ describe('TaskController', () => {
         audience: null,
         audience_role_id: null,
         audience_group_id: null,
+        audience_tier_id: undefined,
+        followed_by: undefined,
         created_by: userId,
         due_date: dto.due_date,
         due_at: null,
@@ -264,6 +337,8 @@ describe('TaskController', () => {
         audience: null,
         audience_role_id: null,
         audience_group_id: null,
+        audience_tier_id: undefined,
+        followed_by: undefined,
         created_by: userId,
         due_date: dto.due_date,
         due_at: null,
@@ -292,6 +367,8 @@ describe('TaskController', () => {
         audience: 'everyone',
         audience_role_id: 'role-1',
         audience_group_id: null,
+        audience_tier_id: undefined,
+        followed_by: undefined,
         assignee_ids: null,
       });
       expect(taskService.create.mock.calls[1][0]).toMatchObject({
@@ -382,6 +459,17 @@ describe('TaskController', () => {
         TaskController.prototype.removeFromGroup,
       ) as string[];
       expect(required).toEqual([SystemPermissions.TASKS_MANAGE]);
+    });
+
+    it('keeps Confirm and Send back to tasks:manage, whoever can read the task (#5473)', () => {
+      for (const handler of [
+        TaskController.prototype.confirmCompletion,
+        TaskController.prototype.rejectCompletion,
+      ]) {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, handler) as string[],
+        ).toEqual([SystemPermissions.TASKS_MANAGE]);
+      }
     });
   });
 

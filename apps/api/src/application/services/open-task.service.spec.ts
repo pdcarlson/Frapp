@@ -62,6 +62,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   occurrence_date: null,
   group_id: null,
   meeting_id: null,
+  followed_by: null,
   created_at: '2026-11-18T00:00:00.000Z',
   ...over,
 });
@@ -112,7 +113,12 @@ describe('OpenTaskService (2026-11-18)', () => {
     ];
     roleRepo = {
       findByChapter: jest.fn().mockResolvedValue([
-        { id: 'role-phil', name: 'Philanthropy Chair', system_key: null },
+        {
+          id: 'role-phil',
+          name: 'Philanthropy Chair',
+          system_key: null,
+          tier_id: 'tier-chairs',
+        },
         { id: 'role-empty', name: 'Treasurer', system_key: null },
         { id: 'role-alumni', name: 'Alumni', system_key: 'ALUMNI' },
       ]),
@@ -128,6 +134,11 @@ describe('OpenTaskService (2026-11-18)', () => {
       { findByChapter: jest.fn().mockResolvedValue(members) } as never,
       roleRepo as never,
       groupRepo as never,
+      {
+        findByChapter: jest
+          .fn()
+          .mockResolvedValue([{ id: 'tier-chairs', name: 'Chairs' }]),
+      } as never,
       { getAlumniRoleId: jest.fn().mockResolvedValue('role-alumni') } as never,
     );
     service = new OpenTaskService(
@@ -226,7 +237,20 @@ describe('OpenTaskService (2026-11-18)', () => {
       );
     });
 
+    it("posts one for a tier's role holders, alumni left out (#5473)", async () => {
+      const view = await create({ kind: 'tier', id: 'tier-chairs' });
+      expect(repo.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          scope: 'tier',
+          scope_id: 'tier-chairs',
+          scope_name: 'Chairs',
+        }),
+      );
+      expect(view).toMatchObject({ eligible_count: 2 });
+    });
+
     it.each([
+      [{ kind: 'tier', id: 'tier-other' }, "That tier isn't in this chapter"],
       [{ kind: 'role', id: 'role-empty' }, 'Nobody holds that role yet'],
       [{ kind: 'role', id: 'role-alumni' }, "Alumni don't get chapter tasks"],
       [{ kind: 'people', userIds: ['sam', 'alum'] }, 'active member'],

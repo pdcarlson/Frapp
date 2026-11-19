@@ -72,7 +72,7 @@ import {
   RowDivider,
 } from "@/components/events/event-form-rows";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
-import { RepeatOptions } from "@/components/events/repeat-options";
+import { RepeatOptions } from "@/components/repeat-options";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   applyEventType,
@@ -104,6 +104,7 @@ import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { useNotesLabel } from "@/lib/minutes/meetings-on";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
+import { askSeriesScope } from "@/lib/series-scope";
 
 /**
  * The "New event" bottom sheet: an officer's quick create on the phone.
@@ -268,33 +269,16 @@ function isBadRequest(error: unknown): boolean {
   );
 }
 
-/**
- * Calendar's question for a repeating event, as the platform's own alert.
- * Resolves `null` on Cancel.
- */
-function askSeriesScope(copy: {
+/** Calendar's question for a repeating event, in the event editors' words. */
+function askEventSeriesScope(copy: {
   title: string;
   message: string;
   seriesDestructive?: boolean;
 }): Promise<EventEditScope | null> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      copy.title,
-      copy.message,
-      [
-        {
-          text: SERIES_SCOPE_COPY.thisEvent,
-          onPress: () => resolve("instance"),
-        },
-        {
-          text: SERIES_SCOPE_COPY.allUpcoming,
-          style: copy.seriesDestructive ? "destructive" : "default",
-          onPress: () => resolve("series"),
-        },
-        { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
-      ],
-      { cancelable: true, onDismiss: () => resolve(null) },
-    );
+  return askSeriesScope({
+    ...copy,
+    thisOne: SERIES_SCOPE_COPY.thisEvent,
+    allUpcoming: SERIES_SCOPE_COPY.allUpcoming,
   });
 }
 
@@ -308,7 +292,7 @@ export function askEventDelete(
   event: Parameters<typeof deleteOffersSeriesChoice>[0],
 ): Promise<EventEditScope | null> {
   if (deleteOffersSeriesChoice(event, new Date())) {
-    return askSeriesScope({
+    return askEventSeriesScope({
       title: SERIES_SCOPE_COPY.deleteTitle,
       message: SERIES_SCOPE_COPY.deleteMessage,
       seriesDestructive: true,
@@ -536,7 +520,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       const askedScope = scope === "ask";
       if (scope === "ask") {
         sending.current = true;
-        const picked = await askSeriesScope({
+        const picked = await askEventSeriesScope({
           title: SERIES_SCOPE_COPY.saveTitle,
           message: SERIES_SCOPE_COPY.saveMessage,
         });
@@ -892,6 +876,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     error={errors.repeat}
                     showCaption={showRepeatLength}
                     series={repeatSeries}
+                    input={BottomSheetTextInput}
                   />
                 </View>
               ) : null}

@@ -177,7 +177,7 @@ Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were
   A member who can't see it falls through to `#general`.
   Mobile does not use it: with no remembered channel, launch stays on chat home.
 - **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped.
-  Web then opens the chapter default, else `#general`, else the first channel.
+  Web then opens the chapter default, else `#general`, else the first channel the member can post in that isn't `#chapter-audit` (2026-11-19), else the first channel.
   The same applies in the middle of a visit: the open channel disappearing lands there.
 - **Web's two lists** (since [#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn, 2026-11-12).
   Web's chat panel shows the chapter's channels or the member's direct messages, and each remembers its own last conversation.

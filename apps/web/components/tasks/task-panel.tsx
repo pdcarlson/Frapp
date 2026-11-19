@@ -36,8 +36,11 @@ import {
   taskGroupLabel,
   taskNeedsSignOff,
   taskRepeatDraftFromRule,
+  taskFirstDue,
   taskRepeatRuleOf,
-  taskSaveScope,
+  taskFieldSaveScope,
+  taskSeriesBody,
+  taskSeriesLive,
   taskSignedOffAutomatically,
   type RepeatDraft,
   type TaskProofKind,
@@ -72,7 +75,7 @@ import { cn, guardIntDraft, initials, parseGuardedInt } from "@/lib/utils";
 import type { BoardTask, GroupTileData } from "./board-task";
 import { DueDateField, dueEntryPassed } from "./due-date-field";
 import { TaskSubtaskList } from "./task-subtasks";
-import { firstDueOf, TaskRepeatLine } from "./task-repeat";
+import { TaskRepeatLine } from "./task-repeat";
 import {
   MarkDoneControl,
   TaskPhotoPicker,
@@ -84,7 +87,7 @@ import {
 } from "./task-photo";
 import { WhoPicker } from "./who-picker";
 import type { RowPerson } from "./task-row";
-import { movesDayTo, seriesBody } from "./task-edit-form";
+import { movesDayTo } from "./task-edit-form";
 
 /** What the panel shows: one task, or a group task's copies. */
 export type TaskPanelTarget =
@@ -229,7 +232,7 @@ function TaskPanelBody({
   const status = actionStatus(task);
   const sentBack = isSentBack(task);
   const editable = canManage && !task.points_awarded;
-  const repeats = !!task.series && !task.series.ended;
+  const repeats = taskSeriesLive(task.series);
 
   /**
    * Save one field. A copy of a live series asks which tasks it changes when
@@ -243,12 +246,7 @@ function TaskPanelBody({
     if (isGroup) {
       send = { ...body, scope: "group" };
     } else {
-      const { recurrence_rule, ...rest } = body;
-      const decided = taskSaveScope(task, {
-        ...(recurrence_rule !== undefined ? { recurrence_rule } : {}),
-        movesDay,
-        changesOther: Object.keys(rest).length > 0,
-      });
+      const decided = taskFieldSaveScope(task, body, movesDay);
       if (decided.kind === "refuse") {
         toast({
           title: "Couldn't save the task",
@@ -269,7 +267,7 @@ function TaskPanelBody({
         if (!picked) return false;
         scope = picked.alternative ? "instance" : "series";
       }
-      if (scope === "series") send = seriesBody(body);
+      if (scope === "series") send = taskSeriesBody(body);
     }
     setSaving(true);
     try {
@@ -939,7 +937,7 @@ function RepeatRow({
 }) {
   const [draft, setDraft] = useState<RepeatDraft | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const live = !!task.series && !task.series.ended;
+  const live = taskSeriesLive(task.series);
   if (isGroup) {
     return (
       <FieldRow label="Repeat">
@@ -981,7 +979,7 @@ function RepeatRow({
       </FieldRow>
     );
   }
-  const first = firstDueOf(dueEntryFromTask(task), draft.timeZone);
+  const first = taskFirstDue(dueEntryFromTask(task), draft.timeZone);
   return (
     <FieldRow label="Repeat" alignTop>
       <InlineEditor

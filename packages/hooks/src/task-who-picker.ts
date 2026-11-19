@@ -66,9 +66,12 @@ export interface WhoPerson {
   isViewer: boolean;
 }
 
-/** A role or chapter group, with the active members it reaches now. */
+/**
+ * A role, chapter group or tier (#5473), with the active members it reaches
+ * now: a tier reaches everyone holding a role in it.
+ */
 export interface WhoSet {
-  kind: "role" | "group";
+  kind: "role" | "group" | "tier";
   id: string;
   name: string;
   /** Its active members' ids, in {@link WhoDirectory.people}'s order. */
@@ -81,6 +84,11 @@ export interface WhoTier {
   id: string | null;
   name: string;
   roles: WhoSet[];
+  /**
+   * The tier itself as something to pick (#5473): everyone holding a role in
+   * it. `null` for the roles outside every tier.
+   */
+  set: WhoSet | null;
 }
 
 /** The chapter as the picker draws it. */
@@ -91,7 +99,7 @@ export interface WhoDirectory {
   /** Tiers with roles, then the roles in no tier ({@link OTHER_ROLES_HEADING}). */
   tiers: WhoTier[];
   groups: WhoSet[];
-  /** Every role and group by id. */
+  /** Every role, group and tier by id. */
   sets: ReadonlyMap<string, WhoSet>;
   /** Every active member's id, in {@link people}'s order. */
   activeIds: string[];
@@ -210,12 +218,37 @@ export function buildWhoDirectory(input: {
   };
   const tierRows = normalizeTiers(input.tiers);
   const known = new Set(tierRows.map((tier) => tier.id));
+  // A tier reaches everyone holding a role in it, and the whole chapter when
+  // it holds the Everyone role, as the API reads it (#5473).
+  const everyRole = normalizeTieredRoles(input.roles);
+  const tierSet = (id: string, name: string, roleSets: WhoSet[]): WhoSet => {
+    const everyone = everyRole.some(
+      (role) => role.tier_id === id && isEveryoneRole(role),
+    );
+    const held = new Set(roleSets.flatMap((role) => role.memberIds));
+    const set: WhoSet = {
+      kind: "tier",
+      id,
+      name: name.trim() || "Unnamed tier",
+      memberIds: everyone
+        ? activeIds
+        : activeIds.filter((userId) => held.has(userId)),
+    };
+    sets.set(set.id, set);
+    return set;
+  };
   const tiers: WhoTier[] = tierRows
-    .map((tier) => ({
-      id: tier.id,
-      name: tier.name,
-      roles: roles.filter((role) => role.tier_id === tier.id).map(asSet),
-    }))
+    .map((tier) => {
+      const tierRoles = roles
+        .filter((role) => role.tier_id === tier.id)
+        .map(asSet);
+      return {
+        id: tier.id,
+        name: tier.name,
+        roles: tierRoles,
+        set: tierRoles.length > 0 ? tierSet(tier.id, tier.name, tierRoles) : null,
+      };
+    })
     .filter((tier) => tier.roles.length > 0);
   const loose = roles.filter(
     (role) => !role.tier_id || !known.has(role.tier_id),
@@ -225,6 +258,7 @@ export function buildWhoDirectory(input: {
       id: null,
       name: tiers.length > 0 ? OTHER_ROLES_HEADING : ROLES_HEADING,
       roles: loose.map(asSet),
+      set: null,
     });
   }
 
@@ -270,6 +304,7 @@ export function targetMemberIds(
       return directory.activeIds;
     case "role":
     case "group":
+    case "tier":
       return directory.sets.get(target.id)?.memberIds ?? [];
     case "people":
       return target.userIds;
@@ -321,7 +356,7 @@ export function withMode(who: TaskWho | null, mode: WhoMode): TaskWho | null {
 
 function isPickedSet(
   who: TaskWho | null,
-  kind: "role" | "group" | "chapter",
+  kind: "role" | "group" | "tier" | "chapter",
   id?: string,
 ): boolean {
   if (!who || who.kind === "person") return false;
@@ -468,11 +503,14 @@ function firstNames(ids: readonly string[], directory: WhoDirectory): string[] {
 
 /** A set's name, or the words for one the picker hasn't read. */
 function setName(
-  kind: "role" | "group",
+  kind: "role" | "group" | "tier",
   id: string,
   directory: WhoDirectory,
 ): string {
-  return directory.sets.get(id)?.name ?? (kind === "role" ? "a role" : "a group");
+  return (
+    directory.sets.get(id)?.name ??
+    (kind === "role" ? "a role" : kind === "tier" ? "a tier" : "a group")
+  );
 }
 
 /**
@@ -492,7 +530,8 @@ export function whoLabel(
     case "chapter":
       return each ? TASK_AUDIENCE_COPY.everyone : TASK_AUDIENCE_COPY.anyone;
     case "role":
-    case "group": {
+    case "group":
+    case "tier": {
       const name = setName(target.kind, target.id, directory);
       return each
         ? TASK_AUDIENCE_COPY.everyoneIn(name)
@@ -526,6 +565,7 @@ export function whoSummary(
       return `${EVERYONE_IN_CHAPTER} · ${count}`;
     case "role":
     case "group":
+    case "tier":
       return `${setName(target.kind, target.id, directory)} · ${count} ${
         count === 1 ? "member" : "members"
       }`;
@@ -582,11 +622,13 @@ export function initialOpenTiers(
   }
   const { target } = who;
   for (const tier of directory.tiers) {
-    const holds = tier.roles.some((role) =>
-      target.kind === "role"
-        ? role.id === target.id
-        : target.kind === "people" && setTick(who, role, directory) === "all",
-    );
+    const holds =
+      (target.kind === "tier" && tier.id === target.id) ||
+      tier.roles.some((role) =>
+        target.kind === "role"
+          ? role.id === target.id
+          : target.kind === "people" && setTick(who, role, directory) === "all",
+      );
     if (holds) open.add(tierKey(tier));
   }
   return open;
@@ -596,7 +638,9 @@ export function initialOpenTiers(
 export function initialWhoTab(who: TaskWho | null): "people" | "sets" {
   return who &&
     who.kind !== "person" &&
-    (who.target.kind === "role" || who.target.kind === "group")
+    (who.target.kind === "role" ||
+      who.target.kind === "group" ||
+      who.target.kind === "tier")
     ? "sets"
     : "people";
 }

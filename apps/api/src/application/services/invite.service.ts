@@ -30,6 +30,7 @@ import {
   WILDCARD,
 } from '#domain/constants/permissions';
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
 import type { RankContext } from '#domain/utils/rank-context';
@@ -151,6 +152,7 @@ function toListItem(invite: Invite, now: Date): InviteListItem {
     used_at: invite.used_at,
     revoked_at: invite.revoked_at ?? null,
     created_at: invite.created_at,
+    reusable: invite.reusable === true,
   };
 }
 
@@ -164,7 +166,16 @@ export interface InviteListItem {
   used_at: string | null;
   revoked_at: string | null;
   created_at: string;
+  /** The chapter link (#3353), which many people join with. */
+  reusable: boolean;
 }
+
+/**
+ * How long a chapter link works (#3353, Paul 2026-11-19: "One chapter link,
+ * 7 days"): long enough for a Discord post to reach everyone, short enough
+ * that a link someone forwards doesn't work forever.
+ */
+export const CHAPTER_LINK_DAYS = 7;
 
 export interface BulkEmailInviteResult {
   /** The new invites, as `GET /v1/invites` lists them. */
@@ -259,9 +270,12 @@ export class InviteService {
     createdBy: string,
     role: string,
     email: string | null = null,
+    reusable = false,
   ): Partial<Invite> {
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    expiresAt.setHours(
+      expiresAt.getHours() + (reusable ? CHAPTER_LINK_DAYS * 24 : 24),
+    );
 
     return {
       token: randomUUID(),
@@ -270,6 +284,7 @@ export class InviteService {
       expires_at: expiresAt.toISOString(),
       created_by: createdBy,
       email,
+      reusable,
     };
   }
 
@@ -426,6 +441,73 @@ export class InviteService {
     const invite = await this.inviteRepo.create(data);
     // Funnel step 2 (#267). Recorded after the write so an invite that failed
     // to persist never counts as one the chapter created.
+    await this.activation.record(chapterId, 'activation-first-invite-created', {
+      batch_size: 1,
+    });
+    return toListItem(invite, new Date());
+  }
+
+  /**
+   * The chapter link (#3353): one link an officer posts where the whole
+   * chapter will see it, such as its Discord. Anyone who opens it joins at the
+   * chapter's default invite role (`resolveInviteRole` with no role named)
+   * until it expires after {@link CHAPTER_LINK_DAYS} days or an officer turns
+   * it off. Null when there is none, or when the one there grants a role the
+   * caller couldn't invite someone into ({@link inviteVisibility}): its link
+   * is not theirs to copy. An expired one is returned, so the screen can say
+   * it expired.
+   */
+  async findChapterLink(
+    chapterId: string,
+    userId: string,
+  ): Promise<InviteListItem | null> {
+    const [link, visible] = await Promise.all([
+      this.inviteRepo.findChapterLink(chapterId),
+      this.inviteVisibility(chapterId, userId),
+    ]);
+    if (!link || !visible(link)) return null;
+    return toListItem(link, new Date());
+  }
+
+  /**
+   * A new chapter link, replacing the current one: the old link stops working
+   * the moment the new one exists, so an officer who thinks a link spread too
+   * far makes a new one. A link granting a role above the caller's reach is
+   * not theirs to replace (403), as it is not theirs to revoke.
+   */
+  async createChapterLink(
+    chapterId: string,
+    createdBy: string,
+  ): Promise<InviteListItem> {
+    const [{ role }, current, visible] = await Promise.all([
+      this.resolveInviteRole(chapterId, undefined, createdBy),
+      this.inviteRepo.findChapterLink(chapterId),
+      this.inviteVisibility(chapterId, createdBy),
+    ]);
+    if (current && !visible(current)) {
+      throw new ForbiddenException({
+        code: 'invite.chapter_link_out_of_reach',
+        message:
+          "An officer above you made this chapter's link, so only they can replace it.",
+      });
+    }
+    if (current) await this.inviteRepo.markRevoked(current.id);
+    let invite: Invite;
+    try {
+      invite = await this.inviteRepo.create(
+        this.prepareInviteData(chapterId, createdBy, role, null, true),
+      );
+    } catch (error) {
+      // Another officer made one at the same moment (`invites_one_chapter_link`).
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: 'invite.chapter_link_conflict',
+          message:
+            'Another officer just made a chapter link. Reload to see it.',
+        });
+      }
+      throw error;
+    }
     await this.activation.record(chapterId, 'activation-first-invite-created', {
       batch_size: 1,
     });
@@ -901,8 +983,13 @@ export class InviteService {
     const { roleIds, refusal } = await this.resolveRedeemRoles(invite);
     if (refusal) throw inviteRoleOutOfReach();
 
-    const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
-    if (!claimedAt) throw new GoneException('Invite already used');
+    // A chapter link (#3353) is never claimed: the next person joins with it
+    // too. Turning it off sets `used_at`, which `findLiveInvite` refuses.
+    let claimedAt: string | null = null;
+    if (!invite.reusable) {
+      claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
+      if (!claimedAt) throw new GoneException('Invite already used');
+    }
 
     let member: Awaited<ReturnType<IMemberRepository['create']>>;
     try {
@@ -934,7 +1021,7 @@ export class InviteService {
         );
         membershipLanded = true;
       }
-      if (!membershipLanded) {
+      if (!membershipLanded && claimedAt) {
         try {
           await this.inviteRepo.releaseClaim(invite.id, claimedAt);
         } catch (releaseError) {
@@ -1041,7 +1128,9 @@ export class InviteService {
       const message: Partial<ChatMessage> = {
         channel_id: dm.id,
         sender_id: SYSTEM_SENDER_ID,
-        content: `${accepter.display_name} accepted your invite.`,
+        content: invite.reusable
+          ? `${accepter.display_name} joined with your chapter link.`
+          : `${accepter.display_name} accepted your invite.`,
         kind: 'system_audit',
       };
       try {
@@ -1081,7 +1170,11 @@ export class InviteService {
       this.inviteRepo.findByChapter(chapterId),
       this.inviteVisibility(chapterId, viewerUserId),
     ]);
-    return invites.filter(visible).map((invite) => toListItem(invite, now));
+    // The chapter link has its own place on the screen
+    // (`GET /v1/invites/chapter-link`): this list is who was asked.
+    return invites
+      .filter((invite) => !invite.reusable && visible(invite))
+      .map((invite) => toListItem(invite, now));
   }
 
   async revoke(id: string, chapterId: string, userId: string): Promise<void> {

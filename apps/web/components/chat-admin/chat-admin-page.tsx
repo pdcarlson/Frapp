@@ -883,7 +883,8 @@ function ChatAdminBody({
                   <p className="text-xs text-muted-foreground">
                     Chat opens here when a member&apos;s device has no last
                     channel. Turning this on moves it off any other channel.
-                    Members who can&apos;t see this channel open #general.
+                    Members who can&apos;t see this channel open #general, or
+                    the first channel they can post in.
                   </p>
                 </div>
                 <div className="grid gap-1">

@@ -43,16 +43,17 @@ import { SystemPermissions } from '#domain/constants/permissions';
 
 /** Who may claim a new posting, from the body's scope fields. */
 function targetOf(dto: CreateOpenTaskDto): TaskAudienceTarget {
-  const given = [dto.role_id, dto.group_id, dto.user_ids].filter(
+  const given = [dto.role_id, dto.group_id, dto.tier_id, dto.user_ids].filter(
     (value) => value != null,
   );
   if (given.length > 1) {
     throw new BadRequestException(
-      'Send at most one of role_id, group_id and user_ids',
+      'Send at most one of role_id, group_id, tier_id and user_ids',
     );
   }
   if (dto.role_id) return { kind: 'role', id: dto.role_id };
   if (dto.group_id) return { kind: 'group', id: dto.group_id };
+  if (dto.tier_id) return { kind: 'tier', id: dto.tier_id };
   if (dto.user_ids) return { kind: 'people', userIds: dto.user_ids };
   return { kind: 'chapter' };
 }

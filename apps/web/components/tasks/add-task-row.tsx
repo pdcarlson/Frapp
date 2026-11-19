@@ -24,6 +24,7 @@ import {
 import {
   TASK_AUDIENCE_COPY,
   noTaskRepeatDraft,
+  taskFirstDue,
   taskRepeatRuleOf,
   taskWhoRequest,
   type RepeatDraft,
@@ -32,7 +33,6 @@ import {
   type TaskWhoTaskFields,
 } from "@repo/validation";
 import { RepeatOptions } from "@/components/shared/repeat-options";
-import { firstDueOf } from "@/components/tasks/task-repeat";
 import { WhoPicker } from "@/components/tasks/who-picker";
 
 /** What `POST /v1/tasks` takes from the page. */
@@ -153,7 +153,7 @@ export function AddTaskRow({
       dueRef.current?.focus();
       return;
     }
-    const firstDue = firstDueOf(draft.due, draft.repeat.timeZone);
+    const firstDue = taskFirstDue(draft.due, draft.repeat.timeZone);
     const repeat =
       firstDue && single ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
     if (repeat && !repeat.ok) {
@@ -376,7 +376,7 @@ export function AddTaskRow({
               forTasks
               idPrefix={`${ids}-repeat`}
               draft={draft.repeat}
-              start={firstDueOf(draft.due, draft.repeat.timeZone)}
+              start={taskFirstDue(draft.due, draft.repeat.timeZone)}
               showLength
               disabled={busy}
               onChange={(repeat) => {
