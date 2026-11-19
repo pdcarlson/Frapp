@@ -14,9 +14,9 @@ import { DASHBOARD_ROUTES } from "./routes";
  * enough for every viewport breakpoint, so a page that breaks on `sm`/`md`/`lg`
  * draws its desktop layout into a phone's width. `responsive-floor.spec.ts`
  * can't see that: its 375px *viewport* makes the page and the window the same
- * width. This opens each tool beside chat in a 1440px window with the divider
- * at its minimum (`frapp_chat_split=0`; CSS holds the page at 375px) and asserts
- * the page doesn't scroll sideways.
+ * width. This opens each tool beside chat in a 1440px window with chat's side
+ * panel as wide as it goes (`frapp_chat_width=4000`; CSS holds the page at
+ * 375px, #5575) and asserts the page doesn't scroll sideways.
  *
  * **What CI measures.** The same sessionless harness as the other suites, so
  * most pages show an empty or loading state, and this mostly pins the shell's
@@ -132,7 +132,7 @@ test.describe("tool pages hold the 375px floor beside chat", () => {
     }
     await context.addCookies([
       { name: "frapp_chat_open", value: "1", url },
-      { name: "frapp_chat_split", value: "0", url },
+      { name: "frapp_chat_width", value: "4000", url },
     ]);
   });
 

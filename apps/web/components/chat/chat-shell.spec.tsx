@@ -4998,6 +4998,36 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     expect(document.cookie).not.toContain("frapp_chat_members_hidden=1");
   });
 
+  it("shows one pane at a time beside a tool, from lg up, with the back arrow and no history (#5575)", async () => {
+    stubWidth(1440);
+    window.history.replaceState(null, "");
+    const push = vi.spyOn(window.history, "pushState");
+    try {
+      render(<ChatShell toolBeside />);
+      const channels = screen.getByRole("region", { name: "Channels" });
+      const thread = channels.nextElementSibling as HTMLElement;
+      // The conversation first, the list hidden at every width.
+      expect(channels).toHaveClass("w-full", "hidden");
+      expect(channels).not.toHaveClass("lg:w-60");
+      expect(thread).not.toHaveClass("hidden");
+      // The way back is drawn at every width, not only below `lg`.
+      const back = screen.getByRole("button", { name: "Back to channels" });
+      expect(back).not.toHaveClass("lg:hidden");
+
+      fireEvent.click(back);
+      await waitFor(() => expect(channels).not.toHaveClass("hidden"));
+      expect(thread).toHaveClass("hidden");
+
+      fireEvent.click(screen.getByTestId("pick-random"));
+      await waitFor(() => expect(thread).not.toHaveClass("hidden"));
+      expect(channels).toHaveClass("hidden");
+      // Back still moves between pages, not within the panel.
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+    }
+  });
+
   it("draws a Close chat X at the end of the channel header only when handed a close (#4223)", () => {
     stubWidth(1440);
     const onClose = vi.fn();

@@ -16,22 +16,18 @@ import { SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import { AppNav } from "@/components/layout/app-nav";
 import { NavColumn } from "@/components/layout/nav-column";
 import {
-  FULL_NAV_SPLIT_QUERY,
   isChatRoute,
   isFullWidthToolRoute,
   PANE_FLOOR,
-  CHANNELS_WIDTH,
-  OUTSIDE_RAIL_BAND,
-  RAIL_BAND_ONLY,
   SPLIT_QUERY,
-  useHydrated,
   useMediaQueryState,
 } from "@/components/layout/shell-layout";
 import {
   parseChatView,
   persistChatOpen,
   persistChatView,
-  persistToolShare,
+  persistChatWidth,
+  DEFAULT_CHAT_WIDTH,
   type ChatView,
 } from "@/components/layout/shell-prefs";
 import {
@@ -95,8 +91,9 @@ import { cn } from "@/lib/utils";
  *
  * **Chat is a panel of the shell, not a page** (#3779, Paul 2026-11-10). The
  * nav column always stays; its Chat row opens and closes the chat panel, and
- * a tool row opens its page beside chat, on the right, with a divider between
- * them. Chat and one tool can be open; with neither, the home view
+ * a tool row opens its page. Beside chat the tool page takes the main column
+ * and chat is a side panel on the right, one pane at a time, with a divider
+ * between them (#5575, Paul 2026-11-19). Chat and one tool can be open; with neither, the home view
  * (`chapter-home.tsx`). `shell-layout.ts` owns the state model: the open tool
  * is the URL, chat open or closed and the divider are cookies.
  *
@@ -142,8 +139,8 @@ type DashboardShellProps = {
   defaultChatOpen?: boolean;
   /** Which list chat shows, channels or direct messages, from its cookie. */
   defaultChatView?: ChatView;
-  /** The divider's tool-page share, from its cookie. */
-  defaultToolShare?: number;
+  /** Chat's side-panel width beside a tool, from its cookie (#5575). */
+  defaultChatWidth?: number;
   /** Chat's member column preference (`lib/chat/members-panel.ts`). */
   defaultMembersHidden?: boolean;
 };
@@ -160,7 +157,7 @@ export function DashboardShell({
   defaultNavCollapsed = false,
   defaultChatOpen = true,
   defaultChatView = "channels",
-  defaultToolShare = 0.5,
+  defaultChatWidth = DEFAULT_CHAT_WIDTH,
   defaultMembersHidden = false,
 }: DashboardShellProps) {
   // Ask Frapp's bar (#5476) floats at the bottom of the page below `lg`,
@@ -185,7 +182,6 @@ export function DashboardShell({
   // Side by side: `null` until the client knows its width, so a hydration
   // render never unmounts chat beside a tool page.
   const split = useMediaQueryState(SPLIT_QUERY);
-  const fullNavRoom = useMediaQueryState(FULL_NAV_SPLIT_QUERY);
   const onChatRoute = isChatRoute(pathname);
   const hasTool = !onChatRoute;
 
@@ -211,7 +207,7 @@ export function DashboardShell({
   const [chatView, setChatView] = useState<ChatView>(() =>
     urlView ? parseChatView(urlView) : defaultChatView,
   );
-  const [toolShare, setToolShare] = useState(defaultToolShare);
+  const [chatWidth, setChatWidth] = useState(defaultChatWidth);
   const splitRowRef = useRef<HTMLElement>(null);
 
   /*
@@ -388,32 +384,6 @@ export function DashboardShell({
   const chatMounted = onChatRoute
     ? chatShown || split !== true
     : chatShown && split !== false;
-  // The rail, forced while chat and a tool share a window too narrow for the
-  // full nav beside both 375px floors.
-  // `chatShown`, not `chatOpen`: the panel keeps its width while it plays
-  // its exit, so the rail holds until it is gone.
-  const forceRail =
-    hasTool && chatShown && split === true && fullNavRoom === false;
-  /*
-    The server and hydration know the route and the chat cookie but not the
-    width, so where the rail might be forced they draw both columns and let
-    the band's CSS show one (#4024). Deciding it in JS instead painted the
-    full nav first and clipped ~130px off the tool page until it snapped.
-    From the first client render the shell knows and draws only the one CSS
-    already showed, keyed so it keeps its DOM: nothing moves.
-
-    The key is settled once, on that first render, and never follows
-    `forceRail` after it: a chat toggle in the band must change the column's
-    width, not remount it (focus on the Chat row, the nav's scroll and the
-    chapter menu all live in it).
-  */
-  const hydrated = useHydrated();
-  const railByCss = !hydrated && hasTool && chatShown && !navCollapsed;
-  // The server drew a separate "rail" column only when `railByCss` held.
-  const hydratedNavKey = forceRail && !navCollapsed ? "rail" : "column";
-  const [navKey, setNavKey] = useState<"rail" | "column" | null>(null);
-  if (hydrated && navKey === null) setNavKey(hydratedNavKey);
-
   // `undefined` hides gated rows until the read answers; `null` means the
   // offline dashboard can't ask, and shows them (`useNavPermissions`, #3854).
   const permissions = useNavPermissions();
@@ -473,11 +443,13 @@ export function DashboardShell({
         : undefined,
     ...(hasTool
       ? {
-          // The channels column, then the messages' part of what is left.
-          // CSS holds both floors: chat never below channels + 375, and the
-          // tool page (`min-w-[375px]`) never below 375, whatever the share.
-          flexBasis: `calc(${CHANNELS_WIDTH}px + (100% - ${CHANNELS_WIDTH + 1}px) * ${(1 - toolShare).toFixed(4)})`,
-          minWidth: CHANNELS_WIDTH + PANE_FLOOR,
+          // The side panel keeps the member's width and the tool page takes
+          // the rest (#5575). CSS holds both floors: chat never below 375,
+          // and never so wide that the tool page (`min-w-[375px]`, past the
+          // divider's 1px) drops below 375, whatever width was saved.
+          flex: `0 1 ${chatWidth}px`,
+          minWidth: PANE_FLOOR,
+          maxWidth: `calc(100% - ${PANE_FLOOR + 1}px)`,
         }
       : {}),
   };
@@ -567,45 +539,23 @@ export function DashboardShell({
         nothing in it jumps going in and out of Chat.
       */}
       <div className="hidden lg:flex">
-        {(railByCss ? [false, true] : [navCollapsed || forceRail]).map(
-          (rail) => (
-            <NavColumn
-              key={
-                railByCss
-                  ? rail
-                    ? "rail"
-                    : "column"
-                  : (navKey ?? hydratedNavKey)
-              }
-              className={
-                railByCss
-                  ? rail
-                    ? RAIL_BAND_ONLY
-                    : OUTSIDE_RAIL_BAND
-                  : undefined
-              }
-              collapsed={rail}
-              onToggleCollapsed={
-                forceRail || (railByCss && rail)
-                  ? undefined
-                  : toggleNavCollapsed
-              }
-              permissions={permissions}
-              isModuleEnabled={isModuleEnabled}
-              pathname={pathname}
-              chatRow={
-                // Beside a full-width tool the Chat row is the link to
-                // `/chat` it is below the side-by-side width: a toggle would
-                // open a panel the page has no room for.
-                split === true && !fullWidthTool
-                  ? { onSelect: selectChatView, open: chatOpen, view: chatView }
-                  : undefined
-              }
-              chatView={chatView}
-              onCloseTool={split === true && hasTool ? closeTool : undefined}
-            />
-          ),
-        )}
+        <NavColumn
+          collapsed={navCollapsed}
+          onToggleCollapsed={toggleNavCollapsed}
+          permissions={permissions}
+          isModuleEnabled={isModuleEnabled}
+          pathname={pathname}
+          chatRow={
+            // Beside a full-width tool the Chat row is the link to `/chat`
+            // it is below the side-by-side width: a toggle would open a
+            // panel the page has no room for.
+            split === true && !fullWidthTool
+              ? { onSelect: selectChatView, open: chatOpen, view: chatView }
+              : undefined
+          }
+          chatView={chatView}
+          onCloseTool={split === true && hasTool ? closeTool : undefined}
+        />
       </div>
 
       {/*
@@ -653,53 +603,6 @@ export function DashboardShell({
           ref={splitRowRef}
           className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
         >
-          {chatMounted ? (
-            <section
-              id="chat-panel"
-              aria-label={
-                chatView === "direct" ? DIRECT_MESSAGES_TITLE : "Chat"
-              }
-              data-chat-panel=""
-              inert={leaving}
-              className={chatPanelClassName}
-              style={chatPanelStyle}
-              onAnimationEnd={() => setAnimateOpen(false)}
-            >
-              <ChatPanelBoundary resetKey={pathname}>
-                {/*
-                  Beside a tool, chat mounts once the window is known to be
-                  wide enough. Until then (server render, hydration) the
-                  panel holds its place with chat's skeleton, so a phone never
-                  builds and tears down a chat it cannot show.
-                */}
-                {onChatRoute || split === true ? (
-                  <ChatPage
-                    defaultMembersHidden={defaultMembersHidden}
-                    toolBeside={hasTool}
-                    view={chatView}
-                    onViewChange={followPanelView}
-                    onClose={
-                      hasTool && split === true ? closeChatPanel : undefined
-                    }
-                  />
-                ) : (
-                  <ChatRouteSkeleton />
-                )}
-              </ChatPanelBoundary>
-            </section>
-          ) : null}
-          {showDivider ? (
-            <div className="hidden min-[1056px]:flex">
-              <SplitDivider
-                share={toolShare}
-                onChange={setToolShare}
-                onCommit={persistToolShare}
-                rowRef={splitRowRef}
-                onCollapsePreview={setCollapsing}
-                onCollapse={collapseSide}
-              />
-            </div>
-          ) : null}
           {/*
             The tool page. It scrolls independently of the nav, which is what
             makes the nav's own scroll position survive navigation. `min-w-0`
@@ -753,6 +656,53 @@ export function DashboardShell({
               <ChapterHome />
             </div>
           )}
+          {showDivider ? (
+            <div className="hidden min-[1056px]:flex">
+              <SplitDivider
+                width={chatWidth}
+                onChange={setChatWidth}
+                onCommit={persistChatWidth}
+                rowRef={splitRowRef}
+                onCollapsePreview={setCollapsing}
+                onCollapse={collapseSide}
+              />
+            </div>
+          ) : null}
+          {chatMounted ? (
+            <section
+              id="chat-panel"
+              aria-label={
+                chatView === "direct" ? DIRECT_MESSAGES_TITLE : "Chat"
+              }
+              data-chat-panel=""
+              inert={leaving}
+              className={chatPanelClassName}
+              style={chatPanelStyle}
+              onAnimationEnd={() => setAnimateOpen(false)}
+            >
+              <ChatPanelBoundary resetKey={pathname}>
+                {/*
+                  Beside a tool, chat mounts once the window is known to be
+                  wide enough. Until then (server render, hydration) the
+                  panel holds its place with chat's skeleton, so a phone never
+                  builds and tears down a chat it cannot show.
+                */}
+                {onChatRoute || split === true ? (
+                  <ChatPage
+                    defaultMembersHidden={defaultMembersHidden}
+                    toolBeside={hasTool}
+                    view={chatView}
+                    onViewChange={followPanelView}
+                    onClose={
+                      hasTool && split === true ? closeChatPanel : undefined
+                    }
+                  />
+                ) : (
+                  <ChatRouteSkeleton />
+                )}
+              </ChatPanelBoundary>
+            </section>
+          ) : null}
         </main>
       </div>
     </div>

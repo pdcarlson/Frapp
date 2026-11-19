@@ -859,6 +859,18 @@ export function ChatShell({
   };
   // From `lg` up the channels and the thread are both on screen.
   const isDesktopShell = useIsDesktopShell();
+  /*
+    Beside a tool page chat is a side panel one pane wide (#5575): the list
+    and the conversation take turns, as they do below `lg`, with the same back
+    arrow. Only the layout follows: the pane history (#3824) stays a below-`lg`
+    affair, so Back still moves between pages, not within the panel.
+  */
+  const twoColumns = isDesktopShell && !toolBeside;
+  // The classes that show one pane at a time: below `lg`, or always beside a
+  // tool. The shell mounts chat beside a tool only once the client knows the
+  // width, so `toolBeside` never differs between server and client.
+  const oneOnly = toolBeside ? "hidden" : "max-lg:hidden";
+  const oneAtATimeOnly = toolBeside ? undefined : "lg:hidden";
 
   useEffect(() => {
     if (
@@ -2185,9 +2197,10 @@ export function ChatShell({
     nav's Chat row never lit and the channel came back read. Leaving the
     thread for the list runs the cleanup, which stamps it read on the way out as leaving
     a channel always has; coming back claims and stamps it again. From `lg`
-    up both are on screen and `narrowPane` changes nothing.
+    up both are on screen and `narrowPane` changes nothing, except beside a
+    tool, where the panel shows one at a time (#5575).
   */
-  const threadOnScreen = isDesktopShell || narrowPane === "thread";
+  const threadOnScreen = twoColumns || narrowPane === "thread";
   useEffect(() => {
     if (!activeChannelId || !threadOnScreen) return;
     markReadMutate(activeChannelId);
@@ -3563,8 +3576,9 @@ export function ChatShell({
         className={cn(
           "flex min-h-0 flex-col border-r border-border bg-surface-1",
           // Full width below `lg`, where it is the only column on screen.
-          "w-full lg:w-60 lg:shrink-0",
-          narrowPane === "thread" && "max-lg:hidden",
+          // Beside a tool, the whole panel whenever it shows (#5575).
+          toolBeside ? "w-full" : "w-full lg:w-60 lg:shrink-0",
+          narrowPane === "thread" && oneOnly,
         )}
       >
         {channelsPaneBody}
@@ -3583,7 +3597,7 @@ export function ChatShell({
           // `isolate` + `relative`: the chat background (#3973) sits at
           // `-z-10` inside this column, and only this column (#3779).
           "relative isolate flex min-w-0 flex-1 flex-col bg-background",
-          narrowPane === "channels" && "max-lg:hidden",
+          narrowPane === "channels" && oneOnly,
         )}
       >
         <ChatBackground channelId={activeChannel?.id ?? null} />
@@ -3624,7 +3638,7 @@ export function ChatShell({
               size="icon"
               // 40px, never the 32px compact control (#3824): it is the one
               // way back below `lg`, so it gets a real target.
-              className="-ml-2 h-10 w-10 shrink-0 lg:hidden"
+              className={cn("-ml-2 h-10 w-10 shrink-0", oneAtATimeOnly)}
               onClick={backToChannels}
               aria-label="Back to channels"
             >
@@ -3998,12 +4012,14 @@ export function ChatShell({
               </InlineNote>
             ) : (
               <InlineNote>
-                <span className="max-lg:hidden">
-                  Choose one from the list to open it.
-                </span>
-                {/* Below `lg` the list is its own screen. */}
+                {toolBeside ? null : (
+                  <span className="max-lg:hidden">
+                    Choose one from the list to open it.
+                  </span>
+                )}
+                {/* Below `lg`, and beside a tool, the list is its own screen. */}
                 <InlineNoteAction
-                  className="lg:hidden"
+                  className={oneAtATimeOnly}
                   onClick={() => setNarrowPane("channels")}
                 >
                   Show your direct messages

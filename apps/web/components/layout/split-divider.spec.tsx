@@ -4,13 +4,16 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { SplitDivider } from "./split-divider";
 import {
-  CHANNELS_WIDTH,
   PANE_FLOOR,
   SPLIT_MIN_WIDTH,
-  FULL_NAV_SPLIT_WIDTH,
-  toolShareBounds,
+  chatWidthBounds,
+  clampChatWidth,
 } from "./shell-layout";
-import { parseChatOpen, parseToolShare } from "./shell-prefs";
+import {
+  DEFAULT_CHAT_WIDTH,
+  parseChatOpen,
+  parseChatWidth,
+} from "./shell-prefs";
 
 /** A row of `width` px whose right edge is at `width`. */
 function rowOf(width: number) {
@@ -22,83 +25,80 @@ function rowOf(width: number) {
   return ref;
 }
 
-function setup(share = 0.5, width = 1200) {
+function setup(chatWidth = 400, rowWidth = 1200) {
   const onChange = vi.fn();
   const onCommit = vi.fn();
   render(
     <SplitDivider
-      share={share}
+      width={chatWidth}
       onChange={onChange}
       onCommit={onCommit}
-      rowRef={rowOf(width)}
+      rowRef={rowOf(rowWidth)}
     />,
   );
   return { onChange, onCommit, divider: screen.getByRole("separator") };
 }
 
-describe("SplitDivider (#3779)", () => {
-  it("is a focusable vertical separator announcing the page's share", () => {
-    const { divider } = setup(0.5);
+describe("SplitDivider (#3779, chat on the right since #5575)", () => {
+  it("is a focusable vertical separator announcing chat's width", () => {
+    const { divider } = setup(400);
     expect(divider).toHaveAttribute("aria-orientation", "vertical");
     expect(divider).toHaveAttribute("tabindex", "0");
-    expect(divider).toHaveAttribute("aria-valuenow", "50");
+    expect(divider).toHaveAttribute("aria-valuenow", "400");
+    expect(divider).toHaveAttribute("aria-valuetext", "Chat 400 pixels wide");
   });
 
   it("moves with the arrow keys, and remembers each move", () => {
-    const { divider, onChange, onCommit } = setup(0.5);
+    const { divider, onChange, onCommit } = setup(400);
     fireEvent.keyDown(divider, { key: "ArrowLeft" });
-    // Left widens the page beside it.
-    expect(onChange.mock.calls[0]![0]).toBeGreaterThan(0.5);
-    expect(onCommit).toHaveBeenCalledWith(onChange.mock.calls[0]![0]);
+    // Left widens chat, the panel right of the divider.
+    expect(onChange.mock.calls[0]![0]).toBe(424);
+    expect(onCommit).toHaveBeenCalledWith(424);
     fireEvent.keyDown(divider, { key: "ArrowRight" });
-    expect(onChange.mock.calls[1]![0]).toBeLessThan(0.5);
+    expect(onChange.mock.calls[1]![0]).toBe(376);
   });
 
   it("never lets either side below 375px", () => {
-    const width = 1200;
-    const { divider, onChange } = setup(0.5, width);
+    const row = 1200;
+    const { divider, onChange } = setup(400, row);
     fireEvent.keyDown(divider, { key: "Home" });
     fireEvent.keyDown(divider, { key: "End" });
-    const flexible = width - CHANNELS_WIDTH - 1;
-    // Home is the minimum page share, End the maximum (window splitter).
+    // Home is chat's narrowest, End its widest (window splitter).
     const [min, max] = [onChange.mock.calls[0]![0], onChange.mock.calls[1]![0]];
-    expect(min).toBeLessThan(max);
-    expect(Math.round(flexible * max)).toBeLessThanOrEqual(
-      flexible - PANE_FLOOR,
-    );
-    expect(Math.round(flexible * min)).toBeGreaterThanOrEqual(PANE_FLOOR);
+    expect(min).toBe(PANE_FLOOR);
+    // The page keeps its floor past the divider's 1px.
+    expect(row - 1 - max).toBeGreaterThanOrEqual(PANE_FLOOR);
   });
 
-  it("resets to 50/50 on a double-click", () => {
-    const { divider, onCommit } = setup(0.7);
+  it("resets to the default width on a double-click", () => {
+    const { divider, onCommit } = setup(600);
     fireEvent.doubleClick(divider);
-    expect(onCommit).toHaveBeenCalledWith(0.5);
+    expect(onCommit).toHaveBeenCalledWith(DEFAULT_CHAT_WIDTH);
   });
 
-  it("drags, and commits where the pointer let go", () => {
-    const { divider, onChange, onCommit } = setup(0.5, 1200);
+  it("drags, and commits chat's width where the pointer let go", () => {
+    const { divider, onChange, onCommit } = setup(400, 1200);
     divider.setPointerCapture = () => {};
     divider.hasPointerCapture = () => false;
-    fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
+    fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 800 });
     fireEvent.pointerMove(divider, { pointerId: 1, clientX: 700 });
     fireEvent.pointerUp(divider, { pointerId: 1, clientX: 700 });
-    const moved = onChange.mock.calls[0]![0];
-    expect(moved).toBeCloseTo((1200 - 700) / (1200 - 241), 3);
-    expect(onCommit).toHaveBeenCalledWith(moved);
+    expect(onChange.mock.calls[0]![0]).toBe(500);
+    expect(onCommit).toHaveBeenCalledWith(500);
   });
 
   describe("dragged to an edge, it closes that side (Paul, 2026-11-11)", () => {
-    function setupCollapse(share = 0.5, width = 1200) {
+    function setupCollapse(chatWidth = 400, rowWidth = 1200) {
       const onChange = vi.fn();
       const onCommit = vi.fn();
       const onCollapse = vi.fn();
       const onCollapsePreview = vi.fn();
       render(
         <SplitDivider
-          share={share}
+          width={chatWidth}
           onChange={onChange}
           onCommit={onCommit}
-          rowRef={rowOf(width)}
+          rowRef={rowOf(rowWidth)}
           onCollapse={onCollapse}
           onCollapsePreview={onCollapsePreview}
         />,
@@ -109,42 +109,36 @@ describe("SplitDivider (#3779)", () => {
       return { divider, onChange, onCommit, onCollapse, onCollapsePreview };
     }
 
-    it("closes the page when let go at the right edge, keeping the split from before", () => {
+    it("closes chat when let go at the right edge, keeping the width from before", () => {
       const { divider, onChange, onCommit, onCollapse, onCollapsePreview } =
-        setupCollapse(0.4, 1200);
-      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
-      // Past the page's floor but not yet half of it: only the floor holds.
+        setupCollapse(450, 1200);
+      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 750 });
+      // Past chat's floor but not yet half of it: only the floor holds.
       fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1200 - 300 });
-      expect(onCollapsePreview).not.toHaveBeenCalledWith("page");
-      // Past half the floor: the page fades to say a release closes it.
+      expect(onCollapsePreview).not.toHaveBeenCalledWith("chat");
+      // Past half the floor: chat fades to say a release closes it.
       fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1190 });
-      expect(onCollapsePreview).toHaveBeenLastCalledWith("page");
+      expect(onCollapsePreview).toHaveBeenLastCalledWith("chat");
       fireEvent.pointerUp(divider, { pointerId: 1, clientX: 1190 });
-      expect(onCollapse).toHaveBeenCalledWith("page");
+      expect(onCollapse).toHaveBeenCalledWith("chat");
       expect(onCollapsePreview).toHaveBeenLastCalledWith(null);
-      // The floor-clamped split is not remembered; the one before the drag is.
-      expect(onChange).toHaveBeenLastCalledWith(0.4);
+      // The floor-clamped width is not remembered; the one before the drag is.
+      expect(onChange).toHaveBeenLastCalledWith(450);
       expect(onCommit).not.toHaveBeenCalled();
     });
 
-    it("closes chat when let go at the left edge", () => {
-      const { divider, onCollapse } = setupCollapse(0.5, 1200);
-      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
-      fireEvent.pointerMove(divider, {
-        pointerId: 1,
-        clientX: CHANNELS_WIDTH + 20,
-      });
-      fireEvent.pointerUp(divider, {
-        pointerId: 1,
-        clientX: CHANNELS_WIDTH + 20,
-      });
-      expect(onCollapse).toHaveBeenCalledWith("chat");
+    it("closes the page when let go at the left edge", () => {
+      const { divider, onCollapse } = setupCollapse(400, 1200);
+      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 800 });
+      fireEvent.pointerMove(divider, { pointerId: 1, clientX: 20 });
+      fireEvent.pointerUp(divider, { pointerId: 1, clientX: 20 });
+      expect(onCollapse).toHaveBeenCalledWith("page");
     });
 
     it("cancels when dragged back from the edge before letting go", () => {
       const { divider, onCollapse, onCommit, onCollapsePreview } =
-        setupCollapse(0.5, 1200);
-      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
+        setupCollapse(400, 1200);
+      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 800 });
       fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1190 });
       fireEvent.pointerMove(divider, { pointerId: 1, clientX: 700 });
       expect(onCollapsePreview).toHaveBeenLastCalledWith(null);
@@ -155,28 +149,30 @@ describe("SplitDivider (#3779)", () => {
   });
 });
 
-describe("shell layout constants and cookies (#3779)", () => {
-  it("starts side by side only where both floors fit beside the rail, and the full nav only where they fit beside it", () => {
-    expect(56 + CHANNELS_WIDTH + 2 * PANE_FLOOR + 3).toBeLessThanOrEqual(
-      SPLIT_MIN_WIDTH,
-    );
-    expect(240 + CHANNELS_WIDTH + 2 * PANE_FLOOR + 3).toBeLessThanOrEqual(
-      FULL_NAV_SPLIT_WIDTH,
-    );
+describe("shell layout constants and cookies (#3779, #5575)", () => {
+  it("starts side by side only where both floors fit beside the full nav", () => {
+    expect(240 + 2 * PANE_FLOOR + 2).toBeLessThanOrEqual(SPLIT_MIN_WIDTH);
     // The shell's Tailwind classes spell the breakpoint out literally.
     expect(SPLIT_MIN_WIDTH).toBe(1056);
   });
 
-  it("pins both bounds at 50/50 on a row too narrow for the floors", () => {
-    expect(toolShareBounds(800)).toEqual({ min: 0.5, max: 0.5 });
+  it("gives the tool page at 1440px the width it has alone at 820px", () => {
+    // The full nav and its hairline, the divider, then the default panel.
+    const tool = 1440 - 241 - 1 - DEFAULT_CHAT_WIDTH;
+    expect(tool).toBeGreaterThanOrEqual(820);
   });
 
-  it("reads chat as open unless closed, and a foreign split as 50/50", () => {
+  it("pins chat at its floor on a row too narrow for both floors", () => {
+    expect(chatWidthBounds(700)).toEqual({ min: PANE_FLOOR, max: PANE_FLOOR });
+    expect(clampChatWidth(900, 1000)).toBe(1000 - 1 - PANE_FLOOR);
+  });
+
+  it("reads chat as open unless closed, and a foreign width as the default", () => {
     expect(parseChatOpen(undefined)).toBe(true);
     expect(parseChatOpen("0")).toBe(false);
-    expect(parseToolShare(undefined)).toBe(0.5);
-    expect(parseToolShare("0.3")).toBe(0.3);
-    expect(parseToolShare("7")).toBe(0.5);
-    expect(parseToolShare("abc")).toBe(0.5);
+    expect(parseChatWidth(undefined)).toBe(DEFAULT_CHAT_WIDTH);
+    expect(parseChatWidth("480")).toBe(480);
+    expect(parseChatWidth("-3")).toBe(DEFAULT_CHAT_WIDTH);
+    expect(parseChatWidth("abc")).toBe(DEFAULT_CHAT_WIDTH);
   });
 });

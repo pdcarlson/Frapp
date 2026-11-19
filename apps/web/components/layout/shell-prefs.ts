@@ -23,25 +23,28 @@ export function persistChatOpen(open: boolean): void {
   writePreferenceCookie(CHAT_OPEN_COOKIE, open);
 }
 
-export const CHAT_SPLIT_COOKIE = "frapp_chat_split";
-
-/** 50/50 between the messages and the tool page. */
-export const DEFAULT_TOOL_SHARE = 0.5;
+export const CHAT_WIDTH_COOKIE = "frapp_chat_width";
 
 /**
- * The tool page's share of the width after the channels column, 0 to 1. A
- * missing or foreign value is the default; the floors are CSS's to hold, so
- * any share in range is safe at any width.
+ * The side panel's width beside a tool, in pixels (#5575). The floor, so at
+ * 1440px the tool page keeps the width it has alone at 820px.
  */
-export function parseToolShare(value: string | undefined): number {
-  if (value === undefined) return DEFAULT_TOOL_SHARE;
+export const DEFAULT_CHAT_WIDTH = 375;
+
+/**
+ * A missing or foreign value is the default. Any width is safe to lay out:
+ * CSS holds both floors (`dashboard-shell.tsx`), so a width saved at a wider
+ * window still fits a narrower one.
+ */
+export function parseChatWidth(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_CHAT_WIDTH;
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0 || n > 1) return DEFAULT_TOOL_SHARE;
-  return n;
+  if (!Number.isFinite(n) || n < 0 || n > 4000) return DEFAULT_CHAT_WIDTH;
+  return Math.round(n);
 }
 
-export function persistToolShare(share: number): void {
-  writePreferenceValue(CHAT_SPLIT_COOKIE, share.toFixed(3));
+export function persistChatWidth(width: number): void {
+  writePreferenceValue(CHAT_WIDTH_COOKIE, String(Math.round(width)));
 }
 
 /**

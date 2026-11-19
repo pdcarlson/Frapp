@@ -236,7 +236,7 @@ afterEach(() => {
   mockSearch.value = "";
   setWindowWidth(null);
   document.cookie = "frapp_chat_open=; Max-Age=0; Path=/";
-  document.cookie = "frapp_chat_split=; Max-Age=0; Path=/";
+  document.cookie = "frapp_chat_width=; Max-Age=0; Path=/";
   document.cookie = "frapp_chat_view=; Max-Age=0; Path=/";
 });
 
@@ -685,11 +685,29 @@ describe("DashboardShell", () => {
       expect(screen.queryByTestId("chat-stub")).not.toBeInTheDocument();
       expect(screen.getByRole("separator")).toBeInTheDocument();
       expect(screen.getByText("events page")).toBeInTheDocument();
-      // Both floors: the page keeps 375px, and chat its channels plus 375px.
-      expect(container.querySelector("[data-tool-column]")).toHaveClass(
-        "min-[1056px]:min-w-[375px]",
+      // Both floors: the page keeps 375px, and so does chat's side panel.
+      const tool = container.querySelector("[data-tool-column]")!;
+      expect(tool).toHaveClass("min-[1056px]:min-w-[375px]");
+      expect(chatPanel(container)!.style.minWidth).toBe("375px");
+      expect(chatPanel(container)!.style.maxWidth).toBe("calc(100% - 376px)");
+    });
+
+    it("gives the tool the main column and chat a side panel on the right (#5575)", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/tasks";
+      const { container } = render(
+        <DashboardShell defaultChatWidth={420}>tasks</DashboardShell>,
       );
-      expect(chatPanel(container)!.style.minWidth).toBe("615px");
+      const main = screen.getByRole("main");
+      const tool = container.querySelector("[data-tool-column]")!;
+      const panel = chatPanel(container)!;
+      // In order: the tool page, the divider, then chat.
+      expect(Array.from(main.children).indexOf(tool)).toBe(0);
+      expect(main.lastElementChild).toBe(panel);
+      expect(tool).toHaveClass("flex-1");
+      // The panel keeps the member's width; the page takes the rest.
+      expect(panel.style.flex).toBe("0 1 420px");
+      expect(screen.getByTestId("chat-stub")).toHaveTextContent("beside");
     });
 
     describe("the Direct messages row (#3774)", () => {
@@ -960,7 +978,7 @@ describe("DashboardShell", () => {
         expect(routerPush).not.toHaveBeenCalled();
       });
 
-      it("closes the page when the divider is let go at the right edge", () => {
+      it("closes the page when the divider is let go at the left edge", () => {
         setWindowWidth(1440);
         mockPathname.value = "/events";
         const { container } = render(<DashboardShell>events</DashboardShell>);
@@ -975,12 +993,12 @@ describe("DashboardShell", () => {
           pointerId: 1,
           clientX: 900,
         });
-        fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1430 });
+        fireEvent.pointerMove(divider, { pointerId: 1, clientX: 250 });
         // The page fades first, so the release is no surprise.
         expect(container.querySelector("[data-tool-column]")).toHaveClass(
           "opacity-40",
         );
-        fireEvent.pointerUp(divider, { pointerId: 1, clientX: 1430 });
+        fireEvent.pointerUp(divider, { pointerId: 1, clientX: 250 });
         expect(routerPush).toHaveBeenCalledWith("/chat");
       });
     });
@@ -1106,69 +1124,22 @@ describe("DashboardShell", () => {
       expect(chatPanel(container)).not.toBeNull();
     });
 
-    it("drops the nav to its rail while chat and a tool share a window without room for it", () => {
+    it("keeps the full nav beside chat and a tool, with no rail forced (#5575)", () => {
+      // Chat's one-pane side panel leaves room for the full nav beside both
+      // 375px floors from the side-by-side width up.
       setWindowWidth(1100);
       mockPathname.value = "/events";
-      const { container, rerender } = render(
-        <DashboardShell>events</DashboardShell>,
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>events</DashboardShell>,
       );
-      expect(column(container)).toHaveClass("w-14");
-      // Forced, not the member's preference: no toggle to undo it.
+      const before = column(container);
+      expect(before).toHaveClass("w-60");
+      fireEvent.click(within(nav()).getByRole("button", { name: "Chat" }));
+      expect(column(container)).toBe(before);
+      expect(before).toHaveClass("w-60");
       expect(
-        screen.queryByRole("button", { name: /expand sidebar/i }),
-      ).not.toBeInTheDocument();
-
-      // Chat alone has room: the nav comes back.
-      mockPathname.value = "/chat";
-      rerender(<DashboardShell>{null}</DashboardShell>);
-      expect(column(container)).toHaveClass("w-60");
-
-      // And at a wide window it never drops.
-      setWindowWidth(1440);
-      mockPathname.value = "/events";
-      rerender(<DashboardShell>events</DashboardShell>);
-      expect(column(container)).toHaveClass("w-60");
-    });
-
-    it("paints the forced rail on the server, by CSS, and keeps that column through hydration (#4024)", async () => {
-      // The server knows the route and the chat cookie, not the width. It
-      // used to paint the full nav, which at 1100px clipped ~130px off the
-      // tool page until hydration snapped the nav to its rail.
-      mockPathname.value = "/events";
-      const host = document.createElement("div");
-      host.innerHTML = renderToString(<DashboardShell>events</DashboardShell>);
-      document.body.appendChild(host);
-      try {
-        const served = Array.from(
-          host.querySelectorAll<HTMLElement>("[data-nav-column]"),
-        );
-        expect(served).toHaveLength(2);
-        const [full, rail] = served;
-        // Both answers, the band's CSS picking one: the rail only from 1056
-        // to 1239px, the full nav everywhere else.
-        expect(full).toHaveClass("w-60", "min-[1056px]:max-[1240px]:hidden");
-        expect(rail).toHaveClass(
-          "w-14",
-          "hidden",
-          "min-[1056px]:max-[1240px]:flex",
-        );
-        expect(rail).not.toHaveClass("flex");
-
-        // Hydrated at 1100px: only the rail stays, the same node, so the
-        // frame the server painted is the frame that stays.
-        setWindowWidth(1100);
-        const root = await act(async () =>
-          hydrateRoot(host, <DashboardShell>events</DashboardShell>),
-        );
-        const left = host.querySelectorAll<HTMLElement>("[data-nav-column]");
-        expect(left).toHaveLength(1);
-        expect(left[0]).toBe(rail);
-        expect(left[0]).toHaveClass("w-14", "flex");
-        expect(left[0]).not.toHaveClass("hidden");
-        act(() => root.unmount());
-      } finally {
-        host.remove();
-      }
+        screen.getByRole("button", { name: /collapse sidebar/i }),
+      ).toBeInTheDocument();
     });
 
     it("hydrates to the full nav, the same node, where the window has room for it", async () => {
@@ -1186,17 +1157,15 @@ describe("DashboardShell", () => {
         expect(left).toHaveLength(1);
         expect(left[0]).toBe(full);
         expect(left[0]).toHaveClass("w-60");
-        expect(left[0]!.className).not.toContain("max-[1240px]");
         act(() => root.unmount());
       } finally {
         host.remove();
       }
     });
 
-    it("draws one column on the server where no rail can be forced", () => {
-      // Chat closed beside a tool, and chat alone on /chat: the full nav at
-      // every width, so no band CSS and no second column.
+    it("draws one nav column on the server, chat beside a tool or not", () => {
       for (const [path, chatOpen] of [
+        ["/events", true],
         ["/events", false],
         ["/chat", true],
       ] as const) {
@@ -1207,11 +1176,11 @@ describe("DashboardShell", () => {
         );
         const served = host.querySelectorAll("[data-nav-column]");
         expect(served, path).toHaveLength(1);
-        expect(served[0]!.className, path).not.toContain("max-[1240px]");
+        expect(served[0], path).toHaveClass("w-60");
       }
     });
 
-    it("keeps the member's own rail through hydration in the band", async () => {
+    it("keeps the member's own rail through hydration", async () => {
       mockPathname.value = "/events";
       const host = document.createElement("div");
       const shell = <DashboardShell defaultNavCollapsed>events</DashboardShell>;
@@ -1231,26 +1200,12 @@ describe("DashboardShell", () => {
       }
     });
 
-    it("narrows the same nav column, without remounting it, when chat opens in the band", () => {
-      // A remount would drop focus from the Chat row the member just pressed.
-      setWindowWidth(1100);
-      mockPathname.value = "/events";
-      const { container } = render(
-        <DashboardShell defaultChatOpen={false}>events</DashboardShell>,
-      );
-      const before = column(container);
-      expect(before).toHaveClass("w-60");
-      fireEvent.click(within(nav()).getByRole("button", { name: "Chat" }));
-      expect(column(container)).toBe(before);
-      expect(before).toHaveClass("w-14");
-    });
-
-    it("remembers where the divider was left, in its cookie", () => {
+    it("remembers chat's width where the divider was left, in its cookie", () => {
       setWindowWidth(1440);
       mockPathname.value = "/events";
       render(<DashboardShell>events</DashboardShell>);
       fireEvent.keyDown(screen.getByRole("separator"), { key: "Enter" });
-      expect(document.cookie).toContain("frapp_chat_split=0.500");
+      expect(document.cookie).toContain("frapp_chat_width=375");
     });
 
     it("keeps Ask Frapp in the sidebar's foot, not over the home view (#5560)", () => {

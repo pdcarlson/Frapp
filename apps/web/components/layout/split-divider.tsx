@@ -2,19 +2,18 @@
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import {
-  CHANNELS_WIDTH,
-  clampToolShare,
+  chatWidthBounds,
+  clampChatWidth,
   PANE_FLOOR,
-  toolShareBounds,
 } from "@/components/layout/shell-layout";
-import { DEFAULT_TOOL_SHARE } from "@/components/layout/shell-prefs";
+import { DEFAULT_CHAT_WIDTH } from "@/components/layout/shell-prefs";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 
 /** How far one arrow press moves the divider, in pixels. */
 const KEY_STEP_PX = 24;
 
-/** The two sides of the divider: chat on the left, the tool page on the right. */
+/** The two sides of the divider: the tool page on the left, chat on the right. */
 export type SplitSide = "chat" | "page";
 
 /**
@@ -25,37 +24,40 @@ export type SplitSide = "chat" | "page";
 const COLLAPSE_PX = PANE_FLOOR / 2;
 
 /**
- * The divider between chat and the tool page (#3779): drag it, move it with
- * the arrow keys, or double-click it to go back to 50/50. It is the window
- * splitter pattern (WAI-ARIA `separator`, focusable), and its value is the
- * tool page's share in percent.
+ * The divider between the tool page and chat's side panel (#3779, #5575):
+ * drag it, move it with the arrow keys, or double-click it to go back to the
+ * default width. It is the window splitter pattern (WAI-ARIA `separator`,
+ * focusable), and its value is the chat panel's width in pixels, which is
+ * what the shell remembers: a side panel keeps its width as the window
+ * changes, as Slack's and Linear's do, and the tool page takes the rest.
  *
  * Dragged all the way to an edge, it closes that side (Paul, 2026-11-11, the
- * way VS Code's and Figma's panels snap shut): to the right edge closes the
- * tool page, to the left closes chat. The side stops at its floor and fades
+ * way VS Code's and Figma's panels snap shut): to the right edge closes chat,
+ * to the left closes the tool page. The side stops at its floor and fades
  * once the pointer is past half of it (`COLLAPSE_PX`), so the member sees
  * what letting go will do, and dragging back cancels it. A close keeps the
- * split the member had before the drag.
+ * width the member had before the drag.
  *
  * It never lets either side below 375px. CSS holds that floor too
- * (`dashboard-shell.tsx`), so a share saved at a wider window still lays out
+ * (`dashboard-shell.tsx`), so a width saved at a wider window still lays out
  * at a narrower one; this clamps what the member can set so the value it
  * announces is the one on screen.
  */
 export function SplitDivider({
-  share,
+  width,
   onChange,
   onCommit,
   rowRef,
   onCollapsePreview,
   onCollapse,
 }: {
-  share: number;
+  /** The chat panel's width, in pixels. */
+  width: number;
   /** Every move, while dragging or pressing keys. */
-  onChange: (share: number) => void;
+  onChange: (width: number) => void;
   /** The settled value, to remember. */
-  onCommit: (share: number) => void;
-  /** The row chat and the tool page share, which the share is measured on. */
+  onCommit: (width: number) => void;
+  /** The row the tool page and chat share, which the width is clamped to. */
   rowRef: React.RefObject<HTMLElement | null>;
   /** The side a release would close now, or `null`, as the drag moves. */
   onCollapsePreview?: (side: SplitSide | null) => void;
@@ -65,25 +67,25 @@ export function SplitDivider({
   const [dragging, setDragging] = useState(false);
   // The value a drag last set, so the commit on release is that value even
   // if the parent has not re-rendered with it yet.
-  const latest = useRef(share);
-  // The share when the drag started, kept if the drag closes a side.
-  const start = useRef(share);
+  const latest = useRef(width);
+  // The width when the drag started, kept if the drag closes a side.
+  const start = useRef(width);
   // The side a release would close, if the pointer is at an edge.
   const pending = useRef<SplitSide | null>(null);
 
   const rowWidth = () => rowRef.current?.getBoundingClientRect().width ?? 0;
   // The range announced to assistive tech, measured when the divider is
   // focused or grabbed (layout is not readable during render).
-  const [bounds, setBounds] = useState({ min: 0, max: 1 });
-  const measure = () => setBounds(toolShareBounds(rowWidth()));
+  const [bounds, setBounds] = useState({ min: PANE_FLOOR, max: PANE_FLOOR });
+  const measure = () => setBounds(chatWidthBounds(rowWidth()));
 
   /** The side the pointer is close enough to an edge to close, if any. */
   const collapseAt = (clientX: number): SplitSide | null => {
     if (!onCollapse) return null;
     const row = rowRef.current?.getBoundingClientRect();
     if (!row) return null;
-    if (row.right - clientX < COLLAPSE_PX) return "page";
-    if (clientX - row.left - CHANNELS_WIDTH < COLLAPSE_PX) return "chat";
+    if (row.right - clientX < COLLAPSE_PX) return "chat";
+    if (clientX - row.left < COLLAPSE_PX) return "page";
     return null;
   };
 
@@ -93,14 +95,11 @@ export function SplitDivider({
     onCollapsePreview?.(side);
   };
 
-  const shareAt = (clientX: number) => {
+  const widthAt = (clientX: number) => {
     const row = rowRef.current?.getBoundingClientRect();
     if (!row) return latest.current;
-    // The tool page is right of the divider: its share is what is left of
-    // the row past the pointer, out of the width after the channels column.
-    const flexible = row.width - CHANNELS_WIDTH - 1;
-    if (flexible <= 0) return latest.current;
-    return clampToolShare((row.right - clientX) / flexible, row.width);
+    // Chat is right of the divider: its width is the row past the pointer.
+    return clampChatWidth(row.right - clientX, row.width);
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -108,14 +107,14 @@ export function SplitDivider({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     measure();
-    latest.current = share;
-    start.current = share;
+    latest.current = width;
+    start.current = width;
     setPending(null);
     setDragging(true);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!dragging) return;
-    latest.current = shareAt(event.clientX);
+    latest.current = widthAt(event.clientX);
     onChange(latest.current);
     setPending(collapseAt(event.clientX));
   };
@@ -128,7 +127,7 @@ export function SplitDivider({
     const side = event.type === "pointercancel" ? null : pending.current;
     setPending(null);
     if (side) {
-      // Closing a side is not a new split: put back the one from before.
+      // Closing a side is not a new width: put back the one from before.
       onChange(start.current);
       onCollapse?.(side);
       return;
@@ -137,28 +136,26 @@ export function SplitDivider({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const width = rowWidth();
-    const flexible = Math.max(1, width - CHANNELS_WIDTH - 1);
-    const step = KEY_STEP_PX / flexible;
-    const { min, max } = toolShareBounds(width);
+    const row = rowWidth();
+    const { min, max } = chatWidthBounds(row);
     let next: number | null = null;
-    // Left grows the tool page (the divider moves left), right shrinks it.
-    if (event.key === "ArrowLeft") next = share + step;
-    else if (event.key === "ArrowRight") next = share - step;
+    // Left widens chat (the divider moves left), right narrows it.
+    if (event.key === "ArrowLeft") next = width + KEY_STEP_PX;
+    else if (event.key === "ArrowRight") next = width - KEY_STEP_PX;
     // The window-splitter pattern: Home to the minimum value, End to the
-    // maximum, the value being the page's share.
+    // maximum, the value being chat's width.
     else if (event.key === "Home") next = min;
     else if (event.key === "End") next = max;
-    else if (event.key === "Enter") next = DEFAULT_TOOL_SHARE;
+    else if (event.key === "Enter") next = DEFAULT_CHAT_WIDTH;
     if (next === null) return;
     event.preventDefault();
-    const clamped = clampToolShare(next, width);
+    const clamped = clampChatWidth(next, row);
     onChange(clamped);
     onCommit(clamped);
   };
 
   const reset = () => {
-    const clamped = clampToolShare(DEFAULT_TOOL_SHARE, rowWidth());
+    const clamped = clampChatWidth(DEFAULT_CHAT_WIDTH, rowWidth());
     onChange(clamped);
     onCommit(clamped);
   };
@@ -169,11 +166,11 @@ export function SplitDivider({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize chat and page"
-      aria-valuenow={Math.round(share * 100)}
-      aria-valuemin={Math.round(min * 100)}
-      aria-valuemax={Math.round(max * 100)}
-      aria-valuetext={`Page ${Math.round(share * 100)} percent`}
+      aria-label="Resize page and chat"
+      aria-valuenow={Math.round(width)}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuetext={`Chat ${Math.round(width)} pixels wide`}
       tabIndex={0}
       title={
         onCollapse
