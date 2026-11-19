@@ -175,6 +175,9 @@ export function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+/** One thing laid out in a day's lanes: an event or a timed task. */
+type GridBlock<E, Task> = { event: E } | { task: Task };
+
 /** What an event row needs for the grid to place it. */
 type GridEvent = { start_time?: unknown; end_time?: unknown };
 
@@ -186,21 +189,49 @@ export type TimeGridColumn<E, Task> = {
   key: string;
   /** Events lasting a whole day or more that touch this day, for the strip. */
   allDay: E[];
+  /** The day's tasks with no time of day (and birthdays), for the strip. */
   tasks: Task[];
   /** The day's timed events, clipped to it and laid out in lanes. */
   placed: PlacedSpan<E>[];
+  /**
+   * The day's tasks due at a time (#5116), each a marker at that time,
+   * sharing lanes with the events it overlaps.
+   */
+  placedTasks: PlacedSpan<Task>[];
 };
+
+/**
+ * Where a task due at `minute` draws: a marker starting at its time, as
+ * Google Calendar draws a timed task, at the shortest block's height. A task
+ * due in the day's last half hour (an 11:59 PM deadline) is drawn ending at
+ * midnight rather than running off the column.
+ */
+export function taskSpan(minute: number): {
+  startMinute: number;
+  endMinute: number;
+} {
+  const startMinute = Math.min(
+    Math.max(minute, 0),
+    MINUTES_PER_DAY - MIN_BLOCK_MINUTES,
+  );
+  return { startMinute, endMinute: startMinute };
+}
 
 /**
  * The Week or Day view's columns, one per day. Each event is placed on every
  * day it touches: one lasting a whole day or more sits in that day's strip, as
  * calendar apps draw a multi-day event, and a shorter one is a block clipped
  * to the day. An event whose start doesn't parse is left out.
+ *
+ * A task `taskMinute` gives a minute is a marker at that time in the grid
+ * (`calendarItemDueMinute` for the calendar's items); the rest sit in the
+ * strip.
  */
 export function timeGridColumns<E extends GridEvent, Task>(
   days: readonly Date[],
   events: readonly E[],
   tasksByDay: ReadonlyMap<string, Task[]>,
+  taskMinute: (task: Task) => number | null = () => null,
 ): TimeGridColumn<E, Task>[] {
   const parsed = events.flatMap((event) => {
     const start = parseInstant(event.start_time);
@@ -210,20 +241,29 @@ export function timeGridColumns<E extends GridEvent, Task>(
   return days.map((day) => {
     const key = localIsoDate(day);
     const allDay: E[] = [];
-    const timed: TimedSpan<E>[] = [];
+    const timed: TimedSpan<GridBlock<E, Task>>[] = [];
     for (const { event, start, end } of parsed) {
       const span = spanWithinDay(start, end, day);
       if (!span) continue;
       if (isAllDaySpan(start, end)) allDay.push(event);
-      else timed.push({ item: event, ...span });
+      else timed.push({ item: { event }, ...span });
     }
-    return {
-      day,
-      key,
-      allDay,
-      tasks: tasksByDay.get(key) ?? [],
-      placed: layoutDay(timed),
-    };
+    const tasks: Task[] = [];
+    for (const task of tasksByDay.get(key) ?? []) {
+      const minute = taskMinute(task);
+      if (minute === null) tasks.push(task);
+      else timed.push({ item: { task }, ...taskSpan(minute) });
+    }
+    // Events and tasks are laid out together, so a task at 5 PM sits beside
+    // a meeting at 5 PM rather than on top of it.
+    const placed: PlacedSpan<E>[] = [];
+    const placedTasks: PlacedSpan<Task>[] = [];
+    for (const span of layoutDay(timed)) {
+      const { item, ...geometry } = span;
+      if ("event" in item) placed.push({ item: item.event, ...geometry });
+      else placedTasks.push({ item: item.task, ...geometry });
+    }
+    return { day, key, allDay, tasks, placed, placedTasks };
   });
 }
 

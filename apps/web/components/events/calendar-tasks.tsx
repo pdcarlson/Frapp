@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Circle, CircleCheck } from "lucide-react";
 import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
@@ -102,15 +102,17 @@ function badgeVariant(state: CalendarTaskState) {
   return "outline" as const;
 }
 
-function dueLabel(day: string): string {
-  const at = parseInstantOrBareLocalNoon(day);
-  return at
+/** "Thursday, November 20", and " at 5 PM" for a task due at a time. */
+function dueLabel(item: CalendarTask): string {
+  const at = parseInstantOrBareLocalNoon(item.day);
+  const day = at
     ? at.toLocaleDateString(undefined, {
         weekday: "long",
         month: "long",
         day: "numeric",
       })
-    : day;
+    : item.day;
+  return item.timeLabel ? `${day} at ${item.timeLabel}` : day;
 }
 
 /**
@@ -125,7 +127,7 @@ function CalendarTaskPopover({
 }: {
   item: CalendarTask;
   nameOf: (userId: string) => string;
-  /** The trigger: an agenda row, or a chip on the hour grid. */
+  /** The trigger: an agenda row, or a chip or marker on the hour grid. */
   children: ReactNode;
 }) {
   return (
@@ -135,7 +137,7 @@ function CalendarTaskPopover({
         <div className="space-y-1">
           <p className="text-sm font-semibold text-foreground">{item.title}</p>
           <p className="text-caption text-muted-foreground">
-            Due {dueLabel(item.day)}
+            Due {dueLabel(item)}
           </p>
         </div>
         {item.kind === "mine" ? (
@@ -311,6 +313,61 @@ function TaskChip({
   );
 }
 
+/**
+ * A task due at a time on the hour grid (#5116): a slim marker at that
+ * time, the way Google Calendar draws a timed task: its ring, then its time,
+ * then as much of its title as fits (a narrow lane beside an event keeps the
+ * time), and for one the viewer assigned, who it went to or how many are
+ * done, as the strip's chip says. Where it sits is the grid's (`timeGridColumns`);
+ * `style` places it. It opens the task's card, as the strip's chip does.
+ */
+export function CalendarTaskBlock({
+  item,
+  nameOf,
+  style,
+}: {
+  item: CalendarTask;
+  nameOf: (userId: string) => string;
+  style: CSSProperties;
+}) {
+  const trailing = assignedTrailing(item, nameOf);
+  return (
+    <CalendarTaskPopover item={item} nameOf={nameOf}>
+      <button
+        type="button"
+        title={item.title}
+        aria-label={calendarTaskAccessibleLabel(item)}
+        data-kind="tasks"
+        data-testid={`time-grid-task-${item.key}`}
+        className={cn(
+          "absolute z-10 flex items-center gap-1 overflow-hidden rounded-xs border border-border bg-card px-1.5 text-left leading-tight ring-1 ring-background transition-colors hover:bg-card-hover",
+          CHIP_TEXT,
+          FOCUS_RING,
+        )}
+        style={style}
+      >
+        <KindMark kind="tasks" done={isDone(item.state)} size="small" />
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {item.timeLabel}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            taskTitleClassName(item.state),
+          )}
+        >
+          {item.title}
+        </span>
+        {trailing ? (
+          <span className="max-w-[40%] shrink-0 truncate tabular-nums text-muted-foreground">
+            {trailing}
+          </span>
+        ) : null}
+      </button>
+    </CalendarTaskPopover>
+  );
+}
+
 /** The agenda row's frame, shared by every kind so their text lines up. */
 export const AGENDA_ROW_CLASS =
   "flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1.5 text-left";
@@ -330,7 +387,7 @@ export function AgendaMarkSlot({ children }: { children: ReactNode }) {
 /**
  * A task on the agenda (#5560): a ring in the Tasks hue, filled once the
  * task is done (waiting on an officer or confirmed), when its title steps
- * back. One row per task the viewer assigned to many (`selectCalendarTasks`
+ * back. Its line under the title starts with its time when it has one. One row per task the viewer assigned to many (`selectCalendarTasks`
  * groups them), naming its progress at the right. It opens the task's card.
  */
 export function AgendaTaskRow({
@@ -341,12 +398,14 @@ export function AgendaTaskRow({
   nameOf: (userId: string) => string;
 }) {
   const done = isDone(item.state);
-  const meta =
+  const status =
     item.kind === "mine"
       ? item.label
       : item.assignees.length === 1
         ? item.assignees[0]!.label
         : "Assigned by you";
+  // A task due at a time leads with it, as an event's row does (#5116).
+  const meta = item.timeLabel ? `${item.timeLabel} · ${status}` : status;
   const trailing =
     item.kind === "mine"
       ? null
