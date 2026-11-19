@@ -138,18 +138,9 @@ export function termsPromptErrorCopy(error: unknown): string {
  * acceptance and every such join carries it. The server records it only when
  * the user hasn't accepted the current version already.
  */
-export function joinRedeemBody(
-  token: string,
-  /** The invite card's visit (#5663), so the join lands in its funnel. */
-  visitId?: string | null,
-): {
+export function joinRedeemBody(token: string): {
   token: string;
   accept_terms_privacy: true;
-  visit_id?: string;
 } {
-  return {
-    token,
-    accept_terms_privacy: true,
-    ...(visitId ? { visit_id: visitId } : {}),
-  };
+  return { token, accept_terms_privacy: true };
 }

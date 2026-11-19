@@ -23976,11 +23976,6 @@
           "accept_terms_privacy": {
             "type": "boolean",
             "description": "True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version."
-          },
-          "visit_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The invite card's random visit id, which records the join in the card's funnel. Analytics only."
           }
         },
         "required": [
@@ -24140,6 +24135,7 @@
               "sign-in-started",
               "email-code-sent",
               "email-code-verified",
+              "joined",
               "join-failed",
               "new-link-asked"
             ]

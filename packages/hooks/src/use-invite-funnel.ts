@@ -16,12 +16,17 @@ export type RecordInviteStep = (input: InviteFunnelStepInput) => void;
  * `POST /v1/analytics/events`).
  *
  * The visit id is each app's own, because where it lives differs: the web
- * keeps it in the tab's session storage so a sign-in that leaves for Apple or
- * Google and comes back is still the same visit, the phone keeps it in memory
- * for the native sign-ins that never leave the app. Both mint it as a random
+ * keeps it a day in `localStorage` (`inviteVisitId` in
+ * `apps/web/lib/auth/join-visit.ts`) so a sign-in that leaves for Apple or
+ * Google, or an email link opened in another tab, is still the same visit;
+ * the phone keeps it in memory for the native sign-ins that never leave the
+ * app. Both mint it as a random
  * UUID. With no token or no visit id, nothing is sent.
  *
- * Fire-and-forget: a lost step never reaches the screen.
+ * Fire-and-forget: a lost step never reaches the screen. Sent with
+ * `keepalive`, so a step recorded just before Apple or Google takes the page
+ * away still has a chance to land. A step taken while offline is lost, so
+ * `join-failed` with `reason: offline` is rare in the data.
  */
 export function useInviteFunnel(
   token: string | null,
@@ -34,6 +39,7 @@ export function useInviteFunnel(
       void client
         .POST("/v1/invites/funnel", {
           body: { token, visit_id: visitId, ...input },
+          keepalive: true,
         })
         .catch(() => undefined);
     },

@@ -102,6 +102,7 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/events/:id/agenda-suggestions/:suggestionId/add`, `/dismiss` | 10/min | Add writes the event's agenda, as `PATCH /v1/events/:id` does. |
 | `POST /v1/invites/preview` | 10/min | Token-guessing surface, the same as redeem. |
 | `POST /v1/invites/details` | 120/min | Needs no account, so it counts per address. Higher than the default, not lower: a whole pledge class opens the chapter link at once on one campus network, and the token, not the rate, keeps a guess from finding anything ([`onboarding.md`](onboarding.md)). |
+| `POST /v1/invites/funnel` | 120/min | The invite card's funnel steps (#5663). Needs no account, so it counts per address, generously for the same campus-network reason as details; its own counter, so a visitor's steps never use up the card's reads ([`observability.md` § Invite Card Funnel](observability.md#invite-card-funnel)). |
 | `POST /v1/invites/ask-for-new-link` | 3/hour | Each call pushes a notification to the person who sent the invite, who never asked to hear from the caller. A real visitor asks once. |
 | `POST /v1/integrations/dev-log` | 10/min | Token-guessing surface, and each call writes a message into a channel. Counted per caller IP: its bearer token is not a member's ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)). |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |

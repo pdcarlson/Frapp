@@ -91,19 +91,33 @@ describe("inviteVisitId (#5663)", () => {
   });
 
   it("keeps one visit per invite through a sign-in round trip", () => {
-    const first = inviteVisitId("tok-1", T0, () => "visit-a");
-    expect(first).toBe("visit-a");
-    expect(inviteVisitId("tok-1", T0 + 60_000, () => "visit-b")).toBe(
-      "visit-a",
+    const A = "00000000-0000-4000-8000-00000000000a";
+    expect(inviteVisitId("tok-1", T0, () => A)).toBe(A);
+    expect(
+      inviteVisitId(
+        "tok-1",
+        T0 + 60_000,
+        () => "00000000-0000-4000-8000-00000000000b",
+      ),
+    ).toBe(A);
+    // The token itself is never kept: it is a credential.
+    expect(window.localStorage.getItem(INVITE_VISIT_STORAGE_KEY)).not.toContain(
+      "tok-1",
     );
   });
 
   it("starts a new visit for another invite, or after a day", () => {
-    inviteVisitId("tok-1", T0, () => "visit-a");
-    expect(inviteVisitId("tok-2", T0, () => "visit-b")).toBe("visit-b");
-    expect(inviteVisitId("tok-2", T0 + INVITE_VISIT_MS, () => "visit-c")).toBe(
-      "visit-c",
-    );
+    inviteVisitId("tok-1", T0, () => "00000000-0000-4000-8000-00000000000a");
+    expect(
+      inviteVisitId("tok-2", T0, () => "00000000-0000-4000-8000-00000000000b"),
+    ).toBe("00000000-0000-4000-8000-00000000000b");
+    expect(
+      inviteVisitId(
+        "tok-2",
+        T0 + INVITE_VISIT_MS,
+        () => "00000000-0000-4000-8000-00000000000c",
+      ),
+    ).toBe("00000000-0000-4000-8000-00000000000c");
   });
 
   it("records nothing where no id can be minted", () => {

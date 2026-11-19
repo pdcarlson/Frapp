@@ -87,8 +87,8 @@ type SessionState = "checking" | "signed-out" | "ready" | "failed";
  *
  * Each step is recorded in the invite card funnel (#5663, `useInviteFunnel`):
  * the card viewed (its state, signed in or not), the way in tapped, the email
- * code sent and verified, a failed join and an ask for a new link. The join
- * carries the visit id, so the API records it in the same funnel.
+ * code sent and verified, the join or a failed one, and an ask for a new
+ * link.
  */
 export function JoinWithInvite({ token }: { token: string }) {
   const router = useRouter();
@@ -204,7 +204,8 @@ export function JoinWithInvite({ token }: { token: string }) {
           setBusy(false);
           return;
         }
-        const result = await redeem.mutateAsync(joinRedeemBody(token, visitId));
+        const result = await redeem.mutateAsync(joinRedeemBody(token));
+        record({ step: "joined" });
         const chapterId = redeemChapterId(result) ?? card.chapter_id;
         await selectChapter(chapterId);
         toast({ title: `Welcome to ${card.chapter_name}` });
@@ -238,7 +239,6 @@ export function JoinWithInvite({ token }: { token: string }) {
       selectChapter,
       toast,
       token,
-      visitId,
     ],
   );
 

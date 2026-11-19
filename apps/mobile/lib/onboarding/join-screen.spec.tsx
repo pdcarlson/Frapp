@@ -77,9 +77,8 @@ vi.mock("@/lib/select-chapter", () => ({
 }));
 
 const redeemMutateAsync = vi.fn();
-/** The invite card funnel's recorder (#5663), and the visit it records under. */
+/** The invite card funnel's recorder (#5663). */
 const recordInviteStep = vi.fn();
-const VISIT = "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718";
 
 // The invite card's visit id (#5663): a fixed one, since the native module
 // isn't in a test run.
@@ -549,8 +548,8 @@ describe("join screen — the Terms line (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-1",
       accept_terms_privacy: true,
-      visit_id: VISIT,
-    });
+    });    // The invite card funnel's last step (#5663).
+    expect(recordInviteStep).toHaveBeenCalledWith({ step: "joined" });
   });
 });
 
@@ -661,7 +660,6 @@ describe("join screen — the question (#3350)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-2a9f",
       accept_terms_privacy: true,
-      visit_id: VISIT,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });
@@ -1351,6 +1349,51 @@ describe("join screen — signed out with an invite (#5625)", () => {
     });
   });
 
+  it("records the email way in, the code sent and verified, and a password way in (#5663)", async () => {
+    params.mockReturnValue({ token: "invite-token-57" });
+    const tree = render();
+    await settle();
+
+    act(() => {
+      control(tree.root, "Continue with email")?.props.onPress();
+    });
+    const field = (label: string) =>
+      tree.root
+        .findAllByType("TextInput" as never, { deep: true })
+        .find((input) => input.props.accessibilityLabel === label);
+    act(() => {
+      field("Email")?.props.onChangeText("winston@rpi.edu");
+    });
+    await act(async () => {
+      await control(tree.root, "Send code")?.props.onPress();
+    });
+    await settle();
+    await act(async () => {
+      field("6-digit code")?.props.onChangeText("123456");
+    });
+    await settle();
+
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "sign-in-started",
+      method: "email",
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({ step: "email-code-sent" });
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "email-code-verified",
+    });
+
+    act(() => {
+      control(tree.root, "Back")?.props.onPress();
+    });
+    act(() => {
+      labelled(tree.root, "Have a password? Sign in")?.props.onPress();
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "sign-in-started",
+      method: "password",
+    });
+  });
+
   it("sends a visit with no invite to sign-in", () => {
     const tree = render();
     const redirect = tree.root.findAllByType("Redirect" as never)[0];
@@ -1366,7 +1409,6 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-52",
       accept_terms_privacy: true,
-      visit_id: VISIT,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
     // Joined: nothing is left to remember.
@@ -1385,7 +1427,6 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-54",
       accept_terms_privacy: true,
-      visit_id: VISIT,
     });
   });
 
@@ -1537,7 +1578,6 @@ describe("join screen — invites for this account (#3782)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: FIJI_OFFER.token,
       accept_terms_privacy: true,
-      visit_id: VISIT,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });

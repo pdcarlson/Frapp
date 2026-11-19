@@ -7327,11 +7327,6 @@ export interface components {
             token: string;
             /** @description True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version. */
             accept_terms_privacy?: boolean;
-            /**
-             * Format: uuid
-             * @description The invite card's random visit id, which records the join in the card's funnel. Analytics only.
-             */
-            visit_id?: string;
         };
         PendingInviteDto: {
             chapter_name: string;
@@ -7392,7 +7387,7 @@ export interface components {
              */
             visit_id: string;
             /** @enum {string} */
-            step: "card-viewed" | "sign-in-started" | "email-code-sent" | "email-code-verified" | "join-failed" | "new-link-asked";
+            step: "card-viewed" | "sign-in-started" | "email-code-sent" | "email-code-verified" | "joined" | "join-failed" | "new-link-asked";
             /**
              * @description The way in tapped, for `sign-in-started`.
              * @enum {string}

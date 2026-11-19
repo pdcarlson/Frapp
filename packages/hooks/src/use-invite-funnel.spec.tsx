@@ -2,7 +2,6 @@ import { renderHook } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { useInviteCardViewed, useInviteFunnel } from "./use-invite-funnel";
-import { joinRedeemBody } from "./legal-acceptance";
 import { createHookWrapper } from "./test-utils";
 
 /** #5663. The invite card funnel, shared by web `/join` and the phone. */
@@ -33,6 +32,7 @@ describe("useInviteFunnel", () => {
         step: "sign-in-started",
         method: "apple",
       },
+      keepalive: true,
     });
   });
 
@@ -73,19 +73,5 @@ describe("useInviteCardViewed", () => {
       { step: "card-viewed", state: "live", signed_in: true },
       { step: "card-viewed", state: "used", signed_in: true },
     ]);
-  });
-});
-
-describe("joinRedeemBody", () => {
-  it("carries the visit only when there is one", () => {
-    expect(joinRedeemBody("tok-1")).toEqual({
-      token: "tok-1",
-      accept_terms_privacy: true,
-    });
-    expect(joinRedeemBody("tok-1", VISIT)).toEqual({
-      token: "tok-1",
-      accept_terms_privacy: true,
-      visit_id: VISIT,
-    });
   });
 });

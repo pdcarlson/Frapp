@@ -83,8 +83,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Each step is recorded in the invite card funnel (#5663, `useInviteFunnel`),
  * the same steps web records: the card viewed, the way in tapped, the email
- * code sent and verified, a failed join and an ask for a new link. The join
- * carries the visit id, so the API records it in the same funnel.
+ * code sent and verified, the join or a failed one, and an ask for a new
+ * link.
  *
  * `header` and `accountLine` are the join screen's own chrome (Back, the
  * Account menu, "Signed in as"), drawn above the card.
@@ -170,7 +170,8 @@ export function JoinWithInvite({
       setBusy(true);
       setJoinError(null);
       try {
-        const result = await redeem.mutateAsync(joinRedeemBody(token, visitId));
+        const result = await redeem.mutateAsync(joinRedeemBody(token));
+        record({ step: "joined" });
         consumeRememberedInviteToken();
         // The member is in: the one tap a chapter going live gives, so joining
         // one feels like it landed (`lib/haptics.ts`, best effort).
@@ -203,7 +204,6 @@ export function JoinWithInvite({
       router,
       selectChapter,
       token,
-      visitId,
     ],
   );
 

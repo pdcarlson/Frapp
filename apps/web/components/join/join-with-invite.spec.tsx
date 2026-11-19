@@ -222,7 +222,6 @@ describe("the invite card, signed out (#5625)", () => {
       expect(h.redeem).toHaveBeenCalledWith({
         token: "tok-1",
         accept_terms_privacy: true,
-        visit_id: VISIT,
       }),
     );
     await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
@@ -280,7 +279,6 @@ describe("the invite card, signed in (#5625)", () => {
       expect(h.redeem).toHaveBeenCalledWith({
         token: "tok-1",
         accept_terms_privacy: true,
-        visit_id: VISIT,
       }),
     );
     await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
@@ -478,24 +476,23 @@ describe("the invite card funnel (#5663)", () => {
     );
   });
 
-  it("keeps one visit across the sign-in round trip", async () => {
+  it("records the join once the redeem succeeds, and a password way in", async () => {
     const first = render(<JoinWithInvite token="tok-1" />);
-    await screen.findByRole("button", { name: "Continue with Apple" });
+    fireEvent.click(await screen.findByRole("link", { name: "Sign in" }));
+    expect(steps()).toContainEqual({
+      step: "sign-in-started",
+      method: "password",
+    });
     first.unmount();
-    vi.mocked(crypto.randomUUID).mockReturnValue(
-      "00000000-0000-4000-8000-0000000000ff",
-    );
+
     signedIn();
     render(<JoinWithInvite token="tok-1" />);
     fireEvent.click(
       await screen.findByRole("button", { name: "Join chapter" }),
     );
 
-    await waitFor(() =>
-      expect(h.redeem).toHaveBeenCalledWith(
-        expect.objectContaining({ visit_id: VISIT }),
-      ),
-    );
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+    expect(steps()).toContainEqual({ step: "joined" });
   });
 
   it("records a failed join by its class, never its words", async () => {

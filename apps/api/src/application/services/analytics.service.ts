@@ -374,28 +374,13 @@ export class AnalyticsService {
     chapterId: string,
     properties?: AnalyticsProperties,
   ): Promise<void> {
-    // Checked first, analytics configured or not, as in `track`.
-    assertContentFreeProperties({ name: eventName, properties });
-    if (!this.salt) return;
-
-    const distinctId = hashChapterIdForAnalytics(this.salt, chapterId);
-    const event: AnalyticsEvent = {
-      name: eventName,
-      distinctId,
-      properties: withApp(properties, 'api'),
-    };
-
-    try {
-      if (!(await this.isChapterAnalyticsEnabled(chapterId))) return;
-      await this.provider.capture(event);
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Failed to capture chapter analytics event "${eventName}"`,
-        error,
-      );
-    }
+    await this.captureForChapter(
+      eventName,
+      chapterId,
+      (salt) => hashChapterIdForAnalytics(salt, chapterId),
+      withApp(properties, 'api'),
+      properties,
+    );
   }
 
   /**
@@ -420,16 +405,37 @@ export class AnalyticsService {
     visitId: string,
     options: Pick<TrackOptions, 'properties' | 'app' | 'appVersion'> = {},
   ): Promise<void> {
-    assertContentFreeProperties({
-      name: eventName,
-      properties: options.properties,
-    });
+    await this.captureForChapter(
+      eventName,
+      chapterId,
+      (salt) => hashInviteVisitForAnalytics(salt, visitId),
+      withApp(options.properties, options.app, options.appVersion),
+      options.properties,
+    );
+  }
+
+  /**
+   * The shared path of {@link trackForChapter} and {@link trackInviteVisit}:
+   * events whose distinct id isn't a user's, sent with no group (so
+   * personless), and gated strictly by a chapter the caller has proved.
+   * The caller's own properties are checked before anything else, analytics
+   * configured or not; a delivery or opt-out lookup failure is logged and
+   * swallowed.
+   */
+  private async captureForChapter(
+    eventName: string,
+    chapterId: string,
+    distinctIdFor: (salt: string) => string,
+    stamped: AnalyticsProperties | undefined,
+    ownProperties: AnalyticsProperties | undefined,
+  ): Promise<void> {
+    assertContentFreeProperties({ name: eventName, properties: ownProperties });
     if (!this.salt) return;
 
     const event: AnalyticsEvent = {
       name: eventName,
-      distinctId: hashInviteVisitForAnalytics(this.salt, visitId),
-      properties: withApp(options.properties, options.app, options.appVersion),
+      distinctId: distinctIdFor(this.salt),
+      properties: stamped,
     };
 
     try {
@@ -439,7 +445,7 @@ export class AnalyticsService {
       logThrowable(
         this.logger,
         'warn',
-        `Failed to capture invite funnel event "${eventName}"`,
+        `Failed to capture chapter analytics event "${eventName}"`,
         error,
       );
     }

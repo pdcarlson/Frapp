@@ -7,6 +7,16 @@ describe('InviteFunnelService (#5663)', () => {
   let findByToken: jest.Mock;
   let trackInviteVisit: jest.Mock;
   let service: InviteFunnelService;
+  const NOW = new Date('2026-11-19T12:00:00.000Z');
+  /** A live chapter link, made a day ago. */
+  const live = {
+    chapter_id: 'chapter-1',
+    expires_at: '2026-11-25T12:00:00.000Z',
+    created_at: '2026-11-18T12:00:00.000Z',
+    used_at: null,
+    revoked_at: null,
+    reusable: true,
+  };
 
   beforeEach(() => {
     findByToken = jest.fn();
@@ -18,7 +28,7 @@ describe('InviteFunnelService (#5663)', () => {
   });
 
   it("records a step under the invite's chapter, with only that step's fields", async () => {
-    findByToken.mockResolvedValue({ chapter_id: 'chapter-1' });
+    findByToken.mockResolvedValue(live);
 
     await service.recordStep(
       'tok',
@@ -31,6 +41,7 @@ describe('InviteFunnelService (#5663)', () => {
         reason: 'gone',
       },
       { app: 'web' },
+      NOW,
     );
 
     expect(trackInviteVisit).toHaveBeenCalledWith(
@@ -42,13 +53,14 @@ describe('InviteFunnelService (#5663)', () => {
   });
 
   it('records the way in for sign-in-started', async () => {
-    findByToken.mockResolvedValue({ chapter_id: 'chapter-1' });
+    findByToken.mockResolvedValue(live);
 
     await service.recordStep(
       'tok',
       VISIT,
       { step: 'sign-in-started', method: 'apple' },
       { app: 'mobile' },
+      NOW,
     );
 
     expect(trackInviteVisit).toHaveBeenCalledWith(
@@ -70,14 +82,21 @@ describe('InviteFunnelService (#5663)', () => {
     expect(trackInviteVisit).not.toHaveBeenCalled();
   });
 
-  it('records the join under the visit, with no properties of its own', async () => {
-    await service.recordJoined('chapter-1', VISIT, { app: 'web' });
+  it('records a dead link while its card still answers, and not after', async () => {
+    const expired = { ...live, expires_at: '2026-11-10T12:00:00.000Z' };
+    findByToken
+      .mockResolvedValueOnce({
+        ...expired,
+        created_at: '2026-11-01T12:00:00.000Z',
+      })
+      .mockResolvedValueOnce({
+        ...expired,
+        created_at: '2026-10-01T12:00:00.000Z',
+      });
 
-    expect(trackInviteVisit).toHaveBeenCalledWith(
-      'invite-joined',
-      'chapter-1',
-      VISIT,
-      { app: 'web' },
-    );
+    await service.recordStep('tok', VISIT, { step: 'card-viewed' }, {}, NOW);
+    await service.recordStep('tok', VISIT, { step: 'card-viewed' }, {}, NOW);
+
+    expect(trackInviteVisit).toHaveBeenCalledTimes(1);
   });
 });

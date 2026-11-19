@@ -127,20 +127,6 @@ export class RedeemInviteDto {
     message: 'Terms of Service and Privacy Policy must be accepted',
   })
   accept_terms_privacy?: boolean;
-
-  /**
-   * The invite card's visit id (#5663), so the join lands in the same funnel
-   * as the card view that started it. Analytics only: the join is the same
-   * without it.
-   */
-  @ApiPropertyOptional({
-    format: 'uuid',
-    description:
-      "The invite card's random visit id, which records the join in the card's funnel. Analytics only.",
-  })
-  @IsOptional()
-  @IsUUID()
-  visit_id?: string;
 }
 
 /**

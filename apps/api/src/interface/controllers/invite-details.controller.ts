@@ -31,8 +31,9 @@ import type { RequestContext } from '../types/request-context.types';
  *
  * A controller of its own because `InviteController` guards every route at
  * the class level, and one unguarded handler there would be the exception a
- * later edit misses. Its one route answers for the token alone, which is the
- * credential: whoever holds a live one could join with it, so the card tells
+ * later edit misses. Its routes answer for the token alone. `details` reads
+ * the card, and `funnel` records the card's analytics steps (#5663). The token
+ * is the credential: whoever holds a live one could join with it, so the card tells
  * them nothing joining wouldn't. It answers for a dead link too, so the screen
  * can still name the chapter and the sender to ask for a new one.
  *
@@ -72,7 +73,8 @@ export class InviteDetailsController {
    * applies, which is why this rides the invite and not
    * `POST /v1/analytics/events` (which needs an account). Always 204, for an
    * unknown token too, so it tells a guesser nothing the details route
-   * doesn't; throttled with it, per address.
+   * doesn't. Throttled like it, 120 a minute per address, on its own
+   * counter.
    */
   @Post('funnel')
   @HttpCode(HttpStatus.NO_CONTENT)

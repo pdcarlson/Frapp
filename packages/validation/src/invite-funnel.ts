@@ -10,9 +10,11 @@
  * is the proof: the API finds the invite's chapter, applies that chapter's
  * opt-out, and records the step with no person attached, keyed by a random
  * visit id the card mints (`spec/behavior/observability.md` § Invite card
- * funnel). The join itself is recorded by the API when the redeem succeeds,
- * under the same visit id, so a PostHog funnel from card viewed to joined
- * counts visits, split by `app`.
+ * funnel). The card reports the join too, once the redeem has succeeded, so
+ * a PostHog funnel from card viewed to joined counts visits, split by `app`.
+ * The redeem itself carries nothing for analytics: an API rolled back to
+ * before this would refuse a field it doesn't know, and the join must never
+ * depend on analytics.
  */
 
 /** The steps a card reports. Each is recorded as `invite-<step>`. */
@@ -21,13 +23,11 @@ export const INVITE_FUNNEL_STEPS = [
   "sign-in-started",
   "email-code-sent",
   "email-code-verified",
+  "joined",
   "join-failed",
   "new-link-asked",
 ] as const;
 export type InviteFunnelStep = (typeof INVITE_FUNNEL_STEPS)[number];
-
-/** The event the API records when a redeem carrying a visit id succeeds. */
-export const INVITE_JOINED_EVENT = "invite-joined";
 
 /** The PostHog event name for a step the card reports. */
 export function inviteFunnelEventName(step: InviteFunnelStep): string {
