@@ -508,7 +508,7 @@ export interface paths {
         put?: never;
         /**
          * Leave a self-assignable role
-         * @description Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.
+         * @description Takes the role off the caller's own roles (#4958). 403 `role.not_self_assignable` unless the role is still marked: a role an officer gave, or has stopped offering, stays until an officer removes it (#5650). Alumni may leave a marked role. Leaving a role not held changes nothing.
          */
         post: operations["RbacController_leave_v1"];
         delete?: never;
@@ -842,6 +842,30 @@ export interface paths {
         put?: never;
         /** Generate an invite token */
         post: operations["InviteController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/chapter-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The chapter's shareable invite link, if it has one (#3353)
+         * @description One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.
+         */
+        get: operations["InviteController_getChapterLink_v1"];
+        put?: never;
+        /**
+         * Make the chapter's shareable invite link, turning off the one before it (#3353)
+         * @description 403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.
+         */
+        post: operations["InviteController_createChapterLink_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6454,6 +6478,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/minutes-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event’s unposted minutes, when the caller may ask for them (one row or none), and whether they have */
+        get: operations["MeetingMinutesRequestController_state_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/minutes-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask for unposted minutes, which reminds whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over`, 503 `meeting.request_not_sent` (nothing recorded; ask again) */
+        post: operations["MeetingMinutesRequestController_request_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -7171,6 +7229,12 @@ export interface components {
             used_at: string | null;
             revoked_at: string | null;
             created_at: string;
+            /** @description True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined. */
+            reusable: boolean;
+        };
+        ChapterLinkResponseDto: {
+            /** @description The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into. */
+            link: components["schemas"]["InviteListItemDto"] | null;
         };
         BatchCreateInvitesDto: {
             /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
@@ -12698,6 +12762,24 @@ export interface components {
             /** @description The longest recording this server takes, in seconds. */
             max_seconds: number;
         };
+        MinutesRequestStateDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The caller has asked for these minutes. */
+            requested: boolean;
+        };
+        MinutesRequestSentDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The caller has asked for these minutes. */
+            requested: boolean;
+            /** @description This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day. */
+            pinged: boolean;
+        };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
             user?: {
@@ -14576,6 +14658,62 @@ export interface operations {
                 "application/json": components["schemas"]["CreateInviteDto"];
             };
         };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_getChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterLinkResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_createChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             201: {
                 headers: {
@@ -27414,6 +27552,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecorderAvailabilityDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingMinutesRequestController_state_v1: {
+        parameters: {
+            query: {
+                /** @description The meeting’s event. */
+                event_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinutesRequestStateDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingMinutesRequestController_request_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinutesRequestSentDto"];
                 };
             };
             /** @description Error */

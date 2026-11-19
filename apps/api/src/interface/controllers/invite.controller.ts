@@ -45,6 +45,7 @@ import {
   BulkEmailInviteResponseDto,
   PendingInviteDto,
   InvitableRolesDto,
+  ChapterLinkResponseDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -76,6 +77,46 @@ export class InviteController {
     @Body() dto: CreateInviteDto,
   ): Promise<InviteListItemDto> {
     return this.inviteService.create(chapterId, userId, dto.role);
+  }
+
+  @Get('chapter-link')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @ApiOperation({
+    summary: "The chapter's shareable invite link, if it has one (#3353)",
+    description:
+      'One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.',
+  })
+  @ApiOkResponse({ type: ChapterLinkResponseDto })
+  async getChapterLink(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChapterLinkResponseDto> {
+    return {
+      link: await this.inviteService.findChapterLink(chapterId, userId),
+    };
+  }
+
+  @Post('chapter-link')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @GraceBlocked()
+  @ApiOperation({
+    summary:
+      "Make the chapter's shareable invite link, turning off the one before it (#3353)",
+    description:
+      '403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.',
+  })
+  @ApiCreatedResponse({ type: InviteListItemDto })
+  @FeatureEvent('invite-created', () => ({
+    invite_method: 'chapter-link',
+    count: 1,
+  }))
+  async createChapterLink(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<InviteListItemDto> {
+    return this.inviteService.createChapterLink(chapterId, userId);
   }
 
   @Post('batch')

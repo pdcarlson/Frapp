@@ -31,6 +31,7 @@ import {
   SettingsNavRail,
   type SettingsNavGroup,
 } from "@/components/settings/settings-nav-rail";
+import { useSettingJump } from "@/lib/settings/use-setting-jump";
 
 /**
  * The personal Settings page: the second of the two doors (#3856, epic #4068
@@ -48,6 +49,8 @@ function PersonalSettingsContent() {
   // Whether the server has AI: the AI section shows only on `true` (#4308).
   const aiConsent = useAiConsent();
   const aiAvailable = aiAvailableFrom(aiConsent);
+  // `?setting=` from settings search: scroll to the setting and light it.
+  useSettingJump();
   const section = resolvePersonalSettingsSection(
     useSearchParams().get("section"),
     aiAvailable,

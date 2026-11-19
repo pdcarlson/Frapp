@@ -7,17 +7,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
  * with and without location, and a code that rotated out while they signed in.
  */
 
-const { checkInMutate, ownRowRefetch, sessionUser, searchParams, device } = vi.hoisted(() => ({
-  checkInMutate: vi.fn(),
-  ownRowRefetch: vi.fn(),
-  sessionUser: vi.fn(),
-  searchParams: { current: new URLSearchParams() },
-  device: {
-    phone: null as "ios" | "android" | null,
-    // The store app, as on app.frapp.live (`nativeAppForOrigin`).
-    app: { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" },
-  },
-}));
+const { checkInMutate, ownRowRefetch, sessionUser, searchParams, device } =
+  vi.hoisted(() => ({
+    checkInMutate: vi.fn(),
+    ownRowRefetch: vi.fn(),
+    sessionUser: vi.fn(),
+    searchParams: { current: new URLSearchParams() },
+    device: {
+      phone: null as "ios" | "android" | null,
+      // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+      app: { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" },
+    },
+  }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -91,6 +92,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setGeolocation(undefined);
+  vi.unstubAllEnvs();
 });
 
 describe("web check-in link page", () => {
@@ -140,7 +142,28 @@ describe("web check-in link page", () => {
     expect(open.getAttribute("href")).toBe(
       "frapp-staging://check-in?event=ev-1&t=tok-abc",
     );
-    expect(screen.queryByRole("link", { name: "Get Frapp" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Get / })).toBeNull();
+  });
+
+  it("offers Frapp Staging's install link once one is set (2026-11-19)", async () => {
+    device.phone = "ios";
+    device.app = {
+      id: "live.frapp.mobile.staging",
+      scheme: "frapp-staging",
+      name: "Frapp Staging",
+    };
+    vi.stubEnv(
+      "NEXT_PUBLIC_IOS_INSTALL_URL",
+      "https://testflight.apple.com/join/AbCd1234",
+    );
+    sessionUser.mockResolvedValue(null);
+    render(<CheckInPage />);
+
+    expect(
+      (
+        await screen.findByRole("link", { name: "Get Frapp Staging" })
+      ).getAttribute("href"),
+    ).toBe("https://testflight.apple.com/join/AbCd1234");
   });
 
   it("hands Android the intent link", async () => {
@@ -149,9 +172,9 @@ describe("web check-in link page", () => {
     render(<CheckInPage />);
 
     expect(
-      (
-        await screen.findByRole("link", { name: "Open in Frapp" })
-      ).getAttribute("href"),
+      (await screen.findByRole("link", { name: "Open in Frapp" })).getAttribute(
+        "href",
+      ),
     ).toBe(
       "intent://check-in?event=ev-1&t=tok-abc#Intent;scheme=frapp;package=live.frapp.mobile;end",
     );

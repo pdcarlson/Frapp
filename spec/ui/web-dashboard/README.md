@@ -264,7 +264,7 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   Mobile keeps its in-screen titles ([`../mobile/patterns.md`](../mobile/patterns.md) § Screen headers).
 
 - **Find** ([`find-bar.tsx`](../../../apps/web/components/layout/find-bar.tsx), [`find-dialog.tsx`](../../../apps/web/components/layout/find-dialog.tsx)) is a field-shaped button in the bar that opens a centered dialog, as does Cmd/Ctrl+F.
-  The dialog searches channels, members, messages, events and backwork, in that order, with filter chips to narrow to one group, and every dated row carries its date: a message its sent day, an event its start, a backwork file its course, term and the day it was added ([`find-results.ts`](../../../apps/web/components/layout/find-results.ts)).
+  The dialog searches channels, settings, members, messages, events and backwork, in that order (settings since 2026-11-19, [`../../behavior/settings/README.md` § Search settings](../../behavior/settings/README.md#search-settings)), with filter chips to narrow to one group, and every dated row carries its date: a message its sent day, an event its start, a backwork file its course, term and the day it was added ([`find-results.ts`](../../../apps/web/components/layout/find-results.ts)).
   Events and Backwork drop out when the chapter switches their module off (and stay out while that setting is still loading), and Backwork also drops out for a member without `backwork:upload` or `backwork:admin`, whom `/v1/search` sends no backwork rows either ([`search.md`](../../behavior/search.md)).
   Typing on the focused field opens the dialog with that text, as it would in the field it looks like.
   It replaced the ⌘K `cmdk` palette, which is deleted, and the chat channel list's own search field, which went with it.
@@ -353,7 +353,7 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   Microsoft 365 Copilot and Gemini in Workspace open the same way, on prompts drawn from the person's own meetings, files and mail, above the field.
   Every card in the thread stays live; none is replaced by the next thing asked.
   The card is on the `card` surface, one step above the panel's turn bubbles, and is a 14px-radius bordered block. Its top line is a small mark and what it makes ("New event", "New task", "Give points") with a ··· menu at the right holding Dismiss and Report this (#5148). Then the headline (for points, the size in words, "Give 5 points to 42 members", with the total under it on a line that keeps its height when empty), each detail as a row led by a small Lucide mark in place of an all-caps label, the members as a list with a remove control on each row (collapsed behind "Show members" above five) and an "Add a member" select, notes on a `surface-1` strip, a caption saying that only the officer can see the card and who is notified, and Edit (secondary) beside one named action (primary: "Create event", "Create task", "Give 5 points") at the bottom right.
-  A task card has the same who and when controls as a suggested task.
+  A task card has the same who and when controls as the task form: the Who picker and a due-date field (a suggested task's card draws them as chips since 2026-11-19).
   Edit (#5117) opens the event form filled in from an event card, and turns a task's name and details, or a points change's amount and reason, into fields on the card; a series adds a repeat row ("Every Sunday until February 7, 2027", "13 times" under it).
   An event's day sits in a date tile beside the written-out date and times ("Sunday, November 22", "6:48 to 7:48 PM").
   An event whose points could not be filled shows an outlined "Points for coming" field that the action waits on.
@@ -695,15 +695,12 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Until then the ops-setup nudge stays.
 - **Catch me up** (added 2026-11-12, [#3946](https://github.com/pdcarlson/Frapp/issues/3946);
   behavior in [`../../behavior/ai.md` § Catch me up](../../behavior/ai.md#catch-me-up)) has three doors, none shown unless summaries are on for the chapter and the member: the first row of the channel's `⋯` menu, a "Summarize thread" text button in a thread's header once the thread holds 5 messages, and a strip above the timeline when a channel opens with 20 or more new messages ([`components.md` § The Catch me up strip](../design-system/components.md#the-catch-me-up-strip)).
-  The summary opens as a panel on the right edge, in the place and at the width Ask's panel had until #4702 (440px, not modal, the whole viewport below `sm`), because the next thing a member does with a line is open its message, and the summary should still be there.
-  Slack's recap and Teams' Copilot recap open beside the conversation for the same reason; Discord's summaries are a strip to jump from, which is the offer strip here.
-  The panel's header says who it is for ("Only you can see this.
-  It isn't saved.").
-  Under it a segmented control picks the stretch (New messages, Last 24 hours, Last 7 days; New messages only when the channel had some), and picking one asks again.
-  The points sit under four group labels, each point one sentence over its author and the full date and time, and the whole point is the link.
+  The summary opens in the channel itself, as a block between the channel header and the first message, in the offer strip's place (a thread's opens at the top of the thread pane). Changed 2026-11-19 at Paul's word ("I NEVER WANT TO SEE ANOTHER ONE OF THESE SIDE CARDS"): until then it was a 440px panel on the window's right edge, in the place Ask's panel had until #4702, chosen so the summary stayed beside the message a line opened, as Slack's recap and Teams' Copilot recap do; it covered the page beside chat. The block keeps that reason without the card: it is at most a third of the pane tall and scrolls inside itself, so pressing a line scrolls the conversation under it to the message and the summary is still above it. Gmail's and Outlook's thread summaries sit at the top of the thread the same way, and Discord's summaries are a strip above the channel.
+  Its header row is the title, a dense segmented control picking the stretch (New messages, Last 24 hours, Last 7 days; New messages only when the channel had some; picking one asks again), then **Hide** and an ×.
+  Hide folds it to the one-line strip "Your summary is still here." with **Back to summary**, the phone's strip; the × ends it. Escape inside the block ends it too; nothing is dimmed or modal, so Escape in the composer stays the composer's.
+  The points sit under four group labels, each point one sentence over its author and the full date and time, and the whole point is the link. Under them, who it is for ("Only you can see this. It isn't saved."), then Summarize again and Report this.
   While it works, one line ("Reading the conversation") sits where the first group lands, so nothing above it moves.
-  Leaving the channel closes the panel and ends the summary.
-  If Ask's card is open too, the summary is drawn over that side of it until one is closed.
+  Leaving the channel ends the summary.
 - **`@Frapp` in the message box asks Frapp from the channel** (added in #4713 by pdcarlson, 2026-11-13; behavior in [`../../behavior/ai.md` § Asking from a channel](../../behavior/ai.md#asking-from-a-channel)).
   For a member with Ask the composer's `@` list offers Frapp (`mention-list.tsx`), and while the draft names `@Frapp` a caption on the composer's control row, beside the send button, says only they will see the question and the answer.
   Where the row is too narrow for the sentence (a phone-width window) it is a private mark and "Only you", and a screen reader still gets the sentence.
@@ -746,7 +743,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 - **One member profile, every door** ([#3726](https://github.com/pdcarlson/Frapp/issues/3726)).
   `MemberDetailSheet` (`components/members/member-detail-sheet.tsx`) reads a member by `users.id` (`GET /v1/members/by-user/{userId}`), so chat can open it with only a sender or mention id: since 2026-11-15 (#4593) a sender's name or photo, an `@` chip or a member-list row opens chat's profile popout first, and the sheet is its View profile ([`chat/README.md` § Mentions](../../behavior/chat/README.md#mentions), "The web profile popout").
   It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as the sheet's one accent button, then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then roles as chips in the chapter's rank with each role's color dot, then the bio, with the custom fields the viewer's tier can see, those with a value (#1749), behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
-  In the Directory (actives and alumni) it opens docked in place of the list, led by a Back to directory arrow, and chat still opens it as a sheet beside the conversation ([`components.md` § Surface size](../design-system/components.md#surface-size), 2026-11-12).
+  In the Directory (actives and alumni) it opens docked in place of the list, led by a Back to directory arrow, and chat opens it docked over the chat column, led by a Back to chat arrow, so the page beside chat stays in view ([`components.md` § Surface size](../design-system/components.md#surface-size), 2026-11-12; in chat since #5616, 2026-11-19).
   Its title row draws no title, only the close or the back arrow (with the `⋯` below at its end), and the name heads the body, as § Surface size has a member sheet do.
   Under the roles sits the member's pledge class and order number ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)), drawn when set, and always for a `roles:manage` holder, who gets Edit there;
   [`members.md` § Pledge class and order number](../../behavior/members.md#pledge-class-and-order-number) owns it, and mobile shows it read-only, each when set.
@@ -1029,11 +1026,11 @@ What needs stating is where the board describes a product this codebase does not
 
 ### Get the app (phones)
 
-On an iPhone or an Android phone (`phonePlatform` in `@repo/validation`), every dashboard page shows a strip between the top bar and `<main>` that points at the app ([`get-the-app-card.tsx`](../../../apps/web/components/layout/get-the-app-card.tsx), #4002): **Get the app** (the platform's store listing) and **Open the app** (`frapp://` on iOS;
+On an iPhone or an Android phone (`phonePlatform` in `@repo/validation`), every dashboard page shows a strip between the top bar and `<main>` that points at the app ([`get-the-app-card.tsx`](../../../apps/web/components/layout/get-the-app-card.tsx), #4002): **Get the app** (the environment's install link, [`lib/app-install.ts`](../../../apps/web/lib/app-install.ts): the TestFlight or Play tester link during the beta, the store listing when none is set, hidden for Frapp Staging until its link is set) and **Open the app** (`frapp://` on iOS;
 Chrome's `intent:` on Android, which opens Play when the app is missing), and a close button.
 Closing it hides it for good in that browser (`localStorage`, [`lib/get-the-app.ts`](../../../apps/web/lib/get-the-app.ts)); with storage blocked it stays hidden until the page reloads.
 It never shows in the app's own in-app browser: the app marks the dashboard pages it opens with `?from=app` (the setup list's web-only steps), and the card stays away for that tab's session.
-During the beta both store listings open for testers only (TestFlight, and Play internal testing), so the card says that if the store shows Frapp as unavailable, keep using it here.
+During the beta the store listings open for testers only, so the card still says that if the store shows Frapp as unavailable, keep using it here; with an install link set, Get the app goes to TestFlight's or Play's tester page instead (2026-11-19).
 Until closed it takes about 120px of a phone's height above chat or the page.
 It is per browser, not per account, because it is about this phone.
 Tablets and desktops never see it.

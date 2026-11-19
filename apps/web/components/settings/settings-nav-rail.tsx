@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { SettingsSearch } from "@/components/settings/settings-search";
 
 /**
  * A settings rail row that is a link, in a container-sized rail
@@ -57,6 +58,8 @@ export function SettingsNavRail({
       aria-label={label}
       className="flex w-full flex-col gap-3 @3xl:w-[200px] @3xl:shrink-0 @3xl:self-stretch @3xl:border-r @3xl:border-border @3xl:px-2 @3xl:py-3"
     >
+      {/* Settings search, as atop Chapter settings' rail (2026-11-19). */}
+      <SettingsSearch />
       {groups.map((group) => (
         <div key={group.label} className="flex flex-col gap-0.5">
           <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}>

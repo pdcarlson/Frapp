@@ -9,6 +9,7 @@ import {
   dueSave,
   editFactsOfLive,
   editFactsOfRow,
+  followerSave,
   photosSave,
   pointsSave,
   proofSave,
@@ -210,6 +211,37 @@ describe("proof, photos and who", () => {
         row({ status: "IN_PROGRESS", stored_status: "IN_PROGRESS" }),
       ),
     ).toBe(true);
+  });
+});
+
+describe("From (#5473)", () => {
+  it("sends a new follower, a cleared one, and nothing unchanged", () => {
+    expect(followerSave(row(), "tier:t-exec")).toEqual({
+      kind: "save",
+      body: { followed_by: "tier:t-exec" },
+    });
+    const followed = row({ followed_by: "tier:t-exec" });
+    expect(followed.followedBy).toBe("tier:t-exec");
+    expect(followerSave(followed, null)).toEqual({
+      kind: "save",
+      body: { followed_by: null },
+    });
+    expect(followerSave(followed, "tier:t-exec")).toEqual({ kind: "none" });
+  });
+
+  it("changes a group task's follower on every copy", () => {
+    const copy = row({ group_id: "g1" });
+    expect(scopedEdit(copy, { followed_by: "group:g-phil" })).toEqual({
+      followed_by: "group:g-phil",
+      scope: "group",
+    });
+  });
+
+  it("measures the next pick against the one on its way", () => {
+    const after = rowAfter(row(), { followed_by: "role:pres" });
+    expect(after.followedBy).toBe("role:pres");
+    expect(followerSave(after, "role:pres")).toEqual({ kind: "none" });
+    expect(rowAfter(after, { followed_by: null }).followedBy).toBeNull();
   });
 });
 

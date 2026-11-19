@@ -8,6 +8,7 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { ArrowLeft } from "lucide-react";
 import {
@@ -157,6 +158,8 @@ export interface ThreadPanelProps extends Pick<
    * to be worth shortening.
    */
   onCatchUp?: () => void;
+  /** The thread's open summary (`catch-up-panel.tsx`), shown above it. */
+  catchUpBlock?: ReactNode;
   /**
    * A reply to bring on screen, from a summary line. A new `nonce` asks
    * again for the same reply. A reply not loaded yet is left where it is.
@@ -255,6 +258,7 @@ export function ThreadPanel({
   onClose,
   onClosePanel,
   onCatchUp,
+  catchUpBlock,
   jumpTo,
   askRefusal,
   onSchedule,
@@ -684,6 +688,7 @@ export function ThreadPanel({
         ) : null}
       </header>
 
+      {catchUpBlock}
       <div className="min-h-0 flex-1 pb-2">
         <MessageTimeline
           ref={timeline}

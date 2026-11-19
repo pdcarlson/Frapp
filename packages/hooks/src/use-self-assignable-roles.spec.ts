@@ -32,9 +32,9 @@ describe("selectPickableRoles (#4958)", () => {
     ]);
   });
 
-  it("keeps a held role an officer unmarked, to leave only", () => {
-    // The API lets a member leave any unkeyed role outside the tiers, so a
-    // role unmarked after they picked it never traps them.
+  it("leaves out every unmarked role, held or not (#5650)", () => {
+    // The API lets a member leave only a marked role: one an officer gave,
+    // or has stopped offering, stays until an officer takes it off.
     const roles = selectPickableRoles(
       [
         row("r-im", "Intramurals", false),
@@ -44,17 +44,20 @@ describe("selectPickableRoles (#4958)", () => {
       ],
       ["r-im", "r-chair", "r-member"],
     );
-    expect(roles.map((r) => [r.name, r.held, r.joinable])).toEqual([
-      ["Intramurals", true, false],
-    ]);
+    expect(roles).toEqual([]);
   });
 
-  it("offers an alum nothing to join, but lets them leave what they hold", () => {
-    // The API refuses an alum's join, not their leave.
+  it("offers an alum nothing to join, but lets them leave a marked role they hold", () => {
+    // The API refuses an alum's join, not their leave of a marked role.
     const alumni = { ...row("r-alum", "Alumni", false), system_key: "ALUMNI" };
     const roles = selectPickableRoles(
-      [alumni, row("r-im", "Intramurals", true), row("r-vg", "Games", true)],
-      ["r-alum", "r-vg"],
+      [
+        alumni,
+        row("r-im", "Intramurals", true),
+        row("r-vg", "Games", true),
+        row("r-chess", "Chess", false),
+      ],
+      ["r-alum", "r-vg", "r-chess"],
     );
     expect(roles.map((r) => [r.name, r.held, r.joinable])).toEqual([
       ["Games", true, false],

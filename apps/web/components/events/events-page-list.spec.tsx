@@ -361,19 +361,23 @@ describe("EventsPage list", () => {
   });
 
   it("files a generated meeting as repeating under the Cadence filter", async () => {
-    // The series sits at 6 PM around today: pinned to midday so which of its
-    // meetings is still to come doesn't depend on when the suite runs (#5637).
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(2026, 10, 18, 12, 0, 0));
+    // Midday, so today's 6 PM meeting is still ahead: after 6 PM it has
+    // started and the count changes with the clock the suite runs at.
+    const noon = new Date();
+    noon.setHours(12, 0, 0, 0);
+    vi.useFakeTimers({ toFake: ["Date"], now: noon });
     onTestFinished(() => {
       vi.useRealTimers();
     });
     const user = userEvent.setup();
     // The head has already happened: only generated meetings are upcoming,
     // and they carry no rule of their own.
+    // Whole days from now, never today: a meeting at 18:00 today is upcoming
+    // or past by the hour the suite runs.
     const series = weeklySeries("Chapter", 3).map((event, i) => ({
       ...event,
-      start_time: daysOut(-7 + i * 7, 18),
+      start_time: daysOut(-6 + i * 7, 18),
+      end_time: daysOut(-6 + i * 7, 19),
     }));
     eventsQuery.data = series;
     render(<EventsPage />);

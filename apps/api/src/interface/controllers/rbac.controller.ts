@@ -91,8 +91,9 @@ export class RbacController {
   }
 
   // Behind the controller's `members:view` only: any member joins and leaves
-  // a role an officer marked self-assignable (#4958). The service refuses
-  // every other role, whatever the caller holds.
+  // a role an officer marked self-assignable (#4958), and only while it is
+  // marked (#5650). The service refuses every other role, whatever the
+  // caller holds.
   @Post(':id/join')
   @HttpCode(200)
   @ApiOperation({
@@ -119,7 +120,7 @@ export class RbacController {
   @ApiOperation({
     summary: 'Leave a self-assignable role',
     description:
-      "Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.",
+      "Takes the role off the caller's own roles (#4958). 403 `role.not_self_assignable` unless the role is still marked: a role an officer gave, or has stopped offering, stays until an officer removes it (#5650). Alumni may leave a marked role. Leaving a role not held changes nothing.",
   })
   @ApiOkResponse({ type: SelfAssignRoleResultDto })
   async leave(

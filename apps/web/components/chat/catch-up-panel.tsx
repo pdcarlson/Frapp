@@ -7,19 +7,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import {
+  catchUpFirstRange,
+  catchUpRangesFor,
+  catchUpTargetFor,
   errorCopy,
   useChatCatchUp,
-  type ChatCatchUpTarget,
+  type CatchUpScope,
 } from "@repo/hooks";
 import {
   CHAT_CATCH_UP_COPY,
   CHAT_CATCH_UP_POINT_KINDS,
   chatCatchUpGroupOf,
   chatCatchUpNotes,
-  chatCatchUpSince,
   chatCatchUpTooLittleLine,
   chatCatchUpUnavailableLine,
   chatCatchUpWhen,
@@ -29,7 +30,6 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { ReportAiButton } from "@/components/ai/report-ai";
-import { PanelBody } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
@@ -42,20 +42,21 @@ import { cn } from "@/lib/utils";
  * back to a busy channel asks for the short version and gets a few lines,
  * each one a link to the message it came from.
  *
- * **Where the others put it.** Slack's recap and Teams' Copilot recap both
- * open beside the conversation and keep each line tied to its message;
- * Discord's summaries sit above the channel as a strip to jump from. This
- * takes both halves: a strip above the timeline offers it when a channel
- * opens with many new messages (`CatchUpOffer`), and the summary itself is a
- * panel on the right edge, 440px wide (the place and width Ask's panel had
- * until #4702 moved Ask over the chat), so the member reads a line, opens
- * its message, and the summary is still there.
+ * **In the channel, never over it** (Paul, 2026-11-19: "I NEVER WANT TO SEE
+ * ANOTHER ONE OF THESE SIDE CARDS"). It used to be a 440px card on the
+ * window's right edge that covered the page beside chat. Now the summary is
+ * a block at the top of the conversation it summarizes, between the channel
+ * header and the first message (where the offer strip sits), or at the top of
+ * the thread pane for a thread. That is where Gmail's and Outlook's thread
+ * summaries sit, and where Discord's channel summaries strip is. It grows to
+ * at most a third of the pane and scrolls inside itself, so the conversation
+ * is always readable under it, and pressing a line scrolls the conversation
+ * to that message with the summary still above it.
  *
- * **Not a dialog**: nothing dims, the channel stays live, a Radix dialog
- * would take Escape from the composer beside it, and from `lg` up the shell
- * moves over to make room
- * (`CATCH_UP_OPEN_ATTRIBUTE`). Below `lg` it covers the page and opening a
- * line closes it.
+ * **Hide folds it to one line** ("Your summary is still here.", Back to
+ * summary), the same strip the phone shows after a line is pressed. Close
+ * ends it. Nothing dims and nothing is modal: Escape inside the block closes
+ * it, and the composer keeps its own Escape.
  *
  * **Only the member's, and gone when they leave.** The summary lives in this
  * hook's state. Nothing is cached or stored, here or on the server, and
@@ -68,72 +69,65 @@ import { cn } from "@/lib/utils";
  * **Nothing moves while it works.** The working line sits where the first
  * group lands, under a header and range control that are already in place.
  */
-export const CATCH_UP_OPEN_ATTRIBUTE = "data-catch-up-open";
 
-/** Tailwind's `lg`: from here the channel and the panel fit side by side. */
-const BESIDE_PAGE_QUERY = "(min-width: 1024px)";
-
-/** What a summary is of. */
-export type CatchUpScope =
-  | {
-      kind: "channel";
-      channelId: string;
-      channelName: string | null;
-      /**
-       * The stretch that was new when the member opened the channel, or null
-       * when there was none (or it is not known).
-       */
-      unread: { count: number; as_of: string } | null;
-    }
-  | {
-      kind: "thread";
-      channelId: string;
-      channelName: string | null;
-      rootId: string;
-    };
+export type { CatchUpScope };
 
 type Held = { kind: "consent" } | { kind: "failed"; message: string };
 
-function targetFor(scope: CatchUpScope, range: ChatCatchUpRange): ChatCatchUpTarget {
-  if (scope.kind === "thread") return { thread_root_id: scope.rootId };
-  if (range === "unread" && scope.unread) return { unread: scope.unread };
-  return { since: chatCatchUpSince(range === "week" ? "week" : "day", new Date()) };
-}
-
 /**
- * The panel and what opens it. `start` asks for a summary straight away: of
+ * The summary and what opens it. `start` asks for a summary straight away: of
  * the thread, of the new stretch when the channel had one, otherwise of the
- * last 24 hours. Render `element` once in the screen.
+ * last 24 hours. Render `element` at the top of the conversation `openKind`
+ * names (the channel's timeline, or the thread pane), and `dialogs` once in
+ * the screen.
  */
-export function useCatchUpPanel({
+export function useCatchUp({
   activeChannelId,
+  activeThreadRootId,
   nameFor,
   onOpenPoint,
 }: {
   /** The channel on screen. A summary of any other channel is dropped. */
   activeChannelId: string | null;
+  /**
+   * The thread open beside or over the channel, or null. A thread's summary
+   * is drawn in its thread, so closing that thread or opening another ends
+   * it, rather than leaving it open with nowhere to show.
+   */
+  activeThreadRootId: string | null;
   nameFor: (userId: string) => string | null;
-  /** Opens the message a line rests on. */
-  onOpenPoint: (point: ChatCatchUpPoint) => void;
+  /** Opens the message a line rests on, given what the summary is of. */
+  onOpenPoint: (point: ChatCatchUpPoint, scope: CatchUpScope) => void;
 }): {
   /** The channel a summary is open for, or null. */
   openChannelId: string | null;
+  /** What the open summary is of: where to render `element`. */
+  openKind: CatchUpScope["kind"] | null;
   start: (scope: CatchUpScope) => void;
   close: () => void;
+  /** The block itself, or null when no summary is open. */
   element: ReactNode;
+  /** The consent sheet the first summary may ask through. */
+  dialogs: ReactNode;
 } {
   const { current, run, reset } = useChatCatchUp();
   const { ensureConsent, consentDialog } = useAiConsentGate();
   const [scope, setScope] = useState<CatchUpScope | null>(null);
   const [range, setRange] = useState<ChatCatchUpRange>("day");
+  const [folded, setFolded] = useState(false);
   // A summary that never reached the server: no answer on the AI sheet yet,
   // or the answer could not be read.
   const [held, setHeld] = useState<Held | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const panel = useRef<HTMLElement | null>(null);
+  const block = useRef<HTMLElement | null>(null);
 
-  // Leaving the channel ends its summary (state adjusted during render).
-  if (scope && scope.channelId !== activeChannelId) {
+  // Leaving the channel ends its summary, and leaving the thread ends a
+  // thread's (state adjusted during render).
+  if (
+    scope &&
+    (scope.channelId !== activeChannelId ||
+      (scope.kind === "thread" && scope.rootId !== activeThreadRootId))
+  ) {
     setScope(null);
     setHeld(null);
   }
@@ -144,20 +138,26 @@ export function useCatchUpPanel({
     if (!open) reset();
   }, [open, reset]);
 
+  // Into the block as it opens, so Escape closes it and Tab starts inside
+  // it; back to whatever opened it when it closes, unless the member has
+  // moved on into the conversation.
+  const scopeKey = scope
+    ? `${scope.channelId}:${scope.kind === "thread" ? scope.rootId : ""}`
+    : null;
   useEffect(() => {
-    if (!open) return;
-    const root = document.documentElement;
+    if (!scopeKey) return;
     const opener = returnFocus.current;
-    root.setAttribute(CATCH_UP_OPEN_ATTRIBUTE, "");
-    // Into the panel, so Escape closes it and Tab starts inside it.
-    panel.current?.focus({ preventScroll: true });
+    block.current?.focus({ preventScroll: true });
     return () => {
-      root.removeAttribute(CATCH_UP_OPEN_ATTRIBUTE);
-      if (opener?.isConnected && !document.activeElement?.closest("main")) {
+      const active = document.activeElement;
+      if (
+        opener?.isConnected &&
+        (!active || active === document.body || !active.isConnected)
+      ) {
         opener.focus({ preventScroll: true });
       }
     };
-  }, [open]);
+  }, [scopeKey]);
 
   const summarize = useCallback(
     async (next: CatchUpScope, nextRange: ChatCatchUpRange) => {
@@ -176,7 +176,7 @@ export function useCatchUpPanel({
         setHeld({ kind: "consent" });
         return;
       }
-      await run(next.channelId, targetFor(next, nextRange));
+      await run(next.channelId, catchUpTargetFor(next, nextRange));
     },
     [ensureConsent, run],
   );
@@ -185,11 +185,11 @@ export function useCatchUpPanel({
     (next: CatchUpScope) => {
       const active = document.activeElement;
       returnFocus.current = active instanceof HTMLElement ? active : null;
-      const nextRange: ChatCatchUpRange =
-        next.kind === "channel" && next.unread ? "unread" : "day";
+      const nextRange = catchUpFirstRange(next);
       reset();
       setScope(next);
       setRange(nextRange);
+      setFolded(false);
       void summarize(next, nextRange);
     },
     [reset, summarize],
@@ -200,119 +200,143 @@ export function useCatchUpPanel({
     setHeld(null);
   }, []);
 
+  // Hide and Back to summary each swap out the control that was pressed, so
+  // focus goes to the block itself rather than falling to the page, where
+  // Escape and Tab would no longer reach it.
+  const fold = useCallback((next: boolean) => {
+    setFolded(next);
+    requestAnimationFrame(() => block.current?.focus({ preventScroll: true }));
+  }, []);
+
   const shown = scope && current?.channelId === scope.channelId ? current : null;
   const working = !held && shown?.phase === "working";
 
-  const element = (
-    <>
-      {scope
-        ? createPortal(
-            <aside
-              ref={panel}
-              tabIndex={-1}
-              aria-label={CHAT_CATCH_UP_COPY.name}
-              data-slot="catch-up-panel"
-              className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-border bg-popover text-popover-foreground outline-none animate-in slide-in-from-right duration-300 sm:w-[440px] sm:rounded-l-2xl sm:border-l"
-              onKeyDown={(event) => {
-                // Escape inside the panel only, and only when nothing inside
-                // (the consent sheet) took it first.
-                if (event.key !== "Escape" || event.defaultPrevented) return;
-                event.preventDefault();
-                event.stopPropagation();
-                close();
-              }}
-            >
-              <div className="flex min-h-14 shrink-0 items-start gap-2 py-2.5 pl-5 pr-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-lg font-bold leading-[26px]">
-                    {scope.kind === "thread"
-                      ? CHAT_CATCH_UP_COPY.thread_title
-                      : CHAT_CATCH_UP_COPY.name}
-                  </h2>
-                  <p className="truncate text-caption text-muted-foreground">
-                    {scope.channelName ? `#${scope.channelName} · ` : ""}
-                    {CHAT_CATCH_UP_COPY.private}
-                  </p>
-                </div>
-                <IconButton
-                  label={CHAT_CATCH_UP_COPY.close}
-                  onClick={close}
-                  className="shrink-0 text-muted-foreground"
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </IconButton>
-              </div>
-              {scope.kind === "channel" ? (
-                <div className="shrink-0 px-5 pb-3">
-                  <SegmentedChoice
-                    label={CHAT_CATCH_UP_COPY.range_label}
-                    fill
-                    // Never disabled while it works: a disabled control
-                    // drops focus out of the panel, and picking another
-                    // range replaces the request in flight.
-                    value={range}
-                    onChange={(next) => {
-                      setRange(next);
-                      void summarize(scope, next);
-                    }}
-                    options={(scope.unread
-                      ? (["unread", "day", "week"] as const)
-                      : (["day", "week"] as const)
-                    ).map((value) => ({
-                      value,
-                      label: CHAT_CATCH_UP_COPY.ranges[value],
-                    }))}
-                  />
-                </div>
+  const element = scope ? (
+    <section
+      ref={block}
+      tabIndex={-1}
+      aria-label={
+        scope.kind === "thread"
+          ? CHAT_CATCH_UP_COPY.thread_title
+          : CHAT_CATCH_UP_COPY.name
+      }
+      data-slot="catch-up"
+      data-folded={folded ? "" : undefined}
+      className={cn(
+        "flex max-h-[33%] min-h-0 shrink-0 flex-col bg-surface-1 outline-none",
+        // Folded, the strip draws its own hairline.
+        !folded && "border-b border-border",
+      )}
+      onKeyDown={(event) => {
+        // Escape inside the block only, and only when nothing inside (the
+        // consent sheet, Report this) took it first.
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }}
+    >
+      {folded ? (
+        <CatchUpStrip
+          line={CHAT_CATCH_UP_COPY.resume_line}
+          action={CHAT_CATCH_UP_COPY.resume_action}
+          onAction={() => fold(false)}
+          dismissLabel={CHAT_CATCH_UP_COPY.close}
+          onDismiss={close}
+        />
+      ) : (
+        <>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 pb-1 pl-4 pr-1 pt-2">
+            <h2 className="text-body font-semibold">
+              {scope.kind === "thread"
+                ? CHAT_CATCH_UP_COPY.thread_title
+                : CHAT_CATCH_UP_COPY.name}
+            </h2>
+            {scope.kind === "channel" ? (
+              <SegmentedChoice
+                label={CHAT_CATCH_UP_COPY.range_label}
+                dense
+                // Never disabled while it works: a disabled control drops
+                // focus out of the block, and picking another range
+                // replaces the request in flight.
+                value={range}
+                onChange={(next) => {
+                  setRange(next);
+                  void summarize(scope, next);
+                }}
+                options={catchUpRangesFor(scope).map((value) => ({
+                  value,
+                  label: CHAT_CATCH_UP_COPY.ranges[value],
+                }))}
+              />
+            ) : null}
+            <span className="ml-auto flex shrink-0 items-center">
+              <button
+                type="button"
+                onClick={() => fold(true)}
+                className={cn(
+                  "rounded-sm px-2 text-caption font-semibold text-muted-foreground hover:text-foreground",
+                  FOCUS_RING_OFFSET,
+                )}
+              >
+                {CHAT_CATCH_UP_COPY.hide}
+              </button>
+              <IconButton
+                label={CHAT_CATCH_UP_COPY.close}
+                onClick={close}
+                className="shrink-0 text-muted-foreground"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+            </span>
+          </div>
+          <div className="min-h-0 overflow-y-auto px-4 pb-3 pt-1">
+            <div aria-live="polite" className="space-y-3">
+              {held?.kind === "consent" ? (
+                <Notice
+                  line={chatCatchUpUnavailableLine("consent_required")}
+                  action={CHAT_CATCH_UP_COPY.consent_action}
+                  onAction={() => void summarize(scope, range)}
+                />
+              ) : held?.kind === "failed" ? (
+                <Notice
+                  line={held.message}
+                  action={CHAT_CATCH_UP_COPY.try_again}
+                  onAction={() => void summarize(scope, range)}
+                />
+              ) : working ? (
+                <p className="text-sm text-muted-foreground">
+                  {CHAT_CATCH_UP_COPY.working}
+                </p>
+              ) : shown?.phase === "failed" ? (
+                <Notice
+                  line={shown.failure ?? CHAT_CATCH_UP_COPY.failed}
+                  action={CHAT_CATCH_UP_COPY.try_again}
+                  onAction={() => void summarize(scope, range)}
+                />
+              ) : shown?.summary ? (
+                <Summary
+                  summary={shown.summary}
+                  nameFor={nameFor}
+                  onAgain={() => void summarize(scope, range)}
+                  onOpenPoint={(point) => onOpenPoint(point, scope)}
+                />
               ) : null}
-              <PanelBody>
-                <div aria-live="polite" className="space-y-4">
-                  {held?.kind === "consent" ? (
-                    <Notice
-                      line={chatCatchUpUnavailableLine("consent_required")}
-                      action={CHAT_CATCH_UP_COPY.consent_action}
-                      onAction={() => void summarize(scope, range)}
-                    />
-                  ) : held?.kind === "failed" ? (
-                    <Notice
-                      line={held.message}
-                      action={CHAT_CATCH_UP_COPY.try_again}
-                      onAction={() => void summarize(scope, range)}
-                    />
-                  ) : working ? (
-                    <p className="text-sm text-muted-foreground">
-                      {CHAT_CATCH_UP_COPY.working}
-                    </p>
-                  ) : shown?.phase === "failed" ? (
-                    <Notice
-                      line={shown.failure ?? CHAT_CATCH_UP_COPY.failed}
-                      action={CHAT_CATCH_UP_COPY.try_again}
-                      onAction={() => void summarize(scope, range)}
-                    />
-                  ) : shown?.summary ? (
-                    <Summary
-                      summary={shown.summary}
-                      nameFor={nameFor}
-                      onAgain={() => void summarize(scope, range)}
-                      onOpenPoint={(point) => {
-                        onOpenPoint(point);
-                        if (!window.matchMedia?.(BESIDE_PAGE_QUERY).matches) {
-                          close();
-                        }
-                      }}
-                    />
-                  ) : null}
-                </div>
-              </PanelBody>
-            </aside>,
-            document.body,
-          )
-        : null}
-      {consentDialog}
-    </>
-  );
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  ) : null;
 
-  return { openChannelId: scope?.channelId ?? null, start, close, element };
+  return {
+    openChannelId: scope?.channelId ?? null,
+    openKind: scope?.kind ?? null,
+    start,
+    close,
+    element,
+    dialogs: consentDialog,
+  };
 }
 
 /** One line of plain words, and the one thing to do about it. */
@@ -451,6 +475,9 @@ function Summary({
         );
       })}
       <Notes summary={summary} />
+      <p className="text-caption text-muted-foreground">
+        {CHAT_CATCH_UP_COPY.private}
+      </p>
       <div className="flex items-center justify-between gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onAgain}>
           {CHAT_CATCH_UP_COPY.again}
@@ -493,32 +520,59 @@ export function CatchUpOffer({
   return (
     <div role="status" aria-live="polite" className="shrink-0">
       {line ? (
-        <div
-          data-slot="catch-up-offer"
-          className="flex h-9 items-center gap-2 border-b border-border bg-surface-1 pl-4 pr-1 pointer-coarse:h-11"
-        >
-          <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-            {line}
-          </span>
-          <button
-            type="button"
-            onClick={onStart}
-            className={cn(
-              "shrink-0 rounded-sm px-2 text-caption font-semibold text-foreground hover:underline",
-              FOCUS_RING_OFFSET,
-            )}
-          >
-            {CHAT_CATCH_UP_COPY.offer_action}
-          </button>
-          <IconButton
-            label={CHAT_CATCH_UP_COPY.offer_dismiss}
-            onClick={onDismiss}
-            className="shrink-0"
-          >
-            <X />
-          </IconButton>
-        </div>
+        <CatchUpStrip
+          slot="catch-up-offer"
+          line={line}
+          action={CHAT_CATCH_UP_COPY.offer_action}
+          onAction={onStart}
+          dismissLabel={CHAT_CATCH_UP_COPY.offer_dismiss}
+          onDismiss={onDismiss}
+        />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * One line, one action and an ×: the offer above a busy channel, and the
+ * open summary folded (Hide). The phone's `CatchUpStrip` is the same strip.
+ */
+function CatchUpStrip({
+  slot,
+  line,
+  action,
+  onAction,
+  dismissLabel,
+  onDismiss,
+}: {
+  slot?: string;
+  line: string;
+  action: string;
+  onAction: () => void;
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      data-slot={slot}
+      className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-surface-1 pl-4 pr-1 pointer-coarse:h-11"
+    >
+      <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
+        {line}
+      </span>
+      <button
+        type="button"
+        onClick={onAction}
+        className={cn(
+          "shrink-0 rounded-sm px-2 text-caption font-semibold text-foreground hover:underline",
+          FOCUS_RING_OFFSET,
+        )}
+      >
+        {action}
+      </button>
+      <IconButton label={dismissLabel} onClick={onDismiss} className="shrink-0">
+        <X />
+      </IconButton>
     </div>
   );
 }

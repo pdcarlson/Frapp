@@ -1,5 +1,6 @@
 import { formatDay, formatDayTime } from "@repo/formatting";
 import { memberLabel } from "./display-names";
+import type { SettingMatch } from "./settings-search";
 
 /**
  * What Find lists, built from the channel list and one `/v1/search` payload:
@@ -10,10 +11,13 @@ import { memberLabel } from "./display-names";
  * either. Each result names what it is (`target`); where that opens is the
  * client's own routing.
  *
- * **Group order is Channels, Members, Messages, Events, Backwork.** The first
- * three are the board's ranking (`1d` pins 2-4): channels are where a member
- * goes most, and they come from the channel list the member can already read,
- * because `/v1/search` has no channel source. Events and Backwork were left
+ * **Group order is Channels, Settings, Members, Messages, Events, Backwork.**
+ * Channels, Members and Messages, in that order, are the board's ranking
+ * (`1d` pins 2-4): channels are where a member goes most, and they come from
+ * the channel list the member can already read, because `/v1/search` has no
+ * channel source. Settings (2026-11-19) is the settings search's list, so
+ * "dues" or "quiet hours" finds the setting from anywhere; it sits after
+ * Channels as the other group matched on the device, ahead of the server's. Events and Backwork were left
  * out of the old top-bar dropdown to keep it small; the dialog has the room,
  * and leaving them out meant a backwork title search answered "No matches."
  * while the file existed (2026-11-05).
@@ -26,6 +30,7 @@ import { memberLabel } from "./display-names";
 
 export const FIND_GROUPS = [
   "Channels",
+  "Settings",
   "Members",
   "Messages",
   "Events",
@@ -43,7 +48,8 @@ export type FindTarget =
   | { type: "message"; channelId: string | null; messageId: string | null }
   | { type: "member"; userId: string | null }
   | { type: "event"; eventId: string | null }
-  | { type: "backwork"; entryId: string | null };
+  | { type: "backwork"; entryId: string | null }
+  | { type: "setting"; settingId: string };
 
 export type FindResult = {
   id: string;
@@ -146,6 +152,12 @@ export type FindInput = {
   departments?: unknown;
   /** Groups the chapter has switched off (a module gate), never listed. */
   hiddenGroups?: ReadonlySet<FindGroup>;
+  /**
+   * The settings that match, already filtered to what the viewer can change
+   * (`searchSettings` in `settings-search.ts`); the client asks, since only
+   * it knows its platform, grants and AI.
+   */
+  settings?: readonly SettingMatch[];
   now?: Date;
 };
 
@@ -156,6 +168,7 @@ export function buildFindResults({
   payload,
   departments,
   hiddenGroups,
+  settings,
   now = new Date(),
 }: FindInput): FindResult[] {
   const needle = query.trim().toLowerCase();
@@ -184,6 +197,23 @@ export function buildFindResults({
         target: { type: "channel", channelId: row.id ?? null },
       });
       if (++count >= limit) break;
+    }
+  }
+
+  /*
+    Settings sit after Channels: both are places, matched here with no wait
+    for the server, and a member typing "notifications" or "dues" is after
+    the setting, not a message that says the word.
+  */
+  if (wants("Settings")) {
+    for (const match of (settings ?? []).slice(0, limit)) {
+      out.push({
+        id: `setting-${match.entry.id}`,
+        group: "Settings",
+        label: match.entry.label,
+        hint: match.hint,
+        target: { type: "setting", settingId: match.entry.id },
+      });
     }
   }
 

@@ -177,7 +177,7 @@ Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were
   A member who can't see it falls through to `#general`.
   Mobile does not use it: with no remembered channel, launch stays on chat home.
 - **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped.
-  Web then opens the chapter default, else `#general`, else the first channel.
+  Web then opens the chapter default, else `#general`, else the first channel the member can post in that isn't `#chapter-audit` (2026-11-19), else the first channel.
   The same applies in the middle of a visit: the open channel disappearing lands there.
 - **Web's two lists** (since [#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn, 2026-11-12).
   Web's chat panel shows the chapter's channels or the member's direct messages, and each remembers its own last conversation.
@@ -1957,7 +1957,7 @@ The list opens only on text the member typed: text put in the box for them (an e
 Web's inline editor offers the same list as its composer and, like this one, opens it only once the member changes the text (`components.md` §11 § Editing (web)).
 
 **Opening a member's profile.**
-On both clients, clicking or tapping a message author's name or photo, an `@` chip that names one member, or a row of the channel's member list opens that member's profile, read by `users.id` through `GET /v1/members/by-user/{userId}` (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)). On mobile that is the same screen the Directory opens, pushed over the thread (a sheet until #5568, 2026-11-19). On web it is a small profile popout beside what was clicked, with that sheet behind its View profile (below).
+On both clients, clicking or tapping a message author's name or photo, an `@` chip that names one member, or a row of the channel's member list opens that member's profile, read by `users.id` through `GET /v1/members/by-user/{userId}` (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)). On mobile that is the same screen the Directory opens, pushed over the thread (a sheet until #5568, 2026-11-19). On web it is a small profile popout beside what was clicked, with the full profile behind its View profile (below), which opens over the chat column with a Back to chat arrow (#5616, 2026-11-19).
 Which member, if any, is the shared answer in `packages/chat-core/src/profile-targets.ts`:
 
 - **An author** opens unless the row has no member behind it: Frapp's own posts (`SYSTEM_SENDER_ID`), an imported author nobody has linked (`sender_id` null), and a sender the roster no longer lists, whose profile read would only 404 (`authorProfileUserId`).
@@ -1967,8 +1967,8 @@ Which member, if any, is the shared answer in `packages/chat-core/src/profile-ta
   What the sheet holds is [`members.md` § Profiles](../members.md#profiles) and, for web's sheet, [`web-dashboard/README.md` § Directory](../../ui/web-dashboard/README.md#directory).
 
 **The web profile popout** (2026-11-15, [#4593](https://github.com/pdcarlson/Frapp/issues/4593), item 8 there; Discord's user popout and Slack's profile card are the comparables).
-A name, photo, chip or member-list row opens a 288px card beside it instead of the full sheet over the page: to the right of a name in the timeline, to the left of a member-list row, flipping when there is no room.
-It shows the photo, the name in its role color, the class-year line and up to four role chips (then "+N"), with Message (absent on the viewer's own) and View profile, which opens the full sheet.
+A name, photo, chip or member-list row opens a 288px card beside it instead of the full profile: to the right of a name in the timeline, to the left of a member-list row, flipping when there is no room.
+It shows the photo, the name in its role color, the class-year line and up to four role chips (then "+N"), with Message (absent on the viewer's own) and View profile, which opens the full profile over the chat column and closes the Members list it came from.
 It follows its name as the timeline scrolls. Escape or a click away closes it and puts focus back on what opened it; a popout opened from the Members list closes back to the list.
 Implementation: `apps/web/components/chat/member-popout.tsx`.
 

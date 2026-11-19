@@ -230,6 +230,67 @@ function OpenerHarness({
   );
 }
 
+/**
+ * Docked where it was opened (Paul, 2026-11-19: no more side cards): a panel
+ * from a surface with no page of its own covers the host box around it (the
+ * chat column, Ask's card) instead of sliding over the window.
+ */
+describe('Panel docked "here"', () => {
+  function HereHarness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <div>
+        <div data-tool-column="">
+          <button type="button">Page button</button>
+        </div>
+        <div data-panel-host="" data-testid="chat">
+          <button type="button">Send</button>
+          <Panel
+            open={open}
+            onOpenChange={setOpen}
+            docked="here"
+            backLabel="Back to chat"
+          >
+            <PanelContent>
+              <PanelHeader>Create channel</PanelHeader>
+              <PanelBody>
+                <input aria-label="Name" />
+              </PanelBody>
+            </PanelContent>
+          </Panel>
+        </div>
+      </div>
+    );
+  }
+
+  it("covers the host it was opened in, and leaves the page beside it alone", async () => {
+    render(<HereHarness />);
+    const region = await screen.findByRole("region", { name: "Create channel" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(region.parentElement).toBe(screen.getByTestId("chat"));
+    // Covered: inert, and hidden so a focus trap around the host skips it.
+    const send = screen.getByText("Send");
+    expect(send.inert).toBe(true);
+    expect(send.style.visibility).toBe("hidden");
+    const page = document.querySelector("[data-tool-column]") as HTMLElement;
+    expect(page.inert).not.toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+    expect(screen.queryByRole("region", { name: "Create channel" })).toBeNull();
+  });
+
+  it("falls back to the sheet with no host around it", () => {
+    render(
+      <Panel open onOpenChange={() => undefined} docked="here">
+        <PanelContent aria-describedby={undefined}>
+          <PanelHeader>Create channel</PanelHeader>
+        </PanelContent>
+      </Panel>,
+    );
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Create channel");
+  });
+});
+
 describe("Panel docked focus on close", () => {
   it("hands focus back to the button pressed to open it, though a click left it unfocused (Safari)", () => {
     const onClose = vi.fn();

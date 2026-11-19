@@ -221,6 +221,23 @@ export class InviteListItemDto implements InviteListItem {
 
   @ApiProperty()
   created_at: string;
+
+  @ApiProperty({
+    description:
+      'True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined.',
+  })
+  reusable: boolean;
+}
+
+/** `GET /v1/invites/chapter-link` (#3353). */
+export class ChapterLinkResponseDto {
+  @ApiProperty({
+    type: InviteListItemDto,
+    nullable: true,
+    description:
+      "The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into.",
+  })
+  link: InviteListItemDto | null;
 }
 
 /** `GET /v1/invites/roles` (#4546). */

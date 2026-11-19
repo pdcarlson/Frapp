@@ -201,8 +201,17 @@ vi.mock("@/components/tasks/who-picker-sheet", async () => {
     }),
   };
 });
+// From's choices (#5473); none unless a spec gives some.
+const whoFollowers = vi.hoisted(
+  () => [] as { entry: string; kind: string; name: string; count: number }[],
+);
 vi.mock("@/lib/tasks/use-who-directory", () => ({
-  useWhoDirectory: () => ({ directory: {}, people: {}, sets: {} }),
+  useWhoDirectory: () => ({
+    directory: {},
+    people: {},
+    sets: {},
+    followers: whoFollowers,
+  }),
 }));
 vi.mock("@/components/tasks/mark-done-sheet", async () => {
   const { createElement } = await import("react");
@@ -1423,6 +1432,74 @@ describe("An officer edits a task in place (#5514)", () => {
     expect(screenText(tree)).not.toContain(
       "That member isn't in this chapter.",
     );
+    act(() => tree.unmount());
+  });
+});
+
+describe("A task a group follows (#5613)", () => {
+  const EXEC = "tier:7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  const fromSheet = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.title === "From" && typeof node.props.onSelect === "function",
+    );
+
+  afterEach(() => {
+    whoFollowers.splice(0, whoFollowers.length);
+  });
+
+  it("names the group as From, and keeps the giver in History", () => {
+    task = { ...PLAIN, followed_by: EXEC, followed_by_name: "Exec board" };
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Exec board");
+    expect(text).toContain("Assigned by Jordan Lee");
+    act(() => tree.unmount());
+  });
+
+  it("says a deleted group when the follower is gone", () => {
+    task = { ...PLAIN, followed_by: EXEC, followed_by_name: null };
+    const tree = render();
+    expect(screenText(tree)).toContain("A deleted group");
+    act(() => tree.unmount());
+  });
+
+  it("changes a group task's From on every copy from edit mode", async () => {
+    permissions = ["members:view", "tasks:manage"];
+    whoFollowers.push({ entry: EXEC, kind: "tier", name: "Exec board", count: 4 });
+    task = copy("u-ana");
+    const tree = render();
+    press(tree, "Edit task");
+    expect(screenText(tree)).toContain("Just you");
+    await act(async () => {
+      fromSheet(tree).props.onSelect(EXEC);
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "copy-u-ana",
+      body: { followed_by: EXEC, scope: "group" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says a repeating task can't be from a group, in place of the row", () => {
+    permissions = ["members:view", "tasks:manage"];
+    whoFollowers.push({ entry: EXEC, kind: "tier", name: "Exec board", count: 4 });
+    task = {
+      ...PLAIN,
+      series: {
+        recurrence_rule: "FREQ=WEEKLY;BYDAY=MO;TZID=America/New_York",
+        next_due_date: "2026-11-24",
+        ended: false,
+      },
+    };
+    const tree = render();
+    press(tree, "Edit task");
+    expect(screenText(tree)).toContain(
+      "A repeating task can't be from a group yet.",
+    );
+    expect(
+      tree.root.findAll((node) => node.props.title === "From"),
+    ).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

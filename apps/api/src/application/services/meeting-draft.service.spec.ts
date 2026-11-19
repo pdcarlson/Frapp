@@ -36,6 +36,7 @@ import type { MeetingNotesService } from './meeting-notes.service';
 import type { MinutesSource } from '#domain/utils/minutes-draft';
 import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import type { RbacService } from './rbac.service';
+import type { NotificationService } from './notification.service';
 import type {
   MeetingDraftContext,
   MeetingDraftContextService,
@@ -297,6 +298,7 @@ function setup(options: Setup = {}) {
     getTemplate: jest.fn().mockResolvedValue([...DEFAULT_MEETING_SECTIONS]),
     update: jest.fn().mockResolvedValue({}),
   };
+  const notifications = { notifyUser: jest.fn().mockResolvedValue(undefined) };
   const runs = {
     enqueue: jest.fn().mockResolvedValue({ id: RUN }),
     cancel: jest.fn().mockResolvedValue(true),
@@ -334,6 +336,7 @@ function setup(options: Setup = {}) {
     gateway,
     consent as unknown as AiConsentService,
     context as unknown as MeetingDraftContextService,
+    notifications as unknown as NotificationService,
   );
 
   const ask = (notes = NOTES, expected = V1) =>
@@ -372,6 +375,7 @@ function setup(options: Setup = {}) {
     ask,
     work,
     context,
+    notifications,
   };
 }
 
@@ -1043,6 +1047,131 @@ describe('MeetingDraftService', () => {
       expect(failure).toBeInstanceOf(AiRunFailure);
       expect((failure as AiRunFailure).retryable).toBe(false);
       expect(drafts.row?.failure_code).toBe('refused');
+    });
+
+    it('tells the officer who asked once the draft is in, naming only the meeting', async () => {
+      const { ask, work, notifications } = setup();
+      await ask();
+      await work();
+      expect(notifications.notifyUser).toHaveBeenCalledTimes(1);
+      const [userId, chapterId, payload] =
+        notifications.notifyUser.mock.calls[0];
+      expect(userId).toBe(SECRETARY);
+      expect(chapterId).toBe(CHAPTER);
+      expect(payload).toMatchObject({
+        title: 'Minutes drafted',
+        category: 'admin',
+        priority: 'NORMAL',
+        data: {
+          target: { screen: 'events', eventId: 'evt-1', meetingId: MEETING },
+        },
+      });
+      expect(payload.body).toContain('Chapter meeting');
+      expect(payload.body).not.toContain('DJ');
+    });
+
+    it('tells the officer when the draft waits for them, too', async () => {
+      const { ask, work, meetings, notifications } = setup();
+      await ask();
+      meetings.update.mockRejectedValue(
+        new ConflictException({ code: 'meeting.stale' }),
+      );
+      await work();
+      expect(notifications.notifyUser.mock.calls[0][2].title).toBe(
+        'Minutes drafted',
+      );
+    });
+
+    it('tells the officer a draft stopped, but not one they may no longer see', async () => {
+      const capped = setup({
+        spend: { granted: false, reason: 'chapter_cap' },
+      });
+      await capped.ask();
+      await capped.work().catch(() => undefined);
+      expect(capped.notifications.notifyUser.mock.calls[0][2].title).toBe(
+        'Minutes not drafted',
+      );
+
+      const gone = setup();
+      await gone.ask();
+      gone.meetings.editableBy.mockRejectedValue(new NotFoundException());
+      await gone.work().catch(() => undefined);
+      expect(gone.notifications.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('lands the draft even when the notice cannot be sent', async () => {
+      const { ask, work, drafts, notifications } = setup();
+      notifications.notifyUser.mockRejectedValue(new Error('push down'));
+      await ask();
+      await expect(work()).resolves.toMatchObject({ applied: true });
+      expect(drafts.row?.status).toBe('applied');
+    });
+
+    describe('a run that ends failed in the queue', () => {
+      const ended = (
+        service: MeetingDraftService,
+        requestId: string,
+        reason: 'attempts_exhausted' | 'not_permitted',
+      ) =>
+        service.onFailed(
+          {
+            id: RUN,
+            chapter_id: CHAPTER,
+            kind: 'minutes_draft',
+            requested_by: SECRETARY,
+            acting_user_id: SECRETARY,
+            attempt_count: 2,
+            max_attempts: 2,
+          },
+          { meeting_id: MEETING, request_id: requestId },
+          reason,
+        );
+
+      it('ends the draft and tells the officer, once', async () => {
+        const { service, ask, drafts, notifications } = setup();
+        await ask();
+        const requestId = drafts.row!.request_id;
+        await ended(service, requestId, 'attempts_exhausted');
+        await ended(service, requestId, 'attempts_exhausted');
+
+        expect(drafts.row).toMatchObject({
+          status: 'failed',
+          failure_code: 'failed',
+        });
+        expect(notifications.notifyUser).toHaveBeenCalledTimes(1);
+        expect(notifications.notifyUser.mock.calls[0][2].title).toBe(
+          'Minutes not drafted',
+        );
+      });
+
+      it('says nothing of an end the officer caused or can no longer see', async () => {
+        const lost = setup();
+        await lost.ask();
+        await ended(lost.service, lost.drafts.row!.request_id, 'not_permitted');
+        expect(lost.drafts.row?.failure_code).toBe('not_permitted');
+        expect(lost.notifications.notifyUser).not.toHaveBeenCalled();
+
+        const posted = setup();
+        await posted.ask();
+        posted.meetings.editableBy.mockResolvedValue(
+          meeting({ status: 'posted', posted_at: V1 }),
+        );
+        await ended(
+          posted.service,
+          posted.drafts.row!.request_id,
+          'attempts_exhausted',
+        );
+        expect(posted.drafts.row?.status).toBe('failed');
+        expect(posted.notifications.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('leaves a newer request alone', async () => {
+        const { service, ask, drafts, notifications } = setup();
+        await ask();
+        await ended(service, 'an-older-request', 'attempts_exhausted');
+        expect(drafts.row?.status).toBe('drafting');
+        expect(notifications.notifyUser).not.toHaveBeenCalled();
+      });
     });
 
     it('asks for another try when the answer does not fit the schema', async () => {

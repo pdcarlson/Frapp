@@ -16,6 +16,7 @@ import {
   Hash,
   MessageSquareText,
   Search,
+  Settings,
   User,
   type LucideIcon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import {
 import { canAny } from "@repo/validation";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
+import { useSettingsSearch } from "@/lib/settings/use-settings-search";
 import { asArray, cn } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -44,8 +46,8 @@ import {
 } from "@/components/layout/find-results";
 
 /**
- * The Find dialog: a centered search over channels, members, messages, events
- * and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
+ * The Find dialog: a centered search over channels, settings, members,
+ * messages, events and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
  *
  * **Why a dialog again.** #2141 replaced the ⌘K palette with a field that
  * dropped its results under itself, 520px wide. Paul picked a centered dialog
@@ -70,6 +72,7 @@ export const FIND_PLACEHOLDER = "Find channels, members, messages and more";
 
 const GROUP_ICON: Record<FindGroup, LucideIcon> = {
   Channels: Hash,
+  Settings: Settings,
   Members: User,
   Messages: MessageSquareText,
   Events: CalendarDays,
@@ -155,8 +158,8 @@ export function FindDialog({
             Find
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Search channels, members, messages, events and backwork. Use the
-            arrow keys to move through results and Enter to open one.
+            Search channels, settings, members, messages, events and backwork.
+            Use the arrow keys to move through results and Enter to open one.
           </DialogPrimitive.Description>
           <FindPanel
             query={query}
@@ -213,6 +216,8 @@ function FindPanel({
   const channels = useChannels();
   const isModuleEnabled = useChapterModuleGate();
   const permissions = usePermissionList();
+  // Settings the member can change, found by name or synonym (2026-11-19).
+  const findSettings = useSettingsSearch();
   // `null` outside `AnalyticsProvider` (tests, or an opted-out member).
   const track = useContext(AnalyticsContext);
   // Set by the member typing in this mount; see the telemetry effect.
@@ -257,6 +262,7 @@ function FindPanel({
             payload: search.data?.payload,
             departments: departments.data,
             hiddenGroups,
+            settings: findSettings(debouncedQuery),
           })
         : [],
     [
@@ -267,6 +273,7 @@ function FindPanel({
       search.data,
       departments.data,
       hiddenGroups,
+      findSettings,
     ],
   );
 
@@ -405,10 +412,14 @@ function FindPanel({
     const group = GROUP_FOR_SOURCE[source];
     return group ? shownGroup(group) : true;
   });
+  // Channels and Settings are matched on this device, so the server's
+  // timeout or failure says nothing about them.
+  const matchedHere =
+    effectiveFilter === "Channels" || effectiveFilter === "Settings";
   const timedOut =
     allTimedOutSources.length > 0
       ? timedOutSources.length > 0
-      : (search.data?.timedOut ?? false) && effectiveFilter !== "Channels";
+      : (search.data?.timedOut ?? false) && !matchedHere;
 
   /*
    * "We stopped looking here" must read differently from "we found nothing"
@@ -422,7 +433,7 @@ function FindPanel({
     statusMessage = null;
   } else if (isLoading) {
     statusMessage = "Searching...";
-  } else if (search.isError) {
+  } else if (search.isError && !matchedHere) {
     statusMessage = "Search is unavailable right now. Try again in a moment.";
   } else if (results.length === 0) {
     statusMessage = timedOut

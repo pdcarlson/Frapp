@@ -34,7 +34,7 @@ Organization roles are granted only to these Google Groups, plus the domain-wide
 
 The whole `frapp.live` domain can also create projects and billing accounts.
 
-Project roles are granted per project. `pdcarlson@frapp.live` owns `signet-frapp` and `frapp-67722`, and is the only Owner of each. That account is a single point of failure: every admin group above holds only it, so if it is locked out, the way back is Google Workspace's super admin account recovery, not another member. A second, break-glass admin is planned under #5323. The service accounts each project's runbook lists (for example [`cloud-run.md` § Identities](cloud-run.md#identities)) hold the rest.
+Project roles are granted per project. `pdcarlson@frapp.live` owns `signet-frapp` and `frapp-67722`, and is the only Owner of each. That account is a single point of failure: every admin group above holds only it, so if it is locked out, the way back is Google Workspace's super admin account recovery, not another member. That recovery is on ([Admin console](https://admin.google.com) > Security > Authentication > Account recovery, read from the owner's screenshot on 2026-11-19), and the account's recovery email is the owner's personal address, which has 2-step verification on (both 2026-11-19, the owner's report; #5323). Recovery for other users is off, so an admin resets their passwords. A personal account can't hold a Workspace admin role, and the domain rule below keeps it out of Cloud roles, so a true second admin would be another `frapp.live` account, at one more paid seat; none exists as of 2026-11-19. The service accounts each project's runbook lists (for example [`cloud-run.md` § Identities](cloud-run.md#identities)) hold the rest.
 
 ## Organization policies that bite
 
