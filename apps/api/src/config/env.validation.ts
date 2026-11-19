@@ -7,6 +7,7 @@ import { validateDevLogEnv } from '../application/services/dev-log.service';
 import { validateAiEnv } from './ai-config';
 import { validateAiSpendEnv } from './ai-spend-config';
 import { validateAiStoredTextEnv } from './ai-stored-text-config';
+import { validateCalendarFeedEnv } from './calendar-feed-config';
 import { validateGoogleCalendarEnv } from './google-calendar-config';
 import { validateGoogleDriveEnv } from './google-drive-config';
 import { classifySupabaseKey } from './supabase-key';
@@ -117,6 +118,11 @@ const REQUIRED_ENV_VARS = [
 //                        diagnostics window; needs the key above
 //                        (config/ai-stored-text-config.ts)
 //
+// Optional, sealing calendar subscription links (config/calendar-feed-config.ts).
+// Unset, links already handed out keep working but none can be shown or made:
+//   - CALENDAR_FEED_TOKEN_KEY  "<key id>:<base64 of 32 bytes>", older keys
+//                        after it separated by commas; checked at boot
+//
 // Optional, the Google Calendar sync (#3322; config/google-calendar-config.ts).
 // All three or none, checked at boot; unset, Google Calendar is not offered and
 // the subscription link still is:
@@ -173,6 +179,11 @@ export function validateEnv(config: Record<string, unknown>) {
   const devLogProblems = validateDevLogEnv(config);
   if (devLogProblems.length > 0) {
     throw new Error(devLogProblems.join(' '));
+  }
+
+  const calendarFeedProblems = validateCalendarFeedEnv(config);
+  if (calendarFeedProblems.length > 0) {
+    throw new Error(calendarFeedProblems.join(' '));
   }
 
   const googleCalendarProblems = validateGoogleCalendarEnv(config);
