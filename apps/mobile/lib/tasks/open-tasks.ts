@@ -51,7 +51,7 @@ export function openTaskLine(posting: OpenTask, now: Date): string {
 }
 
 /**
- * Who may claim it, in full, for its sheet: "Anyone in the chapter",
+ * Who may claim it, in full, for its screen: "Anyone in the chapter",
  * "Someone in Philanthropy Committee", "One of Sam, Alex and 3 others".
  */
 export function openTaskWho(
@@ -87,7 +87,7 @@ export function claimedTaskId(data: unknown): string | null {
 }
 
 /**
- * Said once Give it back lands, as the board's line under its points card:
+ * Said once Give it back lands, as the board's line under its points line:
  * from the board's own toast, and from the task's screen, which returns to
  * the board with {@link RELEASED_PARAM} so the line shows there (and
  * announces it before it goes).
@@ -96,6 +96,12 @@ export const RELEASED_LINE = `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`;
 
 /** `/tasks?released=1`: the task screen's Give it back landed. */
 export const RELEASED_PARAM = "released";
+
+/**
+ * `/tasks?assigned=<userId>`: a posting's screen handed it to that member
+ * (#5570), and the board says who has it in its line, as after New task.
+ */
+export const ASSIGNED_PARAM = "assigned";
 
 /** Said when Give it back didn't land. */
 export const RELEASE_FAILED = "Couldn't give that task back. Try again.";

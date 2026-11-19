@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
+import { FloatingCreateButton } from "@/components/floating-create-button";
 import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
@@ -343,8 +344,9 @@ describe("Events header Subscribe", () => {
 
 // #5113 (Shawn, 2026-11-15): add an event from the Calendar itself, in every
 // view, not only from the tab bar's + (which a member can take off their
-// panel) or an hour of the grid.
-describe("Events header New event", () => {
+// panel) or an hour of the grid. #5570 (Paul, 2026-11-19): from the floating
+// + at the bottom, where the task board adds a task, not the header.
+describe("Calendar New event", () => {
   const nextMonth = (tree: ReactTestRenderer) =>
     tree.root.find(
       (node) =>
@@ -352,15 +354,14 @@ describe("Events header New event", () => {
         typeof node.props.onPress === "function",
     );
 
-  it("draws a round + after Subscribe for a member who can create", () => {
+  it("draws the floating + for a member who can create, and leaves the header to Subscribe", () => {
     permissions = ["*"];
-    const labels = render()
-      .root.findAllByType(HeaderButton)
-      .map((node) => node.props.label);
-    expect(labels).toEqual([
-      "Subscribe to events in your calendar",
-      "New event",
-    ]);
+    const tree = render();
+    const [plus] = tree.root.findAllByType(FloatingCreateButton);
+    expect(plus?.props.label).toBe("New event");
+    expect(
+      tree.root.findAllByType(HeaderButton).map((node) => node.props.label),
+    ).toEqual(["Subscribe to events in your calendar"]);
     permissions = [];
   });
 

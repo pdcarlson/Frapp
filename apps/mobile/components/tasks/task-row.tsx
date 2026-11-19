@@ -9,7 +9,6 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { AccentChip } from "@/components/status-chip";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
   itemMenuAccessibility,
@@ -29,7 +28,7 @@ import { markDoneLabel } from "@/lib/tasks/task-photos";
  *
  * A flush row on the screen background, split from the one above by a
  * hairline, with a leading checkbox, a title, a due/done subtitle, and an
- * optional trailing points chip.
+ * optional trailing points, in muted text (#5570).
  * The finished row is drawn at `opacity:.62` with a line-through title and a
  * box in the raised neutral fill with a muted check. Canvas draws that box
  * gold; foundations.md §6 ("Where the accent goes", 2026-11-05) overrides it:
@@ -199,7 +198,13 @@ function TaskCheckbox({
   );
 }
 
-/** The trailing points chip, accent while open and green once awarded. */
+/**
+ * The trailing points, as muted text: "+5 pts", and "+5 pts ✓" once awarded.
+ * An accent pill until #5570 (Paul, 2026-11-19): a yellow pill on every row
+ * was brighter than the task's title, and the title is what a member reads
+ * a list for. Things 3 and Todoist draw a to-do's extras in the quiet grey
+ * under or beside its title; colour on a row is kept for its due and overdue.
+ */
 function PointsChip({
   chip,
   styles,
@@ -208,11 +213,7 @@ function PointsChip({
   styles: TaskStyles;
 }) {
   if (!chip) return null;
-  return chip.tone === "awarded" ? (
-    <Text style={styles.awardedChip}>{chip.label}</Text>
-  ) : (
-    <AccentChip label={chip.label} />
-  );
+  return <Text style={styles.points}>{chip.label}</Text>;
 }
 
 /**
@@ -520,11 +521,9 @@ function createStyles(tokens: SignetTokens) {
     subtitleDone: {
       color: tokens.color.text.muted,
     },
-    awardedChip: {
+    points: {
       ...typeRole(tokens.typography.role.caption),
-      // Canvas draws `#4BC262` here, which is the Signet success token
-      // (`semantic.success`) since the 2026-11-12 lift (#3826).
-      color: tokens.color.semantic.success,
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

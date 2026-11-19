@@ -862,7 +862,7 @@ export default function ActivityScreen() {
 }
 
 /**
- * The task board's door (#4610): the board (List and Grid, the points card)
+ * The task board's door (#4610): the board (List and Grid, the points line)
  * is a pushed screen now that Activity and Calendar hold a member's tasks.
  * Drawn only while the chapter has Tasks on, since the whole board is behind
  * that module. A plain neutral control on the title row, never the accent, which marks

@@ -57,6 +57,7 @@ import {
 } from "@/components/tasks/task-action-bar";
 import { WhoHasIt } from "@/components/tasks/who-has-it";
 import { GroupProgress } from "@/components/tasks/group-progress";
+import { OpenTaskScreen } from "@/components/tasks/open-task-screen";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { showActionMenu } from "@/lib/action-menu";
@@ -102,7 +103,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Linear's issue page lays out a pushed issue.
  *
  * Reached from a row on the task board, from the Calendar's task rows, and
- * from a task push through the board (`/tasks?task=<id>`), with an `id`.
+ * from a task push through the board (`/tasks?task=<id>`), with an `id`. A
+ * task up for grabs opens here too, with `posting=<id>` in place of the `id`,
+ * and draws its own screen (`OpenTaskScreen`, #5570).
  *
  * ## What it shows
  *
@@ -163,7 +166,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Remove people (#5492) pushes this screen with `select=1`, and it opens in
  * select mode.
  */
-export default function TaskDetailsScreen() {
+export default function TaskDetailsRoute() {
+  // `posting=<id>`: a task up for grabs (#5570), which is a posting and not
+  // yet a task, so it reads off its own list and has its own controls.
+  const { posting } = useLocalSearchParams<{ posting?: string | string[] }>();
+  const postingId = Array.isArray(posting) ? posting[0] : posting;
+  return postingId ? (
+    <OpenTaskScreen postingId={postingId} />
+  ) : (
+    <TaskDetailsScreen />
+  );
+}
+
+function TaskDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const params = useLocalSearchParams<{

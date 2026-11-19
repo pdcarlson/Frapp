@@ -204,7 +204,6 @@ vi.mock("@/lib/haptics", () => ({
 import TasksScreen from "@/app/(app)/tasks";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { OpenTaskRow } from "@/components/tasks/open-task-row";
-import { OpenTaskSheet } from "@/components/tasks/open-task-sheet";
 import { TASK_AUDIENCE_COPY } from "@repo/validation";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
@@ -656,8 +655,11 @@ describe("Tasks as a pushed screen (#4610)", () => {
     expect(screenText(tree)).toContain(
       `It's back on ${TASK_AUDIENCE_COPY.upForGrabs}.`,
     );
-    expect(router.setParams).toHaveBeenCalledWith({ released: undefined });
-    // The next focus takes it down, as any line under the points card.
+    expect(router.setParams).toHaveBeenCalledWith({
+      released: undefined,
+      assigned: undefined,
+    });
+    // The next focus takes it down, as any line under the points line.
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -689,7 +691,7 @@ describe("Tasks as a pushed screen (#4610)", () => {
 
 /**
  * Rule 7 of the empty-states plan: a member with nothing assigned reads one
- * line under the points card, the same line web's board writes, rather than a
+ * line under the points line, the same line web's board writes, rather than a
  * card. The + is the board's own (New task), so only an officer hears about
  * it.
  */
@@ -1028,26 +1030,35 @@ describe("Up for grabs", () => {
     act(() => tree.unmount());
   });
 
-  it("opens a posting's sheet; Assign to someone and Delete only for an officer", () => {
+  // #5570: a posting opens on its own screen, as a task does; no sheet.
+  it("pushes a posting's own screen", () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.push).mockClear();
     openTasks = [POSTING];
-    const member = render();
-    act(() => openRows(member)[0]!.props.onOpen());
-    let sheet = member.root.findByType(OpenTaskSheet);
-    expect(sheet.props.posting?.id).toBe("open-1");
-    expect(sheet.props.who).toBe("Someone in Philanthropy");
-    expect(sheet.props.onClaim).toBeDefined();
-    expect(sheet.props.onAssign).toBeUndefined();
-    expect(sheet.props.onDelete).toBeUndefined();
-    act(() => member.unmount());
+    const tree = render();
+    act(() => openRows(tree)[0]!.props.onOpen());
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { posting: "open-1" },
+    });
+    act(() => tree.unmount());
+  });
 
-    permissions = ["tasks:manage", "members:view"];
-    const officer = render();
-    act(() => openRows(officer)[0]!.props.onOpen());
-    sheet = officer.root.findByType(OpenTaskSheet);
-    expect(sheet.props.onAssign).toBeDefined();
-    expect(sheet.props.onDelete).toBeDefined();
-    act(() => officer.unmount());
-    permissions = [];
+  it("says who a posting went to when its screen handed it over", () => {
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.setParams).mockClear();
+    const tree = render();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      assigned: "user-1",
+    });
+    act(() => refocus());
+    expect(screenText(tree)).toContain("Added to your tasks.");
+    expect(router.setParams).toHaveBeenCalledWith({
+      released: undefined,
+      assigned: undefined,
+    });
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+    act(() => tree.unmount());
   });
 });
 

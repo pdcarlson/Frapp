@@ -8,14 +8,12 @@ import {
   useState,
 } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
-  useAssignOpenTask,
   useChapterRoster,
   useClaimOpenTask,
-  useDeleteOpenTask,
   useOpenTasks,
   useReleaseTask,
   useCurrentChapter,
@@ -59,24 +57,20 @@ import { ListLayoutToggle } from "@/components/list-layout-toggle";
 import { useListLayout } from "@/lib/list-layout";
 import { OpenTaskRow } from "@/components/tasks/open-task-row";
 import {
-  OpenTaskAssignPicker,
-  OpenTaskSheet,
-} from "@/components/tasks/open-task-sheet";
-import {
+  ASSIGNED_PARAM,
   claimLost,
   claimedLine,
   claimedTaskId,
   RELEASE_FAILED,
   RELEASED_LINE,
   RELEASED_PARAM,
-  openTaskWho,
   selectOpenTasks,
 } from "@/lib/tasks/open-tasks";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import { UndoBar } from "@/components/tasks/undo-bar";
-import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
+import { PointsSummaryLine } from "@/components/tasks/points-summary-line";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { MarkDoneHost, useTaskToggle } from "@/lib/tasks/use-task-toggle";
@@ -127,7 +121,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * different shape, and is not this slice.
  */
 const CLAIM_FAILED = "Couldn't claim that task. Try again.";
-const POSTING_FAILED = "That didn't go through. Try again.";
 
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
@@ -284,7 +277,7 @@ export default function TasksScreen() {
   // quick action is (`availableQuickActions`).
   const createRef = useRef<BottomSheetModal>(null);
   const [createMounted, setCreateMounted] = useState(false);
-  // The line under the points card. `keep` holds it through the focus that
+  // The line under the points line. `keep` holds it through the focus that
   // brought the member here, for one set as they arrived (Give it back from
   // the task's screen), which that focus would otherwise clear.
   const [createdLine, setCreatedLine] = useState<{
@@ -319,19 +312,54 @@ export default function TasksScreen() {
   // `/tasks?released=1`: the task's screen gave a task back to Up for grabs
   // and came here, where the posting is back; the board says so in its line,
   // as after its own toast's Give it back, then clears the param.
-  const { [RELEASED_PARAM]: released } = useLocalSearchParams<{
+  // `/tasks?assigned=<userId>`: a posting's screen handed it to that member
+  // (#5570), and the line says who has it, as after New task.
+  const rosterQuery = useChapterRoster();
+  const nameOf = useCallback(
+    (userId: string) =>
+      memberLabel(
+        (rosterQuery.data ?? []).find((member) => member.user_id === userId)
+          ?.display_name,
+        userId,
+      ),
+    [rosterQuery.data],
+  );
+  const {
+    [RELEASED_PARAM]: released,
+    [ASSIGNED_PARAM]: assignedTo,
+  } = useLocalSearchParams<{
     [RELEASED_PARAM]?: string;
+    [ASSIGNED_PARAM]?: string;
   }>();
-  const [releaseSeen, setReleaseSeen] = useState(false);
-  if (released === "1" && !releaseSeen) {
-    setReleaseSeen(true);
-    setCreatedLine({ text: RELEASED_LINE, keep: true });
-  } else if (released !== "1" && releaseSeen) {
-    setReleaseSeen(false);
+  const arrival =
+    released === "1"
+      ? "released"
+      : typeof assignedTo === "string" && assignedTo !== ""
+        ? `assigned:${assignedTo}`
+        : null;
+  const [arrivalSeen, setArrivalSeen] = useState<string | null>(null);
+  if (arrival !== null && arrival !== arrivalSeen) {
+    setArrivalSeen(arrival);
+    setCreatedLine({
+      text:
+        arrival === "released"
+          ? RELEASED_LINE
+          : taskCreatedLine(
+              nameOf(assignedTo as string),
+              assignedTo === viewerUserId,
+            ),
+      keep: true,
+    });
+  } else if (arrival === null && arrivalSeen !== null) {
+    setArrivalSeen(null);
   }
+  const arrived = arrivalSeen !== null;
   useEffect(() => {
-    if (!releaseSeen) return undefined;
-    router.setParams({ [RELEASED_PARAM]: undefined });
+    if (!arrived) return undefined;
+    router.setParams({
+      [RELEASED_PARAM]: undefined,
+      [ASSIGNED_PARAM]: undefined,
+    });
     // The arrival's focus may come just before the param or just after it;
     // once this turn is over the line is an ordinary one, which the next
     // focus clears.
@@ -339,9 +367,8 @@ export default function TasksScreen() {
       setCreatedLine((line) => (line?.keep ? { ...line, keep: false } : line)),
     );
     return () => clearTimeout(settle);
-  }, [releaseSeen, router]);
+  }, [arrived, router]);
 
-  const rosterQuery = useChapterRoster();
   const { setNotice, offerRelease, clearUndo } = toggles;
   // Up for grabs (spec/behavior/tasks.md § Up for grabs). A claim is optimistic in the
   // hook: the row leaves on the tap, the task lands in its day once the board
@@ -349,8 +376,6 @@ export default function TasksScreen() {
   // (a 409) says so, and the row stays gone while the list reads again.
   const claimOpen = useClaimOpenTask();
   const releaseTask = useReleaseTask();
-  const assignOpen = useAssignOpenTask();
-  const deleteOpen = useDeleteOpenTask();
   // A lost claim hides its posting only until the list reads again: the
   // fresh read leaves out a claimed posting itself, and shows it again if
   // its taker gives it back. So each hide is keyed to the read it was made on.
@@ -367,16 +392,6 @@ export default function TasksScreen() {
       ),
     [openTasksQuery.data, lostClaims, openTasksReadAt],
   );
-  const nameOf = useCallback(
-    (userId: string) =>
-      memberLabel(
-        (rosterQuery.data ?? []).find((member) => member.user_id === userId)
-          ?.display_name,
-        userId,
-      ),
-    [rosterQuery.data],
-  );
-
   const claim = useCallback(
     (posting: OpenTask) => {
       setNotice(null);
@@ -431,68 +446,6 @@ export default function TasksScreen() {
     [releaseTask, clearUndo, setNotice, setCreated],
   );
 
-  // A posting's sheet, by id, so it redraws as the list reads again and
-  // closes on nothing once the posting is gone.
-  const postingRef = useRef<BottomSheetModal>(null);
-  const [postingId, setPostingId] = useState<string | null>(null);
-  const [postingProblem, setPostingProblem] = useState<string | null>(null);
-  const [assigning, setAssigning] = useState<OpenTask | null>(null);
-  const openPosting = useMemo(
-    () => openTasks.find((posting) => posting.id === postingId) ?? null,
-    [openTasks, postingId],
-  );
-  const postingFailed = useCallback((error: unknown) => {
-    setPostingProblem(
-      claimLost(error)
-        ? TASK_AUDIENCE_COPY.alreadyClaimed
-        : errorCopy(error, POSTING_FAILED),
-    );
-  }, []);
-  const assignPosting = useCallback(
-    (posting: OpenTask, userId: string) => {
-      setPostingProblem(null);
-      assignOpen.mutate(
-        { id: posting.id, assigneeId: userId },
-        {
-          onSuccess: () => {
-            postingRef.current?.dismiss();
-            const text = taskCreatedLine(
-              nameOf(userId),
-              userId === viewerUserId,
-            );
-            setCreated(text);
-            AccessibilityInfo.announceForAccessibility(text);
-          },
-          onError: postingFailed,
-        },
-      );
-    },
-    [assignOpen, nameOf, viewerUserId, postingFailed, setCreated],
-  );
-  const deletePosting = useCallback(
-    (posting: OpenTask) => {
-      Alert.alert(
-        `Delete “${posting.title}”?`,
-        `It comes off ${TASK_AUDIENCE_COPY.upForGrabs} for everyone.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => {
-              setPostingProblem(null);
-              deleteOpen.mutate(posting.id, {
-                onSuccess: () => postingRef.current?.dismiss(),
-                onError: postingFailed,
-              });
-            },
-          },
-        ],
-      );
-    },
-    [deleteOpen, postingFailed],
-  );
-
   function renderUpForGrabs() {
     if (openTasks.length === 0) {
       // A failed read says so in one line rather than leaving a member to
@@ -516,11 +469,13 @@ export default function TasksScreen() {
               onClaim={
                 posting.viewer_can_claim ? () => claim(posting) : undefined
               }
-              onOpen={() => {
-                setPostingProblem(null);
-                setPostingId(posting.id);
-                postingRef.current?.present();
-              }}
+              // Its own screen, as a task's (#5570; a sheet until then).
+              onOpen={() =>
+                router.push({
+                  pathname: "/task-details",
+                  params: { posting: posting.id },
+                })
+              }
             />
           ))}
         </View>
@@ -623,7 +578,7 @@ export default function TasksScreen() {
       return (
         <>
           {renderUpForGrabs()}
-          {/* One line under the points card, not a card of its own
+          {/* One line under the points line, not a card of its own
               (`writing.md` § 4, rule 7): the plate is clear, then what comes
               next, so the line says more than what isn't there. Web's Tasks
               board writes the same line (`nextUpLine`). An officer also hears
@@ -670,7 +625,7 @@ export default function TasksScreen() {
           chapterId ? <ListLayoutToggle screen="tasks" /> : undefined
         }
       >
-        <PointsSummaryCard summary={summary} rank={rank} />
+        <PointsSummaryLine summary={summary} rank={rank} />
 
         {created ? <InlineNote>{created}</InlineNote> : null}
 
@@ -697,45 +652,6 @@ export default function TasksScreen() {
               : void takeBack(undo.id)
           }
           aboveCreate={canCreate}
-        />
-      ) : null}
-
-      <OpenTaskSheet
-        ref={postingRef}
-        posting={openPosting}
-        who={openPosting ? openTaskWho(openPosting, nameOf) : null}
-        busy={assignOpen.isPending || deleteOpen.isPending}
-        problem={postingProblem}
-        onClaim={
-          openPosting?.viewer_can_claim
-            ? () => {
-                const posting = openPosting;
-                postingRef.current?.dismiss();
-                claim(posting);
-              }
-            : undefined
-        }
-        onAssign={
-          canManageTasks && openPosting
-            ? () => setAssigning(openPosting)
-            : undefined
-        }
-        onDelete={
-          canManageTasks && openPosting
-            ? () => deletePosting(openPosting)
-            : undefined
-        }
-        onDismiss={() => {
-          setPostingId(null);
-          setPostingProblem(null);
-        }}
-      />
-
-      {assigning ? (
-        <OpenTaskAssignPicker
-          key={assigning.id}
-          onPick={(userId) => assignPosting(assigning, userId)}
-          onClosed={() => setAssigning(null)}
         />
       ) : null}
 

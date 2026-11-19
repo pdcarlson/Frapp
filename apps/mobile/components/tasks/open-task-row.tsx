@@ -15,9 +15,10 @@ import { openTaskLine } from "@/lib/tasks/open-tasks";
  * above it. The pill sits where a task's points chip sits.
  *
  * Claim is optimistic (`useClaimOpenTask`): the row leaves on the tap, so it
- * has no pending state of its own. A tap elsewhere opens the posting's sheet,
- * where its notes, steps and proof are read, and an officer hands it over or
- * takes it down. `onClaim` is left out where the viewer may not claim it (an
+ * has no pending state of its own. A tap elsewhere pushes the posting's own
+ * screen (`open-task-screen.tsx`, #5570; a sheet until then), where its
+ * notes, steps and proof are read, and an officer hands it over or takes it
+ * down. `onClaim` is left out where the viewer may not claim it (an
  * officer seeing a posting for another committee), and the row shows no pill.
  */
 export function OpenTaskRow({

@@ -262,11 +262,11 @@ describe("TaskRow — the completed row", () => {
     expect(Number(container.opacity)).toBeLessThan(1);
   });
 
-  it("marks an awarded reward in the success role", () => {
+  it("marks an awarded reward with a check, in the muted text (#5570)", () => {
     const tree = render(<TaskRow row={done} now={NOW} />);
     expect(texts(tree)).toContain("+15 pts ✓");
     expect(styleOfText(tree, "+15 pts ✓").color).toBe(
-      signetDarkTokens.color.semantic.success,
+      signetDarkTokens.color.text.mutedForeground,
     );
   });
 });
@@ -283,7 +283,19 @@ describe("TaskRow — the points chip", () => {
     expect(texts(tree).some((text) => text.startsWith("+"))).toBe(false);
   });
 
-  it("keeps a completed-but-unconfirmed reward on the accent chip", () => {
+  // #5570: the points are muted text, never louder than the title.
+  it("draws the points in the muted text, under the title's weight", () => {
+    const tree = render(
+      <TaskRow row={row({ pointReward: 5 })} now={NOW} onToggle={() => {}} />,
+    );
+    const points = styleOfText(tree, "+5 pts");
+    expect(points.color).toBe(signetDarkTokens.color.text.mutedForeground);
+    expect(points.fontSize).toBeLessThan(
+      signetDarkTokens.typography.role.label.size,
+    );
+  });
+
+  it("keeps a completed-but-unconfirmed reward unchecked", () => {
     const tree = render(
       <TaskRow
         row={row({
@@ -296,7 +308,7 @@ describe("TaskRow — the points chip", () => {
       />,
     );
     expect(texts(tree)).toContain("+15 pts");
-    expect(styleOfText(tree, "+15 pts").color).toBe("#CB9FFF");
+    expect(texts(tree)).not.toContain("+15 pts ✓");
   });
 });
 
