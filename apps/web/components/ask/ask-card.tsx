@@ -35,6 +35,7 @@ import {
   type AskCardEditsStore,
 } from "@/components/ask/ask-proposal";
 import { Button } from "@/components/ui/button";
+import { escapeIntoDockedPanel } from "@/components/shared/panel";
 import { DialogOverlay } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Textarea } from "@/components/ui/textarea";
@@ -174,6 +175,7 @@ export function AskCard({
   const cardEdits = sharedEdits ?? ownEdits;
   const [draft, setDraft] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   // Whether the member is reading the newest words: only then does the
   // thread follow an answer as it grows.
@@ -274,12 +276,28 @@ export function AskCard({
         <DialogPrimitive.Portal>
           <DialogOverlay className="motion-reduce:animate-none" />
           <DialogPrimitive.Content
+            ref={card}
             aria-describedby={undefined}
+            // An event form opened from an answer docks over the card
+            // (`Panel`'s `docked="here"`), never a card over the window.
+            data-panel-host=""
             // Closing drops a question still being answered (above), so a
             // stray click on the page behind does not close it mid-answer.
             // Escape and the close button still do.
             onInteractOutside={(event) => {
               if (askedHere) event.preventDefault();
+              // A click outside with a form docked over the card (Ask's event
+              // form) would close the form with Ask; only its back arrow,
+              // Escape or Ask's X leave it.
+              if (card.current?.querySelector("[data-docked-panel]")) {
+                event.preventDefault();
+              }
+            }}
+            // Escape in an event form docked over the card goes back to the
+            // answer, as it does from a docked form anywhere, rather than
+            // closing Ask with the form in it.
+            onEscapeKeyDown={(event) => {
+              if (escapeIntoDockedPanel(event.target)) event.preventDefault();
             }}
             onOpenAutoFocus={(event) => {
               event.preventDefault();

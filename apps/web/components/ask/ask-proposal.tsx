@@ -1375,6 +1375,10 @@ function ActCard({
         <EventEditorDialog
           open={eventForm}
           onOpenChange={setEventForm}
+          // Over Ask's card, or the chat column for an answer in a channel:
+          // never a card sliding over the window (Paul, 2026-11-19).
+          docked="here"
+          backLabel="Back to the conversation"
           mode="create"
           event={null}
           usingPreviewData={false}
