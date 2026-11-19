@@ -155,9 +155,7 @@ function ChapterMeetingsPage() {
               {MEETING_LIST_COPY.posted}
             </SectionLabel>
             {posted.length === 0 ? (
-              <InlineNote>
-                {MEETING_LIST_COPY.none}
-              </InlineNote>
+              <InlineNote>{MEETING_LIST_COPY.none}</InlineNote>
             ) : (
               <MeetingList rows={posted} />
             )}

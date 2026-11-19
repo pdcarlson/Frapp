@@ -226,17 +226,31 @@ export interface MinutesDateTile {
   month: string;
   day: string;
   weekday: string;
+  /**
+   * The line beside the tile: the weekday, and the year when it isn't this
+   * one ("Tuesday", "Friday, 2027"). The tile already shows the month and
+   * day, so the line never says them again (Paul, 2026-11-19: "double
+   * listings", on a line that read "Tuesday, Tuesday, December 15").
+   */
+  line: string;
 }
 
 /** `2026-11-28` as its tile, read as a calendar day wherever the reader is. */
-export function minutesDateTile(date: string): MinutesDateTile {
+export function minutesDateTile(
+  date: string,
+  now: Date = new Date(),
+): MinutesDateTile {
   const [year, month, day] = date.split("-").map(Number);
-  if (!year || !month || !day) return { month: "", day: "", weekday: "" };
+  if (!year || !month || !day) {
+    return { month: "", day: "", weekday: "", line: "" };
+  }
   const at = new Date(year, month - 1, day, 12);
+  const weekday = at.toLocaleDateString("en-US", { weekday: "long" });
   return {
     month: at.toLocaleDateString("en-US", { month: "short" }).toUpperCase(),
     day: String(day),
-    weekday: at.toLocaleDateString("en-US", { weekday: "long" }),
+    weekday,
+    line: year === now.getFullYear() ? weekday : `${weekday}, ${year}`,
   };
 }
 

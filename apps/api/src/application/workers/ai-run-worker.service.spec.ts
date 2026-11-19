@@ -237,6 +237,64 @@ describe('AiRunWorkerService', () => {
     );
   });
 
+  it('tells the handler once its run has ended failed, not on a try it retries', async () => {
+    const onFailed = jest.fn(async () => {});
+    const run = jest.fn(async () => {
+      throw new AiRunFailure('handler_failed', 'provider answered 529', true);
+    });
+    registry.register(handler({ run, onFailed }));
+    const queued = await enqueue();
+
+    let now = T0;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const w = worker(now);
+      await w.drain(now);
+      await w.idle();
+      if (attempt < 3) {
+        expect(onFailed).not.toHaveBeenCalled();
+        now = new Date(runs.row(queued.id).lease_expires_at!);
+      }
+    }
+
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ id: queued.id, chapter_id: CHAPTER }),
+      expect.objectContaining({ meeting_id: MEETING }),
+      'attempts_exhausted',
+    );
+  });
+
+  it("a handler's onFailed that throws leaves the run failed", async () => {
+    const onFailed = jest.fn(async () => {
+      throw new Error('notice down');
+    });
+    registry.register(
+      handler({
+        run: jest.fn(async () => {
+          throw new AiRunFailure('source_gone', 'meeting deleted');
+        }),
+        onFailed,
+      }),
+    );
+    const queued = await enqueue();
+    const w = worker();
+
+    await w.drain(T0);
+    await w.idle();
+
+    expect(onFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'source_gone',
+    );
+    expect(runs.row(queued.id)).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        failure_reason: 'source_gone',
+      }),
+    );
+  });
+
   it('an error the handler did not expect is tried again', async () => {
     registry.register(
       handler({

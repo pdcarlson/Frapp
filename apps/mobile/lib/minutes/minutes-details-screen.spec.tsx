@@ -5,10 +5,11 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import {
+  EMPTY_MEETING_CONTENT,
   MEETING_COPY,
-  MEETING_NOTE_TAKERS_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
+  MINUTES_FLOW_COPY,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
@@ -60,6 +61,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useCachedMeetingRow: () => null,
   useMeeting: () => ({
     data: state.meeting ?? undefined,
     isPending: state.isPending,
@@ -169,7 +171,11 @@ vi.mock("@/components/minutes/notes-panel", async () => {
       state.notesProps = props;
       return null;
     }),
-    useOtherSources: () => ({ othersWrote: state.othersWrote }),
+    useOtherSources: () => ({
+      othersWrote: state.othersWrote,
+      takersWrote: state.othersWrote,
+      transcriptReady: false,
+    }),
   };
 });
 vi.mock("@/components/minutes/summary-note", async () => {
@@ -675,20 +681,42 @@ describe("Minutes on the phone", () => {
     state.row = recorderRow();
     state.panelStop.mockResolvedValue(undefined);
     const tree = render();
-    expect(screenText(tree)).toContain(MEETING_NOTES_COPY.drafting);
+    // Web's steps, and Drafting pinned with Stop drafting (#5562).
+    expect(screenText(tree)).toContain("Saved your notes");
+    expect(screenText(tree)).toContain("Writing the minutes");
+    expect(screenText(tree)).toContain(MINUTES_FLOW_COPY.drafting.leave);
+    expect(screenText(tree)).toContain(MINUTES_FLOW_COPY.drafting.badge);
     expect(button(tree, "Record")).toBeUndefined();
     expect(state.notesProps?.stopInFooter).toBe(true);
     await act(async () =>
-      button(tree, MEETING_NOTES_COPY.stop).props.onPress(),
+      button(tree, MINUTES_FLOW_COPY.drafting.stop).props.onPress(),
     );
     expect(state.panelStop).toHaveBeenCalledTimes(1);
   });
 
-  it("says the pinned draft reads everyone's notes when others wrote too, as the web does (#5562)", () => {
+  it("says the draft reads everyone's notes when others wrote too, as the web does (#5562)", () => {
     state.draft = { status: "drafting" };
     state.othersWrote = true;
     const tree = render();
-    expect(screenText(tree)).toContain(MEETING_NOTE_TAKERS_COPY.draftingAll);
+    expect(screenText(tree)).toContain(
+      MINUTES_FLOW_COPY.drafting.steps.everyone,
+    );
+  });
+
+  it("asks how the meeting went before anything is written, and banners a draft once it is in", () => {
+    state.draft = { status: "none" };
+    state.meeting = meeting({ content: EMPTY_MEETING_CONTENT });
+    const start = render();
+    expect(screenText(start)).toContain(MINUTES_FLOW_COPY.start.heading);
+
+    state.draft = { status: "applied", notes: "budget passed" };
+    state.meeting = meeting();
+    const review = render();
+    expect(screenText(review)).toContain(
+      MINUTES_FLOW_COPY.review.banner("notes"),
+    );
+    expect(screenText(review)).not.toContain(MINUTES_FLOW_COPY.start.heading);
+    expect(state.notesProps?.bannerAbove).toBe(true);
   });
 
   it("links the tasks suggested from posted minutes, and asks only where AI is on", () => {

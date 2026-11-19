@@ -11,6 +11,7 @@ import {
   useRequestMeetingDraft,
   useUseMeetingDraft,
   useRemoveMeetingRecording,
+  useMinutesDraftClock,
   type MeetingDraftState,
   type MeetingNotesState,
   type MeetingRecordingState,
@@ -20,12 +21,17 @@ import {
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
   MEETING_NOTE_TAKERS_COPY,
+  MINUTES_FLOW_COPY,
   MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
+  minutesDraftSource,
+  minutesDraftSteps,
   notesLookLikeTranscript,
   notesWordCount,
+  type MinutesDraftSource,
 } from "@repo/validation";
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,7 +47,7 @@ import {
   saveStatusLine,
   useNotesAutosave,
 } from "@/components/meetings/note-takers";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 
 /**
  * The notes box above a draft's sections (`spec/behavior/meetings.md`
@@ -50,8 +56,9 @@ import { getErrorMessage } from "@/lib/utils";
  * and post, the way Granola turns rough notes into a write-up in the same
  * document. The minutes stay theirs: nothing here posts anything.
  *
- * One status line sits beside the buttons and keeps its height in every
- * state, so nothing below moves while a draft is written (principles P4).
+ * Three states, in the phone's words (`MINUTES_FLOW_COPY`): the start box
+ * (one box and Draft minutes), the drafting steps with a clock, and once the
+ * minutes are written, a one-line banner with the notes behind it.
  *
  * Since #4935 the notes save as they are typed, other members can take notes
  * too, and the draft reads all of them and the recording's transcript
@@ -65,6 +72,9 @@ export function NotesDraftPanel({
   recording,
   hasContent,
   folded = false,
+  open = false,
+  onOpenChange,
+  onWriteByHand,
   fillInSlot = null,
   disabled,
   prepare,
@@ -85,11 +95,20 @@ export function NotesDraftPanel({
   /** The sections below already hold something a draft would replace. */
   hasContent: boolean;
   /**
-   * The minutes are written and lead the page, so the notes fold away under
-   * them behind a Show button (Paul, 2026-11-16: a 4-hour transcript is not
-   * what the officer edits).
+   * The minutes are written and lead the page, so the panel is one line
+   * saying what they were drafted from, with the notes behind "Notes and
+   * transcript" (Paul, 2026-11-16: a 4-hour transcript is not what the
+   * officer edits).
    */
   folded?: boolean;
+  /** Folded, whether the notes are shown under the banner. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * The start box's Write the minutes by hand, which lays the sections out
+   * to type in; absent once they are.
+   */
+  onWriteByHand?: () => void;
   /**
    * Where the draft's "To fill in" questions go, above the minutes, so
    * answering them is the first thing to do; in this panel when null.
@@ -127,7 +146,8 @@ export function NotesDraftPanel({
   );
   const notes = autosave.text;
   const [problem, setProblem] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const setOpen = (next: boolean) => onOpenChange?.(next);
+  const [addingTaker, setAddingTaker] = useState(false);
   // One answer per open question, for the draft on screen.
   const [answers, setAnswers] = useState<string[]>([]);
   const [answersFor, setAnswersFor] = useState(state.requested_at);
@@ -141,10 +161,10 @@ export function NotesDraftPanel({
   const needsConsent = state.blocked === "consent_required";
   const transcriptReady =
     recording?.status === "ready" && !!recording.transcript;
-  const othersWrote =
-    (notesState?.takers ?? []).some(
-      (taker) => taker.notes.trim() && taker.held === null,
-    ) || transcriptReady;
+  const takersWrote = (notesState?.takers ?? []).some(
+    (taker) => taker.notes.trim() && taker.held === null,
+  );
+  const othersWrote = takersWrote || transcriptReady;
 
   // The draft landing is the server's doing, so the page learns of it here.
   // Whenever one stops being written (put in, waiting, stopped, failed, or
@@ -350,6 +370,11 @@ export function NotesDraftPanel({
   }
 
   const waiting = state.status === "ready";
+  const source = minutesDraftSource({
+    notes,
+    othersWrote: takersWrote,
+    recordingReady: transcriptReady,
+  });
   const saving = saveStatusLine(autosave.status);
   const status = problem
     ? { tone: "problem" as const, text: problem }
@@ -384,13 +409,13 @@ export function NotesDraftPanel({
               : state.status === "applied"
                 ? {
                     tone: "quiet" as const,
-                    text: othersWrote
-                      ? MEETING_NOTE_TAKERS_COPY.appliedAll
-                      : MEETING_NOTES_COPY.applied,
+                    text: MINUTES_FLOW_COPY.review.banner(source),
                   }
                 : {
                     tone: "quiet" as const,
-                    text: MEETING_NOTES_COPY.idle,
+                    text: folded
+                      ? MINUTES_FLOW_COPY.start.hint
+                      : MEETING_NOTES_COPY.idle,
                   };
 
   const reviewed = state.status === "applied" || state.status === "ready";
@@ -465,75 +490,116 @@ export function NotesDraftPanel({
       </section>
     ) : null;
 
+  // The start box: one box and Draft minutes (Paul, 2026-11-19), so its
+  // other ways in are quiet and the button lights up once there is
+  // something to draft from.
+  const starting = !folded && !drafting;
+  const canDraft = notes.trim().length > 0 || othersWrote;
+  const recordingShown =
+    !!recording?.available && recording.blocked !== "chapter_off";
+  const takersShown =
+    !!notesState &&
+    (notesState.takers.length > 0 ||
+      transcriptReady ||
+      addingTaker ||
+      (!starting && notesState.can_add));
+
   return (
     <section
       aria-labelledby={`${ids}-heading`}
-      className="space-y-3 rounded-lg border border-border p-4"
+      aria-busy={drafting || undefined}
+      className={cn(
+        "space-y-3 rounded-lg border p-4",
+        folded && !drafting
+          ? "border-border bg-surface-1"
+          : "border-border bg-card",
+      )}
     >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1 space-y-1">
-          <h3 id={`${ids}-heading`} className="text-base font-semibold">
-            {folded
-              ? MEETING_NOTES_COPY.foldedHeading
-              : MEETING_NOTES_COPY.heading}
-          </h3>
-          <p className="text-caption text-muted-foreground">
-            {folded
-              ? MEETING_NOTES_COPY.foldedSummary(notesWordCount(notes))
-              : MEETING_NOTES_COPY.hint}
+      {drafting ? (
+        <DraftingSteps
+          headingId={`${ids}-heading`}
+          source={source}
+          // While the ask is still on its way, the last draft's time is not
+          // this one's.
+          requestedAt={state.status === "drafting" ? state.requested_at : null}
+        />
+      ) : folded ? (
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <p
+            id={`${ids}-heading`}
+            role="status"
+            className={cn(
+              "min-w-0 flex-1 basis-64 text-sm",
+              status.tone === "problem"
+                ? "text-destructive-text"
+                : "text-foreground",
+            )}
+          >
+            {status.text}
           </p>
-        </div>
-        {folded ? (
           <Button
             variant="ghost"
             size="sm"
             aria-expanded={open}
             aria-controls={`${ids}-notes`}
-            onClick={() => setOpen((was) => !was)}
+            onClick={() => setOpen(!open)}
           >
-            {open ? MEETING_NOTES_COPY.hide : MEETING_NOTES_COPY.show}
+            {open ? MEETING_NOTES_COPY.hide : MINUTES_FLOW_COPY.review.notes}
           </Button>
-        ) : null}
-      </div>
-      <div id={`${ids}-notes`} hidden={folded && !open} className="space-y-3">
-        {recording?.available && recording.blocked !== "chapter_off" ? (
-          <RecordingUpload
-            meetingId={meetingId}
-            state={recording}
-            disabled={drafting || disabled}
-            ensureConsent={ensureConsent}
-            confirm={confirm}
-          />
-        ) : null}
-        {pastedFolded ? (
-          <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <h3 id={`${ids}-heading`} className="text-lg font-semibold">
+            {MINUTES_FLOW_COPY.start.heading}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {MINUTES_FLOW_COPY.start.hint}
+          </p>
+        </div>
+      )}
+      <div
+        id={`${ids}-notes`}
+        hidden={(folded && !drafting && !open) || (drafting && !pasted)}
+        className="space-y-3"
+      >
+        {pastedFolded || (drafting && pasted) ? (
+          <div className="flex items-center gap-3 rounded-md border border-border bg-surface-1 px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">{pastedCopy.title}</p>
               <p className="text-caption text-muted-foreground">
                 {pastedCopy.words(notesWordCount(notes))}
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowText(true)}>
-              {pastedCopy.view}
-            </Button>
             {!drafting ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={disabled || discard.isPending}
-                onClick={() => void handleRemovePasted()}
-              >
-                {pastedCopy.remove}
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowText(true)}
+                >
+                  {pastedCopy.view}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled || discard.isPending}
+                  onClick={() => void handleRemovePasted()}
+                >
+                  {pastedCopy.remove}
+                </Button>
+              </>
             ) : null}
           </div>
         ) : (
           <Textarea
-            aria-labelledby={`${ids}-heading`}
+            aria-label={MEETING_NOTES_COPY.heading}
             aria-describedby={`${ids}-status`}
             aria-invalid={problem ? true : undefined}
             placeholder={MEETING_NOTES_COPY.placeholder}
             rows={8}
+            // A fixed height that scrolls inside, so a long paste never
+            // pushes Draft minutes off the page (#5562).
+            className="max-h-[50vh]"
             value={notes}
             disabled={drafting || disabled}
             onFocus={() => setFocused(true)}
@@ -544,24 +610,23 @@ export function NotesDraftPanel({
             }}
           />
         )}
-        {pasted && showText && !focused ? (
+        {pasted && showText && !focused && !drafting ? (
           <Button variant="ghost" size="sm" onClick={() => setShowText(false)}>
             {pastedCopy.hide}
           </Button>
         ) : null}
-        {saving && autosave.status !== "failed" ? (
+        {saving && autosave.status !== "failed" && !drafting ? (
           <p className="text-caption text-muted-foreground">{saving}</p>
         ) : null}
-        {notesState &&
-        (notesState.takers.length > 0 ||
-          transcriptReady ||
-          notesState.can_add) ? (
+        {takersShown && notesState && !drafting ? (
           <NoteTakersList
             meetingId={meetingId}
             state={notesState}
             recording={recording}
             disabled={drafting || disabled}
             confirm={confirm}
+            startAdding={addingTaker}
+            onCancelAdd={() => setAddingTaker(false)}
           />
         ) : null}
       </div>
@@ -572,12 +637,12 @@ export function NotesDraftPanel({
             disabled={discard.isPending || request.isPending}
             onClick={() => void handleStop()}
           >
-            {MEETING_NOTES_COPY.stop}
+            {MINUTES_FLOW_COPY.drafting.stop}
           </Button>
         ) : (
           <Button
-            variant={hasContent ? "secondary" : "default"}
-            disabled={disabled}
+            variant={folded ? "secondary" : "default"}
+            disabled={disabled || (starting && !canDraft)}
             onClick={() => void handleDraft()}
           >
             {reviewed
@@ -587,7 +652,7 @@ export function NotesDraftPanel({
                 : MEETING_NOTES_COPY.draft}
           </Button>
         )}
-        {waiting ? (
+        {waiting && !drafting ? (
           <Button
             disabled={disabled || use.isPending}
             onClick={() => void handleUse()}
@@ -595,7 +660,50 @@ export function NotesDraftPanel({
             {MEETING_NOTES_COPY.useDraft}
           </Button>
         ) : null}
-        {!drafting &&
+        {/* One upload row for the whole flow, never swapped for another:
+            an upload under way lives in it. In the start box it is only its
+            button; with an upload it takes its own line above the buttons,
+            and it is hidden, not dropped, behind the banner or while the
+            draft is written. */}
+        {recordingShown && recording ? (
+          <div
+            className={cn(
+              (folded && !open) || drafting ? "hidden" : "contents",
+            )}
+          >
+            <RecordingUpload
+              compact={starting}
+              className="order-first basis-full"
+              meetingId={meetingId}
+              state={recording}
+              disabled={drafting || disabled}
+              ensureConsent={ensureConsent}
+              confirm={confirm}
+            />
+          </div>
+        ) : null}
+        {starting && notesState?.can_add && !takersShown ? (
+          <Button
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => setAddingTaker(true)}
+          >
+            {MEETING_NOTE_TAKERS_COPY.add}
+          </Button>
+        ) : null}
+        {starting && onWriteByHand ? (
+          <Button variant="ghost" disabled={disabled} onClick={onWriteByHand}>
+            {MINUTES_FLOW_COPY.start.byHand}
+          </Button>
+        ) : null}
+        {/* Clearing is for what is stored beyond the box: notes already
+            drafted from (behind the banner), a draft that failed, or an
+            upload. Typing in the box empties it by hand. */}
+        {(folded
+          ? open
+          : state.status !== "none" ||
+            (!!recording && recording.status !== "none")) &&
+        !drafting &&
         (notes !== "" ||
           state.status !== "none" ||
           (!!recording && recording.status !== "none")) ? (
@@ -617,17 +725,20 @@ export function NotesDraftPanel({
           />
         ) : null}
       </div>
-      <p
-        id={`${ids}-status`}
-        role="status"
-        className={
-          status.tone === "problem"
-            ? "min-h-10 text-sm text-destructive-text"
-            : "min-h-10 text-sm text-muted-foreground"
-        }
-      >
-        {status.text}
-      </p>
+      {/* The banner carries the status once folded; a problem still shows. */}
+      {starting || status.tone === "problem" ? (
+        <p
+          id={`${ids}-status`}
+          role={folded && !drafting ? "alert" : "status"}
+          className={
+            status.tone === "problem"
+              ? "min-h-5 text-sm text-destructive-text"
+              : "min-h-5 text-caption text-muted-foreground"
+          }
+        >
+          {folded && !drafting ? (problem ?? "") : status.text}
+        </p>
+      ) : null}
       {fillInSlot ? (fillIn ? createPortal(fillIn, fillInSlot) : null) : fillIn}
       {reviewed && !drafting && conflicts.length > 0 ? (
         <div className="space-y-2 border-t border-border pt-3">
@@ -699,5 +810,70 @@ export function NotesDraftPanel({
       ) : null}
       {consentDialog}
     </section>
+  );
+}
+
+/**
+ * What a draft being written shows (Paul, 2026-11-19: "Nothing indicates
+ * it's processing"): the steps so far, how long it has run, and that the
+ * officer may leave, the way a build log or an upload says where it is.
+ * The clock counts from the request, so a reload shows the same time.
+ */
+function DraftingSteps({
+  headingId,
+  source,
+  requestedAt,
+}: {
+  headingId: string;
+  source: MinutesDraftSource;
+  requestedAt: string | null;
+}) {
+  const clock = useMinutesDraftClock(requestedAt);
+  return (
+    <div className="space-y-3">
+      <h3 id={headingId} className="text-lg font-semibold">
+        {MINUTES_FLOW_COPY.drafting.badge}
+      </h3>
+      <ol role="list" className="space-y-2">
+        {minutesDraftSteps(source).map((step) => (
+          <li key={step.label} className="flex items-center gap-3 text-sm">
+            {step.state === "done" ? (
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
+                <Check className="h-3 w-3" aria-hidden="true" />
+              </span>
+            ) : step.state === "now" ? (
+              <span className="grid h-5 w-5 place-items-center rounded-full border border-primary">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
+              </span>
+            ) : (
+              <span className="h-5 w-5 rounded-full border border-border" />
+            )}
+            <span
+              className={cn(
+                step.state === "next" && "text-muted-foreground",
+                step.state === "now" && "font-semibold",
+              )}
+            >
+              {step.label}
+              <span className="sr-only">
+                {step.state === "done"
+                  ? ", done"
+                  : step.state === "now"
+                    ? ", under way"
+                    : ""}
+              </span>
+            </span>
+            {step.state === "now" && clock ? (
+              <span className="text-caption tabular-nums text-muted-foreground">
+                {clock}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      <p role="status" className="text-caption text-muted-foreground">
+        {MINUTES_FLOW_COPY.drafting.leave}
+      </p>
+    </div>
   );
 }
