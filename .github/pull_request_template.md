@@ -38,6 +38,8 @@
 
 ## UI/UX quality gate (required for UI-touching PRs)
 
+- [ ] Ran `.claude/skills/ui-development/review-checklist.md` and filled its **UI self-review** section below: captures as member, chair, exec and empty on web and phone, comparable apps, the sibling sweep table, and any rulebook or P1 to P8 failures with how each was fixed or filed.
+- [ ] Web and phone change together in this PR, with the same structure, options and wording, or the PR names the issue that brings the other platform along.
 - [ ] Token-only styling for colors/spacing/radius/motion (no ad hoc visual values).
 - [ ] One clear primary action per touched screen/section.
 - [ ] Async states complete (loading, empty, error, success, and offline/degraded when network-dependent).
