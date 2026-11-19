@@ -125,16 +125,21 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     changes: [
       "Documents now shows every file, however many the chapter has, instead of stopping at the newest thousand.",
       "New event is easier to fill in: every setting is one row you can read at a glance, types come from a short searchable list, and Create sits at the top, the same on the web and on your phone.",
+      "A long transcript pasted into your notes now folds into a card you can view or remove.",
+      "Minutes now open with the TL;DR, then the dates coming up, bold decision headlines and a checklist of action items with yours first, and the menu at the top right changes the meeting's name, time, type and who was there.",
+      "A task made from minutes now names its meeting as it's called today, with a link to the minutes, and a long task title wraps so you can read all of it.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
       "You can now set how many minutes before an event check-in opens when you make or edit it.",
       "With a page open on a wide window, the page now gets the main space and chat sits in a narrower panel on the right that you can drag wider, so lists and names no longer get cut off.",
+      "Events is now one list of events, tasks and birthdays by day, each in its own colour, with a small month beside it to jump to any day.",
     ],
     phone: [
       "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",
       "Tapping someone in the Directory or in a chat now opens their profile as its own page, and the Directory keeps one simple list with calmer filter chips.",
       "Tasks puts your tasks first: your points sit in one quiet line, a task up for grabs opens on its own page, and New event on the Calendar now sits at the bottom like New task.",
+      "While minutes are drafted from your notes, Drafting and Stop stay at the bottom of the screen.",
     ],
   },
   {
