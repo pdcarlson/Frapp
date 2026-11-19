@@ -291,23 +291,15 @@ export function SheetCloseButton({
 
 /**
  * A tall sheet's header row: an optional title and the close X. A record
- * sheet passes no title, because the record's own name heads the body (the
- * member sheet used to say "Member" above "Marcus Ellison").
- *
- * `actions` are the record's own icon controls (`IconButton`s), drawn just
- * before the close, as web's `PanelHeader` draws them: the member sheet's `⋯`
- * sits here, so what a viewer only now and then reaches for stays off the
- * record's face (`components.md` § Chrome weight).
+ * sheet passes no title, because the record's own name heads the body.
  */
 export function TallSheetHeader({
   title,
   onClose,
-  actions,
   doneAccent,
 }: {
   title?: string;
   onClose: () => void;
-  actions?: ReactNode;
   /**
    * When set, closes with a "Done" word in this accent instead of the X, for a tall
    * sheet stacked over a form to set one of its fields (Who's coming over New
@@ -327,7 +319,6 @@ export function TallSheetHeader({
         </Text>
       ) : null}
       <View style={styles.headerActions}>
-        {actions}
         {doneAccent ? (
           <Pressable
             accessibilityRole="button"

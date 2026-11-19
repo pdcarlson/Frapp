@@ -237,6 +237,24 @@ describe("MemberProfile as a screen", () => {
     act(() => tree.unmount());
   });
 
+  it("reads the member and the thread it was pushed from off the route", () => {
+    vi.spyOn(expoRouter, "useLocalSearchParams").mockReturnValueOnce({
+      userId: ADA,
+      channelId: "dm-ada",
+    });
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberProfileScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    const profile = tree.root.findByType(MemberProfile);
+    expect(profile.props).toEqual({ userId: ADA, openChannelId: "dm-ada" });
+    act(() => tree.unmount());
+  });
+
   it("says where to open a member from when the route has no user", () => {
     vi.spyOn(expoRouter, "useLocalSearchParams").mockReturnValueOnce({});
     let tree!: ReactTestRenderer;
@@ -469,6 +487,22 @@ describe("MemberProfile Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
+  it("raises no failure alert once the screen has lost focus", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    act(() => nav.__blur());
+    await act(async () => {
+      pending.reject(new Error("offline"));
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    act(() => nav.__refocus());
+    act(() => tree.unmount());
+  });
+
   it("drops a failure that lands after the screen has gone", async () => {
     const pending = deferred<unknown>();
     state.mutateAsync.mockReturnValueOnce(pending.promise);
@@ -697,6 +731,24 @@ describe("MemberProfile ⋯ menu", () => {
     state.removable = new Set([userId]);
     const tree = render(userId);
     expect(moreButton(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // #3790: an editor opened from the ⋯ would stay drawn over the thread a
+  // DM pushes, so the ⋯ waits for the DM as the roles Edit does.
+  it("holds the ⋯ while a DM with this member opens", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(moreButton(tree)[0]!.props.disabled).toBe(false);
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(moreButton(tree)[0]!.props.disabled).toBe(true);
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(moreButton(tree)[0]!.props.disabled).toBe(false);
     act(() => tree.unmount());
   });
 
@@ -1112,7 +1164,7 @@ describe("MemberProfile presence (#3917)", () => {
     expect(dots(tree).map((dot) => dot.props.testID)).toEqual([
       "member-presence-dnd",
     ]);
-    expect(faceLabel(tree)).toBe("Do Not Disturb");
+    expect(faceLabel(tree)).toBe("Ada, Do Not Disturb");
     expect(
       tree.root.findAll(
         (node) =>

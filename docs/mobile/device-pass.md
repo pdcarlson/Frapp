@@ -59,7 +59,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | 9 | Both | Open a photo, pinch in, drag it from near the left edge, close it, then swipe back slowly from the edge (Android: back) | The drag pans the photo. With the viewer closed, the swipe goes to the channel list with no pale strip at the left edge | #3588, #4465 |
 | 10 | Both | Open a thread from a reply-count line, then long-press a reply in it | The header names the parent message. The reply gets the same long-press sheet a channel message does | #4444, #4455, #4466 |
 | 11 | Both | Long-press a message, flag it Important, then clear the flag | The tint and caption appear and go. Report and Block are in the menu (don't send either) | #4195, #3724 |
-| 12 | Both | Tap a member's name. Look at the ⋯, then tap Edit in the Roles block, and close the role editor with a swipe down | The ⋯ sits beside the X (and never on your own profile). Closing the role editor lands back on the member sheet, not on the chat | #3729, #4345, #3798 |
+| 12 | Both | Tap a member's name. Look at the ⋯, then tap Edit in the Roles block, and close the role editor with a swipe down | The profile opens as its own screen, and the ⋯ sits at the back row's far end (never on your own profile). Closing the role editor lands back on the profile, not on the chat | #3729, #4345, #3798 |
 
 ## 4. Making things (3 minutes)
 

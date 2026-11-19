@@ -61,6 +61,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { showActionMenu } from "@/lib/action-menu";
 import { goBackTo } from "@/lib/href";
+import { leaveScreen } from "@/lib/back-target";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import { taskStatusHue } from "@/lib/tasks/status-hue";
@@ -304,10 +305,7 @@ function TaskScreen({
 
   // Back where the member came from (the board, the Calendar), or to the
   // board on a cold link with nothing under this screen.
-  const leave = () => {
-    if (router.canGoBack()) router.back();
-    else goBackTo(router, BACK_TO_TASKS.href);
-  };
+  const leave = () => leaveScreen(router, BACK_TO_TASKS.href);
   const startSelecting = () => {
     setPeopleNote(null);
     setPicked(new Set());

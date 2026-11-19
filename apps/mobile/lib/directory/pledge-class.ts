@@ -2,10 +2,10 @@
  * A member's pledge class and order number on mobile (#3939;
  * `spec/behavior/members.md` § Pledge class and order number).
  *
- * Shared by the member sheet (s13) and the viewer's own Profile (s15), so the
+ * Shared by the member profile (s13) and the viewer's own Profile (s15), so the
  * two draw the same rows under the same rules: `usePledgeClassRows` is the
  * whole of it for both. An officer holding `roles:manage` also sets them from
- * the member sheet (#3991), through `MemberClassSheet`; `classEditorResult`
+ * the member profile (#3991), through `MemberClassSheet`; `classEditorResult`
  * is that editor's rule for what it sends.
  */
 import {

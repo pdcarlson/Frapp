@@ -18,12 +18,17 @@ describe("findTargetRoute", () => {
     ).toEqual({ pathname: "/chat-thread", params: { channelId: "c1" } });
   });
 
-  it("opens an event's details and the directory for a member", () => {
+  it("opens an event's details and a member's profile (#5568)", () => {
     expect(findTargetRoute({ type: "event", eventId: "e1" })).toEqual({
       pathname: "/event-details",
       params: { id: "e1" },
     });
     expect(findTargetRoute({ type: "member", userId: "u1" })).toEqual({
+      pathname: "/member",
+      params: { userId: "u1" },
+    });
+    // No user to open: the Directory, where they can be found.
+    expect(findTargetRoute({ type: "member", userId: null })).toEqual({
       pathname: "/directory",
     });
   });

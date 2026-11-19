@@ -3,6 +3,8 @@ import {
   NavigationContext,
   NavigationRouteContext,
 } from "expo-router/react-navigation";
+import type { Href } from "expo-router";
+import { goBackTo } from "@/lib/href";
 
 /**
  * Going back through the stack (`spec/ui/mobile/navigation.md` § Going back).
@@ -177,4 +179,21 @@ export function useHoldSwipeBack(hold: boolean): void {
       for (const at of held) at.setOptions({ gestureEnabled: true });
     };
   }, [navigation, hold]);
+}
+
+/**
+ * Leaves a pushed record screen the way its back capsule does: pops it to
+ * whatever is under it, or, on a cold link with nothing under it, goes to
+ * `fallback` (a task's screen to the board, a member's to the Directory).
+ * For a screen that closes itself once its record is gone or done with.
+ */
+export function leaveScreen(
+  router: Parameters<typeof goBackTo>[0] & {
+    canGoBack: () => boolean;
+    back: () => void;
+  },
+  fallback: Href,
+): void {
+  if (router.canGoBack()) router.back();
+  else goBackTo(router, fallback);
 }

@@ -85,7 +85,8 @@ import {
   START_DM_FAILED_BODY,
   startDmFailedTitle,
 } from "@/lib/directory/start-dm";
-import { goBackTo } from "@/lib/href";
+import { leaveScreen } from "@/lib/back-target";
+import { firstParam } from "@/lib/route-params";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -157,11 +158,6 @@ export function MemberProfileScreen() {
     );
   }
   return <MemberProfile userId={userId} openChannelId={openChannelId} />;
-}
-
-function firstParam(value: string | string[] | undefined): string | null {
-  const first = Array.isArray(value) ? value[0] : value;
-  return first ? first : null;
 }
 
 export function MemberProfile({
@@ -267,10 +263,7 @@ export function MemberProfile({
       !!detail?.canRemove && !!detail.memberId && otherMemberId !== null,
   });
 
-  function leave() {
-    if (router.canGoBack()) router.back();
-    else goBackTo(router, BACK_TO_DIRECTORY.href);
-  }
+  const leave = () => leaveScreen(router, BACK_TO_DIRECTORY.href);
 
   function openMenu() {
     if (!detail) return;
@@ -351,7 +344,9 @@ export function MemberProfile({
       if (channelId === openChannelId) leave();
       else router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
-      if (!mountedRef.current) return;
+      // Quiet once the member has moved on, as the success path is: an
+      // alert over an unrelated screen would surprise.
+      if (!isShown()) return;
       Alert.alert(startDmFailedTitle(name), START_DM_FAILED_BODY);
     } finally {
       dmInFlightRef.current = false;
@@ -365,8 +360,12 @@ export function MemberProfile({
         label={memberMenuButtonLabel(detail.displayName)}
         onPress={openMenu}
         // Held while a block or a removal is out, rather than dropping a row
-        // from the menu, so the ⋯ never jumps.
-        disabled={blockActions.isPending || removeMutation.isPending}
+        // from the menu, so the ⋯ never jumps; and while a DM opens, as the
+        // roles Edit is (#3790): its editor sheet would stay drawn over the
+        // thread the DM pushes.
+        disabled={
+          blockActions.isPending || removeMutation.isPending || dmPending
+        }
       >
         <OverflowGlyph
           color={tokens.color.text.mutedForeground}
@@ -410,9 +409,16 @@ export function MemberProfile({
         title={detail.displayName}
         subtitle={detail.meta ?? undefined}
         titleMark={
+          // The status read with the name it belongs to ("Ada, Online"),
+          // as the sheet's name heading read it, since the shell's title
+          // carries no label of its own.
           <View
             accessible={!!status}
-            accessibilityLabel={status ? presenceLabel(status) : undefined}
+            accessibilityLabel={
+              status
+                ? `${detail.displayName}, ${presenceLabel(status)}`
+                : undefined
+            }
           >
             <AvatarWithPresence
               status={status}

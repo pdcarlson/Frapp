@@ -9,8 +9,8 @@ import type { NotificationTarget } from "@/lib/notifications/targets";
  *
  * - A channel opens the channel; a message opens its channel at that message
  *   (`focusMessageId`, the route's own jump).
- * - A member opens the directory, as web's Find opens Members: neither has a
- *   page for one member.
+ * - A member opens their profile (`/member`, #5568), the page every other
+ *   door to a member opens; one with no user id opens the Directory.
  * - An event opens its details.
  * - Backwork has no screen on the phone.
  *
@@ -32,7 +32,9 @@ export function findTargetRoute(target: FindTarget): NotificationTarget | null {
           : { channelId: target.channelId },
       };
     case "member":
-      return { pathname: "/directory" };
+      return target.userId
+        ? { pathname: "/member", params: { userId: target.userId } }
+        : { pathname: "/directory" };
     case "event":
       return target.eventId
         ? { pathname: "/event-details", params: { id: target.eventId } }

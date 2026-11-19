@@ -936,7 +936,7 @@ function ChannelThreadScreen() {
     setListKind(kind);
     listSheetRef.current?.present();
   }, []);
-  // Closed on a blur or a channel switch, for the member sheet's reason.
+  // Closed on a blur or a channel switch, for the member list's reason.
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
@@ -1371,9 +1371,19 @@ function ChannelThreadScreen() {
   // reason below: this screen stays mounted, and the sheet draws through the
   // app's sheet provider, so left up it would sit over the next channel (a
   // push can switch it to a 1:1 DM, which has no list) or another tab.
+  // A profile opened from a row of the list (#5568) pushes a screen, which
+  // blurs the thread and closes the list; coming back from it reopens the
+  // list, so checking a second member doesn't start from the bare thread
+  // (`spec/ui/mobile/patterns.md`: a sheet's way on returns to it). Keyed by
+  // channel, so a switch in between reopens nothing.
+  const reopenMembersFor = useRef<string | null>(null);
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
+      if (reopenMembersFor.current === channelId) {
+        memberSheetRef.current?.present();
+      }
+      reopenMembersFor.current = null;
       return () => memberSheetRef.current?.dismiss();
     }, [channelId]),
   );
@@ -1385,7 +1395,7 @@ function ChannelThreadScreen() {
   // the thread (#5568), so a profile reads the same from every door. The
   // thread passes itself, so Message to this DM's own member goes back to it
   // rather than stacking a second copy. The push blurs the thread, which
-  // closes the member list (above).
+  // closes the member list; from the list, the list comes back (above).
   const openProfile = useCallback(
     (userId: string) => {
       Keyboard.dismiss();
@@ -1395,6 +1405,13 @@ function ChannelThreadScreen() {
       });
     },
     [router, channelId],
+  );
+  const openProfileFromList = useCallback(
+    (userId: string) => {
+      reopenMembersFor.current = channelId ?? null;
+      openProfile(userId);
+    },
+    [channelId, openProfile],
   );
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
@@ -2275,7 +2292,7 @@ function ChannelThreadScreen() {
       <ChannelMemberSheet
         ref={memberSheetRef}
         channelId={channelId ?? null}
-        onOpenProfile={openProfile}
+        onOpenProfile={openProfileFromList}
       />
       {composerPlus.sheets}
       {scheduleSend.sheets}

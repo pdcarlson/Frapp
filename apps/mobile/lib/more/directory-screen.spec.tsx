@@ -282,6 +282,7 @@ function chips(tree: ReactTestRenderer) {
     trailing: React.ReactElement<{
       label: string;
       on: boolean;
+      quiet?: boolean;
       accessibilityState: { expanded: boolean };
       onPress: () => void;
     }> | null;
@@ -291,6 +292,7 @@ function chips(tree: ReactTestRenderer) {
 type TrailingChip = React.ReactElement<{
   label: string;
   on: boolean;
+  quiet?: boolean;
   accessibilityLabel?: string;
   accessibilityState: Record<string, boolean>;
   onPress: () => void;
@@ -734,6 +736,14 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
 
     expect(metaOf(tree, "Marcus Reid")).toBe("Alpha");
     expect(metaOf(tree, "Andre Silva")).toBe("Beta");
+  });
+
+  // #5568: the sort lights quietly, as the chips beside it do.
+  it("draws the sort chip quiet", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    const tree = render();
+    expect(orderChip(tree)!.props.quiet).toBe(true);
   });
 
   it("offers the sort under the chapter's own word, as typed, and lists by it", () => {
@@ -1195,14 +1205,26 @@ describe("s13's rows, profile and quiet chips (#5568)", () => {
   it("lights the chips quietly, the tabs and the chips beside them", () => {
     const tree = render();
     expect(chips(tree)).toMatchObject({ quiet: true });
-    const trailing = chips(tree).trailing as React.ReactElement<{
-      children?: React.ReactElement<{ quiet?: boolean }>[];
-      quiet?: boolean;
-    }>;
-    const beside = trailing.props.children ?? [trailing];
-    for (const chip of [beside].flat().filter(Boolean)) {
-      expect(chip.props.quiet).toBe(true);
-    }
+    const beside = trailingChips(tree);
+    expect(beside.length).toBeGreaterThan(0);
+    for (const chip of beside) expect(chip.props.quiet).toBe(true);
+  });
+
+  it("draws the Alumni tab's Filters chip quiet too", () => {
+    const tree = render();
+    act(() => chips(tree).onSelect("alumni"));
+    expect(chips(tree).trailing!.props).toMatchObject({
+      label: "Filters",
+      quiet: true,
+    });
+  });
+
+  it("draws Add roles quiet", () => {
+    state.pickable = [{ id: "r-im", name: "Intramurals" }] as never;
+    const tree = render();
+    expect(
+      inHeader(tree, (element) => element.props.label === "Add roles"),
+    ).toMatchObject({ quiet: true });
   });
 
   it("names a row with its member's words", () => {

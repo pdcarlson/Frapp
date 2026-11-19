@@ -98,7 +98,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
     // loads once the device is online instead of offering a dead Retry.
     const body =
       blockList.status === "loading" ? (
-        <SkeletonLines lines={3} showTile={false} tone="list" />
+        <SkeletonLines lines={3} tone="list" />
       ) : blockList.status === "unavailable" && rows.length === 0 ? (
         <ErrorState
           title={BLOCKED_MEMBERS_ERROR_TITLE}

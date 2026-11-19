@@ -2276,13 +2276,45 @@ describe("chat thread member profile", () => {
       pathname: "/member",
       params: { userId: "user-42", channelId: CHANNEL },
     });
-    // The member list opens the same screen.
-    expect(
-      tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
-    ).toBe(row.props.onOpenProfile);
+    act(() => tree.unmount());
+  });
+
+  // From a row of the member list, the same screen; coming back from it
+  // reopens the list, which the push's blur closed.
+  it("reopens the member list on return from a profile it opened", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    const tree = render();
+    const list = tree.root.findByType("ChannelMemberSheet" as never);
+    act(() => (list.props.onOpenProfile as (id: string) => void)("user-7"));
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: "user-7", channelId: CHANNEL },
+    });
+    act(() => blurThread());
+    presentMemberSheet.mockClear();
+    act(() => refocus());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    // Once: a later return from elsewhere doesn't reopen it.
+    act(() => blurThread());
+    act(() => refocus());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't reopen the list after a profile opened from a message", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
+    act(() => blurThread());
+    presentMemberSheet.mockClear();
+    act(() => refocus());
+    expect(presentMemberSheet).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });
+
+const blurThread = (expoRouter as unknown as { __blur: () => void }).__blur;
 
 describe("chat thread member list (#3536)", () => {
   const membersButtons = (tree: ReactTestRenderer) =>
