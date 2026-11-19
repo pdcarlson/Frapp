@@ -29,6 +29,7 @@ import {
   EVENT_CREATE_PERMISSIONS,
   deleteOffersSeriesChoice,
   describeAttendance,
+  describeCheckIn,
   EVENT_DESCRIPTION_MAX_LENGTH,
   EVENT_FORM_MEMBER_NOTE,
   EVENT_FORM_PLACEHOLDERS,
@@ -39,6 +40,7 @@ import {
   eventLimitsAudience,
   isEmptyEventPatch,
   leavesAfterSave,
+  parseCheckInOpens,
   repeatEditAnchor,
   repeatEditDraft,
   repeatEditSeriesOf,
@@ -112,17 +114,19 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  *
  * ## What it asks
  *
- * It opens simple: name, start, end and place, the four things every event
- * needs. "More options" holds the rest, and says in one line what they are
- * set to while closed: who's coming (by role, in its own stacked sheet,
- * `attendance-sheet.tsx`), points, Repeat and a description. The check-in
- * zone stays on the web editor. `lib/events/create-event.ts` holds the rules.
+ * The name as a borderless title, then one property row per setting, in the
+ * order and words web's form draws (#5561, `event-form-rows.tsx`): Type (its
+ * own stacked sheet), When, Repeat, Location, Who's coming (by role, in its
+ * own stacked sheet, `attendance-sheet.tsx`), Points, Description, Notes and
+ * Check-in. Every row says what it holds at rest; When, Repeat and Check-in
+ * unfold in place. Create sits small in the header. The check-in zone stays
+ * on the web editor. `lib/events/create-event.ts` holds the rules.
  * Attendance starts optional for everyone, as `/event` creates it: a required
  * event marks everyone who misses it absent, so it is a choice, not a default.
  *
  * ## The platform's own pickers
  *
- * Starts and Ends are rows laid out the way Calendar's are: a day and a time,
+ * Starts and Ends unfold under the When row, laid out the way Calendar's are: a day and a time,
  * each opening the system picker. On iOS they are the native compact pickers,
  * whose popovers are the calendar and the time wheel; on Android a tap opens
  * the system date or time dialog. Moving the start drags the end along,
@@ -509,10 +513,13 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       if (!result.ok) {
         setErrors(result.errors);
         // Every row shows at rest, so each error sits under its own row;
-        // Repeat's is inside its options, so they open.
-        if (result.errors.repeat) {
-          setDraft((previous) => ({ ...previous, openRow: "repeat" }));
-        }
+        // Repeat's and Check-in's fields fold into their rows, so they open.
+        const openRow = result.errors.repeat
+          ? "repeat"
+          : result.errors.checkInOpens
+            ? "checkIn"
+            : null;
+        if (openRow) setDraft((previous) => ({ ...previous, openRow }));
         return;
       }
       setErrors({});
@@ -631,10 +638,13 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       if (!result.ok) {
         setErrors(result.errors);
         // Every row shows at rest, so each error sits under its own row;
-        // Repeat's is inside its options, so they open.
-        if (result.errors.repeat) {
-          setDraft((previous) => ({ ...previous, openRow: "repeat" }));
-        }
+        // Repeat's and Check-in's fields fold into their rows, so they open.
+        const openRow = result.errors.repeat
+          ? "repeat"
+          : result.errors.checkInOpens
+            ? "checkIn"
+            : null;
+        if (openRow) setDraft((previous) => ({ ...previous, openRow }));
         return;
       }
       sending.current = true;
@@ -726,7 +736,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const touched =
       JSON.stringify({ ...draft, openRow: null }) !==
       JSON.stringify({ ...base, openRow: null });
-    const toggleRow = (row: "when" | "repeat") => {
+    const toggleRow = (row: "when" | "repeat" | "checkIn") => {
       Keyboard.dismiss();
       setDraft((previous) => ({
         ...previous,
@@ -991,8 +1001,22 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               {/* #3703: members arrive early, so check-in opens ahead of the
                   start; 10 minutes unless the officer says. The check-in zone
                   is drawn on web, where a map belongs. */}
-              <PropertyRow glyph="checkIn" label={EVENT_FORM_ROW_LABELS.checkIn}>
-                <View style={styles.checkInValue}>
+              <PropertyRow
+                glyph="checkIn"
+                label={EVENT_FORM_ROW_LABELS.checkIn}
+                value={describeCheckIn(
+                  parseCheckInOpens(draft.checkInOpensInput),
+                )}
+                invalid={
+                  !!errors.checkInOpens ||
+                  parseCheckInOpens(draft.checkInOpensInput) === null
+                }
+                disabled={pending}
+                accessibilityHint="Shows how many minutes early check-in opens."
+                onPress={() => toggleRow("checkIn")}
+              />
+              {draft.openRow === "checkIn" ? (
+                <View style={[styles.opened, styles.checkInValue]}>
                   <BottomSheetTextInput
                     value={draft.checkInOpensInput}
                     onChangeText={(checkInOpensInput) =>
@@ -1011,9 +1035,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                       errors.checkInOpens ? styles.rowInputError : null,
                     ]}
                   />
-                  <Text style={styles.rowSuffix}>min early</Text>
+                  <Text style={styles.rowSuffix}>minutes early</Text>
                 </View>
-              </PropertyRow>
+              ) : null}
               {errors.checkInOpens ? (
                 <Text style={styles.error}>{errors.checkInOpens}</Text>
               ) : null}
@@ -1264,9 +1288,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     rowInputError: {
       color: tokens.color.semantic.destructive,
     },
+    // The minutes field, unfolded under its row and set under the label.
     checkInValue: {
-      flex: 1,
       flexDirection: "row",
+      paddingLeft: 18 + tokens.spacing.sm,
       alignItems: "center",
       gap: tokens.spacing.xs,
     },

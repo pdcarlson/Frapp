@@ -76,6 +76,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
 import { EventEditorDialog } from "./event-editor-dialog";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
@@ -203,9 +204,60 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     });
   });
 
-  it("keeps meeting minutes to an edit, after the event exists", () => {
+  it("draws its rows in the order the phone draws them (#5561)", () => {
     renderCreate();
-    expect(screen.queryByLabelText("Meeting minutes")).toBeNull();
+    const labels = EVENT_FORM_ROWS.map((row) =>
+      row === "notes" ? "Meeting minutes" : EVENT_FORM_ROW_LABELS[row],
+    );
+    const drawn = labels.map(
+      (label) => screen.getAllByText(label, { selector: "label, span" })[0]!,
+    );
+    for (let i = 1; i < drawn.length; i += 1) {
+      expect(
+        drawn[i - 1]!.compareDocumentPosition(drawn[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("takes notes on create, as the phone's sheet does, and sends them", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Meeting minutes"), {
+      target: { value: "  Bring dues " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({
+      notes: "Bring dues",
+    });
+  });
+
+  it("creates on Ctrl+Enter from a field, not from a menu over the form", async () => {
+    renderCreate();
+    fillRequiredFields();
+    // From the open When menu, a portal over the form: not a create.
+    fireEvent.keyDown(screen.getByLabelText("Starts, time"), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMutate).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByLabelText("Event name"), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+  });
+
+  it("offers Discard only once something is typed", () => {
+    renderCreate();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Formal" },
+    });
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
   it("labels the notes field as meeting minutes on edit", () => {
@@ -1552,6 +1604,16 @@ describe("EventEditorDialog event types (#3730)", () => {
       point_value: 10,
       is_mandatory: true,
     });
+  });
+
+  it("keeps what was changed when the held type is picked again", () => {
+    renderCreate();
+    pickType("Chapter meeting");
+    fireEvent.change(screen.getByLabelText("Points for attending"), {
+      target: { value: "25" },
+    });
+    pickType("Chapter meeting");
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(25);
   });
 
   it("replaces a name the last type wrote, never one the officer typed", () => {

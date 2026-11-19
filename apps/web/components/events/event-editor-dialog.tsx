@@ -193,8 +193,7 @@ type EventFormMenu = "when" | "repeat" | "attendance" | "checkIn";
 
 /**
  * What the form keeps when the officer leaves it unsaved (#4593): every field
- * as typed, and whether More options and the zone were open, so it comes back
- * exactly as it was left.
+ * as typed, so it comes back as it was left.
  */
 type EventFields = {
   name: string;
@@ -834,9 +833,11 @@ export function EventEditorDialog({
 
   const submitLabel = useMemo(() => {
     if (isSubmitting) {
-      return mode === "create" ? "Creating..." : "Saving...";
+      return mode === "create" ? "Creating" : "Saving";
     }
-    return mode === "create" ? "Create event" : "Save changes";
+    // The phone's header says the same (#5561); the button's name is the
+    // whole "Create event" / "Save changes".
+    return mode === "create" ? "Create" : "Save";
   }, [isSubmitting, mode]);
 
   /**
@@ -846,6 +847,9 @@ export function EventEditorDialog({
    * go leaves the form as it is.
    */
   function handlePickType(type: EventType | null) {
+    // The held type picked again keeps it and what was changed since, as
+    // the phone's Type sheet does: it never resets the points or attendance.
+    if (type && type.id === eventTypeId) return;
     setEventTypeId(type?.id ?? null);
     if (!type) return;
     // A member's event carries no points and requires nobody, whatever the
@@ -922,6 +926,7 @@ export function EventEditorDialog({
         description: "Provide both start and end times.",
         variant: "destructive",
       });
+      setMenu("when");
       return;
     }
     if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
@@ -930,6 +935,7 @@ export function EventEditorDialog({
         description: "End must be after start.",
         variant: "destructive",
       });
+      setMenu("when");
       return;
     }
 
@@ -940,6 +946,7 @@ export function EventEditorDialog({
         description: parsedZone.message,
         variant: "destructive",
       });
+      setMenu("checkIn");
       return;
     }
     const zone = parsedZone.zone;
@@ -1304,7 +1311,17 @@ export function EventEditorDialog({
         aria-describedby={undefined}
         onKeyDown={(keyEvent) => {
           // Ctrl/Cmd+Enter creates from anywhere in the form, as Linear's
-          // create does.
+          // create does. Not from a menu or dialog opened over it (React
+          // carries their keys here through the portal): the Type search
+          // takes Enter as a pick, and the series question as its answer.
+          const target = keyEvent.target;
+          if (
+            keyEvent.defaultPrevented ||
+            !(target instanceof Node) ||
+            !keyEvent.currentTarget.contains(target)
+          ) {
+            return;
+          }
           if (
             keyEvent.key === "Enter" &&
             (keyEvent.metaKey || keyEvent.ctrlKey) &&
@@ -1579,24 +1596,22 @@ export function EventEditorDialog({
             </PropertyRow>
 
             {/* Labeled as the sheet labels them: Notes while minutes are
-                their own record (#4934). Only on an edit: notes are written
-                after the meeting. */}
-            {mode === "edit" ? (
-              <PropertyRow
-                glyph="notes"
-                label={notesLabel}
-                labelFor="event-meeting-minutes"
-                align="start"
-              >
-                <RowTextarea
-                  id="event-meeting-minutes"
-                  maxLength={EVENT_NOTES_MAX_LENGTH}
-                  value={notes}
-                  onChange={(eventValue) => setNotes(eventValue.target.value)}
-                  placeholder={EVENT_FORM_PLACEHOLDERS.notes}
-                />
-              </PropertyRow>
-            ) : null}
+                their own record (#4934). On create too, as the phone's
+                sheet has it (#5561). */}
+            <PropertyRow
+              glyph="notes"
+              label={notesLabel}
+              labelFor="event-meeting-minutes"
+              align="start"
+            >
+              <RowTextarea
+                id="event-meeting-minutes"
+                maxLength={EVENT_NOTES_MAX_LENGTH}
+                value={notes}
+                onChange={(eventValue) => setNotes(eventValue.target.value)}
+                placeholder={EVENT_FORM_PLACEHOLDERS.notes}
+              />
+            </PropertyRow>
 
             <PropertyRow glyph="checkIn" label={EVENT_FORM_ROW_LABELS.checkIn}>
               <Popover {...menuProps("checkIn")}>

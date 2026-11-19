@@ -14,6 +14,7 @@ import {
   EVENT_FORM_PLACEHOLDERS,
   EVENT_FORM_ROW_LABELS,
   EVENT_TYPE_NAME_MAX_LENGTH,
+  EVENT_TYPE_SEARCH_FROM,
   EVENT_TYPES_MAX,
 } from "@repo/validation";
 import {
@@ -109,7 +110,9 @@ export function EventTypeRow({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[22rem] p-0">
           <Command label="Event type">
-            <CommandInput placeholder="Find a type" />
+            {types.length > EVENT_TYPE_SEARCH_FROM ? (
+              <CommandInput placeholder="Find a type" />
+            ) : null}
             <CommandList className="max-h-72">
               <CommandEmpty>No type by that name.</CommandEmpty>
               <CommandGroup>
@@ -156,15 +159,6 @@ export function EventTypeRow({
   );
 }
 
-/** "10 points, required for everyone": a type's chip title and editor row. */
-function describeEventType(type: {
-  point_value: number;
-  is_mandatory: boolean;
-}): string {
-  const points =
-    type.point_value === 1 ? "1 point" : `${type.point_value} points`;
-  return `${points}, ${type.is_mandatory ? "required" : "optional"} for everyone`;
-}
 
 
 type Draft = { name: string; points: string; required: boolean };
@@ -195,7 +189,7 @@ function EventTypesEditor({
       blurb="Picking a type fills in its points and attendance. Events already made keep theirs."
       max={EVENT_TYPES_MAX}
       deleteConsequence="Its events keep their points and lose the type."
-      describe={describeEventType}
+      describe={describeEventTypeSets}
       editLabel={(name) => `Edit ${name}`}
       useDeleteType={useDeleteEventType}
       renderForm={(type, onDone) => <TypeForm type={type} onDone={onDone} />}

@@ -132,7 +132,7 @@ describe("EventTypeRow's Edit types", () => {
         "    <li class="flex items-center gap-2 px-3 py-1">",
         "      <div class="min-w-0 flex-1">",
         "        <p class="truncate text-sm font-semibold">Chapter meeting",
-        "        <p class="truncate text-caption text-muted-foreground">10 points, required for everyone",
+        "        <p class="truncate text-caption text-muted-foreground">10 points · Required",
         "      <button aria-label="Edit Chapter meeting" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Edit Chapter meeting">",
         "        <svg aria-hidden="true" class="lucide lucide-pencil">",
         "      <button aria-label="Delete Chapter meeting" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Delete Chapter meeting">",
@@ -140,7 +140,7 @@ describe("EventTypeRow's Edit types", () => {
         "    <li class="flex items-center gap-2 px-3 py-1">",
         "      <div class="min-w-0 flex-1">",
         "        <p class="truncate text-sm font-semibold">Social",
-        "        <p class="truncate text-caption text-muted-foreground">1 point, optional for everyone",
+        "        <p class="truncate text-caption text-muted-foreground">1 point",
         "      <button aria-label="Edit Social" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Edit Social">",
         "        <svg aria-hidden="true" class="lucide lucide-pencil">",
         "      <button aria-label="Delete Social" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Delete Social">",
@@ -426,7 +426,7 @@ describe("EventTypeRow's Edit types", () => {
 
     await userEvent.click(within(item).getByRole("button", { name: "Keep" }));
     expect(
-      within(item).getByText("10 points, required for everyone"),
+      within(item).getByText("10 points · Required"),
     ).toBeInTheDocument();
 
     await userEvent.click(

@@ -257,7 +257,7 @@ export function SheetHeader({
           accessibilityState={{ disabled: !!action.disabled }}
           disabled={action.disabled}
           onPress={action.onPress}
-          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           style={({ pressed }) => [
             styles.headerAction,
             { backgroundColor: action.accent },
@@ -728,10 +728,11 @@ function createStyles(tokens: SignetTokens) {
     titleFill: {
       flex: 1,
     },
-    // The Compact step (foundations.md §9): a header's commit, not the
-    // full-width Primary at a form's foot. `hitSlop` reaches the 44pt floor.
+    // A header's commit, not the full-width Primary at a form's foot: drawn
+    // at 32, the height mobile's filter chips draw at the Chip step
+    // (foundations.md §9), and `hitSlop` reaches the 44pt floor.
     headerAction: {
-      minHeight: 34,
+      minHeight: 32,
       minWidth: 72,
       paddingHorizontal: tokens.spacing.md,
       borderRadius: tokens.radius.control,

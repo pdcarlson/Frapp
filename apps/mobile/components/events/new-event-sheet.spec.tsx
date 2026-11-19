@@ -110,7 +110,8 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewEventSheet, WhenRow } from "./new-event-sheet";
-import { EventTypeSheet } from "./event-form-rows";
+import { EventTypeSheet, PropertyRow } from "./event-form-rows";
+import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
 import { emptyEventDraft } from "@/lib/events/create-event";
 import type { EventEditTarget } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
@@ -242,10 +243,9 @@ describe("New event", () => {
     expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
       "Repeat: Doesn't repeat",
     );
-    expect(
-      byLabel(tree, "Minutes before the start that check-in opens").props
-        .value,
-    ).toBe("10");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens 10 minutes early",
+    );
     type(tree, "Points for attending", "25");
     // Notes, sent on create as web's form sends them (#4934).
     type(tree, "Notes", "  Bring dues ");
@@ -312,6 +312,52 @@ describe("New event", () => {
     expect(byLabel(tree, "Points for attending").props.value).toBe("10");
     expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
       "Repeat: Doesn't repeat",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("draws its rows in the order web draws them (#5561)", () => {
+    const tree = render();
+    expect(
+      tree.root.findAllByType(PropertyRow).map((row) => row.props.label),
+    ).toEqual(
+      EVENT_FORM_ROWS.map((row) =>
+        row === "notes" ? "Notes" : EVENT_FORM_ROW_LABELS[row],
+      ),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("reads Cancel until something is typed, then Discard", () => {
+    const tree = render();
+    const cancelWord = () =>
+      tree.root
+        .findAll(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            ["Cancel", "Discard"].includes(drawnText(node)),
+        )
+        .map(drawnText);
+    expect(cancelWord()).toEqual(["Cancel"]);
+    type(tree, "Event name", "Formal");
+    expect(cancelWord()).toEqual(["Discard"]);
+    act(() => tree.unmount());
+  });
+
+  it("says when check-in opens in web's words, and unfolds to change it", () => {
+    const tree = render();
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens 10 minutes early",
+    );
+    expect(drawn(tree, "Minutes before the start")).toBe(false);
+    act(() => byLabel(tree, "Check-in").props.onPress());
+    type(tree, "Minutes before the start that check-in opens", "0");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens at the start",
+    );
+    type(tree, "Minutes before the start that check-in opens", "200");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opening time needs a fix",
     );
     act(() => tree.unmount());
   });

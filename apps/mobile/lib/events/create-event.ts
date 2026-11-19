@@ -97,7 +97,7 @@ export interface NewEventDraft {
 }
 
 /** The New event rows that open in place on the phone; one at a time. */
-export type EventFormOpenRow = "when" | "repeat" | null;
+export type EventFormOpenRow = "when" | "repeat" | "checkIn" | null;
 
 /** A fresh draft. */
 export function emptyEventDraft(): NewEventDraft {

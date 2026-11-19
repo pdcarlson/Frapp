@@ -1,3 +1,5 @@
+import { ATTENDANCE_SEARCH_FROM } from "./event-attendance";
+
 /**
  * The words of the event form's rows (#5561), one copy for web's
  * `EventEditorDialog` and the phone's `NewEventSheet`, so the two read as
@@ -52,6 +54,12 @@ export const EVENT_FORM_PLACEHOLDERS = {
  */
 export const EVENT_FORM_MEMBER_NOTE =
   "Events you make carry no points and require nobody.";
+
+/**
+ * Past this many types, the Type menu (web) and sheet (phone) get a search,
+ * as Who's coming does past as many roles.
+ */
+export const EVENT_TYPE_SEARCH_FROM = ATTENDANCE_SEARCH_FROM;
 
 /** `"10 points · Required"`: what picking a type sets, in its menu row. */
 export function describeEventTypeSets(type: {

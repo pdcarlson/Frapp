@@ -8,7 +8,10 @@ import {
   type EventFormGlyphName,
 } from "@repo/theme/event-form-glyphs";
 import type { EventType } from "@repo/hooks";
-import { describeEventTypeSets } from "@repo/validation";
+import {
+  describeEventTypeSets,
+  EVENT_TYPE_SEARCH_FROM,
+} from "@repo/validation";
 import { Frame, paint } from "@/components/glyph-recipe";
 import { CheckGlyph, ForwardGlyph } from "@/components/control-glyphs";
 import {
@@ -173,8 +176,6 @@ export const EventTypeSheet = forwardRef<
   );
 });
 
-/** Past this many types the list gets a search, as Who's coming does. */
-const TYPE_SEARCH_FROM = 8;
 
 type TypeOption = { id: string | null; type: EventType | null };
 
@@ -221,7 +222,7 @@ function TypeList({
             onClose={onDone}
             doneAccent={brand.accent}
           />
-          {types.length > TYPE_SEARCH_FROM ? (
+          {types.length > EVENT_TYPE_SEARCH_FROM ? (
             <BottomSheetTextInput
               value={search}
               onChangeText={setSearch}

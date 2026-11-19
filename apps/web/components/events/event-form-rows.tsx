@@ -114,7 +114,7 @@ export const RowValueButton = React.forwardRef<
       type="button"
       className={cn(
         ROW_VALUE,
-        "text-left",
+        "truncate text-left",
         empty ? "text-muted-foreground" : "text-foreground",
         invalid && "text-destructive-text",
         className,
@@ -137,7 +137,7 @@ export const RowInput = React.forwardRef<
       ref={ref}
       className={cn(
         ROW_VALUE,
-        "caret-primary placeholder:text-muted-foreground focus:bg-surface-1",
+        "truncate caret-primary placeholder:text-muted-foreground focus:bg-surface-1",
         "aria-[invalid=true]:text-destructive-text",
         className,
       )}
@@ -182,7 +182,7 @@ export const RowTextarea = React.forwardRef<
  * label size, and the row's own hover lift.
  */
 const ROW_VALUE = cn(
-  "flex min-h-9 w-full min-w-0 items-center truncate rounded-md bg-transparent px-2 text-sm pointer-coarse:min-h-11",
+  "flex min-h-9 w-full min-w-0 items-center rounded-md bg-transparent px-2 text-sm pointer-coarse:min-h-11",
   "transition-colors hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
   FOCUS_RING,
 );
