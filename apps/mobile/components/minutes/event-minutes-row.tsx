@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useRouter } from "expo-router";
 import {
+  useMeeting,
   useMeetingNoteTaking,
   useMeetings,
   useMinutesRequest,
@@ -12,6 +13,7 @@ import {
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   can,
+  eventMinutesLines,
 } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
@@ -31,7 +33,9 @@ import { RequestMinutesRow } from "@/components/minutes/request-minutes-row";
  * (`spec/behavior/meetings.md` § Writing minutes; web's twin is
  * `event-minutes.tsx`, with the same words).
  *
- * - Minutes the viewer may read: one row that opens them.
+ * - Minutes the viewer may read: one row that opens them, saying where they
+ *   stand (posted on which day, or a draft), how many decisions and action
+ *   items they hold, and the TL;DR's first line, as web's card does.
  * - None yet, for an officer who records minutes (`meetings:record`):
  *   Record minutes where this phone can record (it starts them and opens
  *   them asking to record, notice first), else Write minutes, which starts
@@ -58,6 +62,8 @@ export function EventMinutesRow({
   const on = useMeetingsOn();
   const router = useRouter();
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
+  // The TL;DR lives on the minutes themselves, read once they are known.
+  const detailQuery = useMeeting(on ? meetingsQuery.data?.[0]?.id : null);
   const canRecord = can("meetings:record", usePermissionList());
   const canDraft = useAiSurfaces().meetingNotes;
   const start = useStartMinutesFor();
@@ -137,16 +143,17 @@ export function EventMinutesRow({
     }
   }
 
+  const lines = minutes
+    ? eventMinutesLines(minutes, detailQuery.data?.content?.tldr)
+    : null;
   return (
     <>
       <ListSection>
-        {minutes ? (
+        {lines && minutes ? (
           <ListRow
             label={MEETING_ENTRY_COPY.label}
-            value={
-              minutes.status === "draft"
-                ? MEETING_COPY.draftBadge
-                : MEETING_ENTRY_COPY.posted
+            description={
+              lines.gist ? `${lines.status}\n${lines.gist}` : lines.status
             }
             accessibilityHint={MEETING_ENTRY_COPY.open}
             onPress={() => open(minutes.id)}
