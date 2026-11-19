@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Eye } from "lucide-react";
-import { useGroups } from "@repo/hooks";
+import { useGroups, useRoles } from "@repo/hooks";
 import { allRoles } from "@repo/hooks/task-who-picker";
 import {
   TASK_FOLLOWER_COPY,
@@ -48,6 +48,7 @@ const JUST_YOU = "none";
 export function useFollowerChoices(): FollowerChoice[] {
   const { directory } = useWhoDirectory();
   const groups = useGroups();
+  const roles = useRoles();
   return useMemo(() => {
     const viewer = directory.people.find((person) => person.isViewer)?.userId;
     if (!viewer) return [];
@@ -71,8 +72,22 @@ export function useFollowerChoices(): FollowerChoice[] {
         count: ids.length,
       });
     };
+    // The tier holding the Everyone role is the chapter, which the API
+    // refuses as a follower, as it does the Everyone role.
+    const everyoneTiers = new Set(
+      (
+        (roles.data ?? []) as {
+          tier_id?: string | null;
+          system_key?: string | null;
+        }[]
+      )
+        .filter((role) => role.system_key === "MEMBER" && role.tier_id)
+        .map((role) => role.tier_id as string),
+    );
     for (const tier of directory.tiers) {
-      if (tier.set) add("tier", tier.set.id, tier.set.name, tier.set.memberIds);
+      if (tier.set && !everyoneTiers.has(tier.set.id)) {
+        add("tier", tier.set.id, tier.set.name, tier.set.memberIds);
+      }
     }
     for (const role of allRoles(directory)) {
       add("role", role.id, role.name, role.memberIds);
@@ -83,7 +98,7 @@ export function useFollowerChoices(): FollowerChoice[] {
       }
     }
     return choices;
-  }, [directory, groups.data]);
+  }, [directory, groups.data, roles.data]);
 }
 
 /**
