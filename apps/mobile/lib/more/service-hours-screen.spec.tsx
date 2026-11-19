@@ -878,7 +878,7 @@ describe("Log service hours date across a day", () => {
   }
 
   const weekday = (day: Date) =>
-    day.toLocaleDateString(undefined, { weekday: "short" });
+    day.toLocaleDateString(undefined, { weekday: "long" });
   const chip = (tree: ReactTestRenderer, label: string) =>
     pressable(tree, label);
   const isSelected = (tree: ReactTestRenderer, label: string) =>

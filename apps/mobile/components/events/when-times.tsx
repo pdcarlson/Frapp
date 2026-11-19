@@ -385,6 +385,11 @@ function createStyles(tokens: SignetTokens) {
     lineLabel: rowText,
     pickers: {
       flexDirection: "row",
+      // A written-out day ("Wednesday, September 23") and the time don't fit
+      // one line on a 360dp Android phone, so the time pill wraps under it.
+      flexWrap: "wrap",
+      flexShrink: 1,
+      justifyContent: "flex-end",
       alignItems: "center",
       gap: tokens.spacing.xs,
     },

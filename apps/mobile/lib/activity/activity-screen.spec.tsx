@@ -1852,7 +1852,7 @@ describe("Activity screen (#3897)", () => {
       const tree = render();
       const card = tree.root.findByProps({ testID: "activity-recap" });
       expect(drawnText(card)).toContain("Last week");
-      expect(drawnText(card)).toContain("Nov 8 – Nov 14");
+      expect(drawnText(card)).toContain("November 8 – November 14");
       const figure = (id: string) =>
         card.findByProps({ testID: `activity-recap-${id}`, accessible: true })
           .props.accessibilityLabel;

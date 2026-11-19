@@ -168,7 +168,7 @@ function displayNameOf(member: MemberProfile): string {
 function formatJoined(value: string): string | null {
   const parsed = parseInstant(value);
   return parsed
-    ? parsed.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+    ? parsed.toLocaleDateString(undefined, { month: "long", year: "numeric" })
     : null;
 }
 

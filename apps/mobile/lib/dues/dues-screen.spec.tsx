@@ -382,7 +382,7 @@ describe("Dues with more than one open invoice", () => {
     const second = drawnText(rows[1]!);
     expect(second).toContain("Social fee");
     expect(second).toContain("$50.00");
-    expect(second).toMatch(/Due Oct\s?1/);
+    expect(second).toMatch(/Due October\s?1/);
     expect(screenText(tree)).toContain("OPEN");
   });
 
@@ -560,7 +560,7 @@ describe("Dues after a captured payment", () => {
       "Fall dues$425.00Pending",
     );
     expect(drawnText(openRow(tree, "inv-social"))).toMatch(
-      /^Social fee\$50\.00Due Oct\s?1$/,
+      /^Social fee\$50\.00Due October\s?1$/,
     );
     // Pay is still about Fall, for a retry.
     presentPaymentSheet.mockResolvedValueOnce({ kind: "canceled" });
@@ -1327,12 +1327,12 @@ describe("Dues on a new visit", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2099, 8, 15, 20, 0));
     const tree = mount();
-    expect(chip(tree)).toMatch(/^Due Sep\s?15$/);
+    expect(chip(tree)).toMatch(/^Due September\s?15$/);
 
     appGoes("background");
     vi.setSystemTime(new Date(2099, 8, 16, 8, 0));
     appGoes("active");
-    expect(chip(tree)).toMatch(/^Past due Sep\s?15$/);
+    expect(chip(tree)).toMatch(/^Past due September\s?15$/);
   });
 
   it("takes the clock again when the member comes back to the screen", async () => {
@@ -1342,7 +1342,7 @@ describe("Dues on a new visit", () => {
     act(() => blur());
     vi.setSystemTime(new Date(2099, 8, 16, 8, 0));
     await refocus();
-    expect(chip(tree)).toMatch(/^Past due Sep\s?15$/);
+    expect(chip(tree)).toMatch(/^Past due September\s?15$/);
   });
 
   it("is done with the Paid line when the app comes back, as on a return to the screen", async () => {

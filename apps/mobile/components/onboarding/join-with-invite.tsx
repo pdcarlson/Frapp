@@ -17,12 +17,14 @@ import {
   redeemChapterId,
   UNKNOWN_INVITE_COPY,
   useAskForNewLink,
+  useInviteCardViewed,
   useInviteDetails,
+  useInviteFunnel,
   useListChapters,
   useRedeemInvite,
   type InviteDetails,
 } from "@repo/hooks";
-import { extractInviteToken } from "@repo/validation";
+import { extractInviteToken, inviteJoinFailureReason } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   DeadInviteHero,
@@ -45,6 +47,7 @@ import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-se
 import { TermsLine } from "@/components/onboarding/terms-line";
 import { ErrorState } from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
+import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
 import {
   clearRememberedInviteThen,
@@ -54,6 +57,7 @@ import {
   rememberInviteToken,
   type JoinThen,
 } from "@/lib/onboarding/invite-token";
+import { inviteVisitId } from "@/lib/onboarding/invite-visit";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -76,6 +80,11 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *   name. Asking needs an account, so the sender knows who; signed out, the
  *   button opens the ways in, marked `ask`.
  * - **Not an invite** (404). Says so, and takes another link.
+ *
+ * Each step is recorded in the invite card funnel (#5663, `useInviteFunnel`),
+ * the same steps web records: the card viewed, the way in tapped, the email
+ * code sent and verified, the join or a failed one, and an ask for a new
+ * link.
  *
  * `header` and `accountLine` are the join screen's own chrome (Back, the
  * Account menu, "Signed in as"), drawn above the card.
@@ -105,6 +114,9 @@ export function JoinWithInvite({
   const redeem = useRedeemInvite();
   const ask = useAskForNewLink();
   const details = useInviteDetails(token);
+  const { isOffline } = useConnection();
+  const [visitId] = useState(() => inviteVisitId(token));
+  const record = useInviteFunnel(token, visitId);
 
   const signedIn = status === "authenticated";
   const chapters = useListChapters({ enabled: signedIn });
@@ -114,6 +126,13 @@ export function JoinWithInvite({
     signedIn &&
     !!invite &&
     memberships.some((m) => m.chapter_id === invite.chapter_id);
+
+  useInviteCardViewed(
+    record,
+    invite && status !== "hydrating"
+      ? { state: invite.state, signed_in: signedIn }
+      : null,
+  );
 
   // A sign-in started here, whose session hasn't reached this screen yet.
   const [localThen, setLocalThen] = useState<JoinThen | null>(null);
@@ -152,6 +171,7 @@ export function JoinWithInvite({
       setJoinError(null);
       try {
         const result = await redeem.mutateAsync(joinRedeemBody(token));
+        record({ step: "joined" });
         consumeRememberedInviteToken();
         // The member is in: the one tap a chapter going live gives, so joining
         // one feels like it landed (`lib/haptics.ts`, best effort).
@@ -165,19 +185,33 @@ export function JoinWithInvite({
           return;
         }
         joining.current = false;
+        record({
+          step: "join-failed",
+          reason: inviteJoinFailureReason(statusOf(error), isOffline),
+        });
         setJoinError(joinErrorCopy(error));
         setBusy(false);
         // A link that died since the card was read gets the dead card.
         if (statusOf(error) === 410) void details.refetch();
       }
     },
-    [details, openChapter, redeem, router, selectChapter, token],
+    [
+      details,
+      isOffline,
+      openChapter,
+      record,
+      redeem,
+      router,
+      selectChapter,
+      token,
+    ],
   );
 
   const askForLink = useCallback(async () => {
     setAskError(null);
     try {
       await ask.mutateAsync(token);
+      record({ step: "new-link-asked" });
       setAsked(true);
     } catch (error) {
       const code = codeOf(error);
@@ -188,7 +222,7 @@ export function JoinWithInvite({
       }
       setAskError("Couldn't send that. Try again in a moment.");
     }
-  }, [ask, chapters, token]);
+  }, [ask, chapters, record, token]);
 
   // What a sign-in from the card came back to do, done once. The mark comes
   // off the remembered invite first, so a relaunch never repeats it.
@@ -249,6 +283,7 @@ export function JoinWithInvite({
 
   const passwordSignIn = () => {
     startSignIn("join");
+    record({ step: "sign-in-started", method: "password" });
     // Marked, so sign-in doesn't send a remembered invite back to this card.
     router.push({ pathname: "/sign-in", params: { password: "1" } });
   };
@@ -303,7 +338,7 @@ export function JoinWithInvite({
         ) : !signedIn && askOpen ? (
           <View style={styles.signInBlock}>
             <Text style={styles.askPrompt}>{askCopy.signedOutHint}</Text>
-            <JoinSignIn onStart={() => startSignIn("ask")} />
+            <JoinSignIn onStart={() => startSignIn("ask")} record={record} />
             <TermsLine action="continuing" />
           </View>
         ) : null}
@@ -336,7 +371,7 @@ export function JoinWithInvite({
       <>
         <InviteHero details={invite} />
         <View style={styles.signInBlock}>
-          <JoinSignIn onStart={() => startSignIn("join")} />
+          <JoinSignIn onStart={() => startSignIn("join")} record={record} />
           <TermsLine action="continuing" />
           <PasswordSignInLine onPress={passwordSignIn} />
         </View>

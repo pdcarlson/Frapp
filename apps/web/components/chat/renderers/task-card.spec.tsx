@@ -590,7 +590,7 @@ describe("TaskCard status colour and due line", () => {
     chapter.active();
     mockUseTask.mockReturnValue(liveTask());
     vi.useFakeTimers({ toFake: ["Date"] });
-    // Sat Jun 13, 2026, noon local: the snapshot's Jun 15 is two days out.
+    // Sat June 13, 2026, noon local: the snapshot's June 15 is two days out.
     vi.setSystemTime(new Date(2026, 5, 13, 12));
   });
 
@@ -632,7 +632,7 @@ describe("TaskCard status colour and due line", () => {
     render(
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
     );
-    expect(screen.getByText("Due Jun 25")).toBeInTheDocument();
+    expect(screen.getByText("Due June 25")).toBeInTheDocument();
     expect(screen.queryByText(/Overdue by/)).not.toBeInTheDocument();
   });
 
@@ -648,7 +648,7 @@ describe("TaskCard status colour and due line", () => {
 
   it("gives a viewer who can't read the task the plain date", () => {
     render(<TaskCard message={makeMessage()} viewerId="someone" isConfirmed />);
-    expect(screen.getByText("Due Jun 15")).toBeInTheDocument();
+    expect(screen.getByText("Due June 15")).toBeInTheDocument();
   });
 });
 

@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from "react-native";
+import type { RecordInviteStep } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { EmailCodeSignIn } from "@/components/onboarding/email-code-sign-in";
@@ -37,9 +38,12 @@ const PROVIDER_LABEL: Record<OAuthProvider, string> = {
  */
 export function JoinSignIn({
   onStart,
+  record,
   disabled = false,
 }: {
   onStart: () => void;
+  /** The card's funnel (#5663): which way in, the code sent and verified. */
+  record?: RecordInviteStep;
   disabled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
@@ -59,6 +63,7 @@ export function JoinSignIn({
     setPending(provider);
     setError(null);
     onStart();
+    record?.({ step: "sign-in-started", method: provider });
     try {
       await signInWithOAuthProvider(provider);
       // Signed in, or the member closed the provider's page: either way the
@@ -75,6 +80,8 @@ export function JoinSignIn({
     return (
       <EmailCodeSignIn
         onSending={onStart}
+        onCodeSent={() => record?.({ step: "email-code-sent" })}
+        onCodeVerified={() => record?.({ step: "email-code-verified" })}
         onBack={() => setEmailOpen(false)}
         disabled={disabled}
       />
@@ -111,6 +118,7 @@ export function JoinSignIn({
         disabled={disabled || pending !== null}
         onPress={() => {
           setError(null);
+          record?.({ step: "sign-in-started", method: "email" });
           setEmailOpen(true);
         }}
         quiet

@@ -211,9 +211,9 @@ describe("StudyPage subscription gating", () => {
       screen.getByRole("region", { name: /start a session/i }),
     ).toBeInTheDocument();
     const history = screen.getByRole("region", { name: /session history/i });
-    // Aug 1 2026 is a Saturday; the clock depends on the runner's zone, so
+    // August 1 2026 is a Saturday; the clock depends on the runner's zone, so
     // only the day and the middle dot are pinned. No seconds, no "Started".
-    expect(history).toHaveTextContent(/Sat, Aug 1(, 2026)? · /);
+    expect(history).toHaveTextContent(/Saturday, August 1(, 2026)? · /);
     expect(history).not.toHaveTextContent(/Started|:\d{2}:\d{2}/);
     expect(history).toHaveTextContent("Completed");
     expect(history).not.toHaveTextContent("COMPLETED");

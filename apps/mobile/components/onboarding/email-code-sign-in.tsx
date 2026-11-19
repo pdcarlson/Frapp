@@ -39,10 +39,16 @@ import {
  */
 export function EmailCodeSignIn({
   onSending,
+  onCodeSent,
+  onCodeVerified,
   onBack,
   disabled = false,
 }: {
   onSending: () => void;
+  /** The email went out (the invite card's funnel, #5663). */
+  onCodeSent?: () => void;
+  /** The code was right (the invite card's funnel, #5663). */
+  onCodeVerified?: () => void;
   onBack: () => void;
   disabled?: boolean;
 }) {
@@ -77,6 +83,7 @@ export function EmailCodeSignIn({
     onSending();
     try {
       await sendMagicLink({ email: address });
+      onCodeSent?.();
       setStage("code");
       setCooldown(EMAIL_RESEND_COOLDOWN_SECONDS);
     } catch (caught) {
@@ -101,6 +108,7 @@ export function EmailCodeSignIn({
     setError(null);
     try {
       await verifyEmailCode({ email: email.trim().toLowerCase(), code: value });
+      onCodeVerified?.();
       // Signed in: the session change carries the card on from here.
     } catch (caught) {
       const { message, wrongCode } = describeEmailCodeError(caught);

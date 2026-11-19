@@ -140,6 +140,14 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers who invite members or manage roles can filter the Directory to see who has the phone app with notifications on, who turned them off, and who only uses the web.",
       "An event's Minutes now says when they were posted, how many decisions and action items they hold, and the first line of the TL;DR, so you can see what happened before opening them.",
       "For officers who take minutes, Meetings on the web and Minutes on the phone now start with the meetings that ended without minutes, each with Start minutes, and end with the next meeting coming up, so none get forgotten.",
+      "The calendar now shows the time a task is due, and a task due at a time sits at that hour in the day view.",
+      "Chapter settings and switching chapters now live in one place: tap your chapter's name at the top left.",
+      "Add an event's agenda while you create it, and set its time as a day with a start and end, plus one tap for how long it runs.",
+      "An event's page now shows its details first, then its agenda, then attendance, and agenda items are dragged into order and checked off once the meeting starts.",
+      "An invite link now opens a card showing the chapter and who sent it, and one tap on Apple, Google or your email signs you in and joins.",
+      "When someone joins with your invite, you now get a notification instead of a message in your DMs.",
+      "Personal invites now last 7 days, and a link that has run out lets you ask the sender for a new one in one tap.",
+      "Each minutes on Meetings now says what happened, its first TL;DR line, under how many decisions and action items it holds.",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
@@ -151,6 +159,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "New members whose chapter has no default channel or #general now open on a channel they can post in, not the audit log.",
       "A profile, a new channel or an event form opened from chat now opens in the chat itself, so the page beside it stays in view.",
       "You can give a task to a whole tier like Exec board, and mark a task as from a tier, role or group so everyone in it can follow how it's going.",
+      "Taking attendance gives each member one row with Present, Late, Excused and Absent, with filters to see who is still unmarked.",
+      "Every page's main buttons, like New event, New minutes, Upload and Log service, now sit in the page's own header next to its title instead of on a row of their own, and every New button looks the same.",
     ],
     phone: [
       "Officers can change a task's title, notes, due date, points and more right on the task's page, and each change saves as they make it.",
@@ -159,6 +169,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "While minutes are drafted from your notes, Drafting and Stop stay at the bottom of the screen.",
       "Tasks can repeat every day, week or month: pick Repeat when you make one, and a new one appears each time the last one comes due.",
       "You can now give a task to a whole tier like Exec board, and mark a task as from a tier, role or group so everyone in it can follow how it's going.",
+      "Edit minutes is now in the minutes menu, so you can fix any section, add decisions with their vote count, and give action items an owner and a due date.",
     ],
   },
   {

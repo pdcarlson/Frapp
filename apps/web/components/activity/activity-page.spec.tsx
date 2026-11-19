@@ -848,7 +848,7 @@ describe("ActivityPage", () => {
       const { unmount } = render(<ActivityPage />);
 
       const card = screen.getByRole("region", { name: "Last week" });
-      expect(within(card).getByText("Nov 8 – Nov 14")).toBeInTheDocument();
+      expect(within(card).getByText("November 8 – November 14")).toBeInTheDocument();
       expect(
         within(card)
           .getAllByRole("listitem")
@@ -2218,7 +2218,7 @@ describe("ActivityPage", () => {
     expect(within(list).getByTestId("activity-date-block")).toBeInTheDocument();
     // The block is decoration; the detail still says the day in words.
     expect(
-      within(list).getByText(/^Jan 1, 2099 · .* · Great Room$/),
+      within(list).getByText(/^January 1, 2099 · .* · Great Room$/),
     ).toBeInTheDocument();
   });
 

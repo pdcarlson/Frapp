@@ -399,6 +399,8 @@ describe("day dividers", () => {
     expect(label).not.toBe("Yesterday");
     expect(label).toContain("20");
     expect(label).not.toMatch(/\d:\d\d/);
+    // Written out, never "Sun, Sep 20" (writing.md § 5a).
+    expect(label).toBe("Sunday, September 20");
   });
 
   it("adds the year to a day in another year, and only then", () => {

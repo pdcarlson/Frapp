@@ -74,7 +74,7 @@ describe("checkInLabel", () => {
       start,
       new Date(2026, 10, 5),
     );
-    expect(label).toMatch(/^Checked in Sat, Nov 7 · 12:10\sAM$/);
+    expect(label).toMatch(/^Checked in Saturday, November 7 · 12:10\sAM$/);
   });
 
   it("never prints seconds or a numeric date", () => {

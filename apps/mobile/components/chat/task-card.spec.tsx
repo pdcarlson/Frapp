@@ -255,8 +255,8 @@ describe("TaskCard — the snapshot", () => {
     state.now = new Date(2026, 10, 9, 12, 0);
     const late = screenText(render(ASSIGNEE));
     expect(late).not.toContain("Overdue");
-    expect(late).toMatch(/Due Nov 6/);
-    expect(screenText(render("bystander"))).toMatch(/Due Nov 6/);
+    expect(late).toMatch(/Due November 6/);
+    expect(screenText(render("bystander"))).toMatch(/Due November 6/);
   });
 
   it("reads the live due date over the snapshot's (#4135)", () => {
@@ -264,7 +264,7 @@ describe("TaskCard — the snapshot", () => {
     state.live = liveTask({ due_date: "2026-11-20" });
     const text = screenText(render(ASSIGNEE));
     expect(text).not.toContain("Overdue");
-    expect(text).toContain("Due Nov 20");
+    expect(text).toContain("Due November 20");
   });
 });
 

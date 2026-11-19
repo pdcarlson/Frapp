@@ -10,7 +10,7 @@ const REMINDER_FAILED_TITLE = "Couldn't set the reminder";
 
 /**
  * When a reminder is for, in a sentence: "today at 3:40 PM", "tomorrow at
- * 9:00 AM", "Monday at 9:00 AM", "Nov 30 at 9:00 AM". The same words web's
+ * 9:00 AM", "Monday at 9:00 AM", "November 30 at 9:00 AM". The same words web's
  * toast says (`formatActedLabel`, which both read), so the clients agree.
  */
 export function reminderAtLabel(at: Date, now: Date = new Date()): string {
@@ -20,7 +20,7 @@ export function reminderAtLabel(at: Date, now: Date = new Date()): string {
 
 /**
  * A preset's time on the right of its row, as Slack's menu shows it: the
- * clock for today, the short weekday and clock for any later day.
+ * clock for today, the weekday and clock for any later day.
  */
 export function reminderPresetValue(at: Date, now: Date): string {
   const time = formatTimeOfDay(at);
@@ -29,7 +29,7 @@ export function reminderPresetValue(at: Date, now: Date): string {
     at.getMonth() === now.getMonth() &&
     at.getDate() === now.getDate();
   if (sameDay) return time;
-  return `${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
+  return `${at.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
 }
 
 /** What the member hears once a reminder is set: "Reminder set for …". */
