@@ -65,7 +65,7 @@ It normally has no route of its own — s17 is the single exception, and honestl
 
 Supporting routes with no drawn Canvas screen: `(app)/invite.tsx` — Invite members: invite by email, setup's share-first link, and the chapter's invites with resend and revoke, as web's panel has them;
 Live since 2026-11-06, email and the list since 2026-11-09 (#3828) ([`navigation.md` § Inviting members](navigation.md#inviting-members))
-— and `(auth)/chapter-picker.tsx` — chapter selection, reached from You's Switch chapter ([`navigation.md` § You](navigation.md#you-s09-and-s15)) or a `frapp://chapter-picker` link, reusing s02's visual language;
+— and `(auth)/chapter-picker.tsx` — chapter selection, reached from Switch chapter in Chat home's chapter menu ([`navigation.md` § Chapter menu](navigation.md#chapter-menu)) or a `frapp://chapter-picker` link, reusing s02's visual language;
 it marks the open chapter `Current`, and a tap on that row selects it again like any other, since the mark reads the token's claim and the server's active chapter can differ;
 a switch the server refuses (403: the member is no longer in that chapter) stays on the list, on any row and the Current one too, with an error that says to pick another ([`writing.md` § Chapter picker (mobile)](../design-system/writing.md#chapter-picker-mobile)), because the tabs would refuse every request for the same reason, and fetches the list again, so that chapter drops off it and, when it was the member's only one, the empty state's Join or start a chapter appears in place of the error;
 when a re-select of Current fails any other way (offline, say) it still goes on to the tabs, unless the last switch the picker saw land on the server since it opened was to another chapter and its session refresh failed (the server then holds that chapter, and the next token would move the member there), in which case it shows the error and stays, as a failed switch to another chapter always does;
@@ -77,7 +77,7 @@ The auth gate pins a member here who hasn't accepted the Terms version the serve
 It carries the shared checkbox, and, like s02, sign-out and **Delete account**, because Settings is unreachable while the gate holds a member here (Apple 5.1.1(v)).
 Its copy is `writing.md` § 7, Terms prompt.
 
-**`(app)/chapter-settings.tsx`, `(app)/chapter-roles.tsx`, `(app)/role-tier.tsx` and `(app)/role.tsx`**, Chapter settings and its Roles screens ([#4074](https://github.com/pdcarlson/Frapp/issues/4074)), are supporting routes with no drawn Canvas screen, live since 2026-11-12, reached from You → Admin.
+**`(app)/chapter-settings.tsx`, `(app)/chapter-roles.tsx`, `(app)/role-tier.tsx` and `(app)/role.tsx`**, Chapter settings and its Roles screens ([#4074](https://github.com/pdcarlson/Frapp/issues/4074)), are supporting routes with no drawn Canvas screen, live since 2026-11-12, reached from Chat home's chapter menu (You → Admin until 2026-11-19).
 [`navigation.md` § Chapter settings](navigation.md#chapter-settings) owns what each holds.
 
 **`(app)/(tabs)/activity.tsx`, Activity** ([#3897](https://github.com/pdcarlson/Frapp/issues/3897)), has no drawn Canvas screen.

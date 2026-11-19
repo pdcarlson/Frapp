@@ -46,7 +46,7 @@ describe("resolvePageTitle", () => {
   });
 
   it("keeps the two doors' titles apart (#3856)", () => {
-    // The member's own page is "Settings"; the nav row's is the chapter's.
+    // The member's own page is "Settings"; the chapter menu's is the chapter's.
     expect(resolvePageTitle("/preferences")).toEqual({ title: "Settings" });
     expect(resolvePageTitle("/settings")).toEqual({
       title: "Chapter settings",

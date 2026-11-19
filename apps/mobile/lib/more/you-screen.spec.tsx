@@ -393,7 +393,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
     expect(
       tree.root.findAll((n) => (n.type as unknown) === "ProfileDetails"),
     ).toHaveLength(0);
-    expect(screenText(tree)).toContain("Switch chapter");
+    expect(screenText(tree)).toContain("Directory");
   });
 
   it("says the profile failed in place of the head, and keeps every row", () => {
@@ -407,7 +407,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
     const tree = render();
     const text = screenText(tree);
     expect(text).toContain("Couldn't load your profile");
-    expect(text).toContain("Switch chapter");
+    expect(text).toContain("Directory");
     expect(
       tree.root.findAll((n) => (n.type as unknown) === "ProfileHead"),
     ).toHaveLength(0);
@@ -446,7 +446,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
     expect(present).toHaveBeenCalledTimes(1);
   });
 
-  it("draws labels without a description line, and names the current chapter", () => {
+  it("draws labels without a description line", () => {
     const text = screenText(render());
     for (const label of [
       "Study hours",
@@ -455,11 +455,9 @@ describe("You tab anatomy (#1048, #3839)", () => {
       "Documents",
       "Directory",
       "Settings",
-      "Switch chapter",
     ]) {
       expect(text).toContain(label);
     }
-    expect(text).toContain("FIJI Tau Nu");
   });
 
   it("gives no row a description line", () => {
@@ -468,7 +466,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
     for (const row of rows) expect(row.props.description).toBeUndefined();
   });
 
-  it("groups chapter tools, then your settings and chapter, then Admin", () => {
+  it("groups chapter tools, then your settings, then Admin", () => {
     permissions = ["events:update"];
     const sections = render()
       .root.findAllByType(ListSection)
@@ -485,7 +483,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
         "Minutes",
         "Directory",
       ],
-      ["Settings", "Switch chapter"],
+      ["Settings"],
       ["Host check-in"],
     ]);
   });
@@ -637,7 +635,6 @@ describe("You tab anatomy (#1048, #3839)", () => {
       "Minutes",
       "Directory",
       "Settings",
-      "Switch chapter",
     ]);
     // One drawn chevron inside each press target (#3628: never a typed `›`).
     for (const button of buttons) {
@@ -695,11 +692,7 @@ describe("You tab anatomy (#1048, #3839)", () => {
       .at(-1)
       ?.findAllByType(ListRow)
       .map((row) => row.props.label);
-    expect(labels).toEqual([
-      "Invite members",
-      "Host check-in",
-      "Chapter settings",
-    ]);
+    expect(labels).toEqual(["Invite members", "Host check-in"]);
     const row = tree.root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
@@ -713,54 +706,17 @@ describe("You tab anatomy (#1048, #3839)", () => {
     expect(push).toHaveBeenCalledWith("/invite");
   });
 
-  it("gives Chapter settings to whoever has a page in it, and fails closed (#4074)", () => {
-    const hasRow = () => screenText(render()).includes("Chapter settings");
-    // `[]` is also what the permission list is while it loads.
-    permissions = [];
-    expect(hasRow()).toBe(false);
-    permissions = ["members:view", "events:update"];
-    expect(hasRow()).toBe(false);
-    // Plan and billing doesn't come to the phone, so a treasurer who holds
-    // only that gets no door to an empty screen.
-    permissions = ["billing:view"];
-    expect(hasRow()).toBe(false);
-    permissions = ["chapter-config:view"];
-    expect(hasRow()).toBe(true);
-    permissions = ["roles:manage"];
-    const tree = render();
-    const row = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Chapter settings",
-    );
-    const push = vi.mocked(useRouter().push);
-    push.mockClear();
-    act(() => {
-      row.props.onPress();
-    });
-    expect(push).toHaveBeenCalledWith("/chapter-settings");
+  it("draws neither Chapter settings nor Switch chapter: Chat home's chapter menu holds both", () => {
+    // One door each, as on web (Paul, 2026-11-19).
+    permissions = ["*"];
+    const text = screenText(render());
+    expect(text).not.toContain("Chapter settings");
+    expect(text).not.toContain("Switch chapter");
   });
 
   it("draws no Invite members row for a role that can't invite", () => {
     permissions = ["members:view", "events:update"];
     expect(screenText(render())).not.toContain("Invite members");
-  });
-
-  it("tells the chapter picker that You opened it, so it draws ‹ You", () => {
-    const row = render().root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Switch chapter",
-    );
-    const push = vi.mocked(useRouter().push);
-    push.mockClear();
-    act(() => {
-      row.props.onPress();
-    });
-    expect(push).toHaveBeenCalledWith({
-      pathname: "/(auth)/chapter-picker",
-      params: { from: "you" },
-    });
   });
 });
 

@@ -1,7 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { useFocusEffect } from "expo-router";
 import {
   FILTER_CHANNELS_LABEL,
   FILTER_CHANNELS_ON_LABEL,
@@ -16,7 +15,11 @@ import { Segmented } from "@/components/segmented";
 import { SignetTokens } from "@repo/theme/signet";
 import { Toggle } from "@/components/toggle";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
+import { useFocusOnOpen } from "@/lib/overlay";
+import {
+  type AnchoredMenuState,
+  useAnchoredMenu,
+} from "@/components/anchored-menu";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -66,31 +69,10 @@ export function channelFilterMenuAnchor(
   };
 }
 
-export type ChannelFilterMenuState = {
-  visible: boolean;
-  anchor: { top: number; left: number };
-  open: (anchor: { top: number; left: number }) => void;
-  close: () => void;
-};
+export type ChannelFilterMenuState = AnchoredMenuState;
 
-export function useChannelFilterMenu(): ChannelFilterMenuState {
-  const [visible, setVisible] = useState(false);
-  const [anchor, setAnchor] = useState({ top: 0, left: 0 });
-  const close = useCallback(() => setVisible(false), []);
-  const open = useCallback((at: { top: number; left: number }) => {
-    setAnchor(at);
-    setVisible(true);
-  }, []);
-  // The overlay takes every tap while it is up, so Android back closes it
-  // instead of leaving the tab.
-  useBackToClose(visible, close);
-  // The tab bar sits outside the overlay and still takes taps, and a push can
-  // open a thread over the tab. Chat home stays mounted under either, so
-  // close on blur: an open menu would otherwise hold Android back on the
-  // next screen and still be open on return.
-  useFocusEffect(useCallback(() => close, [close]));
-  return { visible, anchor, open, close };
-}
+/** The filter menu's open state (`useAnchoredMenu`). */
+export const useChannelFilterMenu = useAnchoredMenu;
 
 /** Lucide's `ListFilter`, the web trigger's glyph, on the 24pt grid. */
 function FilterGlyph({

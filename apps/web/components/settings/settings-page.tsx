@@ -589,8 +589,8 @@ function SettingsPageContent() {
   }
 
   /*
-    Settings shows each viewer only what they can use (#2946). The nav's
-    Settings row admits anyone Settings holds a tab or an officer tool for
+    Settings shows each viewer only what they can use (#2946). The chapter
+    menu's Chapter settings link admits anyone Settings holds a tab or an officer tool for
     (`hasSettingsDestination`), so a treasurer who holds only reports:export
     arrives here too. Before, every setup tab rendered for everyone and the
     config-gated ones answered a non-holder with "Couldn't load chapter

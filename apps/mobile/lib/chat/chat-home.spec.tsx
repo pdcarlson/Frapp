@@ -1778,6 +1778,102 @@ describe("Chat home's title (#2485)", () => {
   it("falls back to Frapp while the chapter's name is unknown", () => {
     const tree = render();
     expect(heading(tree).props.children).toBe("Frapp");
+    // No chapter, no chapter menu.
+    expect(tree.root.findByType(ScreenShell).props.titleMenu).toBeUndefined();
+  });
+});
+
+/**
+ * The chapter menu (Paul, 2026-11-19: "can we move chapter settings into one
+ * place? the chapter thing on the top left?"): the chapter's name opens
+ * Chapter settings and Switch chapter, as web's chapter row does, and You
+ * draws neither any more.
+ */
+describe("Chat home's chapter menu", () => {
+  beforeEach(() => {
+    branding.current = { ...branding.unnamed, chapterName: "Tau Nu" };
+  });
+
+  function chapterButton(tree: ReactTestRenderer) {
+    return tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Chapter menu (currently Tau Nu)",
+    );
+  }
+
+  /** The words a menu item draws. */
+  function drawnText(node: ReactTestInstance): string {
+    return node
+      .findAll((n) => (n.type as unknown) === "Text")
+      .map((n) => n.props.children)
+      .join("");
+  }
+
+  function menuItems(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+  }
+
+  function openMenu(tree: ReactTestRenderer) {
+    act(() => {
+      chapterButton(tree).props.onPress();
+    });
+  }
+
+  it("opens from the chapter name with Chapter settings first for an officer", () => {
+    permissionList.value = ["chapter-config:view"];
+    const tree = render();
+    expect(menuItems(tree)).toHaveLength(0);
+    openMenu(tree);
+    expect(chapterButton(tree).props.accessibilityState).toEqual({
+      expanded: true,
+    });
+    expect(menuItems(tree).map((item) => drawnText(item))).toEqual([
+      "Chapter settings",
+      "Switch chapter",
+    ]);
+    const push = vi.mocked(vi.mocked(useRouter)().push);
+    push.mockClear();
+    act(() => {
+      menuItems(tree)[0]!.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith("/chapter-settings");
+    // A pick closes the menu.
+    expect(menuItems(tree)).toHaveLength(0);
+  });
+
+  it("offers only Switch chapter to a member Chapter settings holds nothing for", () => {
+    // `[]` is also the permission list while it loads: fails closed.
+    permissionList.value = [];
+    const tree = render();
+    openMenu(tree);
+    expect(menuItems(tree).map((item) => drawnText(item))).toEqual([
+      "Switch chapter",
+    ]);
+    const push = vi.mocked(vi.mocked(useRouter)().push);
+    push.mockClear();
+    act(() => {
+      menuItems(tree)[0]!.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/(auth)/chapter-picker",
+      params: { from: "chat" },
+    });
+  });
+
+  it("closes on a tap outside", () => {
+    const tree = render();
+    openMenu(tree);
+    act(() => {
+      tree.root
+        .findByProps({ testID: "chapter-menu-backdrop" })
+        .props.onPress();
+    });
+    expect(menuItems(tree)).toHaveLength(0);
   });
 });
 

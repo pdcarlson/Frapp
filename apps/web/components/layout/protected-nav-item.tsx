@@ -83,8 +83,8 @@ function isGranted(
  * something the viewer can open sits under it.
  *
  * The permission gate fails CLOSED while `permissions` is `undefined` (the
- * read in flight, or failed online): a row that declares `requirePermission`,
- * `requireAnyOf` or `showWhen` stays hidden until the viewer's grants are known
+ * read in flight, or failed online): a row that declares `requirePermission`
+ * or `requireAnyOf` stays hidden until the viewer's grants are known
  * (#3854). It used to fail open, so on
  * every reload a member saw officer doors (Chapter settings, Billing before
  * #3827) appear, take a click, and vanish, which read as broken and as "I can
@@ -115,9 +115,7 @@ export function isNavItemVisible(
 ): boolean {
   const resolved = permissions !== undefined && permissions !== null;
   const gated =
-    item.requirePermission !== undefined ||
-    item.requireAnyOf !== undefined ||
-    item.showWhen !== undefined;
+    item.requirePermission !== undefined || item.requireAnyOf !== undefined;
   if (permissions === undefined) {
     // Fail closed (#3854): never draw a door before we know it opens.
     if (gated) return false;
@@ -128,13 +126,6 @@ export function isNavItemVisible(
     return false;
   }
   if (item.hiddenUntilSetUp && hiddenFeatures?.has(item.hiddenUntilSetUp)) {
-    return false;
-  }
-  if (
-    resolved &&
-    item.showWhen &&
-    !item.showWhen(permissions, isModuleEnabled)
-  ) {
     return false;
   }
   return true;

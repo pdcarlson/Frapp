@@ -83,11 +83,12 @@ The caller's effective permission set is loaded per chapter via `GET /v1/users/m
 Controls inside a screen gate through `<Can>` or the `can()` / `canAny()` / `canAll()` helpers, which live in `@repo/validation` ([`packages/validation/src/permissions.ts`](../../../packages/validation/src/permissions.ts)) rather than in `apps/web`, because `apps/mobile` needs the same gate and the wildcard `*` rule has to match the server's `PermissionsGuard`: a per-app copy is how that drifts.
 
 A Chat anchor of two rows, Chat and Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn, 2026-11-12;
-[§ Chat](#chat)), two member sections (Chapter, Resources), and one unlabeled group holding Directory and Chapter settings (Billing left it for Chapter settings' Plan and billing row in [#3827](https://github.com/pdcarlson/Frapp/issues/3827)).
+[§ Chat](#chat)), two member sections (Chapter, Resources), and one unlabeled group holding Directory (Billing left it for Chapter settings' Plan and billing row in [#3827](https://github.com/pdcarlson/Frapp/issues/3827)).
+Chapter settings has no row: it opens from the chapter menu atop the nav, the crest and chapter name, which leads with Chapter settings, then Join another chapter (and the member's chapters to switch between, when there is more than one). _(Paul, 2026-11-19: one place, not a menu item and a row. The row sat in this group from #2946 to then. The phone matches: [`../mobile/navigation.md`](../mobile/navigation.md).)_
 Activity leads the Chapter section: it is the inbox for the rows under it ([§ Activity](#activity)).
 There is no Polls row: polls live in the channel where they were made, and the chapter-wide `/polls` list, which could only show the older REST poll shape no client creates any more, was retired ([#3871](https://github.com/pdcarlson/Frapp/issues/3871), Shawn, 2026-11-09).
-Officer setup and officer tools sit behind the Chapter settings row; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
-The row was named Settings until 2026-11-10: it is the chapter's, and a member's own settings are a separate page on the account menu ([§ Two doors](#two-doors-chapter-settings-and-your-settings), [#3856](https://github.com/pdcarlson/Frapp/issues/3856)).
+Officer setup and officer tools sit behind Chapter settings; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
+It was named Settings until 2026-11-10: it is the chapter's, and a member's own settings are a separate page on the account menu ([§ Two doors](#two-doors-chapter-settings-and-your-settings), [#3856](https://github.com/pdcarlson/Frapp/issues/3856)).
 
 | Section | Item | Route | Module | Permission |
 | --- | --- | --- | --- | --- |
@@ -103,9 +104,8 @@ The row was named Settings until 2026-11-10: it is the chapter's, and a member's
 | Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`; hidden from a viewer without `chapter_docs:upload` while there are no documents: [`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)) |
 | Resources | Backwork | `/backwork` | `backwork` | `backwork:upload` or `backwork:admin`, the pair the API gates browsing on at controller level (upload needs `backwork:upload` specifically) |
 | _(unlabeled)_ | Directory | `/members` | — | `members:view` |
-| _(unlabeled)_ | Chapter settings | `/settings` | — | shown when Chapter settings holds a tab or a tool for the viewer ([`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what) § Who sees what) |
 
-**Behind the Chapter settings row.**
+**Behind Chapter settings.** The chapter menu's Chapter settings item shows when Chapter settings holds a tab or a tool for the viewer ([`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what) § Who sees what).
 These were the Admin group's rows until #2946, and each has one stated path.
 The four tools keep the permission and module gate each had as a row.
 The Roles tab opens a little wider than its row did: it also admits `chapter-config:view`, since anyone who could open Settings before could see it.

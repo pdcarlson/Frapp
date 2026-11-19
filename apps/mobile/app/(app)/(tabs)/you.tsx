@@ -50,12 +50,10 @@ import {
   ProfileSkeleton,
 } from "@/components/you/profile-sections";
 import { useOwnStatus } from "@/lib/account/own-status";
-import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import {
   destinationHue,
   type YouDestination,
 } from "@/lib/more/destination-hue";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { selectViewerProfile } from "@/lib/more/profile";
 import {
@@ -106,20 +104,21 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Grouping
  *
  * The board draws one group (Study hours through Settings) and an Admin group.
- * The app splits the first in two, chapter tools and then your own Settings
- * and chapter switcher, so the two reachability rows the board never drew
- * (Service hours and Switch chapter, `spec/ui/mobile/navigation.md` § You)
- * sit with their kind instead of trailing the list. The owner approved this
- * layout on 2026-11-04.
+ * The app splits the first in two, chapter tools and then your own Settings,
+ * so Service hours, a row the board never drew (`spec/ui/mobile/navigation.md`
+ * § You), sits with its kind instead of trailing the list. The owner approved
+ * this layout on 2026-11-04.
  *
  * Notifications are not here: the inbox is the bell on Chat home, beside the
  * unread counts it belongs with (#3362, #3839).
  *
- * **Switch chapter** is the only entry to the chapter picker (#764). When
- * `GET /v1/chapters` is empty the same slot becomes **Create a chapter**
- * (#1084) so a first officer who landed in the tabs still has a door. The
- * picker is deliberately not forced on members whose token lacks an
- * `active_chapter_id` claim (see `lib/auth-gate.ts`), so it needs a door.
+ * **Switch chapter** and **Chapter settings** left You on 2026-11-19 for the
+ * chapter menu that Chat home's chapter name opens
+ * (`components/chat/chapter-menu.tsx`), so each has one door, the one web
+ * has (Paul: "can we move chapter settings into one place?"). When
+ * `GET /v1/chapters` is empty, You draws **Create a chapter** after Settings
+ * (#1084), so a first officer who landed in the tabs still has a door: with
+ * no chapter there is no chapter name to open.
  *
  * ## The admin section, and why it may look empty
  *
@@ -130,8 +129,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the right direction.
  *
  * It holds Invite members (`members:invite`, owner ask 2026-11-06: the phone
- * had no way to invite), Host check-in (`events:update`) and Chapter settings
- * (`chapter-config:view` or `roles:manage`, #4074, `lib/more/chapter-settings.ts`),
+ * had no way to invite) and Host check-in (`events:update`),
  * each row drawn only for a role that holds its permission, and the section
  * only when one row is.
  *
@@ -163,7 +161,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function YouScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const { chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
   // Every row that opens a place leads with that place's tile, in its own
   // fixed hue (`lib/more/destination-hue.ts`; Paul, 2026-11-12). Never the
@@ -222,7 +219,6 @@ export default function YouScreen() {
   // Every invite route checks `members:invite`; by default the President's.
   const canInvite = can("members:invite", permissions);
   // The chapter's side of settings (#4074), for whoever has a page there.
-  const canChapterSettings = chapterSettingsAccess(permissions).any;
 
   // The setup gate needs to tell "still loading" from "holds nothing", which
   // `usePermissionList` (`[]` while loading) can't, so it reads the query.
@@ -437,6 +433,9 @@ export default function YouScreen() {
           accessibilityHint="Opens notifications, quiet hours and your account."
           onPress={() => router.push("/preferences")}
         />
+        {/* Switch chapter is in the chapter menu on Chat home's chapter
+            name since 2026-11-19, as on web. Create a chapter stays here: a
+            member with no chapter has no chapter name to open. */}
         {hasNoChapters ? (
           <ListRow
             label="Create a chapter"
@@ -444,27 +443,10 @@ export default function YouScreen() {
             accessibilityHint="Opens the chapter setup wizard."
             onPress={() => router.push("/(auth)/create-chapter")}
           />
-        ) : (
-          <ListRow
-            label="Switch chapter"
-            leading={tile(ChapterGlyph, "chapter")}
-            value={chapterName}
-            accessibilityHint="Opens the list of chapters you belong to."
-            onPress={() =>
-              // `from` is how the picker knows You is under it, and so
-              // draws `‹ You`: a link that opens it has sign-in under it
-              // instead (`app/(auth)/chapter-picker.tsx`). Object form, the
-              // shape `lib/routes.spec.ts` matches when a param is involved.
-              router.push({
-                pathname: "/(auth)/chapter-picker",
-                params: { from: "you" },
-              })
-            }
-          />
-        )}
+        ) : null}
       </ListSection>
 
-      {canHost || canInvite || canChapterSettings ? (
+      {canHost || canInvite ? (
         <>
           <SectionHeader>Admin</SectionHeader>
           <ListSection>
@@ -505,14 +487,6 @@ export default function YouScreen() {
                     params: { eventId: nextEvent.id },
                   });
                 }}
-              />
-            ) : null}
-            {canChapterSettings ? (
-              <ListRow
-                label="Chapter settings"
-                leading={tile(SettingsGlyph, "chapterSettings")}
-                accessibilityHint="Opens the chapter's accent, chat background and roles."
-                onPress={() => router.push("/chapter-settings")}
               />
             ) : null}
           </ListSection>

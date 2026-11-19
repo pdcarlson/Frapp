@@ -6,8 +6,10 @@ import {
   type RefObject,
   cloneElement,
   isValidElement,
+  useRef,
 } from "react";
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +23,7 @@ import {
   PinnedBackRow,
   pinnedBackClearance,
 } from "@/components/back-row";
+import { DisclosureGlyph } from "@/components/control-glyphs";
 import {
   CREATE_BUTTON_SIZE,
   type CreateAction,
@@ -66,6 +69,24 @@ type ScreenShellProps = {
    * navigator's header, which no screen has since #2485.
    */
   titleMark?: ReactNode;
+  /**
+   * Makes the mark and title one button with a down chevron that opens a menu,
+   * as Chat home's chapter name opens the chapter menu
+   * (`components/chat/chapter-menu.tsx`), the way web's chapter row atop the
+   * nav does. `onOpen` gets the title row's frame in the window, measured at
+   * the tap, so the menu can hang under it.
+   */
+  titleMenu?: {
+    open: boolean;
+    accessibilityLabel: string;
+    onOpen: (frame: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }) => void;
+    onClose: () => void;
+  };
   /**
    * A line under the title, for a fact about this one item that the title
    * can't carry. Optional since #3023: the board draws one only on s07, where
@@ -166,6 +187,7 @@ export function ScreenShell({
   backAction,
   createAction,
   titleMark,
+  titleMenu,
   subtitle,
   headerAction,
   refresh,
@@ -227,10 +249,21 @@ export function ScreenShell({
             >
               <View style={styles.header}>
                 <View style={styles.headerRow}>
-                  {titleMark}
-                  <Text accessibilityRole="header" style={styles.title}>
-                    {title}
-                  </Text>
+                  {titleMenu ? (
+                    <TitleMenuButton
+                      title={title}
+                      titleMark={titleMark}
+                      menu={titleMenu}
+                      tokens={tokens}
+                    />
+                  ) : (
+                    <>
+                      {titleMark}
+                      <Text accessibilityRole="header" style={styles.title}>
+                        {title}
+                      </Text>
+                    </>
+                  )}
                   {headerAction ? (
                     <View style={styles.headerAction}>{headerAction}</View>
                   ) : null}
@@ -247,6 +280,63 @@ export function ScreenShell({
       </CoveredByOverlay>
       {overlay?.content}
     </View>
+  );
+}
+
+/**
+ * The title row's mark and title as one button that opens a menu, ending in a
+ * down chevron so it reads as one, as web's chapter row does. The title Text
+ * keeps its header role; the button's label names the menu.
+ */
+function TitleMenuButton({
+  title,
+  titleMark,
+  menu,
+  tokens,
+}: {
+  title: string;
+  titleMark?: ReactNode;
+  menu: NonNullable<ScreenShellProps["titleMenu"]>;
+  tokens: SignetTokens;
+}) {
+  const styles = createStyles(tokens);
+  const ref = useRef<View>(null);
+  const openUnderTitle = () => {
+    const node = ref.current;
+    // No frame to measure (a renderer without layout): open at the top.
+    if (!node?.measureInWindow) {
+      return menu.onOpen({ x: 0, y: 0, width: 0, height: 0 });
+    }
+    node.measureInWindow((x, y, width, height) =>
+      menu.onOpen({ x, y, width, height }),
+    );
+  };
+  return (
+    <Pressable
+      ref={ref}
+      accessibilityRole="button"
+      accessibilityLabel={menu.accessibilityLabel}
+      accessibilityState={{ expanded: menu.open }}
+      onPress={() => (menu.open ? menu.onClose() : openUnderTitle())}
+      style={({ pressed }) => [
+        styles.titleButton,
+        pressed ? styles.titlePressed : null,
+      ]}
+    >
+      {titleMark}
+      <Text
+        accessibilityRole="header"
+        numberOfLines={1}
+        style={styles.titleInButton}
+      >
+        {title}
+      </Text>
+      <DisclosureGlyph
+        color={tokens.color.text.muted}
+        size={18}
+        direction="down"
+      />
+    </Pressable>
   );
 }
 
@@ -379,6 +469,20 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...screenTitleStyle(tokens),
     },
+    // The button hugs its title, so the space after the chevron is not a tap
+    // target, and the header actions keep their place at the far end.
+    titleButton: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+    },
+    titleInButton: {
+      flexShrink: 1,
+      ...screenTitleStyle(tokens),
+    },
+    titlePressed: { opacity: 0.6 },
     headerAction: {
       flexShrink: 0,
     },

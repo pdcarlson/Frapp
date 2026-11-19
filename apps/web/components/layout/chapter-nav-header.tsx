@@ -41,7 +41,8 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  *   single-chapter case that describes nearly every user. Here the row *is* the
  *   chapter's identity, so it renders regardless; only the menu's contents
  *   change. A member with one chapter still gets "Join another chapter", and
- *   "Chapter settings" whenever Settings holds something for them.
+ *   "Chapter settings" whenever Settings holds something for them. This menu
+ *   is the only door into Chapter settings (Paul, 2026-11-19).
  * - **Switching still goes through `useSelectChapter`**, never the chapter
  *   store directly. The `active_chapter_id` JWT claim outranks the
  *   `x-chapter-id` header, so writing the store alone puts the two in
@@ -73,10 +74,12 @@ export function ChapterNavHeader({
     enabled: !!activeChapterId,
   });
   const { data: membershipData, isSuccess } = useAccessibleChapters();
-  // The menu's "Chapter settings" link is the second door into Settings, so it
-  // asks the nav's Settings row's question: is there anything there for this
-  // viewer? Without it a member followed the link to a page with nothing they
-  // could use (#2946).
+  // The menu's "Chapter settings" link is the one door into Chapter settings
+  // (Paul, 2026-11-19: the nav row that repeated it is gone), so it asks: is
+  // there anything there for this viewer? Without it a member followed the
+  // link to a page with nothing they could use (#2946). It leads the menu,
+  // above Join another chapter, as Slack's workspace menu and Discord's server
+  // menu lead with their settings.
   const permissions = useNavPermissions();
   const isModuleEnabled = useChapterModuleGate();
   const showSettingsLink = hasSettingsDestination(permissions, isModuleEnabled);
@@ -318,11 +321,6 @@ export function ChapterNavHeader({
             <DropdownMenuSeparator />
           </>
         ) : null}
-        <DropdownMenuItem asChild>
-          <Link href="/join" onClick={onNavigate}>
-            Join another chapter
-          </Link>
-        </DropdownMenuItem>
         {showSettingsLink ? (
           <DropdownMenuItem asChild>
             <Link href="/settings" onClick={onNavigate}>
@@ -330,6 +328,11 @@ export function ChapterNavHeader({
             </Link>
           </DropdownMenuItem>
         ) : null}
+        <DropdownMenuItem asChild>
+          <Link href="/join" onClick={onNavigate}>
+            Join another chapter
+          </Link>
+        </DropdownMenuItem>
       </DropdownMenuContent>
       {confirmDropDialog}
     </DropdownMenu>
