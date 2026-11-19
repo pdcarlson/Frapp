@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { InviteService } from '../../application/services/invite.service';
+import { InviteFunnelService } from '../../application/services/invite-funnel.service';
 import { InviteController } from '../../interface/controllers/invite.controller';
 import { InviteDetailsController } from '../../interface/controllers/invite-details.controller';
 import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
@@ -13,6 +14,8 @@ import { EmailModule } from '../email/email.module';
 // RbacModule → RbacService: the member-joined push goes to whoever can act on
 // a join (#3656).
 import { RbacModule } from '../rbac/rbac.module';
+// AnalyticsModule → AnalyticsService: the invite card funnel (#5663).
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
   imports: [
@@ -22,10 +25,12 @@ import { RbacModule } from '../rbac/rbac.module';
     ActivationModule,
     EmailModule,
     RbacModule,
+    AnalyticsModule,
   ],
   controllers: [InviteController, InviteDetailsController],
   providers: [
     InviteService,
+    InviteFunnelService,
     AuthSyncInterceptor,
     { provide: INVITE_REPOSITORY, useClass: SupabaseInviteRepository },
   ],

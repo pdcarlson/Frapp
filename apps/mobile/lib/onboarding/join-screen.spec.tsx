@@ -77,10 +77,19 @@ vi.mock("@/lib/select-chapter", () => ({
 }));
 
 const redeemMutateAsync = vi.fn();
+/** The invite card funnel's recorder (#5663), and the visit it records under. */
+const recordInviteStep = vi.fn();
+const VISIT = "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718";
 
+// The invite card's visit id (#5663): a fixed one, since the native module
+// isn't in a test run.
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718",
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({ mutateAsync: redeemMutateAsync }),
+  useInviteFunnel: () => recordInviteStep,
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
 }));
 
@@ -540,6 +549,7 @@ describe("join screen — the Terms line (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-1",
       accept_terms_privacy: true,
+      visit_id: VISIT,
     });
   });
 });
@@ -651,6 +661,7 @@ describe("join screen — the question (#3350)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-2a9f",
       accept_terms_privacy: true,
+      visit_id: VISIT,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });
@@ -1015,6 +1026,12 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     expect(allText(tree.root)).toContain(
       "Asked. Paul got a notification with your name",
     );
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "card-viewed",
+      state: "expired",
+      signed_in: true,
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({ step: "new-link-asked" });
     // Back still leads to the field, to paste another.
     expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
       false,
@@ -1038,6 +1055,16 @@ describe("join screen — the invite card (#3352, #5625)", () => {
     await settle();
     expect(allText(tree.root)).toContain("This invite was already used");
     expect(control(tree.root, "Join chapter")).toBeUndefined();
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "join-failed",
+      reason: "gone",
+    });
+    // The card is seen again in its new state.
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "card-viewed",
+      state: "used",
+      signed_in: true,
+    });
   });
 
   it("says a link that isn't an invite doesn't work, and takes another", async () => {
@@ -1312,6 +1339,16 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(signInWithOAuthProvider).toHaveBeenCalledWith("google");
     expect(peekRememberedInviteToken()).toBe("invite-token-51");
     expect(peekRememberedInviteThen()).toBe("join");
+    // The invite card funnel (#5663), the same steps web records.
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "card-viewed",
+      state: "live",
+      signed_in: false,
+    });
+    expect(recordInviteStep).toHaveBeenCalledWith({
+      step: "sign-in-started",
+      method: "google",
+    });
   });
 
   it("sends a visit with no invite to sign-in", () => {
@@ -1329,6 +1366,7 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-52",
       accept_terms_privacy: true,
+      visit_id: VISIT,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
     // Joined: nothing is left to remember.
@@ -1347,6 +1385,7 @@ describe("join screen — signed out with an invite (#5625)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: "invite-token-54",
       accept_terms_privacy: true,
+      visit_id: VISIT,
     });
   });
 
@@ -1498,6 +1537,7 @@ describe("join screen — invites for this account (#3782)", () => {
     expect(redeemMutateAsync).toHaveBeenCalledWith({
       token: FIJI_OFFER.token,
       accept_terms_privacy: true,
+      visit_id: VISIT,
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });

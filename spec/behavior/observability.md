@@ -255,6 +255,8 @@ Since [#3832](https://github.com/pdcarlson/Frapp/issues/3832), web and mobile re
 
 **Why Sentry and not PostHog.** PostHog on web and mobile stays opted out until the chapter read proves the chapter allows analytics ([#2957](https://github.com/pdcarlson/Frapp/issues/2957), [§ Route views](#route-views)), because nothing on the server stands behind what the SDK sends directly. A signed-out screen never gets that proof, so a client PostHog event there would be exactly the unproven capture #2957 forbids, and a named event through `POST /v1/analytics/events` needs a signed-in caller. Sentry already runs on every screen, signed out or not, behind the shared scrubber. Rejected: opting PostHog in on signed-out screens (breaks #2957), a public unauthenticated telemetry endpoint (a new abuse surface for one count), and `Sentry.metrics` (its pipeline passes no scrubber here, the reason the chat worker doesn't use it either). So an expected refusal is a Sentry event at `info`, counted and never paged, and only an unexpected failure is an `error`.
 
+**Correction (2026-11-19):** the invite card's steps before sign-in do reach PostHog, through `POST /v1/invites/funnel` ([§ Invite Card Funnel](#invite-card-funnel), #5663). That is not the rejected general endpoint: it records only a closed set of funnel steps, only with a real invite token, and only when that invite's chapter allows analytics. Signed-out auth failures still go to Sentry, as above.
+
 - **One reporter, two bindings.** The rules live in `createAuthFailureReporter` (`packages/observability/src/auth-failures.ts`). Web binds it in `apps/web/lib/sentry/auth-failures.ts` and mobile in `apps/mobile/lib/sentry/auth-failures.ts`, each with its own SDK's `captureException` and its own online reading. Web's `/auth/callback` route handler reports through `reportServerAuthFailure` in the same file, which applies the same rules without the rate limit, since one server process serves every member. Like the query reporter, it never throws.
 - **Where it is called.** Web: password sign-in, the magic link, and Google or Apple on `/sign-in`; sign-up and its OAuth start on `/sign-up`, including GoTrue's success-shaped answer for a taken address, reported as `user_already_exists`; the confirmation Resend; `/auth/callback` itself, with GoTrue's own error from `verifyOtp` or `exchangeCodeForSession`, the `error_code` or `error` GoTrue redirected with, `missing_code`, or `otp_type_invalid` for a link whose `type` GoTrue never sends (`/sign-in` reports nothing for its `authError`, which only names the copy shown, and would count a reload or a typed value again); and a session Auth judges over, from the API's 401 hook and from `/join`'s session read. Mobile, all in `lib/auth-session.tsx` unless named: password sign-in and the magic link; the confirmation Resend, offered on s01 for an address GoTrue answered `email_not_confirmed`; a deep link that didn't become a session (its `error_code`, else its `error`, or the error `setSession`, `verifyOtp` or `exchangeCodeForSession` returned); Google or Apple failing to start, natively or in the browser, reported once as `oauth_start` (a cancel is not a failure, and a browser return that didn't become a session is the deep link's `auth_callback` report, not a second one); and a session Auth judges over (`lib/rejected-session.ts`). A session that ends because a background token refresh was refused is not reported on either app: supabase-js signs the device out with no error to read. Neither app has a password reset, so there is nothing to report there.
 - **Level.** `info` for a refusal a member meets in normal use, named `AuthRefusal`: a code in `EXPECTED_AUTH_ERROR_CODES` with a 4xx status or with no status at all (a code a link or provider redirected with, or one the app names, such as sign-up's `user_already_exists`). The list covers a wrong password, an unconfirmed address, an expired or spent link, a link opened in another browser, the one-email-a-minute cooldown, an address that already has an account, a revoked session and a deleted account. `error` for anything else, named `AuthFailure`: a 5xx; a request that got no answer while the device read online; a failure with no code at all, such as a native sign-in that gave out or a bare `TypeError`, which supabase-js never lets out, so it is a bug in the calling code; a code not on the list, such as a disabled provider or a broken email template; and the project's hourly email cap, which GoTrue refuses with the same `over_email_send_rate_limit` as the cooldown but without "after N seconds", so it is reported as `email_send_capped` (no auth email is reaching anyone). A failure with no status while the device reads offline (a dead request, or a native SDK giving out) is the member's network and is not reported. Which of these page: [`alert-routing.md` § Signed-out auth failures](../../docs/ops/alert-routing.md#signed-out-auth-failures).
@@ -589,6 +591,51 @@ it (2026-11-07).
   out). Not a funnel step: a tour that ran is read off it on its own.
 - Steps 2 and 3 are optional, so the funnel in PostHog marks them optional.
   Break it down by `sign_in_method` (on step 1) and `app`.
+
+## Invite Card Funnel
+
+The Member Onboarding Funnel starts at the join. This one starts a step
+earlier, at the invite card (#5625), so the drop between opening an invite
+link and joining shows up per way in and per app (#5663, 2026-11-19).
+
+| Step | Event | Properties | Recorded when |
+| --- | --- | --- | --- |
+| 1 | `invite-card-viewed` | `state` (`live`, `expired`, `used`, `off`, `locked`), `signed_in` | The card shows, once per state and sign-in |
+| 2 | `invite-sign-in-started` | `method` (`apple`, `google`, `email`, `password`) | A way in is tapped |
+| 3 | `invite-email-code-sent` | none | The email with the code went out |
+| 4 | `invite-email-code-verified` | none | The code was right |
+| 5 | `invite-joined` | none | The redeem succeeded (the API, on `POST /v1/invites/redeem`) |
+| | `invite-join-failed` | `reason` (`gone`, `forbidden`, `rate_limited`, `offline`, `server`, `other`) | A join from the card failed |
+| | `invite-new-link-asked` | none | Ask for a new link was sent |
+
+- **How the steps travel.** Steps 1 to 4 mostly happen before the visitor has
+  an account, so they can't use `POST /v1/analytics/events`, and the PostHog
+  SDKs stay opted out until a chapter read (#2957). Each goes to
+  `POST /v1/invites/funnel` with the invite token, which needs no account:
+  the token proves the chapter, the API applies that chapter's analytics
+  opt-out, and an unknown token records nothing and answers the same 204. It
+  is throttled with the card's details read (`ThrottlePublicTokenRead`).
+  This is narrower than the public telemetry endpoint rejected under
+  [§ Signed-out auth failures](#signed-out-auth-failures): it takes only a
+  closed set of steps, only with a real invite, and only for a chapter that
+  allows analytics.
+- **Keyed by visit, not by person.** The card mints a random UUID per visit
+  (web keeps it a day in `localStorage` beside the join mark, so an Apple or
+  Google round trip or an email link in another tab is the same visit; the
+  phone keeps it in memory for the app's run). The API sends
+  `hmac_sha256(salt, "invite-visit:" + id)` as the distinct id, with no
+  chapter group, so each event is personless and no visit becomes a PostHog
+  person. The join carries the same id (`visit_id` on the redeem), so steps 1
+  to 5 share a distinct id and a PostHog funnel over them counts visits.
+- **Labels.** `app` and the mobile build come from the request
+  (`requestApp`, `requestAppVersion`), as on feature events. The API keeps
+  only the properties the step may carry (`inviteFunnelProperties` in
+  `packages/validation/src/invite-funnel.ts`), whatever the client sent.
+- **Reading it.** Steps 3 and 4 apply only to email, so mark them optional,
+  or filter step 2 to `method = email` for the email-only funnel. Filter
+  step 1 to `state = live` for joins, and break down by `app` and by step 2's
+  `method`. A web visit that hands off to the phone app starts a new visit
+  there.
 
 ## Feature Events
 

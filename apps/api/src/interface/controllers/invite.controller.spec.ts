@@ -6,6 +6,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InviteController } from './invite.controller';
 import { InviteService } from '../../application/services/invite.service';
+import { InviteFunnelService } from '../../application/services/invite-funnel.service';
 import { AuthService } from '../../application/services/auth.service';
 import {
   CreateInviteDto,
@@ -17,6 +18,11 @@ import {
 describe('InviteController', () => {
   let controller: InviteController;
   let inviteService: InviteService;
+  let funnel: { recordJoined: jest.Mock; recordStep: jest.Mock };
+  /** A request from the web dashboard, as `requestApp` reads it. */
+  const webRequest = {
+    headers: { origin: 'https://app.frapp.live' },
+  } as never;
 
   beforeEach(async () => {
     const mockInviteService = {
@@ -28,6 +34,11 @@ describe('InviteController', () => {
       findPendingForVerifiedEmail: jest.fn(),
       revoke: jest.fn(),
       findInvitableRoleIds: jest.fn(),
+    };
+
+    funnel = {
+      recordJoined: jest.fn().mockResolvedValue(undefined),
+      recordStep: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockAuthService = {
@@ -46,6 +57,7 @@ describe('InviteController', () => {
           useValue: mockAuthService,
         },
         { provide: TimeZoneSyncService, useValue: { record: jest.fn() } },
+        { provide: InviteFunnelService, useValue: funnel },
       ],
     }).compile();
 
@@ -142,7 +154,7 @@ describe('InviteController', () => {
 
       jest.spyOn(inviteService, 'redeem').mockResolvedValue(expectedResult);
 
-      const result = await controller.redeem(userId, dto);
+      const result = await controller.redeem(userId, dto, webRequest);
 
       // No checkbox sent: the service checks for an existing acceptance.
       expect(inviteService.redeem).toHaveBeenCalledWith(
@@ -162,13 +174,49 @@ describe('InviteController', () => {
         .spyOn(inviteService, 'redeem')
         .mockResolvedValue({ chapterId: 'chapter-1', memberId: 'member-1' });
 
-      await controller.redeem('user-1', dto);
+      await controller.redeem('user-1', dto, webRequest);
 
       expect(inviteService.redeem).toHaveBeenCalledWith(
         'invite-token-1',
         'user-1',
         true,
       );
+    });
+
+    it("records the join under the card's visit, labelled by app (#5663)", async () => {
+      const visitId = '6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718';
+      jest
+        .spyOn(inviteService, 'redeem')
+        .mockResolvedValue({ chapterId: 'chapter-1', memberId: 'member-1' });
+
+      await controller.redeem(
+        'user-1',
+        { token: 'invite-token-1', visit_id: visitId },
+        webRequest,
+      );
+
+      expect(funnel.recordJoined).toHaveBeenCalledWith('chapter-1', visitId, {
+        app: 'web',
+        appVersion: undefined,
+      });
+    });
+
+    it('records no join without a visit id, or when the join fails', async () => {
+      jest
+        .spyOn(inviteService, 'redeem')
+        .mockResolvedValueOnce({ chapterId: 'chapter-1', memberId: 'member-1' })
+        .mockRejectedValueOnce(new Error('gone'));
+
+      await controller.redeem('user-1', { token: 't' }, webRequest);
+      await expect(
+        controller.redeem(
+          'user-1',
+          { token: 't', visit_id: '6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718' },
+          webRequest,
+        ),
+      ).rejects.toThrow('gone');
+
+      expect(funnel.recordJoined).not.toHaveBeenCalled();
     });
   });
 

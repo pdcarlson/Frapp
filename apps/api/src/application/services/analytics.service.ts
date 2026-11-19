@@ -9,6 +9,7 @@ import {
 } from '@repo/validation';
 import {
   hashChapterIdForAnalytics,
+  hashInviteVisitForAnalytics,
   hashUserIdForAnalytics,
 } from '#domain/utils/analytics-keying';
 import {
@@ -392,6 +393,53 @@ export class AnalyticsService {
         this.logger,
         'warn',
         `Failed to capture chapter analytics event "${eventName}"`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Record a step of the invite card funnel (#5663), keyed by the card
+   * visit's pseudonym rather than a user's: most steps happen before the
+   * visitor has an account, and the join that ends the funnel must land on the
+   * same distinct id as the card view that started it. The visit id is random
+   * and minted by the card, so it names no one; it is hashed anyway, so a
+   * client-chosen string never becomes a PostHog distinct id.
+   *
+   * The caller has proved the chapter (an invite token, or a redeem that
+   * just succeeded), so the chapter's opt-out applies strictly, as in
+   * {@link trackForChapter}. Personless: it carries no chapter group, so the
+   * provider sends it with `$process_person_profile: false` and no visit
+   * becomes a PostHog person.
+   *
+   * Best-effort like {@link track}.
+   */
+  async trackInviteVisit(
+    eventName: string,
+    chapterId: string,
+    visitId: string,
+    options: Pick<TrackOptions, 'properties' | 'app' | 'appVersion'> = {},
+  ): Promise<void> {
+    assertContentFreeProperties({
+      name: eventName,
+      properties: options.properties,
+    });
+    if (!this.salt) return;
+
+    const event: AnalyticsEvent = {
+      name: eventName,
+      distinctId: hashInviteVisitForAnalytics(this.salt, visitId),
+      properties: withApp(options.properties, options.app, options.appVersion),
+    };
+
+    try {
+      if (!(await this.isChapterAnalyticsEnabled(chapterId))) return;
+      await this.provider.capture(event);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to capture invite funnel event "${eventName}"`,
         error,
       );
     }

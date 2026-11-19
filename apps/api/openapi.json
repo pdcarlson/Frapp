@@ -3051,6 +3051,41 @@
         ]
       }
     },
+    "/v1/invites/funnel": {
+      "post": {
+        "operationId": "InviteDetailsController_funnelStep_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteFunnelStepDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record a step of the invite card funnel (card viewed, sign-in started, and so on), with no account needed",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/push-tokens": {
       "post": {
         "operationId": "NotificationController_registerPushToken_v1",
@@ -23941,6 +23976,11 @@
           "accept_terms_privacy": {
             "type": "boolean",
             "description": "True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version."
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The invite card's random visit id, which records the join in the card's funnel. Analytics only."
           }
         },
         "required": [
@@ -24079,6 +24119,73 @@
           "chapter_id",
           "member_count",
           "sent_at"
+        ]
+      },
+      "InviteFunnelStepDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The invite token, as the join link carries it"
+          },
+          "visit_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A random id the card mints once per visit, so the steps of one visit form one funnel."
+          },
+          "step": {
+            "type": "string",
+            "enum": [
+              "card-viewed",
+              "sign-in-started",
+              "email-code-sent",
+              "email-code-verified",
+              "join-failed",
+              "new-link-asked"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "apple",
+              "google",
+              "email",
+              "password"
+            ],
+            "description": "The way in tapped, for `sign-in-started`."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "live",
+              "expired",
+              "used",
+              "off",
+              "locked"
+            ],
+            "description": "The state the card showed, for `card-viewed`."
+          },
+          "signed_in": {
+            "type": "boolean",
+            "description": "Whether the visitor was already signed in, for `card-viewed`."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "gone",
+              "forbidden",
+              "rate_limited",
+              "offline",
+              "server",
+              "other"
+            ],
+            "description": "Why the join failed, for `join-failed`."
+          }
+        },
+        "required": [
+          "token",
+          "visit_id",
+          "step"
         ]
       },
       "RegisterPushTokenDto": {

@@ -185,3 +185,58 @@ export function joinPathWithoutThen(search: URLSearchParams): string {
   const query = next.toString();
   return query ? `/join?${query}` : "/join";
 }
+
+/**
+ * The invite card's visit id (#5663): one random UUID per invite per browser,
+ * kept beside the join mark so a sign-in that leaves for Apple or Google, or
+ * an email link opened in another tab, comes back as the same visit and the
+ * join lands in the same funnel as the card view. A day old, or another
+ * invite, starts a new visit. Analytics only: it names no one, and losing it
+ * (storage off) just splits one visit in two.
+ */
+export const INVITE_VISIT_STORAGE_KEY = "frapp.invite-visit";
+export const INVITE_VISIT_MS = 24 * 60 * 60 * 1000;
+
+export function inviteVisitId(
+  token: string,
+  now: number = Date.now(),
+  mint: () => string = () => crypto.randomUUID(),
+): string | null {
+  try {
+    const raw = window.localStorage.getItem(INVITE_VISIT_STORAGE_KEY);
+    if (raw) {
+      const kept = JSON.parse(raw) as {
+        token?: unknown;
+        id?: unknown;
+        at?: unknown;
+      };
+      if (
+        kept.token === token &&
+        typeof kept.id === "string" &&
+        typeof kept.at === "number" &&
+        now - kept.at >= 0 &&
+        now - kept.at < INVITE_VISIT_MS
+      ) {
+        return kept.id;
+      }
+    }
+  } catch {
+    // Unreadable or storage off: a new visit.
+  }
+  let id: string;
+  try {
+    id = mint();
+  } catch {
+    // No secure context to mint in (plain http): nothing to record under.
+    return null;
+  }
+  try {
+    window.localStorage.setItem(
+      INVITE_VISIT_STORAGE_KEY,
+      JSON.stringify({ token, id, at: now }),
+    );
+  } catch {
+    // Storage off: this page's steps still share the id.
+  }
+  return id;
+}

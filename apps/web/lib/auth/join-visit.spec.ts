@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearJoinMark,
+  INVITE_VISIT_MS,
+  INVITE_VISIT_STORAGE_KEY,
+  inviteVisitId,
   JOIN_MARK_MS,
   joinThenFor,
   rememberJoinMark,
@@ -26,7 +29,9 @@ describe("shouldSkipJoinForMember (#3850)", () => {
   });
 
   it("keeps the page for a member with no role, whom /chat would send to /no-access", () => {
-    expect(shouldSkipJoinForMember({ ...member, hasAccess: false })).toBe(false);
+    expect(shouldSkipJoinForMember({ ...member, hasAccess: false })).toBe(
+      false,
+    );
   });
 
   it("keeps the page for an account with no chapter", () => {
@@ -76,5 +81,36 @@ describe("joinThenFor (#5625)", () => {
     rememberJoinMark("tok-1", "join", 1_000);
     clearJoinMark();
     expect(joinThenFor("tok-1", search("then=join"), 2_000)).toBeNull();
+  });
+});
+
+describe("inviteVisitId (#5663)", () => {
+  const T0 = 1_800_000_000_000;
+  beforeEach(() => {
+    window.localStorage.removeItem(INVITE_VISIT_STORAGE_KEY);
+  });
+
+  it("keeps one visit per invite through a sign-in round trip", () => {
+    const first = inviteVisitId("tok-1", T0, () => "visit-a");
+    expect(first).toBe("visit-a");
+    expect(inviteVisitId("tok-1", T0 + 60_000, () => "visit-b")).toBe(
+      "visit-a",
+    );
+  });
+
+  it("starts a new visit for another invite, or after a day", () => {
+    inviteVisitId("tok-1", T0, () => "visit-a");
+    expect(inviteVisitId("tok-2", T0, () => "visit-b")).toBe("visit-b");
+    expect(inviteVisitId("tok-2", T0 + INVITE_VISIT_MS, () => "visit-c")).toBe(
+      "visit-c",
+    );
+  });
+
+  it("records nothing where no id can be minted", () => {
+    expect(
+      inviteVisitId("tok-1", T0, () => {
+        throw new Error("insecure context");
+      }),
+    ).toBeNull();
   });
 });

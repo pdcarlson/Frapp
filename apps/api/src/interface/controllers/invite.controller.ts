@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -20,6 +21,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';
+import { InviteFunnelService } from '../../application/services/invite-funnel.service';
+import { requestApp, requestAppVersion } from '../http/request-app';
+import type { RequestContext } from '../types/request-context.types';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -64,7 +68,10 @@ import type { BulkEmailInviteResult } from '../../application/services/invite.se
 @FreeTier()
 @Controller('invites')
 export class InviteController {
-  constructor(private readonly inviteService: InviteService) {}
+  constructor(
+    private readonly inviteService: InviteService,
+    private readonly funnel: InviteFunnelService,
+  ) {}
 
   @Post()
   @UseGuards(ChapterGuard, PermissionsGuard)
@@ -226,12 +233,22 @@ export class InviteController {
   async redeem(
     @CurrentUser('id') userId: string,
     @Body() dto: RedeemInviteDto,
+    @Req() request: RequestContext,
   ) {
-    return this.inviteService.redeem(
+    const result = await this.inviteService.redeem(
       dto.token,
       userId,
       dto.accept_terms_privacy === true,
     );
+    // The invite card's funnel ends here (#5663): recorded only once the join
+    // has happened, under the visit that started it. Best-effort.
+    if (dto.visit_id) {
+      await this.funnel.recordJoined(result.chapterId, dto.visit_id, {
+        app: requestApp(request),
+        appVersion: requestAppVersion(request),
+      });
+    }
+    return result;
   }
 
   /**

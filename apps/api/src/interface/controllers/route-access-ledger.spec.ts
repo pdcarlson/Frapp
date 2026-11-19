@@ -73,6 +73,8 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "Google's OAuth redirect; connects nothing, only sends the browser back to where the sign-in started, whose signed-in member finishes it.",
   'InviteDetailsController.details':
     'The card an invite link opens on, before anyone signs in (#5625); the unguessable invite token in the body is the credential, and it shows only the chapter, sender, role and whether the link works.',
+  'InviteDetailsController.funnelStep':
+    "A step of the invite card's funnel (#5663), before anyone signs in; the invite token in the body proves the chapter whose analytics opt-out applies, and the route returns nothing.",
   'DevLogController.post':
     'Posts to the dev-log channel; guarded by DevLogTokenGuard (a shared secret), not a user session.',
 };
