@@ -33,6 +33,7 @@ import {
   seriesChildStarts,
   shiftRepeatRule,
   shiftWeekdays,
+  taskCopyDueInstant,
   zonedCalendarDay,
   type NthWeek,
   type RepeatFrequency,
@@ -909,6 +910,57 @@ function shortDay(day: string, ref: Date, timeZone: string): string {
   });
 }
 
+/**
+ * The moment a task typed as a due entry (`YYYY-MM-DD`, or with `THH:MM`) is
+ * due, for its Repeat control (#5119): the weekday and day of the month it
+ * defaults to. A timed entry reads on this device's clock, as the task forms
+ * save it. An untimed day reads at noon in `timeZone`, the zone the Repeat
+ * steps in (an edit's is the stored rule's), so it is the day the officer
+ * picked there whatever this device's zone; without one, at local noon.
+ * `null` until the entry reads as a day. Shared by both apps' task forms.
+ */
+export function taskFirstDue(entry: string, timeZone?: string): Date | null {
+  // A time only as the forms type it (`THH:MM`); a stored timestamp's tail
+  // isn't one, and reads as its day.
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})$)?/.exec(entry);
+  if (!match) return null;
+  const [, year, month, day, hours, minutes] = match;
+  const at =
+    hours !== undefined && minutes !== undefined
+      ? new Date(
+          Number(year),
+          Number(month) - 1,
+          Number(day),
+          Number(hours),
+          Number(minutes),
+        )
+      : timeZone
+        ? taskCopyDueInstant(`${year}-${month}-${day}`, "12:00:00", timeZone)
+        : new Date(Number(year), Number(month) - 1, Number(day), 12);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * How often a copy of a repeating task comes, in a word for a phone row's
+ * status line (#5119): "Daily", "Weekly", "Monthly", or "Every 2 weeks" past
+ * an interval of one. `null` for a task with no live series.
+ */
+export function taskRepeatCadence(
+  series: TaskSeriesLine | null | undefined,
+): string | null {
+  if (!series || series.ended) return null;
+  const parsed = parseTaskRepeatRule(series.recurrence_rule);
+  if (!parsed) return null;
+  if (parsed.interval === 1) return REPEAT_PRESET_LABELS[parsed.freq];
+  const unit =
+    parsed.freq === "DAILY"
+      ? "days"
+      : parsed.freq === "WEEKLY"
+        ? "weeks"
+        : "months";
+  return `Every ${parsed.interval} ${unit}`;
+}
+
 /** What a task read says about its series (`TaskSeriesSummaryDto`). */
 export interface TaskSeriesLine {
   recurrence_rule: string;
@@ -955,6 +1007,19 @@ export const TASK_SERIES_SCOPE_COPY = {
   repeatAlone:
     "Save the repeat change on its own first, then make your other changes.",
 } as const;
+
+/**
+ * An "All upcoming tasks" write (#5119), for both apps. The copy keeps its
+ * day there, so only the time travels: the server reads the time of day
+ * from `due_at` and refuses any `due_date` but the open copy's own.
+ */
+export function taskSeriesBody<T extends { due_date?: string }>(
+  body: T,
+): Omit<T, "due_date" | "scope"> & { scope: "series" } {
+  const rest = { ...body, scope: "series" as const };
+  delete rest.due_date;
+  return rest;
+}
 
 /**
  * What saving an edit of a task does (#5119), decided before anything is

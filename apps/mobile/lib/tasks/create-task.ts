@@ -267,6 +267,12 @@ export interface ValidatedNewTask {
    * once the picked photos are up, never by {@link validateNewTask}.
    */
   reference_photo_paths?: string[];
+  /**
+   * Repeat on this rule (#5119), the task its series' first copy: added by
+   * the sheet from its Repeat control, never by {@link validateNewTask}. One
+   * person's task only; the API refuses it on a group or up for grabs.
+   */
+  recurrence_rule?: string;
 }
 
 /**
@@ -426,7 +432,7 @@ export type TaskCreateRequest =
   | { route: "open"; body: CreateOpenTaskBody };
 
 export function createRequestOf(task: ValidatedNewTask): TaskCreateRequest {
-  const { who, reference_photo_paths, ...fields } = task;
+  const { who, reference_photo_paths, recurrence_rule, ...fields } = task;
   const request = taskWhoRequest(who);
   if (!request) {
     // `validateNewTask` never lets nobody through.
@@ -441,6 +447,7 @@ export function createRequestOf(task: ValidatedNewTask): TaskCreateRequest {
       ...fields,
       ...request.fields,
       ...(reference_photo_paths ? { reference_photo_paths } : {}),
+      ...(recurrence_rule ? { recurrence_rule } : {}),
     },
   };
 }

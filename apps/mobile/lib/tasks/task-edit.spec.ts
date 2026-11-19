@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pickRepeatPreset, TASK_SERIES_SCOPE_COPY } from "@repo/validation";
 import type { LiveTask, LiveTaskPhoto } from "@repo/hooks";
 import { toTaskRow, type TaskRowModel } from "./board";
 import {
@@ -12,8 +13,12 @@ import {
   pointsSave,
   proofSave,
   reassignRestarts,
+  repeatDraftOf,
+  repeatEditable,
+  repeatSave,
   rowAfter,
   scopedEdit,
+  seriesScopeOf,
   TASK_EDIT_COPY,
   taskEditable,
   titleSave,
@@ -286,5 +291,117 @@ describe("who may edit, and how far it reaches", () => {
     expect(
       taskEditable(editFactsOfLive({ ...live, due: undefined }), true),
     ).toBe(false);
+  });
+});
+
+describe("a copy of a repeating task (#5119)", () => {
+  const RULE = "FREQ=WEEKLY;BYDAY=WE;TZID=America/New_York";
+  const live = (overrides: Record<string, unknown> = {}) =>
+    row({
+      series_id: "s1",
+      series: {
+        recurrence_rule: RULE,
+        next_due_date: "2026-10-07",
+        ended: false,
+      },
+      ...overrides,
+    });
+
+  it("reads its series off the task", () => {
+    expect(live().series).toEqual({
+      recurrence_rule: RULE,
+      next_due_date: "2026-10-07",
+      ended: false,
+    });
+    expect(row().series).toBeNull();
+  });
+
+  it("asks on the copy still to come, as web's panel does", () => {
+    expect(seriesScopeOf(live(), { title: "Mop" })).toEqual({ kind: "ask" });
+    expect(seriesScopeOf(live(), { point_reward: 3 })).toEqual({
+      kind: "ask",
+    });
+  });
+
+  it("saves one copy without asking where All upcoming tasks can't apply", () => {
+    // Not a copy of a live series.
+    expect(seriesScopeOf(row(), { title: "Mop" })).toEqual({
+      kind: "instance",
+    });
+    const ended = live({
+      series: {
+        recurrence_rule: RULE,
+        next_due_date: "2026-10-07",
+        ended: true,
+      },
+    });
+    expect(seriesScopeOf(ended, { title: "Mop" })).toEqual({
+      kind: "instance",
+    });
+    // Overdue or done: All upcoming tasks wouldn't change this copy.
+    expect(
+      seriesScopeOf(live({ status: "OVERDUE" }), { title: "Mop" }),
+    ).toEqual({ kind: "instance" });
+    expect(
+      seriesScopeOf(live({ status: "COMPLETED", stored_status: "COMPLETED" }), {
+        title: "Mop",
+      }),
+    ).toEqual({ kind: "instance" });
+    // A move to another day moves this copy; the schedule stays.
+    expect(
+      seriesScopeOf(live(), { due_date: "2026-10-01", due_at: null }),
+    ).toEqual({ kind: "instance" });
+    // Photos go on the copy they were added to.
+    expect(
+      seriesScopeOf(live(), { reference_photo_paths: ["chapters/c/p.jpg"] }),
+    ).toEqual({ kind: "instance" });
+  });
+
+  it("asks for a new time on the same day", () => {
+    expect(
+      seriesScopeOf(live(), {
+        due_date: "2026-09-30",
+        due_at: new Date(2026, 8, 30, 21, 0).toISOString(),
+      }),
+    ).toEqual({ kind: "ask" });
+  });
+
+  it("saves a Repeat change to the series, from the copy still to come only", () => {
+    expect(seriesScopeOf(live(), { recurrence_rule: null })).toEqual({
+      kind: "series",
+    });
+    expect(
+      seriesScopeOf(live({ status: "OVERDUE" }), { recurrence_rule: null }),
+    ).toEqual({
+      kind: "refuse",
+      message: TASK_SERIES_SCOPE_COPY.repeatFromNext,
+    });
+    expect(repeatEditable(live())).toBe(true);
+    expect(repeatEditable(live({ status: "OVERDUE" }))).toBe(false);
+    expect(repeatEditable(row())).toBe(false);
+  });
+
+  it("sends the Repeat only when it changed", () => {
+    const task = live();
+    const stored = repeatDraftOf(task)!;
+    expect(stored.preset).toBe("WEEKLY");
+    expect(repeatSave(task, stored)).toEqual({ kind: "none" });
+    // Doesn't repeat stops it.
+    expect(repeatSave(task, pickRepeatPreset(stored, "NONE"))).toEqual({
+      kind: "save",
+      body: { recurrence_rule: null },
+    });
+    const daily = repeatSave(task, pickRepeatPreset(stored, "DAILY"));
+    expect(daily.kind).toBe("save");
+    expect(daily.kind === "save" && daily.body.recurrence_rule).toMatch(
+      /^FREQ=DAILY;/,
+    );
+    // A task that doesn't repeat has no Repeat to save.
+    expect(repeatSave(row(), stored)).toEqual({ kind: "none" });
+  });
+
+  it("measures the next change against a stopped series", () => {
+    const after = rowAfter(live(), { recurrence_rule: null });
+    expect(after.series?.ended).toBe(true);
   });
 });

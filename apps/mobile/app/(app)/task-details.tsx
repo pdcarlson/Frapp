@@ -58,6 +58,7 @@ import {
   TaskFact,
   TaskMinutesFact,
   TaskFacts,
+  TaskRepeatFact,
 } from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
@@ -445,11 +446,15 @@ function TaskScreen({
   // Delete, after the platform alert, then back to the board.
   const deleteTask = useDeleteTask();
   const [deleteFailed, setDeleteFailed] = useState<string | null>(null);
-  const runDelete = async (everyone: boolean) => {
+  const runDelete = async (everyone: boolean, series?: "series") => {
     setDeleteFailed(null);
     try {
       await deleteTask.mutateAsync(
-        everyone ? { id: row.id, scope: "group" } : row.id,
+        everyone
+          ? { id: row.id, scope: "group" }
+          : series
+            ? { id: row.id, scope: series }
+            : row.id,
       );
       leave();
     } catch (error) {
@@ -457,7 +462,11 @@ function TaskScreen({
     }
   };
   const confirmDelete = (everyone: boolean) =>
-    confirmTaskDelete(row.title, everyone, () => void runDelete(everyone));
+    confirmTaskDelete(
+      row,
+      everyone,
+      (series) => void runDelete(everyone, series),
+    );
 
   // Give it back (tasks.md § Up for grabs): the task is deleted and its
   // posting is open again, so there is nothing left here to show. It lands on
@@ -687,6 +696,8 @@ function TaskScreen({
             />
           </View>
         ) : null}
+
+        {!editing ? <TaskRepeatFact row={row} /> : null}
 
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 

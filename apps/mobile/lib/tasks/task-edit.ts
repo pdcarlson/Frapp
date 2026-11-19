@@ -1,6 +1,14 @@
 import { dueEntryFields, dueTimePassed } from "@repo/formatting";
 import type { LiveTask, TaskEdit } from "@repo/hooks";
-import { TASK_TITLE_MAX_LENGTH, type TaskProofKind } from "@repo/validation";
+import {
+  TASK_TITLE_MAX_LENGTH,
+  taskFirstDue,
+  taskRepeatDraftFromRule,
+  taskRepeatRuleOf,
+  taskSaveScope,
+  type RepeatDraft,
+  type TaskProofKind,
+} from "@repo/validation";
 import { parsePointReward, storedDueOf, TASK_FORM_COPY } from "./create-task";
 import type { TaskRowModel } from "./board";
 
@@ -14,9 +22,9 @@ import type { TaskRowModel } from "./board";
  * `scope: "group"`, so the edit reaches every copy not yet confirmed, except
  * who it is for, which hands over that one copy (no scope, the API's
  * instance edit). Its photos change per copy only, and the screen leaves
- * them out on a group (the API's 400). A copy of a repeating task saves to
- * that copy alone, as the phone's edit always did; web asks "This task only"
- * or "All upcoming tasks".
+ * them out on a group (the API's 400). A copy of a repeating task asks
+ * "This task only" or "All upcoming tasks" as web's task panel does
+ * (#5119, `seriesScopeOf`), and its Repeat saves to the series on its own.
  */
 
 /** What one field's change sends, or why it can't. */
@@ -123,6 +131,102 @@ export function dueSave(
   return { kind: "save", body: { due_date: next.date, due_at: dueAt } };
 }
 
+/** A copy of a repeating series that still makes copies (#5119). */
+export function seriesLive(row: TaskRowModel): boolean {
+  return !!row.series && !row.series.ended;
+}
+
+/**
+ * Whether its Repeat can change from this copy (#5119): the copy still to
+ * come, not overdue or done. "All upcoming tasks" wouldn't change an
+ * earlier one, so the field says to change it from the next.
+ */
+export function repeatEditable(row: TaskRowModel): boolean {
+  return (
+    seriesLive(row) &&
+    taskSaveScope(
+      {
+        status: row.displayStatus ?? row.storedStatus ?? "",
+        series: row.series,
+      },
+      { recurrence_rule: null, movesDay: false, changesOther: false },
+    ).kind === "series"
+  );
+}
+
+/** The Repeat field's draft for a copy of a live series, as it is saved. */
+export function repeatDraftOf(row: TaskRowModel): RepeatDraft | null {
+  return row.series && seriesLive(row)
+    ? taskRepeatDraftFromRule(row.series.recurrence_rule)
+    : null;
+}
+
+/** The copy's due, which a Repeat read against it defaults from. */
+export function repeatFirstDue(
+  row: TaskRowModel,
+  timeZone?: string,
+): Date | null {
+  const due = dueDraftOf(row);
+  if (!due) return null;
+  return taskFirstDue(
+    due.time ? `${due.date}T${due.time}` : due.date,
+    timeZone,
+  );
+}
+
+/**
+ * The Repeat as picked: the new rule (`null` stops it repeating), sent only
+ * when it differs from the series', and only on a copy of a live series.
+ */
+export function repeatSave(
+  row: TaskRowModel,
+  draft: RepeatDraft,
+): TaskFieldSave {
+  if (!row.series || !seriesLive(row)) return NONE;
+  const first = repeatFirstDue(row, draft.timeZone);
+  if (!first) return NONE;
+  const result = taskRepeatRuleOf(draft, first);
+  if (!result.ok) return { kind: "problem", message: result.error };
+  if (result.rule === row.series.recurrence_rule) return NONE;
+  return { kind: "save", body: { recurrence_rule: result.rule } };
+}
+
+/**
+ * Which tasks a field's save on a copy of a live series changes (#5119),
+ * as web's task panel decides it (`taskSaveScope`): `ask` on the copy still
+ * to come; `instance` for an overdue or done copy, a move to another day,
+ * or photos, which go on the copy they were added to (a series doesn't copy
+ * them); `series` for a Repeat change. A Repeat change saves on its own, so
+ * it is never refused for riding with other changes here.
+ */
+export function seriesScopeOf(
+  row: TaskRowModel,
+  body: TaskEdit,
+): ReturnType<typeof taskSaveScope> {
+  const { recurrence_rule, reference_photo_paths, ...rest } = body;
+  if (!seriesLive(row)) return { kind: "instance" };
+  if (
+    recurrence_rule === undefined &&
+    reference_photo_paths !== undefined &&
+    Object.keys(rest).length === 0
+  ) {
+    return { kind: "instance" };
+  }
+  // Both days on this device's calendar, as the date field holds them: a
+  // time change seen from another zone isn't a move.
+  const day = dueDraftOf(row)?.date ?? row.dueDay;
+  return taskSaveScope(
+    { status: row.displayStatus ?? row.storedStatus ?? "", series: row.series },
+    {
+      ...(recurrence_rule !== undefined ? { recurrence_rule } : {}),
+      movesDay:
+        body.due_date !== undefined &&
+        body.due_date.slice(0, 10) !== day?.slice(0, 10),
+      changesOther: Object.keys(rest).length > 0,
+    },
+  );
+}
+
 /** What Mark done needs. */
 export function proofSave(
   row: TaskRowModel,
@@ -193,6 +297,14 @@ export function rowAfter(row: TaskRowModel, body: TaskEdit): TaskRowModel {
     ...(body.due_at !== undefined ? { dueAt: body.due_at } : {}),
     ...(body.proof_kind !== undefined ? { proofKind: body.proof_kind } : {}),
     ...(body.assignee_id !== undefined ? { assigneeId: body.assignee_id } : {}),
+    ...(body.recurrence_rule !== undefined && row.series
+      ? {
+          series:
+            body.recurrence_rule === null
+              ? { ...row.series, ended: true }
+              : { ...row.series, recurrence_rule: body.recurrence_rule },
+        }
+      : {}),
   };
 }
 

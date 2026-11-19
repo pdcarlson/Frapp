@@ -36,8 +36,10 @@ import {
   taskGroupLabel,
   taskNeedsSignOff,
   taskRepeatDraftFromRule,
+  taskFirstDue,
   taskRepeatRuleOf,
   taskSaveScope,
+  taskSeriesBody,
   taskSignedOffAutomatically,
   type RepeatDraft,
   type TaskProofKind,
@@ -72,7 +74,7 @@ import { cn, guardIntDraft, initials, parseGuardedInt } from "@/lib/utils";
 import type { BoardTask, GroupTileData } from "./board-task";
 import { DueDateField, dueEntryPassed } from "./due-date-field";
 import { TaskSubtaskList } from "./task-subtasks";
-import { firstDueOf, TaskRepeatLine } from "./task-repeat";
+import { TaskRepeatLine } from "./task-repeat";
 import {
   MarkDoneControl,
   TaskPhotoPicker,
@@ -84,7 +86,7 @@ import {
 } from "./task-photo";
 import { WhoPicker } from "./who-picker";
 import type { RowPerson } from "./task-row";
-import { movesDayTo, seriesBody } from "./task-edit-form";
+import { movesDayTo } from "./task-edit-form";
 
 /** What the panel shows: one task, or a group task's copies. */
 export type TaskPanelTarget =
@@ -269,7 +271,7 @@ function TaskPanelBody({
         if (!picked) return false;
         scope = picked.alternative ? "instance" : "series";
       }
-      if (scope === "series") send = seriesBody(body);
+      if (scope === "series") send = taskSeriesBody(body);
     }
     setSaving(true);
     try {
@@ -981,7 +983,7 @@ function RepeatRow({
       </FieldRow>
     );
   }
-  const first = firstDueOf(dueEntryFromTask(task), draft.timeZone);
+  const first = taskFirstDue(dueEntryFromTask(task), draft.timeZone);
   return (
     <FieldRow label="Repeat" alignTop>
       <InlineEditor

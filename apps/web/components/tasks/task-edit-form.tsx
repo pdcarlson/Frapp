@@ -12,6 +12,7 @@ import {
   noTaskRepeatDraft,
   taskRepeatDraftFromRule,
   taskSaveScope,
+  taskSeriesBody,
   type TaskProofKind,
   type TaskSeriesLine,
 } from "@repo/validation";
@@ -60,17 +61,6 @@ export function movesDayTo(
 ): boolean {
   const before = dueEntryFields(dueEntryFromTask(task)).due_date;
   return dueDate.slice(0, 10) !== before.slice(0, 10);
-}
-
-/**
- * An "All upcoming tasks" write (#5119). The copy keeps its day there, so
- * only the time travels: the server reads the time of day from `due_at` and
- * refuses any `due_date` but the open copy's own.
- */
-export function seriesBody(body: TaskEdit): TaskEdit {
-  const rest: TaskEdit = { ...body, scope: "series" };
-  delete rest.due_date;
-  return rest;
 }
 
 /** A copy of a series that still makes copies (#5119). */
@@ -224,7 +214,7 @@ export function TaskEditForm({
           try {
             await updateTask.mutateAsync({
               id: task.id,
-              body: scope.current === "series" ? seriesBody(body) : body,
+              body: scope.current === "series" ? taskSeriesBody(body) : body,
             });
             return { ok: true };
           } catch (error) {

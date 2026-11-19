@@ -34,8 +34,13 @@ import {
   type TaskStatus,
 } from "@repo/hooks";
 import { formatPointsChip, formatRelativeDayTime } from "@repo/formatting";
-import { taskGroupLabel } from "@repo/validation";
+import {
+  TASK_SERIES_SCOPE_COPY,
+  taskGroupLabel,
+  type TaskSeriesLine,
+} from "@repo/validation";
 import { records, str } from "@/lib/more/narrow";
+import { askSeriesScope } from "@/lib/series-scope";
 import {
   rowSignedOffAutomatically,
   toTaskRow,
@@ -246,13 +251,30 @@ export function taskMenuKeys(
 /**
  * Delete's question, the platform alert, for the task screen's More and a
  * row's long-press menu alike. One copy's Delete, or, `everyone`, every copy
- * of a group task. `onConfirm` runs on the red button.
+ * of a group task. On a copy of a live repeating series (#5119) it asks as
+ * web does, "This task only" or "All upcoming tasks", the second stopping
+ * the repeat (its open copy goes only if untouched). `onConfirm` runs on the
+ * red button, with `"series"` for All upcoming tasks.
  */
 export function confirmTaskDelete(
-  title: string,
+  task: { title: string; series: TaskSeriesLine | null },
   everyone: boolean,
-  onConfirm: () => void,
+  onConfirm: (scope?: "series") => void,
 ): void {
+  const { title } = task;
+  if (!everyone && task.series && !task.series.ended) {
+    void askSeriesScope({
+      title: TASK_SERIES_SCOPE_COPY.deleteTitle,
+      message: TASK_SERIES_SCOPE_COPY.deleteMessage,
+      thisOne: TASK_SERIES_SCOPE_COPY.thisTask,
+      allUpcoming: TASK_SERIES_SCOPE_COPY.allUpcoming,
+      destructive: true,
+    }).then((scope) => {
+      if (scope === "instance") onConfirm();
+      else if (scope === "series") onConfirm("series");
+    });
+    return;
+  }
   Alert.alert(
     everyone ? `Delete "${title}" for everyone?` : `Delete "${title}"?`,
     everyone
@@ -263,7 +285,7 @@ export function confirmTaskDelete(
       {
         text: everyone ? "Delete for everyone" : "Delete task",
         style: "destructive",
-        onPress: onConfirm,
+        onPress: () => onConfirm(),
       },
     ],
   );
