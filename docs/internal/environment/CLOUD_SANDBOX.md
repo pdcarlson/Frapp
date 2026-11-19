@@ -211,7 +211,8 @@ The ACL repair is sequenced **after `db push`** because it fixes the tables thos
 just created: the pinned Postgres image grants `anon`/`authenticated`/`service_role` no DML on
 objects created by `postgres`, so without it the API's first query is `42501 permission
 denied`. It also resets the schema's *default* privileges, so migrations added in a later
-session inherit working grants.
+session inherit working grants. It repairs `service_role` only, the API's role: the client
+roles keep exactly the narrow grants migration 20261119210325 gives them, as on hosted.
 
 It is sequenced **after `write_env_files`** for a different reason: the repair is fatal, and
 nothing in the env file depends on the grants. Running it earlier meant a failed repair
@@ -422,7 +423,7 @@ every session), so skim the log even when bringup succeeds.
 | The hook says bringup "already finished", but `docker` cannot connect and `uptime` is minutes old | The VM restarted and the lock plus sentinel from before it were trusted. Since #2515 the hook detects a lock from an earlier boot (by boot id, or by age for a lock written before boot ids) and relaunches on its own, so this now means a host that exposes no boot id | `bash scripts/cloud-sandbox-up.sh` |
 | Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `bash scripts/cloud-sandbox-up.sh`. If that refuses because the old bringup is still alive but hung, `bash scripts/cloud-sandbox-up.sh --stop`, then run it again |
 | `Error: No matching Supabase CLI binary package found for linux-x64` (from `supabase/dist/supabase.js`), then a sentinel reading `'supabase start' failed (toolchain)` | The Supabase v2 CLI ships its binary as a platform-specific **optionalDependency** (`@supabase/cli-<platform>`). If that optional install is skipped, the launcher finds no binary and throws — and npx caches the broken tree under `~/.npm/_npx`, so it stays broken all session | **Repo fix, not an env change** — already handled: both scripts go through `cs_supabase`, which installs a pinned CLI into `.cache/supabase-cli/` and probes it by running `--version`. If it recurs, delete `.cache/supabase-cli/` to force a clean reinstall |
-| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `frapp_repair_local_acls` (shared with the laptop path via `scripts/lib/local-postgres-acl.sh`) runs after `db push`, granting table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (bringup takes the session-start lock itself, so a resumed session does not launch a second one alongside it). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. On an API that is still running, re-check with `/health/ready`, since `/health` reuses its probe for up to 60 s. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
+| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `frapp_repair_local_acls` (shared with the laptop path via `scripts/lib/local-postgres-acl.sh`) runs after `db push`, granting `service_role` table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (bringup takes the session-start lock itself, so a resumed session does not launch a second one alongside it). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `service_role=arwdDxtm/postgres` and no `anon` or `authenticated` entry (migration 20261119210325 revokes the client roles' defaults), broken shows `service_role=Dxtm/postgres`. On an API that is still running, re-check with `/health/ready`, since `/health` reuses its probe for up to 60 s. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
 
 Env var and network changes **apply to new sessions only** — the user must start a fresh
 session for them to take effect.
@@ -481,12 +482,12 @@ apply it. To call it directly, source
 `EXECUTE`:
 
 ```sql
-grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
-grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
 alter default privileges for role postgres in schema public
-  grant select, insert, update, delete on tables to anon, authenticated, service_role;
+  grant select, insert, update, delete on tables to service_role;
 alter default privileges for role postgres in schema public
-  grant usage, select on sequences to anon, authenticated, service_role;
+  grant usage, select on sequences to service_role;
 ```
 
 ⚠️ **`supabase db reset --local` undoes this.** The reset rebuilds the database from the

@@ -45,19 +45,26 @@ try {
     ('${F.userCId}', '${F.userCAuth}', 'c@test.local'),
     ('${F.userDId}', '${F.userDAuth}', 'd@test.local'),
     ('${F.userEId}', '${F.userEAuth}', 'e@test.local'),
-    ('${F.userFId}', '${F.userFAuth}', 'f@test.local');
+    ('${F.userFId}', '${F.userFAuth}', 'f@test.local'),
+    ('${F.userGId}', '${F.userGAuth}', 'g@test.local'),
+    ('${F.userHId}', '${F.userHAuth}', 'h@test.local');
   insert into roles (id, chapter_id, name, permissions) values
-    ('${F.roleSecret}',       '${F.chapA}', 'Secret',   '{chat:secret}'),
-    ('${F.roleBasic}',        '${F.chapA}', 'Basic',    '{}'),
+    ('${F.roleSecret}',       '${F.chapA}', 'Secret',   '{chat:secret,members:view}'),
+    ('${F.roleBasic}',        '${F.chapA}', 'Basic',    '{members:view}'),
     ('${F.roleWildcard}',     '${F.chapA}', 'Wildcard', '{*}'),
-    ('${F.roleSecretChapB}',  '${F.chapB}', 'Secret B', '{chat:secret}');
+    ('${F.roleNoView}',       '${F.chapA}', 'No view',  '{}'),
+    ('${F.roleSecretChapB}',  '${F.chapB}', 'Secret B', '{chat:secret,members:view}'),
+    ('${F.roleMemberChapB}',  '${F.chapB}', 'Member B', '{members:view}');
   insert into members (user_id, chapter_id, role_ids) values
     ('${F.userAId}', '${F.chapA}', '{${F.roleSecret}}'),
     ('${F.userCId}', '${F.chapA}', '{${F.roleBasic}}'),
     ('${F.userDId}', '${F.chapA}', '{${F.roleWildcard}}'),
-    ('${F.userEId}', '${F.chapA}', '{${F.roleSecretChapB}}'),
+    -- members:view from a chapter-A role, chat:secret only from a chapter-B one.
+    ('${F.userEId}', '${F.chapA}', '{${F.roleBasic},${F.roleSecretChapB}}'),
     ('${F.userFId}', '${F.chapA}', '{${F.roleSecret.toUpperCase()}}'),
-    ('${F.userBId}', '${F.chapB}', '{}');
+    ('${F.userGId}', '${F.chapA}', '{${F.roleNoView}}'),
+    ('${F.userHId}', '${F.chapA}', '{${F.roleMemberChapB}}'),
+    ('${F.userBId}', '${F.chapB}', '{${F.roleMemberChapB}}');
   -- A DM holds exactly two members (chat_channels_dm_two_members, #2788). Its
   -- other participant is userF, whom no scenario below reads the DM as.
   insert into chat_channels (id, chapter_id, name, type, member_ids, required_permissions) values
