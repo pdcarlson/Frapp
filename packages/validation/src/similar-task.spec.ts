@@ -28,6 +28,13 @@ describe("similar tasks (#5562)", () => {
   it("does not match tasks that only share a word", () => {
     expect(taskTitleLikeness("Book the hall", "Book the DJ")).toBe(0);
     expect(taskTitleLikeness("Order shirts", "Order pizza for rush")).toBe(0);
+    // "about" says nothing about which task it is.
+    expect(
+      taskTitleLikeness(
+        "Email alumni about homecoming",
+        "Email alumni about formal",
+      ),
+    ).toBeLessThan(0.75);
   });
 
   it("holds down a short title inside a much longer one", () => {
