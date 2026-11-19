@@ -4,7 +4,7 @@ import { selectCalendarTasks } from "@repo/hooks/calendar-tasks";
 import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
 import { localIsoDate } from "@repo/formatting";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /*
@@ -361,6 +361,13 @@ describe("EventsPage list", () => {
   });
 
   it("files a generated meeting as repeating under the Cadence filter", async () => {
+    // The series sits at 6 PM around today: pinned to midday so which of its
+    // meetings is still to come doesn't depend on when the suite runs (#5637).
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 10, 18, 12, 0, 0));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const user = userEvent.setup();
     // The head has already happened: only generated meetings are upcoming,
     // and they carry no rule of their own.
