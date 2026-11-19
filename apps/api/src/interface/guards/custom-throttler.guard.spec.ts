@@ -1236,6 +1236,12 @@ describe('CustomThrottlerGuard', () => {
         120,
       ),
       route(
+        'POST /invites/funnel',
+        InviteDetailsController,
+        InviteDetailsController.prototype.funnelStep,
+        120,
+      ),
+      route(
         'POST /invites/ask-for-new-link',
         InviteController,
         IN.askForNewLink,

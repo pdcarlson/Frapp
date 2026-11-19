@@ -156,16 +156,19 @@ export function joinThenFor(
       then?: unknown;
       at?: unknown;
     };
-    const fresh =
-      typeof mark.at === "number" &&
-      now - mark.at >= 0 &&
-      now - mark.at < JOIN_MARK_MS;
-    return mark.token === token && mark.then === fromUrl && fresh
+    return mark.token === token &&
+      mark.then === fromUrl &&
+      isFresh(mark.at, now, JOIN_MARK_MS)
       ? fromUrl
       : null;
   } catch {
     return null;
   }
+}
+
+/** A stored `at` that is a time no later than `now` and under `ms` old. */
+function isFresh(at: unknown, now: number, ms: number): boolean {
+  return typeof at === "number" && now - at >= 0 && now - at < ms;
 }
 
 /** `/join` with this visit's query, marked to finish with `then`. */
@@ -184,4 +187,78 @@ export function joinPathWithoutThen(search: URLSearchParams): string {
   next.delete(JOIN_THEN_KEY);
   const query = next.toString();
   return query ? `/join?${query}` : "/join";
+}
+
+/**
+ * The invite card's visit id (#5663): one random UUID per invite per browser,
+ * kept beside the join mark so a sign-in that leaves for Apple or Google, or
+ * an email link opened in another tab, comes back as the same visit and the
+ * join lands in the same funnel as the card view. A day old, or another
+ * invite, starts a new visit. Analytics only: it names no one, and losing it
+ * (storage off) just splits one visit in two.
+ *
+ * It keeps a short digest of the token, not the token: the token is a
+ * credential, and this entry outlives the join and a sign-out, unlike the
+ * join mark, which is cleared once acted on.
+ */
+export const INVITE_VISIT_STORAGE_KEY = "frapp.invite-visit";
+export const INVITE_VISIT_MS = 24 * 60 * 60 * 1000;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Which invite a kept visit is for, without keeping the token: a 32-bit
+ * FNV-1a digest, enough to tell this browser's last invite from the next and
+ * nowhere near enough to rebuild a token from.
+ */
+function tokenDigest(token: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < token.length; i++) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+export function inviteVisitId(
+  token: string,
+  now: number = Date.now(),
+  mint: () => string = () => crypto.randomUUID(),
+): string | null {
+  try {
+    const raw = window.localStorage.getItem(INVITE_VISIT_STORAGE_KEY);
+    if (raw) {
+      const kept = JSON.parse(raw) as {
+        invite?: unknown;
+        id?: unknown;
+        at?: unknown;
+      };
+      if (
+        kept.invite === tokenDigest(token) &&
+        typeof kept.id === "string" &&
+        UUID.test(kept.id) &&
+        isFresh(kept.at, now, INVITE_VISIT_MS)
+      ) {
+        return kept.id;
+      }
+    }
+  } catch {
+    // Unreadable or storage off: a new visit.
+  }
+  let id: string;
+  try {
+    id = mint();
+  } catch {
+    // No secure context to mint in (plain http): nothing to record under.
+    return null;
+  }
+  try {
+    window.localStorage.setItem(
+      INVITE_VISIT_STORAGE_KEY,
+      JSON.stringify({ invite: tokenDigest(token), id, at: now }),
+    );
+  } catch {
+    // Storage off: this page's steps still share the id.
+  }
+  return id;
 }

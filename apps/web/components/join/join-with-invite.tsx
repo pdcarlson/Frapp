@@ -13,12 +13,14 @@ import {
   UNKNOWN_INVITE_COPY,
   useAccessibleChapters,
   useAskForNewLink,
+  useInviteCardViewed,
   useInviteDetails,
+  useInviteFunnel,
   useRedeemInvite,
   type InviteDetails,
 } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
-import { extractInviteToken } from "@repo/validation";
+import { extractInviteToken, inviteJoinFailureReason } from "@repo/validation";
 import { AppHandoff } from "@/components/auth/app-handoff";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { SignedInAs } from "@/components/auth/signed-in-as";
@@ -32,6 +34,7 @@ import {
   JOIN_IN_BROWSER_VALUE,
   joinPathWithoutThen,
   clearJoinMark,
+  inviteVisitId,
   joinReturnPath,
   joinThenFor,
   readJoinThen,
@@ -81,6 +84,11 @@ type SessionState = "checking" | "signed-out" | "ready" | "failed";
  * The page reads the invite with `POST /v1/invites/details`, which needs no
  * sign-in and answers for a dead link too, so nothing here waits on Auth to
  * show the chapter.
+ *
+ * Each step is recorded in the invite card funnel (#5663, `useInviteFunnel`):
+ * the card viewed (its state, signed in or not), the way in tapped, the email
+ * code sent and verified, the join or a failed one, and an ask for a new
+ * link.
  */
 export function JoinWithInvite({ token }: { token: string }) {
   const router = useRouter();
@@ -92,6 +100,8 @@ export function JoinWithInvite({ token }: { token: string }) {
   const redeem = useRedeemInvite();
   const ask = useAskForNewLink();
   const details = useInviteDetails(token);
+  const [visitId] = useState(() => inviteVisitId(token));
+  const record = useInviteFunnel(token, visitId);
 
   const [sessionState, setSessionState] = useState<SessionState>("checking");
   const [email, setEmail] = useState<string | null>(null);
@@ -122,6 +132,13 @@ export function JoinWithInvite({ token }: { token: string }) {
     ready &&
     !!invite &&
     memberships.some((m) => m.chapter_id === invite.chapter_id);
+
+  useInviteCardViewed(
+    record,
+    invite && (sessionState === "signed-out" || ready)
+      ? { state: invite.state, signed_in: ready }
+      : null,
+  );
 
   const phone = usePhonePlatform();
   const inBrowser =
@@ -188,6 +205,7 @@ export function JoinWithInvite({ token }: { token: string }) {
           return;
         }
         const result = await redeem.mutateAsync(joinRedeemBody(token));
+        record({ step: "joined" });
         const chapterId = redeemChapterId(result) ?? card.chapter_id;
         await selectChapter(chapterId);
         toast({ title: `Welcome to ${card.chapter_name}` });
@@ -201,19 +219,34 @@ export function JoinWithInvite({ token }: { token: string }) {
           router.refresh();
           return;
         }
+        record({
+          step: "join-failed",
+          reason: inviteJoinFailureReason(statusOf(error), isOffline),
+        });
         setJoinError(joinErrorCopy(error));
         setBusy(false);
         // A link that died since the card was read gets the dead card.
         if (statusOf(error) === 410) void details.refetch();
       }
     },
-    [confirmDrop, details, redeem, router, selectChapter, toast, token],
+    [
+      confirmDrop,
+      details,
+      isOffline,
+      record,
+      redeem,
+      router,
+      selectChapter,
+      toast,
+      token,
+    ],
   );
 
   const askForLink = useCallback(async () => {
     setAskError(null);
     try {
       await ask.mutateAsync(token);
+      record({ step: "new-link-asked" });
       setAsked(true);
     } catch (error) {
       const code = codeOf(error);
@@ -228,7 +261,7 @@ export function JoinWithInvite({ token }: { token: string }) {
           : "Couldn't send that. Try again in a moment.",
       );
     }
-  }, [ask, chapters, isOffline, token]);
+  }, [ask, chapters, isOffline, record, token]);
 
   // What a sign-in from the card came back to do, done once. The mark comes
   // off the URL first, so a refresh or Back never repeats it.
@@ -427,6 +460,7 @@ export function JoinWithInvite({ token }: { token: string }) {
                 returnTo={joinReturnPath(searchParams, "ask")}
                 onStart={() => rememberJoinMark(token, "ask")}
                 onSignedIn={() => signedInHere("ask")}
+                record={record}
               />
               <TermsLine action="continuing" />
             </div>
@@ -474,7 +508,10 @@ export function JoinWithInvite({ token }: { token: string }) {
         footer={
           <PasswordSignInLine
             returnTo={returnTo}
-            onStart={() => rememberJoinMark(token, "join")}
+            onStart={() => {
+              rememberJoinMark(token, "join");
+              record({ step: "sign-in-started", method: "password" });
+            }}
           />
         }
       >
@@ -482,6 +519,7 @@ export function JoinWithInvite({ token }: { token: string }) {
           returnTo={returnTo}
           onStart={() => rememberJoinMark(token, "join")}
           onSignedIn={() => signedInHere("join")}
+          record={record}
         />
         <TermsLine action="continuing" className="mt-4" />
       </AuthScreen>

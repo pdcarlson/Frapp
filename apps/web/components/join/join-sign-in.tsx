@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import type { RecordInviteStep } from "@repo/hooks";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -35,6 +36,7 @@ export function JoinSignIn({
   returnTo,
   onStart,
   onSignedIn,
+  record,
   disabled = false,
 }: {
   /** Where every way in lands once signed in (already open-redirect safe). */
@@ -43,6 +45,8 @@ export function JoinSignIn({
   onStart: () => void;
   /** The email code signed this tab in without leaving it. */
   onSignedIn: () => void;
+  /** The card's funnel (#5663): which way in, the code sent and verified. */
+  record?: RecordInviteStep;
   disabled?: boolean;
 }) {
   const { toast } = useToast();
@@ -52,6 +56,7 @@ export function JoinSignIn({
   async function start(provider: OAuthProvider) {
     setPending(provider);
     onStart();
+    record?.({ step: "sign-in-started", method: provider });
     try {
       const { error } = await startWebOAuth(
         createSupabaseBrowserClient(),
@@ -78,6 +83,8 @@ export function JoinSignIn({
         redirectTo={returnTo}
         onSending={onStart}
         onSignedIn={onSignedIn}
+        onCodeSent={() => record?.({ step: "email-code-sent" })}
+        onCodeVerified={() => record?.({ step: "email-code-verified" })}
         onBack={() => setEmailOpen(false)}
         disabled={disabled}
       />
@@ -111,7 +118,10 @@ export function JoinSignIn({
         variant="ghost"
         className="h-11 w-full"
         disabled={disabled || pending !== null}
-        onClick={() => setEmailOpen(true)}
+        onClick={() => {
+          record?.({ step: "sign-in-started", method: "email" });
+          setEmailOpen(true);
+        }}
       >
         Continue with email
       </Button>

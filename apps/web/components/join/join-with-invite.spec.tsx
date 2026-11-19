@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   },
   chapters: { data: [] as unknown[], isLoading: false, refetch: vi.fn() },
   redeem: vi.fn(),
+  record: vi.fn(),
   ask: vi.fn(),
   askPending: false,
   sessionUser: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAccessibleChapters: () => h.chapters,
   useRedeemInvite: () => ({ mutateAsync: h.redeem, isPending: false }),
   useAskForNewLink: () => ({ mutateAsync: h.ask, isPending: h.askPending }),
+  useInviteFunnel: () => h.record,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: h.replace, refresh: vi.fn() }),
@@ -91,10 +93,18 @@ vi.mock("@/lib/app-install", () => ({
 
 import { JoinWithInvite } from "./join-with-invite";
 import {
+  INVITE_VISIT_STORAGE_KEY,
   JOIN_MARK_STORAGE_KEY,
   clearJoinMark,
   rememberJoinMark,
 } from "@/lib/auth/join-visit";
+
+const VISIT = "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718";
+
+/** The funnel steps the card recorded, in order (#5663). */
+function steps(): unknown[] {
+  return h.record.mock.calls.map(([input]) => input);
+}
 
 const CHAPTER_ID = "00000000-0000-4000-8000-000000000001";
 const LIVE = {
@@ -118,6 +128,8 @@ function signedIn() {
 beforeEach(() => {
   vi.clearAllMocks();
   clearJoinMark();
+  window.localStorage.removeItem(INVITE_VISIT_STORAGE_KEY);
+  vi.spyOn(crypto, "randomUUID").mockReturnValue(VISIT);
   h.details.data = LIVE;
   h.details.error = null;
   h.details.isLoading = false;
@@ -420,6 +432,100 @@ describe("a dead link (#5625)", () => {
     render(<JoinWithInvite token="tok-1" />);
     await screen.findByRole("button", { name: "Ask Paul for a new link" });
     expect(screen.queryByRole("button", { name: "Join chapter" })).toBeNull();
+  });
+});
+
+describe("the invite card funnel (#5663)", () => {
+  it("records the card once, then the way in", async () => {
+    render(<JoinWithInvite token="tok-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue with Google" }),
+    );
+
+    await waitFor(() => expect(h.auth.signInWithOAuth).toHaveBeenCalled());
+    expect(steps()).toEqual([
+      { step: "card-viewed", state: "live", signed_in: false },
+      { step: "sign-in-started", method: "google" },
+    ]);
+  });
+
+  it("records the email code sent and verified", async () => {
+    render(<JoinWithInvite token="tok-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue with email" }),
+    );
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "winston@rpi.edu" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await screen.findByText("Check your email");
+    signedIn();
+    fireEvent.change(screen.getByLabelText("6-digit code"), {
+      target: { value: "123456" },
+    });
+
+    await waitFor(() => expect(h.redeem).toHaveBeenCalled());
+    expect(steps()).toEqual(
+      expect.arrayContaining([
+        { step: "sign-in-started", method: "email" },
+        { step: "email-code-sent" },
+        { step: "email-code-verified" },
+        // Back signed in: the card is seen again, now with an account.
+        { step: "card-viewed", state: "live", signed_in: true },
+      ]),
+    );
+  });
+
+  it("records the join once the redeem succeeds, and a password way in", async () => {
+    const first = render(<JoinWithInvite token="tok-1" />);
+    fireEvent.click(await screen.findByRole("link", { name: "Sign in" }));
+    expect(steps()).toContainEqual({
+      step: "sign-in-started",
+      method: "password",
+    });
+    first.unmount();
+
+    signedIn();
+    render(<JoinWithInvite token="tok-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Join chapter" }),
+    );
+
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+    expect(steps()).toContainEqual({ step: "joined" });
+  });
+
+  it("records a failed join by its class, never its words", async () => {
+    signedIn();
+    h.redeem.mockRejectedValue({ statusCode: 403, message: "Forbidden" });
+    render(<JoinWithInvite token="tok-1" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Join chapter" }),
+    );
+
+    await waitFor(() =>
+      expect(steps()).toContainEqual({
+        step: "join-failed",
+        reason: "forbidden",
+      }),
+    );
+  });
+
+  it("records an ask for a new link, and the dead state it was asked from", async () => {
+    signedIn();
+    h.details.data = { ...LIVE, state: "used" };
+    render(<JoinWithInvite token="tok-1" />);
+    const askButton = await screen.findByRole("button", {
+      name: "Ask Paul for a new link",
+    });
+    await act(async () => {
+      fireEvent.click(askButton);
+    });
+
+    expect(steps()).toEqual([
+      { step: "card-viewed", state: "used", signed_in: true },
+      { step: "new-link-asked" },
+    ]);
   });
 });
 

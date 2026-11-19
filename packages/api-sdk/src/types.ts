@@ -1054,6 +1054,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a step of the invite card funnel (card viewed, sign-in started, and so on), with no account needed */
+        post: operations["InviteDetailsController_funnelStep_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/push-tokens": {
         parameters: {
             query?: never;
@@ -7424,6 +7441,34 @@ export interface components {
              * @description When the invite was made, for a dead card ("sent it on Friday, November 14").
              */
             sent_at: string;
+        };
+        InviteFunnelStepDto: {
+            /** @description The invite token, as the join link carries it */
+            token: string;
+            /**
+             * Format: uuid
+             * @description A random id the card mints once per visit, so the steps of one visit form one funnel.
+             */
+            visit_id: string;
+            /** @enum {string} */
+            step: "card-viewed" | "sign-in-started" | "email-code-sent" | "email-code-verified" | "joined" | "join-failed" | "new-link-asked";
+            /**
+             * @description The way in tapped, for `sign-in-started`.
+             * @enum {string}
+             */
+            method?: "apple" | "google" | "email" | "password";
+            /**
+             * @description The state the card showed, for `card-viewed`.
+             * @enum {string}
+             */
+            state?: "live" | "expired" | "used" | "off" | "locked";
+            /** @description Whether the visitor was already signed in, for `card-viewed`. */
+            signed_in?: boolean;
+            /**
+             * @description Why the join failed, for `join-failed`.
+             * @enum {string}
+             */
+            reason?: "gone" | "forbidden" | "rate_limited" | "offline" | "server" | "other";
         };
         RegisterPushTokenDto: {
             /** @description Expo push token */
@@ -15160,6 +15205,36 @@ export interface operations {
             };
             /** @description No such invite, or its chapter is gone */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteDetailsController_funnelStep_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteFunnelStepDto"];
+            };
+        };
+        responses: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };

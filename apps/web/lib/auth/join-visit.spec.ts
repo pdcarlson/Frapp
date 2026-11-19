@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearJoinMark,
+  INVITE_VISIT_MS,
+  INVITE_VISIT_STORAGE_KEY,
+  inviteVisitId,
   JOIN_MARK_MS,
   joinThenFor,
   rememberJoinMark,
@@ -26,7 +29,9 @@ describe("shouldSkipJoinForMember (#3850)", () => {
   });
 
   it("keeps the page for a member with no role, whom /chat would send to /no-access", () => {
-    expect(shouldSkipJoinForMember({ ...member, hasAccess: false })).toBe(false);
+    expect(shouldSkipJoinForMember({ ...member, hasAccess: false })).toBe(
+      false,
+    );
   });
 
   it("keeps the page for an account with no chapter", () => {
@@ -76,5 +81,50 @@ describe("joinThenFor (#5625)", () => {
     rememberJoinMark("tok-1", "join", 1_000);
     clearJoinMark();
     expect(joinThenFor("tok-1", search("then=join"), 2_000)).toBeNull();
+  });
+});
+
+describe("inviteVisitId (#5663)", () => {
+  const T0 = 1_800_000_000_000;
+  beforeEach(() => {
+    window.localStorage.removeItem(INVITE_VISIT_STORAGE_KEY);
+  });
+
+  it("keeps one visit per invite through a sign-in round trip", () => {
+    const A = "00000000-0000-4000-8000-00000000000a";
+    expect(inviteVisitId("tok-1", T0, () => A)).toBe(A);
+    expect(
+      inviteVisitId(
+        "tok-1",
+        T0 + 60_000,
+        () => "00000000-0000-4000-8000-00000000000b",
+      ),
+    ).toBe(A);
+    // The token itself is never kept: it is a credential.
+    expect(window.localStorage.getItem(INVITE_VISIT_STORAGE_KEY)).not.toContain(
+      "tok-1",
+    );
+  });
+
+  it("starts a new visit for another invite, or after a day", () => {
+    inviteVisitId("tok-1", T0, () => "00000000-0000-4000-8000-00000000000a");
+    expect(
+      inviteVisitId("tok-2", T0, () => "00000000-0000-4000-8000-00000000000b"),
+    ).toBe("00000000-0000-4000-8000-00000000000b");
+    expect(
+      inviteVisitId(
+        "tok-2",
+        T0 + INVITE_VISIT_MS,
+        () => "00000000-0000-4000-8000-00000000000c",
+      ),
+    ).toBe("00000000-0000-4000-8000-00000000000c");
+  });
+
+  it("records nothing where no id can be minted", () => {
+    expect(
+      inviteVisitId("tok-1", T0, () => {
+        throw new Error("insecure context");
+      }),
+    ).toBeNull();
   });
 });
