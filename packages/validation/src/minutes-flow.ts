@@ -5,6 +5,7 @@ import {
   type MeetingContent,
   type MeetingSectionKey,
 } from "./meetings";
+import { meetingRecorderClock } from "./meeting-recording";
 import { notesLookLikeTranscript } from "./minutes-read";
 
 /**
@@ -27,8 +28,6 @@ export const MINUTES_FLOW_COPY = {
     hint: "Paste your notes or a transcript. Rough is fine.",
     upload: "Upload a recording",
     byHand: "Write the minutes by hand",
-    /** Phone, where the recorder is the other way in. */
-    record: "Record the meeting",
   },
   drafting: {
     badge: "Drafting",
@@ -115,9 +114,7 @@ export function minutesDraftElapsed(
   if (!requestedAt) return null;
   const started = Date.parse(requestedAt);
   if (Number.isNaN(started)) return null;
-  const seconds = Math.max(0, Math.floor((now - started) / 1000));
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+  return meetingRecorderClock((now - started) / 1000);
 }
 
 /**

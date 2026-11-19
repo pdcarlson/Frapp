@@ -1,4 +1,4 @@
-import { minutesDraftElapsed } from "@repo/validation";
+import { MINUTES_FLOW_COPY, minutesDraftElapsed } from "@repo/validation";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingMinutes } from "@repo/hooks";
@@ -407,7 +407,8 @@ describe("MinutesPage", () => {
     expect(screen.getByText("NOV")).toBeTruthy();
     expect(screen.getByText("28")).toBeTruthy();
     expect(screen.getByText("Officer installation")).toBeTruthy();
-    expect(screen.getByText(/^Saturday, /)).toBeTruthy();
+    // The weekday alone beside the tile, which already says the day.
+    expect(screen.getByText(/^Saturday(, \d{4})?$/)).toBeTruthy();
     expect(screen.getByText("Formal deposit approved").className).toContain(
       "font-semibold",
     );
@@ -1171,6 +1172,20 @@ describe("MinutesPage", () => {
       expect(
         screen.getByRole("textbox", { name: "Your notes" }),
       ).toHaveProperty("value", "notes");
+    });
+
+    it("keeps a section the officer empties, even the only one the draft filled", () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(ownDraft({ content: { ...EMPTY, tldr: "- Formal is on." } }));
+      render(<MinutesPage id="m-1" />);
+      const tldr = screen.getByRole("textbox", { name: "TL;DR" });
+      fireEvent.change(tldr, { target: { value: "" } });
+      // Not swept away from under the cursor, and no start box in its place.
+      expect(screen.getByRole("textbox", { name: "TL;DR" })).toHaveProperty(
+        "value",
+        "",
+      );
+      expect(screen.queryByText(MINUTES_FLOW_COPY.start.heading)).toBeNull();
     });
 
     it("folds a pasted transcript into a card with View and Remove, like the phone (#5562)", async () => {

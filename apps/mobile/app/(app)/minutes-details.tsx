@@ -21,7 +21,6 @@ import {
   useMeetingDraft,
   useMeetingRecording,
   useMemberDisplayNames,
-  useMinutesDraftClock,
   usePermissionList,
   usePostMeeting,
   type MeetingMinutes,
@@ -66,7 +65,10 @@ import {
   useItemMenu,
   type ItemMenuAction,
 } from "@/components/item-actions-menu";
-import { DraftingSteps } from "@/components/minutes/drafting-steps";
+import {
+  DraftingClockLine,
+  DraftingSteps,
+} from "@/components/minutes/drafting-steps";
 import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
@@ -308,9 +310,6 @@ function LoadedMinutes({
     othersWrote: takersWrote,
     recordingReady: transcriptReady,
   });
-  const clock = useMinutesDraftClock(
-    drafting ? (draftState?.requested_at ?? null) : null,
-  );
   const notesY = useRef(0);
 
   // The tasks suggested from these minutes, for someone who could accept
@@ -541,11 +540,12 @@ function LoadedMinutes({
       footer = (
         <View style={styles.draftingBar}>
           <ActivityIndicator color={tokens.color.text.mutedForeground} />
-          <Text accessibilityLiveRegion="polite" style={[styles.draftingText]}>
-            {clock
-              ? `${MINUTES_FLOW_COPY.drafting.badge} · ${clock}`
-              : MINUTES_FLOW_COPY.drafting.badge}
-          </Text>
+          <DraftingClockLine
+            requestedAt={
+              draftState?.status === "drafting" ? draftState.requested_at : null
+            }
+            style={styles.draftingText}
+          />
           <TextAction
             label={MINUTES_FLOW_COPY.drafting.stop}
             color={tokens.color.text.foreground}

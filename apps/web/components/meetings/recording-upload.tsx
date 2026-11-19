@@ -15,11 +15,13 @@ import {
   MEETING_RECORDING_FORMATS_LABEL,
   MEETING_RECORDING_NOTICE,
   MIN_MEETING_RECORDING_SECONDS,
+  MINUTES_FLOW_COPY,
   STANDARDS_MEETING_NOTE,
   meetingRecordingLengthLabel,
   meetingRecordingMimeType,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -112,6 +114,7 @@ export function RecordingUpload({
   ensureConsent,
   confirm,
   compact = false,
+  className,
 }: {
   meetingId: string;
   state: MeetingRecordingState;
@@ -123,6 +126,8 @@ export function RecordingUpload({
    * shows as usual.
    */
   compact?: boolean;
+  /** On the row's own box, so a parent can place the full row. */
+  className?: string;
   ensureConsent: () => Promise<boolean>;
   confirm: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
 }) {
@@ -335,7 +340,7 @@ export function RecordingUpload({
   };
   let action: RowAction | null = null;
   const uploadAction: RowAction = {
-    label: "Upload a recording",
+    label: MINUTES_FLOW_COPY.start.upload,
     does: "upload",
   };
   if (sending) {
@@ -499,7 +504,7 @@ export function RecordingUpload({
   }
 
   return (
-    <div className="space-y-2">
+    <div className={cn("space-y-2", className)}>
       <div className="flex min-h-[6.5rem] flex-wrap content-start items-start gap-x-3 gap-y-2">
         <p
           id={`${ids}-status`}

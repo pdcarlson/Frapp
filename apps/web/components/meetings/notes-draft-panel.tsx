@@ -56,8 +56,9 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * and post, the way Granola turns rough notes into a write-up in the same
  * document. The minutes stay theirs: nothing here posts anything.
  *
- * One status line sits beside the buttons and keeps its height in every
- * state, so nothing below moves while a draft is written (principles P4).
+ * Three states, in the phone's words (`MINUTES_FLOW_COPY`): the start box
+ * (one box and Draft minutes), the drafting steps with a clock, and once the
+ * minutes are written, a one-line banner with the notes behind it.
  *
  * Since #4935 the notes save as they are typed, other members can take notes
  * too, and the draft reads all of them and the recording's transcript
@@ -94,9 +95,10 @@ export function NotesDraftPanel({
   /** The sections below already hold something a draft would replace. */
   hasContent: boolean;
   /**
-   * The minutes are written and lead the page, so the notes fold away under
-   * them behind a Show button (Paul, 2026-11-16: a 4-hour transcript is not
-   * what the officer edits).
+   * The minutes are written and lead the page, so the panel is one line
+   * saying what they were drafted from, with the notes behind "Notes and
+   * transcript" (Paul, 2026-11-16: a 4-hour transcript is not what the
+   * officer edits).
    */
   folded?: boolean;
   /** Folded, whether the notes are shown under the banner. */
@@ -495,7 +497,6 @@ export function NotesDraftPanel({
   const canDraft = notes.trim().length > 0 || othersWrote;
   const recordingShown =
     !!recording?.available && recording.blocked !== "chapter_off";
-  const recordingIdle = recording?.status === "none";
   const takersShown =
     !!notesState &&
     (notesState.takers.length > 0 ||
@@ -518,7 +519,9 @@ export function NotesDraftPanel({
         <DraftingSteps
           headingId={`${ids}-heading`}
           source={source}
-          requestedAt={state.requested_at}
+          // While the ask is still on its way, the last draft's time is not
+          // this one's.
+          requestedAt={state.status === "drafting" ? state.requested_at : null}
         />
       ) : folded ? (
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
@@ -559,15 +562,6 @@ export function NotesDraftPanel({
         hidden={(folded && !drafting && !open) || (drafting && !pasted)}
         className="space-y-3"
       >
-        {recordingShown && !(starting && recordingIdle) && !drafting ? (
-          <RecordingUpload
-            meetingId={meetingId}
-            state={recording}
-            disabled={drafting || disabled}
-            ensureConsent={ensureConsent}
-            confirm={confirm}
-          />
-        ) : null}
         {pastedFolded || (drafting && pasted) ? (
           <div className="flex items-center gap-3 rounded-md border border-border bg-surface-1 px-3 py-2">
             <div className="min-w-0 flex-1">
@@ -666,15 +660,27 @@ export function NotesDraftPanel({
             {MEETING_NOTES_COPY.useDraft}
           </Button>
         ) : null}
-        {starting && recordingShown && recordingIdle && recording ? (
-          <RecordingUpload
-            compact
-            meetingId={meetingId}
-            state={recording}
-            disabled={disabled}
-            ensureConsent={ensureConsent}
-            confirm={confirm}
-          />
+        {/* One upload row for the whole flow, never swapped for another:
+            an upload under way lives in it. In the start box it is only its
+            button; with an upload it takes its own line above the buttons,
+            and it is hidden, not dropped, behind the banner or while the
+            draft is written. */}
+        {recordingShown && recording ? (
+          <div
+            className={cn(
+              (folded && !open) || drafting ? "hidden" : "contents",
+            )}
+          >
+            <RecordingUpload
+              compact={starting}
+              className="order-first basis-full"
+              meetingId={meetingId}
+              state={recording}
+              disabled={drafting || disabled}
+              ensureConsent={ensureConsent}
+              confirm={confirm}
+            />
+          </div>
         ) : null}
         {starting && notesState?.can_add && !takersShown ? (
           <Button
@@ -693,7 +699,10 @@ export function NotesDraftPanel({
         {/* Clearing is for what is stored beyond the box: notes already
             drafted from (behind the banner), a draft that failed, or an
             upload. Typing in the box empties it by hand. */}
-        {(folded ? open : state.status !== "none" || recordingShown) &&
+        {(folded
+          ? open
+          : state.status !== "none" ||
+            (!!recording && recording.status !== "none")) &&
         !drafting &&
         (notes !== "" ||
           state.status !== "none" ||

@@ -39,7 +39,10 @@ import type { IAttendanceRepository } from '#domain/repositories/attendance.repo
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { Meeting, MeetingDraft } from '#domain/entities/meeting.entity';
-import type { AiRunFailureReason } from '#domain/entities/ai-run.entity';
+import type {
+  AiRunFailureReason,
+  AiRunRef,
+} from '#domain/entities/ai-run.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
@@ -75,6 +78,7 @@ import {
   AiRunRegistry,
   type AiRunContext,
   type AiRunHandler,
+  type AiRunHandlerRun,
 } from './ai-run-registry';
 import { AiGatewayService, type AiObjectResult } from './ai/ai-gateway.service';
 import { AiConsentService } from './ai/ai-consent.service';
@@ -641,9 +645,9 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     ) {
       return;
     }
-    // The minutes once the officer's access is checked: until then nothing
-    // about them is told to anyone.
-    let known: Meeting | null = null;
+    // Nothing about the minutes is told to anyone until the officer's
+    // access is checked.
+    let checked = false;
     const fail = async (
       failure: MeetingDraftFailure,
       reason: AiRunFailureReason,
@@ -655,8 +659,8 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         ['drafting'],
         { status: 'failed', failure_code: failure },
       );
-      if (ended && known && userId && NOTIFIED_FAILURES.has(failure)) {
-        await this.tellOfficer(userId, chapterId, known, 'stopped');
+      if (ended && checked && userId && NOTIFIED_FAILURES.has(failure)) {
+        await this.tellOfficer(userId, chapterId, meetingId, 'stopped');
       }
       throw new AiRunFailure(reason, `minutes draft ended: ${failure}`);
     };
@@ -678,7 +682,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
       }
       throw error;
     }
-    known = meeting;
+    checked = true;
 
     const request = await this.draftRequest(chapterId, meeting, draft, userId);
     if (request.sources) {
@@ -761,7 +765,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
           },
         );
         if (waiting) {
-          await this.tellOfficer(userId, chapterId, meeting, 'drafted');
+          await this.tellOfficer(userId, chapterId, meetingId, 'drafted');
         }
         return { meeting_id: meetingId, applied: false, ...counts };
       }
@@ -779,25 +783,81 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     }
     // In the minutes now, so the drafted sections are not kept a second
     // time: only what the officer checks them against.
-    await this.drafts.finish(chapterId, meetingId, requestId, ['drafting'], {
-      status: 'applied',
-      result: { review: verified.review },
-    });
-    await this.tellOfficer(userId, chapterId, meeting, 'drafted');
+    const applied = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      requestId,
+      ['drafting'],
+      { status: 'applied', result: { review: verified.review } },
+    );
+    if (applied) {
+      await this.tellOfficer(userId, chapterId, meetingId, 'drafted');
+    }
     return { meeting_id: meetingId, applied: true, ...counts };
   }
 
   /**
-   * Tells the officer who asked that the draft is in, or stopped. Best-effort:
-   * the draft has landed either way, so a failed notice is reported and never
-   * fails (or retries) the run, which would write the draft twice.
+   * The run ended failed in the queue without the handler recording why: its
+   * tries ran out (a timeout, an error, a draft that never fit its schema).
+   * The draft ends as failed and its officer hears, as they would of any
+   * other failure. A failure `run` already recorded finds the draft ended and
+   * does nothing.
+   */
+  async onFailed(
+    run: AiRunHandlerRun,
+    input: AiRunRef,
+    reason: AiRunFailureReason,
+  ): Promise<void> {
+    const chapterId = run.chapter_id;
+    const meetingId = String(input.meeting_id);
+    const requestId = String(input.request_id);
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (
+      !draft ||
+      draft.request_id !== requestId ||
+      draft.status !== 'drafting'
+    ) {
+      return;
+    }
+    const failure = RUN_FAILURES[reason] ?? 'failed';
+    const ended = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      requestId,
+      ['drafting'],
+      { status: 'failed', failure_code: failure },
+    );
+    if (ended && run.acting_user_id && NOTIFIED_FAILURES.has(failure)) {
+      await this.tellOfficer(
+        run.acting_user_id,
+        chapterId,
+        meetingId,
+        'stopped',
+      );
+    }
+  }
+
+  /**
+   * Tells the officer who asked that the draft is in, or stopped. Their access
+   * is read again first: an officer who lost it while the draft was written,
+   * or minutes posted meanwhile, gets no notice naming the meeting.
+   * Best-effort: the draft has landed either way, so a failed notice is
+   * reported and never fails (or retries) the run, which would write the
+   * draft twice.
    */
   private async tellOfficer(
     userId: string,
     chapterId: string,
-    meeting: Meeting,
+    meetingId: string,
     outcome: 'drafted' | 'stopped',
   ): Promise<void> {
+    let meeting: Meeting;
+    try {
+      meeting = await this.meetings.editableBy(chapterId, meetingId, userId);
+      this.assertDraftable(meeting);
+    } catch {
+      return;
+    }
     try {
       await this.notifications.notifyUser(
         userId,

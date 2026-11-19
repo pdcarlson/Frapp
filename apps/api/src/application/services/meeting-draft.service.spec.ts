@@ -1107,6 +1107,73 @@ describe('MeetingDraftService', () => {
       expect(drafts.row?.status).toBe('applied');
     });
 
+    describe('a run that ends failed in the queue', () => {
+      const ended = (
+        service: MeetingDraftService,
+        requestId: string,
+        reason: 'attempts_exhausted' | 'not_permitted',
+      ) =>
+        service.onFailed(
+          {
+            id: RUN,
+            chapter_id: CHAPTER,
+            kind: 'minutes_draft',
+            requested_by: SECRETARY,
+            acting_user_id: SECRETARY,
+            attempt_count: 2,
+            max_attempts: 2,
+          },
+          { meeting_id: MEETING, request_id: requestId },
+          reason,
+        );
+
+      it('ends the draft and tells the officer, once', async () => {
+        const { service, ask, drafts, notifications } = setup();
+        await ask();
+        const requestId = drafts.row!.request_id;
+        await ended(service, requestId, 'attempts_exhausted');
+        await ended(service, requestId, 'attempts_exhausted');
+
+        expect(drafts.row).toMatchObject({
+          status: 'failed',
+          failure_code: 'failed',
+        });
+        expect(notifications.notifyUser).toHaveBeenCalledTimes(1);
+        expect(notifications.notifyUser.mock.calls[0][2].title).toBe(
+          'Minutes not drafted',
+        );
+      });
+
+      it('says nothing of an end the officer caused or can no longer see', async () => {
+        const lost = setup();
+        await lost.ask();
+        await ended(lost.service, lost.drafts.row!.request_id, 'not_permitted');
+        expect(lost.drafts.row?.failure_code).toBe('not_permitted');
+        expect(lost.notifications.notifyUser).not.toHaveBeenCalled();
+
+        const posted = setup();
+        await posted.ask();
+        posted.meetings.editableBy.mockResolvedValue(
+          meeting({ status: 'posted', posted_at: V1 }),
+        );
+        await ended(
+          posted.service,
+          posted.drafts.row!.request_id,
+          'attempts_exhausted',
+        );
+        expect(posted.drafts.row?.status).toBe('failed');
+        expect(posted.notifications.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('leaves a newer request alone', async () => {
+        const { service, ask, drafts, notifications } = setup();
+        await ask();
+        await ended(service, 'an-older-request', 'attempts_exhausted');
+        expect(drafts.row?.status).toBe('drafting');
+        expect(notifications.notifyUser).not.toHaveBeenCalled();
+      });
+    });
+
     it('asks for another try when the answer does not fit the schema', async () => {
       const { ask, work, drafts } = setup({
         reply: { text: '{}', object: { summary: 3 } },

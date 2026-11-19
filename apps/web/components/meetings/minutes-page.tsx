@@ -382,28 +382,39 @@ function Minutes({
   // Without drafting the editor is the only way in, so it is by hand.
   const [byHand, setByHand] = useState(false);
   const handWritten = byHand || !showNotes;
-  // A section once shown stays while it is edited, even emptied, so it
-  // never vanishes from under the cursor. A new draft starts afresh.
+  // A section the officer added or typed in stays while they work, even
+  // emptied, so it never vanishes from under the cursor. A new draft starts
+  // afresh. Attendance has no words to fill: it shows once anyone is
+  // marked.
   const [kept, setKept] = useState<MeetingSectionKey[]>([]);
   const [keptFor, setKeptFor] = useState(draftState?.requested_at ?? null);
   if ((draftState?.requested_at ?? null) !== keptFor) {
     setKeptFor(draftState?.requested_at ?? null);
     setKept([]);
   }
+  const marked = hasAttendees(meeting);
   const shown = useMemo(
     () =>
       minutesEditorSections(
         meeting.sections as MeetingSectionKey[],
         draft.content,
-        { byHand: handWritten, added: kept },
+        {
+          byHand: handWritten,
+          added: marked ? [...kept, "attendees"] : kept,
+        },
       ),
-    [draft.content, meeting.sections, handWritten, kept],
+    [draft.content, meeting.sections, handWritten, kept, marked],
   );
-  if (shown.some((key) => !kept.includes(key))) setKept(shown);
   const addable = minutesAddableSections(shown);
   const [notesOpen, setNotesOpen] = useState(false);
 
   function editContent(patch: Partial<MeetingContent>) {
+    const touched = Object.keys(patch) as MeetingSectionKey[];
+    setKept((current) =>
+      touched.every((key) => current.includes(key))
+        ? current
+        : [...current, ...touched.filter((key) => !current.includes(key))],
+    );
     setDraft((current) => ({
       ...current,
       content: { ...current.content, ...patch },
@@ -657,11 +668,11 @@ function Minutes({
     (hasAttendees(meeting) ||
       (meeting.sections as MeetingSectionKey[]).includes("attendees"));
   const hasContent = !isMeetingContentEmpty(cleanContent(draft.content));
-  // Once a draft has filled the minutes, they lead and the notes the draft
-  // read fold away underneath; before that, the notes are the first step.
-  // A redraft keeps them where they are while it is written.
-  // Nothing written and nothing drafting: the start box is the page.
-  const starting = showNotes && !hasContent && !drafting && !handWritten;
+  // Nothing written, nothing drafting and no section the officer is working
+  // in: the start box is the page. Once a draft has filled the minutes,
+  // they lead and the notes it read fold into a banner above them.
+  const starting =
+    showNotes && !hasContent && !drafting && !handWritten && kept.length === 0;
   // Where the notes panel puts its "To fill in" questions: above the
   // minutes, the first thing to do after a draft (Paul, 2026-11-16).
   const [fillInSlot, setFillInSlot] = useState<HTMLDivElement | null>(null);
@@ -684,7 +695,9 @@ function Minutes({
         notesState={notesState}
         recording={recordingState}
         hasContent={hasContent}
-        folded={hasContent}
+        // A section the officer is working in counts as minutes begun, even
+        // emptied, so the start box never comes back under them.
+        folded={hasContent || kept.length > 0}
         open={notesOpen}
         onOpenChange={setNotesOpen}
         onWriteByHand={

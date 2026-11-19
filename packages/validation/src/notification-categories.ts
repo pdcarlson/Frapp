@@ -53,10 +53,12 @@ import {
  *   #1323. (Earlier versions of this docblock named `chat.service.ts` as an
  *   emitter and a `kind` arm in the predicate; neither exists any more.)
  * - **`admin`** — "message reported" to the officers who can open the chat
- *   report queue (`ChatReportService`, via `notifyUser`), and "Discord import
- *   finished" to the admin who started it. A report-queue officer must not be
- *   able to silence reports by flipping a switch, and the import notice
- *   answers a job the admin started themselves, so neither gets one. The
+ *   report queue (`ChatReportService`, via `notifyUser`), "Discord import
+ *   finished" to the admin who started it, and "Minutes drafted" / "Minutes
+ *   not drafted" to the officer who asked for a draft (`MeetingDraftService`).
+ *   A report-queue officer must not be able to silence reports by flipping a
+ *   switch, and the import and draft notices answer a job the member started
+ *   themselves, so none gets one. The
  *   report alert uses it rather than `chat` because it is moderation work, not
  *   a message. "New member joined" was here too until #4008 moved it to its
  *   own `members` switch; "invite accepted" is a system line in the inviter's

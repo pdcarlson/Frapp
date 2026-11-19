@@ -1,4 +1,11 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type TextStyle,
+} from "react-native";
 import { useMinutesDraftClock } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -49,7 +56,14 @@ export function DraftingSteps({
               step.state === "next" ? styles.waiting : null,
               step.state === "now" ? styles.now : null,
             ]}
-            accessibilityLabel={`${step.label}, ${step.state === "done" ? "done" : step.state === "now" ? "in progress" : "next"}`}
+            // Web's words for each step's state.
+            accessibilityLabel={
+              step.state === "done"
+                ? `${step.label}, done`
+                : step.state === "now"
+                  ? `${step.label}, under way`
+                  : step.label
+            }
           >
             {step.label}
           </Text>
@@ -62,6 +76,27 @@ export function DraftingSteps({
         {MINUTES_FLOW_COPY.drafting.leave}
       </Text>
     </View>
+  );
+}
+
+/**
+ * "Drafting · 1:05" on the bar at the bottom of the screen. Its own component
+ * so the clock's tick redraws this line, not the whole minutes screen.
+ */
+export function DraftingClockLine({
+  requestedAt,
+  style,
+}: {
+  requestedAt: string | null;
+  style: StyleProp<TextStyle>;
+}) {
+  const clock = useMinutesDraftClock(requestedAt);
+  return (
+    <Text accessibilityLiveRegion="polite" style={style}>
+      {clock
+        ? `${MINUTES_FLOW_COPY.drafting.badge} · ${clock}`
+        : MINUTES_FLOW_COPY.drafting.badge}
+    </Text>
   );
 }
 

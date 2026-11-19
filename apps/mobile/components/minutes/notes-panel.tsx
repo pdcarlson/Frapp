@@ -28,9 +28,11 @@ import {
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
   MEETING_NOTE_TAKERS_COPY,
+  MINUTES_FLOW_COPY,
   MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
+  minutesDraftSource,
   notesLookLikeTranscript,
   notesWordCount,
 } from "@repo/validation";
@@ -253,7 +255,10 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
       if (was === "drafting" || state.status === "applied") settled.current();
     }, [state.status]);
 
-    const { othersWrote } = useOtherSources(meetingId, recording);
+    const { othersWrote, takersWrote, transcriptReady } = useOtherSources(
+      meetingId,
+      recording,
+    );
     const choose = useChooseMeetingDraftVersion();
     const viewer = useCurrentUser().data as { id?: string } | undefined;
     const myName = useMemberDisplayNames().nameFor(viewer?.id ?? "");
@@ -496,6 +501,10 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
       }
     }
 
+    // The box goes while the draft is written, taking its focus with it
+    // without a blur: forget it, so a pasted transcript folds again after.
+    if (drafting && stopInFooter && focused) setFocused(false);
+
     const waiting = state.status === "ready";
     const status: { problem: boolean; text: string } = problem
       ? { problem: true, text: problem }
@@ -529,9 +538,14 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
                     : state.status === "applied"
                       ? {
                           problem: false,
-                          text: othersWrote
-                            ? MEETING_NOTE_TAKERS_COPY.appliedAll
-                            : MEETING_NOTES_COPY.applied,
+                          // The review banner's words, as web says them.
+                          text: MINUTES_FLOW_COPY.review.banner(
+                            minutesDraftSource({
+                              notes: state.notes,
+                              othersWrote: takersWrote,
+                              recordingReady: transcriptReady,
+                            }),
+                          ),
                         }
                       : { problem: false, text: "" };
 
