@@ -15,6 +15,7 @@ import {
   isTaskStatus,
   myTasksGroup,
   readLiveTaskPhotos,
+  readTaskSeries,
   type LiveTaskPhoto,
   type MyTasksGroup,
 } from "@repo/hooks";
@@ -22,6 +23,7 @@ import {
   taskNeedsSignOff,
   taskSignedOffAutomatically,
   type TaskProofKind,
+  type TaskSeriesLine,
 } from "@repo/validation";
 import { num, records, str } from "@/lib/more/narrow";
 import { daysSinceCompletion, parseTaskDate } from "./format";
@@ -92,6 +94,11 @@ export interface TaskRowModel {
    * can give it back until it is done.
    */
   openTaskId: string | null;
+  /**
+   * The repeating series this task is a copy of (#5119): its rule, next day
+   * and whether it ended, or `null` for a task that doesn't repeat.
+   */
+  series: TaskSeriesLine | null;
 }
 
 /** A group task's summary, as the task reads carry it (`group`). */
@@ -242,6 +249,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     meetingId: str(row, "meeting_id"),
     group: toGroup(row.group),
     openTaskId: str(row, "open_task_id"),
+    series: readTaskSeries(row.series),
   };
 }
 

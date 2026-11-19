@@ -10,7 +10,10 @@ import {
   taskRepeatDraftFromRule,
   taskRepeatRuleOf,
   taskRepeatSummary,
+  taskFirstDue,
+  taskRepeatCadence,
   taskSaveScope,
+  taskSeriesBody,
   taskSeriesLine,
   TASK_SERIES_SCOPE_COPY,
 } from "./repeat-draft";
@@ -206,6 +209,69 @@ describe("taskRepeatCaption's end date (#5119)", () => {
     expect(taskRepeatCaption(draft, FIRST)).toEqual({
       text: "Repeats until Dec 31, 2028.",
       problem: false,
+    });
+  });
+});
+
+describe("the task helpers both apps share (#5119)", () => {
+  it("reads a typed due as the moment the Repeat defaults from", () => {
+    // A typed time is this device's clock, as the forms save it.
+    expect(taskFirstDue("2026-11-16T21:00")).toEqual(
+      new Date(2026, 10, 16, 21, 0),
+    );
+    // A day alone is noon in the rule's zone, so its weekday is that zone's.
+    expect(taskFirstDue("2026-11-16", NY)?.toISOString()).toBe(
+      "2026-11-16T17:00:00.000Z",
+    );
+    expect(taskFirstDue("2026-11-16")).toEqual(new Date(2026, 10, 16, 12));
+    // A stored timestamp's tail isn't a typed time: it reads as its day.
+    expect(taskFirstDue("2026-11-16T00:00:00Z", NY)?.toISOString()).toBe(
+      "2026-11-16T17:00:00.000Z",
+    );
+    expect(taskFirstDue("")).toBeNull();
+    expect(taskFirstDue("soon")).toBeNull();
+  });
+
+  it("says how often a copy comes in a word, for a phone row", () => {
+    const series = (rule: string, ended = false) => ({
+      recurrence_rule: rule,
+      next_due_date: "2026-11-23",
+      ended,
+    });
+    expect(
+      taskRepeatCadence(series("FREQ=WEEKLY;BYDAY=MO;TZID=America/New_York")),
+    ).toBe("Weekly");
+    expect(taskRepeatCadence(series("FREQ=DAILY;TZID=America/New_York"))).toBe(
+      "Daily",
+    );
+    expect(
+      taskRepeatCadence(
+        series("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;TZID=America/New_York"),
+      ),
+    ).toBe("Every 2 weeks");
+    expect(
+      taskRepeatCadence(
+        series("FREQ=MONTHLY;BYMONTHDAY=16;TZID=America/New_York"),
+      ),
+    ).toBe("Monthly");
+    expect(
+      taskRepeatCadence(series("FREQ=WEEKLY;TZID=America/New_York", true)),
+    ).toBeNull();
+    expect(taskRepeatCadence(null)).toBeNull();
+    expect(taskRepeatCadence(series("not a rule"))).toBeNull();
+  });
+
+  it("sends an All upcoming tasks write without the day", () => {
+    expect(
+      taskSeriesBody({
+        title: "Kitchen duty",
+        due_date: "2026-11-16",
+        due_at: "2026-11-17T03:00:00.000Z",
+      }),
+    ).toEqual({
+      title: "Kitchen duty",
+      due_at: "2026-11-17T03:00:00.000Z",
+      scope: "series",
     });
   });
 });

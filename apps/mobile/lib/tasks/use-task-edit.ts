@@ -12,7 +12,13 @@ import {
   useUpdateTask,
   type TaskEdit,
 } from "@repo/hooks";
-import type { TaskProofKind } from "@repo/validation";
+import {
+  TASK_SERIES_SCOPE_COPY,
+  taskSeriesBody,
+  type RepeatDraft,
+  type TaskProofKind,
+} from "@repo/validation";
+import { askSeriesScope } from "@/lib/series-scope";
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import {
@@ -24,8 +30,10 @@ import {
   proofSave,
   reassignRestarts,
   referencePhotos,
+  repeatSave,
   rowAfter,
   scopedEdit,
+  seriesScopeOf,
   TASK_EDIT_COPY,
   titleSave,
   type TaskDueDraft,
@@ -44,6 +52,8 @@ interface TaskEditDrafts {
   description: string | null;
   points: string | null;
   due: TaskDueDraft | null;
+  /** The Repeat as picked, on a copy of a live series (#5119). */
+  repeat: RepeatDraft | null;
 }
 
 type DraftKey = keyof TaskEditDrafts;
@@ -56,6 +66,7 @@ const NO_DRAFTS: TaskEditDrafts = {
   description: null,
   points: null,
   due: null,
+  repeat: null,
 };
 
 const DRAFT_KEYS: readonly DraftKey[] = [
@@ -63,12 +74,14 @@ const DRAFT_KEYS: readonly DraftKey[] = [
   "description",
   "points",
   "due",
+  "repeat",
 ];
 
 /** The order a refusal is said in when more than one is open: the form's. */
 const FIELD_ORDER: readonly FieldKey[] = [
   "title",
   "due",
+  "repeat",
   "points",
   "description",
   "proof",
@@ -77,6 +90,22 @@ const FIELD_ORDER: readonly FieldKey[] = [
 ];
 
 const SENT_KEYS: readonly FieldKey[] = ["proof", "photos", "who"];
+
+/**
+ * Commit every draft: the fields together, then the Repeat (#5119). A
+ * Repeat change saves to the series at once, and stopping it first would
+ * leave an "All upcoming tasks" answer for the other fields nothing to
+ * change (the API refuses a series edit once it has ended).
+ */
+async function commitDrafts(
+  run: (key: DraftKey) => Promise<boolean>,
+): Promise<{ key: DraftKey; ok: boolean }[]> {
+  const fields = DRAFT_KEYS.filter((key) => key !== "repeat");
+  const results = await Promise.all(
+    fields.map(async (key) => ({ key, ok: await run(key) })),
+  );
+  return [...results, { key: "repeat", ok: await run("repeat") }];
+}
 
 /**
  * How long the due waits after a pick before it saves: the platform's time
@@ -103,6 +132,8 @@ function saveOf(
       return drafts.due
         ? dueSave(row, drafts.due, new Date())
         : { kind: "none" };
+    case "repeat":
+      return drafts.repeat ? repeatSave(row, drafts.repeat) : { kind: "none" };
   }
 }
 
@@ -121,6 +152,12 @@ export interface TaskEditing {
   type: (key: "title" | "description" | "points", text: string) => void;
   /** A picked day or time, saved a moment later (`DUE_SAVE_DELAY_MS`). */
   pickDue: (next: TaskDueDraft) => void;
+  /**
+   * The Repeat as picked (#5119), saved with Done or as the screen goes:
+   * its chips and numbers change a step at a time, and only the last of
+   * them should reach the series.
+   */
+  pickRepeat: (next: RepeatDraft) => void;
   /** Save one field's draft, if it differs from the task. */
   commit: (key: DraftKey) => Promise<boolean>;
   /**
@@ -163,7 +200,13 @@ export interface TaskEditing {
 /**
  * The task screen's edit (#5514): each field saves itself through
  * `PATCH /v1/tasks/:id` as it is left, as web's task panel does, with
- * `scope: "group"` on a group task's copy (`scopedEdit`). Not optimistic,
+ * `scope: "group"` on a group task's copy (`scopedEdit`). On a copy of a
+ * repeating task (#5119) a save asks "This task only" or "All upcoming
+ * tasks" first where web's panel does (`seriesScopeOf`), in the platform's
+ * alert; Cancel keeps the draft unsaved. Saves that ask at once (Done with
+ * several fields typed) share one question, and the Repeat saves after
+ * them; a draft saved as the screen goes saves to this copy alone, unasked.
+ * Not optimistic,
  * as `useUpdateTask` isn't: a field keeps what was typed until the save
  * lands and the task is read again, and a refusal is said in the API's
  * words with the draft kept for another try.
@@ -245,13 +288,41 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     [],
   );
 
+  // The scope question on its way, which saves asking at once share.
+  const asking = useRef<Promise<"instance" | "series" | null> | null>(null);
+  const leaving = useRef(false);
+  const askScope = useCallback(() => {
+    if (leaving.current) return Promise.resolve("instance" as const);
+    asking.current ??= askSeriesScope({
+      title: TASK_SERIES_SCOPE_COPY.saveTitle,
+      message: TASK_SERIES_SCOPE_COPY.saveMessage,
+      thisOne: TASK_SERIES_SCOPE_COPY.thisTask,
+      allUpcoming: TASK_SERIES_SCOPE_COPY.allUpcoming,
+    }).finally(() => {
+      asking.current = null;
+    });
+    return asking.current;
+  }, []);
+
   const send = useCallback(
     async (key: FieldKey, body: TaskEdit): Promise<boolean> => {
       const task = rowRef.current;
       setFailure(key, null);
+      let request = scopedEdit(task, body);
+      if (task.groupId === null) {
+        const decided = seriesScopeOf(task, body);
+        if (decided.kind === "refuse") {
+          setFailure(key, decided.message);
+          return false;
+        }
+        const scope = decided.kind === "ask" ? await askScope() : decided.kind;
+        // Cancel: the draft stays, unsaved, and nothing failed.
+        if (scope === null) return false;
+        if (scope === "series") request = taskSeriesBody(body);
+      }
       setInFlight((count) => count + 1);
       try {
-        await mutateAsync({ id: task.id, body: scopedEdit(task, body) });
+        await mutateAsync({ id: task.id, body: request });
         return true;
       } catch (error) {
         // The API's own sentence where it wrote one for members ("Every
@@ -267,7 +338,7 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
         setInFlight((count) => count - 1);
       }
     },
-    [mutateAsync, setFailure],
+    [mutateAsync, setFailure, askScope],
   );
 
   /** Send after this field's save before it, whatever that one's outcome. */
@@ -335,8 +406,15 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
   );
 
   const commitAll = useCallback(async () => {
-    const typed = await Promise.all(DRAFT_KEYS.map((key) => commit(key)));
+    // The saves already on their way are taken now: one that settles while
+    // the drafts save still counts.
+    const onTheirWay = [
+      ...SENT_KEYS.map((key) => pending.current[key]?.saved ?? true),
+      upload.current ?? true,
+    ];
+    const typed = (await commitDrafts(commit)).map(({ ok }) => ok);
     const sent = await Promise.all([
+      ...onTheirWay,
       ...SENT_KEYS.map((key) => pending.current[key]?.saved ?? true),
       upload.current ?? true,
     ]);
@@ -354,11 +432,12 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     () => () => {
       const left = live.current;
       const name = keptKey.current;
-      void Promise.all(
-        DRAFT_KEYS.map(async (key) => ({
-          key,
-          ok: left[key] === null || (await commitRef.current(key)),
-        })),
+      // No question once the screen is gone: an alert over another screen
+      // wouldn't say which task it means. What is left saves to this copy
+      // alone, as the phone's edit did before it asked (#5119).
+      leaving.current = true;
+      void commitDrafts(async (key) =>
+        left[key] === null ? true : commitRef.current(key),
       ).then((results) => {
         const unsaved = results.filter(({ ok }) => !ok);
         if (unsaved.length === 0) return;
@@ -393,6 +472,14 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
       }, DUE_SAVE_DELAY_MS);
     },
     [commit, setDraft, setFailure],
+  );
+
+  const pickRepeat = useCallback(
+    (next: RepeatDraft) => {
+      setFailure("repeat", null);
+      setDraft("repeat", next);
+    },
+    [setDraft, setFailure],
   );
 
   const discard = useCallback(() => {
@@ -527,6 +614,7 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     drafts,
     type,
     pickDue,
+    pickRepeat,
     commit,
     commitAll,
     begin,

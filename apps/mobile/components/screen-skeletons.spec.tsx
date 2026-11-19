@@ -489,6 +489,7 @@ describe("Placeholder rows sit on their real row's frame", () => {
           meetingId: null,
           group: null,
           openTaskId: null,
+          series: null,
         }}
         now={new Date("2026-11-05T12:00:00Z")}
       />,

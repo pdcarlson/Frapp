@@ -10,12 +10,12 @@ import {
   TASK_AUDIENCE_EVERYONE,
   TASK_PHOTOS_MAX,
   TASK_TITLE_MAX_LENGTH,
+  taskFirstDue,
   taskRepeatRuleOf,
   type TaskWho,
   taskRepeatSummary,
 } from "@repo/validation";
 import { RepeatOptions } from "@/components/shared/repeat-options";
-import { firstDueOf } from "@/components/tasks/task-repeat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -222,7 +222,7 @@ export function TaskForm({
     // The Repeat pick (#5119), read against the first due it repeats from.
     const showRepeat =
       !suggestion && !forEveryone && (!editing || editing.repeats);
-    const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
+    const firstDue = taskFirstDue(draft.dueDate, draft.repeat.timeZone);
     const repeat =
       showRepeat && firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
     if (repeat && !repeat.ok) {
@@ -331,7 +331,7 @@ export function TaskForm({
 
   const showRepeat =
     !suggestion && !forEveryone && (!editing || editing.repeats);
-  const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
+  const firstDue = taskFirstDue(draft.dueDate, draft.repeat.timeZone);
   const moreSummary = [
     ...(suggestion
       ? []

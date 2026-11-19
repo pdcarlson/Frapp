@@ -13,6 +13,11 @@ import {
   TASK_PHOTOS_MAX,
   TASK_TITLE_MAX_LENGTH,
   aiSuggestionRefusalLine,
+  noTaskRepeatDraft,
+  taskFirstDue,
+  taskRepeatRuleOf,
+  taskRepeatSummary,
+  type RepeatDraft,
   type TaskProofKind,
   type TaskWho,
 } from "@repo/validation";
@@ -47,6 +52,7 @@ import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
 import { TaskPhotoPicker } from "@/components/tasks/task-photos";
+import { TaskRepeatField } from "@/components/tasks/repeat-field";
 import {
   AssigneeRow,
   PointsField,
@@ -221,6 +227,8 @@ type KeptTask = {
   assigneeId?: string | null;
   proofKind: TaskProofKind;
   pickedPhotos: PendingTaskPhoto[];
+  /** How it repeats (#5119); absent in a draft kept before Repeat. */
+  repeat?: RepeatDraft;
 };
 
 /** Who a kept draft holds, read from a draft kept before `who` too. */
@@ -341,6 +349,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>(
       () => opening?.pickedPhotos ?? [],
     );
+    // How it repeats (#5119): the event sheet's control with a Never end,
+    // where a new task starts, shown once the member opens the Repeat row.
+    const [repeat, setRepeat] = useState<RepeatDraft>(
+      () => opening?.repeat ?? noTaskRepeatDraft(),
+    );
+    const [repeatOpen, setRepeatOpen] = useState(
+      () => !!opening?.repeat && opening.repeat.preset !== "NONE",
+    );
     const kept = useKeptSheetDraft<KeptTask>(
       keptName,
       {
@@ -353,6 +369,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         who,
         proofKind,
         pickedPhotos,
+        repeat,
       },
       JSON.stringify([
         title,
@@ -364,6 +381,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         who,
         proofKind,
         pickedPhotos.map(({ image }) => image.uri),
+        repeat,
       ]),
       opening,
     );
@@ -452,10 +470,22 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       proofKind,
       description: prefill?.description ?? null,
     };
-    const body = validateNewTask(draft, at);
+    // Repeat is for one person's task made from the Tasks screen (#5119): a
+    // task for a group or up for grabs can't repeat yet, a chat's + posts one
+    // card, and a suggestion is one task from one meeting.
+    const repeatOffered = !suggestion && !postToChannel;
+    const showRepeat = repeatOffered && !forGroup && !upForGrabs;
+    const firstDue = taskFirstDue(
+      dueTime ? `${dueDate}T${dueTime}` : dueDate,
+      repeat.timeZone,
+    );
+    const repeatRule =
+      showRepeat && firstDue ? taskRepeatRuleOf(repeat, firstDue) : null;
+    const body = withRepeat(validateNewTask(draft, at), repeatRule);
     const timePassed = dueTimePassed(draft, at);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
-    const canSubmit = body !== null && !pending && refusal === null;
+    const canSubmit =
+      body !== null && repeatRule?.ok !== false && !pending && refusal === null;
 
     /** The draft itself: what a create sends. */
     const clearDraft = useCallback(() => {
@@ -470,6 +500,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setProofKind("none");
       setPickedPhotos([]);
       setPhotoProblem(null);
+      setRepeat(noTaskRepeatDraft());
+      setRepeatOpen(false);
     }, [clearKept]);
 
     /** Add photos from the library, several at once, up to the room left. */
@@ -850,6 +882,31 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               />
             </View>
 
+            {showRepeat ? (
+              <TaskRepeatField
+                draft={repeat}
+                first={firstDue}
+                summary={
+                  repeat.preset !== "NONE" && firstDue
+                    ? taskRepeatSummary(repeat, firstDue)
+                    : null
+                }
+                open={repeatOpen}
+                onOpenChange={setRepeatOpen}
+                onChange={setRepeat}
+                disabled={pending}
+                fieldStyle={styles.field}
+                input={BottomSheetTextInput}
+                error={repeatRule && !repeatRule.ok ? repeatRule.error : null}
+              />
+            ) : repeatOffered && repeat.preset !== "NONE" ? (
+              <Text style={styles.note}>
+                {upForGrabs
+                  ? `A task ${TASK_AUDIENCE_COPY.upForGrabs.toLowerCase()} can't repeat yet.`
+                  : TASK_AUDIENCE_COPY.noRepeat}
+              </Text>
+            ) : null}
+
             <SubtaskDraftField
               items={subtasks}
               onChange={setSubtasks}
@@ -965,6 +1022,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     );
   },
 );
+
+/** The validated task with the Repeat's rule, when it repeats (#5119). */
+function withRepeat(
+  task: ValidatedNewTask | null,
+  repeat: ReturnType<typeof taskRepeatRuleOf> | null,
+): ValidatedNewTask | null {
+  return task && repeat?.ok && repeat.rule
+    ? { ...task, recurrence_rule: repeat.rule }
+    : task;
+}
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const fieldStyles = sheetFieldStyles(tokens, brand.accent);
