@@ -20,6 +20,8 @@ describe('ChapterGroupController (#4076)', () => {
       create: jest.fn(),
       update: jest.fn(),
       setMembers: jest.fn(),
+      addMember: jest.fn(),
+      removeMember: jest.fn(),
       remove: jest.fn(),
     };
     const module: TestingModule = await createUnguardedTestingModule({
@@ -42,23 +44,29 @@ describe('ChapterGroupController (#4076)', () => {
   });
 
   // Without it a write would need only members:view, which every member holds.
-  it.each(['create', 'update', 'setMembers', 'remove'] as const)(
-    '%s also needs groups:manage',
-    (handler) => {
-      expect(
-        Reflect.getMetadata(
-          PERMISSIONS_KEY,
-          ChapterGroupController.prototype[handler],
-        ),
-      ).toEqual([SystemPermissions.GROUPS_MANAGE]);
-    },
-  );
+  it.each([
+    'create',
+    'update',
+    'setMembers',
+    'addMember',
+    'removeMember',
+    'remove',
+  ] as const)('%s also needs groups:manage', (handler) => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        ChapterGroupController.prototype[handler],
+      ),
+    ).toEqual([SystemPermissions.GROUPS_MANAGE]);
+  });
 
   it('scopes every call to the guard-resolved chapter and the caller', async () => {
     await controller.list('ch-1');
     await controller.create('ch-1', 'u-1', { name: 'Live-ins' });
     await controller.update('ch-1', 'u-1', 'g-1', { mentionable: false });
     await controller.setMembers('ch-1', 'u-1', 'g-1', { member_ids: ['u-2'] });
+    await controller.addMember('ch-1', 'u-1', 'g-1', 'u-3');
+    await controller.removeMember('ch-1', 'u-1', 'g-1', 'u-4');
     await expect(controller.remove('ch-1', 'u-1', 'g-1')).resolves.toEqual({
       success: true,
     });
@@ -73,6 +81,13 @@ describe('ChapterGroupController (#4076)', () => {
     expect(service.setMembers).toHaveBeenCalledWith('g-1', 'ch-1', 'u-1', [
       'u-2',
     ]);
+    expect(service.addMember).toHaveBeenCalledWith('g-1', 'ch-1', 'u-1', 'u-3');
+    expect(service.removeMember).toHaveBeenCalledWith(
+      'g-1',
+      'ch-1',
+      'u-1',
+      'u-4',
+    );
     expect(service.remove).toHaveBeenCalledWith('g-1', 'ch-1', 'u-1');
   });
 });

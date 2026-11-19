@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
+  groupFollowsLabel,
   useCreateGroup,
   useDeleteGroup,
   useGroups,
@@ -52,13 +53,6 @@ const ADD_MATCH_LIMIT = 8;
 
 function memberCountLabel(count: number): string {
   return count === 1 ? "1 member" : `${count} members`;
-}
-
-/** What an automatic group follows, said on its row and in its editor. */
-function followsLabel(group: ChapterGroup): string | null {
-  if (group.kind === "pledge_class") return "Follows pledge class";
-  if (group.kind === "class_year") return "Follows graduation year";
-  return null;
 }
 
 /**
@@ -237,7 +231,7 @@ function GroupRow({
 }) {
   const { toast } = useToast();
   const remove = useDeleteGroup();
-  const follows = followsLabel(group);
+  const follows = groupFollowsLabel(group);
   const details = [
     memberCountLabel(group.member_ids.length),
     follows,

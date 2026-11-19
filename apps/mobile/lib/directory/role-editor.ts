@@ -56,16 +56,6 @@ export function removesBaseAccess(
   return removesMemberAccess(before, settled, memberAccessRoleIds(options));
 }
 
-export function removeBaseAccessTitle(name: string): string {
-  return `Take away ${name}'s access?`;
-}
-
-export function removeBaseAccessBody(name: string): string {
-  return `With none of these roles, ${name} can't open chat, the member list or events.`;
-}
-
-export const ROLES_SAVE_FAILED_TITLE = "Couldn't save roles";
-
 /**
  * Why a save failed, by the API's answer: a 400 is a role deleted since the
  * list loaded; a 403 is a change the viewer may no longer make (they lost

@@ -268,11 +268,11 @@ A `/points` command refused 429 on its first attempt adds the body's sentence to
 | No results (filters) | — | `No actives match these filters.` then a **Clear filters** link (one line) |
 | No results (search) | — | `Nobody matches “<query>”.` then a **Clear search** link (one line), the phone's words, since the search spans actives and alumni *(was `No actives match “<query>”.` until #4135, 2026-11-12)* |
 | Empty and no results, mobile s13 | — | `No actives yet.`; a search, which spans both tabs, `Nobody matches “<query>”.` then **Clear search**; the Actives filters, the web row's `No actives match these filters.` then **Clear filters** (one line each; the alumni rows are [Alumni](#alumni-dashboard)'s) |
-| Actives filter sheet, mobile s13 | `Filter actives` | Sections `Status`, `Graduation year`, the chapter's class word, `Role`, each led by `Any` (`Any role` for the role list); `Search roles`; a role search that matches nothing, `No roles match that search.`; the role list loading, `Loading roles…`; failed, `Couldn't load roles.` then **Retry**; **Clear filters** while any is set ([#3971](https://github.com/pdcarlson/Frapp/issues/3971)) |
+| Actives filter sheet, mobile s13 | `Filter actives` | Sections `Status`, `Graduation year`, the chapter's class word, `Group` (when a group has members; added 2026-11-19), `Role`, each led by `Any` (`Any role` for the role list); `Search roles`; a role search that matches nothing, `No roles match that search.`; the role list loading, `Loading roles…`; failed, `Couldn't load roles.` then **Retry**; **Clear filters** while any is set ([#3971](https://github.com/pdcarlson/Frapp/issues/3971)) |
 | Error | `Couldn't load the directory` | the load-failure line (§ copy rules); the page is Directory in the nav, and the phone says the same *(was `Couldn't load members` until #4135, 2026-11-12)* |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
-| Member sheet: a role save that removes the last role carrying member access | `Take away <name>'s access?` | `With none of these roles, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Take away access`. Mobile s13 asks the same per tap with `Remove <role>` ([Edit roles](#edit-roles-mobile-s13)); one web save can remove several roles, so its button names the outcome. Set in `components/members/member-detail-sheet.tsx` (`handleSaveRoles`) |
+| Member sheet and card: taking away the last role carrying member access | `Take away <name>'s access?` | `Without this role, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>`, the same on mobile s13 ([Edit roles](#edit-roles-mobile-s13)); each x or untick removes one role (2026-11-19, #5684). A failed role save is `Couldn't save roles`; a group one `Couldn't add to that group` or `Couldn't take out of that group`, with the API's reason. Held once in `@repo/hooks` (`ASSIGN_COPY`) for both apps |
 | Member sheet: Remove from chapter (web and mobile s13, from the `⋯`) | `Remove <name> from the chapter?` | `They lose chat, events and the member list right away, and can come back only with a new invite.` Buttons `Cancel` and `Remove from chapter`. The `⋯` row reads `Remove from chapter`; the button is named `More for <name>`. A refusal says `Couldn't remove <name>` (mobile alert) or `Could not remove member` (web toast) with the API's reason. Held once in `@repo/hooks/member-removal-copy` for both apps |
 
 The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07).
@@ -1124,15 +1124,16 @@ The delete confirmation is one wording for both clients, so it lives in `package
 
 ### Edit roles (mobile s13)
 
-The role editor behind the directory member profile's Roles row, the one place on mobile roles are edited.
+The roles-and-groups sheet behind the directory member profile's "+ Add role" and "+ Add to group" (2026-11-19, #5684; it was the Roles row's Edit), the one place on mobile a member's roles and groups are changed.
 Who gets it, and what it changes, is owned by [`../mobile/screens.md`](../mobile/screens.md) s13.
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
-| President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
-| Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
-| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `With none of these roles, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | mobile `lib/directory/role-editor.ts` (`removeBaseAccessTitle`, `removeBaseAccessBody`) |
+| The sheet | `<name>'s roles and groups` | Section headings as web's list (each tier's name, `Other roles`, `Groups`); search field `Search roles and groups`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
+| A row the viewer can't tick | — | Under the name, why: `Changes with Transfer presidency` (President), `Ranks at or above yours`, `Checking what your role can give`, `Your role can't give roles`, `Your role can't change groups`; the row can't be tapped | `@repo/hooks` `member-assignments.ts` (`ASSIGN_CAPTIONS`), shared with web |
+| Empty | — | `This chapter has no roles or groups yet.`, or `Nothing matches that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
+| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `Without this role, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | `@repo/hooks` (`ASSIGN_COPY`), shared with web |
+| Group save failed | `Couldn't add to that group` or `Couldn't take out of that group` | The API's reason (a channel names the group, the group is full, the member has left) | same |
 | Save failed: a role was deleted (400) | `Couldn't save roles` | `One of those roles was just deleted. The change was put back and the list refreshed.` | mobile `lib/directory/role-editor.ts` (`rolesSaveFailedBody`) |
 | Save failed: not allowed (403) | `Couldn't save roles` | `The change isn't allowed any more, so it was put back.` | same |
 | Save failed: anything else | `Couldn't save roles` | `The change didn't reach the server, so it was put back. Try again.` | same |

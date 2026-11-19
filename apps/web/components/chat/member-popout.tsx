@@ -136,7 +136,9 @@ export function MemberPopout({
         sideOffset={8}
         collisionPadding={16}
         aria-label={`${displayName}'s profile`}
-        className="flex w-72 flex-col gap-3 p-4"
+        // Every role and group is on the card now, so a member with many
+        // scrolls inside it rather than pushing Message off the screen.
+        className="flex max-h-[var(--radix-popover-content-available-height)] w-72 flex-col gap-3 overflow-y-auto p-4"
         data-testid="member-popout"
         ref={contentRef}
         onCloseAutoFocus={(event) => {

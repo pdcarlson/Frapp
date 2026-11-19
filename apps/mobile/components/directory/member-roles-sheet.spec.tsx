@@ -6,8 +6,7 @@ import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { parseChapterRoles } from "@repo/hooks/chapter-roles";
-import type { ChapterGroup } from "@repo/hooks";
-import { ROLES_SAVE_FAILED_TITLE } from "@/lib/directory/role-editor";
+import { ASSIGN_COPY, type ChapterGroup } from "@repo/hooks";
 
 /**
  * The roles-and-groups editor behind Directory > member > "+ Add role" or
@@ -221,7 +220,7 @@ describe("MemberRolesSheet", () => {
     await tap(tree, "r-cabinet");
     expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(false);
     expect(Alert.alert).toHaveBeenCalledWith(
-      ROLES_SAVE_FAILED_TITLE,
+      ASSIGN_COPY.rolesFailed,
       expect.any(String),
     );
     act(() => tree.unmount());
@@ -423,6 +422,44 @@ describe("MemberRolesSheet", () => {
       userId: "u-ada",
       in: true,
     });
+    act(() => tree.unmount());
+  });
+
+  it("says the API's reason when a group save is refused", async () => {
+    state.setMembership.mockRejectedValueOnce({
+      statusCode: 403,
+      message:
+        "A channel uses this group to decide who can see or post in it. Only someone who can manage channels can change who is in it.",
+    });
+    const tree = render({ ...SESSION, focus: "groups" });
+    await tap(tree, "g-campus");
+    const [title, body] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+    expect(title).toBe(ASSIGN_COPY.groupAddFailed);
+    expect(body).toContain("Only someone who can manage channels");
+    act(() => tree.unmount());
+  });
+
+  it("keeps Saving… while a role save is out, whatever a group tap does", async () => {
+    let release!: () => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    state.setMembership.mockResolvedValueOnce({});
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    await tap(tree, "g-campus");
+    // The header is a prop element the FlatList stand-in doesn't render.
+    const header = list(tree).props.ListHeaderComponent as React.ReactElement<{
+      children: React.ReactElement<{
+        accessibilityLiveRegion?: string;
+        children?: unknown;
+      }>[];
+    }>;
+    const statusLine = header.props.children.find(
+      (child) => child?.props?.accessibilityLiveRegion === "polite",
+    );
+    expect(statusLine?.props.children).toBe("Saving…");
+    await act(async () => release());
     act(() => tree.unmount());
   });
 

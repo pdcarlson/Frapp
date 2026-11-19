@@ -3,6 +3,7 @@
 import { useId, useMemo, useState } from "react";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import {
+  ASSIGN_COPY,
   memberAssignmentSections,
   memberGroupChips,
   memberRoleChips,
@@ -75,16 +76,25 @@ export function MemberAssignments({
   const canManageRoles = data.canManage && editable && !!memberId;
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
 
+  // What this card last saved, kept until the profile read catches up. A
+  // save resolves before its re-read lands, so a second tick built from the
+  // `roleIds` prop alone would send the old list and undo the first.
+  const roleIdsKey = roleIds.join(",");
+  const [saved, setSaved] = useState<{ from: string; ids: string[] } | null>(
+    null,
+  );
+  const heldRoleIds = saved && saved.from === roleIdsKey ? saved.ids : roleIds;
+
   const roleChips = useMemo(
     () =>
       memberRoleChips({
         roles: data.roles,
         tiers: data.tiers,
-        heldRoleIds: roleIds,
+        heldRoleIds,
         reach: data.reach,
         canManageRoles,
       }),
-    [data.roles, data.tiers, roleIds, data.reach, canManageRoles],
+    [data.roles, data.tiers, heldRoleIds, data.reach, canManageRoles],
   );
   const groupChips = useMemo(
     () => memberGroupChips(groups, userId, canManageGroups && editable),
@@ -100,21 +110,24 @@ export function MemberAssignments({
 
   async function setRole(roleId: string, give: boolean) {
     if (!memberId) return;
+    const current = heldRoleIds;
     const requested = give
-      ? [...new Set([...roleIds, roleId])]
-      : roleIds.filter((id) => id !== roleId);
+      ? [...new Set([...current, roleId])]
+      : current.filter((id) => id !== roleId);
     if (
       !give &&
       removesMemberAccess(
-        [...roleIds],
-        rolesAfterSave(requested, roleIds, data.roles),
+        [...current],
+        rolesAfterSave(requested, current, data.roles),
         memberAccessRoleIds(data.roles),
       )
     ) {
+      const roleName =
+        data.roles.find((role) => role.id === roleId)?.name ?? "this role";
       const confirmed = await confirm({
-        title: `Take away ${displayName}'s access?`,
-        description: `Without this role, ${displayName} can't open chat, the member list or events.`,
-        confirmLabel: "Take away access",
+        title: ASSIGN_COPY.accessTitle(displayName),
+        description: ASSIGN_COPY.accessBody(displayName),
+        confirmLabel: ASSIGN_COPY.accessConfirm(roleName),
         tone: "destructive",
       });
       if (!confirmed) return;
@@ -122,11 +135,10 @@ export function MemberAssignments({
     setPendingKey(`role:${roleId}`);
     try {
       await updateRoles.mutateAsync({ id: memberId, role_ids: requested });
+      setSaved({ from: roleIdsKey, ids: requested });
     } catch (error) {
       toast({
-        title: give
-          ? "Couldn't give that role"
-          : "Couldn't take that role away",
+        title: ASSIGN_COPY.rolesFailed,
         description: getErrorMessage(
           error,
           "Something went wrong. Please retry.",
@@ -144,9 +156,7 @@ export function MemberAssignments({
       await setMembership.mutateAsync({ groupId, userId, in: add });
     } catch (error) {
       toast({
-        title: add
-          ? "Couldn't add to that group"
-          : "Couldn't take out of that group",
+        title: add ? ASSIGN_COPY.groupAddFailed : ASSIGN_COPY.groupRemoveFailed,
         description: getErrorMessage(
           error,
           "Something went wrong. Please retry.",
@@ -169,7 +179,14 @@ export function MemberAssignments({
       <ChipRow
         title="Roles"
         chips={roleChips}
-        empty="No roles"
+        // A read still out, or one that failed, is not a member with no roles.
+        empty={
+          data.rolesQuery.data !== undefined
+            ? "No roles"
+            : data.rolesQuery.isError
+              ? "Couldn't load roles"
+              : "Loading roles"
+        }
         compact={compact}
         pendingKey={pendingKey}
         onRemove={(chip) => void toggle(chip, false)}
@@ -187,7 +204,7 @@ export function MemberAssignments({
                   reach: data.reach,
                   canManageRoles,
                   canManageGroups: canManageGroups && editable,
-                  heldRoleIds: roleIds,
+                  heldRoleIds,
                   userId,
                   query,
                 })
@@ -198,38 +215,42 @@ export function MemberAssignments({
           ) : null
         }
       />
-      <ChipRow
-        title="Groups"
-        chips={groupChips}
-        empty="No groups"
-        compact={compact}
-        pendingKey={pendingKey}
-        onRemove={(chip) => void toggle(chip, false)}
-        add={
-          canAddAnything ? (
-            <AddPicker
-              label="Add to group"
-              displayName={displayName}
-              focus="groups"
-              sections={(query) =>
-                memberAssignmentSections({
-                  roles: data.roles,
-                  tiers: data.tiers,
-                  groups,
-                  reach: data.reach,
-                  canManageRoles,
-                  canManageGroups: canManageGroups && editable,
-                  heldRoleIds: roleIds,
-                  userId,
-                  query,
-                })
-              }
-              pendingKey={pendingKey}
-              onToggle={(row, on) => void toggle(row, on)}
-            />
-          ) : null
-        }
-      />
+      {/* Nothing until the groups list is in: an empty row before then
+          would claim the member is in none. */}
+      {groupsQuery.data !== undefined ? (
+        <ChipRow
+          title="Groups"
+          chips={groupChips}
+          empty="No groups"
+          compact={compact}
+          pendingKey={pendingKey}
+          onRemove={(chip) => void toggle(chip, false)}
+          add={
+            canAddAnything ? (
+              <AddPicker
+                label="Add to group"
+                displayName={displayName}
+                focus="groups"
+                sections={(query) =>
+                  memberAssignmentSections({
+                    roles: data.roles,
+                    tiers: data.tiers,
+                    groups,
+                    reach: data.reach,
+                    canManageRoles,
+                    canManageGroups: canManageGroups && editable,
+                    heldRoleIds,
+                    userId,
+                    query,
+                  })
+                }
+                pendingKey={pendingKey}
+                onToggle={(row, on) => void toggle(row, on)}
+              />
+            ) : null
+          }
+        />
+      ) : null}
       {confirmDialog}
     </div>
   );
@@ -421,7 +442,7 @@ function AddPicker({
                         className={cn(
                           "grid h-4 w-4 shrink-0 place-items-center rounded border",
                           row.held
-                            ? "border-accent bg-accent text-accent-foreground"
+                            ? "border-primary bg-primary text-primary-foreground"
                             : "border-muted-foreground",
                           row.disabledReason !== null && "opacity-40",
                         )}

@@ -59,6 +59,7 @@ const ROLES = [
 vi.mock("@/components/roles/use-roles-data", () => ({
   useRolesData: () => ({
     roles: ROLES,
+    rolesQuery: { data: ROLES, isError: false },
     tiers: TIERS,
     reach: {
       wildcard: permissions.current.includes("*"),
@@ -76,6 +77,7 @@ vi.mock("@repo/hooks", async () => {
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
   return {
+    ASSIGN_COPY: actual.ASSIGN_COPY,
     memberAssignmentSections: actual.memberAssignmentSections,
     memberGroupChips: actual.memberGroupChips,
     memberRoleChips: actual.memberRoleChips,
@@ -169,7 +171,9 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
       await screen.findByText("Take away Jimmy Mitchell's access?"),
     ).toBeInTheDocument();
     expect(updateRoles).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Take away access" }));
+    await user.click(
+      screen.getByRole("button", { name: "Remove Corresponding Secretary" }),
+    );
     await waitFor(() =>
       expect(updateRoles).toHaveBeenCalledWith({ id: "m1", role_ids: [] }),
     );
@@ -202,6 +206,38 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     expect(
       within(list).getByRole("menuitemcheckbox", { name: /President/ }),
     ).toBeDisabled();
+  });
+
+  it("builds a second quick tick on the first, before the profile re-reads", async () => {
+    const user = userEvent.setup();
+    renderIt(["r-sec", "r-everyone"]);
+    await user.click(
+      screen.getByRole("button", { name: "Remove Corresponding Secretary" }),
+    );
+    // The access confirm: this was their last role with access.
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Remove Corresponding Secretary",
+      }),
+    );
+    await waitFor(() => expect(updateRoles).toHaveBeenCalledTimes(1));
+    // The profile prop still holds the old list; the chip is gone anyway.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", {
+          name: "Remove Corresponding Secretary",
+        }),
+      ).toBeNull(),
+    );
+    await user.click(screen.getByRole("button", { name: "Add role" }));
+    const list = screen.getByRole("dialog", {
+      name: "Roles and groups for Jimmy Mitchell",
+    });
+    expect(
+      within(list).getByRole("menuitemcheckbox", {
+        name: /Corresponding Secretary/,
+      }),
+    ).toHaveAttribute("aria-checked", "false");
   });
 
   it("offers a plain member no way to change anything", () => {

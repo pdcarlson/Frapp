@@ -1,4 +1,5 @@
 import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
+import { matchesWordStarts, normalizeWords } from "./fuzzy-match";
 import type { ChapterGroup } from "./use-groups";
 import {
   isWildcardRole,
@@ -36,6 +37,30 @@ export const ASSIGN_CAPTIONS = {
   noGroups: "Your role can't change groups",
 } as const;
 
+/**
+ * The words both apps use when a role or group change from a member goes
+ * wrong or needs a yes, so the web card and the phone sheet say the same.
+ * Each tap removes one role, so the confirm names it.
+ */
+export const ASSIGN_COPY = {
+  accessTitle: (name: string) => `Take away ${name}'s access?`,
+  accessBody: (name: string) =>
+    `Without this role, ${name} can't open chat, the member list or events.`,
+  accessConfirm: (roleName: string) => `Remove ${roleName}`,
+  rolesFailed: "Couldn't save roles",
+  groupAddFailed: "Couldn't add to that group",
+  groupRemoveFailed: "Couldn't take out of that group",
+} as const;
+
+/** What an automatic group follows, said beside it on both apps. */
+export function groupFollowsLabel(
+  group: Pick<ChapterGroup, "kind">,
+): string | null {
+  if (group.kind === "pledge_class") return "Follows pledge class";
+  if (group.kind === "class_year") return "Follows graduation year";
+  return null;
+}
+
 export type AssignmentRow = {
   kind: "role" | "group";
   id: string;
@@ -72,10 +97,6 @@ export type AssignmentInputs = {
   query?: string;
 };
 
-function fold(text: string): string {
-  return text.toLocaleLowerCase().replace(/\s+/g, " ").trim();
-}
-
 function roleReason(role: TieredRole, inputs: AssignmentInputs): string | null {
   if (isWildcardRole(role)) return ASSIGN_CAPTIONS.presidency;
   if (!inputs.canManageRoles) return ASSIGN_CAPTIONS.noRoles;
@@ -95,8 +116,12 @@ function roleReason(role: TieredRole, inputs: AssignmentInputs): string | null {
 export function memberAssignmentSections(
   inputs: AssignmentInputs,
 ): AssignmentSection[] {
-  const query = fold(inputs.query ?? "");
-  const matches = (name: string) => !query || fold(name).includes(query);
+  // Every word typed matches the start of a word, ignoring case and accents,
+  // as every other role search does (`fuzzy-match.ts`).
+  const query = inputs.query ?? "";
+  const searching = normalizeWords(query).length > 0;
+  const matches = (name: string) =>
+    !searching || matchesWordStarts(name, query);
   const held = new Set(inputs.heldRoleIds);
   const byOrder = (a: TieredRole, b: TieredRole) =>
     a.display_order - b.display_order || a.name.localeCompare(b.name);

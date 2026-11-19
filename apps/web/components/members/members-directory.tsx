@@ -356,9 +356,14 @@ export function MembersDirectory() {
         .map((group) => ({ value: group.id, label: group.name })),
     [groupsQuery.data],
   );
+  // Only a group the chip still offers filters: one that has emptied (its
+  // last member taken out from their card) reads as unpicked, as a deleted
+  // role does for the Role chip.
   const groupMemberIds = useMemo(() => {
     const group = (groupsQuery.data ?? []).find((g) => g.id === groupFilter);
-    return group ? new Set(group.member_ids) : null;
+    return group && group.member_ids.length > 0
+      ? new Set(group.member_ids)
+      : null;
   }, [groupsQuery.data, groupFilter]);
   const effectiveGroupFilter = groupMemberIds ? groupFilter : null;
 

@@ -239,9 +239,7 @@ describe('ChapterGroupService (#4076)', () => {
   describe('addMember and removeMember (from a profile)', () => {
     it('adds one member and audits the list before and after', async () => {
       repo.findById.mockResolvedValue(group('m', 'In house'));
-      repo.findMemberIds
-        .mockResolvedValueOnce(['u1'])
-        .mockResolvedValueOnce(['u1', 'u2']);
+      repo.findMemberIds.mockResolvedValue(['u1']);
       repo.addMember.mockResolvedValue('added');
 
       const view = await service.addMember('m', CHAPTER, ACTOR, 'u2');
@@ -319,9 +317,7 @@ describe('ChapterGroupService (#4076)', () => {
 
     it('removes one member and audits only when they were in it', async () => {
       repo.findById.mockResolvedValue(group('m', 'In house'));
-      repo.findMemberIds
-        .mockResolvedValueOnce(['u1', 'u2'])
-        .mockResolvedValueOnce(['u1']);
+      repo.findMemberIds.mockResolvedValue(['u1', 'u2']);
       repo.removeMember.mockResolvedValueOnce(true);
 
       const view = await service.removeMember('m', CHAPTER, ACTOR, 'u2');

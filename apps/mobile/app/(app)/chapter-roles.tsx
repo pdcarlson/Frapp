@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { useGroups, usePermissionList, type ChapterGroup } from "@repo/hooks";
+import { groupFollowsLabel, useGroups, usePermissionList } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
@@ -31,13 +31,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** A list longer than this gets a search field, as web's does. */
 const SEARCH_FROM = 8;
-
-/** What an automatic group follows, as web's Groups list says it. */
-function followsLabel(group: ChapterGroup): string | null {
-  if (group.kind === "pledge_class") return "Follows pledge class";
-  if (group.kind === "class_year") return "Follows graduation year";
-  return null;
-}
 
 /**
  * Chapter settings → Roles and groups on the phone (#4074): the chapter's tiers in rank
@@ -299,7 +292,7 @@ export default function ChapterRolesScreen() {
                           ]}
                         />
                       }
-                      description={followsLabel(group)}
+                      description={groupFollowsLabel(group)}
                       value={String(count)}
                       accessibilityValue={`${count} ${count === 1 ? "member" : "members"}`}
                     />

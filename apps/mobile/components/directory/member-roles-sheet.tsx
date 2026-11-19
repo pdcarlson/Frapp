@@ -3,7 +3,9 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { statusOf } from "@repo/api-sdk";
+import { errorCopy } from "@repo/hooks/error-copy";
 import {
+  ASSIGN_COPY,
   memberAssignmentSections,
   useRoles,
   useSetGroupMembership,
@@ -26,11 +28,8 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
-  removeBaseAccessBody,
-  removeBaseAccessTitle,
   removesBaseAccess,
   rolesSaveFailedBody,
-  ROLES_SAVE_FAILED_TITLE,
   toggleRole,
   type RoleOption,
 } from "@/lib/directory/role-editor";
@@ -232,21 +231,26 @@ export const MemberRolesSheet = forwardRef<
         userId: session.userId,
         in: !inGroup,
       });
-      setStatus("saved");
+      if (!roleSaveOut()) setStatus("saved");
     } catch (caught) {
-      setStatus("idle");
+      if (!roleSaveOut()) setStatus("idle");
+      // The API's own words: a channel that names the group, a full group,
+      // or a member who has left, none of which a retry fixes.
       Alert.alert(
-        inGroup
-          ? "Couldn't take out of that group"
-          : "Couldn't add to that group",
-        caught instanceof Error && caught.message
-          ? caught.message
-          : "Check your connection and try again.",
+        inGroup ? ASSIGN_COPY.groupRemoveFailed : ASSIGN_COPY.groupAddFailed,
+        errorCopy(caught, undefined, { serverWritesForMembers: true }),
       );
     } finally {
       setGroupPending(null);
     }
   }
+
+  // A role save for this member still out: its "Saving…" stands until it
+  // lands, whatever a group tap beside it does.
+  const roleSaveOut = () => {
+    const memberId = sessionRef.current?.memberId;
+    return memberId ? !!linesRef.current.get(memberId)?.inFlight : false;
+  };
 
   const isShown = (memberId: string) =>
     sessionRef.current?.memberId === memberId;
@@ -281,7 +285,7 @@ export const MemberRolesSheet = forwardRef<
       if (status === 400 || status === 409) void rolesQuery.refetch();
       // Said even when the officer has moved on, so no change is lost quietly.
       Alert.alert(
-        ROLES_SAVE_FAILED_TITLE,
+        ASSIGN_COPY.rolesFailed,
         rolesSaveFailedBody(status, isShown(memberId) ? null : line.name),
       );
     } finally {
@@ -309,12 +313,12 @@ export const MemberRolesSheet = forwardRef<
     const next = toggleRole(current, option.id);
     if (removesBaseAccess(current, next, options)) {
       Alert.alert(
-        removeBaseAccessTitle(session.name),
-        removeBaseAccessBody(session.name),
+        ASSIGN_COPY.accessTitle(session.name),
+        ASSIGN_COPY.accessBody(session.name),
         [
           { text: "Cancel", style: "cancel" },
           {
-            text: `Remove ${option.name}`,
+            text: ASSIGN_COPY.accessConfirm(option.name),
             style: "destructive",
             // A removal, never a toggle: a save that failed while the alert
             // was up may have put the list back, and the button must not

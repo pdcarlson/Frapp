@@ -197,8 +197,9 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
     if (!error) return 'added';
     if (error.code === PG_UNIQUE_VIOLATION) return 'already';
     if (error.code === PG_FOREIGN_KEY_VIOLATION) {
-      // The composite keys don't say which one failed; the group's is the
-      // only one the caller didn't already check, so ask it.
+      // The composite keys don't say which one failed. The service checked
+      // the group just before, but it can be deleted since, so ask whether
+      // it is still there: if so, the member is the one missing.
       const group = await this.findById(groupId, chapterId);
       return group ? 'member_not_found' : 'group_not_found';
     }

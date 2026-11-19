@@ -334,6 +334,15 @@ describe("Settings shows each viewer what they can use", () => {
     ).toHaveAttribute("data-state", "active");
   });
 
+  it("opens Roles and groups from an old Groups link", () => {
+    permissions.current = ["*"];
+    search.current = "tab=groups";
+    render(<SettingsPage />);
+    expect(
+      screen.getByRole("tab", { name: "Roles and groups" }),
+    ).toHaveAttribute("data-state", "active");
+  });
+
   it("tells a viewer with nothing here who can change that", () => {
     permissions.current = ["members:view"];
     render(<SettingsPage />);
