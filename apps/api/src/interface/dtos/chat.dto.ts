@@ -1218,6 +1218,27 @@ export class ResolveAuthorAvatarsDto {
   message_ids: string[];
 }
 
+/**
+ * Server cap on one batched attachments request (#5667). Clients chunk at
+ * this size (`ATTACHMENT_REQUEST_CHUNK_SIZE` in `@repo/hooks`). With at most
+ * 10 attachments a message, a full request stays under PostgREST's 1000-row
+ * read cap.
+ */
+const MAX_ATTACHMENT_MESSAGES_PER_REQUEST = 50;
+
+export class ListMessagesAttachmentsDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description:
+      'IDs of messages in this channel whose attachments to list. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list.',
+  })
+  @IsArray()
+  @ArrayMaxSize(MAX_ATTACHMENT_MESSAGES_PER_REQUEST)
+  @IsUUID(undefined, { each: true })
+  message_ids: string[];
+}
+
 /** What a thread's parent holds of its newest reply (#4297). */
 export class ChatThreadLastReplyDto {
   @ApiProperty()

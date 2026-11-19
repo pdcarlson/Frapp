@@ -88,6 +88,41 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
     return (data ?? []).map(stripAttachmentRow);
   }
 
+  async findByMessages(
+    channelId: string,
+    messageIds: readonly string[],
+    chapterId: string,
+  ): Promise<(ChatMessageAttachment & { sender_id: string | null })[]> {
+    if (messageIds.length === 0) return [];
+    // Both embeds are `!inner` so their filters exclude rows instead of nulling
+    // the embed. The message embed names its foreign key: the table reaches
+    // `chat_messages` only through `message_id`, but naming it keeps a future
+    // second key from making the embed ambiguous. At most 50 messages of at
+    // most 10 attachments each, so the read stays under PostgREST's 1000-row
+    // cap and cannot come back silently truncated.
+    const { data, error } = await this.supabase
+      .from('chat_message_attachments')
+      .select(
+        '*, chat_channels!inner(chapter_id), chat_messages!chat_message_attachments_message_id_fkey!inner(sender_id, is_deleted, channel_id)',
+      )
+      .eq('channel_id', channelId)
+      .in('message_id', [...messageIds])
+      .eq('chat_channels.chapter_id', chapterId)
+      .eq('chat_messages.channel_id', channelId)
+      .eq('chat_messages.is_deleted', false)
+      .order('created_at', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => {
+      const { chat_messages: message, ...rest } = row as typeof row & {
+        chat_messages: { sender_id: string | null };
+      };
+      return {
+        ...stripAttachmentRow(rest as unknown as ChatMessageAttachment),
+        sender_id: message.sender_id,
+      };
+    });
+  }
+
   async findSharedObjects(
     candidates: readonly { bucket: string; storage_path: string }[],
     excludingMessageId: string | null,

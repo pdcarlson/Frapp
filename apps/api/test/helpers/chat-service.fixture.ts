@@ -163,6 +163,7 @@ export async function createChatServiceFixture() {
   const mockAttachmentRepo: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn().mockResolvedValue([]),
     findByMessage: jest.fn().mockResolvedValue([]),
+    findByMessages: jest.fn().mockResolvedValue([]),
     findSharedObjects: jest.fn().mockResolvedValue([]),
   };
 

@@ -194,6 +194,118 @@ describe('SupabaseChatMessageAttachmentRepository — tenant scope', () => {
 });
 
 /**
+ * `findByMessages` (#5667): the batched read behind
+ * `POST /v1/channels/:id/messages/attachments`, which replaced one request per
+ * visible message. Each row embeds its message so the service can withhold a
+ * blocked sender's files and so a deleted message's files never come back.
+ */
+describe('SupabaseChatMessageAttachmentRepository — findByMessages', () => {
+  const MESSAGE_B2 = '0b000000-0000-4000-8000-000000000183';
+  const MESSAGE_B_DELETED = '0b000000-0000-4000-8000-000000000184';
+  const ATTACHMENT_B2 = '0b000000-0000-4000-8000-000000000185';
+  const ATTACHMENT_B_DELETED = '0b000000-0000-4000-8000-000000000186';
+
+  const withMessage = (
+    row: ReturnType<typeof attachment>,
+    isDeleted = false,
+  ) => ({
+    ...row,
+    chat_messages: {
+      sender_id: USER_SHARED,
+      is_deleted: isDeleted,
+      channel_id: row.channel_id,
+    },
+  });
+
+  let harness: TenantHarness;
+  let repo: SupabaseChatMessageAttachmentRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        ...seed(),
+        chat_message_attachments: [
+          withMessage(
+            attachment(ATTACHMENT_A, MESSAGE_A, CHANNEL_A, CHAPTER_A),
+          ),
+          withMessage(
+            attachment(ATTACHMENT_B, MESSAGE_B, CHANNEL_B, CHAPTER_B),
+          ),
+          withMessage(
+            attachment(ATTACHMENT_B2, MESSAGE_B2, CHANNEL_B, CHAPTER_B),
+          ),
+          withMessage(
+            attachment(
+              ATTACHMENT_B_DELETED,
+              MESSAGE_B_DELETED,
+              CHANNEL_B,
+              CHAPTER_B,
+            ),
+            true,
+          ),
+        ],
+      },
+      untenantedTables: ['chat_messages', 'chat_message_attachments'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+        chat_message_attachments: {
+          column: 'channel_id',
+          table: 'chat_channels',
+        },
+      },
+    });
+    repo = new SupabaseChatMessageAttachmentRepository(harness.client);
+  });
+
+  it('reads every requested message in one query, with its sender', async () => {
+    const rows = await repo.findByMessages(
+      CHANNEL_B,
+      [MESSAGE_B, MESSAGE_B2],
+      CHAPTER_B,
+    );
+
+    expect(rows.map((r) => r.id).sort()).toEqual(
+      [ATTACHMENT_B, ATTACHMENT_B2].sort(),
+    );
+    expect(rows.every((r) => r.sender_id === USER_SHARED)).toBe(true);
+    expect(harness.ops).toHaveLength(1);
+    expect(
+      harness.ops[0].filters.map((f) => [f.column, f.value]),
+    ).toContainEqual(['chat_channels.chapter_id', CHAPTER_B]);
+  });
+
+  it('returns nothing for a message id from another chapter', async () => {
+    const rows = await repo.findByMessages(CHANNEL_B, [MESSAGE_A], CHAPTER_B);
+
+    expect(rows).toEqual([]);
+  });
+
+  it('leaves out the files of a deleted message', async () => {
+    const rows = await repo.findByMessages(
+      CHANNEL_B,
+      [MESSAGE_B, MESSAGE_B_DELETED],
+      CHAPTER_B,
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([ATTACHMENT_B]);
+  });
+
+  it('strips both embeds and external_url off returned rows', async () => {
+    const [row] = await repo.findByMessages(CHANNEL_B, [MESSAGE_B], CHAPTER_B);
+
+    expect(row).toBeDefined();
+    expect(row).not.toHaveProperty('chat_channels');
+    expect(row).not.toHaveProperty('chat_messages');
+    expect(row).not.toHaveProperty('external_url');
+  });
+
+  it('issues no query for an empty list', async () => {
+    expect(await repo.findByMessages(CHANNEL_B, [], CHAPTER_B)).toEqual([]);
+    expect(harness.ops).toHaveLength(0);
+  });
+});
+
+/**
  * `findSharedObjects` (#514) — the read that keeps a message delete from
  * purging an object another message still points at.
  *

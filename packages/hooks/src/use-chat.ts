@@ -917,15 +917,115 @@ export function useMessageAttachments(
     // Comfortably inside the API's 3600s signed-URL TTL, so a link handed to the
     // DOM is still live when it is used.
     staleTime: 10 * 60_000,
-    queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET(
-        "/v1/channels/{id}/messages/{messageId}/attachments",
-        { signal, params: { path: { id: channelId, messageId } } },
+    // Batched: every row that mounts in the same tick shares one request
+    // (#5667). One request per message cost ~7 database calls each, so a
+    // channel of photos queued the whole API behind it.
+    queryFn: () => attachmentBatcherFor(client).load(channelId, messageId),
+  });
+}
+
+/**
+ * Server caps one batched attachments request at this many message ids
+ * (`MAX_ATTACHMENT_MESSAGES_PER_REQUEST` in `chat.dto.ts`), kept in sync by
+ * hand like the avatar cap below.
+ */
+const ATTACHMENT_REQUEST_CHUNK_SIZE = 50;
+
+type FrappClient = ReturnType<typeof useFrappClient>;
+
+interface AttachmentWaiter {
+  resolve: (rows: MessageAttachment[]) => void;
+  reject: (error: unknown) => void;
+}
+
+/**
+ * Collects the attachment reads that start in one tick and sends them as one
+ * `POST /v1/channels/{id}/messages/attachments` per channel and 50 ids. Each
+ * message keeps its own query, so its cache entry, `staleTime` and the image
+ * viewer's `refetchOnMount: false` join work exactly as before; only the
+ * network call is shared.
+ *
+ * Not tied to a caller's abort signal: one row unmounting must not cancel the
+ * request its neighbours are waiting on. A request that fails rejects only the
+ * messages in its own chunk.
+ */
+function createAttachmentBatcher(client: FrappClient) {
+  /** channel id → message id → everyone waiting on that message. */
+  let pending = new Map<string, Map<string, AttachmentWaiter[]>>();
+  let scheduled = false;
+
+  const send = async (
+    channelId: string,
+    messageIds: string[],
+    waiters: Map<string, AttachmentWaiter[]>,
+  ) => {
+    try {
+      const { data, error } = await client.POST(
+        "/v1/channels/{id}/messages/attachments",
+        {
+          params: { path: { id: channelId } },
+          body: { message_ids: messageIds },
+        },
       );
       if (error) throw error;
-      return (data ?? []) as MessageAttachment[];
+      const byMessage = (data ?? {}) as Record<string, MessageAttachment[]>;
+      for (const id of messageIds) {
+        const rows = byMessage[id] ?? [];
+        for (const waiter of waiters.get(id) ?? []) waiter.resolve(rows);
+      }
+    } catch (error) {
+      for (const id of messageIds) {
+        for (const waiter of waiters.get(id) ?? []) waiter.reject(error);
+      }
+    }
+  };
+
+  const flush = () => {
+    scheduled = false;
+    const batch = pending;
+    pending = new Map();
+    for (const [channelId, waiters] of batch) {
+      const ids = [...waiters.keys()].sort();
+      for (const ids50 of chunk(ids, ATTACHMENT_REQUEST_CHUNK_SIZE)) {
+        void send(channelId, ids50, waiters);
+      }
+    }
+  };
+
+  return {
+    load(channelId: string, messageId: string): Promise<MessageAttachment[]> {
+      return new Promise((resolve, reject) => {
+        let forChannel = pending.get(channelId);
+        if (!forChannel) {
+          forChannel = new Map();
+          pending.set(channelId, forChannel);
+        }
+        const waiters = forChannel.get(messageId) ?? [];
+        waiters.push({ resolve, reject });
+        forChannel.set(messageId, waiters);
+        if (!scheduled) {
+          scheduled = true;
+          // A macrotask, not a microtask: rows of one list mount in one commit
+          // but their queries start across several microtask turns.
+          setTimeout(flush, 0);
+        }
+      });
     },
-  });
+  };
+}
+
+const attachmentBatchers = new WeakMap<
+  FrappClient,
+  ReturnType<typeof createAttachmentBatcher>
+>();
+
+function attachmentBatcherFor(client: FrappClient) {
+  let batcher = attachmentBatchers.get(client);
+  if (!batcher) {
+    batcher = createAttachmentBatcher(client);
+    attachmentBatchers.set(client, batcher);
+  }
+  return batcher;
 }
 
 /**

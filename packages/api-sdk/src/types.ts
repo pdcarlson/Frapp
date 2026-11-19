@@ -1532,6 +1532,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/messages/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attachments on several messages, with signed download URLs, keyed by message id */
+        post: operations["ChatController_listMessagesAttachments_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}/messages/avatars": {
         parameters: {
             query?: never;
@@ -7871,6 +7888,10 @@ export interface components {
             /** @description Client annotations, at most 16384 characters as JSON. */
             metadata?: Record<string, never>;
             mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        ListMessagesAttachmentsDto: {
+            /** @description IDs of messages in this channel whose attachments to list. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list. */
+            message_ids: string[];
         };
         ResolveAuthorAvatarsDto: {
             /** @description IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path. */
@@ -16162,6 +16183,38 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_listMessagesAttachments_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListMessagesAttachmentsDto"];
+            };
+        };
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

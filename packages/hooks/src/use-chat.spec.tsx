@@ -13,6 +13,7 @@ import {
   useSetChannelDisplayLock,
   canSetChannelDisplayLock,
   useAuthorAvatars,
+  useMessageAttachments,
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
   useUploadSignedUrl,
@@ -447,6 +448,112 @@ describe("useLeaveChannel", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(mockError);
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("useMessageAttachments", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  const file = (id: string, messageId: string) => ({
+    id,
+    message_id: messageId,
+    filename: "photo.jpg",
+    content_type: "image/jpeg",
+    byte_size: 1,
+    width: null,
+    height: null,
+    download_url: `https://signed/${id}`,
+  });
+
+  it("sends one request for every row that mounts together (#5667)", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { "m-1": [file("a-1", "m-1")], "m-2": [file("a-2", "m-2")] },
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-1", "m-2", true),
+        useMessageAttachments("chan-1", "m-3", true),
+      ],
+      { wrapper: createWrapper(queryClient, { POST: mockPost }) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.every((q) => q.isSuccess)).toBe(true),
+    );
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith(
+      "/v1/channels/{id}/messages/attachments",
+      {
+        params: { path: { id: "chan-1" } },
+        body: { message_ids: ["m-1", "m-2", "m-3"] },
+      },
+    );
+    expect(result.current[0]!.data?.map((a) => a.id)).toEqual(["a-1"]);
+    expect(result.current[1]!.data?.map((a) => a.id)).toEqual(["a-2"]);
+    // A message the server answered with nothing reads as no files, not loading.
+    expect(result.current[2]!.data).toEqual([]);
+    // Each message keeps its own cache entry, so the image viewer still joins it.
+    expect(
+      queryClient.getQueryData([
+        "channels",
+        "chan-1",
+        "messages",
+        "m-2",
+        "attachments",
+      ]),
+    ).toEqual([file("a-2", "m-2")]);
+  });
+
+  it("splits a long list at the server's cap of 50 ids", async () => {
+    const mockPost = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const ids = Array.from(
+      { length: 60 },
+      (_, i) => `m-${String(i).padStart(2, "0")}`,
+    );
+
+    const { result } = renderHook(
+      () => ids.map((id) => useMessageAttachments("chan-1", id, true)),
+      { wrapper: createWrapper(queryClient, { POST: mockPost }) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.every((q) => q.isSuccess)).toBe(true),
+    );
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    const sizes = mockPost.mock.calls.map(
+      ([, init]) =>
+        (init as { body: { message_ids: string[] } }).body.message_ids.length,
+    );
+    expect(sizes.sort()).toEqual([10, 50]);
+  });
+
+  it("fails every row of a request that fails, and sends nothing when disabled", async () => {
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: undefined, error: { message: "boom" } });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-1", "m-2", false),
+      ],
+      { wrapper: createWrapper(queryClient, { POST: mockPost }) },
+    );
+
+    await waitFor(() => expect(result.current[0]!.isError).toBe(true));
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(
+      (mockPost.mock.calls[0]![1] as { body: { message_ids: string[] } }).body
+        .message_ids,
+    ).toEqual(["m-1"]);
+    expect(result.current[1]!.fetchStatus).toBe("idle");
   });
 });
 

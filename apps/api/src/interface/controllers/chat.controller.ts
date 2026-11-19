@@ -84,6 +84,7 @@ import {
   KindNotificationPreferenceDto,
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
+  ListMessagesAttachmentsDto,
   GetChannelMessagesQueryDto,
   ChatMessageDto,
   ForwardMessageDto,
@@ -713,6 +714,32 @@ export class ChatController {
       chapterId,
       userId,
       messageId,
+    );
+  }
+
+  /**
+   * Attachments on up to 50 messages of this channel at once, keyed by message
+   * id (#5667): what a message list renders, in one request instead of one per
+   * message. Same rules as `listMessageAttachments`, applied per message. A
+   * POST because the id list does not fit a query string comfortably, as with
+   * `resolveAuthorAvatars`; it changes nothing.
+   */
+  @Post(':id/messages/attachments')
+  @ApiOperation({
+    summary:
+      'Attachments on several messages, with signed download URLs, keyed by message id',
+  })
+  async listMessagesAttachments(
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Body() dto: ListMessagesAttachmentsDto,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.attachments.listAttachmentsForMessages(
+      channelId,
+      chapterId,
+      userId,
+      dto.message_ids,
     );
   }
 
