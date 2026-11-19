@@ -445,6 +445,11 @@ describe("EventsPage list", () => {
   it("draws a required event loudest: a fuller sky fill, a sky edge and the word Required", () => {
     render(<EventsPage />);
 
+    // The wash and edge span the whole row, its selection slot inside.
+    expect(row(/^chapter meeting/i).getAttribute("style")).toContain(
+      "background-color",
+    );
+
     const meeting = screen.getByRole("button", { name: /^chapter meeting/i });
     const study = screen.getByRole("button", { name: /^study night/i });
     expect(meeting).toHaveAttribute("data-required", "true");
@@ -1018,6 +1023,31 @@ describe("EventsPage agenda kinds, navigator and key (#5560)", () => {
 
     await user.click(within(strip).getByRole("button", { name: "Next week" }));
     expect(strip.querySelector("[aria-current='date']")).toBeNull();
+
+    // The toolbar is one row of glyphs and New event: no text buttons.
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Filter events" }),
+    ).toHaveAttribute("title", "Filter events");
+    expect(
+      screen.getByRole("button", {
+        name: "Subscribe to chapter events in your calendar",
+      }),
+    ).not.toHaveTextContent("Subscribe");
+    await user.click(screen.getByRole("button", { name: "Search events" }));
+    const field = screen.getByRole("searchbox", { name: /search events/i });
+    expect(field).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Search events" }));
+    await user.type(
+      screen.getByRole("searchbox", { name: /search events/i }),
+      "chap",
+    );
+    await user.tab();
+    // Holding text, it stays a field.
+    expect(screen.getByRole("searchbox")).toHaveValue("chap");
+    await user.clear(screen.getByRole("searchbox"));
 
     // Hours shows the one day here.
     await user.click(screen.getByRole("button", { name: "Hours for Today" }));

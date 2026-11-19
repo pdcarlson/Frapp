@@ -72,6 +72,7 @@ import {
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
@@ -244,6 +245,9 @@ export function EventsPage() {
   const [recurrenceFilter, setRecurrenceFilter] =
     useState<CadenceFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Beside chat the search is a glyph until pressed (#5560); it stays a
+  // field while it holds text.
+  const [searchOpen, setSearchOpen] = useState(false);
   // Bulk actions live behind Select (#3822): the default list has no
   // checkboxes.
   const [selecting, setSelecting] = useState(false);
@@ -935,8 +939,11 @@ export function EventsPage() {
     return (
       <li
         key={`event:${eventId}`}
+        // The wash and a required event's edge span the whole row, its
+        // selection slot inside the box.
+        style={isSelected ? undefined : eventRowStyle(isRequired)}
         className={cn(
-          "flex items-center gap-1 rounded-md",
+          "flex items-center gap-1 rounded-md border border-transparent transition-[filter] hover:brightness-125",
           // Fill means state, never striping.
           isSelected && "bg-popover",
         )}
@@ -952,12 +959,7 @@ export function EventsPage() {
           data-kind="events"
           data-required={isRequired || undefined}
           onClick={() => openDetails(event)}
-          style={isSelected ? undefined : eventRowStyle(isRequired)}
-          className={cn(
-            AGENDA_ROW_CLASS,
-            "min-w-0 flex-1 border border-transparent transition-[filter] hover:brightness-125",
-            FOCUS_RING_OFFSET,
-          )}
+          className={cn(AGENDA_ROW_CLASS, "min-w-0 flex-1", FOCUS_RING_OFFSET)}
         >
           <AgendaMarkSlot>
             <span
@@ -1121,41 +1123,89 @@ export function EventsPage() {
         the one Filter button, Subscribe (#3322), and New event, the page's one
         primary action, outlined in the accent rather than filled, so the
         agenda is what the eye lands on. The route's title is in the top bar
-        (`top-bar.tsx`). On a narrow pane search takes the rest of its own
-        line.
+        (`top-bar.tsx`). On a narrow pane (beside chat, the width that swaps
+        the month for the week strip) search, Filter and Subscribe are glyphs,
+        so the whole toolbar is one row; search opens into its field when
+        pressed and closes again on Escape or blur while empty.
       */}
-      <PageActions className="gap-x-2 gap-y-2">
-        <div className="relative min-w-0 flex-1 basis-full @xl:max-w-56 @xl:basis-auto">
-          <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
-          <Input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search events"
-            aria-label="Search events by name or location"
-            className={dashboardToolbarSearchClassName}
-          />
-        </div>
+      <PageActions className={cn("gap-x-2 gap-y-2", narrow && "flex-nowrap")}>
+        {narrow && !searchOpen && !query ? (
+          <IconButton
+            variant="secondary"
+            className="shrink-0"
+            label="Search events"
+            onClick={() => setSearchOpen(true)}
+          >
+            <SearchGlyph className="h-4 w-4" />
+          </IconButton>
+        ) : (
+          <div
+            className={cn(
+              "relative min-w-0 flex-1",
+              !narrow && "basis-full @xl:max-w-56 @xl:basis-auto",
+            )}
+          >
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+            <Input
+              type="search"
+              value={query}
+              autoFocus={narrow && searchOpen}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !query) setSearchOpen(false);
+              }}
+              onBlur={() => {
+                if (!query) setSearchOpen(false);
+              }}
+              placeholder="Search events"
+              aria-label="Search events by name or location"
+              className={dashboardToolbarSearchClassName}
+            />
+          </div>
+        )}
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
           <PopoverTrigger asChild>
-            <Button
-              size="toolbar"
-              variant="secondary"
-              className="shrink-0 gap-2"
-              aria-label={
-                activeFilterCount > 0
-                  ? `Filter events, ${activeFilterCount} on`
-                  : "Filter events"
-              }
-            >
-              <ListFilter className="h-4 w-4" aria-hidden="true" />
-              Filter
-              {activeFilterCount > 0 ? (
-                <Badge variant="default" aria-hidden="true">
-                  {activeFilterCount}
-                </Badge>
-              ) : null}
-            </Button>
+            {narrow ? (
+              <IconButton
+                variant="secondary"
+                className="relative shrink-0"
+                label={
+                  activeFilterCount > 0
+                    ? `Filter events, ${activeFilterCount} on`
+                    : "Filter events"
+                }
+              >
+                <ListFilter className="h-4 w-4" aria-hidden="true" />
+                {activeFilterCount > 0 ? (
+                  <Badge
+                    variant="default"
+                    aria-hidden="true"
+                    className="absolute -right-1.5 -top-1.5 h-4 min-w-4 justify-center px-1"
+                  >
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
+              </IconButton>
+            ) : (
+              <Button
+                size="toolbar"
+                variant="secondary"
+                className="shrink-0 gap-2"
+                aria-label={
+                  activeFilterCount > 0
+                    ? `Filter events, ${activeFilterCount} on`
+                    : "Filter events"
+                }
+              >
+                <ListFilter className="h-4 w-4" aria-hidden="true" />
+                Filter
+                {activeFilterCount > 0 ? (
+                  <Badge variant="default" aria-hidden="true">
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
+              </Button>
+            )}
           </PopoverTrigger>
           <PopoverContent align="end" className="w-auto min-w-72 space-y-4">
             <FilterRow label="Time">
@@ -1197,7 +1247,7 @@ export function EventsPage() {
             </div>
           </PopoverContent>
         </Popover>
-        <CalendarSubscribeMenu />
+        <CalendarSubscribeMenu iconOnly={narrow} />
         <Can allOf={EVENT_CREATE_PERMISSIONS}>
           <Button
             size="toolbar"
