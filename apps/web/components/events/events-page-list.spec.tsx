@@ -363,10 +363,12 @@ describe("EventsPage list", () => {
   it("files a generated meeting as repeating under the Cadence filter", async () => {
     const user = userEvent.setup();
     // The head has already happened: only generated meetings are upcoming,
-    // and they carry no rule of their own.
+    // and they carry no rule of their own. Three days either side of now, so
+    // exactly one is upcoming whatever the hour (a meeting today at 18:00
+    // was upcoming or past depending on when the suite ran).
     const series = weeklySeries("Chapter", 3).map((event, i) => ({
       ...event,
-      start_time: daysOut(-7 + i * 7, 18),
+      start_time: daysOut(-10 + i * 7, 18),
     }));
     eventsQuery.data = series;
     render(<EventsPage />);
