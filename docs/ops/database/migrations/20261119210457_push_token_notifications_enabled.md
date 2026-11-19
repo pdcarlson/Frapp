@@ -1,4 +1,4 @@
-# 20261119173123_push_token_notifications_enabled.sql
+# 20261119210457_push_token_notifications_enabled.sql
 
 Adds `push_tokens.notifications_enabled`, so officers can see which members' phones let Frapp's notifications show, which are turned off, and who has no phone signed in at all (Directory "Phone app" filter).
 
