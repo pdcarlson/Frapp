@@ -480,6 +480,12 @@ describe("FindBar", () => {
     expect(
       screen.getByRole("button", { name: "Settings", pressed: false }),
     ).toBeInTheDocument();
+    await user.click(option);
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/preferences?section=notifications&setting=quiet-hours",
+      ),
+    );
   });
 
   it("lists nothing under the minimum query length", async () => {

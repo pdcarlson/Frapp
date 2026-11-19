@@ -3,6 +3,7 @@ import * as WebBrowser from "expo-web-browser";
 import {
   searchSettings,
   settingWebPath,
+  aiAvailableFrom,
   useAiConsent,
   useCurrentChapter,
   usePermissionList,
@@ -26,7 +27,7 @@ import {
  */
 export function usePhoneSettingsSearch(): (query: string) => SettingMatch[] {
   const permissions = usePermissionList();
-  const aiAvailable = !!useAiConsent().data;
+  const aiAvailable = aiAvailableFrom(useAiConsent()) === true;
   const modules = useCurrentChapter().data?.enabled_modules;
   return useCallback(
     (query: string) =>

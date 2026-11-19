@@ -46,8 +46,8 @@ import {
 } from "@/components/layout/find-results";
 
 /**
- * The Find dialog: a centered search over channels, members, messages, events
- * and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
+ * The Find dialog: a centered search over channels, settings, members,
+ * messages, events and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
  *
  * **Why a dialog again.** #2141 replaced the ⌘K palette with a field that
  * dropped its results under itself, 520px wide. Paul picked a centered dialog
@@ -412,10 +412,14 @@ function FindPanel({
     const group = GROUP_FOR_SOURCE[source];
     return group ? shownGroup(group) : true;
   });
+  // Channels and Settings are matched on this device, so the server's
+  // timeout or failure says nothing about them.
+  const matchedHere =
+    effectiveFilter === "Channels" || effectiveFilter === "Settings";
   const timedOut =
     allTimedOutSources.length > 0
       ? timedOutSources.length > 0
-      : (search.data?.timedOut ?? false) && effectiveFilter !== "Channels";
+      : (search.data?.timedOut ?? false) && !matchedHere;
 
   /*
    * "We stopped looking here" must read differently from "we found nothing"
@@ -429,7 +433,7 @@ function FindPanel({
     statusMessage = null;
   } else if (isLoading) {
     statusMessage = "Searching...";
-  } else if (search.isError) {
+  } else if (search.isError && !matchedHere) {
     statusMessage = "Search is unavailable right now. Try again in a moment.";
   } else if (results.length === 0) {
     statusMessage = timedOut

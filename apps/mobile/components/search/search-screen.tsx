@@ -19,6 +19,7 @@ import {
   type FindResult,
 } from "@repo/hooks";
 import { useDebouncedValue } from "@repo/hooks/use-debounced-value";
+import { SETTINGS_SEARCH_COPY } from "@repo/hooks/settings-search";
 import { ASK_COPY, isModuleEnabled } from "@repo/validation";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { PressableRow } from "@/components/list-section";
@@ -244,17 +245,21 @@ export function SearchScreen() {
   const timedOutGroups = allTimedOut
     .map((source) => GROUP_FOR_SOURCE[source])
     .filter((group): group is FindGroup => !!group && shownGroup(group));
+  // Channels and Settings are matched on the phone, so the server's timeout
+  // or failure says nothing about them.
+  const matchedHere = shownFilter === "Channels" || shownFilter === "Settings";
   const timedOut =
     allTimedOut.length > 0
       ? timedOutGroups.length > 0
-      : (search.data?.timedOut ?? false) && shownFilter !== "Channels";
+      : (search.data?.timedOut ?? false) && !matchedHere;
 
   let status: string | null = null;
   if (typed !== "" && !runnable) status = SEARCH_COPY.tooShort;
-  else if (runnable && noChapter) status = SEARCH_COPY.failed;
+  else if (runnable && noChapter && !matchedHere) status = SEARCH_COPY.failed;
   else if (runnable && settling && rows.length === 0)
     status = SEARCH_COPY.searching;
-  else if (runnable && search.isError) status = SEARCH_COPY.failed;
+  else if (runnable && search.isError && !matchedHere)
+    status = SEARCH_COPY.failed;
   else if (runnable && !settling && rows.length === 0)
     status = timedOut ? SEARCH_COPY.timedOut : SEARCH_COPY.none;
   const partial =
@@ -264,8 +269,10 @@ export function SearchScreen() {
         : SEARCH_COPY.partialUnnamed
       : null;
 
+  const [browserFailed, setBrowserFailed] = useState(false);
   const open = (row: SearchRow) => {
     selectionHaptic();
+    setBrowserFailed(false);
     // The rows are the settled search's, so its words are what led here.
     remember(debounced);
     if (row.route) {
@@ -274,7 +281,11 @@ export function SearchScreen() {
     }
     if (row.target.type === "setting") {
       const entry = settingEntryById(row.target.settingId);
-      if (entry) openSetting(router, entry);
+      if (entry) {
+        openSetting(router, entry, {
+          onBrowserFailed: () => setBrowserFailed(true),
+        });
+      }
     }
   };
 
@@ -348,6 +359,11 @@ export function SearchScreen() {
             </Text>
           ) : null}
           {partial ? <Text style={styles.status}>{partial}</Text> : null}
+          {browserFailed ? (
+            <Text accessibilityLiveRegion="polite" style={styles.status}>
+              {SETTINGS_SEARCH_COPY.browserFailed}
+            </Text>
+          ) : null}
           <View testID="search-results">
             {rows.map((row, index) => (
               <View key={row.id}>
@@ -372,7 +388,9 @@ export function SearchScreen() {
                   </Text>
                   {row.hint ? (
                     <Text style={styles.hint} numberOfLines={1}>
-                      {row.hint}
+                      {row.route
+                        ? row.hint
+                        : `${row.hint}. ${SETTINGS_SEARCH_COPY.onWeb}`}
                     </Text>
                   ) : null}
                 </PressableRow>

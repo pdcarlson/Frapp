@@ -12,11 +12,12 @@ import type { SettingMatch } from "./settings-search";
  * client's own routing.
  *
  * **Group order is Channels, Settings, Members, Messages, Events, Backwork.**
- * Settings (2026-11-19) is the settings search's list, so "dues" or "quiet
- * hours" finds the setting from anywhere. The first
- * three are the board's ranking (`1d` pins 2-4): channels are where a member
- * goes most, and they come from the channel list the member can already read,
- * because `/v1/search` has no channel source. Events and Backwork were left
+ * Channels, Members and Messages, in that order, are the board's ranking
+ * (`1d` pins 2-4): channels are where a member goes most, and they come from
+ * the channel list the member can already read, because `/v1/search` has no
+ * channel source. Settings (2026-11-19) is the settings search's list, so
+ * "dues" or "quiet hours" finds the setting from anywhere; it sits after
+ * Channels as the other group matched on the device, ahead of the server's. Events and Backwork were left
  * out of the old top-bar dropdown to keep it small; the dialog has the room,
  * and leaving them out meant a backwork title search answered "No matches."
  * while the file existed (2026-11-05).

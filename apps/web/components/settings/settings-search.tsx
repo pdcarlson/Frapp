@@ -11,15 +11,13 @@ import {
 } from "react";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
-import { settingWebPath } from "@repo/hooks";
+import {
+  SETTINGS_SEARCH_COPY,
+  settingWebPath,
+} from "@repo/hooks/settings-search";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { useSettingsSearch } from "@/lib/settings/use-settings-search";
-
-export const SETTINGS_SEARCH_COPY = {
-  placeholder: "Search settings",
-  none: "No settings match. Try another word.",
-} as const;
 
 /**
  * The search field atop both settings rails (Chapter settings and Settings),

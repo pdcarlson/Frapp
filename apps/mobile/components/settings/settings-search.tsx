@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { useRouter } from "expo-router";
-import type { SettingPhoneScreen } from "@repo/hooks";
+import {
+  SETTINGS_SEARCH_COPY,
+  type SettingPhoneScreen,
+} from "@repo/hooks/settings-search";
 import type { SignetTokens } from "@repo/theme/signet";
 import { SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection } from "@/components/list-section";
@@ -11,13 +14,6 @@ import {
   usePhoneSettingsSearch,
 } from "@/lib/settings/settings-search";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-
-export const SETTINGS_SEARCH_COPY = {
-  placeholder: "Search settings",
-  none: "No settings match. Try another word.",
-  onWeb: "Changed on the web dashboard.",
-  browserFailed: "The web dashboard couldn't be opened. Try again in a moment.",
-} as const;
 
 /**
  * The search atop the phone's Chapter settings and Settings: web's field

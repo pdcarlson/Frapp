@@ -1,3 +1,4 @@
+import { MODULE_CATALOG } from "@repo/org-archetypes";
 import { canAll, isBetaOffModule } from "@repo/validation";
 
 /**
@@ -57,7 +58,7 @@ export type SettingEntry = {
   web?: {
     /** Chapter settings `?tab=`, or Settings `?section=`. */
     page: string;
-    /** The DOM id to scroll to and light. */
+    /** The DOM id to scroll to and light; without one, the tab opens at its top. */
     anchor?: string;
     /** More params the row needs, such as `tool=discord-import`. */
     params?: Readonly<Record<string, string>>;
@@ -66,6 +67,15 @@ export type SettingEntry = {
 };
 
 const CONFIG = ["chapter-config:view", "chapter-config:manage"] as const;
+
+/** The search's words, the same on web and the phone. */
+export const SETTINGS_SEARCH_COPY = {
+  placeholder: "Search settings",
+  none: "No settings match. Try another word.",
+  /** Under a phone match that only the web dashboard changes. */
+  onWeb: "Changed on the web dashboard.",
+  browserFailed: "The web dashboard couldn't be opened. Try again in a moment.",
+} as const;
 
 /** Area names, as each page's title says them. */
 export const SETTINGS_AREA_LABELS: Readonly<Record<SettingsArea, string>> = {
@@ -374,7 +384,8 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
       "archive semester",
       "promote new members",
     ],
-    requires: ["semester:rollover"],
+    // The rollover controller also carries `members:view` on its class.
+    requires: ["members:view", "semester:rollover"],
     web: { page: "semester", anchor: "settings-start-a-new-semester" },
   },
   {
@@ -418,8 +429,9 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
       "payment method",
       "card",
     ],
-    requires: ["billing:manage"],
-    web: { page: "billing" },
+    // The Billing tab and its controller both need `billing:view` as well.
+    requires: ["billing:view", "billing:manage"],
+    web: { page: "billing", anchor: "plan-panel-heading" },
   },
   {
     id: "chapter-invoices",
@@ -427,8 +439,11 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     area: "chapter",
     section: "Plan and billing",
     keywords: ["receipts", "billing history", "payments", "invoice"],
-    requires: ["billing:view"],
-    web: { page: "billing" },
+    // Viewing alone changes nothing there, and search lists what can change.
+    requires: ["billing:view", "billing:manage"],
+    // The list is drawn only while dues is on (off for the beta).
+    betaModule: "dues",
+    web: { page: "billing", anchor: "invoice-list-heading" },
   },
   {
     id: "cancel-chapter",
@@ -441,7 +456,7 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
       "shut down",
       "downgrade",
     ],
-    requires: ["billing:manage"],
+    requires: ["billing:view", "billing:manage"],
     web: { page: "billing", anchor: "plan-cancel-or-close" },
   },
 
@@ -533,19 +548,27 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
   },
 
   // ---- One per module page, then what sits on them ----------------------
-  ...MODULE_WORDS.map((module): SettingEntry => ({
-    id: `module-${module.key}`,
-    label: module.label,
-    area: "chapter",
-    section: "Modules",
-    keywords: [...module.keywords, ...MODULE_SWITCH_WORDS],
-    requires: CONFIG,
-    betaModule: module.key,
-    web: {
-      page: module.key,
-      anchor: `settings-module-${module.key}-switch`,
-    },
-  })),
+  ...MODULE_WORDS.map((module): SettingEntry => {
+    // An always-on module (Chat, Announcements) has no switch to light or
+    // turn off, so its page opens at the top and offers no switch words.
+    const alwaysOn =
+      MODULE_CATALOG.find((entry) => entry.key === module.key)?.alwaysOn ??
+      false;
+    return {
+      id: `module-${module.key}`,
+      label: module.label,
+      area: "chapter",
+      section: "Modules",
+      keywords: alwaysOn
+        ? module.keywords
+        : [...module.keywords, ...MODULE_SWITCH_WORDS],
+      requires: CONFIG,
+      betaModule: module.key,
+      web: alwaysOn
+        ? { page: module.key }
+        : { page: module.key, anchor: `settings-module-${module.key}-switch` },
+    };
+  }),
   {
     id: "channels",
     label: "Channels",
@@ -608,7 +631,7 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     keywords: ["geofence", "map", "library", "study area", "location"],
     requires: ["geofences:manage"],
     module: "geofences",
-    web: { page: "geofences" },
+    web: { page: "geofences", anchor: "settings-module-geofences-zones" },
   },
   {
     id: "points-rules",
@@ -637,7 +660,8 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     section: "Meetings",
     keywords: ["minutes template", "agenda", "officer reports", "minutes"],
     requires: CONFIG,
-    betaModule: "meetings",
+    // The template's write is refused while Meetings is off.
+    module: "meetings",
     web: { page: "meetings", anchor: "settings-module-meetings-rules" },
   },
   {

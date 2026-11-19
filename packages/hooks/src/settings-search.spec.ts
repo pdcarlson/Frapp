@@ -80,12 +80,48 @@ describe("settings search", () => {
   });
 
   it("lists only what web opens on web, and everything on the phone", () => {
-    expect(ids("nudges", { ...MEMBER })).not.toContain("nudges");
-    const phone = searchSettings("dues", { ...PRESIDENT, platform: "phone" });
+    // Nudges live only on the phone.
+    expect(ids("nudges", MEMBER)).not.toContain("nudges");
+    expect(ids("nudges", { ...MEMBER, platform: "phone" })).toContain("nudges");
+    // A setting only web changes is still listed on the phone, marked so.
+    const phone = searchSettings("points goal", {
+      ...PRESIDENT,
+      platform: "phone",
+    });
     const webOnly = phone.find((m) => m.entry.id === "points-goal");
-    expect(webOnly).toBeUndefined();
-    const reports = searchSettings("csv", { ...PRESIDENT, platform: "phone" });
-    expect(reports[0]?.opensHere).toBe(false);
+    expect(webOnly?.opensHere).toBe(false);
+    const quiet = searchSettings("quiet hours", {
+      ...MEMBER,
+      platform: "phone",
+    });
+    expect(quiet[0]?.opensHere).toBe(true);
+  });
+
+  it("leaves out a module that is off for the beta", () => {
+    // Dues is in BETA_OFF_MODULES: neither its page nor its amounts list.
+    expect(ids("dues", PRESIDENT)).not.toContain("module-dues");
+    expect(ids("dues", PRESIDENT)).not.toContain("dues-amounts");
+    expect(ids("invoices", MEMBER)).not.toContain("my-invoices");
+  });
+
+  it("offers no switch for an always-on module", () => {
+    expect(settingEntryById("module-chat")?.web?.anchor).toBeUndefined();
+    expect(ids("disable chat", PRESIDENT)).not.toContain("module-chat");
+    expect(settingEntryById("module-events")?.web?.anchor).toBe(
+      "settings-module-events-switch",
+    );
+  });
+
+  it("asks for the grants the page and the API both check", () => {
+    const manageOnly = { ...MEMBER, permissions: ["billing:manage"] };
+    expect(ids("upgrade", manageOnly)).not.toContain("plan");
+    const rolloverOnly = { ...MEMBER, permissions: ["semester:rollover"] };
+    expect(ids("rollover", rolloverOnly)).not.toContain("new-semester");
+    const meetingsOff = {
+      ...PRESIDENT,
+      isModuleEnabled: (key: string) => key !== "meetings",
+    };
+    expect(ids("agenda", meetingsOff)).not.toContain("minutes-sections");
   });
 
   it("builds the web address that opens and lights it", () => {

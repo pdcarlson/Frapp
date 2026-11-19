@@ -33,7 +33,16 @@ type JumpContext = {
   scrollRef: RefObject<ScrollView | null>;
 };
 
-const SettingJumpContext = createContext<JumpContext | null>(null);
+type JumpContextValue = JumpContext & {
+  /**
+   * The jump already lit, so a row remounted with the same jump (the field
+   * cleared after a search swapped the rows out) doesn't scroll and flash
+   * again. Web drops its `?setting=` param for the same reason.
+   */
+  litSerial: { current: number | null };
+};
+
+const SettingJumpContext = createContext<JumpContextValue | null>(null);
 
 /**
  * The jump state for a settings screen: `jump(settingId)` lights a setting on
@@ -57,8 +66,11 @@ export function SettingJumpProvider({
   scrollRef,
   children,
 }: JumpContext & { children: ReactNode }) {
+  const litSerial = useRef<number | null>(null);
   return (
-    <SettingJumpContext.Provider value={{ anchor, serial, scrollRef }}>
+    <SettingJumpContext.Provider
+      value={{ anchor, serial, scrollRef, litSerial }}
+    >
       {children}
     </SettingJumpContext.Provider>
   );
@@ -83,11 +95,13 @@ export function SettingAnchor({
   const lit = ctx?.anchor === id;
   const serial = ctx?.serial ?? 0;
   const scrollRef = ctx?.scrollRef;
+  const litSerial = ctx?.litSerial;
 
   useEffect(() => {
-    if (!lit) return;
+    if (!lit || !litSerial || litSerial.current === serial) return;
     // A frame for the screen's rows to lay out, more on a cold push.
     const timer = setTimeout(() => {
+      litSerial.current = serial;
       const scroll = scrollRef?.current;
       const inner = (
         scroll as unknown as { getInnerViewRef?: () => unknown } | null
@@ -118,7 +132,7 @@ export function SettingAnchor({
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [lit, serial, scrollRef, reduceMotion, wash]);
+  }, [lit, serial, scrollRef, litSerial, reduceMotion, wash]);
 
   return (
     // The screen's gap between its blocks, for an anchor around several (a
