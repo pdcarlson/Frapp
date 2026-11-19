@@ -221,6 +221,33 @@ a `POST` falls under the 30-a-minute write limit and the lapsed-subscription wri
 Polling (one route once a minute from one long-lived tab) is not N+1: it shows as many traces of one
 request each, not many requests in one trace.
 
+**Postgres errors.** Since 2026-11-19 (Paul, on Supabase's Postgres panel showing 337 errors in a
+day: "that's a lot of postgres errors"). 333 of them were the reminder sweeps losing their
+dispatch claims every five minutes as unique violations, which buried the four real ones. They
+never reach Sentry: Supabase sends Postgres logs elsewhere only through log drains, a paid-plan
+feature, so this read is the only one. `query_logs` on both projects, over the run's window:
+
+```sql
+select severity_text as sev, log_attributes['parsed.sql_state_code'] as code,
+       substring(event_message, 1, 200) as msg, count(*) as n,
+       min(timestamp) as first, max(timestamp) as last
+from logs
+where source = 'postgres_logs' and severity_text in ('ERROR', 'FATAL', 'PANIC')
+group by sev, code, msg order by n desc limit 25
+```
+
+- **File** a message seen 20 or more times in the window, or any `FATAL` or `PANIC` other than a
+  client disconnect. Find the code that issues it first (search `apps/api/src` and
+  `supabase/migrations/` for the constraint, relation or column it names) and say whether it is a
+  real failure or an expected outcome logged as an error. An expected one is fixed in the code
+  (insert-or-ignore, `if exists`), not filtered here: the panel is what Paul reads.
+- Title `[db] Postgres error: <constraint, relation or column> from <job or route>`, labels
+  `triage`, `suggestion`, `area:api`, **P2** when it fails a member's request, **P3** when it is
+  noise. Marker `fp=beta-watch/pg-error/<sql_state_code>/<constraint or relation>`; search first.
+- What stays out: one-off `42P01` / `42703` from someone's hand-typed query in the dashboard's SQL
+  editor (a single occurrence with no matching code), and `57014` statement timeouts already
+  covered by a slow-statement issue. Name them in the report without filing.
+
 ## What counts as a problem
 
 File (or update) an issue for:
