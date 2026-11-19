@@ -38,8 +38,9 @@ import {
   taskRepeatDraftFromRule,
   taskFirstDue,
   taskRepeatRuleOf,
-  taskSaveScope,
+  taskFieldSaveScope,
   taskSeriesBody,
+  taskSeriesLive,
   taskSignedOffAutomatically,
   type RepeatDraft,
   type TaskProofKind,
@@ -231,7 +232,7 @@ function TaskPanelBody({
   const status = actionStatus(task);
   const sentBack = isSentBack(task);
   const editable = canManage && !task.points_awarded;
-  const repeats = !!task.series && !task.series.ended;
+  const repeats = taskSeriesLive(task.series);
 
   /**
    * Save one field. A copy of a live series asks which tasks it changes when
@@ -245,12 +246,7 @@ function TaskPanelBody({
     if (isGroup) {
       send = { ...body, scope: "group" };
     } else {
-      const { recurrence_rule, ...rest } = body;
-      const decided = taskSaveScope(task, {
-        ...(recurrence_rule !== undefined ? { recurrence_rule } : {}),
-        movesDay,
-        changesOther: Object.keys(rest).length > 0,
-      });
+      const decided = taskFieldSaveScope(task, body, movesDay);
       if (decided.kind === "refuse") {
         toast({
           title: "Couldn't save the task",
@@ -941,7 +937,7 @@ function RepeatRow({
 }) {
   const [draft, setDraft] = useState<RepeatDraft | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const live = !!task.series && !task.series.ended;
+  const live = taskSeriesLive(task.series);
   if (isGroup) {
     return (
       <FieldRow label="Repeat">

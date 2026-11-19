@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { Alert } from "react-native";
 import { toTaskRow, type TaskRowModel } from "./board";
 import {
   confirmBarLabel,
+  confirmTaskDelete,
+  seriesDeleteTakesCopy,
+  taskDeleteTarget,
   groupCopies,
   removalAllowed,
   sortCopies,
@@ -629,5 +633,78 @@ describe("Mark done in the bar", () => {
       label: "Mark done",
       hint: undefined,
     });
+  });
+});
+
+describe("Delete on a repeating task (#5119)", () => {
+  const series = {
+    recurrence_rule: "FREQ=WEEKLY;BYDAY=MO;TZID=America/New_York",
+    next_due_date: "2026-11-30",
+    ended: false,
+  };
+  type Button = { text: string; onPress?: () => void };
+  const buttonsOf = () =>
+    vi.mocked(Alert.alert).mock.calls.at(-1)![2] as Button[];
+
+  it("asks This task only or All upcoming tasks, and hands back the scope", async () => {
+    vi.mocked(Alert.alert).mockClear();
+    const picked: string[] = [];
+    confirmTaskDelete(row({ series }), false, (scope) => picked.push(scope));
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
+      "Delete a repeating task",
+    );
+    buttonsOf().find((b) => b.text === "All upcoming tasks")!.onPress!();
+    await Promise.resolve();
+    confirmTaskDelete(row({ series }), false, (scope) => picked.push(scope));
+    buttonsOf().find((b) => b.text === "This task only")!.onPress!();
+    await Promise.resolve();
+    expect(picked).toEqual(["series", "instance"]);
+  });
+
+  it("asks the plain question for a task that doesn't repeat, or a stopped series", () => {
+    for (const task of [row(), row({ series: { ...series, ended: true } })]) {
+      vi.mocked(Alert.alert).mockClear();
+      const picked: string[] = [];
+      confirmTaskDelete(task, false, (scope) => picked.push(scope));
+      expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
+        'Delete "Sweep the porch"?',
+      );
+      buttonsOf().find((b) => b.text === "Delete task")!.onPress!();
+      expect(picked).toEqual(["instance"]);
+    }
+  });
+
+  it("sends each answer as the delete it means", () => {
+    expect(taskDeleteTarget("t1", "instance")).toBe("t1");
+    expect(taskDeleteTarget("t1", "series")).toEqual({
+      id: "t1",
+      scope: "series",
+    });
+    expect(taskDeleteTarget("t1", "group")).toEqual({
+      id: "t1",
+      scope: "group",
+    });
+  });
+
+  it("knows a stopped repeat takes only an untouched copy still to come", () => {
+    expect(seriesDeleteTakesCopy(row({ series }))).toBe(true);
+    expect(
+      seriesDeleteTakesCopy(
+        row({ series, status: "IN_PROGRESS", stored_status: "IN_PROGRESS" }),
+      ),
+    ).toBe(false);
+    expect(seriesDeleteTakesCopy(row({ series, status: "OVERDUE" }))).toBe(
+      false,
+    );
+    expect(
+      seriesDeleteTakesCopy(
+        row({
+          series,
+          subtasks: [
+            { id: "s1", title: "Mop", done_at: "2026-11-18T12:00:00Z" },
+          ],
+        }),
+      ),
+    ).toBe(false);
   });
 });

@@ -948,7 +948,7 @@ export function taskFirstDue(entry: string, timeZone?: string): Date | null {
 export function taskRepeatCadence(
   series: TaskSeriesLine | null | undefined,
 ): string | null {
-  if (!series || series.ended) return null;
+  if (!series || !taskSeriesLive(series)) return null;
   const parsed = parseTaskRepeatRule(series.recurrence_rule);
   if (!parsed) return null;
   if (parsed.interval === 1) return REPEAT_PRESET_LABELS[parsed.freq];
@@ -969,6 +969,17 @@ export interface TaskSeriesLine {
 }
 
 /**
+ * Whether a task is a copy of a series that still makes copies (#5119):
+ * what decides the repeat mark, the Repeat field and the scope question on
+ * both apps.
+ */
+export function taskSeriesLive(
+  series: { ended: boolean } | null | undefined,
+): boolean {
+  return !!series && !series.ended;
+}
+
+/**
  * How a copy of a repeating task says it repeats (#5119): the pattern
  * ("Every Monday"), and with `next`, the next copy's day ("Every Monday ·
  * next Nov 24"). `first` is the copy's own due, which a by-date monthly
@@ -979,7 +990,7 @@ export function taskSeriesLine(
   first: Date,
   options: { next?: boolean } = {},
 ): string | null {
-  if (!series || series.ended) return null;
+  if (!series || !taskSeriesLive(series)) return null;
   const pattern = describeRepeatPattern(series.recurrence_rule, first);
   if (!pattern) return null;
   if (!options.next) return pattern;
@@ -1053,7 +1064,7 @@ export function taskSaveScope(
 ):
   | { kind: "instance" | "series" | "ask" }
   | { kind: "refuse"; message: string } {
-  const live = !!task.series && !task.series.ended;
+  const live = taskSeriesLive(task.series);
   const upcoming = task.status !== "OVERDUE" && task.status !== "COMPLETED";
   if (edit.recurrence_rule !== undefined && live) {
     if (!upcoming) {
@@ -1066,4 +1077,38 @@ export function taskSaveScope(
   }
   if (!live || !upcoming || edit.movesDay) return { kind: "instance" };
   return { kind: "ask" };
+}
+
+/**
+ * What saving one field's change of a task does (#5119), for the editors
+ * that save a field at a time (web's task panel, the phone's task screen):
+ * `taskSaveScope` over the field's body. Reference photos never ask, since a
+ * series doesn't copy them and they go on the copy they were added to
+ * (`spec/behavior/tasks.md` § Repeating tasks); a body with only photos is
+ * `instance`. `movesDay` is the caller's, as for `taskSaveScope`.
+ */
+export function taskFieldSaveScope(
+  task: Parameters<typeof taskSaveScope>[0],
+  body: {
+    recurrence_rule?: string | null;
+    reference_photo_paths?: unknown;
+    [field: string]: unknown;
+  },
+  movesDay: boolean,
+): ReturnType<typeof taskSaveScope> {
+  const { recurrence_rule, reference_photo_paths, ...rest } = body;
+  if (!taskSeriesLive(task.series)) return { kind: "instance" };
+  if (
+    recurrence_rule === undefined &&
+    reference_photo_paths !== undefined &&
+    Object.keys(rest).length === 0
+  ) {
+    return { kind: "instance" };
+  }
+  return taskSaveScope(task, {
+    ...(recurrence_rule !== undefined ? { recurrence_rule } : {}),
+    movesDay,
+    changesOther:
+      Object.keys(rest).length > 0 || reference_photo_paths !== undefined,
+  });
 }

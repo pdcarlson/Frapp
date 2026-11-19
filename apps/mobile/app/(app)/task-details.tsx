@@ -72,6 +72,10 @@ import { taskEditDraftName, useTaskEdit } from "@/lib/tasks/use-task-edit";
 import {
   confirmBarLabel,
   confirmTaskDelete,
+  SERIES_STOPPED_LINE,
+  seriesDeleteTakesCopy,
+  taskDeleteTarget,
+  type TaskDeleteScope,
   groupCopies,
   livePicks,
   markDoneBarLabel,
@@ -446,27 +450,26 @@ function TaskScreen({
   // Delete, after the platform alert, then back to the board.
   const deleteTask = useDeleteTask();
   const [deleteFailed, setDeleteFailed] = useState<string | null>(null);
-  const runDelete = async (everyone: boolean, series?: "series") => {
+  // All upcoming tasks on a repeating copy (#5119) stops the repeat; the copy
+  // goes with it only while untouched, else the screen stays on it and says so.
+  const [seriesStopped, setSeriesStopped] = useState(false);
+  const runDelete = async (scope: TaskDeleteScope) => {
     setDeleteFailed(null);
+    const takesCopy = scope !== "series" || seriesDeleteTakesCopy(row);
     try {
-      await deleteTask.mutateAsync(
-        everyone
-          ? { id: row.id, scope: "group" }
-          : series
-            ? { id: row.id, scope: series }
-            : row.id,
-      );
-      leave();
+      await deleteTask.mutateAsync(taskDeleteTarget(row.id, scope));
+      if (takesCopy) {
+        leave();
+        return;
+      }
+      setSeriesStopped(true);
+      AccessibilityInfo.announceForAccessibility(SERIES_STOPPED_LINE);
     } catch (error) {
       setDeleteFailed(errorCopy(error, "Couldn't delete the task. Try again."));
     }
   };
   const confirmDelete = (everyone: boolean) =>
-    confirmTaskDelete(
-      row,
-      everyone,
-      (series) => void runDelete(everyone, series),
-    );
+    confirmTaskDelete(row, everyone, (scope) => void runDelete(scope));
 
   // Give it back (tasks.md § Up for grabs): the task is deleted and its
   // posting is open again, so there is nothing left here to show. It lands on
@@ -699,6 +702,12 @@ function TaskScreen({
 
         {!editing ? <TaskRepeatFact row={row} /> : null}
 
+        {seriesStopped && !editing ? (
+          <Text style={styles.stoppedNote} accessibilityLiveRegion="polite">
+            {SERIES_STOPPED_LINE}
+          </Text>
+        ) : null}
+
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
         {!editing && row.description ? (
@@ -901,6 +910,10 @@ function createStyles(tokens: SignetTokens) {
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructiveText,
+    },
+    stoppedNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     section: {
       gap: tokens.spacing.xs,

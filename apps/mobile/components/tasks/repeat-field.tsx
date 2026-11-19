@@ -45,7 +45,10 @@ export function TaskRepeatField({
   fieldStyle: object;
   /** `BottomSheetTextInput` in a sheet; the plain `TextInput` on a screen. */
   input?: ComponentType<TextInputProps>;
-  /** A save's refusal, shown under the control. */
+  /**
+   * Why the pick can't be saved, shown under the control, or under the row
+   * while it is closed, so a disabled Create always says why.
+   */
   error?: string | null;
 }) {
   const { tokens } = useFrappTheme();
@@ -86,6 +89,10 @@ export function TaskRepeatField({
             input={input}
           />
         </View>
+      ) : error ? (
+        <Text style={styles.error} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
       ) : null}
     </>
   );
@@ -126,6 +133,10 @@ function createStyles(tokens: SignetTokens) {
     },
     options: {
       gap: tokens.spacing.sm,
+    },
+    error: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
     },
   });
 }

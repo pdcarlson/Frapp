@@ -456,7 +456,7 @@ export interface EditableCardTask {
 }
 
 /** A task read's `series`, or `null` when it isn't one (#5119). */
-function readSeries(value: unknown): TaskSeriesLine | null {
+export function readTaskSeries(value: unknown): TaskSeriesLine | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
   if (
@@ -503,6 +503,6 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     subtasks: Array.isArray(r.subtasks) ? (r.subtasks as TaskSubtask[]) : [],
     photos: live.photos,
     proof_kind: live.proof_kind,
-    series: readSeries(r.series),
+    series: readTaskSeries(r.series),
   };
 }

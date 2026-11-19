@@ -13,6 +13,7 @@ import {
   taskRepeatDraftFromRule,
   taskSaveScope,
   taskSeriesBody,
+  taskSeriesLive,
   type TaskProofKind,
   type TaskSeriesLine,
 } from "@repo/validation";
@@ -65,7 +66,7 @@ export function movesDayTo(
 
 /** A copy of a series that still makes copies (#5119). */
 function repeats(task: EditableTask): boolean {
-  return !!task.series && !task.series.ended;
+  return taskSeriesLive(task.series);
 }
 
 /** The task's reference photos, in order. */

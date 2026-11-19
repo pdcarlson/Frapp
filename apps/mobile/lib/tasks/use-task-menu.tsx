@@ -46,6 +46,8 @@ import {
 } from "@/lib/tasks/create-task";
 import {
   confirmTaskDelete,
+  taskDeleteTarget,
+  type TaskDeleteScope,
   groupCopies,
   taskMenuKeys,
   taskScreenControls,
@@ -127,18 +129,12 @@ export function useTaskMenu({
   }, [duplicating]);
 
   const runDelete = useCallback(
-    (row: TaskRowModel, everyone: boolean, series?: "series") => {
+    (row: TaskRowModel, scope: TaskDeleteScope) => {
       // One copy's Delete never names the group: only Delete for everyone
       // sends `scope=group`; All upcoming tasks on a repeating copy sends
       // `scope=series` (#5119).
       deleteTask
-        .mutateAsync(
-          everyone
-            ? { id: row.id, scope: "group" }
-            : series
-              ? { id: row.id, scope: series }
-              : row.id,
-        )
+        .mutateAsync(taskDeleteTarget(row.id, scope))
         .catch((error: unknown) =>
           alertFailure({
             title: "Couldn't delete the task",
@@ -258,8 +254,8 @@ export function useTaskMenu({
             destructive: true,
             glyph: (color) => <TrashGlyph color={color} />,
             run: () =>
-              confirmTaskDelete(row, everyone, (series) =>
-                runDelete(row, everyone, series),
+              confirmTaskDelete(row, everyone, (scope) =>
+                runDelete(row, scope),
               ),
           };
         }

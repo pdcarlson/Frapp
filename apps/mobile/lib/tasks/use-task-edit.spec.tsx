@@ -428,6 +428,51 @@ describe("a copy of a repeating task (#5119)", () => {
     act(() => tree.unmount());
   });
 
+  it("saves the Repeat after the other fields Done saves with it", async () => {
+    const tree = mount(live());
+    act(() => {
+      hook.edit!.type("title", "Mop");
+      hook.edit!.pickRepeat({
+        ...taskRepeatDraftFromRule(RULE),
+        preset: "NONE",
+        pristine: false,
+      });
+    });
+    let saved!: Promise<boolean>;
+    act(() => {
+      saved = hook.edit!.commitAll();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Stopping the repeat waits on the title's question.
+    expect(updateTask).not.toHaveBeenCalled();
+    await act(async () => {
+      answer("All upcoming tasks");
+      expect(await saved).toBe(true);
+    });
+    expect(updateTask.mock.calls.map(([call]) => call.body)).toEqual([
+      { title: "Mop", scope: "series" },
+      { recurrence_rule: null, scope: "series" },
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("saves what is left as the screen goes to this copy, without asking", async () => {
+    const tree = mount(live());
+    act(() => hook.edit!.type("title", "Mop"));
+    await act(async () => {
+      tree.unmount();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { title: "Mop" },
+    });
+  });
+
   it("saves a Repeat change to the series without asking", async () => {
     const tree = mount(live());
     const stored = hook.edit!.drafts.repeat;

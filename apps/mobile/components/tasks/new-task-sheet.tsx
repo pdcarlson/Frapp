@@ -897,6 +897,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 disabled={pending}
                 fieldStyle={styles.field}
                 input={BottomSheetTextInput}
+                error={repeatRule && !repeatRule.ok ? repeatRule.error : null}
               />
             ) : repeatOffered && repeat.preset !== "NONE" ? (
               <Text style={styles.note}>

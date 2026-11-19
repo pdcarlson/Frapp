@@ -1347,6 +1347,45 @@ describe("New task's Repeat (#5119)", () => {
     act(() => tree.unmount());
   });
 
+  it("sends no rule once a group is picked, and says why", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
+        </FrappThemeProvider>,
+      );
+    });
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            node.props.accessibilityRole === "button",
+        )
+        .props.onPress(),
+    );
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "chapter" },
+      }),
+    );
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.noRepeat);
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("recurrence_rule");
+    act(() => tree.unmount());
+  });
+
   it("sends no rule while it doesn't repeat", () => {
     const tree = render();
     submitTask(tree);

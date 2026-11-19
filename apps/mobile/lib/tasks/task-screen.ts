@@ -37,6 +37,7 @@ import { formatPointsChip, formatRelativeDayTime } from "@repo/formatting";
 import {
   TASK_SERIES_SCOPE_COPY,
   taskGroupLabel,
+  taskSeriesLive,
   type TaskSeriesLine,
 } from "@repo/validation";
 import { records, str } from "@/lib/more/narrow";
@@ -248,21 +249,54 @@ export function taskMenuKeys(
   return keys;
 }
 
+/** What a Delete removes: one copy, every copy of a group, or the repeat. */
+export type TaskDeleteScope = "instance" | "group" | "series";
+
+/** `useDeleteTask`'s argument for a Delete's answer. */
+export function taskDeleteTarget(
+  id: string,
+  scope: TaskDeleteScope,
+): string | { id: string; scope: "group" | "series" } {
+  return scope === "instance" ? id : { id, scope };
+}
+
+/**
+ * Whether an "All upcoming tasks" delete takes this copy with it (#5119):
+ * the server ends the series and deletes its open copy only while it is
+ * still to come and no one has started it (to do, no proof, no step
+ * checked; `spec/behavior/tasks.md` § Repeating tasks). Any other copy stays,
+ * so the task screen stays on it. Its answer doesn't say, so this is the
+ * same rule read off the row.
+ */
+export function seriesDeleteTakesCopy(row: TaskRowModel): boolean {
+  return (
+    row.displayStatus === "TODO" &&
+    (row.storedStatus ?? "TODO") === "TODO" &&
+    !row.proofLink &&
+    !row.photos.some((photo) => photo.kind === "proof") &&
+    !row.subtasks.some((subtask) => subtask.done)
+  );
+}
+
+/** Said on the task screen when the repeat stopped and this copy stayed. */
+export const SERIES_STOPPED_LINE =
+  "Stopped repeating. This task and any done or overdue ones stay.";
+
 /**
  * Delete's question, the platform alert, for the task screen's More and a
  * row's long-press menu alike. One copy's Delete, or, `everyone`, every copy
  * of a group task. On a copy of a live repeating series (#5119) it asks as
  * web does, "This task only" or "All upcoming tasks", the second stopping
- * the repeat (its open copy goes only if untouched). `onConfirm` runs on the
- * red button, with `"series"` for All upcoming tasks.
+ * the repeat. `onConfirm` runs on the red button, with what to delete
+ * (`taskDeleteTarget`).
  */
 export function confirmTaskDelete(
   task: { title: string; series: TaskSeriesLine | null },
   everyone: boolean,
-  onConfirm: (scope?: "series") => void,
+  onConfirm: (scope: TaskDeleteScope) => void,
 ): void {
   const { title } = task;
-  if (!everyone && task.series && !task.series.ended) {
+  if (!everyone && taskSeriesLive(task.series)) {
     void askSeriesScope({
       title: TASK_SERIES_SCOPE_COPY.deleteTitle,
       message: TASK_SERIES_SCOPE_COPY.deleteMessage,
@@ -270,8 +304,7 @@ export function confirmTaskDelete(
       allUpcoming: TASK_SERIES_SCOPE_COPY.allUpcoming,
       destructive: true,
     }).then((scope) => {
-      if (scope === "instance") onConfirm();
-      else if (scope === "series") onConfirm("series");
+      if (scope) onConfirm(scope);
     });
     return;
   }
@@ -285,7 +318,7 @@ export function confirmTaskDelete(
       {
         text: everyone ? "Delete for everyone" : "Delete task",
         style: "destructive",
-        onPress: () => onConfirm(),
+        onPress: () => onConfirm(everyone ? "group" : "instance"),
       },
     ],
   );

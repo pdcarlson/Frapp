@@ -92,6 +92,22 @@ const FIELD_ORDER: readonly FieldKey[] = [
 const SENT_KEYS: readonly FieldKey[] = ["proof", "photos", "who"];
 
 /**
+ * Commit every draft: the fields together, then the Repeat (#5119). A
+ * Repeat change saves to the series at once, and stopping it first would
+ * leave an "All upcoming tasks" answer for the other fields nothing to
+ * change (the API refuses a series edit once it has ended).
+ */
+async function commitDrafts(
+  run: (key: DraftKey) => Promise<boolean>,
+): Promise<{ key: DraftKey; ok: boolean }[]> {
+  const fields = DRAFT_KEYS.filter((key) => key !== "repeat");
+  const results = await Promise.all(
+    fields.map(async (key) => ({ key, ok: await run(key) })),
+  );
+  return [...results, { key: "repeat", ok: await run("repeat") }];
+}
+
+/**
  * How long the due waits after a pick before it saves: the platform's time
  * wheel reports each stop, and only the last should be sent.
  */
@@ -188,7 +204,9 @@ export interface TaskEditing {
  * repeating task (#5119) a save asks "This task only" or "All upcoming
  * tasks" first where web's panel does (`seriesScopeOf`), in the platform's
  * alert; Cancel keeps the draft unsaved. Saves that ask at once (Done with
- * several fields typed) share one question. Not optimistic,
+ * several fields typed) share one question, and the Repeat saves after
+ * them; a draft saved as the screen goes saves to this copy alone, unasked.
+ * Not optimistic,
  * as `useUpdateTask` isn't: a field keeps what was typed until the save
  * lands and the task is read again, and a refusal is said in the API's
  * words with the draft kept for another try.
@@ -272,7 +290,9 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
 
   // The scope question on its way, which saves asking at once share.
   const asking = useRef<Promise<"instance" | "series" | null> | null>(null);
+  const leaving = useRef(false);
   const askScope = useCallback(() => {
+    if (leaving.current) return Promise.resolve("instance" as const);
     asking.current ??= askSeriesScope({
       title: TASK_SERIES_SCOPE_COPY.saveTitle,
       message: TASK_SERIES_SCOPE_COPY.saveMessage,
@@ -386,8 +406,15 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
   );
 
   const commitAll = useCallback(async () => {
-    const typed = await Promise.all(DRAFT_KEYS.map((key) => commit(key)));
+    // The saves already on their way are taken now: one that settles while
+    // the drafts save still counts.
+    const onTheirWay = [
+      ...SENT_KEYS.map((key) => pending.current[key]?.saved ?? true),
+      upload.current ?? true,
+    ];
+    const typed = (await commitDrafts(commit)).map(({ ok }) => ok);
     const sent = await Promise.all([
+      ...onTheirWay,
       ...SENT_KEYS.map((key) => pending.current[key]?.saved ?? true),
       upload.current ?? true,
     ]);
@@ -405,11 +432,12 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
     () => () => {
       const left = live.current;
       const name = keptKey.current;
-      void Promise.all(
-        DRAFT_KEYS.map(async (key) => ({
-          key,
-          ok: left[key] === null || (await commitRef.current(key)),
-        })),
+      // No question once the screen is gone: an alert over another screen
+      // wouldn't say which task it means. What is left saves to this copy
+      // alone, as the phone's edit did before it asked (#5119).
+      leaving.current = true;
+      void commitDrafts(async (key) =>
+        left[key] === null ? true : commitRef.current(key),
       ).then((results) => {
         const unsaved = results.filter(({ ok }) => !ok);
         if (unsaved.length === 0) return;

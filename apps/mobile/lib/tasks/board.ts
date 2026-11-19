@@ -15,6 +15,7 @@ import {
   isTaskStatus,
   myTasksGroup,
   readLiveTaskPhotos,
+  readTaskSeries,
   type LiveTaskPhoto,
   type MyTasksGroup,
 } from "@repo/hooks";
@@ -110,19 +111,6 @@ export interface TaskRowGroup {
   /** Copies marked done, confirmed or still waiting on an officer. */
   done: number;
   confirmed: number;
-}
-
-function toSeries(value: unknown): TaskSeriesLine | null {
-  if (!value || typeof value !== "object") return null;
-  const series = value as Record<string, unknown>;
-  const rule = series.recurrence_rule;
-  const next = series.next_due_date;
-  if (typeof rule !== "string" || typeof next !== "string") return null;
-  return {
-    recurrence_rule: rule,
-    next_due_date: next,
-    ended: series.ended === true,
-  };
 }
 
 function toGroup(value: unknown): TaskRowGroup | null {
@@ -261,7 +249,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     meetingId: str(row, "meeting_id"),
     group: toGroup(row.group),
     openTaskId: str(row, "open_task_id"),
-    series: toSeries(row.series),
+    series: readTaskSeries(row.series),
   };
 }
 

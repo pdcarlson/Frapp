@@ -398,6 +398,10 @@ describe("a copy of a repeating task (#5119)", () => {
     );
     // A task that doesn't repeat has no Repeat to save.
     expect(repeatSave(row(), stored)).toEqual({ kind: "none" });
+    // A pick held while the copy went overdue can't save: it is dropped.
+    expect(
+      repeatSave(live({ status: "OVERDUE" }), pickRepeatPreset(stored, "NONE")),
+    ).toEqual({ kind: "none" });
   });
 
   it("measures the next change against a stopped series", () => {
