@@ -391,7 +391,7 @@ describe("Invite members", () => {
       email: null,
       status: "pending",
       reusable: true,
-      expires_at: "2026-11-26T17:00:00.000Z",
+      expires_at: "2026-11-26T12:00:00.000Z",
     };
     const sheet = vi
       .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
@@ -428,7 +428,7 @@ describe("Invite members", () => {
       email: null,
       status: "expired",
       reusable: true,
-      expires_at: "2026-11-26T17:00:00.000Z",
+      expires_at: "2026-11-26T12:00:00.000Z",
     };
     const tree = render();
     expect(screenText(tree)).toContain("Make a chapter link");

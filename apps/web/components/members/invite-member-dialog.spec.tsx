@@ -796,7 +796,7 @@ describe("InviteMemberDialog chapter link", () => {
     email: null,
     role: "Everyone",
     reusable: true,
-    expires_at: "2026-11-26T17:00:00.000Z",
+    expires_at: "2026-11-26T12:00:00.000Z",
   };
   const section = () =>
     within(screen.getByRole("region", { name: "Chapter link" }));
