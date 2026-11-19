@@ -13,8 +13,11 @@ import {
   useFrappClient,
   useMeetings,
   useMemberDisplayNames,
+  useTasks,
+  taskDueLine,
   type AiSuggestion,
   type AiSuggestionDismissReason,
+  type TaskStatus,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -24,10 +27,15 @@ import {
   AI_SUGGESTION_COPY,
   taskWhoOf,
   LAST_YEAR_COPY,
+  SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
+  existingTasks,
   lastYearEventLine,
   lastYearTaskLine,
   meetingDueLabel,
+  similarTask,
+  statusLabel,
+  type ExistingTask,
 } from "@repo/validation";
 import {
   useAiReport,
@@ -98,10 +106,16 @@ import { pageSurfaces } from "@/lib/surfaces";
  *   the officer presses Create.
  * - **Already planned**, one tap.
  * - **Not this year**. Either of the last two and it does not come back.
+ *
+ * ## A task the chapter already has (#5562)
+ *
+ * A suggestion that reads like an open task (`similar-task.ts`) sets the two
+ * side by side and asks which it is, as web's card does: **Already a task**
+ * dismisses it, **Create anyway** brings back the usual row.
  */
 
 /** Which of a row's answers is being sent. */
-type Doing = "accept" | "dismiss" | "already";
+type Doing = "accept" | "dismiss" | "already" | "keep";
 
 type SuggestedTask = NonNullable<AiSuggestion["task"]>;
 type Waiting = AiSuggestion & { task: SuggestedTask };
@@ -202,6 +216,18 @@ function SuggestedTasks() {
   }, [planFor]);
   // Said once an event was added from a suggestion, where the row was.
   const [added, setAdded] = useState(false);
+  // Suggestions the officer said are not the existing task they look like.
+  const [keptAnyway, setKeptAnyway] = useState<ReadonlySet<string>>(new Set());
+  // The tasks this officer can see, to spot a suggestion that is one of them.
+  const tasksQuery = useTasks();
+  const twins = useMemo(() => {
+    const existing = existingTasks(tasksQuery.data);
+    return new Map(
+      tasks.map((item) => [item.id, similarTask(item.task.title, existing)]),
+    );
+  }, [tasks, tasksQuery.data]);
+  const twinOf = (item: Waiting) =>
+    keptAnyway.has(item.id) ? null : (twins.get(item.id) ?? null);
 
   const groups = useMemo(() => {
     const bySource = new Map<string, Waiting[]>();
@@ -344,6 +370,14 @@ function SuggestedTasks() {
         isFromLastYear(item)
           ? () => void dismissRow(item, "already_doing")
           : undefined
+      }
+      existing={twinOf(item)}
+      onSameTask={() => void dismissRow(item, "already_doing")}
+      onDifferentTask={() =>
+        setKeptAnyway((previous) => new Set(previous).add(item.id))
+      }
+      onOpenExisting={(id) =>
+        router.push({ pathname: "/task-details", params: { id } })
       }
       report={reportFor(item, reporting)}
       styles={styles}
@@ -606,6 +640,10 @@ function SuggestionRow({
   onAccept,
   onDismiss,
   onAlreadyDoing,
+  existing,
+  onSameTask,
+  onDifferentTask,
+  onOpenExisting,
   report,
   styles,
 }: {
@@ -619,10 +657,31 @@ function SuggestionRow({
   onDismiss: () => void;
   /** Set for a task drawn from last year's board, which has a third answer. */
   onAlreadyDoing?: () => void;
+  /** The open task this suggestion reads like, until the officer says. */
+  existing: ExistingTask | null;
+  onSameTask: () => void;
+  onDifferentTask: () => void;
+  onOpenExisting: (id: string) => void;
   report: RowReport;
   styles: Styles;
 }) {
   const { task } = item;
+  if (existing) {
+    return (
+      <SimilarTaskRow
+        item={item}
+        existing={existing}
+        busy={busy}
+        disabled={disabled}
+        problem={problem}
+        onSame={onSameTask}
+        onDifferent={onDifferentTask}
+        onOpenExisting={() => onOpenExisting(existing.id)}
+        report={report}
+        styles={styles}
+      />
+    );
+  }
   const meta = [
     who ?? AI_SUGGESTION_COPY.who,
     task.due_date ? `Due ${meetingDueLabel(task.due_date)}` : null,
@@ -694,6 +753,99 @@ function SuggestionRow({
           styles={styles}
         />
       )}
+      {problem ? (
+        <Text accessibilityLiveRegion="polite" style={styles.problem}>
+          {problem}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A suggestion beside the open task it reads like (#5562): the two titles
+ * side by side, where the existing one stands, and the one question. Web's
+ * card (`SimilarTaskCard`) says the same in the same order.
+ */
+function SimilarTaskRow({
+  item,
+  existing,
+  busy,
+  disabled,
+  problem,
+  onSame,
+  onDifferent,
+  onOpenExisting,
+  report,
+  styles,
+}: {
+  item: Waiting;
+  existing: ExistingTask;
+  busy: Doing | null;
+  disabled: boolean;
+  problem: string | null;
+  onSame: () => void;
+  onDifferent: () => void;
+  onOpenExisting: () => void;
+  report: RowReport;
+  styles: Styles;
+}) {
+  const { task } = item;
+  const due = taskDueLine(
+    existing.due_at ?? existing.due_date,
+    existing.status as TaskStatus,
+  );
+  const where = [statusLabel("task", existing.status), due?.text]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <View style={styles.card}>
+      <Text style={styles.meta}>{SIMILAR_TASK_COPY.heading}</Text>
+      <View style={styles.compare}>
+        <View style={styles.compareSide}>
+          <Text style={styles.meta}>{SIMILAR_TASK_COPY.suggested}</Text>
+          <Text style={styles.title}>{task.title}</Text>
+          {item.quote && item.quote !== task.title ? (
+            <Text style={styles.meta} numberOfLines={3}>
+              {`“${item.quote}”`}
+            </Text>
+          ) : null}
+        </View>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`${SIMILAR_TASK_COPY.openExisting}: ${existing.title}`}
+          onPress={onOpenExisting}
+          style={({ pressed }) => [
+            styles.compareSide,
+            styles.compareExisting,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.meta}>{SIMILAR_TASK_COPY.existing}</Text>
+          <Text style={styles.title}>{existing.title}</Text>
+          {where ? <Text style={styles.meta}>{where}</Text> : null}
+          <Text style={[styles.meta, styles.link]}>
+            {SIMILAR_TASK_COPY.openExisting}
+          </Text>
+        </Pressable>
+      </View>
+      <RowActions
+        name={task.title}
+        busy={busy}
+        disabled={disabled}
+        report={report}
+        primary={{
+          label: SIMILAR_TASK_COPY.same,
+          doing: "already",
+          onPress: onSame,
+        }}
+        secondary={{
+          label: SIMILAR_TASK_COPY.different,
+          doing: "keep",
+          onPress: onDifferent,
+        }}
+        styles={styles}
+      />
       {problem ? (
         <Text accessibilityLiveRegion="polite" style={styles.problem}>
           {problem}
@@ -812,6 +964,23 @@ function createStyles(tokens: SignetTokens) {
     },
     cardText: {
       gap: tokens.spacing.xs,
+    },
+    compare: {
+      flexDirection: "row",
+      gap: tokens.spacing.md,
+    },
+    compareSide: {
+      flex: 1,
+      minWidth: 0,
+      gap: tokens.spacing.xs,
+    },
+    compareExisting: {
+      borderLeftWidth: 1,
+      borderLeftColor: tokens.color.border.hairline,
+      paddingLeft: tokens.spacing.md,
+    },
+    link: {
+      textDecorationLine: "underline",
     },
     title: {
       ...typeRole(tokens.typography.role.label),

@@ -8,6 +8,7 @@ import {
   AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
   LAST_YEAR_COPY,
+  SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
   lastYearEventLine,
   lastYearTaskLine,
@@ -24,6 +25,7 @@ import type { ValidatedNewTask } from "@/lib/tasks/create-task";
  */
 const state = vi.hoisted(() => ({
   items: [] as unknown[],
+  tasks: [] as unknown[],
   isPending: false,
   isError: false,
   source: undefined as unknown,
@@ -63,6 +65,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ({
     nameFor: (id: string) => (id === "u1" ? "Ana Ruiz" : null),
   }),
+  // The chapter's open tasks, to spot a suggestion that is one of them (#5562).
+  useTasks: () => ({ data: state.tasks }),
   useActiveChapterId: () => "chapter-1",
   useFrappClient: () => ({ GET: vi.fn() }),
   useAcceptAiSuggestion: () => ({ mutateAsync: state.accept }),
@@ -213,6 +217,7 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   state.items = [READY, UNFINISHED];
+  state.tasks = [];
   state.isPending = false;
   state.isError = false;
   state.seed = undefined;
@@ -367,6 +372,74 @@ describe("Suggested tasks", () => {
     state.items = [READY];
     // A failed refresh keeps what was read.
     expect(screenText(render())).toContain("Book the hall");
+  });
+});
+
+describe("A suggestion that reads like an existing task (#5562)", () => {
+  const HALL = {
+    id: "t-hall",
+    title: "Hall: book it",
+    status: "IN_PROGRESS",
+    due_date: "2026-11-20",
+    due_at: null,
+  };
+
+  it("sets the two side by side and takes Already a task as a dismissal", async () => {
+    state.tasks = [HALL];
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain(SIMILAR_TASK_COPY.heading);
+    expect(text).toContain(SIMILAR_TASK_COPY.suggested);
+    expect(text).toContain(SIMILAR_TASK_COPY.existing);
+    expect(text).toContain("Hall: book it");
+    expect(text).toContain("In progress");
+    // Nothing creates it until the officer says which it is.
+    expect(
+      byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`),
+    ).toBeUndefined();
+
+    await act(async () =>
+      byLabel(tree, `${SIMILAR_TASK_COPY.same}: Book the hall`).props.onPress(),
+    );
+    expect(state.dismiss).toHaveBeenCalledWith({
+      id: "s1",
+      reason: "already_doing",
+    });
+  });
+
+  it("opens the existing task from its side", () => {
+    state.tasks = [HALL];
+    const tree = render();
+    act(() =>
+      byLabel(
+        tree,
+        `${SIMILAR_TASK_COPY.openExisting}: Hall: book it`,
+      ).props.onPress(),
+    );
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: "t-hall" },
+    });
+  });
+
+  it("brings back the usual row on Create anyway", () => {
+    state.tasks = [HALL];
+    const tree = render();
+    act(() =>
+      byLabel(
+        tree,
+        `${SIMILAR_TASK_COPY.different}: Book the hall`,
+      ).props.onPress(),
+    );
+    expect(screenText(tree)).not.toContain(SIMILAR_TASK_COPY.heading);
+    expect(
+      byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`),
+    ).toBeDefined();
+  });
+
+  it("leaves a finished task alone: doing it again is new work", () => {
+    state.tasks = [{ ...HALL, status: "COMPLETED" }];
+    expect(screenText(render())).not.toContain(SIMILAR_TASK_COPY.heading);
   });
 });
 
@@ -549,7 +622,10 @@ describe("suggestionEdits", () => {
       suggestionEdits(
         people as never,
         form({
-          who: { kind: "each", target: { kind: "people", userIds: ["u2", "u1"] } },
+          who: {
+            kind: "each",
+            target: { kind: "people", userIds: ["u2", "u1"] },
+          },
         }),
       ),
     ).toBeUndefined();
