@@ -28,6 +28,7 @@ export function SegmentedChoice<T extends string>({
   quiet = false,
   dense = false,
   className,
+  describedBy,
 }: {
   label: string;
   /**
@@ -52,11 +53,15 @@ export function SegmentedChoice<T extends string>({
   /** Caption-size labels and tighter padding, for a control beside a name in a list row. */
   dense?: boolean;
   className?: string;
+  /** The id of a line saying why the control is off (a gate's notice). */
+  describedBy?: string;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
+      aria-describedby={describedBy}
+      aria-disabled={disabled || undefined}
       className={cn(
         "inline-flex rounded-md border border-control-edge bg-surface-1 p-0.5",
         fill ? "w-full" : "shrink-0",

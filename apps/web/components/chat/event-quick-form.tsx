@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { addMinutesToTime, timeSpanMinutes } from "@repo/formatting";
 import {
   localDateTimeToIso,
   type DispatchResult,
@@ -9,6 +10,7 @@ import {
 } from "@repo/chat-core/dispatch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TimeField } from "@/components/ui/time-field";
 import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import {
@@ -31,6 +33,31 @@ import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 const EVENT_MAX_NAME_LENGTH = 255;
 
 type Problems = { name?: string; date?: string; time?: string };
+
+/** A first start's end: an hour on, as a calendar's quick create fills it. */
+const FIRST_LENGTH_MINUTES = 60;
+
+/** Minutes from `HH:MM` to midnight: the card's event ends the day it starts. */
+function minutesLeftInDay(time: string): number {
+  return 24 * 60 - timeSpanMinutes("00:00", time);
+}
+
+/**
+ * The end when the start moves to `startTime`: it keeps the event's length,
+ * as Google Calendar's does, and a first start fills an hour, while the end
+ * still falls on the same day; otherwise it stays as typed.
+ */
+function endFollowing(draft: EventQuickDraft, startTime: string): string {
+  if (!startTime) return draft.endTime;
+  const length =
+    draft.startTime && draft.endTime
+      ? timeSpanMinutes(draft.startTime, draft.endTime)
+      : FIRST_LENGTH_MINUTES;
+  if (length <= 0 || length >= minutesLeftInDay(startTime)) {
+    return draft.endTime;
+  }
+  return addMinutesToTime(startTime, length);
+}
 
 export interface EventQuickFormProps {
   initialDraft?: EventQuickDraft;
@@ -178,16 +205,15 @@ export function EventQuickForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="grid min-w-0 grid-cols-1 gap-1">
           <Label htmlFor={`${ids}-start`}>Starts</Label>
-          <Input
+          <TimeField
             ref={startRef}
             id={`${ids}-start`}
-            type="time"
-            step={300}
+            placeholder="7 PM"
             className={field}
             value={draft.startTime}
             aria-invalid={problems.time ? true : undefined}
-            onChange={(event) => {
-              edit({ startTime: event.target.value });
+            onChange={(startTime) => {
+              edit({ startTime, endTime: endFollowing(draft, startTime) });
               clear("time");
             }}
             {...gate.controlProps()}
@@ -195,15 +221,17 @@ export function EventQuickForm({
         </div>
         <div className="grid min-w-0 grid-cols-1 gap-1">
           <Label htmlFor={`${ids}-end`}>Ends</Label>
-          <Input
+          <TimeField
             id={`${ids}-end`}
-            type="time"
-            step={300}
+            placeholder="8 PM"
             className={field}
             value={draft.endTime}
+            anchor={draft.startTime || undefined}
+            from={draft.startTime || undefined}
+            span={draft.startTime ? minutesLeftInDay(draft.startTime) : undefined}
             aria-invalid={problems.time ? true : undefined}
-            onChange={(event) => {
-              edit({ endTime: event.target.value });
+            onChange={(endTime) => {
+              edit({ endTime });
               clear("time");
             }}
             {...gate.controlProps()}

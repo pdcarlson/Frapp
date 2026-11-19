@@ -20,7 +20,7 @@ import {
   eventInvitedRoleNames,
   type MeetingType,
 } from "@repo/validation";
-import { WhenRow } from "@/components/events/new-event-sheet";
+import { WhenRow } from "@/components/events/when-times";
 import { Segmented } from "@/components/segmented";
 import {
   SHEET_STACK_BEHAVIOR,

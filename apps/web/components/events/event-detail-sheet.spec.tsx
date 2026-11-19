@@ -115,15 +115,18 @@ vi.mock("@/components/events/event-agenda", () => ({
   EventMeetingLists: ({
     lists,
     canEdit,
+    checkOffOpen,
     documentsOn,
   }: {
     lists: { agenda: { text: string }[]; attachments: { title: string }[] };
     canEdit: boolean;
+    checkOffOpen?: boolean;
     documentsOn: boolean | null;
   }) => (
     <div
       data-testid="event-lists"
       data-can-edit={String(canEdit)}
+      data-check-off={String(checkOffOpen)}
       data-documents={String(documentsOn)}
       data-agenda={lists.agenda.map((item) => item.text).join("|")}
       data-attachments={lists.attachments.map((item) => item.title).join("|")}
@@ -210,10 +213,9 @@ describe("EventDetailSheet who's coming", () => {
       />,
     );
 
+    // The form's own words for it (`describeAttendance`), in its row.
     expect(screen.getByText("Who's coming")).toBeInTheDocument();
-    expect(screen.getByText("Only the roles below")).toBeInTheDocument();
-    expect(screen.getByText("Exec")).toBeInTheDocument();
-    expect(screen.getByText("Required")).toBeInTheDocument();
+    expect(screen.getByText(/^Exec required/)).toBeInTheDocument();
   });
 
   it("says the default alone when no role is set apart", () => {
@@ -249,7 +251,7 @@ describe("EventDetailSheet series", () => {
     },
   ];
 
-  it("lists the series' upcoming meetings under the one it opened, and opens another", async () => {
+  it("links the series' next meeting rather than listing every date", async () => {
     const user = userEvent.setup();
     const onSelectOccurrence = vi.fn();
     render(
@@ -257,7 +259,7 @@ describe("EventDetailSheet series", () => {
         open
         onOpenChange={() => {}}
         usingPreviewData
-        event={baseEvent}
+        event={{ ...baseEvent, recurrence_rule: "WEEKLY" }}
         series={series}
         onSelectOccurrence={onSelectOccurrence}
         onRequestEdit={() => {}}
@@ -265,19 +267,28 @@ describe("EventDetailSheet series", () => {
       />,
     );
 
-    const list = within(
-      screen.getByRole("region", { name: "Upcoming in this series" }),
-    );
-    const meetings = list.getAllByRole("button");
-    expect(meetings).toHaveLength(3);
-    // The one open is marked and isn't a way to reopen itself.
-    expect(meetings[0]).toHaveAttribute("aria-current", "true");
-    expect(meetings[0]).toBeDisabled();
-
-    await user.click(meetings[2]!);
+    // Paul 2026-11-19: "don't need to see all the upcoming series events".
+    expect(screen.queryByText("Upcoming in this series")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^Next / }));
     expect(onSelectOccurrence).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "e3" }),
+      expect.objectContaining({ id: "e2" }),
     );
+  });
+
+  it("offers no next meeting from the series' last one", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...series[2]!, recurrence_rule: "WEEKLY" }}
+        series={series}
+        onSelectOccurrence={() => {}}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^Next / })).toBeNull();
   });
 
   it("badges a generated meeting with the series' rule it was handed", () => {
@@ -678,7 +689,7 @@ describe("EventDetailSheet loading", () => {
 describe("EventDetailSheet required badge", () => {
   // A status, so danger as the events list and mobile draw it, never the
   // chapter accent (components.md §5).
-  it("draws required-for-everyone as the danger badge", () => {
+  it("says required-for-everyone in words", () => {
     render(
       <EventDetailSheet
         open
@@ -689,9 +700,8 @@ describe("EventDetailSheet required badge", () => {
         onEventDeleted={() => {}}
       />,
     );
-    const badge = screen.getByText("Required for everyone");
-    expect(badge.className).toContain("text-destructive-text");
-    expect(badge.className).not.toContain("text-accent-text");
+    // Said in Who's coming's row, in the form's words.
+    expect(screen.getByText("Required for everyone")).toBeInTheDocument();
   });
 });
 
@@ -911,6 +921,39 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
+  });
+
+  it("reads details, then the agenda, then attendance (Paul 2026-11-19)", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    renderLive();
+    const details = screen.getByText("When");
+    const agenda = screen.getByTestId("event-lists");
+    const roster = screen.getByTestId("attendance-roster");
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(details, agenda)).toBe(true);
+    expect(follows(agenda, roster)).toBe(true);
+  });
+
+  it("lets the agenda be ticked off only once the meeting has started", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    const { unmount } = renderLive();
+    expect(screen.getByTestId("event-lists")).toHaveAttribute(
+      "data-check-off",
+      "true",
+    );
+    unmount();
+    const later = {
+      ...baseEvent,
+      start_time: "2099-07-01T18:00:00.000Z",
+      end_time: "2099-07-01T19:00:00.000Z",
+    };
+    eventQueryState.data = later;
+    renderLive(later);
+    expect(screen.getByTestId("event-lists")).toHaveAttribute(
+      "data-check-off",
+      "false",
+    );
   });
 
   it("hands the meeting's agenda and attachments to their sections, editable only by an officer with a real answer (#4934)", () => {
