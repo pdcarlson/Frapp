@@ -29,13 +29,13 @@ import {
 } from "@repo/hooks";
 import {
   ALL_CALENDAR_LAYERS,
-  calendarLayersShowing,
   calendarTasksByDay,
   type CalendarItem,
   type CalendarKind,
 } from "@repo/hooks/calendar-tasks";
-import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
+import { addDays } from "@repo/hooks/calendar-time-grid";
 import { consecutiveDays, startOfDay } from "@repo/hooks/calendar-time-grid";
+import { calendarKindOf } from "@repo/hooks/calendar-tasks";
 import { memberLabel } from "@repo/hooks/display-names";
 import {
   AGENDA_ROW_CLASS,
@@ -52,6 +52,11 @@ import {
   calendarEventFacts,
   EventsTimeGrid,
 } from "@/components/events/events-time-grid";
+import {
+  EVENT_HUE,
+  eventIdOf,
+  eventKindStyle,
+} from "@/components/events/event-kind";
 // A subpath, like `error-copy`: pure functions a test's `@repo/hooks` mock
 // must not swallow.
 import {
@@ -182,10 +187,6 @@ const TIME_FILTER_LABELS: Record<TimeFilter, string> = {
   all: "All events",
 };
 
-function eventIdOf(event: EventRow): string {
-  return String(event.id ?? event.name ?? "unknown-event");
-}
-
 function startMsOf(event: EventRow): number | null {
   return parseInstant(event.start_time)?.getTime() ?? null;
 }
@@ -202,17 +203,6 @@ function nothingOn(heading: string): string {
   if (heading === "Today" || heading === "Tomorrow" || heading === "Yesterday")
     return `Nothing ${heading.toLowerCase()}.`;
   return `Nothing on ${heading}.`;
-}
-
-/** A required event's fill and edge, and a plain one's wash (#5560). */
-function eventRowStyle(isRequired: boolean) {
-  const hue = CALENDAR_KIND_HUE.events;
-  return isRequired
-    ? {
-        backgroundColor: `color-mix(in srgb, ${hue} 22%, transparent)`,
-        borderColor: `color-mix(in srgb, ${hue} 60%, transparent)`,
-      }
-    : { backgroundColor: `color-mix(in srgb, ${hue} 9%, transparent)` };
 }
 
 /** The editor a page was left with open (#4593). */
@@ -320,6 +310,8 @@ export function EventsPage() {
   // A day heading's Hours opens the hour grid on that day; `null` is the
   // agenda.
   const [hoursDay, setHoursDay] = useState<Date | null>(null);
+  // A column heading's Open narrows the grid to that one day.
+  const [hoursSingle, setHoursSingle] = useState(false);
   // The day heading to bring into view, counted so picking the same day
   // again scrolls again.
   const [scrollTarget, setScrollTarget] = useState<{
@@ -536,6 +528,9 @@ export function EventsPage() {
   // everything. Soonest first, except Past, which reads back from the
   // latest. A start that can't be read sorts last.
   const anchorMs = anchor.getTime();
+  // The day after the anchor, by the calendar: 24 hours lands on 11 PM or
+  // 1 AM across a daylight-saving change.
+  const dayAfterAnchorMs = addDays(anchor, 1).getTime();
   const filteredEvents = useMemo(() => {
     const now = nowTick;
     const inWindow = calendarEvents.filter((event) => {
@@ -546,7 +541,7 @@ export function EventsPage() {
       // would lose the row rather than mis-sort it.
       if (start === null) return timeFilter === "upcoming";
       if (timeFilter === "upcoming") return start >= anchorMs;
-      return start < Math.min(now, anchorMs + 24 * 60 * 60 * 1000);
+      return start < Math.min(now, dayAfterAnchorMs);
     });
     const direction = timeFilter === "past" ? -1 : 1;
     return inWindow.sort((a, b) => {
@@ -556,7 +551,7 @@ export function EventsPage() {
       if (bStart === null) return -1;
       return (aStart - bStart) * direction;
     });
-  }, [calendarEvents, timeFilter, nowTick, anchorMs]);
+  }, [calendarEvents, timeFilter, nowTick, anchorMs, dayAfterAnchorMs]);
 
   // One row per repeating series, its next meeting (#3707); meetings that
   // already happened stay rows of their own.
@@ -575,7 +570,10 @@ export function EventsPage() {
         anchor,
         direction: timeFilter === "past" ? -1 : 1,
         spanDays,
+        // Today always heads Upcoming and All; under Past, a picked day does.
+        forceAnchor: timeFilter !== "past" || anchorKey !== null,
         eventsBeforeAnchor: timeFilter === "all",
+        overdueBefore: timeFilter === "upcoming" ? todayKey : undefined,
         hidden: hiddenKinds,
       }),
     // `anchor` is derived from `anchorKey` and today, both listed.
@@ -589,6 +587,16 @@ export function EventsPage() {
       spanDays,
       hiddenKinds,
     ],
+  );
+
+  // The hour grid's tasks and birthdays by day, less what the key hides.
+  const gridItemsByDay = useMemo(
+    () =>
+      calendarTasksByDay(
+        agendaItems.filter((item) => !hiddenKinds.has(calendarKindOf(item))),
+        ALL_CALENDAR_LAYERS,
+      ),
+    [agendaItems, hiddenKinds],
   );
 
   // The navigator's dots: every day's kinds, the same rows the agenda would
@@ -616,15 +624,29 @@ export function EventsPage() {
   /**
    * Shows `day` on the agenda: scrolls to its heading when the agenda lists
    * anything there, else starts the agenda on it, so its heading shows,
-   * saying so when it's empty.
+   * saying so when it's empty. Today always brings the agenda back to
+   * today. The span Show more reached stays.
    */
   function showDayOnAgenda(day: Date) {
     const key = localIsoDate(day);
-    if (!agenda.dayKeys.has(key)) {
-      setAnchorKey(key === todayKey ? null : key);
-      setSpanDays(AGENDA_SPAN_DAYS);
+    if (key === todayKey) {
+      if (anchorKey !== null) setAnchorKey(null);
+    } else if (!agenda.dayKeys.has(key)) {
+      setAnchorKey(key);
     }
     setScrollTarget((target) => ({ key, count: (target?.count ?? 0) + 1 }));
+  }
+
+  /** The navigator's Today: its month or week, and the agenda, back home. */
+  function goToToday() {
+    setNavMonth(null);
+    setStripStartKey(null);
+    setPickedKey(null);
+    if (hoursDay) {
+      setHoursDay(todayStart);
+      return;
+    }
+    showDayOnAgenda(todayStart);
   }
 
   function pickDay(day: Date) {
@@ -640,6 +662,7 @@ export function EventsPage() {
   function leaveHours() {
     const day = hoursDay;
     setHoursDay(null);
+    setHoursSingle(false);
     if (day) showDayOnAgenda(day);
   }
 
@@ -935,13 +958,13 @@ export function EventsPage() {
     ]
       .filter(Boolean)
       .join(" · ");
-    const hue = CALENDAR_KIND_HUE.events;
+    const hue = EVENT_HUE;
     return (
       <li
         key={`event:${eventId}`}
         // The wash and a required event's edge span the whole row, its
         // selection slot inside the box.
-        style={isSelected ? undefined : eventRowStyle(isRequired)}
+        style={isSelected ? undefined : eventKindStyle(isRequired)}
         className={cn(
           "flex items-center gap-1 rounded-md border border-transparent transition-[filter] hover:brightness-125",
           // Fill means state, never striping.
@@ -1072,6 +1095,7 @@ export function EventsPage() {
               aria-label={`Hours for ${heading}`}
               onClick={() => {
                 setPickedKey(day.key);
+                setHoursSingle(false);
                 setHoursDay(dayDate);
               }}
               className={cn(
@@ -1102,6 +1126,14 @@ export function EventsPage() {
   }
 
   const navigatorMonth = navMonth ?? todayStart;
+  // The navigator's Today shows only once something has moved off today.
+  const showTodayButton =
+    anchorKey !== null ||
+    pickedKey !== null ||
+    stripStartKey !== null ||
+    (navMonth !== null &&
+      (navMonth.getFullYear() !== todayStart.getFullYear() ||
+        navMonth.getMonth() !== todayStart.getMonth()));
   const stripStart =
     (stripStartKey ? dateOfKey(stripStartKey) : null) ?? todayStart;
   const kindKey = (
@@ -1293,6 +1325,7 @@ export function EventsPage() {
           <div className="space-y-1">
             <WeekStrip
               start={stripStart}
+              onToday={showTodayButton ? goToToday : undefined}
               onStartChange={(next) =>
                 setStripStartKey(
                   localIsoDate(next) === todayKey ? null : localIsoDate(next),
@@ -1313,6 +1346,7 @@ export function EventsPage() {
           >
             <MiniMonth
               month={navigatorMonth}
+              onToday={showTodayButton ? goToToday : undefined}
               onMonthChange={setNavMonth}
               todayKey={todayKey}
               pickedKey={pickedKey}
@@ -1349,15 +1383,18 @@ export function EventsPage() {
                 </h2>
               </div>
               <EventsTimeGrid
-                days={consecutiveDays(hoursDay, narrow ? 1 : 3)}
+                days={consecutiveDays(hoursDay, narrow || hoursSingle ? 1 : 3)}
                 events={hiddenKinds.has("events") ? [] : calendarEvents}
-                tasksByDay={calendarTasksByDay(
-                  agendaItems,
-                  calendarLayersShowing(hiddenKinds),
-                )}
+                tasksByDay={gridItemsByDay}
                 nameOf={nameOf}
                 factsOf={(event) => calendarEventFacts(event, requiredOf)}
                 onSelectEvent={(event) => openDetails(event)}
+                // A column's heading opens that day alone, whose hours are
+                // the keyboard's way to make an event at one.
+                onOpenDay={(day) => {
+                  setHoursDay(startOfDay(day));
+                  setHoursSingle(true);
+                }}
                 onCreateAt={(day, hour) => openCreate(day, hour)}
                 canCreate={canCreateEvents}
                 createDisabled={Boolean(eventWriteControls.disabled)}
@@ -1482,6 +1519,26 @@ export function EventsPage() {
               {agenda.blocks.map((block) =>
                 block.type === "day" ? (
                   renderDay(block.day)
+                ) : block.type === "overdue" ? (
+                  <div
+                    key="overdue"
+                    id="events-day-overdue"
+                    role="group"
+                    aria-labelledby="events-day-overdue-label"
+                  >
+                    <h3
+                      id="events-day-overdue-label"
+                      className="px-2 pb-1 pt-3 text-caption font-semibold text-destructive-text"
+                    >
+                      Overdue
+                    </h3>
+                    <ul
+                      role="list"
+                      className={cn(denseListClassName, "space-y-1")}
+                    >
+                      {block.rows.map(renderAgendaRow)}
+                    </ul>
+                  </div>
                 ) : (
                   <p
                     key="quiet-week"

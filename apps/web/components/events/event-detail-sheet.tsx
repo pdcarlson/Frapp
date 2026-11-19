@@ -61,6 +61,7 @@ import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import { formatDayTime, formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
+import { EVENT_HUE } from "@/components/events/event-kind";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -411,7 +412,27 @@ export function EventDetailSheet({
             </>
           }
         >
-          {eventName}
+          {/*
+            The event's kind mark (#5560): the sky bar its agenda row and
+            hour-grid block wear, and "Required" in sky when it requires this
+            viewer, so dot, row, grid and sheet read as one thing.
+          */}
+          <span
+            aria-hidden="true"
+            data-testid="event-kind-mark"
+            data-hue={EVENT_HUE}
+            className="mr-2 inline-block h-4 w-1 rounded-full align-[-2px]"
+            style={{ backgroundColor: EVENT_HUE }}
+          />
+          <span>{eventName}</span>
+          {requiredOfViewer ? (
+            <span
+              className="ml-2 text-caption font-semibold"
+              style={{ color: EVENT_HUE }}
+            >
+              Required
+            </span>
+          ) : null}
         </PanelHeader>
         {/* `gap-0`: the blocks below carry their own top margins. */}
         <PanelBody className="gap-0">

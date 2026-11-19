@@ -1,3 +1,4 @@
+import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -601,6 +602,24 @@ describe("EventDetailSheet schedule and policy", () => {
     expect(dialog.textContent).not.toMatch(/Starts:|Ends:/);
     expect(dialog.textContent).not.toMatch(/:\d\d:\d\d/);
     expect(screen.getByText(/· 5:00\s?– 7:00\sPM$/)).toBeInTheDocument();
+  });
+
+  it("wears the events kind mark, and Required in its hue when it requires the viewer (#5560)", () => {
+    excuseState.required = true;
+    const { unmount } = renderSheet(baseEvent);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByTestId("event-kind-mark")).toHaveAttribute(
+      "data-hue",
+      CALENDAR_KIND_HUE.events,
+    );
+    expect(within(dialog).getByText("Required")).toBeInTheDocument();
+    unmount();
+
+    excuseState.required = false;
+    renderSheet(baseEvent);
+    expect(
+      within(screen.getByRole("dialog")).queryByText("Required"),
+    ).toBeNull();
   });
 
   it("names the cadence in words and draws nothing for a one-time event", () => {

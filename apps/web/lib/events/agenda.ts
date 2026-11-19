@@ -1,10 +1,17 @@
-import { localIsoDate, parseInstant } from "@repo/formatting";
+import {
+  localIsoDate,
+  parseBareDateLocalMidnight,
+  parseInstant,
+} from "@repo/formatting";
 import type { CalendarBirthday } from "@repo/hooks/calendar-birthdays";
-import type {
-  CalendarItem,
-  CalendarKind,
-  CalendarTask,
+import {
+  CALENDAR_KINDS,
+  calendarKindOf,
+  type CalendarItem,
+  type CalendarKind,
+  type CalendarTask,
 } from "@repo/hooks/calendar-tasks";
+import { addDays } from "@repo/hooks/calendar-time-grid";
 import type { EventListEntry } from "@repo/hooks/event-series";
 
 /**
@@ -28,15 +35,20 @@ export interface AgendaDay<E> {
 }
 
 export type AgendaBlock<E> =
+  /** The viewer's unfinished tasks due before today, over Upcoming. */
+  | { type: "overdue"; rows: AgendaRow<E>[] }
   | { type: "day"; day: AgendaDay<E> }
   /** One line, "Nothing this week.", where seven days hold nothing. */
   | { type: "quiet-week" };
 
 export interface Agenda<E> {
   blocks: AgendaBlock<E>[];
-  /** What the shown range holds of each kind, hidden kinds included. */
+  /**
+   * What the shown range holds of each kind: the rows on screen, and the
+   * rows a switched-off kind holds back on the same days.
+   */
   counts: Record<CalendarKind, number>;
-  /** Days with rows after the shown range: what "Show more" reaches. */
+  /** Days with rows past the shown range: what "Show more" reaches. */
   hasMore: boolean;
   /** Days shown with at least one row. */
   dayKeys: ReadonlySet<string>;
@@ -50,14 +62,13 @@ export const AGENDA_SPAN_DAYS = 28;
 /** The days "Nothing this week." speaks for. */
 const QUIET_WEEK_DAYS = 7;
 
-export function addDays(day: Date, count: number): Date {
-  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + count);
-}
+/** The kinds in the order a day lists them, and the key draws them. */
+const KIND_ORDER: readonly CalendarKind[] = CALENDAR_KINDS.map(
+  (kind) => kind.value,
+);
 
 export function dateOfKey(key: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return parseBareDateLocalMidnight(key);
 }
 
 export interface AgendaInput<E> {
@@ -75,8 +86,18 @@ export interface AgendaInput<E> {
   /** Forward from the anchor (Upcoming, All), or back from it (Past). */
   direction: 1 | -1;
   spanDays: number;
-  /** All: events before the anchor are listed too, oldest first. */
+  /**
+   * Whether the anchor's heading shows even with nothing on it: always
+   * forward ("Nothing today."), and under Past once a day was picked.
+   */
+  forceAnchor: boolean;
+  /** All: event days before the anchor are listed too, oldest first. */
   eventsBeforeAnchor?: boolean;
+  /**
+   * Upcoming: today's key. Unfinished tasks due before it, and before the
+   * anchor, gather under one Overdue group at the top.
+   */
+  overdueBefore?: string;
   /** Kinds the colour key has switched off. */
   hidden: ReadonlySet<CalendarKind>;
 }
@@ -87,8 +108,24 @@ function emptyBucket<E>(): Bucket<E> {
   return { events: [], tasks: [], birthdays: [] };
 }
 
+function itemRow<E>(item: CalendarItem): AgendaRow<E> {
+  return item.kind === "birthdays"
+    ? { kind: "birthdays", key: item.key, birthday: item }
+    : { kind: "tasks", key: item.key, task: item };
+}
+
+/** A task the viewer still has to do or chase: not done, not waiting. */
+function isUnfinished(item: CalendarItem): boolean {
+  return (
+    item.kind !== "birthdays" &&
+    item.state !== "waiting" &&
+    item.state !== "confirmed"
+  );
+}
+
 export function buildAgenda<E>(input: AgendaInput<E>): Agenda<E> {
   const { anchor, direction, hidden } = input;
+  const forward = direction === 1;
   const anchorKey = localIsoDate(anchor);
   const endKey = localIsoDate(addDays(anchor, direction * input.spanDays));
 
@@ -110,59 +147,57 @@ export function buildAgenda<E>(input: AgendaInput<E>): Agenda<E> {
       entry,
     });
   }
+  const overdue: AgendaRow<E>[] = [];
   for (const item of input.items) {
-    if (item.kind === "birthdays") {
-      bucketOf(item.day).birthdays.push({
-        kind: "birthdays",
-        key: item.key,
-        birthday: item,
-      });
-    } else {
-      bucketOf(item.day).tasks.push({
-        kind: "tasks",
-        key: item.key,
-        task: item,
-      });
+    if (
+      input.overdueBefore &&
+      item.day < input.overdueBefore &&
+      item.day < anchorKey &&
+      isUnfinished(item)
+    ) {
+      overdue.push(itemRow(item));
+      continue;
     }
+    bucketOf(item.day)[calendarKindOf(item)].push(itemRow(item));
   }
 
   // A day's rows: events by start, then tasks, then birthdays, less what the
   // key switched off.
   const visibleRows = (bucket: Bucket<E>): AgendaRow<E>[] =>
-    (["events", "tasks", "birthdays"] as const).flatMap((kind) =>
-      hidden.has(kind) ? [] : bucket[kind],
-    );
+    KIND_ORDER.flatMap((kind) => (hidden.has(kind) ? [] : bucket[kind]));
 
-  const inWindow = (key: string, bucket: Bucket<E>) => {
-    if (direction === 1) {
-      if (key >= endKey) return false;
-      if (key >= anchorKey) return true;
-      // Before the anchor: All's earlier events only.
-      return Boolean(input.eventsBeforeAnchor) && bucket.events.length > 0;
-    }
-    return key <= anchorKey && key > endKey;
+  const inWindow = (key: string) => {
+    if (!forward) return key <= anchorKey && key > endKey;
+    if (key >= endKey) return false;
+    if (key >= anchorKey) return true;
+    // Before the anchor: All's earlier events only, as far as they show.
+    const bucket = byDay.get(key)!;
+    return (
+      Boolean(input.eventsBeforeAnchor) &&
+      !hidden.has("events") &&
+      bucket.events.length > 0
+    );
   };
   const dated = [...byDay.keys()]
     .filter((key) => key !== UNDATED_KEY)
-    .sort((a, b) =>
-      direction === 1 ? a.localeCompare(b) : b.localeCompare(a),
-    );
+    .sort((a, b) => (forward ? a.localeCompare(b) : b.localeCompare(a)));
   const withRows = dated.filter(
     (key) => visibleRows(byDay.get(key)!).length > 0,
   );
+  const pastWindow = (key: string) => (forward ? key >= endKey : key <= endKey);
 
-  let shown = withRows.filter((key) => inWindow(key, byDay.get(key)!));
-  let beyond = withRows.filter((key) =>
-    direction === 1 ? key >= endKey : key <= endKey,
-  );
-  // Nothing in the whole window: carry on to the next day that has anything,
-  // rather than end the list on empty days.
-  if (direction === 1 && shown.every((key) => key < anchorKey) && beyond[0]) {
+  let shown = withRows.filter(inWindow);
+  let beyond = withRows.filter(pastWindow);
+  // Nothing from the anchor on (or back, under Past) within the window:
+  // carry on to the next day that has anything, rather than end the list on
+  // empty days.
+  const fromAnchor = (key: string) =>
+    forward ? key >= anchorKey : key <= anchorKey;
+  if (!shown.some(fromAnchor) && beyond[0]) {
     shown = [...shown, beyond[0]];
     beyond = beyond.slice(1);
   }
 
-  const blocks: AgendaBlock<E>[] = [];
   const dayBlock = (key: string): AgendaBlock<E> => ({
     type: "day",
     day: {
@@ -172,49 +207,57 @@ export function buildAgenda<E>(input: AgendaInput<E>): Agenda<E> {
     },
   });
 
-  if (direction === 1) {
-    for (const key of shown) {
-      if (key < anchorKey) blocks.push(dayBlock(key));
-    }
-    // The anchor always shows: today reads "Nothing today." when empty, and
-    // a day picked on the navigator reads "Nothing on …".
-    blocks.push(dayBlock(anchorKey));
+  const blocks: AgendaBlock<E>[] = [];
+  const shownOverdue = hidden.has("tasks") ? [] : overdue;
+  if (shownOverdue.length > 0) {
+    blocks.push({ type: "overdue", rows: shownOverdue });
+  }
+  // Days before the anchor in the reading order (All's earlier events).
+  for (const key of shown) {
+    if (!fromAnchor(key)) blocks.push(dayBlock(key));
+  }
+  // The anchor shows even when empty: "Nothing today.", "Nothing on …".
+  const anchorShown = input.forceAnchor || shown.includes(anchorKey);
+  if (anchorShown) blocks.push(dayBlock(anchorKey));
+  if (forward) {
     const weekEnd = localIsoDate(addDays(anchor, QUIET_WEEK_DAYS));
-    const quietWeek = !shown.some((key) => key >= anchorKey && key < weekEnd);
-    const after = shown.filter((key) => key > anchorKey);
-    if (quietWeek) blocks.push({ type: "quiet-week" });
-    for (const key of after) blocks.push(dayBlock(key));
+    if (!shown.some((key) => key >= anchorKey && key < weekEnd)) {
+      blocks.push({ type: "quiet-week" });
+    }
+  }
+  for (const key of shown) {
+    if (fromAnchor(key) && key !== anchorKey) blocks.push(dayBlock(key));
+  }
+  if (forward) {
     const undated = byDay.get(UNDATED_KEY);
     if (undated && visibleRows(undated).length > 0) {
       blocks.push(dayBlock(UNDATED_KEY));
     }
-  } else {
-    for (const key of shown) blocks.push(dayBlock(key));
   }
 
-  // Counts cover the range on screen, whatever the key hides, so a kind
-  // switched off still says how many it is holding back.
+  // Counts: every kind on the days the agenda shows, and on the empty-looking
+  // days between them, so a kind switched off still says what it holds back.
+  // A day before the anchor counts only when it is shown.
   const counts: Record<CalendarKind, number> = {
     events: 0,
     tasks: 0,
     birthdays: 0,
   };
-  const last = shown[shown.length - 1];
+  const lastShown = shown.filter(fromAnchor).at(-1);
   const inRange = (key: string) => {
-    if (direction === -1) return key <= anchorKey && key > endKey;
-    if (key < anchorKey && !input.eventsBeforeAnchor) return false;
-    return key < endKey || (last !== undefined && key <= last);
+    if (!fromAnchor(key)) return shown.includes(key);
+    if (!pastWindow(key)) return true;
+    return (
+      lastShown !== undefined && (forward ? key <= lastShown : key >= lastShown)
+    );
   };
   for (const key of dated) {
     if (!inRange(key)) continue;
     const bucket = byDay.get(key)!;
-    counts.events += bucket.events.length;
-    counts.tasks += bucket.tasks.length;
-    counts.birthdays += bucket.birthdays.length;
+    for (const kind of KIND_ORDER) counts[kind] += bucket[kind].length;
   }
-  if (direction === 1) {
-    counts.events += byDay.get(UNDATED_KEY)?.events.length ?? 0;
-  }
+  counts.tasks += overdue.length;
+  if (forward) counts.events += byDay.get(UNDATED_KEY)?.events.length ?? 0;
 
   return {
     blocks,
@@ -248,8 +291,6 @@ export function kindsByDay<E>(
     const start = parseInstant(startOf(event));
     if (start) add(localIsoDate(start), "events");
   }
-  for (const item of items) {
-    add(item.day, item.kind === "birthdays" ? "birthdays" : "tasks");
-  }
+  for (const item of items) add(item.day, calendarKindOf(item));
   return map;
 }

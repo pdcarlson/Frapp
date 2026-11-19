@@ -23,6 +23,11 @@ import {
   TWO_LINE_MIN_HEIGHT,
 } from "@repo/hooks/calendar-time-grid";
 import { CalendarTaskChip } from "@/components/events/calendar-tasks";
+import {
+  EVENT_HUE,
+  eventIdOf,
+  eventKindStyle,
+} from "@/components/events/event-kind";
 
 type EventRow = Record<string, unknown>;
 
@@ -50,7 +55,7 @@ export function calendarEventFacts(
   // The time of day only: the day is the column's own.
   const clockLabel = formatTimeOfDay(event.start_time);
   return {
-    eventId: String(event.id ?? event.name ?? "unknown-event"),
+    eventId: eventIdOf(event),
     eventName,
     isMandatory,
     // The series head carries `recurrence_rule`; every generated occurrence
@@ -302,10 +307,10 @@ export function EventsTimeGrid({
                     <button
                       key={hour}
                       type="button"
-                      // The Day view's hours are its keyboard path to a
-                      // timed event. In the Week the 168 slots stay out of
-                      // the tab order: a day's heading opens its Day view,
-                      // and New event is the toolbar's.
+                      // The one-day grid's hours are its keyboard path to a
+                      // timed event. With several days the slots stay out of
+                      // the tab order: a day's heading (Open <day>) opens it
+                      // alone, and New event is the toolbar's.
                       tabIndex={isDayView ? undefined : -1}
                       disabled={createDisabled}
                       title={createTitle}
@@ -334,15 +339,15 @@ export function EventsTimeGrid({
                       type="button"
                       title={facts.eventName}
                       aria-label={facts.viewLabel}
+                      data-kind="events"
+                      data-required={facts.isMandatory || undefined}
                       className={cn(
-                        "absolute z-10 flex flex-col overflow-hidden rounded-xs border-l-2 bg-surface-1 px-1.5 py-0.5 text-left text-caption leading-tight text-foreground ring-1 ring-background transition-colors",
+                        "absolute z-10 flex flex-col overflow-hidden rounded-xs border border-transparent px-1.5 py-0.5 text-left text-caption leading-tight text-foreground ring-1 ring-background transition-[filter] hover:brightness-125",
                         FOCUS_RING,
-                        "hover:bg-card-hover",
-                        facts.isMandatory
-                          ? "border-l-primary"
-                          : "border-l-border",
                       )}
                       style={{
+                        ...eventKindStyle(facts.isMandatory),
+                        borderLeft: `2px solid ${EVENT_HUE}`,
                         top,
                         height: height - 1,
                         left: `calc(${(span.lane / span.lanes) * 100}% + 2px)`,
@@ -410,12 +415,16 @@ export function EventChip({
       type="button"
       title={facts.eventName}
       aria-label={facts.viewLabel}
+      data-kind="events"
+      data-required={facts.isMandatory || undefined}
       className={cn(
-        "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
+        "flex items-center gap-1 truncate rounded-xs border border-transparent px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-[filter] hover:brightness-125",
         FOCUS_RING,
-        "hover:bg-card-hover",
-        facts.isMandatory ? "border-l-primary" : "border-l-border",
       )}
+      style={{
+        ...eventKindStyle(facts.isMandatory),
+        borderLeft: `2px solid ${EVENT_HUE}`,
+      }}
       onClick={onSelect}
     >
       <SeriesMark facts={facts} />

@@ -112,14 +112,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: birthdays,
     refetch: birthdaysRefetch,
   }),
-  useCalendarTasks: () => {
-    const items = selectCalendarTasks(tasks, "me");
-    return {
-      items,
-      hasMine: items.some((item) => item.kind === "mine"),
-      hasAssigned: items.some((item) => item.kind === "assigned"),
-    };
-  },
+  useCalendarTasks: () => ({ items: selectCalendarTasks(tasks, "me") }),
   useChapterRoster: () => ({
     data: [
       { user_id: "m1", display_name: "Sam Lee" },

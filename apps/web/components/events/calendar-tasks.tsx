@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Cake, Circle, CircleCheck } from "lucide-react";
+import { Circle, CircleCheck } from "lucide-react";
 import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
 import {
   calendarTaskAccessibleLabel,
@@ -195,8 +195,8 @@ function CalendarTaskPopover({
 }
 
 /**
- * A member's birthday on the hour grid's all-day strip (#4959): a cake and
- * their name, no fill and nothing to open. The name reads "Dana Lowe's
+ * A member's birthday on the hour grid's all-day strip (#4959): its rose
+ * square and their name, no fill and nothing to open. The name reads "Dana Lowe's
  * birthday" to a screen reader.
  */
 function BirthdayChip({ item }: { item: CalendarBirthday }) {
@@ -206,10 +206,7 @@ function BirthdayChip({ item }: { item: CalendarBirthday }) {
       title={label}
       className={cn("flex items-center gap-1 px-1.5 py-1 text-left", CHIP_TEXT)}
     >
-      <Cake
-        aria-hidden="true"
-        className="h-3 w-3 shrink-0 text-muted-foreground"
-      />
+      <KindMark kind="birthdays" size="small" />
       <span className="min-w-0 flex-1 truncate text-foreground">
         <span className="sr-only">{label}</span>
         <span aria-hidden="true">{item.title}</span>
@@ -218,7 +215,51 @@ function BirthdayChip({ item }: { item: CalendarBirthday }) {
   );
 }
 
-/** The hour grid's chip for a task (no fill, a check mark, the title), or a birthday's. */
+/**
+ * A kind's mark (#5560): a task's ring in the Tasks hue, filled once done,
+ * or a birthday's square in the Birthdays hue. The agenda's rows draw it at
+ * 16px and the hour grid's chips at 12px, so both read as the dots do.
+ */
+export function KindMark({
+  kind,
+  done = false,
+  size = "row",
+}: {
+  kind: "tasks" | "birthdays";
+  done?: boolean;
+  size?: "row" | "small";
+}) {
+  const hue = CALENDAR_KIND_HUE[kind];
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="agenda-mark"
+      data-hue={hue}
+      data-done={done || undefined}
+      className={cn(
+        "shrink-0",
+        size === "row" ? "h-4 w-4" : "h-3 w-3",
+        kind === "tasks"
+          ? cn("rounded-full", size === "row" ? "border-2" : "border-[1.5px]")
+          : size === "row"
+            ? "rounded-[4px]"
+            : "rounded-[3px]",
+      )}
+      style={
+        kind === "tasks"
+          ? { borderColor: hue, backgroundColor: done ? hue : undefined }
+          : { backgroundColor: hue }
+      }
+    />
+  );
+}
+
+/** A task is done for its mark once it is marked, signed off or not. */
+function isDone(state: CalendarTaskState): boolean {
+  return state === "waiting" || state === "confirmed";
+}
+
+/** The hour grid's chip for a task (its green ring, the title), or a birthday's. */
 export function CalendarTaskChip({
   item,
   nameOf,
@@ -251,7 +292,7 @@ function TaskChip({
           "hover:bg-card-hover",
         )}
       >
-        <TaskMark state={item.state} className="h-3 w-3" />
+        <KindMark kind="tasks" done={isDone(item.state)} size="small" />
         <span
           className={cn(
             "min-w-0 flex-1 truncate",
@@ -299,8 +340,7 @@ export function AgendaTaskRow({
   item: CalendarTask;
   nameOf: (userId: string) => string;
 }) {
-  const hue = CALENDAR_KIND_HUE.tasks;
-  const done = item.state === "waiting" || item.state === "confirmed";
+  const done = isDone(item.state);
   const meta =
     item.kind === "mine"
       ? item.label
@@ -326,16 +366,7 @@ export function AgendaTaskRow({
         )}
       >
         <AgendaMarkSlot>
-          <span
-            data-testid="agenda-mark"
-            data-hue={hue}
-            data-done={done || undefined}
-            className="h-4 w-4 rounded-full border-2"
-            style={{
-              borderColor: hue,
-              backgroundColor: done ? hue : undefined,
-            }}
-          />
+          <KindMark kind="tasks" done={done} />
         </AgendaMarkSlot>
         <span className="flex min-w-0 flex-1 flex-col">
           <span
@@ -372,16 +403,10 @@ export function AgendaTaskRow({
  * Birthdays hue and their name. Nothing to open.
  */
 export function AgendaBirthdayRow({ item }: { item: CalendarBirthday }) {
-  const hue = CALENDAR_KIND_HUE.birthdays;
   return (
     <div data-kind="birthdays" className={AGENDA_ROW_CLASS}>
       <AgendaMarkSlot>
-        <span
-          data-testid="agenda-mark"
-          data-hue={hue}
-          className="h-4 w-4 rounded-[4px]"
-          style={{ backgroundColor: hue }}
-        />
+        <KindMark kind="birthdays" />
       </AgendaMarkSlot>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-semibold text-foreground">

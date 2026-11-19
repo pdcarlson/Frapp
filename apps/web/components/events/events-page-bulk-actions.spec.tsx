@@ -18,14 +18,14 @@ const { autoAbsentMutateAsync, access } = vi.hoisted(() => ({
 }));
 
 // Dates relative to the suite's clock: Chapter Meeting is tomorrow, inside
-// the default Upcoming window and its two-week horizon; Last Formal was
+// the default Upcoming window and the agenda's four weeks; Last Formal was
 // yesterday, so only Past shows it.
 const EVENTS = [
   {
     id: "evt-1",
     name: "Chapter Meeting",
     location: "Great Hall",
-    // Tomorrow, inside the list's two-week horizon whenever the suite runs.
+    // Tomorrow, inside the agenda's four weeks whenever the suite runs.
     start_time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     end_time: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(),
     is_mandatory: true,

@@ -335,7 +335,8 @@ Store-facing wording: Paul approves it.
 | A picked day with nothing on it | — | `Nothing on Monday.`, `Nothing on November 30.`, `Nothing tomorrow.` (under that day's heading) |
 | Seven days from where the agenda starts hold nothing | — | `Nothing this week.` (one line; the agenda carries on to the next day that has anything) |
 | More past the agenda's four weeks | — | a **Show more** button under the last day |
-| Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line) |
+| Unfinished tasks due before today (Upcoming) | `Overdue` | the group's heading, over Today; each row still says `Overdue` |
+| Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line); Past says it only when no event is past at all, since it carries back to the last day that has one |
 | Attendance or cadence filter matched nothing | — | `No events match these filters.` then a **Clear filters** link (one line) |
 | Search matched nothing | — | `No events match that search.` then a **Clear search** link (one line) |
 | Error | `Couldn't load events` | the load-failure line (§ copy rules); the phone's title too (#4135) |
@@ -347,7 +348,7 @@ A row under one says only its time (`6:48 PM`), and a repeating series, shown on
 Each day heading ends with a quiet `Hours ›` (named `Hours for Today` to a screen reader), which opens the hour grid on that day; its back button reads `Events`.
 A required event says `Required` after its title, in the events hue; the grey `Mandatory` pill is gone (#5560). The Attendance filter still says `Mandatory`.
 A task row says where it stands (`To do`, `Overdue`, `Waiting on an officer`), and one handed to many says `Assigned by you` with its progress at the right (`0 of 3 done`); a birthday row says `Birthday` under the name.
-The colour key under the navigator reads `Events`, `Tasks` and `Birthdays`, each with its count (`Events, 4` to a screen reader).
+The colour key under the navigator reads `Events`, `Tasks` and `Birthdays`, each with its count (`Events, 4` to a screen reader). The navigator's header says `Today` once it has moved off today. On a narrow pane Search, Filter and Subscribe are glyphs named `Search events`, `Filter events` and `Subscribe to chapter events in your calendar`. In the hour grid a column heading is named `Open Wednesday, November 11`.
 These lines, and the Directory's empty, error and search-miss lines, are one string on both apps: `EVENTS_COPY`, `eventsCount`, `DIRECTORY_COPY` and `directoryNoSearchMatches` in `@repo/validation` (`screen-copy.ts`, #4135, 2026-11-13).
 A point count read as text, as in a row's meta line, is written out on both apps (`7:00 PM · Great Room · 10 points`, `formatPoints`); a chip or badge says `+10 pts` (`formatPointsChip`), the phone's event rows and Event detail included (#4135; the phone's meta line said `10 pts` until then).
 The toolbar's filter button is `Filter`, named `Filter events`, or `Filter events, 2 on` while filters are off their defaults, which it also shows as a count;

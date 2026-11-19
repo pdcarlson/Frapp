@@ -8,7 +8,7 @@ import { CALENDAR_KINDS, type CalendarKind } from "@repo/hooks/calendar-tasks";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { addDays } from "@/lib/events/agenda";
+import { addDays } from "@repo/hooks/calendar-time-grid";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,8 +26,6 @@ import { cn } from "@/lib/utils";
 
 /** Sunday first, as the hour grid's weeks run. */
 const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
-/** At most one dot per kind, and there are three kinds. */
-const KIND_ORDER: readonly CalendarKind[] = ["events", "tasks", "birthdays"];
 
 const FULL_DAY: Intl.DateTimeFormatOptions = {
   weekday: "long",
@@ -39,8 +37,8 @@ type DotsByDay = ReadonlyMap<string, ReadonlySet<CalendarKind>>;
 
 function spokenDay(day: Date, kinds: ReadonlySet<CalendarKind> | undefined) {
   const label = day.toLocaleDateString(undefined, FULL_DAY);
-  const names = KIND_ORDER.filter((kind) => kinds?.has(kind)).map(
-    (kind) => CALENDAR_KINDS.find((entry) => entry.value === kind)!.label,
+  const names = CALENDAR_KINDS.filter(({ value }) => kinds?.has(value)).map(
+    ({ label }) => label,
   );
   return names.length > 0
     ? `${label}, ${names.join(", ").toLowerCase()}`
@@ -56,15 +54,17 @@ function Dots({
 }) {
   return (
     <span aria-hidden="true" className="flex h-1.5 items-center gap-0.5">
-      {KIND_ORDER.filter((kind) => kinds?.has(kind)).map((kind) => (
-        <span
-          key={kind}
-          data-testid={`events-dot-${dayKey}-${kind}`}
-          data-hue={CALENDAR_KIND_HUE[kind]}
-          className="h-1 w-1 rounded-full"
-          style={{ backgroundColor: CALENDAR_KIND_HUE[kind] }}
-        />
-      ))}
+      {CALENDAR_KINDS.filter(({ value }) => kinds?.has(value)).map(
+        ({ value: kind }) => (
+          <span
+            key={kind}
+            data-testid={`events-dot-${dayKey}-${kind}`}
+            data-hue={CALENDAR_KIND_HUE[kind]}
+            className="h-1 w-1 rounded-full"
+            style={{ backgroundColor: CALENDAR_KIND_HUE[kind] }}
+          />
+        ),
+      )}
     </span>
   );
 }
@@ -128,6 +128,26 @@ function DayButton({
   );
 }
 
+/**
+ * A quiet "Today" in the navigator's header: brings its month or week, and
+ * the agenda, back to today. Drawn only once something moved off today.
+ */
+function TodayButton({ onClick }: { onClick?: () => void }) {
+  if (!onClick) return null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "min-h-8 shrink-0 rounded-md px-2 text-caption font-semibold text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:min-h-11",
+        FOCUS_RING,
+      )}
+    >
+      Today
+    </button>
+  );
+}
+
 function StepButton({
   label,
   direction,
@@ -159,6 +179,7 @@ function StepButton({
 export function MiniMonth({
   month,
   onMonthChange,
+  onToday,
   todayKey,
   pickedKey,
   dots,
@@ -167,6 +188,8 @@ export function MiniMonth({
   /** Any day in the month shown. */
   month: Date;
   onMonthChange: (next: Date) => void;
+  /** Back to today; left out while already there. */
+  onToday?: () => void;
   todayKey: string;
   pickedKey: string | null;
   dots: DotsByDay;
@@ -196,6 +219,7 @@ export function MiniMonth({
         >
           {title}
         </h2>
+        <TodayButton onClick={onToday} />
         <StepButton
           label="Previous month"
           direction={-1}
@@ -249,6 +273,7 @@ const COLUMN_START = [
 export function WeekStrip({
   start,
   onStartChange,
+  onToday,
   todayKey,
   pickedKey,
   dots,
@@ -256,6 +281,8 @@ export function WeekStrip({
 }: {
   start: Date;
   onStartChange: (next: Date) => void;
+  /** Back to today; left out while already there. */
+  onToday?: () => void;
   todayKey: string;
   pickedKey: string | null;
   dots: DotsByDay;
@@ -293,6 +320,7 @@ export function WeekStrip({
         direction={1}
         onClick={() => onStartChange(addDays(start, 7))}
       />
+      <TodayButton onClick={onToday} />
     </section>
   );
 }

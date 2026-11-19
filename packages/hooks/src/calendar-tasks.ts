@@ -76,20 +76,6 @@ export function calendarKindOf(item: CalendarItem): CalendarKind {
   return item.kind === "birthdays" ? "birthdays" : "tasks";
 }
 
-/** The layers `calendarTasksByDay` keeps while `hidden` kinds are off. */
-export function calendarLayersShowing(
-  hidden: ReadonlySet<CalendarKind>,
-): Set<CalendarLayer> {
-  const layers = new Set<CalendarLayer>();
-  if (!hidden.has("events")) layers.add("events");
-  if (!hidden.has("tasks")) {
-    layers.add("mine");
-    layers.add("assigned");
-  }
-  if (!hidden.has("birthdays")) layers.add("birthdays");
-  return layers;
-}
-
 /**
  * The kinds a member switched off, read back from storage as
  * `{ "hidden": [...] }`, so a kind added later starts on. Unknown names are
@@ -380,23 +366,12 @@ export function calendarTaskAccessibleLabel(item: CalendarTask): string {
     : `${item.title}, assigned by you, ${item.progress.toLowerCase()}`;
 }
 
-/** What the layer toggles can offer: a kind with nothing in it is not shown. */
-export interface CalendarTasksResult {
-  items: CalendarTask[];
-  hasMine: boolean;
-  hasAssigned: boolean;
-}
-
 /** The calendar's tasks for the signed-in member, from the shared tasks query. */
-export function useCalendarTasks(): CalendarTasksResult {
+export function useCalendarTasks(): { items: CalendarTask[] } {
   const tasksQuery = useTasks();
   const viewerUserId = useViewerUserId();
-  return useMemo(() => {
-    const items = selectCalendarTasks(tasksQuery.data, viewerUserId);
-    return {
-      items,
-      hasMine: items.some((item) => item.kind === "mine"),
-      hasAssigned: items.some((item) => item.kind === "assigned"),
-    };
-  }, [tasksQuery.data, viewerUserId]);
+  return useMemo(
+    () => ({ items: selectCalendarTasks(tasksQuery.data, viewerUserId) }),
+    [tasksQuery.data, viewerUserId],
+  );
 }

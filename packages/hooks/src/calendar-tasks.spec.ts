@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_CALENDAR_LAYERS,
   calendarKindOf,
-  calendarLayersShowing,
   calendarTaskAccessibleLabel,
   calendarTasksByDay,
   parseHiddenCalendarKinds,
@@ -173,13 +172,6 @@ describe("colour key kinds (#5560)", () => {
         day: "2026-11-12",
       }),
     ).toBe("birthdays");
-  });
-
-  it("switches both task layers with Tasks", () => {
-    expect(calendarLayersShowing(new Set(["tasks"]))).toEqual(
-      new Set(["events", "birthdays"]),
-    );
-    expect(calendarLayersShowing(new Set())).toEqual(ALL_CALENDAR_LAYERS);
   });
 
   it("stores what's hidden and reads it back, dropping junk", () => {

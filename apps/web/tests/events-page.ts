@@ -85,7 +85,7 @@ export async function eventsPageHooks(overrides: Record<string, unknown> = {}) {
     readGoogleCalendarReturn: () => null,
     GOOGLE_CALENDAR_RETURN_PARAMS: [],
     useActiveChapterId: () => "chap-1",
-    useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+    useCalendarTasks: () => ({ items: [] }),
     useCalendarBirthdays: () => [],
     useChapterRoster: () => ({ data: [] }),
     useCurrentChapter: () => ({
