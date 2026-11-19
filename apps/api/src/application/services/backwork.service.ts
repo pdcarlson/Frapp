@@ -8,9 +8,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import {
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-  isWithinUploadSizeLimit,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
   MAX_COURSE_NICKNAMES,
@@ -50,9 +47,13 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
-import { safeObjectFilename, storedFilename } from '#domain/constants/storage';
+import { storedFilename } from '#domain/constants/storage';
 import { hasValue } from '#domain/utils/backwork-fill';
-import { assertUploadedPathUnder } from './chapter-upload';
+import {
+  assertUploadedPathUnder,
+  assertUploadRequestAllowed,
+  mintChapterUpload,
+} from './chapter-upload';
 import {
   applyNicknameEdit,
   courseEditRefusal,
@@ -222,39 +223,20 @@ export class BackworkService {
   ) {}
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
-    const ext = input.filename.includes('.')
-      ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
-      : '';
-
-    if (!isAllowedUploadExtension('document', ext)) {
-      throw new BadRequestException(`File extension "${ext}" is not allowed`);
-    }
-
-    if (!isAllowedUploadMime('document', input.contentType)) {
-      throw new BadRequestException(
-        `Content type "${input.contentType}" is not allowed`,
-      );
-    }
-
-    if (
-      input.sizeBytes !== undefined &&
-      !isWithinUploadSizeLimit(input.sizeBytes, MAX_BACKWORK_UPLOAD_BYTES)
-    ) {
-      throw new BadRequestException(
-        `File exceeds the ${MAX_BACKWORK_UPLOAD_LABEL} upload limit`,
-      );
-    }
-
-    const resourceId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${safeObjectFilename(input.filename)}`;
-
-    const signedUrl = await this.storageProvider.getSignedUploadUrl(
+    assertUploadRequestAllowed('document', input, {
+      limit: {
+        bytes: MAX_BACKWORK_UPLOAD_BYTES,
+        label: MAX_BACKWORK_UPLOAD_LABEL,
+      },
+      nameRefusedExtension: true,
+    });
+    const { signedUrl, storagePath, uploadId } = await mintChapterUpload(
+      this.storageProvider,
       BACKWORK_BUCKET,
-      storagePath,
-      input.contentType,
+      `chapters/${input.chapterId}/backwork/`,
+      input,
     );
-
-    return { signedUrl, storagePath, resourceId };
+    return { signedUrl, storagePath, resourceId: uploadId };
   }
 
   /**

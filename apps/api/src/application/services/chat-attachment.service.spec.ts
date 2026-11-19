@@ -879,7 +879,9 @@ describe('ChatAttachmentService', () => {
           'virus.exe',
           'application/x-msdownload',
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException('File extension is not allowed'),
+      );
     });
 
     it('should reject blocked .sh files', async () => {
@@ -912,10 +914,15 @@ describe('ChatAttachmentService', () => {
           'ch-chan-1',
           'ch-1',
           'user-1',
-          'file.zip',
+          // An allowed extension, so the content type is what refuses it.
+          'file.pdf',
           'application/zip',
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Content type "application/zip" is not allowed',
+        ),
+      );
     });
 
     it('should accept PDF content type', async () => {

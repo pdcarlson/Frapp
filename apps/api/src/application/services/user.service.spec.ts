@@ -410,6 +410,16 @@ describe('UserService', () => {
           'image/svg+xml',
         ),
       ).rejects.toThrow(BadRequestException);
+      // A profile photo is checked as an image: a file every document upload
+      // accepts is still refused here.
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'resume.pdf',
+          'application/pdf',
+        ),
+      ).rejects.toThrow('File extension is not allowed');
 
       expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });
