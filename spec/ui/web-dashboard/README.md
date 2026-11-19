@@ -718,7 +718,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 ### Resources: Documents and Backwork
 
 - **Each page keeps its own search field.**
-  Both search the library they already loaded, typos forgiven, with filter chips beside the field (Documents since #3852, [`chapter-docs.md` § Search](../../behavior/chapter-docs.md#search)) ([`backwork.md` § Browsing and Search](../../behavior/backwork.md#browsing-and-search)).
+  Both search the library they already loaded, typos forgiven, with filters beside the field: Backwork's chips, and Documents' one Filters menu (chips since #3852, one menu since #5576; [`chapter-docs.md` § Search](../../behavior/chapter-docs.md#search)) ([`backwork.md` § Browsing and Search](../../behavior/backwork.md#browsing-and-search)).
   The find bar navigates rather than narrowing a route, so deleting either would move a capability.
 - Backwork's one actionable instruction (unknown departments and professors are created on upload) is field help beside those two fields, not a dialog description.
 - **Folder management is a mode.**
@@ -729,19 +729,14 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   The rules are in [`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred).
 - **The folder rail is a tree** ([#5337](https://github.com/frapplive/Frapp/issues/5337), Shawn's pick, 2026-11-17): a folder named by its path, as Google Drive sync names them, sits under its parent with a chevron to open and close it, reading its own name, as Drive's and Dropbox's sidebars draw theirs.
   The rules are in [`chapter-docs.md` § Structure](../../behavior/chapter-docs.md#structure) and § Pinned and starred.
-- **Documents is a List or a Grid** ([#4175](https://github.com/pdcarlson/Frapp/issues/4175), Shawn's idea, 2026-11-12).
-  The List / Grid switch ([`components.md` § Segmented control](../design-system/components.md)) ends the list's toolbar row, after the Sort chip, where Google Drive keeps its own.
-  Grid draws each file as a hairline tile in Drive's shape: a panel naming the file's type (`classifyFile`'s label, not a page preview, which would mean fetching every file), then its title, who uploaded it when, folder, type, effective date and description, with the row's Star, Pin, Download and Delete at its foot.
-  One column, then two, three and four as the list widens.
-  The folder rail, the Pinned and Starred cards and the toolbar are the same in both.
-  - Changed in [#4647](https://github.com/pdcarlson/Frapp/issues/4647) by shawnatomklein-eng, 2026-11-12 (Shawn: a tile that only says "Photo" or "PDF" should show the file or show nothing): **a photo's tile shows the photo and a PDF's shows its first page**, cropped to 4:3 from the top, as Google Drive, Dropbox and Notion's gallery draw theirs.
-    The grid signs every preview link in one batch ([`chapter-docs.md` § Grid preview links](../../behavior/chapter-docs.md#grid-preview-links)), a tile fetches its file only as it nears the screen, and the PDF page is drawn with the viewer's pdf.js renderer, two at a time (`document-thumbnail.tsx`).
-    Storage serves the original, with no resized copy yet ([#2912](https://github.com/pdcarlson/Frapp/issues/2912)), so a file over 8 MB, or one whose size was never recorded (filed before sizes were), gets no preview.
-    **Any other file, Word and Excel included ([#3889](https://github.com/pdcarlson/Frapp/issues/3889)), has no preview panel:** its type glyph sits beside the title.
-    A preview that fails shows the type glyph and label in its place.
-    Under the title, the type then who uploaded it when, folder, document type, effective date and description, then the Star, Pin, Download and Delete right under them, at the tile's start.
-    **Tiles no longer stretch:** as many as fit at 200px or more (160px on a list under 768px, beside chat or on a phone, two to a row there), so a desktop tile is about 200 to 260px.
-    Tasks' grid is four status lanes that fill the page by design, and its Confirmed tiles line up under those lanes, so it is unchanged.
+- **Documents is files first** ([#5576](https://github.com/frapplive/Frapp/issues/5576), Paul, 2026-11-19, from the screen critique: the first file sat at the fold of a 1440×900 window).
+  Over the list sit one Upload control and one toolbar line, as Google Drive, Dropbox and Notion's file lists keep theirs:
+  - **Upload** is an outlined button with a menu beside it holding **Import a folder** and, for `chapter_docs:manage`, **Google Drive**, as Drive's New and Dropbox's Upload menus hold folder uploads and connected sources (`upload-menu.tsx`). Its fill goes to the files, not to the button.
+  - **The toolbar** is the search field and one **Filters** menu holding Uploaded by, Date added, File type, Pinned, Starred and the order (`DocumentFilterMenu`). The trigger is tinted and counts the filters that are on, so a narrowed list says so with the menu closed.
+  - **Folders** stay a rail beside the list from a 672px page (`@2xl`), where they cost the list no height. Narrower, the tool panel beside chat included, the rail folds into a **Folder** control at the toolbar's start that opens the same rail, Edit and all, in a popover, and closes when a folder is picked. They are not a section of the Filters menu, because the rail also carries folder management.
+  - **A row is one line** at every width: a tile in its folder's hue, the title over its facts, and a star or pin mark when set. Star, Pin, Who can see, Download and Delete come up over the row's end on hover or when a control in the row takes focus, as Gmail's and Drive's row actions do. On a touch screen, with no hover, the same actions sit behind one More button at the row's end, as Drive's and Dropbox's touch layouts put them.
+  - **The tile's hue is the folder's** (`documentFolderHues` in `@repo/hooks/document-library`): the top folders the member has take the role palette in the rail's order, a folder drawn under another wears its top folder's hue, and a file in no folder is Slate. So a folder hidden from a member, or one added ahead of the others, shifts the colours after it: distinct colours on one screen won over one colour per folder for everyone. The rail's folder glyph wears the same hue at rest, so the rail is the key. Folder rather than file type because a chapter library is nearly all PDFs. It follows [`foundations.md` § A place's hue](../design-system/foundations.md#a-places-hue-2026-11-12): a hue names a place, never a state.
+  - **There is no List | Grid** (it was [#4175](https://github.com/pdcarlson/Frapp/issues/4175), Shawn's idea, 2026-11-12, with previews from [#4647](https://github.com/pdcarlson/Frapp/issues/4647)). Changed in [#5576](https://github.com/frapplive/Frapp/issues/5576) by pdcarlson, 2026-11-19: view switchers are out, and the grid's tiles showed a few files a screen. The Directory keeps its List | Grid until [#5577](https://github.com/frapplive/Frapp/issues/5577).
 
 ### Directory
 
@@ -1147,7 +1142,7 @@ Source of truth: [`apps/web/components/layout/dashboard-shell.tsx`](../../../app
   The shrink only takes effect if the **content column** is also `min-w-0` — see the floor rule below.
 - **A tool page lays out by its own width** ([#4022](https://github.com/pdcarlson/Frapp/issues/4022)).
   Beside chat a page is 375px or more wide (about 825px at chat's default width in a 1440px window since #5575, about 480px at the old 50/50 split) in a window wide enough for every viewport breakpoint, so a converted page's layout breakpoints are container queries, not `sm`/`md`/`lg`/`xl`: `@container` on the page root (Documents' list is its own container too, so its rows count the list's width beside the folder rail), then Tailwind's `@md` 448px, `@xl` 576px, `@2xl` 672px, `@3xl` 768px and `@4xl` 896px variants.
-  A narrow page beside chat gets the page's phone shape: Events' toolbar on two rows and its rows stacked below 576px, Tasks' lanes one per row below 672px and two below 896px, Points' panes stacked below 768px, Documents' folder rail above the list below 672px, Backwork's table as stacked rows below 896px.
+  A narrow page beside chat gets the page's phone shape: Events' toolbar on two rows and its rows stacked below 576px, Tasks' lanes one per row below 672px and two below 896px, Points' panes stacked below 768px, Documents' folder rail as a Folder control in the list's toolbar below 672px, Backwork's table as stacked rows below 896px.
   Because the page loses 240px when the nav column appears at `lg`, a window just past 1024px without chat can show a narrower shape than one just under it (Tasks' two lanes, Backwork's stacked rows from 1024 to about 1183px);
   that is the page's real width, and Backwork's seven columns were cramped there before.
   Every tool page is converted ([#4033](https://github.com/pdcarlson/Frapp/issues/4033) did Reports, Roles, Members and Alumni, Billing, Chat admin, Discord import, Geofences, Service and Study) except Profile, which still follows the window.

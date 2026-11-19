@@ -1,43 +1,20 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useDocumentPreviews } from "@repo/hooks";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-import {
-  PinGlyph,
-  SearchGlyph,
-  StarGlyph,
-} from "@/components/documents/resources-glyphs";
+import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentRow } from "@/components/documents/document-row";
-import {
-  DocumentTile,
-  documentGridClassName,
-} from "@/components/documents/document-tile";
-import {
-  thumbnailKind,
-  type ThumbnailLink,
-} from "@/components/documents/document-thumbnail";
-import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
-import { useListLayout } from "@/lib/list-layout";
 import type { ChapterDocument } from "@/components/documents/document-types";
+import { DocumentFilterMenu } from "@/components/documents/document-filters";
 import {
-  FilterChip,
-  SortChip,
-  ToggleChip,
-} from "@/components/shared/filter-chip";
-import { DateFilterChip } from "@/components/documents/document-filters";
-import {
-  SORT_OPTIONS,
+  NO_DOCUMENT_FILTERS,
   type DocumentFilters,
   type DocumentSort,
-  type FileKind,
   type LibraryDocument,
 } from "@repo/hooks/document-library";
 import type { FilterOption } from "@/components/shared/filter-chip";
@@ -85,6 +62,8 @@ export function DocumentList({
   isLimited,
   canSetAccess,
   onSetAccess,
+  folderPicker,
+  folderHue,
 }: {
   listState: DocumentListState;
   /** The failed read behind `listState === "error"`, for its wording. */
@@ -133,32 +112,17 @@ export function DocumentList({
   canSetAccess?: (doc: ChapterDocument) => boolean;
   /** Opens Who can see for a file. */
   onSetAccess?: (doc: ChapterDocument) => void;
+  /**
+   * The folder control the page draws at the toolbar's start where the page
+   * is too narrow for its folder rail (#5576).
+   */
+  folderPicker?: ReactNode;
+  /** The hue a file's tile wears, by its folder (#5576). */
+  folderHue: (folder: string | null) => string;
 }) {
   // Starring a file inside a folder or a search moves its row to the head of
   // the list; this keeps focus on the Star that moved it (#3934).
   const { rootRef, remember } = useKeepFocus<HTMLElement>();
-  // List or Grid (#4175), kept per person on this browser; the toggle sits at
-  // the toolbar's end, where Google Drive keeps its own.
-  const [layout] = useListLayout("documents");
-  // The grid's preview links, signed in one batch for the files that preview
-  // (#4647), not one read per tile.
-  const previewIds =
-    layout === "grid" && listState === "ready"
-      ? visible
-          .filter(({ doc }) => thumbnailKind(doc) !== "none")
-          .map(({ doc }) => doc.id)
-      : [];
-  const previews = useDocumentPreviews(previewIds);
-  function previewLink(id: string): ThumbnailLink {
-    const url = previews.data?.get(id);
-    if (url) return { status: "ready", url };
-    if (previews.isError) return { status: "error" };
-    // Signed and absent: storage couldn't sign it.
-    if (previews.data && !previews.isPlaceholderData) {
-      return { status: "ready", url: null };
-    }
-    return { status: "loading" };
-  }
   return (
     // Its own container (#4022): the rows break on the list's width, which
     // the folder rail and, beside chat, the chat panel both take from.
@@ -207,8 +171,15 @@ export function DocumentList({
           glyph class sized against the toolbar field. The wrapper carries the
           spacing so the icon offset never has to compensate for it.
         */}
-        <div className="flex w-full flex-wrap items-center gap-2 @md:w-auto">
-          <div className="relative w-full @md:w-64">
+        {/*
+          One line (#5576): the folder (where the page has no room for its
+          rail), the search, and one Filters menu holding everything that
+          narrows or orders the list, as Google Drive and Dropbox keep theirs,
+          so the files start right under it.
+        */}
+        <div className="flex w-full items-center gap-2 @md:w-auto">
+          {folderPicker}
+          <div className="relative min-w-0 flex-1 @md:w-64 @md:flex-none">
             <Label htmlFor="doc-search" className="sr-only">
               Search documents
             </Label>
@@ -222,57 +193,16 @@ export function DocumentList({
               placeholder="Search titles, people, folders"
             />
           </div>
-          {/*
-            Backwork's toolbar grammar (#3852): chips beside the search, each
-            applied the moment it's picked. Folders stay in the rail.
-          */}
-          <FilterChip
-            label="Uploaded by"
-            anyLabel="Anyone"
-            options={uploaders}
-            value={filters.uploader}
-            onChange={(uploader) => setFilters({ ...filters, uploader })}
-          />
-          <DateFilterChip
+          <DocumentFilterMenu
+            filters={filters}
             semesterKnown={semesterKnown}
-            value={filters.date}
-            onChange={(date) => setFilters({ ...filters, date })}
+            setFilters={setFilters}
+            uploaders={uploaders}
+            kinds={kinds}
+            sort={sort}
+            setSort={setSort}
+            onClear={() => setFilters(NO_DOCUMENT_FILTERS)}
           />
-          <FilterChip
-            label="File type"
-            anyLabel="Any type"
-            options={kinds}
-            value={filters.kind}
-            onChange={(kind) =>
-              setFilters({ ...filters, kind: kind as FileKind | null })
-            }
-          />
-          {/*
-            Pinned and Starred (#4290): toggles rather than menus, each one
-            click, as Google Drive's Starred chip and Gmail's are. Both on
-            shows a file that is either. They narrow with the search and the
-            chips beside them, and the tiers still lead what's left.
-          */}
-          <ToggleChip
-            on={filters.marks.pinned}
-            onToggle={(pinned) =>
-              setFilters({ ...filters, marks: { ...filters.marks, pinned } })
-            }
-          >
-            <PinGlyph className="h-3.5 w-3.5" active={filters.marks.pinned} />
-            Pinned
-          </ToggleChip>
-          <ToggleChip
-            on={filters.marks.starred}
-            onToggle={(starred) =>
-              setFilters({ ...filters, marks: { ...filters.marks, starred } })
-            }
-          >
-            <StarGlyph className="h-3.5 w-3.5" active={filters.marks.starred} />
-            Starred
-          </ToggleChip>
-          <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
-          <ListLayoutToggle screen="documents" />
         </div>
       </div>
       {/*
@@ -283,8 +213,7 @@ export function DocumentList({
         Stars that couldn't be read would otherwise just vanish (#3934): the
         list drops them into the rest and every Star reads off.
       */}
-      {marks.starsFailed &&
-      (listState === "ready" || listState === "empty") ? (
+      {marks.starsFailed && (listState === "ready" || listState === "empty") ? (
         <p className="pt-2 text-caption text-muted-foreground" role="status">
           Couldn&apos;t load your stars.{" "}
           <button
@@ -365,10 +294,7 @@ export function DocumentList({
               {onUpload ? (
                 <>
                   {" "}
-                  <InlineNoteAction
-                    onClick={onUpload}
-                    {...gate.controlProps()}
-                  >
+                  <InlineNoteAction onClick={onUpload} {...gate.controlProps()}>
                     Upload a file
                   </InlineNoteAction>{" "}
                   or drop one anywhere on this page.
@@ -391,17 +317,12 @@ export function DocumentList({
             `denseListClassName`; the Directory lane extracted them when it
             became the third and fourth copy of the same string.
           */
-          <ul
-            className={
-              layout === "grid" ? documentGridClassName : denseListClassName
-            }
-          >
+          <ul className={denseListClassName}>
             {visible.map(({ doc, uploader }) => {
-              // One set of handlers for both layouts: a tile's Star and Pin
-              // keep focus and hold the file under a mark filter as a row's do.
               const props = {
                 doc,
                 uploader,
+                hue: folderHue(doc.folder),
                 gate,
                 deleting: deletingIds.has(doc.id),
                 starred: marks.isStarred({ kind: "document", id: doc.id }),
@@ -426,15 +347,7 @@ export function DocumentList({
                 onSetAccess:
                   onSetAccess && canSetAccess?.(doc) ? onSetAccess : undefined,
               };
-              return layout === "grid" ? (
-                <DocumentTile
-                  key={doc.id}
-                  {...props}
-                  previewLink={previewLink(doc.id)}
-                />
-              ) : (
-                <DocumentRow key={doc.id} {...props} />
-              );
+              return <DocumentRow key={doc.id} {...props} />;
             })}
           </ul>
         )}

@@ -444,9 +444,12 @@ export function UploadDocumentPanel({
   folders,
   typeOptions,
   typeRows = null,
+  triggerClassName,
 }: {
   gate: SubscriptionGate;
   upload: DocumentUpload;
+  /** Joins the button to the Upload menu beside it (#5576). */
+  triggerClassName?: string;
   folders: readonly string[];
   typeOptions: readonly string[];
   /**
@@ -516,13 +519,20 @@ export function UploadDocumentPanel({
 
   return (
     <>
+      {/*
+        Compact and outlined (#5576): the page's fill goes to the files, not
+        to the button that adds one. "Upload" on the button, the full name
+        for a screen reader.
+      */}
       <Button
+        variant="secondary"
         size="toolbar"
-        className="gap-2"
+        className={cn("gap-2", triggerClassName)}
+        aria-label="Upload document"
         onClick={() => openPanel()}
         {...gate.controlProps()}
       >
-        <Upload className="h-4 w-4" /> Upload document
+        <Upload className="h-4 w-4" aria-hidden="true" /> Upload
       </Button>
       <Panel
         open={uploadDialog.dialogProps.open}

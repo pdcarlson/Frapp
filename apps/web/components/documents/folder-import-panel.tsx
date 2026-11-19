@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
   useSyncExternalStore,
+  type RefObject,
 } from "react";
 import { ChevronRight, FolderUp, Loader2 } from "lucide-react";
 import {
@@ -102,9 +103,15 @@ const NONE = "__none__";
 export function FolderImportPanel({
   gate,
   context,
+  openerRef,
 }: {
   gate: SubscriptionGate;
   context: ImportContext;
+  /**
+   * Set, the panel draws no button of its own and puts its opener here, for
+   * a menu to call: Documents opens it from the Upload menu (#5576).
+   */
+  openerRef?: RefObject<(() => void) | null>;
 }) {
   const dialog = useGatedDialog(gate);
   const requestUrls = useRequestDocumentUploadUrls();
@@ -230,17 +237,23 @@ export function FolderImportPanel({
     writeKeptPanel(panelKey, panelOpen && reviewing ? true : null);
   }, [panelKey, panelOpen, reviewing, leftOpen]);
 
+  useLayoutEffect(() => {
+    if (openerRef) openerRef.current = open;
+  });
+
   return (
     <>
-      <Button
-        variant="secondary"
-        size="toolbar"
-        className="gap-2"
-        onClick={open}
-        {...gate.controlProps()}
-      >
-        <FolderUp className="h-4 w-4" /> Import a folder
-      </Button>
+      {openerRef ? null : (
+        <Button
+          variant="secondary"
+          size="toolbar"
+          className="gap-2"
+          onClick={open}
+          {...gate.controlProps()}
+        >
+          <FolderUp className="h-4 w-4" /> Import a folder
+        </Button>
+      )}
       <Panel
         open={dialog.dialogProps.open}
         onOpenChange={(next) => (next ? open() : back())}
@@ -376,7 +389,9 @@ function ImportReview({
           {checking > 0
             ? `Checking ${view.rows.length - checking} of ${view.rows.length} files…`
             : `${toImport} ${toImport === 1 ? "file" : "files"} to import`}
-          {copies.length > 0 ? `, ${copies.length} possible ${copies.length === 1 ? "copy" : "copies"}` : ""}
+          {copies.length > 0
+            ? `, ${copies.length} possible ${copies.length === 1 ? "copy" : "copies"}`
+            : ""}
           {view.leftOut.length > 0 ? `, ${view.leftOut.length} left out` : ""}
           {unreadable > 0 ? `, ${unreadable} couldn't be read` : ""}
         </p>
@@ -385,9 +400,14 @@ function ImportReview({
           <Disclosure label={`Left out (${view.leftOut.length})`}>
             <ul className="grid gap-1 text-caption text-muted-foreground">
               {view.leftOut.map((item) => (
-                <li key={item.path} className="flex min-w-0 justify-between gap-3">
+                <li
+                  key={item.path}
+                  className="flex min-w-0 justify-between gap-3"
+                >
                   <span className="truncate">{item.path}</span>
-                  <span className="shrink-0">{LEFT_OUT_LABEL[item.reason]}</span>
+                  <span className="shrink-0">
+                    {LEFT_OUT_LABEL[item.reason]}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -540,7 +560,9 @@ const FileRow = React.memo(function FileRow({
             className="h-8 text-sm"
             value={row.title}
             maxLength={255}
-            onChange={(event) => run.update(row.id, { title: event.target.value })}
+            onChange={(event) =>
+              run.update(row.id, { title: event.target.value })
+            }
           />
           <Select
             value={row.documentType || NONE}
@@ -564,7 +586,10 @@ const FileRow = React.memo(function FileRow({
             </SelectContent>
           </Select>
         </div>
-        <p className="truncate text-caption text-muted-foreground" title={row.path}>
+        <p
+          className="truncate text-caption text-muted-foreground"
+          title={row.path}
+        >
           {row.path}
           {note ? ` · ${note}` : ""}
         </p>
@@ -628,7 +653,9 @@ function ImportProgress({
                   className="flex min-w-0 items-center justify-between gap-3 text-sm"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate">{pathOf.get(item.id)}</span>
+                    <span className="block truncate">
+                      {pathOf.get(item.id)}
+                    </span>
                     <span className="block text-caption text-destructive-text">
                       {item.error}
                     </span>
