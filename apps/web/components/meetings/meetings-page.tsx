@@ -15,13 +15,13 @@ import {
   type MeetingSummary,
 } from "@repo/hooks";
 import {
-  MEETING_COPY,
   MEETING_ENTRY_COPY,
   MEETING_LIST_COPY,
   MEETING_NOTE_TAKERS_COPY,
   can,
   guessMeetingType,
   meetingTypeLabel,
+  minutesRowTags,
   minutesToWrite,
   startedEventIds,
   type CalendarMeeting,
@@ -349,18 +349,8 @@ function MeetingList({
       {rows.map((row) => {
         const author = authorOf?.(row);
         // What the minutes hold, worked out from them, as the phone's row
-        // says it: Draft, Recorded, decisions and action items, whose draft.
-        const tags = [
-          row.status === "draft" ? MEETING_COPY.draftBadge : null,
-          row.recorded ? MEETING_LIST_COPY.recorded : null,
-          row.decision_count
-            ? MEETING_LIST_COPY.decisions(row.decision_count)
-            : null,
-          row.action_item_count
-            ? MEETING_LIST_COPY.actionItems(row.action_item_count)
-            : null,
-          author ? MEETING_LIST_COPY.draftOf(author) : null,
-        ].filter((tag): tag is string => !!tag);
+        // says it (`minutesRowTags`).
+        const tags = minutesRowTags(row, author);
         return (
           <li key={row.id}>
             <Link
@@ -386,14 +376,16 @@ function MeetingList({
                   <span className="mt-1.5 flex flex-wrap gap-1.5">
                     {tags.map((tag) => (
                       <Badge
-                        key={tag}
+                        key={tag.key}
                         variant={
-                          tag === MEETING_COPY.draftBadge
+                          tag.key === "draft"
                             ? "warning"
-                            : "outline"
+                            : tag.key === "recorded"
+                              ? "destructive"
+                              : "outline"
                         }
                       >
-                        {tag}
+                        {tag.label}
                       </Badge>
                     ))}
                   </span>

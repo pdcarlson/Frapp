@@ -36,7 +36,6 @@ const state = vi.hoisted(() => ({
     requested: boolean;
   },
   ask: vi.fn(),
-  detail: undefined as unknown,
 }));
 vi.mock("@/lib/minutes/recorder/session", () => ({
   useMeetingRecorder: () => ({
@@ -61,7 +60,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: state.takingPending,
   }),
   useMinutesRequest: () => ({ data: state.request, isLoading: false }),
-  useMeeting: () => ({ data: state.detail }),
   useRequestMinutes: () => ({ mutateAsync: state.ask, isPending: false }),
 }));
 vi.mock("@/components/minutes/note-taker-sheet", () => ({
@@ -108,7 +106,6 @@ beforeEach(() => {
   state.recorderState = { phase: "idle", refusal: null };
   state.takingPending = false;
   state.request = null;
-  state.detail = undefined;
 });
 
 describe("EventMinutesRow", () => {
@@ -149,17 +146,14 @@ describe("EventMinutesRow", () => {
         posted_at: "2026-11-18T12:00:00Z",
         decision_count: 2,
         action_item_count: 3,
+        gist: "Dues are due Friday.",
       } as never,
     ];
-    state.detail = {
-      content: { tldr: "- Dues are due Friday.\n- Formal is set." },
-    };
     const text = screenText(render());
     expect(text).toMatch(
       /Posted \w+, November 18 · 2 decisions · 3 action items/,
     );
     expect(text).toContain("Dues are due Friday.");
-    expect(text).not.toContain("Formal is set");
   });
 
   it("offers Take notes on someone else's draft, to a member they added (#4935)", () => {
@@ -244,7 +238,11 @@ describe("EventMinutesRow", () => {
     });
 
     it("offers Request minutes on unposted minutes the member can't open", async () => {
-      state.ask.mockResolvedValue({ ...state.request, requested: true, pinged: true });
+      state.ask.mockResolvedValue({
+        ...state.request,
+        requested: true,
+        pinged: true,
+      });
       const tree = render();
       expect(screenText(tree)).toContain(MINUTES_REQUEST_COPY.request);
       expect(screenText(tree)).toContain(MINUTES_REQUEST_COPY.notPosted);

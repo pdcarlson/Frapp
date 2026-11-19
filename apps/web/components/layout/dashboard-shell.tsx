@@ -650,10 +650,7 @@ export function DashboardShell({
                   askBar && "max-lg:pb-24 max-lg:[--ask-bar-room:4.5rem]",
                 )}
               >
-                {/* The header shows from the side-by-side width up. */}
-                <ToolHeaderSlot.Provider
-                  value={split === true ? toolHeaderSlot : null}
-                >
+                <ToolHeaderSlot.Provider value={toolHeaderSlot}>
                   {children}
                 </ToolHeaderSlot.Provider>
               </div>

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
 import {
-  useMeeting,
   useMeetingNoteTaking,
   useMeetings,
   useMinutesRequest,
@@ -73,8 +72,6 @@ export function EventMinutes({
     enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
     eventId,
   });
-  // The TL;DR lives on the minutes themselves, read once they are known.
-  const detailQuery = useMeeting(on ? meetingsQuery.data?.[0]?.id : null);
   const permissions = useMyPermissions().data?.permissions ?? [];
   const start = useStartMeeting();
 
@@ -107,8 +104,7 @@ export function EventMinutes({
     );
   }
   // Take notes wins: Request waits until the note-taking read has answered.
-  const askable =
-    minutes || takingQuery.isPending ? null : requestQuery.data;
+  const askable = minutes || takingQuery.isPending ? null : requestQuery.data;
   if (askable) {
     return (
       <MinutesRowFrame
@@ -154,9 +150,7 @@ export function EventMinutes({
     }
   }
 
-  const lines = minutes
-    ? eventMinutesLines(minutes, detailQuery.data?.content?.tldr)
-    : null;
+  const lines = minutes ? eventMinutesLines(minutes) : null;
   return (
     <MinutesRowFrame
       status={lines ? lines.status : MEETING_ENTRY_COPY.none}

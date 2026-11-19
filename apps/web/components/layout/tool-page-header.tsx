@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 /**
  * The tool page's own header, from the side-by-side width up (Paul,
  * 2026-11-11): the page's title on the left and a close button on the right,
+ * with the page's main action beside the X when it has one
+ * (`ToolHeaderActions`, Paul 2026-11-19),
  * 48px like chat's channel header beside it, so the two panels read as a pair
  * the way Slack's channel and its right-hand panel do.
  *
@@ -54,7 +56,7 @@ export function ToolPageHeader({
       <div
         ref={actionsRef}
         data-tool-header-actions=""
-        className="flex shrink-0 items-center gap-2 empty:hidden"
+        className="flex shrink-0 items-center gap-2 empty:hidden [&:has(>div:empty)]:hidden"
       />
       <PanelCloseButton
         label={pageTitle ? `Close ${pageTitle.title}` : "Close page"}

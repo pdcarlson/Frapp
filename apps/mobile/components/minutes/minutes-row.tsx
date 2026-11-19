@@ -1,9 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  MEETING_COPY,
-  MEETING_LIST_COPY,
   meetingTypeLabel,
+  minutesRowTags,
   type MeetingType,
 } from "@repo/validation";
 import { ForwardGlyph } from "@/components/control-glyphs";
@@ -93,14 +92,19 @@ export function MinutesRow({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const typeLabel = meetingTypeLabel(type as MeetingType, otherLabel);
+  const shared = minutesRowTags(
+    {
+      status: draft ? "draft" : "posted",
+      recorded,
+      decision_count: decisions,
+      action_item_count: actionItems,
+    },
+    byline,
+  );
   const tags = [
-    showType ? typeLabel : null,
-    draft ? MEETING_COPY.draftBadge : null,
-    recorded ? MEETING_LIST_COPY.recorded : null,
-    decisions > 0 ? MEETING_LIST_COPY.decisions(decisions) : null,
-    actionItems > 0 ? MEETING_LIST_COPY.actionItems(actionItems) : null,
-    byline ?? null,
-  ].filter((tag): tag is string => !!tag);
+    ...(showType ? [typeLabel] : []),
+    ...shared.map((tag) => tag.label),
+  ];
   return (
     <PressableRow
       accessibilityRole="button"
@@ -124,27 +128,21 @@ export function MinutesRow({
         {tags.length > 0 ? (
           <View style={styles.tags}>
             {showType ? <HairlineChip label={typeLabel} /> : null}
-            {draft ? (
-              <StatusChip
-                label={MEETING_COPY.draftBadge}
-                hue={tokens.color.semantic.warning}
-              />
-            ) : null}
-            {recorded ? (
-              <StatusChip
-                label={MEETING_LIST_COPY.recorded}
-                hue={tokens.color.semantic.destructive}
-              />
-            ) : null}
-            {decisions > 0 ? (
-              <HairlineChip label={MEETING_LIST_COPY.decisions(decisions)} />
-            ) : null}
-            {actionItems > 0 ? (
-              <HairlineChip
-                label={MEETING_LIST_COPY.actionItems(actionItems)}
-              />
-            ) : null}
-            {byline ? <HairlineChip label={byline} /> : null}
+            {shared.map((tag) =>
+              tag.key === "draft" || tag.key === "recorded" ? (
+                <StatusChip
+                  key={tag.key}
+                  label={tag.label}
+                  hue={
+                    tag.key === "draft"
+                      ? tokens.color.semantic.warning
+                      : tokens.color.semantic.destructive
+                  }
+                />
+              ) : (
+                <HairlineChip key={tag.key} label={tag.label} />
+              ),
+            )}
           </View>
         ) : null}
         {gist ? (
