@@ -1,7 +1,15 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Keyboard,
   StyleSheet,
   Text,
   View,
@@ -10,6 +18,10 @@ import {
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as Clipboard from "expo-clipboard";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  NavigationContext,
+  usePreventRemove,
+} from "expo-router/react-navigation";
 import { statusOf } from "@repo/api-sdk";
 import {
   useAiSuggestions,
@@ -33,10 +45,14 @@ import {
   MEETING_LIST_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
+  MINUTES_EDITOR_COPY,
   MINUTES_FLOW_COPY,
   MINUTES_READ_COPY,
   can,
+  cleanMeetingContent,
   isMeetingContentEmpty,
+  meetingDraftQuoteFor,
+  meetingDraftSourceFor,
   meetingDayLabel,
   meetingTypeLabel,
   meetingWhenLabel,
@@ -53,11 +69,13 @@ import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import {
   CalendarPlusGlyph,
+  CheckGlyph,
   LinkGlyph,
   ListGlyph,
   MoreGlyph,
   PencilGlyph,
   PersonGlyph,
+  SlidersGlyph,
   TrashGlyph,
 } from "@/components/control-glyphs";
 import { HeaderButton } from "@/components/header-button";
@@ -72,6 +90,10 @@ import {
 import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
+import {
+  MinutesEditor,
+  type MinutesDraftQuote,
+} from "@/components/minutes/minutes-editor";
 import {
   NotesPanel,
   type NotesPanelHandle,
@@ -107,6 +129,7 @@ import {
   recordingPipeline,
 } from "@/lib/minutes/recorder/row-view";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
+import { useMinutesEditor } from "@/lib/minutes/use-minutes-editor";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -348,6 +371,119 @@ function LoadedMinutes({
   const rest = useMemo(() => ({ ...content, summary: "" }), [content]);
   const writtenHere = summaryShown && summaryWritten;
 
+  // Edit minutes (#4412): the screen turns into the section editor in place,
+  // as the task screen does and the web's page does. A draft saves itself
+  // as typing rests; posted minutes keep Save and Cancel.
+  const [editing, setEditing] = useState(false);
+  const [byHand, setByHand] = useState(false);
+  const editor = useMinutesEditor({
+    meeting,
+    active: editing,
+    autosave: isDraft,
+    reload: refetch,
+  });
+  const editingPosted = editing && !isDraft;
+  // The note is set aside while the section editor has the Summary.
+  const summaryOnPage = summaryShown && !editing;
+  // Where drafting is offered the editor shows what the draft filled, with
+  // Add a section for the rest; written by hand it lays out the template,
+  // as on the web.
+  const notesShown = finishing && !!draftState;
+  const editorByHand = byHand || !notesShown;
+  // A new draft starts the kept sections afresh, as on the web.
+  const [keptFor, setKeptFor] = useState(draftState?.requested_at ?? null);
+  if ((draftState?.requested_at ?? null) !== keptFor) {
+    setKeptFor(draftState?.requested_at ?? null);
+    editor.clearKept();
+  }
+  const myName = viewerId ? names.nameFor(viewerId) : null;
+  const review =
+    draftState &&
+    (draftState.status === "applied" || draftState.status === "ready")
+      ? draftState.review
+      : null;
+  const quoteFor = (
+    kind: "decision" | "action_item",
+    text: string,
+  ): MinutesDraftQuote | null => {
+    const quote = meetingDraftQuoteFor(review, kind, text);
+    if (!quote) return null;
+    const from = meetingDraftSourceFor(review, kind, text);
+    return { quote, from, mine: !!from && from === myName };
+  };
+
+  /**
+   * Opens the editor on the newest version: the Summary typed on the note
+   * is saved first, so the editor starts from it rather than over it.
+   */
+  async function startEdit(options: { byHand?: boolean } = {}) {
+    setProblem(null);
+    if (summaryOnPage && summaryRef.current) {
+      const saved = await summaryRef.current.flush();
+      if (!saved) {
+        setProblem(MEETING_COPY.saveFailed);
+        return;
+      }
+    }
+    const fresh = (await refetch()) ?? meeting;
+    editor.begin(fresh);
+    setByHand(!!options.byHand);
+    setEditing(true);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  /** A draft's Done: what is still waiting saves, then the read view. */
+  const [finishingEdit, setFinishingEdit] = useState(false);
+  async function finishEdit() {
+    if (finishingEdit) return;
+    Keyboard.dismiss();
+    setFinishingEdit(true);
+    const saved = editor.isStale() ? null : await editor.save();
+    setFinishingEdit(false);
+    // A save that didn't land keeps the editor, with every word, and says why.
+    if (saved) {
+      setEditing(false);
+      setByHand(false);
+    }
+  }
+
+  /** Posted minutes' Save: the read view once it lands. */
+  async function saveEdit() {
+    Keyboard.dismiss();
+    setProblem(null);
+    const saved = await editor.save();
+    if (!saved) {
+      if (!editor.isStale()) setProblem(MINUTES_EDITOR_COPY.saveFailedTitle);
+      return;
+    }
+    setEditing(false);
+    say(MINUTES_EDITOR_COPY.savedToast);
+  }
+
+  function cancelEdit() {
+    Keyboard.dismiss();
+    editor.discard();
+    setProblem(null);
+    setEditing(false);
+  }
+
+  // Leaving posted minutes with changes not saved asks first, by the back
+  // row, the edge swipe or Android's back, as Apple Notes' shared notes
+  // and Google Docs do; a draft has nothing to ask, since it saves as it
+  // goes.
+  const navigation = useContext(NavigationContext);
+  usePreventRemove(editingPosted && editor.dirty, ({ data }) => {
+    void confirmAlert({
+      title: MINUTES_EDITOR_COPY.discardTitle,
+      body: MINUTES_EDITOR_COPY.discardBody,
+      confirmLabel: MINUTES_EDITOR_COPY.discard,
+      cancelLabel: MINUTES_EDITOR_COPY.keepEditing,
+      destructive: true,
+    }).then((yes) => {
+      if (yes) navigation?.dispatch(data.action);
+    });
+  });
+
   const meetingRefresh = useCallback(() => refetch(), [refetch]);
   const refresh = useRefetchAll([
     { refetch: meetingRefresh },
@@ -363,9 +499,22 @@ function LoadedMinutes({
     // The Summary typed here is saved first; a save refused as stale stops
     // the post, and the note offers their version. Then the version to post
     // is whatever the server holds now, read fresh.
-    if (summaryShown && !(await summaryRef.current?.flush())) {
+    if (summaryOnPage && !(await summaryRef.current?.flush())) {
       setProblem(MEETING_COPY.postFailed);
       return;
+    }
+    // From the editor: what is still waiting saves first, and the read view
+    // shows while the post lands, as on the web. A save refused as stale
+    // keeps the editor and offers their version.
+    if (editing) {
+      Keyboard.dismiss();
+      const saved = await editor.save();
+      if (!saved) {
+        if (!editor.isStale()) setProblem(MEETING_COPY.postFailed);
+        return;
+      }
+      setEditing(false);
+      setByHand(false);
     }
     const expectedUpdatedAt = (await refetch())?.updated_at ?? null;
     if (!expectedUpdatedAt) {
@@ -437,8 +586,7 @@ function LoadedMinutes({
   const canBackfill = !!meeting.event_id && canEditEvents && ended;
   const hasTranscript = !!meeting.transcript?.trim() || !!transcript;
 
-  // The ⋯ menu (#5562): web's items, in web's order. Edit minutes joins
-  // them once the phone has its editor.
+  // The ⋯ menu (#5562): web's items, in web's order.
   const words = MINUTES_READ_COPY.menu;
   const menuActions = (): ItemMenuAction[] => [
     ...(meeting.can_edit
@@ -446,8 +594,19 @@ function LoadedMinutes({
           {
             key: "details",
             label: words.editDetails,
-            glyph: (color: string) => <PencilGlyph color={color} />,
+            glyph: (color: string) => <SlidersGlyph color={color} />,
             run: () => detailsSheetRef.current?.present(),
+          },
+        ]
+      : []),
+    // Not while a draft is being written into the sections.
+    ...(meeting.can_edit && !drafting
+      ? [
+          {
+            key: "edit",
+            label: words.editMinutes,
+            glyph: (color: string) => <PencilGlyph color={color} />,
+            run: () => void startEdit(),
           },
         ]
       : []),
@@ -530,8 +689,40 @@ function LoadedMinutes({
     (!!recorder.primary &&
       recorder.primary.does !== "record" &&
       recorder.primary.does !== "open_settings");
+  // Words in the editor count as something to post, saved or not yet.
+  const postable = editing
+    ? !isMeetingContentEmpty(cleanMeetingContent(editor.draft.content))
+    : !empty || writtenHere;
   let footer: ReactNode = null;
-  if (finishing || heldHere) {
+  // An open microphone always keeps its Stop, even over an edit.
+  const recorderHolds = heldHere && !!recorderFooter && recorderLeads;
+  if (editingPosted && !recorderHolds) {
+    // Posted minutes keep Save and Cancel: members already read them.
+    footer = (
+      <View style={styles.editBar}>
+        <TextAction
+          label={MINUTES_EDITOR_COPY.cancel}
+          color={tokens.color.text.foreground}
+          disabled={editor.saving}
+          onPress={cancelEdit}
+        />
+        <View style={styles.editBarMain}>
+          <SheetPrimaryButton
+            label={
+              editor.dirty || editor.saving
+                ? MINUTES_EDITOR_COPY.save
+                : MINUTES_EDITOR_COPY.saved
+            }
+            busy={editor.saving}
+            disabled={editor.saving || !editor.dirty || editor.stale}
+            onPress={() => void saveEdit()}
+            accent={accent}
+            onAccent={accentOnPrimary}
+          />
+        </View>
+      </View>
+    );
+  } else if (finishing || heldHere) {
     if (recorderFooter && recorderLeads) footer = recorderFooter;
     else if (finishing && drafting) {
       // While the minutes are written, what is happening and Stop are the
@@ -557,12 +748,12 @@ function LoadedMinutes({
           />
         </View>
       );
-    } else if (finishing && !busy && !drafting && (!empty || writtenHere)) {
+    } else if (finishing && !busy && !drafting && postable) {
       footer = (
         <SheetPrimaryButton
           label={MEETING_COPY.post}
           busy={post.isPending}
-          disabled={post.isPending}
+          disabled={post.isPending || (editing && editor.stale)}
           onPress={() => void handlePost()}
           accent={accent}
           onAccent={accentOnPrimary}
@@ -583,7 +774,11 @@ function LoadedMinutes({
   // A draft in the minutes: one line above them says so, with the notes a
   // tap away, as web's banner (Paul, 2026-11-19).
   const reviewing =
-    finishing && !empty && !drafting && draftState?.status === "applied";
+    finishing &&
+    !editing &&
+    !empty &&
+    !drafting &&
+    draftState?.status === "applied";
   const scrollToNotes = () =>
     scrollRef.current?.scrollTo({
       y: Math.max(0, notesY.current - tokens.spacing.md),
@@ -633,7 +828,7 @@ function LoadedMinutes({
   // The jump bar, pinned over the minutes as they scroll (#5562). Only on
   // minutes being read: an officer finishing a draft has the note instead.
   const jumps =
-    bodyHidden || finishing
+    bodyHidden || finishing || editing
       ? []
       : minutesJumps(
           minutesReadSections(meeting.sections, shownContent),
@@ -651,13 +846,36 @@ function LoadedMinutes({
       <ScreenShell
         back={BACK_TO_MINUTES}
         backAction={
-          <HeaderButton
-            label={words.label}
-            hint="Opens what you can do with these minutes."
-            onPress={openMenu}
-          >
-            <MoreGlyph color={tokens.color.text.foreground} />
-          </HeaderButton>
+          editingPosted ? null : editing ? (
+            // A draft's editor: its save state where the web's bar has it,
+            // and Done, which saves what is waiting and goes back to reading.
+            <View style={styles.editHeader}>
+              {editor.saveLine && !drafting ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[styles.meta, editor.failed ? styles.problem : null]}
+                >
+                  {editor.saveLine}
+                </Text>
+              ) : null}
+              <HeaderButton
+                label={MINUTES_EDITOR_COPY.done}
+                hint="Saves what you're typing and goes back to reading."
+                disabled={finishingEdit}
+                onPress={() => void finishEdit()}
+              >
+                <CheckGlyph color={accent} />
+              </HeaderButton>
+            </View>
+          ) : (
+            <HeaderButton
+              label={words.label}
+              hint="Opens what you can do with these minutes."
+              onPress={openMenu}
+            >
+              <MoreGlyph color={tokens.color.text.foreground} />
+            </HeaderButton>
+          )
         }
         title={meeting.event_name}
         // One line instead of a row of chips (#5562): what kind, when, and
@@ -666,7 +884,7 @@ function LoadedMinutes({
         scrollRef={scrollRef}
         refresh={refresh}
         keyboardShouldPersistTaps="handled"
-        avoidKeyboard={finishing}
+        avoidKeyboard={finishing || editing}
         footer={
           footer || problem || notice ? (
             <>
@@ -728,12 +946,25 @@ function LoadedMinutes({
         ) : null}
 
         {/* The start box's question, as on web: nothing is written yet. */}
-        {finishing && empty && !drafting && !steps && notes && !busy ? (
+        {finishing &&
+        empty &&
+        !editing &&
+        !drafting &&
+        !steps &&
+        notes &&
+        !busy ? (
           <View style={styles.start}>
             <Text accessibilityRole="header" style={styles.startTitle}>
               {MINUTES_FLOW_COPY.start.heading}
             </Text>
             <Text style={styles.meta}>{MINUTES_FLOW_COPY.start.hint}</Text>
+            {/* Beside Draft minutes on the web; quiet here, under the
+                question, since Record holds the bottom. */}
+            <TextAction
+              label={MINUTES_FLOW_COPY.start.byHand}
+              color={accent}
+              onPress={() => void startEdit({ byHand: true })}
+            />
           </View>
         ) : null}
 
@@ -750,12 +981,13 @@ function LoadedMinutes({
           </View>
         ) : null}
 
-        {summaryShown ? (
+        {summaryOnPage ? (
           <SummaryNote
             ref={summaryRef}
             meeting={meeting}
             reload={refetch}
             onWritten={setSummaryWritten}
+            onEditAll={() => void startEdit({ byHand: true })}
           />
         ) : null}
 
@@ -763,7 +995,23 @@ function LoadedMinutes({
             minutes are in they lead and the notes sit under them. The notes
             keep one slot, so the minutes arriving never remounts the box
             being typed in. */}
-        {empty ? null : body}
+        {editing ? (
+          <MinutesEditor
+            meeting={meeting}
+            editing={editor}
+            byHand={editorByHand}
+            disabled={drafting}
+            quoteFor={quoteFor}
+            menuFor={menu.handleFor}
+            onMarkAttendance={
+              canBackfill
+                ? () => attendanceSheetRef.current?.present()
+                : undefined
+            }
+          />
+        ) : empty ? null : (
+          body
+        )}
         {notes ? (
           <View
             onLayout={(event) => {
@@ -773,9 +1021,9 @@ function LoadedMinutes({
             {notes}
           </View>
         ) : null}
-        {empty ? body : null}
+        {!editing && empty ? body : null}
 
-        {transcript && recordingState ? (
+        {!editing && transcript && recordingState ? (
           <View style={styles.transcript}>
             {recordingState.audio_url ? (
               <RecordingPlayer
@@ -796,7 +1044,7 @@ function LoadedMinutes({
         ) : null}
 
         {/* Posted minutes keep their recording's transcript (#5410). */}
-        {!transcript && meeting.transcript ? (
+        {!editing && !transcript && meeting.transcript ? (
           <View style={styles.transcript}>
             <ListSection>
               <ListRow
@@ -810,7 +1058,7 @@ function LoadedMinutes({
 
         {/* Under the minutes, so its arrival after the read moves nothing
             the member is reading. */}
-        {suggested > 0 ? (
+        {!editing && suggested > 0 ? (
           <ListSection>
             <ListRow
               label={MEETING_COPY.suggestedTasks}
@@ -917,6 +1165,19 @@ function createStyles(tokens: SignetTokens) {
     startTitle: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    editHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    editBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.lg,
+    },
+    editBarMain: {
+      flex: 1,
     },
     banner: {
       gap: tokens.spacing.sm,

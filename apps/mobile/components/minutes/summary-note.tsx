@@ -45,8 +45,8 @@ export interface SummaryNoteHandle {
  * instead of overwriting it. A refusal keeps every word on screen and offers
  * their version.
  *
- * Decisions and action items have no phone editor yet (#4412); a line under
- * the note says where they are added.
+ * The line under the note opens the section editor (#4412) for the
+ * TL;DR, decisions and action items.
  */
 export const SummaryNote = forwardRef<
   SummaryNoteHandle,
@@ -56,8 +56,10 @@ export const SummaryNote = forwardRef<
     reload: () => Promise<MeetingMinutes | null>;
     /** Whether the note has words, for the screen's Post. */
     onWritten?: (written: boolean) => void;
+    /** Opens the section editor for the other sections (#4412). */
+    onEditAll?: () => void;
   }
->(function SummaryNote({ meeting, reload, onWritten }, ref) {
+>(function SummaryNote({ meeting, reload, onWritten, onEditAll }, ref) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
@@ -208,7 +210,13 @@ export const SummaryNote = forwardRef<
           {MEETING_COPY.saveFailed}
         </Text>
       ) : null}
-      <Text style={styles.hint}>{MEETING_COPY.restOnWeb}</Text>
+      {onEditAll ? (
+        <TextAction
+          label={MEETING_COPY.editAllSections}
+          color={accent}
+          onPress={onEditAll}
+        />
+      ) : null}
     </View>
   );
 });
@@ -229,10 +237,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
     problem: {
       ...caption,
       color: tokens.color.semantic.destructiveText,
-    },
-    hint: {
-      ...caption,
-      color: tokens.color.text.mutedForeground,
     },
   });
 }

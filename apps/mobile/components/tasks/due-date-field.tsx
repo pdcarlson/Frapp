@@ -29,6 +29,7 @@ export function DueDateField({
   today,
   disabled,
   onChange,
+  label = "Due",
   platform = Platform.OS,
 }: {
   /** `YYYY-MM-DD`, device-local. */
@@ -37,6 +38,11 @@ export function DueDateField({
   today: string;
   disabled: boolean;
   onChange: (next: string) => void;
+  /**
+   * What a screen reader says before the day: "Due" on a task, "Day" on a
+   * minutes' Coming up row (#4412).
+   */
+  label?: string;
   platform?: string;
 }) {
   const { tokens } = useFrappTheme();
@@ -44,7 +50,7 @@ export function DueDateField({
   const styles = createStyles(tokens);
   const date = parseBareDateLocalNoon(value) ?? new Date();
   const minimumDate = parseBareDateLocalNoon(today) ?? undefined;
-  const label = formatDueFieldLabel(value);
+  const shown = formatDueFieldLabel(value);
   const pick = (picked: Date | undefined) => {
     if (picked) onChange(localIsoDate(picked));
   };
@@ -61,7 +67,7 @@ export function DueDateField({
           accentColor={brand.accent}
           minimumDate={minimumDate}
           disabled={disabled}
-          accessibilityLabel={`Due ${label}`}
+          accessibilityLabel={`${label} ${shown}`}
           onValueChange={(_event, picked) => pick(picked)}
         />
       </View>
@@ -71,7 +77,7 @@ export function DueDateField({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Due ${label}`}
+      accessibilityLabel={`${label} ${shown}`}
       accessibilityHint="Opens the date picker."
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -87,7 +93,7 @@ export function DueDateField({
       style={styles.row}
     >
       <CalendarGlyph color={tokens.color.text.mutedForeground} />
-      <Text style={styles.value}>{label}</Text>
+      <Text style={styles.value}>{shown}</Text>
     </Pressable>
   );
 }
