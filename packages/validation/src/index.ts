@@ -141,6 +141,8 @@ export * from "./member-nudge";
 export * from "./mentions";
 export * from "./message-link";
 export * from "./message-text";
+// Minutes drafted first: start, drafting and review, in both apps' words.
+export * from "./minutes-flow";
 // How both apps lay minutes out to read, and the words of its ⋯ menu (#5562).
 export * from "./minutes-read";
 export * from "./module-enablement";
