@@ -410,7 +410,7 @@ describe("Calendar states", () => {
     query = { isPending: true, isError: false, isFetching: false };
     const tree = render();
 
-    expect(screenText(tree)).toContain("Choose a chapter from You");
+    expect(screenText(tree)).toContain("then Switch chapter");
     expect(skeletons(tree)).toHaveLength(0);
   });
 
