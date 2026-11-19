@@ -87,13 +87,14 @@ export * from "./event-agenda";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export * from "./event-attendance";
-export * from "./event-form-rows";
 // Editing or deleting an existing event: what a save sends, and whether to
 // ask "this event or all upcoming" first. Web and the phone share it (#3667).
 export * from "./event-edit";
 // Absence excuses for required events: the late window and reason limit the
 // API enforces and the apps read (#3735).
 export * from "./event-excuse";
+// The event form's rows: order, words and values both apps draw (#5561).
+export * from "./event-form-rows";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,
