@@ -391,7 +391,7 @@ Features
 > was the web dashboard.)* `frapp-prod` has **0** DM channels, so a reviewer would have
 > found neither the feature nor a way to produce it. "leaderboards" → "house rank": the
 > leaderboard *routes* were deleted and what survives is the viewer's own rank tile
-> ("House rank #N of M", composed in `components/tasks/points-summary-card.tsx` from the
+> ("#N of M in the house" since #5570, composed in `components/tasks/points-summary-line.tsx` from the
 > `{rank, of}` that `lib/tasks/points-card.ts` selects); the leaderboard list is web-only.
 > The officer paragraph is reconciled as of 2026-09-21 — see the verdict table under it.
 > (This note used to say the opposite and to hold the paste pending #2304; it was written

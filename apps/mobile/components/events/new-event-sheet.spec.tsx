@@ -110,6 +110,8 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewEventSheet, WhenRow } from "./new-event-sheet";
+import { EventTypeSheet, PropertyRow } from "./event-form-rows";
+import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
 import { emptyEventDraft } from "@/lib/events/create-event";
 import type { EventEditTarget } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
@@ -145,11 +147,46 @@ function byLabel(tree: ReactTestRenderer, prefix: string) {
   if (!first) throw new Error(`nothing is labelled ${prefix}…`);
   return first;
 }
-const createButton = (tree: ReactTestRenderer) =>
-  tree.root.find(
+/** The header's Create (#5561), small and opposite the title. */
+const createButton = (tree: ReactTestRenderer) => byLabel(tree, "Create event");
+
+/** Whether a node labelled `prefix` is drawn. */
+const drawn = (tree: ReactTestRenderer, prefix: string) =>
+  tree.root.findAll(
     (node) =>
-      node.props.label === "Create event" && typeof node.type === "function",
-  );
+      typeof node.props.accessibilityLabel === "string" &&
+      node.props.accessibilityLabel.startsWith(prefix),
+  ).length > 0;
+
+/**
+ * Open a row that unfolds in place (#5561): When shows its pickers, Repeat
+ * its options. Safe to call when it is already open.
+ */
+function openRow(tree: ReactTestRenderer, row: "When" | "Repeat") {
+  const shown =
+    row === "When"
+      ? drawn(tree, "Starts day")
+      : tree.root.findAll(
+          (each) =>
+            typeof each.props.onPress === "function" &&
+            each.findAll((child) => child.props.children === "Weekly").length >
+              0,
+        ).length > 0;
+  if (!shown) act(() => byLabel(tree, `${row}: `).props.onPress());
+}
+
+/** Pick a type from the stacked Type sheet, or `null` for No type. */
+function pickType(tree: ReactTestRenderer, name: string | null) {
+  const sheet = tree.root.findByType(EventTypeSheet);
+  const picked =
+    name === null
+      ? null
+      : (sheet.props.types as { name: string }[]).find(
+          (each) => each.name === name,
+        );
+  if (picked === undefined) throw new Error(`no type ${name}`);
+  act(() => sheet.props.onPick(picked));
+}
 
 /** The chip whose text is `label`. */
 function chip(tree: ReactTestRenderer, label: string) {
@@ -172,6 +209,7 @@ function type(tree: ReactTestRenderer, label: string, text: string) {
  * Android dialogs have their own spec below.
  */
 function pick(tree: ReactTestRenderer, prefix: string, picked: Date) {
+  openRow(tree, prefix === "Ends on" ? "Repeat" : "When");
   const [picker] = tree.root.findAll(
     (node) =>
       node.type === ("DateTimePicker" as never) &&
@@ -200,12 +238,14 @@ describe("New event", () => {
     const tree = render(onCreated);
     type(tree, "Event name", "Formal");
     type(tree, "Location", "Great Hall");
-    // The options start closed, and say what they hold.
-    expect(screenText(tree)).not.toContain("Points for attending");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 points · Optional for everyone · Doesn't repeat",
+    // Every row is drawn at rest, saying what it holds (#5561).
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
+      "Repeat: Doesn't repeat",
     );
-    act(() => byLabel(tree, "More options").props.onPress());
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens 10 minutes early",
+    );
     type(tree, "Points for attending", "25");
     // Notes, sent on create as web's form sends them (#4934).
     type(tree, "Notes", "  Bring dues ");
@@ -225,6 +265,7 @@ describe("New event", () => {
     expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
       "Who's coming: Alumni optional, everyone else required",
     );
+    openRow(tree, "Repeat");
     act(() => chip(tree, "Weekly").props.onPress());
     // Read against the default start, Thursday the 5th at 7 PM, whose
     // weekday chip is on (#4488).
@@ -268,8 +309,55 @@ describe("New event", () => {
     expect(successHaptic).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(byLabel(tree, "Event name").props.value).toBe("");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 points · Optional for everyone · Doesn't repeat",
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
+      "Repeat: Doesn't repeat",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("draws its rows in the order web draws them (#5561)", () => {
+    const tree = render();
+    expect(
+      tree.root.findAllByType(PropertyRow).map((row) => row.props.label),
+    ).toEqual(
+      EVENT_FORM_ROWS.map((row) =>
+        row === "notes" ? "Notes" : EVENT_FORM_ROW_LABELS[row],
+      ),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("reads Cancel until something is typed, then Discard", () => {
+    const tree = render();
+    const cancelWord = () =>
+      tree.root
+        .findAll(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            ["Cancel", "Discard"].includes(drawnText(node)),
+        )
+        .map(drawnText);
+    expect(cancelWord()).toEqual(["Cancel"]);
+    type(tree, "Event name", "Formal");
+    expect(cancelWord()).toEqual(["Discard"]);
+    act(() => tree.unmount());
+  });
+
+  it("says when check-in opens in web's words, and unfolds to change it", () => {
+    const tree = render();
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens 10 minutes early",
+    );
+    expect(drawn(tree, "Minutes before the start")).toBe(false);
+    act(() => byLabel(tree, "Check-in").props.onPress());
+    type(tree, "Minutes before the start that check-in opens", "0");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens at the start",
+    );
+    type(tree, "Minutes before the start that check-in opens", "200");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opening time needs a fix",
     );
     act(() => tree.unmount());
   });
@@ -277,7 +365,7 @@ describe("New event", () => {
   it("makes a twice-a-week series that ends after N meetings (#4488)", () => {
     const tree = render();
     type(tree, "Event name", "Chapter");
-    act(() => byLabel(tree, "More options").props.onPress());
+    openRow(tree, "Repeat");
     act(() => chip(tree, "Weekly").props.onPress());
     // Thursday is on, from the default start; Monday joins it.
     act(() => byLabel(tree, "Monday").props.onPress());
@@ -296,7 +384,7 @@ describe("New event", () => {
   it("ends a series on a picked date, and says so before saving (#4488)", () => {
     const tree = render();
     type(tree, "Event name", "Chapter");
-    act(() => byLabel(tree, "More options").props.onPress());
+    openRow(tree, "Repeat");
     act(() => chip(tree, "Weekly").props.onPress());
     act(() => chip(tree, "On date").props.onPress());
     // Offered the day the 13 meetings would end on.
@@ -313,15 +401,25 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
-  it("fills the form from a type chip and sends the type (#3730)", () => {
+  it("fills the form from the Type sheet and sends the type (#3730, #5561)", () => {
     const tree = render();
-    act(() => chip(tree, "Chapter meeting").props.onPress());
+    expect(byLabel(tree, "Type").props.accessibilityLabel).toBe("Type: None");
+    pickType(tree, "Chapter meeting");
+    expect(byLabel(tree, "Type").props.accessibilityLabel).toBe(
+      "Type: Chapter meeting",
+    );
     expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 points · Required for everyone · Doesn't repeat",
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+      "Who's coming: Required for everyone",
+    );
+    // Picking the held type again keeps it; it doesn't let it go.
+    pickType(tree, "Chapter meeting");
+    expect(byLabel(tree, "Type").props.accessibilityLabel).toBe(
+      "Type: Chapter meeting",
     );
     // Another type replaces the name the first wrote.
-    act(() => chip(tree, "Social").props.onPress());
+    pickType(tree, "Social");
     expect(byLabel(tree, "Event name").props.value).toBe("Social");
 
     act(() => createButton(tree).props.onPress());
@@ -340,13 +438,15 @@ describe("New event", () => {
     permissions = ["members:view", "events:create"];
     try {
       const tree = render();
-      act(() => chip(tree, "Chapter meeting").props.onPress());
+      pickType(tree, "Chapter meeting");
       expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
-      expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-        "More options: Optional for everyone · Doesn't repeat",
+      expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+        "Who's coming: Optional for everyone",
       );
-      act(() => byLabel(tree, "More options").props.onPress());
-      expect(screenText(tree)).not.toContain("Points for attending");
+      expect(drawn(tree, "Points for attending")).toBe(false);
+      expect(screenText(tree)).toContain(
+        "Events you make carry no points and require nobody.",
+      );
       // The Who's coming sheet offers no Required answer (#4483).
       const attendance = tree.root.find(
         (node) =>
@@ -440,12 +540,10 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
-  it("opens the options to show an error inside them", () => {
+  it("says what is wrong under the row that holds it", () => {
     const tree = render();
     type(tree, "Event name", "Formal");
-    act(() => byLabel(tree, "More options").props.onPress());
     type(tree, "Points for attending", "1.5");
-    act(() => byLabel(tree, "Fewer options").props.onPress());
     act(() => createButton(tree).props.onPress());
 
     expect(mutate).not.toHaveBeenCalled();
@@ -630,18 +728,19 @@ describe("Edit event", () => {
     return tree;
   }
   const saveButton = (tree: ReactTestRenderer) =>
-    tree.root.find(
-      (node) =>
-        node.props.label === "Save changes" && typeof node.type === "function",
-    );
+    byLabel(tree, "Save changes");
 
   it("opens filled in from the event", () => {
     const tree = renderEdit(single);
     expect(screenText(tree)).toContain("Edit event");
     expect(byLabel(tree, "Event name").props.value).toBe("Chapter");
     expect(byLabel(tree, "Location").props.value).toBe("Sanctuary");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 points · Required for everyone · Doesn't repeat",
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+      "Who's coming: Required for everyone",
+    );
+    expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
+      "Repeat: Doesn't repeat",
     );
   });
 
@@ -675,12 +774,11 @@ describe("Edit event", () => {
     expect(screenText(tree)).not.toContain("That change can't be saved.");
   });
 
-  it("edits the event's notes under More options, named as Event details names them (#4934)", async () => {
+  it("edits the event's notes, named as Event details names them (#4934)", async () => {
     const tree = renderEdit({
       ...single,
       event: { ...single.event, notes: "Old" },
     });
-    act(() => byLabel(tree, "More options").props.onPress());
     expect(byLabel(tree, "Notes").props.value).toBe("Old");
     type(tree, "Notes", "  Bring dues ");
     await act(async () => saveButton(tree).props.onPress());
@@ -797,6 +895,7 @@ describe("Edit event", () => {
 
     it("brings a moved end back with the start it was moved against", async () => {
       const first = open();
+      openRow(first, "When");
       // The end alone, pushed an hour later.
       const ends = first.root
         .findAllByType(WhenRow)
@@ -834,7 +933,7 @@ describe("Edit event", () => {
       ).toBe("Library");
     });
 
-    it("gives the edit up on Cancel", () => {
+    it("gives the edit up on Discard", () => {
       const first = open();
       type(first, "Location", "Great Hall");
       act(() =>
@@ -842,7 +941,7 @@ describe("Edit event", () => {
           .find(
             (node) =>
               node.type === ("Pressable" as never) &&
-              drawnText(node) === "Cancel",
+              drawnText(node) === "Discard",
           )
           .props.onPress(),
       );
@@ -996,7 +1095,6 @@ describe("New event from a chat's + (#3865)", () => {
     const onCreated = vi.fn();
     const tree = renderFromChat(onCreated);
     type(tree, "Event name", "Formal");
-    act(() => byLabel(tree, "More options").props.onPress());
     const attendance = tree.root.find(
       (node) =>
         typeof node.props.onChange === "function" &&

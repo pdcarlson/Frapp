@@ -25,7 +25,7 @@ import { FindDialog, FIND_PLACEHOLDER } from "@/components/layout/find-dialog";
  *
  * **It only searches** (#5476, Paul, 2026-11-18). From #4904 (2026-11-13) it
  * read "Search or ask Frapp" for a member with Ask and its dialog asked too;
- * Ask now has its own floating bar (`ask/ask-bar.tsx`).
+ * Ask now has its own bar (`ask/ask-bar.tsx`).
  *
  * The query lives here, not in the dialog, so closing the dialog (Escape or a
  * click outside) and reopening it keeps what was typed.

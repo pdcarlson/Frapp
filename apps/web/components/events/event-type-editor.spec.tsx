@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemberFacingError, type EventType } from "@repo/hooks";
 import { EVENT_TYPE_NAME_MAX_LENGTH, EVENT_TYPES_MAX } from "@repo/validation";
-import { EventTypePicker } from "@/components/events/event-type-picker";
+import { EventTypeRow } from "@/components/events/event-type-picker";
 import { markupLines } from "@/tests/stable-markup";
 
 /*
@@ -82,7 +82,7 @@ async function openEditor(types: EventType[] = TYPES, onOuterSubmit = vi.fn()) {
   typesState.data = types;
   render(
     <form onSubmit={onOuterSubmit}>
-      <EventTypePicker value={null} onPick={vi.fn()} canManage />
+      <EventTypeRow value={null} onPick={vi.fn()} canManage showSets />
     </form>,
   );
   await userEvent.click(screen.getByRole("button", { name: "Edit types" }));
@@ -100,16 +100,22 @@ beforeEach(() => {
   typesState.data = TYPES;
 });
 
-describe("EventTypePicker's Edit types", () => {
-  it("renders the trigger as a dashed chip at the end of the row", () => {
+describe("EventTypeRow's Edit types", () => {
+  it("renders the trigger as a quiet button at the end of the Type row", () => {
     render(
-      <EventTypePicker value={null} onPick={vi.fn()} canManage disabled />,
+      <EventTypeRow
+        value={null}
+        onPick={vi.fn()}
+        canManage
+        showSets
+        disabled
+      />,
     );
     const trigger = screen.getByRole("button", { name: "Edit types" });
     expect(trigger).toBeDisabled();
     expect(markupLines(trigger)).toMatchInlineSnapshot(`
       [
-        "<button aria-expanded="false" aria-haspopup="dialog" class="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[9px] border px-2 text-caption font-semibold transition-colors pointer-coarse:h-8 disabled:pointer-events-none disabled:text-disabled focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 border-dashed border-input bg-transparent text-muted-foreground hover:bg-card-hover hover:text-foreground" data-state="closed" disabled="" type="button">Edit types",
+        "<button aria-expanded="false" aria-haspopup="dialog" class="inline-flex h-9 items-center gap-1 whitespace-nowrap rounded-md px-2 text-caption font-semibold text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:h-11 disabled:pointer-events-none disabled:text-disabled focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25" data-state="closed" disabled="" type="button">Edit types",
         "  <svg aria-hidden="true" class="lucide lucide-settings-2 h-3 w-3">",
       ]
     `);
@@ -126,7 +132,7 @@ describe("EventTypePicker's Edit types", () => {
         "    <li class="flex items-center gap-2 px-3 py-1">",
         "      <div class="min-w-0 flex-1">",
         "        <p class="truncate text-sm font-semibold">Chapter meeting",
-        "        <p class="truncate text-caption text-muted-foreground">10 points, required for everyone",
+        "        <p class="truncate text-caption text-muted-foreground">10 points · Required",
         "      <button aria-label="Edit Chapter meeting" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Edit Chapter meeting">",
         "        <svg aria-hidden="true" class="lucide lucide-pencil">",
         "      <button aria-label="Delete Chapter meeting" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Delete Chapter meeting">",
@@ -134,7 +140,7 @@ describe("EventTypePicker's Edit types", () => {
         "    <li class="flex items-center gap-2 px-3 py-1">",
         "      <div class="min-w-0 flex-1">",
         "        <p class="truncate text-sm font-semibold">Social",
-        "        <p class="truncate text-caption text-muted-foreground">1 point, optional for everyone",
+        "        <p class="truncate text-caption text-muted-foreground">1 point",
         "      <button aria-label="Edit Social" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Edit Social">",
         "        <svg aria-hidden="true" class="lucide lucide-pencil">",
         "      <button aria-label="Delete Social" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Delete Social">",
@@ -420,7 +426,7 @@ describe("EventTypePicker's Edit types", () => {
 
     await userEvent.click(within(item).getByRole("button", { name: "Keep" }));
     expect(
-      within(item).getByText("10 points, required for everyone"),
+      within(item).getByText("10 points · Required"),
     ).toBeInTheDocument();
 
     await userEvent.click(

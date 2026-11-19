@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
+import { FloatingCreateButton } from "@/components/floating-create-button";
 import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
@@ -343,8 +344,9 @@ describe("Events header Subscribe", () => {
 
 // #5113 (Shawn, 2026-11-15): add an event from the Calendar itself, in every
 // view, not only from the tab bar's + (which a member can take off their
-// panel) or an hour of the grid.
-describe("Events header New event", () => {
+// panel) or an hour of the grid. #5570 (Paul, 2026-11-19): from the floating
+// + at the bottom, where the task board adds a task, not the header.
+describe("Calendar New event", () => {
   const nextMonth = (tree: ReactTestRenderer) =>
     tree.root.find(
       (node) =>
@@ -352,15 +354,14 @@ describe("Events header New event", () => {
         typeof node.props.onPress === "function",
     );
 
-  it("draws a round + after Subscribe for a member who can create", () => {
+  it("draws the floating + for a member who can create, and leaves the header to Subscribe", () => {
     permissions = ["*"];
-    const labels = render()
-      .root.findAllByType(HeaderButton)
-      .map((node) => node.props.label);
-    expect(labels).toEqual([
-      "Subscribe to events in your calendar",
-      "New event",
-    ]);
+    const tree = render();
+    const [plus] = tree.root.findAllByType(FloatingCreateButton);
+    expect(plus?.props.label).toBe("New event");
+    expect(
+      tree.root.findAllByType(HeaderButton).map((node) => node.props.label),
+    ).toEqual(["Subscribe to events in your calendar"]);
     permissions = [];
   });
 
@@ -480,7 +481,7 @@ describe("Calendar states", () => {
     expect(scroll.props.refreshControl).toBeDefined();
   });
 
-  it("points a creator at the header's + when nothing is scheduled", () => {
+  it("points a creator at the + when nothing is scheduled", () => {
     // An owner's grant is the wildcard.
     permissions = ["*"];
     events = [];
@@ -489,7 +490,7 @@ describe("Calendar states", () => {
     expect(screenText(tree)).toContain(
       "Nothing scheduled yet. Tap + to add the first event.",
     );
-    // The + the line names is the screen's own, in the header (#5113).
+    // The + the line names is the screen's own floating one (#5570).
     expect(createButton(tree)).toBeDefined();
     permissions = [];
   });
@@ -1163,6 +1164,43 @@ describe("Calendar long-press menus", () => {
         tree.root.findByType(ScreenShell).findAllByType(UndoBar),
       ).toHaveLength(0);
     }
+  });
+
+  // #5570: the Calendar's New event is the floating +, so the bar sits over
+  // it for a member who has it, and on the bottom edge for one who doesn't.
+  it("lifts the menu's Undo over the floating + for a member who can create", async () => {
+    const due = localIsoDate(MOUNTED_AT);
+    tasks = [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: due,
+        status: "TODO",
+        stored_status: "TODO",
+      },
+    ];
+    for (const [grants, lifted] of [
+      [["*"], true],
+      [[], false],
+    ] as const) {
+      permissions = [...grants];
+      const tree = render();
+      const row = tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.accessibilityLabel).startsWith("Clean the kitchen"),
+      )[0]!;
+      openMenu(row);
+      await act(async () => {
+        items(tree)
+          .find((node) => node.props.accessibilityLabel === "Mark done")!
+          .props.onPress();
+      });
+      expect(tree.root.findByType(UndoBar).props.aboveCreate).toBe(lifted);
+    }
+    permissions = [];
   });
 
   it("says Edit is opening while the event reads", () => {

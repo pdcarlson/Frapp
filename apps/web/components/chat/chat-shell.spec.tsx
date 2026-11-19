@@ -1173,8 +1173,18 @@ const channelAskState = vi.hoisted(() => ({
 // Ask Frapp's bar (#5476): who gets it is `ask-bar.tsx`'s question
 // (`ask-entry.spec.tsx`); here only where the shell puts it.
 vi.mock("@/components/ask/ask-bar", () => ({
-  AskBar: ({ compact }: { compact?: boolean }) => (
-    <button data-testid="ask-bar" data-compact={compact ? "" : undefined}>
+  AskBar: ({
+    compact,
+    className,
+  }: {
+    compact?: boolean;
+    className?: string;
+  }) => (
+    <button
+      data-testid="ask-bar"
+      data-compact={compact ? "" : undefined}
+      className={className}
+    >
       Ask Frapp
     </button>
   ),
@@ -4955,11 +4965,14 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     }
   });
 
-  it("puts Ask Frapp's bar at the foot of the Channels column with chat alone, and not beside a tool (#5476)", () => {
+  it("puts Ask Frapp's bar at the foot of the Channels column with chat alone below lg only, and not beside a tool (#5476, #5560)", () => {
     stubWidth(1440);
     const view = render(<ChatShell />);
     const bar = screen.getByTestId("ask-bar");
     expect(bar).toHaveAttribute("data-compact");
+    // From `lg` up Ask lives in the sidebar's foot (`app-nav.tsx`), so this
+    // one hides there rather than giving the window two.
+    expect(bar).toHaveClass("lg:hidden");
     // In the Channels column, never in the thread with its message box.
     expect(screen.getByRole("region", { name: "Channels" })).toContainElement(
       bar,

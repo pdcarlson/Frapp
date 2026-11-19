@@ -167,6 +167,47 @@ describe('ChapterDocumentController', () => {
     });
   });
 
+  describe('rename and move (#5563)', () => {
+    // As for who sees a file, its uploader or a manager refiles it, so the
+    // routes add nothing past the class floor and the service decides.
+    it('update and move add no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.update as object),
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.move as object),
+      ).toBeUndefined();
+    });
+
+    it('passes the caller and only the fields sent through', async () => {
+      const updateDocument = jest.fn().mockResolvedValue({ id: 'doc-1' });
+      const moveDocuments = jest.fn().mockResolvedValue([]);
+      Object.assign(mockChapterDocumentService, {
+        updateDocument,
+        moveDocuments,
+      });
+      await controller.update('chapter-123', 'user-1', 'doc-1', {
+        folder: null,
+      });
+      expect(updateDocument).toHaveBeenCalledWith(
+        'doc-1',
+        'chapter-123',
+        'user-1',
+        { title: undefined, folder: null },
+      );
+      await controller.move('chapter-123', 'user-1', {
+        document_ids: ['doc-1', 'doc-2'],
+        folder: 'Rush',
+      });
+      expect(moveDocuments).toHaveBeenCalledWith(
+        ['doc-1', 'doc-2'],
+        'chapter-123',
+        'user-1',
+        'Rush',
+      );
+    });
+  });
+
   describe('document types (#3642)', () => {
     // Every member reads the list (the upload form and filters show it);
     // only document managers change it.

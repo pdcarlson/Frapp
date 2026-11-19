@@ -65,6 +65,8 @@ import {
   DocumentTypeDto,
   DocumentAccessOptionsDto,
   SetDocumentAccessDto,
+  UpdateDocumentDto,
+  MoveDocumentsDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -222,6 +224,29 @@ export class ChapterDocumentController {
       effective_date: dto.effective_date,
       who_can_see: dto.who_can_see,
     });
+  }
+
+  // Before `:id` routes, though no other POST would take it. The service
+  // checks each file: its uploader, or a member who manages documents.
+  @Post('move')
+  @HttpCode(200)
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary:
+      'Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder)',
+  })
+  @ApiOkResponse({ type: ChapterDocumentDto, isArray: true })
+  async move(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: MoveDocumentsDto,
+  ): Promise<ChapterDocumentDto[]> {
+    return this.chapterDocumentService.moveDocuments(
+      dto.document_ids,
+      chapterId,
+      userId,
+      dto.folder,
+    );
   }
 
   @Get()
@@ -530,6 +555,26 @@ export class ChapterDocumentController {
   ) {
     await this.chapterDocumentService.delete(id, chapterId, userId);
     return { success: true };
+  }
+
+  // Like who sees it, a file is renamed and refiled by its uploader or by
+  // whoever manages documents; the service checks which.
+  @Patch(':id')
+  @ApiOperation({
+    summary:
+      'Rename a document or move it to another folder (not a copy from the Google Drive folder)',
+  })
+  @ApiOkResponse({ type: ChapterDocumentDto })
+  async update(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDocumentDto,
+  ): Promise<ChapterDocumentDto> {
+    return this.chapterDocumentService.updateDocument(id, chapterId, userId, {
+      title: dto.title,
+      folder: dto.folder,
+    });
   }
 
   // A file's own list is set by its uploader within its folder, or by whoever
