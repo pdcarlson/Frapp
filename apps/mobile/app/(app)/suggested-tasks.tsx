@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
-import { lastYearBareDay, lastYearDay } from "@repo/formatting";
+import {
+  dueEntryFromTask,
+  formatDateEntry,
+  lastYearBareDay,
+  lastYearDay,
+} from "@repo/formatting";
 import {
   useAcceptAiSuggestion,
   useActiveChapterId,
@@ -31,7 +36,6 @@ import {
   aiSuggestionRefusalLine,
   lastYearEventLine,
   lastYearTaskLine,
-  meetingDueLabel,
 } from "@repo/validation";
 import {
   useAiReport,
@@ -39,10 +43,24 @@ import {
 } from "@/components/ai/report-ai-sheet";
 import { BACK_TO_TASKS } from "@/components/back-row";
 import {
+  BackGlyph,
+  CloseGlyph,
+  FlagGlyph,
+  ForwardGlyph,
+  MoreGlyph,
+  PencilGlyph,
+  PersonGlyph,
+} from "@/components/control-glyphs";
+import {
   NewEventSheet,
   useCanCreateEvents,
 } from "@/components/events/new-event-sheet";
 import { InlineNote } from "@/components/inline-note";
+import {
+  useItemMenu,
+  type ItemMenuAction,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
 import { SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -55,6 +73,7 @@ import {
   NewTaskSheet,
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
+import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { NewEventDraft } from "@/lib/events/create-event";
@@ -75,14 +94,17 @@ import { pageSurfaces } from "@/lib/surfaces";
  * draws the same rows (`components/ai/suggested-tasks.tsx`).
  *
  * The secretary does this right after the meeting, from the notification, so
- * each row is decided in one tap, the way Gmail's and Linear's triage lists
- * work on a phone:
+ * each card is decided in one tap, the way Linear's triage and Todoist's
+ * task rows work on a phone. Each card is the same as web's (Paul,
+ * 2026-11-19): the title and the line of the minutes, a who chip and a when
+ * chip, Create task, and a worded ⋯ menu.
  *
- * - **Accept** makes the task as suggested when the minutes said who and
- *   when. When either is missing it opens the normal task form on the
+ * - **Create task** makes the task as suggested when the minutes said who
+ *   and when. When either is missing it opens the normal task form on the
  *   suggestion instead, since a task needs both.
- * - **Tapping the row** opens that same form, to change anything first.
- * - **Dismiss** takes it off the list.
+ * - **The title or either chip** opens that same form, to change anything
+ *   first. "Who?" and "When?" are muted while nothing is set, as web's are.
+ * - **⋯** holds Change before creating, Dismiss and Report this.
  *
  * The server lists a suggestion only for someone who could accept it. A
  * decided row leaves the list; a refusal (another officer got there first)
@@ -188,6 +210,7 @@ function SuggestedTasks() {
   const dismiss = useDismissAiSuggestion();
   const refresh = useRefetchAll([suggestionsQuery]);
   const reporting = useAiReport();
+  const itemMenu = useItemMenu();
 
   const [busy, setBusy] = useState<{ id: string; doing: Doing } | null>(null);
   // Why a row's last press didn't go through, shown under that row.
@@ -225,6 +248,17 @@ function SuggestedTasks() {
     }
     return [...bySource.values()];
   }, [items]);
+
+  // One card at a time (Paul, 2026-11-19: "one at a time actually"), as on
+  // web: the minutes' in their order, then last year's. Deciding one leaves
+  // the place where it is, so the next one takes its place.
+  const queue = useMemo(
+    () => [...groups.flat(), ...lastYearTasks],
+    [groups, lastYearTasks],
+  );
+  const [index, setIndex] = useState(0);
+  const at = Math.min(index, Math.max(queue.length - 1, 0));
+  const current = queue[at] ?? null;
 
   function meetingName(id: string): string {
     return (
@@ -359,6 +393,38 @@ function SuggestedTasks() {
     return whoLabel(who, directory);
   }
 
+  /**
+   * A card's ⋯ menu, worded as web's is: Change before creating (a card that
+   * isn't asking about a twin), Dismiss, and Report this until it is sent.
+   */
+  function menuFor(item: Waiting, twin: boolean): ItemMenuHandle | null {
+    const report = reportFor(item, reporting);
+    const actions: ItemMenuAction[] = [];
+    if (!twin) {
+      actions.push({
+        key: "change",
+        label: AI_SUGGESTION_COPY.change,
+        glyph: (color) => <PencilGlyph color={color} />,
+        run: () => setFormFor(item),
+      });
+    }
+    actions.push({
+      key: "dismiss",
+      label: AI_SUGGESTION_COPY.dismiss,
+      glyph: (color) => <CloseGlyph color={color} />,
+      run: () => void dismissRow(item),
+    });
+    if (report && !report.reported) {
+      actions.push({
+        key: "report",
+        label: AI_REPORT_COPY.action,
+        glyph: (color) => <FlagGlyph color={color} />,
+        run: report.onPress,
+      });
+    }
+    return itemMenu.handleFor({ title: item.task.title, actions });
+  }
+
   const row = (item: Waiting) => (
     <SuggestionRow
       key={item.id}
@@ -369,7 +435,6 @@ function SuggestedTasks() {
       problem={problems[item.id] ?? null}
       onOpen={() => setFormFor(item)}
       onAccept={() => void acceptRow(item)}
-      onDismiss={() => void dismissRow(item)}
       onAlreadyDoing={
         isFromLastYear(item)
           ? () => void dismissRow(item, "already_doing")
@@ -381,7 +446,7 @@ function SuggestedTasks() {
       onOpenExisting={(id) =>
         router.push({ pathname: "/task-details", params: { id } })
       }
-      report={reportFor(item, reporting)}
+      menu={menuFor(item, similar.twinOf(item.id) !== null)}
       styles={styles}
     />
   );
@@ -408,41 +473,46 @@ function SuggestedTasks() {
           />
         ) : waiting === 0 ? (
           <InlineNote>{AI_SUGGESTION_COPY.empty}</InlineNote>
-        ) : (
-          groups.map((group) => {
-            const first = group[0]!;
-            const fromMeeting = first.source.type === "meeting";
-            return (
-              <View
-                key={`${first.source.type}:${first.source.id}`}
-                style={styles.group}
-              >
-                {fromMeeting ? (
-                  <InlineNote
-                    action={{
-                      label: meetingName(first.source.id),
-                      onPress: () =>
-                        router.push({
-                          pathname: "/minutes-details",
-                          params: { id: first.source.id },
-                        }),
-                    }}
-                  >
-                    {AI_SUGGESTION_COPY.fromMinutesOf}
-                  </InlineNote>
-                ) : (
-                  <InlineNote>
-                    {`${AI_SUGGESTION_COPY.fromMinutesOf} ${AI_SUGGESTION_COPY.aMeeting}`}
-                  </InlineNote>
-                )}
-                {group.map(row)}
-              </View>
-            );
-          })
-        )}
-        {events.length + lastYearTasks.length > 0 ? (
+        ) : current ? (
           <View style={styles.group}>
-            <SectionHeader count={events.length + lastYearTasks.length}>
+            <View style={styles.pagerRow}>
+              <SectionHeader count={queue.length}>
+                {AI_SUGGESTION_COPY.heading}
+              </SectionHeader>
+              {queue.length > 1 ? (
+                <Pager
+                  at={at}
+                  of={queue.length}
+                  onMove={setIndex}
+                  styles={styles}
+                />
+              ) : null}
+            </View>
+            {isFromLastYear(current) ? null : current.source.type ===
+              "meeting" ? (
+              <InlineNote
+                action={{
+                  label: meetingName(current.source.id),
+                  onPress: () =>
+                    router.push({
+                      pathname: "/minutes-details",
+                      params: { id: current.source.id },
+                    }),
+                }}
+              >
+                {AI_SUGGESTION_COPY.fromMinutesOf}
+              </InlineNote>
+            ) : (
+              <InlineNote>
+                {`${AI_SUGGESTION_COPY.fromMinutesOf} ${AI_SUGGESTION_COPY.aMeeting}`}
+              </InlineNote>
+            )}
+            {row(current)}
+          </View>
+        ) : null}
+        {events.length > 0 ? (
+          <View style={styles.group}>
+            <SectionHeader count={events.length}>
               {LAST_YEAR_COPY.heading}
             </SectionHeader>
             <InlineNote>{LAST_YEAR_COPY.intro}</InlineNote>
@@ -461,7 +531,6 @@ function SuggestedTasks() {
                 styles={styles}
               />
             ))}
-            {lastYearTasks.map(row)}
           </View>
         ) : null}
       </ScreenShell>
@@ -495,7 +564,65 @@ function SuggestedTasks() {
         />
       ) : null}
       {reporting.reportSheet}
+      {itemMenu.element}
     </>
+  );
+}
+
+/** "2 of 8" with previous and next, as web's card has them. */
+function Pager({
+  at,
+  of,
+  onMove,
+  styles,
+}: {
+  at: number;
+  of: number;
+  onMove: (index: number) => void;
+  styles: Styles;
+}) {
+  const { tokens } = useFrappTheme();
+  const step = (
+    label: string,
+    to: number,
+    enabled: boolean,
+    glyph: ReactNode,
+  ) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !enabled }}
+      disabled={!enabled}
+      hitSlop={4}
+      onPress={() => onMove(to)}
+      style={({ pressed }) => [
+        styles.more,
+        pressed ? styles.pressed : null,
+        enabled ? null : styles.dimmed,
+      ]}
+    >
+      {glyph}
+    </Pressable>
+  );
+  const color = tokens.color.text.foreground;
+  return (
+    <View style={styles.pager}>
+      <Text accessibilityLiveRegion="polite" style={styles.position}>
+        {AI_SUGGESTION_COPY.position(at + 1, of)}
+      </Text>
+      {step(
+        AI_SUGGESTION_COPY.previous,
+        at - 1,
+        at > 0,
+        <BackGlyph color={color} />,
+      )}
+      {step(
+        AI_SUGGESTION_COPY.next,
+        at + 1,
+        at < of - 1,
+        <ForwardGlyph color={color} />,
+      )}
+    </View>
   );
 }
 
@@ -520,10 +647,10 @@ type Styles = ReturnType<typeof createStyles>;
 type RowReport = { reported: boolean; onPress: () => void } | null;
 
 /**
- * A row's answers. The two decisions sit on the right as buttons. From the
- * minutes the quiet "Report this" shares their line; a last-year row has a
- * third answer, so "Report this" and "Not this year" take a quiet line of
- * their own under the buttons rather than crowding four controls into one.
+ * A row's answers. The decisions sit on the right as buttons. A last-year
+ * event has a third answer, so "Report this" and "Not this year" take a
+ * quiet line of their own under the buttons rather than crowding four
+ * controls into one; a suggested task's card keeps those in its ⋯ menu.
  * Every label keeps its words while it saves, so nothing changes width.
  */
 function RowActions({
@@ -541,7 +668,7 @@ function RowActions({
   disabled: boolean;
   report: RowReport;
   primary: { label: string; doing: Doing; onPress: () => void } | null;
-  secondary: { label: string; doing: Doing; onPress: () => void };
+  secondary?: { label: string; doing: Doing; onPress: () => void };
   quiet?: { label: string; doing: Doing; onPress: () => void };
   styles: Styles;
 }) {
@@ -570,23 +697,25 @@ function RowActions({
     <>
       <View style={styles.actions}>
         {quiet ? null : reportLink}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${secondary.label}: ${name}`}
-          accessibilityState={{ disabled, busy: busy === secondary.doing }}
-          disabled={disabled}
-          // 36pt drawn against the 44pt minimum.
-          hitSlop={4}
-          onPress={secondary.onPress}
-          style={({ pressed }) => [
-            styles.button,
-            styles.dismiss,
-            pressed ? styles.pressed : null,
-            disabled && busy !== secondary.doing ? styles.dimmed : null,
-          ]}
-        >
-          <Text style={styles.dismissText}>{secondary.label}</Text>
-        </Pressable>
+        {secondary ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${secondary.label}: ${name}`}
+            accessibilityState={{ disabled, busy: busy === secondary.doing }}
+            disabled={disabled}
+            // 36pt drawn against the 44pt minimum.
+            hitSlop={4}
+            onPress={secondary.onPress}
+            style={({ pressed }) => [
+              styles.button,
+              styles.dismiss,
+              pressed ? styles.pressed : null,
+              disabled && busy !== secondary.doing ? styles.dimmed : null,
+            ]}
+          >
+            <Text style={styles.dismissText}>{secondary.label}</Text>
+          </Pressable>
+        ) : null}
         {primary ? (
           <Pressable
             accessibilityRole="button"
@@ -640,13 +769,12 @@ function SuggestionRow({
   problem,
   onOpen,
   onAccept,
-  onDismiss,
   onAlreadyDoing,
   existing,
   onSameTask,
   onDifferentTask,
   onOpenExisting,
-  report,
+  menu,
   styles,
 }: {
   item: Waiting;
@@ -656,7 +784,6 @@ function SuggestionRow({
   problem: string | null;
   onOpen: () => void;
   onAccept: () => void;
-  onDismiss: () => void;
   /** Set for a task drawn from last year's board, which has a third answer. */
   onAlreadyDoing?: () => void;
   /** The open task this suggestion reads like, until the officer says. */
@@ -664,9 +791,11 @@ function SuggestionRow({
   onSameTask: (existing: ExistingTask) => void;
   onDifferentTask: () => void;
   onOpenExisting: (id: string) => void;
-  report: RowReport;
+  /** Change before creating, Dismiss, Report this. */
+  menu: ItemMenuHandle | null;
   styles: Styles;
 }) {
+  const { tokens } = useFrappTheme();
   const { task } = item;
   if (existing) {
     return (
@@ -678,90 +807,162 @@ function SuggestionRow({
         problem={problem}
         onSame={() => onSameTask(existing)}
         onDifferent={onDifferentTask}
-        onDismiss={onDismiss}
         onOpenExisting={() => onOpenExisting(existing.id)}
-        report={report}
+        menu={menu}
         styles={styles}
       />
     );
   }
-  const meta = [
-    who ?? AI_SUGGESTION_COPY.who,
-    task.due_date ? `Due ${meetingDueLabel(task.due_date)}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const due = task.due_date
+    ? formatDateEntry(
+        dueEntryFromTask({ due_date: task.due_date, due_at: task.due_at }),
+        new Date(),
+      )
+    : null;
   const lastYear = task.last_year_on
     ? lastYearTaskLine(lastYearBareDay(task.last_year_on))
     : null;
-  const accept = {
-    label: AI_SUGGESTION_COPY.accept,
-    doing: "accept" as const,
-    onPress: onAccept,
-  };
-  const dismiss = {
-    // "Dismiss" on a last-year task too, as web's row says it; "Not this
-    // year" is an event's.
-    label: AI_SUGGESTION_COPY.dismiss,
-    doing: "dismiss" as const,
-    onPress: onDismiss,
-  };
+  const muted = tokens.color.text.mutedForeground;
 
   return (
     <View style={styles.card}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${task.title}. ${lastYear ?? meta}`}
-        accessibilityHint={AI_SUGGESTION_COPY.change}
-        disabled={disabled}
-        onPress={onOpen}
-        style={({ pressed }) => [
-          styles.cardText,
-          pressed ? styles.pressed : null,
-        ]}
-      >
-        <Text style={styles.title}>{task.title}</Text>
-        {/* The line of the minutes, when the title had to be cut from it. */}
-        {item.quote && item.quote !== task.title ? (
-          <Text style={styles.meta} numberOfLines={3}>
-            {`“${item.quote}”`}
+      <View style={styles.cardHead}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={task.title}
+          accessibilityHint={AI_SUGGESTION_COPY.change}
+          disabled={disabled}
+          onPress={onOpen}
+          style={({ pressed }) => [
+            styles.cardText,
+            styles.cardHeadText,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.title}>{task.title}</Text>
+          {/* The line of the minutes, when the title had to be cut from it. */}
+          {item.quote && item.quote !== task.title ? (
+            <Text style={styles.meta} numberOfLines={3}>
+              {`“${item.quote}”`}
+            </Text>
+          ) : null}
+          {lastYear ? <Text style={styles.meta}>{lastYear}</Text> : null}
+        </Pressable>
+        <RowMenuButton
+          name={task.title}
+          menu={menu}
+          disabled={disabled}
+          styles={styles}
+        />
+      </View>
+      {/*
+       * Who and when as two chips, the way web's card shows them. Either
+       * opens the task form on the suggestion, where both are set; "Who?"
+       * and "When?" are muted while nothing is set.
+       */}
+      <View style={styles.chips}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Assignee for ${task.title}: ${who ?? AI_SUGGESTION_COPY.who}`}
+          accessibilityHint={AI_SUGGESTION_COPY.change}
+          disabled={disabled}
+          hitSlop={6}
+          onPress={onOpen}
+          style={({ pressed }) => [
+            styles.chip,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <PersonGlyph color={muted} />
+          <Text
+            numberOfLines={1}
+            style={[styles.chipText, who ? null : styles.chipTextEmpty]}
+          >
+            {who ?? AI_SUGGESTION_COPY.who}
           </Text>
-        ) : null}
-        {lastYear ? <Text style={styles.meta}>{lastYear}</Text> : null}
-        <Text style={styles.meta}>{meta}</Text>
-      </Pressable>
-      {onAlreadyDoing ? (
-        <RowActions
-          name={task.title}
-          busy={busy}
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Due date for ${task.title}: ${due ?? AI_SUGGESTION_COPY.when}`}
+          accessibilityHint={AI_SUGGESTION_COPY.change}
           disabled={disabled}
-          report={report}
-          primary={accept}
-          secondary={{
-            label: LAST_YEAR_COPY.alreadyDoing,
-            doing: "already",
-            onPress: onAlreadyDoing,
-          }}
-          quiet={dismiss}
-          styles={styles}
-        />
-      ) : (
-        <RowActions
-          name={task.title}
-          busy={busy}
-          disabled={disabled}
-          report={report}
-          primary={accept}
-          secondary={dismiss}
-          styles={styles}
-        />
-      )}
+          hitSlop={6}
+          onPress={onOpen}
+          style={({ pressed }) => [
+            styles.chip,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <CalendarGlyph color={muted} size={14} />
+          <Text
+            numberOfLines={1}
+            style={[styles.chipText, due ? null : styles.chipTextEmpty]}
+          >
+            {due ?? AI_SUGGESTION_COPY.when}
+          </Text>
+        </Pressable>
+      </View>
+      <RowActions
+        name={task.title}
+        busy={busy}
+        disabled={disabled}
+        report={null}
+        primary={{
+          label: AI_SUGGESTION_COPY.accept,
+          doing: "accept",
+          onPress: onAccept,
+        }}
+        secondary={
+          onAlreadyDoing
+            ? {
+                label: LAST_YEAR_COPY.alreadyDoing,
+                doing: "already",
+                onPress: onAlreadyDoing,
+              }
+            : undefined
+        }
+        styles={styles}
+      />
       {problem ? (
         <Text accessibilityLiveRegion="polite" style={styles.problem}>
           {problem}
         </Text>
       ) : null}
     </View>
+  );
+}
+
+/** A card's ⋯, which opens its worded menu. */
+function RowMenuButton({
+  name,
+  menu,
+  disabled,
+  styles,
+}: {
+  name: string;
+  menu: ItemMenuHandle | null;
+  disabled: boolean;
+  styles: Styles;
+}) {
+  const { tokens } = useFrappTheme();
+  if (!menu) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${AI_SUGGESTION_COPY.more}: ${name}`}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      // 36pt drawn against the 44pt minimum.
+      hitSlop={4}
+      onPress={(event) => menu.open(event.nativeEvent.pageY)}
+      style={({ pressed }) => [
+        styles.more,
+        pressed ? styles.pressed : null,
+        disabled ? styles.dimmed : null,
+      ]}
+    >
+      <MoreGlyph color={tokens.color.text.foreground} />
+    </Pressable>
   );
 }
 
@@ -778,9 +979,8 @@ function SimilarTaskRow({
   problem,
   onSame,
   onDifferent,
-  onDismiss,
   onOpenExisting,
-  report,
+  menu,
   styles,
 }: {
   item: Waiting;
@@ -790,16 +990,26 @@ function SimilarTaskRow({
   problem: string | null;
   onSame: () => void;
   onDifferent: () => void;
-  onDismiss: () => void;
   onOpenExisting: () => void;
-  report: RowReport;
+  /** Dismiss and Report this, as web's card has them. */
+  menu: ItemMenuHandle | null;
   styles: Styles;
 }) {
   const { task } = item;
   const where = existingTaskLine(existing);
   return (
     <View style={styles.card}>
-      <Text style={styles.meta}>{SIMILAR_TASK_COPY.heading}</Text>
+      <View style={styles.cardHead}>
+        <Text style={[styles.meta, styles.cardHeadText]}>
+          {SIMILAR_TASK_COPY.heading}
+        </Text>
+        <RowMenuButton
+          name={task.title}
+          menu={menu}
+          disabled={disabled}
+          styles={styles}
+        />
+      </View>
       <View style={styles.compare}>
         <View style={styles.compareSide}>
           <Text style={styles.meta}>{SIMILAR_TASK_COPY.suggested}</Text>
@@ -832,7 +1042,7 @@ function SimilarTaskRow({
         name={task.title}
         busy={busy}
         disabled={disabled}
-        report={report}
+        report={null}
         primary={{
           label: SIMILAR_TASK_COPY.same,
           doing: "already",
@@ -842,11 +1052,6 @@ function SimilarTaskRow({
           label: SIMILAR_TASK_COPY.different,
           doing: "keep",
           onPress: onDifferent,
-        }}
-        quiet={{
-          label: AI_SUGGESTION_COPY.dismiss,
-          doing: "dismiss",
-          onPress: onDismiss,
         }}
         styles={styles}
       />
@@ -968,6 +1173,67 @@ function createStyles(tokens: SignetTokens) {
     },
     cardText: {
       gap: tokens.spacing.xs,
+    },
+    pagerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
+    },
+    pager: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    position: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      fontVariant: ["tabular-nums"],
+    },
+    cardHead: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: tokens.spacing.sm,
+    },
+    cardHeadText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    more: {
+      width: 36,
+      height: 36,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: tokens.radius.control,
+      // Level with the title's first line rather than below it.
+      marginTop: -tokens.spacing.xs,
+      marginRight: -tokens.spacing.xs,
+    },
+    chips: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    chip: {
+      flexShrink: 1,
+      minWidth: 0,
+      height: 32,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: tokens.spacing.sm,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+    },
+    chipText: {
+      ...typeRole(tokens.typography.role.caption),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
+      flexShrink: 1,
+    },
+    chipTextEmpty: {
+      color: tokens.color.text.mutedForeground,
     },
     compare: {
       flexDirection: "row",

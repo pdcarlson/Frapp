@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { propertyChipClass } from "./property-chip";
 import { cn, initials } from "@/lib/utils";
 import {
   EVERYONE_IN_CHAPTER,
@@ -116,6 +117,12 @@ export interface WhoPickerProps {
   align?: "start" | "end";
   /** A trigger of the caller's own (Up for grabs' Assign). */
   trigger?: ReactElement;
+  /**
+   * Drawn as a property chip (a suggested task's card) instead of a field;
+   * `guessed` dashes it, for a who Frapp filled in.
+   */
+  chip?: boolean;
+  guessed?: boolean;
   "aria-describedby"?: string;
 }
 
@@ -144,6 +151,8 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
       className,
       align = "start",
       trigger,
+      chip = false,
+      guessed = false,
       "aria-describedby": describedBy,
     },
     ref,
@@ -156,28 +165,51 @@ export const WhoPicker = forwardRef<HTMLButtonElement, WhoPickerProps>(
     return (
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          {trigger ?? (
-            <Button
-              ref={ref}
-              id={id}
-              type="button"
-              size="toolbar"
-              variant="secondary"
-              disabled={disabled}
-              aria-label={picked ? `${label}: ${picked}` : label}
-              aria-invalid={invalid || undefined}
-              aria-describedby={describedBy}
-              className={cn(
-                "min-w-0 max-w-full justify-start gap-1.5 font-normal",
-                invalid && "border-destructive text-destructive-text",
-                !picked && "text-muted-foreground",
-                className,
-              )}
-            >
-              <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{picked ?? placeholder}</span>
-            </Button>
-          )}
+          {trigger ??
+            (chip ? (
+              <button
+                ref={ref}
+                id={id}
+                type="button"
+                disabled={disabled}
+                aria-label={picked ? `${label}: ${picked}` : label}
+                aria-invalid={invalid || undefined}
+                aria-describedby={describedBy}
+                className={cn(
+                  propertyChipClass({
+                    guessed: guessed && !!picked,
+                    missing: invalid,
+                    empty: !picked,
+                  }),
+                  FOCUS_RING,
+                  className,
+                )}
+              >
+                <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{picked ?? placeholder}</span>
+              </button>
+            ) : (
+              <Button
+                ref={ref}
+                id={id}
+                type="button"
+                size="toolbar"
+                variant="secondary"
+                disabled={disabled}
+                aria-label={picked ? `${label}: ${picked}` : label}
+                aria-invalid={invalid || undefined}
+                aria-describedby={describedBy}
+                className={cn(
+                  "min-w-0 max-w-full justify-start gap-1.5 font-normal",
+                  invalid && "border-destructive text-destructive-text",
+                  !picked && "text-muted-foreground",
+                  className,
+                )}
+              >
+                <Users className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">{picked ?? placeholder}</span>
+              </Button>
+            ))}
         </PopoverTrigger>
         <PopoverContent
           align={align}

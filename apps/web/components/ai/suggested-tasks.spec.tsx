@@ -134,6 +134,21 @@ const noWho = {
 const acceptButtons = () =>
   screen.getAllByRole("button", { name: "Create task" });
 
+/** A card's ⋯ menu, then one of its worded items (#5562). */
+function menuItem(title: string, name: string) {
+  fireEvent.keyDown(screen.getByRole("button", { name: `More: ${title}` }), {
+    key: "Enter",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
+/** The due chip's popover, holding the due field. */
+function openDue(title: string) {
+  fireEvent.click(
+    screen.getByRole("button", { name: new RegExp(`^Due date for ${title}`) }),
+  );
+}
+
 describe("SuggestedTasks (#4313)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -184,6 +199,13 @@ describe("SuggestedTasks (#4313)", () => {
     fireEvent.click(acceptButtons()[0]!);
 
     expect(screen.getByText("Pick who this is for.")).toBeTruthy();
+    // The date chip turns to the warning tone, and its field says why.
+    expect(
+      screen
+        .getByRole("button", { name: "Due date for Task 1" })
+        .getAttribute("aria-invalid"),
+    ).toBe("true");
+    openDue("Task 1");
     expect(screen.getByText("Pick a due date.")).toBeTruthy();
     expect(mocks.accept).not.toHaveBeenCalled();
   });
@@ -193,9 +215,13 @@ describe("SuggestedTasks (#4313)", () => {
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    fireEvent.change(screen.getByLabelText("Due date for Task 1"), {
-      target: { value: "12/25/2030" },
-    });
+    openDue("Task 1");
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Due date for Task 1" }),
+      {
+        target: { value: "12/25/2030" },
+      },
+    );
     fireEvent.click(acceptButtons()[0]!);
 
     await waitFor(() =>
@@ -291,9 +317,7 @@ describe("SuggestedTasks (#4313)", () => {
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Change before creating: Task 1" }),
-    );
+    menuItem("Task 1", "Change before creating");
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "Book the bus" },
     });
@@ -315,7 +339,10 @@ describe("SuggestedTasks (#4313)", () => {
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    expect(screen.getByRole("button", { name: "Report Task 1" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More: Task 1" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Report this" })).toBeTruthy();
   });
 
   it("dismisses without asking for anything", async () => {
@@ -325,7 +352,7 @@ describe("SuggestedTasks (#4313)", () => {
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^Dismiss / }));
+    menuItem("Task 1", "Dismiss");
     await waitFor(() =>
       expect(mocks.dismiss).toHaveBeenCalledWith({
         id: "1",
@@ -340,9 +367,7 @@ describe("SuggestedTasks (#4313)", () => {
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Change before creating: Task 1" }),
-    );
+    menuItem("Task 1", "Change before creating");
 
     const title = screen.getByLabelText("Title");
     expect((title as HTMLInputElement).value).toBe("Task 1");
@@ -544,9 +569,16 @@ describe("SuggestedTasks (#4313)", () => {
           headingId="s"
         />,
       );
-      expect(screen.getByText("Suggested from the minutes")).toBeTruthy();
+      // Frapp's guesses are dashed chips that say so to a screen reader.
       expect(
-        screen.getByText("Suggested: a week after the meeting"),
+        screen.getByRole("button", {
+          name: /^Assignee for Sam to book the bus, suggested from the minutes/,
+        }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", {
+          name: /Suggested: a week after the meeting$/,
+        }),
       ).toBeTruthy();
 
       fireEvent.click(acceptButtons()[0]!);
@@ -661,12 +693,15 @@ describe("SuggestedTasks (#4313)", () => {
       // Nothing creates it until the officer says which it is.
       expect(screen.queryByRole("button", { name: "Create task" })).toBeNull();
 
-      // A plain Dismiss is still one press away.
-      expect(
-        screen.getByRole("button", {
-          name: "Dismiss Book the hall for formal",
-        }),
-      ).toBeTruthy();
+      // A plain Dismiss is still in the card's menu.
+      fireEvent.keyDown(
+        screen.getByRole("button", { name: "More: Book the hall for formal" }),
+        { key: "Enter" },
+      );
+      expect(screen.getByRole("menuitem", { name: "Dismiss" })).toBeTruthy();
+      fireEvent.keyDown(screen.getByRole("menuitem", { name: "Dismiss" }), {
+        key: "Escape",
+      });
 
       fireEvent.click(screen.getByRole("button", { name: "Already a task" }));
       await waitFor(() =>
