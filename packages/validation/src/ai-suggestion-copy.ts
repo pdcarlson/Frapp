@@ -30,6 +30,8 @@ export const AI_SUGGESTION_COPY = {
   accept: "Create task",
   dismiss: "Dismiss",
   change: "Change before creating",
+  /** The card's ⋯ menu: Change before creating, Dismiss, Report this. */
+  more: "More",
   accepting: "Creating…",
   acceptAll: (count: number) => `Create all ${count}`,
   acceptReady: (count: number) => `Create the ${count} that say who and when`,
@@ -41,6 +43,8 @@ export const AI_SUGGESTION_COPY = {
   suggestedWho: "Suggested from the minutes",
   suggestedDue: "Suggested: a week after the meeting",
   who: "Who?",
+  /** The due chip while no day is set. */
+  when: "When?",
   missingWho: "Pick who this is for.",
   created: "Task created",
   createdCount: (count: number) =>

@@ -735,6 +735,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [MEMBER_TEXT],
   },
+  // "Minutes requested" to whoever is writing them (#5471): names the
+  // meeting's event and the members who asked, never the minutes.
+  'application/services/meeting-minutes-request.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   // The hand-off to `MeetingService.notifyRecordingUploaded` (#712).
   'application/services/meeting-recording.service.ts': {
     calls: 1,

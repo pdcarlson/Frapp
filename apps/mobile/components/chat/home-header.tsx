@@ -81,7 +81,7 @@ export function SearchButton() {
   return (
     <HeaderButton
       label="Search"
-      hint="Searches channels, members, messages and events."
+      hint="Searches channels, settings, members, messages and events."
       onPress={() => router.push("/search")}
     >
       <SearchGlyph color={tokens.color.text.foreground} size={GLYPH} />

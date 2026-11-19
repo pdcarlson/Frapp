@@ -1,3 +1,4 @@
+import { settingEntryById, settingWebPath } from "@repo/hooks/settings-search";
 import {
   buildFindResults as buildSharedFindResults,
   type FindInput,
@@ -39,6 +40,11 @@ function findHref(target: FindTarget): string {
       return "/events";
     case "backwork":
       return "/backwork";
+    case "setting": {
+      // The settings page it lives on, scrolled to it and lit.
+      const entry = settingEntryById(target.settingId);
+      return (entry && settingWebPath(entry)) ?? "/settings";
+    }
   }
 }
 

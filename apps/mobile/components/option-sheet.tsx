@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from "react";
+import { Fragment, forwardRef, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,12 @@ export interface SheetOption {
    * in the label role, so the two lines read as a title and its detail.
    */
   detail?: ReactNode;
+  /**
+   * A heading drawn above this row, starting a section of the list: the
+   * task form's From splits Tiers, Roles and Groups (#5473), as a select
+   * splits two kinds (`components.md` § select).
+   */
+  heading?: string;
   /** What a screen reader hears for the row; the label when absent. */
   accessibilityLabel?: string;
   accessibilityHint?: string;
@@ -54,7 +60,8 @@ export const TWO_LINE_ROW_WEIGHT = 4 / 3;
 /** Whether a list of these rows opens sized to them rather than scrolling. */
 export function fitsContent(options: readonly SheetOption[]): boolean {
   const height = options.reduce(
-    (sum, option) => sum + (option.detail ? TWO_LINE_ROW_WEIGHT : 1),
+    (sum, option) =>
+      sum + (option.detail ? TWO_LINE_ROW_WEIGHT : 1) + (option.heading ? 1 : 0),
     0,
   );
   return height <= MAX_ROWS_SIZED_TO_CONTENT + 1e-9;
@@ -92,7 +99,7 @@ export const OptionSheet = forwardRef<
 
   const rows = options.map((option, index) => {
     const on = option.value === selected;
-    return (
+    const row = (
       <Pressable
         key={option.value ?? "any"}
         accessibilityRole="radio"
@@ -127,6 +134,16 @@ export const OptionSheet = forwardRef<
         )}
         {on ? <CheckGlyph color={accent} size={20} /> : null}
       </Pressable>
+    );
+    return option.heading ? (
+      <Fragment key={option.value ?? "any"}>
+        <Text accessibilityRole="header" style={styles.heading}>
+          {option.heading}
+        </Text>
+        {row}
+      </Fragment>
+    ) : (
+      row
     );
   });
 
@@ -179,6 +196,12 @@ function createStyles(tokens: SignetTokens) {
       paddingVertical: tokens.spacing.sm,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,
+    },
+    heading: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.xs,
     },
     rowLast: {
       borderBottomWidth: 0,

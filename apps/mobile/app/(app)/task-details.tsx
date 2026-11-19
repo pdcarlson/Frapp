@@ -22,7 +22,7 @@ import {
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
-import { can, TASK_AUDIENCE_COPY } from "@repo/validation";
+import { can, TASK_AUDIENCE_COPY, TASK_FOLLOWER_COPY } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_TASKS } from "@/components/back-row";
@@ -102,6 +102,11 @@ import {
   RELEASED_PARAM,
 } from "@/lib/tasks/open-tasks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/** A following tier, role or group since deleted, as a fact's value. */
+const FOLLOWER_DELETED =
+  TASK_FOLLOWER_COPY.deleted.charAt(0).toUpperCase() +
+  TASK_FOLLOWER_COPY.deleted.slice(1);
 
 /**
  * One task as its own pushed screen (#5492), where the task detail sheet used
@@ -594,11 +599,16 @@ function TaskScreen({
   const status = rowStatus(row);
   const due = formatDueDate(row.dueDate);
   const points = formatPointsChip(row.pointReward, row.pointsAwarded);
-  const from = row.createdBy
-    ? row.createdBy === viewerId
-      ? "You"
-      : nameOf(row.createdBy)
-    : null;
+  // From: the tier, role or group it is from when one follows it (#5473),
+  // which "From Exec board" names on the row too; else whoever gave it. The
+  // giver stays in History ("Assigned by Sam").
+  const from = row.followedBy
+    ? row.followedByName?.trim() || FOLLOWER_DELETED
+    : row.createdBy
+      ? row.createdBy === viewerId
+        ? "You"
+        : nameOf(row.createdBy)
+      : null;
   const groupLabel = rowGroupLabel(row);
   const progress = row.group ?? { done: 0, total: copies.length };
   // Who a group task went to, for anyone Who has it doesn't show to.

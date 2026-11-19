@@ -15,8 +15,9 @@ import {
  *
  * Two scopes, as for every per-member table: `chapter_id`, which the harness
  * checks, and `user_id`, which it does not know about, so both are asserted.
- * `findByToken` spans chapters on purpose: a calendar app fetching a link
+ * `findByTokenHash` spans chapters on purpose: a calendar app fetching a link
  * carries no chapter, and the secret token is the boundary, as an invite's is.
+ * `sealLegacy` names one row by id, and only while it still holds plaintext.
  */
 
 const FEED_A = '0a000000-0000-4000-8000-000000000300';
@@ -25,22 +26,26 @@ const FEED_A_OTHER = '0a000000-0000-4000-8000-000000000301';
 const FEED_A_REVOKED = '0a000000-0000-4000-8000-000000000302';
 const FEED_B_OTHER = '0b000000-0000-4000-8000-000000000301';
 const FEED_B_REVOKED = '0b000000-0000-4000-8000-000000000302';
-const TOKEN_A = 'a'.repeat(43);
-const TOKEN_B = 'b'.repeat(43);
+const HASH_A = 'a'.repeat(64);
+const HASH_B = 'b'.repeat(64);
 
 const seed = () => ({
   calendar_feeds: [
     inA({
       id: FEED_A,
       user_id: USER_SHARED,
-      token: TOKEN_A,
+      token: null,
+      token_hash: HASH_A,
+      token_sealed: 'v1.k1.sealed-a',
       created_at: '2026-11-12T00:00:00.000Z',
       revoked_at: null,
     }),
     inB({
       id: FEED_B,
       user_id: USER_SHARED,
-      token: TOKEN_B,
+      token: null,
+      token_hash: HASH_B,
+      token_sealed: 'v1.k1.sealed-b',
       created_at: '2026-11-12T00:00:00.000Z',
       revoked_at: null,
     }),
@@ -48,6 +53,8 @@ const seed = () => ({
       id: FEED_A_OTHER,
       user_id: USER_A,
       token: 'c'.repeat(43),
+      token_hash: 'c'.repeat(64),
+      token_sealed: null,
       created_at: '2026-11-12T00:00:00.000Z',
       revoked_at: null,
     }),
@@ -55,6 +62,8 @@ const seed = () => ({
       id: FEED_B_OTHER,
       user_id: USER_A,
       token: 'd'.repeat(43),
+      token_hash: 'd'.repeat(64),
+      token_sealed: null,
       created_at: '2026-11-12T00:00:00.000Z',
       revoked_at: null,
     }),
@@ -62,6 +71,8 @@ const seed = () => ({
       id: FEED_A_REVOKED,
       user_id: USER_SHARED,
       token: 'e'.repeat(43),
+      token_hash: 'e'.repeat(64),
+      token_sealed: null,
       created_at: '2026-11-11T00:00:00.000Z',
       revoked_at: '2026-11-12T00:00:00.000Z',
     }),
@@ -69,6 +80,8 @@ const seed = () => ({
       id: FEED_B_REVOKED,
       user_id: USER_SHARED,
       token: 'f'.repeat(43),
+      token_hash: 'f'.repeat(64),
+      token_sealed: null,
       created_at: '2026-11-11T00:00:00.000Z',
       revoked_at: '2026-11-12T00:00:00.000Z',
     }),
@@ -82,9 +95,11 @@ describe('SupabaseCalendarFeedRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
-      // A token names exactly one link (a unique index); making twins share
-      // one would model a state the database forbids.
-      collisionExempt: { calendar_feeds: ['token'] },
+      // A token names exactly one link (unique indexes on both forms);
+      // making twins share one would model a state the database forbids.
+      collisionExempt: {
+        calendar_feeds: ['token', 'token_hash', 'token_sealed'],
+      },
     });
     repo = new SupabaseCalendarFeedRepository(harness.client);
   });
@@ -102,7 +117,8 @@ describe('SupabaseCalendarFeedRepository — tenant scope', () => {
       repo.create({
         chapter_id: CHAPTER_B,
         user_id: USER_A,
-        token: 'g'.repeat(43),
+        token_hash: 'g'.repeat(64),
+        token_sealed: 'v1.k1.sealed-g',
       }),
     );
 
@@ -127,12 +143,39 @@ describe('SupabaseCalendarFeedRepository — tenant scope', () => {
     expect(earlier?.revoked_at).toBe('2026-11-12T00:00:00.000Z');
   });
 
-  it('findByToken resolves across chapters — the token is the boundary', async () => {
-    const fromA = await repo.findByToken(TOKEN_A);
-    const fromB = await repo.findByToken(TOKEN_B);
+  it('findByTokenHash resolves across chapters — the token is the boundary', async () => {
+    const fromA = await repo.findByTokenHash(HASH_A);
+    const fromB = await repo.findByTokenHash(HASH_B);
 
     expect(fromA?.chapter_id).toBe(CHAPTER_A);
     expect(fromB?.chapter_id).toBe(CHAPTER_B);
+    expect(harness.ops[0].filters.map((f) => f.column)).toEqual(['token_hash']);
+  });
+
+  it('sealLegacy replaces one legacy link’s plaintext with its sealed copy', async () => {
+    await repo.sealLegacy(FEED_A_OTHER, 'v1.k1.sealed-c');
+
+    const rows = harness.rows('calendar_feeds');
+    const sealed = rows.find((row) => row.id === FEED_A_OTHER);
+    expect(sealed).toMatchObject({
+      token: null,
+      token_sealed: 'v1.k1.sealed-c',
+    });
+    // Its twin in the other chapter keeps its own plaintext until fetched.
+    expect(rows.find((row) => row.id === FEED_B_OTHER)?.token).toBe(
+      'd'.repeat(43),
+    );
+    expect(harness.ops[0].filters.map((f) => f.column).sort()).toEqual(
+      ['id', 'token'].sort(),
+    );
+  });
+
+  it('findLegacy reads the rows still holding plaintext, across chapters', async () => {
+    const legacy = await repo.findLegacy(10);
+
+    expect(legacy.map((row) => row.id).sort()).toEqual(
+      [FEED_A_OTHER, FEED_A_REVOKED, FEED_B_OTHER, FEED_B_REVOKED].sort(),
+    );
     expect(harness.ops[0].filters.map((f) => f.column)).toEqual(['token']);
   });
 });

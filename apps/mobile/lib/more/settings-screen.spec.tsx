@@ -128,6 +128,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePermissionList: () => state.permissions,
+  useAiConsent: () => ({ data: null }),
   useAiChapterSettings: (options: { enabled?: boolean }) => ({
     data: options.enabled ? state.aiChapter : undefined,
   }),
@@ -356,6 +357,30 @@ describe("Settings switches", () => {
  * where a read-only value is changed, or what went wrong.
  */
 describe("Settings copy", () => {
+  // Search settings (2026-11-19): typing swaps the rows for the matches, and a
+  // match on this screen is lit in place.
+  it("finds a setting by another word, and lights its row", async () => {
+    const tree = render();
+    const search = tree.root.findByProps({
+      accessibilityLabel: "Search settings",
+    });
+    act(() => search.props.onChangeText("dnd"));
+    const text = screenText(tree);
+    expect(text).toContain("Quiet hours");
+    expect(text).toContain("Settings · Notifications");
+    expect(text).not.toContain("Chat density");
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Quiet hours",
+    );
+    act(() => row.props.onPress());
+    expect(screenText(tree)).toContain("Chat density");
+    expect(
+      tree.root.findAllByProps({ testID: "setting-lit-quiet-hours" }),
+    ).not.toHaveLength(0);
+  });
+
   it("draws the category switches with their labels only", () => {
     state.permissions = ["*"];
     const text = screenText(render());

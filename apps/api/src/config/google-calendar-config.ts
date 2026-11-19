@@ -1,8 +1,6 @@
-import {
-  parseAiTextKeyRing,
-  type AiTextKeyRing,
-} from '#domain/utils/ai-text-cipher';
+import type { AiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import { envSetting } from './ai-config';
+import { keyRingProblems, keyRingSetting } from './key-ring-config';
 
 type Env = Record<string, unknown>;
 
@@ -21,7 +19,7 @@ const CLIENT_SECRET = 'GOOGLE_CALENDAR_CLIENT_SECRET';
 export function googleCalendarTokenKeyRing(
   env: Env = process.env,
 ): AiTextKeyRing | null {
-  return parseAiTextKeyRing(envSetting(env, TOKEN_KEY), TOKEN_KEY);
+  return keyRingSetting(env, TOKEN_KEY);
 }
 
 /**
@@ -32,16 +30,7 @@ export function googleCalendarTokenKeyRing(
  * feature silently missing.
  */
 export function validateGoogleCalendarEnv(env: Env): string[] {
-  const problems: string[] = [];
-  try {
-    googleCalendarTokenKeyRing(env);
-  } catch (error) {
-    problems.push(
-      error instanceof Error
-        ? error.message
-        : 'GOOGLE_CALENDAR_TOKEN_KEY is invalid.',
-    );
-  }
+  const problems = keyRingProblems(env, TOKEN_KEY);
   const names = [CLIENT_ID, CLIENT_SECRET, TOKEN_KEY];
   const set = names.filter((name) => envSetting(env, name) !== null);
   if (set.length > 0 && set.length < names.length) {

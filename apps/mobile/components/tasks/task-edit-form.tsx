@@ -23,6 +23,7 @@ import {
   ProofField,
 } from "@/components/tasks/task-form-fields";
 import { WhoPickerSheet } from "@/components/tasks/who-picker-sheet";
+import { FollowerField } from "@/components/tasks/task-follower";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import {
   dueDraftOf,
@@ -47,7 +48,8 @@ interface TaskEditPeople {
 /**
  * The task screen's fields in edit mode (#5514), where the facts row and the
  * description were: the title, the due day and time, the points, the notes,
- * what Mark done needs, the photos and who it is for, each saving itself as
+ * what Mark done needs, the photos, who it is from (#5473) and who it is
+ * for, each saving itself as
  * it is left (`useTaskEdit`). The New task sheet's controls, drawn on the
  * screen from the same components (`task-form-fields.tsx`, the platform's
  * date and time pickers, the photo picker). Apple Reminders and Things 3
@@ -225,6 +227,8 @@ export function TaskEditForm({
         </View>
       )}
 
+      <EditFollowerField row={row} edit={edit} />
+
       {row.assigneeId ? (
         <WhoField
           assigneeId={row.assigneeId}
@@ -299,6 +303,31 @@ function RepeatEditField({
         <Text style={noteStyle}>{TASK_SERIES_SCOPE_COPY.repeatFromNext}</Text>
       )}
     </>
+  );
+}
+
+/**
+ * From (#5473): the tier, role or group the task is from, saved as it is
+ * picked; on a group task's copy, for every copy. A repeating task says it
+ * can't have one yet.
+ */
+function EditFollowerField({
+  row,
+  edit,
+}: {
+  row: TaskRowModel;
+  edit: TaskEditing;
+}) {
+  const { followers } = useWhoDirectory();
+  return (
+    <FollowerField
+      value={row.followedBy}
+      currentName={row.followedByName}
+      choices={followers}
+      onChange={edit.setFollower}
+      disabled={edit.saving}
+      repeating={row.series !== null}
+    />
   );
 }
 

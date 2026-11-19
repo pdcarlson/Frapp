@@ -149,7 +149,7 @@ describe("RolePickerCard (#4958)", () => {
     });
     expect(hasButton(tree, "Leave Study group")).toBe(true);
     expect(text).toContain("Video games");
-    expect(text).toContain("No longer open to join");
+    expect(text).toContain("Closed. An officer can add or remove it.");
     expect(hasButton(tree, "Join Video games")).toBe(false);
     // A role deleted since the card was posted is left out.
     expect(text).not.toContain("deleted");

@@ -47,7 +47,8 @@ export class AiTextCipherError extends Error {
 
 /**
  * Parses a key ring setting (`AI_STORED_TEXT_KEY` unless `name` says
- * otherwise; `GOOGLE_CALENDAR_TOKEN_KEY` uses the same format and cipher):
+ * otherwise; `GOOGLE_CALENDAR_TOKEN_KEY` and `CALENDAR_FEED_TOKEN_KEY` use the
+ * same format and cipher, read through `config/key-ring-config.ts`):
  * `<key id>:<base64 of 32 bytes>`, with older
  * keys after it separated by commas. Returns null when the value is unset or
  * blank, and throws (naming the fault, never the value) when it is set and

@@ -95,6 +95,74 @@ describe("taskHistory", () => {
   });
 });
 
+describe("taskHistory: a task a group follows (#5473)", () => {
+  it("says it was submitted to the group on Marked done", () => {
+    const done = taskHistory(
+      row({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        completed_at: new Date(2026, 10, 17, 10, 0).toISOString(),
+        followed_by: "tier:t-exec",
+        followed_by_name: "Exec board",
+      }),
+      nameOf,
+      NOW,
+    );
+    expect(done.at(-1)!.meta).toContain("Submitted to Exec board");
+    const gone = taskHistory(
+      row({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        completed_at: new Date(2026, 10, 17, 10, 0).toISOString(),
+        followed_by: "group:g-gone",
+        followed_by_name: null,
+      }),
+      nameOf,
+      NOW,
+    );
+    expect(gone.at(-1)!.meta).toContain("Submitted to a deleted group");
+  });
+
+  it("says nothing more on a task from its creator alone", () => {
+    const done = taskHistory(
+      row({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        completed_at: new Date(2026, 10, 17, 10, 0).toISOString(),
+      }),
+      nameOf,
+      NOW,
+    );
+    expect(done.at(-1)!.meta).not.toContain("Submitted");
+  });
+});
+
+describe("duplicateWho: a tier's task (#5473)", () => {
+  it("goes to the same tier, a copy each", () => {
+    const copy = row({
+      group_id: "g1",
+      group: {
+        audience: "tier",
+        target_id: "t-exec",
+        target_name: "Exec board",
+        total: 4,
+        done: 0,
+        confirmed: 0,
+      },
+    });
+    expect(duplicateWho(copy, [])).toEqual({
+      kind: "each",
+      target: { kind: "tier", id: "t-exec" },
+    });
+  });
+
+  it("keeps who it is from", () => {
+    expect(
+      taskDuplicateOf(row({ followed_by: "role:pres" }), [], NOW).followedBy,
+    ).toBe("role:pres");
+  });
+});
+
 describe("taskScreenControls", () => {
   it("gives a member Mark done on their own task, and nothing an officer has", () => {
     expect(
@@ -469,6 +537,7 @@ describe("taskDuplicateOf (#5492)", () => {
       subtasks: ["Sweep", "Mop"],
       due: { kind: "date", date: "2026-11-20" },
       dueTime: null,
+      followedBy: null,
     });
   });
 

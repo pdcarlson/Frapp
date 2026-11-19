@@ -63,6 +63,11 @@ export interface WhoPickerSheetProps {
    * always did.
    */
   single?: boolean;
+  /**
+   * Offer a tier whole, "Everyone in Exec board" first under its heading
+   * (#5473). Off for a suggested task, whose payload has no tier field yet.
+   */
+  tiers?: boolean;
   title?: string;
   /** Fired once the sheet has closed, however it closed. */
   onDismiss?: () => void;
@@ -204,6 +209,7 @@ export function WhoPickerBody({
   people,
   sets,
   single = false,
+  tiers = true,
   title = WHO_PICKER_COPY.title,
   mode,
   onPick,
@@ -227,8 +233,9 @@ export function WhoPickerBody({
   );
 
   const rows = useMemo(
-    () => whoRows(directory, { tab, search, single, expanded, openTiers }),
-    [directory, tab, search, single, expanded, openTiers],
+    () =>
+      whoRows(directory, { tab, search, single, expanded, openTiers, tiers }),
+    [directory, tab, search, single, expanded, openTiers, tiers],
   );
   const state = single || tab === "people" || search.trim() ? people : sets;
 
