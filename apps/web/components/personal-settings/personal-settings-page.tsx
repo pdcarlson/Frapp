@@ -35,7 +35,7 @@ import { useSettingJump } from "@/lib/settings/use-setting-jump";
 
 /**
  * The personal Settings page: the second of the two doors (#3856, epic #4068
- * decision 1). The nav's "Chapter settings" row is the chapter's; this one is
+ * decision 1). The chapter menu's "Chapter settings" is the chapter's; this one is
  * the member's own, opened from the account menu on the avatar, the way
  * Discord splits User Settings from Server Settings and Slack splits
  * Preferences from workspace settings. Every section here used to be a block

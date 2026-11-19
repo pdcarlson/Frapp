@@ -351,7 +351,7 @@ describe("ProfilePhoto", () => {
 
     expect(avatar(tree).props.disabled).toBe(true);
     expect(texts(tree)).toContain(
-      "Choose a chapter from You → Switch chapter to add a photo.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
     );
   });
 
@@ -368,7 +368,7 @@ describe("ProfilePhoto", () => {
     });
     expect(avatar(tree).props.accessibilityLabel).toBe("Remove profile photo");
     expect(texts(tree)).toContain(
-      "Choose a chapter from You → Switch chapter to add a photo.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
     );
 
     await tapAvatar(tree);
@@ -378,7 +378,7 @@ describe("ProfilePhoto", () => {
     expect(options.destructiveButtonIndex).toBe(0);
     expect(options.cancelButtonIndex).toBe(1);
     expect(options.message).toBe(
-      "Choose a chapter from You → Switch chapter to add a photo.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
     );
 
     await pickSheetOption("Remove photo");
@@ -399,7 +399,7 @@ describe("ProfilePhoto", () => {
 
       const [, message] = vi.mocked(Alert.alert).mock.calls[0]!;
       expect(message).toBe(
-        "Choose a chapter from You → Switch chapter to add a photo.",
+        "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
       );
       expect(alertButtons().map((button) => button.text)).toEqual([
         "Cancel",

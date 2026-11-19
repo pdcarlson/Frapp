@@ -18,6 +18,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFocusOnOpen } from "@/lib/overlay";
 import {
   type AnchoredMenuState,
+  AnchoredMenuShell,
   useAnchoredMenu,
 } from "@/components/anchored-menu";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -194,63 +195,50 @@ export function ChannelFilterMenu({
   ];
 
   return (
-    // No title and no Cancel row (components.md § Chrome weight): a tap
-    // outside, Android back and VoiceOver's escape gesture close it.
-    <View
-      accessibilityViewIsModal
-      onAccessibilityEscape={menu.close}
-      style={styles.fill}
+    <AnchoredMenuShell
+      menu={menu}
+      width={MENU_WIDTH}
+      backdropTestID="channel-filter-backdrop"
     >
-      <Pressable
-        testID="channel-filter-backdrop"
-        accessible={false}
-        importantForAccessibility="no"
-        onPress={menu.close}
-        style={styles.fill}
-      />
-      <View
-        style={[styles.menu, { top: menu.anchor.top, left: menu.anchor.left }]}
-      >
-        {sort ? (
-          <View style={styles.sort}>
-            <Text ref={firstRef} style={styles.caption}>
-              {SORT_CHANNELS_LABEL}
-            </Text>
-            <Segmented
-              options={SIDEBAR_SORT_OPTIONS}
-              value={sort}
-              onChange={(next) => onChange({ sort: next })}
-              accessibilityLabel={SORT_CHANNELS_LABEL}
-              dense
-            />
-          </View>
-        ) : null}
-        {rows.map((row, index) => (
-          <View
-            key={row.key}
-            style={[styles.row, index > 0 || sort ? styles.rowDivided : null]}
+      {sort ? (
+        <View style={styles.sort}>
+          <Text ref={firstRef} style={styles.caption}>
+            {SORT_CHANNELS_LABEL}
+          </Text>
+          <Segmented
+            options={SIDEBAR_SORT_OPTIONS}
+            value={sort}
+            onChange={(next) => onChange({ sort: next })}
+            accessibilityLabel={SORT_CHANNELS_LABEL}
+            dense
+          />
+        </View>
+      ) : null}
+      {rows.map((row, index) => (
+        <View
+          key={row.key}
+          style={[styles.row, index > 0 || sort ? styles.rowDivided : null]}
+        >
+          <Text
+            ref={index === 0 && !sort ? firstRef : undefined}
+            style={styles.label}
           >
-            <Text
-              ref={index === 0 && !sort ? firstRef : undefined}
-              style={styles.label}
-            >
-              {row.label}
-            </Text>
-            <Toggle
-              value={row.value}
-              accessibilityLabel={row.label}
-              onValueChange={(value) =>
-                onChange(
-                  row.key === "unreadOnly"
-                    ? { unread_only: value }
-                    : { hide_muted: value },
-                )
-              }
-            />
-          </View>
-        ))}
-      </View>
-    </View>
+            {row.label}
+          </Text>
+          <Toggle
+            value={row.value}
+            accessibilityLabel={row.label}
+            onValueChange={(value) =>
+              onChange(
+                row.key === "unreadOnly"
+                  ? { unread_only: value }
+                  : { hide_muted: value },
+              )
+            }
+          />
+        </View>
+      ))}
+    </AnchoredMenuShell>
   );
 }
 
@@ -275,22 +263,6 @@ function createStyles(tokens: SignetTokens) {
       width: 7,
       height: 7,
       borderRadius: 4,
-    },
-    fill: {
-      position: "absolute",
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
-    },
-    menu: {
-      position: "absolute",
-      width: MENU_WIDTH,
-      paddingHorizontal: tokens.spacing.md,
-      backgroundColor: tokens.color.surface.popover,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      borderRadius: tokens.radius.control,
     },
     row: {
       flexDirection: "row",

@@ -833,17 +833,17 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
-      titleMenu={
-        chapterName
-          ? {
-              open: chapterMenu.visible,
-              accessibilityLabel: `Chapter menu (currently ${chapterName})`,
-              onOpen: (frame) =>
-                chapterMenu.open(chapterMenuAnchor(tokens, frame)),
-              onClose: chapterMenu.close,
-            }
-          : undefined
-      }
+      // Always a menu, even before the chapter's name is known: with no
+      // chapter claim, or a chapter the API now refuses, Switch chapter in
+      // it is the member's way out (the picker's empty state offers joining).
+      titleMenu={{
+        open: chapterMenu.visible,
+        accessibilityLabel: chapterName
+          ? `Chapter menu (currently ${chapterName})`
+          : "Chapter menu",
+        onOpen: (frame) => chapterMenu.open(chapterMenuAnchor(tokens, frame)),
+        onClose: chapterMenu.close,
+      }}
       refresh={refresh}
       overlay={{
         open: filterMenu.visible || chapterMenu.visible,

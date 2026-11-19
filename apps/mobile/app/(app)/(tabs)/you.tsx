@@ -114,8 +114,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * **Switch chapter** and **Chapter settings** left You on 2026-11-19 for the
  * chapter menu that Chat home's chapter name opens
- * (`components/chat/chapter-menu.tsx`), so each has one door, the one web
- * has (Paul: "can we move chapter settings into one place?"). When
+ * (`components/chat/chapter-menu.tsx`), the door web has (Paul: "can we move chapter settings into one place?"). When
  * `GET /v1/chapters` is empty, You draws **Create a chapter** after Settings
  * (#1084), so a first officer who landed in the tabs still has a door: with
  * no chapter there is no chapter name to open.

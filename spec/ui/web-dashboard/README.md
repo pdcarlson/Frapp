@@ -144,9 +144,9 @@ Five structural facts the table alone does not carry:
   No section is officer-only any more: `protected-nav-item.spec.tsx` fails if every row of a section is hidden from an ordinary member, because that is the Admin group coming back.
 - **Chapter settings is gated on "has anything here".**
   An ungated entry point sent members without `chapter-config:view` to a screen that could not load, which is the fail-fast rule in [`../design-system/README.md`](../design-system/README.md) §5 inverted.
-  The row shows only when Settings holds a tab or a tool whose module is on for the viewer (`hasSettingsDestination`, `apps/web/components/settings/settings-access.ts`, applied through `NavItem.showWhen`).
-  A treasurer whose only tool is Reports loses the row when the chapter switches Reports off, as the Reports row used to hide.
-  The chapter switcher's "Chapter settings" link asks the same question, since it is another door into Settings, and so does the top bar's "Settings ›" crumb on the officer tools, which shows only when this row does (`page-title.ts`).
+  The chapter menu's Chapter settings item, its one door since 2026-11-19, shows only when Settings holds a tab or a tool whose module is on for the viewer (`hasSettingsDestination`, `apps/web/components/settings/settings-access.ts`).
+  A treasurer whose only tool is Reports loses the item when the chapter switches Reports off, as the Reports row used to hide.
+  Until 2026-11-19 a nav row asked the same question through `NavItem.showWhen`; both went with the row.
 - **Profile left the nav** for the account menu (below).
   It is about the viewer, not the chapter, so it did not belong among chapter surfaces.
   It held two chapter-scoped cards until 2026-11-10: Notifications (#564), because `notification_preferences` is keyed `(user_id, chapter_id, category)`, and Blocked members (#2313), because a chat block is per-chapter too.
@@ -928,7 +928,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
 Decided by Paul, 2026-11-10 ([#3856](https://github.com/pdcarlson/Frapp/issues/3856), asked for by Winston and Shawn; epic [#4068](https://github.com/pdcarlson/Frapp/issues/4068) decision 1).
 The web app has two settings places and their names say whose each is, the split Discord draws between User Settings and Server Settings and Slack between Preferences and workspace settings:
 
-- **Chapter settings** is the nav row (`/settings`): officer setup and officer tools, shown to whoever it holds something for.
+- **Chapter settings** is the chapter menu's item (`/settings`; a nav row until 2026-11-19): officer setup and officer tools, shown to whoever it holds something for.
 - **Settings** is the member's own page (`/preferences`, [`components/personal-settings/`](../../../apps/web/components/personal-settings/personal-settings-page.tsx)), opened from the account menu on the avatar and shown to every member.
   It took every settings block off `/profile`, which keeps the profile itself.
 

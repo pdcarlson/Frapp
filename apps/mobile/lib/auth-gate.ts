@@ -31,7 +31,8 @@
  *
  * So the claim is treated as an optimization, not a requirement: when it is
  * absent the app proceeds and lets the API resolve context. The picker stays a
- * deliberate destination (reached from the You tab) rather than a forced one.
+ * deliberate destination (reached from the chapter menu on Chat home's title)
+ * rather than a forced one.
  *
  * ## First-run (s03) and join (s02)
  *
@@ -69,12 +70,7 @@
 import { needsFirstRun } from "./onboarding/membership";
 
 export type AuthGateDestination =
-  | "hold"
-  | "sign-in"
-  | "join"
-  | "terms"
-  | "welcome"
-  | "tabs";
+  "hold" | "sign-in" | "join" | "terms" | "welcome" | "tabs";
 
 export type AuthGateMembership = {
   chapter_id: string;
@@ -255,7 +251,10 @@ export function resolveAuthGate({
 
   // Only a fresh list sends anyone to first-run: after a failed refetch the
   // cached row may predate finishing it, so that fails open.
-  if (membershipsStatus === "success" && needsFirstRun(memberships, chapterId)) {
+  if (
+    membershipsStatus === "success" &&
+    needsFirstRun(memberships, chapterId)
+  ) {
     return "welcome";
   }
 

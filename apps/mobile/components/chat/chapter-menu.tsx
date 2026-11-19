@@ -2,7 +2,11 @@ import { useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { SignetTokens } from "@repo/theme/signet";
-import type { AnchoredMenuState, MenuAnchor } from "@/components/anchored-menu";
+import {
+  type AnchoredMenuState,
+  AnchoredMenuShell,
+  type MenuAnchor,
+} from "@/components/anchored-menu";
 import { useFocusOnOpen } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -20,9 +24,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * adds Join another chapter; the phone joins by an invite link, so it has no
  * join step to offer here.
  *
- * Drawn by `ScreenShell`'s `overlay`, over the whole screen, like the channel
- * filter menu (`channel-filter-menu.tsx`): a tap outside, Android back and
- * VoiceOver's escape gesture close it.
+ * Drawn by `ScreenShell`'s `overlay`, over the whole screen, in the shell the
+ * channel filter menu uses (`AnchoredMenuShell`).
  */
 
 const MENU_WIDTH = 240;
@@ -83,63 +86,36 @@ export function ChapterMenu({
   });
 
   return (
-    <View
-      accessibilityViewIsModal
-      onAccessibilityEscape={menu.close}
-      style={styles.fill}
+    <AnchoredMenuShell
+      menu={menu}
+      width={MENU_WIDTH}
+      backdropTestID="chapter-menu-backdrop"
     >
-      <Pressable
-        testID="chapter-menu-backdrop"
-        accessible={false}
-        importantForAccessibility="no"
-        onPress={menu.close}
-        style={styles.fill}
-      />
-      <View
-        style={[styles.menu, { top: menu.anchor.top, left: menu.anchor.left }]}
-      >
-        {rows.map((row, index) => (
-          <Pressable
-            key={row.key}
-            ref={index === 0 ? firstRef : undefined}
-            accessibilityRole="menuitem"
-            accessibilityHint={row.hint}
-            onPress={() => {
-              menu.close();
-              row.go();
-            }}
-            style={({ pressed }) => [
-              styles.row,
-              index > 0 ? styles.rowDivided : null,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.label}>{row.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
+      {rows.map((row, index) => (
+        <Pressable
+          key={row.key}
+          ref={index === 0 ? firstRef : undefined}
+          accessibilityRole="menuitem"
+          accessibilityHint={row.hint}
+          onPress={() => {
+            menu.close();
+            row.go();
+          }}
+          style={({ pressed }) => [
+            styles.row,
+            index > 0 ? styles.rowDivided : null,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.label}>{row.label}</Text>
+        </Pressable>
+      ))}
+    </AnchoredMenuShell>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    fill: {
-      position: "absolute",
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
-    },
-    menu: {
-      position: "absolute",
-      width: MENU_WIDTH,
-      paddingHorizontal: tokens.spacing.md,
-      backgroundColor: tokens.color.surface.popover,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      borderRadius: tokens.radius.control,
-    },
     row: {
       justifyContent: "center",
       minHeight: tokens.touch.minimum + tokens.spacing.xs,

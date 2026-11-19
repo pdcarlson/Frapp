@@ -207,7 +207,7 @@ On mobile's You tab, a row that opens a place leads with a tile in that place's 
 **A hue names a place, never a state.** That is the whole rule, and it is what keeps this from being the decoration the accent rule above removed:
 
 - It is the same every day for every member, so it carries no news. It only makes a list of up to ten places findable without reading, as iOS Settings and Telegram's settings list are.
-- **A place keeps its hue wherever a tile draws it.** The You tab reads the hue of a place the Notifications rows already tile from their map, so a service notice and the Service hours row are both teal, a dues notice and the Dues row both sand, an event notice and Host check-in both sky. The palette has ten hues and the app has more places than that, so a hue can stand for another place on another screen (green is a task in Notifications and Switch chapter on You), but never for two places on one screen; the two Settings rows share slate because they are one kind of place.
+- **A place keeps its hue wherever a tile draws it.** The You tab reads the hue of a place the Notifications rows already tile from their map, so a service notice and the Service hours row are both teal, a dues notice and the Dues row both sand, an event notice and Host check-in both sky. The palette has ten hues and the app has more places than that, so a hue can stand for another place on another screen (green is a task in Notifications and Create a chapter on You), but never for two places on one screen; Settings is slate (Chapter settings shared it until it left You for Chat home's chapter menu, 2026-11-19).
 - A row that shows a state stays neutral: the Activity rows, Chat home's Up next, the Calendar. On those screens colour already means something, the accent asks the member to act and red is overdue, and a tint would read as one more status.
 - The hues are the role palette's ([`components.md`](components.md), `ROLE_COLOR_PALETTE` in `@repo/validation`). The glyph on its tile is the pair `packages/hooks/src/member-avatar-color.spec.ts` holds at AA for every hue in the palette. That palette leaves out gold and red on purpose, so no tile can be taken for the accent, a mention or an error. Never the chapter accent.
 - A row that can't be opened now (Host check-in with nothing to host) goes grey with its label.
@@ -215,8 +215,8 @@ On mobile's You tab, a row that opens a place leads with a tile in that place's 
 | Place | Hue | | Place | Hue |
 |---|---|---|---|---|
 | Study hours | Periwinkle | | Directory | Orange |
-| Service hours | Teal (the service notice's) | | Settings, Chapter settings | Slate |
-| Dues | Sand (the dues notice's) | | Switch chapter | Green |
+| Service hours | Teal (the service notice's) | | Settings | Slate |
+| Dues | Sand (the dues notice's) | | Create a chapter | Green |
 | Documents | Violet | | Invite members | Lime |
 | Minutes | Rose | | Host check-in | Sky (the event notice's) |
 

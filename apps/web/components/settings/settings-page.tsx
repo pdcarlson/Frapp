@@ -774,8 +774,8 @@ function SettingsPageContent() {
 
           {/*
             **Deliberately not `renderConfigGated`.** A `roles:manage` holder
-            without `chapter-config:view` reaches this tab: the nav's Settings
-            row admits `roles:manage` on its own (`settings-access.ts`), and
+            without `chapter-config:view` reaches this tab: the chapter menu's
+            Chapter settings item admits `roles:manage` on its own (`settings-access.ts`), and
             `/roles` redirects here. This page's config read is gated on
             `chapter-config:view`, so gating the tab on it would land that
             member on "Couldn't load chapter configuration", which is what

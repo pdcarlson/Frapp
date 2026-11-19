@@ -1778,8 +1778,10 @@ describe("Chat home's title (#2485)", () => {
   it("falls back to Frapp while the chapter's name is unknown", () => {
     const tree = render();
     expect(heading(tree).props.children).toBe("Frapp");
-    // No chapter, no chapter menu.
-    expect(tree.root.findByType(ScreenShell).props.titleMenu).toBeUndefined();
+    // Still a menu: with no chapter known, Switch chapter is the way out.
+    expect(
+      tree.root.findByType(ScreenShell).props.titleMenu.accessibilityLabel,
+    ).toBe("Chapter menu");
   });
 });
 
@@ -1847,8 +1849,9 @@ describe("Chat home's chapter menu", () => {
   });
 
   it("offers only Switch chapter to a member Chapter settings holds nothing for", () => {
-    // `[]` is also the permission list while it loads: fails closed.
-    permissionList.value = [];
+    // Plan and billing doesn't come to the phone, so a billing-only
+    // treasurer gets no door to an empty screen (`chapterSettingsAccess`).
+    permissionList.value = ["members:view", "billing:view"];
     const tree = render();
     openMenu(tree);
     expect(menuItems(tree).map((item) => drawnText(item))).toEqual([
@@ -2432,8 +2435,15 @@ describe("Chat home section headings draw a disclosure glyph", () => {
       collapsed: new Set(["channels"]),
     };
     const folded = render();
+    const [foldedHeader] = folded.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "header",
+    );
     expect(
-      folded.root.findAllByType(DisclosureGlyph).map((n) => n.props.direction),
+      foldedHeader!
+        .findAllByType(DisclosureGlyph)
+        .map((n) => n.props.direction),
     ).toEqual(["right"]);
   });
 

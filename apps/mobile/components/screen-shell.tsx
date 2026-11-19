@@ -250,12 +250,16 @@ export function ScreenShell({
               <View style={styles.header}>
                 <View style={styles.headerRow}>
                   {titleMenu ? (
-                    <TitleMenuButton
-                      title={title}
-                      titleMark={titleMark}
-                      menu={titleMenu}
-                      tokens={tokens}
-                    />
+                    <>
+                      <TitleMenuButton
+                        title={title}
+                        titleMark={titleMark}
+                        menu={titleMenu}
+                        tokens={tokens}
+                      />
+                      {/* The row's slack, outside the button. */}
+                      <View style={styles.titleSlack} />
+                    </>
                   ) : (
                     <>
                       {titleMark}
@@ -285,8 +289,10 @@ export function ScreenShell({
 
 /**
  * The title row's mark and title as one button that opens a menu, ending in a
- * down chevron so it reads as one, as web's chapter row does. The title Text
- * keeps its header role; the button's label names the menu.
+ * down chevron so it reads as one, as web's chapter row does. A screen reader
+ * hears one button named by `accessibilityLabel`; on iOS the title's header
+ * role merges into it, so the Headings rotor skips this title, as web's
+ * chapter row is a button and not a heading.
  */
 function TitleMenuButton({
   title,
@@ -472,7 +478,7 @@ function createStyles(tokens: SignetTokens) {
     // The button hugs its title, so the space after the chevron is not a tap
     // target, and the header actions keep their place at the far end.
     titleButton: {
-      flex: 1,
+      flexShrink: 1,
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
@@ -483,6 +489,7 @@ function createStyles(tokens: SignetTokens) {
       ...screenTitleStyle(tokens),
     },
     titlePressed: { opacity: 0.6 },
+    titleSlack: { flex: 1 },
     headerAction: {
       flexShrink: 0,
     },

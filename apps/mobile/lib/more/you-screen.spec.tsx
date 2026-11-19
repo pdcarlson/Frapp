@@ -66,6 +66,10 @@ const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 // chapter with dues on sees it. The beta's own case, dues off, sets
 // `betaOff.keys`.
 const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+const chapterList = vi.hoisted(() => ({
+  value: [{ id: "chapter-1" }] as { id: string }[],
+}));
+
 vi.mock("@repo/validation/beta-off-modules", () => ({
   get BETA_OFF_MODULES() {
     return betaOff.keys;
@@ -114,7 +118,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     goalReadOptions.push(options);
     return { data: { points: null, service: null, study: studyGoal } };
   },
-  useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
+  useListChapters: () => ({ isSuccess: true, data: chapterList.value }),
   usePermissionList: () => permissions,
   useMyPermissions: () => ({
     data: permissionsLoading ? undefined : { permissions },
@@ -712,6 +716,27 @@ describe("You tab anatomy (#1048, #3839)", () => {
     const text = screenText(render());
     expect(text).not.toContain("Chapter settings");
     expect(text).not.toContain("Switch chapter");
+  });
+
+  it("keeps Create a chapter for a member with no chapter, who has no chapter name to open (#1084)", () => {
+    chapterList.value = [];
+    try {
+      const tree = render();
+      const row = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Create a chapter",
+      );
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => {
+        row.props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith("/(auth)/create-chapter");
+    } finally {
+      chapterList.value = [{ id: "chapter-1" }];
+    }
+    expect(screenText(render())).not.toContain("Create a chapter");
   });
 
   it("draws no Invite members row for a role that can't invite", () => {
