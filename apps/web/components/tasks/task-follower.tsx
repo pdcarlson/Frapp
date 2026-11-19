@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Eye } from "lucide-react";
-import { useGroups, useRoles } from "@repo/hooks";
+import { useGroups } from "@repo/hooks";
 import { allRoles } from "@repo/hooks/task-who-picker";
 import {
   TASK_FOLLOWER_COPY,
@@ -45,10 +45,13 @@ const JUST_YOU = "none";
  * edit can be from (#5473): the API takes only one its sender is in, so "From
  * Exec board" is true. Not a class year, which opens nothing either.
  */
-export function useFollowerChoices(): FollowerChoice[] {
-  const { directory } = useWhoDirectory();
-  const groups = useGroups();
-  const roles = useRoles();
+export function useFollowerChoices(
+  options: { enabled?: boolean } = {},
+): FollowerChoice[] {
+  // Read only where From can be changed: a read-only task panel needs none.
+  const enabled = options.enabled ?? true;
+  const { directory } = useWhoDirectory({ enabled });
+  const groups = useGroups({ enabled });
   return useMemo(() => {
     const viewer = directory.people.find((person) => person.isViewer)?.userId;
     if (!viewer) return [];
@@ -72,20 +75,10 @@ export function useFollowerChoices(): FollowerChoice[] {
         count: ids.length,
       });
     };
-    // The tier holding the Everyone role is the chapter, which the API
-    // refuses as a follower, as it does the Everyone role.
-    const everyoneTiers = new Set(
-      (
-        (roles.data ?? []) as {
-          tier_id?: string | null;
-          system_key?: string | null;
-        }[]
-      )
-        .filter((role) => role.system_key === "MEMBER" && role.tier_id)
-        .map((role) => role.tier_id as string),
-    );
     for (const tier of directory.tiers) {
-      if (tier.set && !everyoneTiers.has(tier.set.id)) {
+      // The tier holding the Everyone role is the chapter, which the API
+      // refuses as a follower, as it does the Everyone role.
+      if (tier.set && !tier.holdsEveryone) {
         add("tier", tier.set.id, tier.set.name, tier.set.memberIds);
       }
     }
@@ -98,12 +91,12 @@ export function useFollowerChoices(): FollowerChoice[] {
       }
     }
     return choices;
-  }, [directory, groups.data, roles.data]);
+  }, [directory, groups.data]);
 }
 
 /**
  * From (#5473): "Just you", or a tier, role or group the viewer is in, each
- * kind under its own heading (components.md § select). A task already from
+ * kind under its own heading (components.md § 2. Shared rules, the select rule). A task already from
  * one the viewer isn't in keeps it listed, by the name its read carries.
  */
 export function FollowerSelect({

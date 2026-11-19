@@ -610,7 +610,7 @@ function FollowerRow({
   disabled: boolean;
   onSave: (entry: string | null) => Promise<boolean>;
 }) {
-  const choices = useFollowerChoices();
+  const choices = useFollowerChoices({ enabled: editable });
   const value = task.followed_by ?? null;
   if (!editable && !value) return null;
   return (
@@ -629,9 +629,9 @@ function FollowerRow({
           />
           {value ? (
             <span className="text-caption text-muted-foreground">
-              {TASK_FOLLOWER_COPY.hint(
-                task.followed_by_name ?? TASK_FOLLOWER_COPY.deleted,
-              )}
+              {task.followed_by_name
+                ? TASK_FOLLOWER_COPY.hint(task.followed_by_name)
+                : TASK_FOLLOWER_COPY.deletedHint}
             </span>
           ) : null}
         </div>

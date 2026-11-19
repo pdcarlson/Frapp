@@ -89,6 +89,11 @@ export interface WhoTier {
    * it. `null` for the roles outside every tier.
    */
   set: WhoSet | null;
+  /**
+   * The tier holds the chapter's Everyone role, so it reaches the chapter:
+   * the API refuses it as what a task is from (#5473), as it does the role.
+   */
+  holdsEveryone: boolean;
 }
 
 /** The chapter as the picker draws it. */
@@ -247,6 +252,9 @@ export function buildWhoDirectory(input: {
         name: tier.name,
         roles: tierRoles,
         set: tierRoles.length > 0 ? tierSet(tier.id, tier.name, tierRoles) : null,
+        holdsEveryone: everyRole.some(
+          (role) => role.tier_id === tier.id && isEveryoneRole(role),
+        ),
       };
     })
     .filter((tier) => tier.roles.length > 0);
@@ -259,6 +267,7 @@ export function buildWhoDirectory(input: {
       name: tiers.length > 0 ? OTHER_ROLES_HEADING : ROLES_HEADING,
       roles: loose.map(asSet),
       set: null,
+      holdsEveryone: false,
     });
   }
 
@@ -287,11 +296,6 @@ export function buildWhoDirectory(input: {
 /** Every role in the directory, tier by tier. */
 export function allRoles(directory: WhoDirectory): WhoSet[] {
   return directory.tiers.flatMap((tier) => tier.roles);
-}
-
-/** Every tier that can be picked whole (#5473), in the chapter's order. */
-export function allTierSets(directory: WhoDirectory): WhoSet[] {
-  return directory.tiers.flatMap((tier) => (tier.set ? [tier.set] : []));
 }
 
 /** A tier's key for folding, the roles in no tier's included. */

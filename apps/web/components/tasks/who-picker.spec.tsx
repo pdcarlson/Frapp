@@ -183,6 +183,31 @@ describe("WhoPicker", () => {
     );
   });
 
+  it("adds no whole-tier row for a tier of one role, in the tree or in search", async () => {
+    render(<Harness />);
+    await openPicker();
+    await userEvent.click(screen.getByRole("radio", { name: "Roles and groups" }));
+    // Chairs holds one role, Recruitment Committee: picking it is the role.
+    const chairs = screen.getByRole("list", { name: "Chairs" });
+    expect(
+      within(chairs).queryByRole("checkbox", { name: /Everyone in Chairs/ }),
+    ).toBeNull();
+
+    await userEvent.type(screen.getByRole("textbox"), "ch");
+    expect(
+      screen.queryByRole("checkbox", { name: /Everyone in Chairs/ }),
+    ).toBeNull();
+  });
+
+  it("finds a tier whole in search, named as its row is", async () => {
+    render(<Harness />);
+    await openPicker();
+    await userEvent.type(screen.getByRole("textbox"), "exec");
+    expect(
+      screen.getByRole("checkbox", { name: /^Everyone in Exec board/ }),
+    ).toBeInTheDocument();
+  });
+
   it("offers no tier whole where the caller can't send one (a suggested task)", async () => {
     render(<WhoPicker value={null} onChange={() => undefined} tiers={false} />);
     await openPicker();

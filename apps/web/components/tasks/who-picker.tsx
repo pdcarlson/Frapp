@@ -36,7 +36,6 @@ import {
   NOBODY_YET,
   WHO_PICKER_COPY,
   allRoles,
-  allTierSets,
   buildWhoDirectory,
   initialOpenTiers,
   initialWhoTab,
@@ -319,7 +318,20 @@ export function WhoPickerBody({
     whoMatches(person.name, query),
   );
   const allSets = [
-    ...(tiers ? allTierSets(directory) : []),
+    // A tier whole, as its tab row reads it: only one of two roles or more
+    // (one of one role is that role), named "Everyone in Exec board".
+    ...(tiers
+      ? directory.tiers.flatMap((tier) =>
+          tier.set && tier.roles.length > 1
+            ? [
+                {
+                  ...tier.set,
+                  name: TASK_AUDIENCE_COPY.everyoneIn(tier.set.name),
+                },
+              ]
+            : [],
+        )
+      : []),
     ...allRoles(directory),
     ...directory.groups,
   ];

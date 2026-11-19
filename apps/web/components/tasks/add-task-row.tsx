@@ -435,13 +435,12 @@ export function AddTaskRow({
               <p className="text-caption text-muted-foreground">
                 {repeating
                   ? TASK_FOLLOWER_COPY.noRepeat
-                  : draft.followedBy
-                    ? TASK_FOLLOWER_COPY.hint(
-                        followerChoices.find(
-                          (choice) => choice.entry === draft.followedBy,
-                        )?.name ?? TASK_FOLLOWER_COPY.deleted,
-                      )
-                    : null}
+                  : (() => {
+                      const picked = followerChoices.find(
+                        (choice) => choice.entry === draft.followedBy,
+                      );
+                      return picked ? TASK_FOLLOWER_COPY.hint(picked.name) : null;
+                    })()}
               </p>
             </div>
           ) : null}

@@ -376,6 +376,8 @@ export function TasksBoard() {
   // A member with nothing assigned sees one line instead of the board, and
   // the line names the next event, so the read runs only for that member and
   // only when Events is on (the module guard would refuse it otherwise).
+  // One who follows tasks (#5473) has a read that isn't empty: their page
+  // opens on All tasks instead when none of it is theirs (below).
   const plateIsClear =
     permissionsKnown &&
     !canManage &&
@@ -439,12 +441,21 @@ export function TasksBoard() {
   const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
 
   const [officerView, setOfficerView] = useState<TasksView>("all");
-  const [memberView, setMemberView] = useState<TasksView>("mine");
+  // Unpicked, a following member's page opens on My tasks, or on All tasks
+  // when nothing in their read is theirs, so it never opens empty.
+  const [memberPick, setMemberPick] = useState<TasksView | null>(null);
   // A member following someone else's task (#5473): their read holds it.
   const follows =
     !canManage &&
     myUserId !== "" &&
-    tasks.some((task) => !!task.followed_by && task.assignee_id !== myUserId);
+    tasks.some((task) => !!task.followed_by && task.assignee_id !== myUserId) &&
+    // A member's read holds only their own and followed tasks; View as a role
+    // keeps the officer's whole read, which this keeps from reading as a
+    // follower's All tasks.
+    tasks.every((task) => task.assignee_id === myUserId || !!task.followed_by);
+  const memberView: TasksView =
+    memberPick ??
+    (tasks.some((task) => task.assignee_id === myUserId) ? "mine" : "all");
   // While permissions are unknown (the read failed) the page can't tell an
   // officer from a member, so it keeps the status board it always drew,
   // with no switch or chips, and the add row says why it isn't there.
@@ -535,13 +546,15 @@ export function TasksBoard() {
       // chapter's, and so is one previewing a role without `tasks:manage`
       // (View as a role keeps the officer's reads). Until the account is
       // known an officer gets none (the page says why) and a member gets the
-      // read, which the server already keeps to their own.
+      // read, which the server keeps to their own and the tasks their groups
+      // follow (#5473); the followed ones are left out, since whose they are
+      // can't be told yet.
       pool =
         myUserId !== ""
           ? tasks.filter((task) => task.assignee_id === myUserId)
           : canManage
             ? []
-            : tasks;
+            : tasks.filter((task) => !task.followed_by);
     } else {
       pool = tasks.filter(
         (task) =>
@@ -1120,7 +1133,7 @@ export function TasksBoard() {
                   label="Whose tasks"
                   options={VIEW_OPTIONS}
                   value={view}
-                  onChange={canManage ? setOfficerView : setMemberView}
+                  onChange={canManage ? setOfficerView : setMemberPick}
                 />
               ) : null}
               <div className="ml-auto flex shrink-0 items-center gap-2">
