@@ -736,7 +736,7 @@ export function TasksBoard() {
                     altText="Show everyone's tasks"
                     onClick={() => setViewPick("all")}
                   >
-                    Show everyone's
+                    {"Show everyone's"}
                   </ToastAction>
                 ),
               }
