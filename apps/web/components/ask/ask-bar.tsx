@@ -17,7 +17,7 @@ import { FrappCrest } from "./frapp-crest";
  * (`ask-card.tsx`) and focus comes back here when it closes.
  *
  * From the nav column's width up (`lg`) it has one home on every layout: the
- * foot of the sidebar (`app-nav.tsx`), above Collapse sidebar, and the crest
+ * foot of the sidebar (`app-nav.tsx`), sharing the collapse toggle's row, and the crest
  * alone in the rail (#5560, Paul's pick of 2026-11-19). It used to float in
  * whichever column was open, so it moved as panes opened and closed (Shawn,
  * 2026-11-18) and covered the last row of any page with its own scroll box.

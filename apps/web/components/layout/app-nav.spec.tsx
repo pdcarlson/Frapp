@@ -295,11 +295,16 @@ describe("AppNav", () => {
     const { unmount } = renderNav({ onToggleCollapsed: vi.fn() });
     const ask = screen.getByRole("button", { name: "Ask Frapp" });
     expect(ask).toHaveTextContent("Ask Frapp");
-    // Above Collapse sidebar, at the foot.
+    // One foot row: Ask fills it and the toggle is a glyph at its end, named
+    // by its label and tooltip, so a full sidebar still fits 1024x768.
     const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(ask.parentElement).toBe(collapse.parentElement);
     expect(
       ask.compareDocumentPosition(collapse) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    expect(collapse).not.toHaveTextContent("Collapse sidebar");
+    expect(collapse).toHaveAttribute("title", "Collapse sidebar");
+    expect(ask).toHaveClass("h-[34px]");
     unmount();
 
     // With no toggle (a forced rail) it still has its place.

@@ -41,8 +41,6 @@ const test = base.extend({
 
 const WIDTH = 1024;
 const HEIGHT = 768;
-/** The sidebar's Ask Frapp bar (`app-nav.tsx`): 40px and its 8px gap. */
-const ASK_FOOT = 48;
 
 test("the sidebar fits a 1024×768 window with every row showing", async ({
   page,
@@ -80,14 +78,9 @@ test("the sidebar fits a 1024×768 window with every row showing", async ({
   ).toBeVisible();
   await expect(nav.getByRole("link", { name: "Backwork" })).toBeVisible();
 
-  // A member with Ask has its bar at the sidebar's foot (#5560): 40px and
-  // its 8px gap, taken from the nav region. This sessionless page has no Ask,
-  // so the budget reserves that room rather than measuring a taller region
-  // than an officer with Ask gets.
-  const askShown = await page
-    .getByRole("button", { name: "Ask Frapp" })
-    .isVisible();
-  const askRoom = askShown ? 0 : ASK_FOOT;
+  // This sessionless page has no Ask Frapp. A member with Ask gets the same
+  // nav region: the bar shares the collapse toggle's 34px row at the foot
+  // (#5560), so it costs no height. A second foot row would not fit here.
   const measured = await nav.evaluate((el) => ({
     scrollHeight: el.scrollHeight,
     clientHeight: el.clientHeight,
@@ -97,9 +90,9 @@ test("the sidebar fits a 1024×768 window with every row showing", async ({
   expect(
     measured.scrollHeight,
     `The sidebar's ${measured.rows} rows need ${measured.scrollHeight}px but ` +
-      `the nav region is ${measured.clientHeight - askRoom}px (with room for Ask Frapp) at ${WIDTH}×${HEIGHT}, so it ` +
+      `the nav region is ${measured.clientHeight}px at ${WIDTH}×${HEIGHT}, so it ` +
       "scrolls. Each row costs 36px and a section heading about 37px. Find " +
       "the new row a home inside an existing one (a tab, or Settings) rather " +
       "than growing the list — spec/ui/web-dashboard/README.md § Navigation map.",
-  ).toBeLessThanOrEqual(measured.clientHeight - askRoom);
+  ).toBeLessThanOrEqual(measured.clientHeight);
 });

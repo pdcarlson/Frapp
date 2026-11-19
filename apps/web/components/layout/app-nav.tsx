@@ -274,6 +274,8 @@ export function AppNav({
 
   const CollapseIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose;
   const hasAsk = useAskEntry() !== null;
+  // Ask shares the toggle's row in the expanded column (#5560).
+  const sharedFoot = hasAsk && !isCollapsed && !isDrawer && !!onToggleCollapsed;
 
   return (
     <div
@@ -298,12 +300,13 @@ export function AppNav({
       {/* Above the foot, a live meeting the viewer runs shows its Start
           minutes card (#5219). No room in the rail. */}
       {isCollapsed ? null : <LiveMeetingCard />}
-      {isDrawer || !hasAsk ? null : (
+      {isDrawer || !hasAsk || sharedFoot ? null : (
         /*
          * Ask Frapp's one home from `lg` up (#5560, Paul's pick of
          * 2026-11-19): the foot of the column on every layout, so it never
-         * moves as panes open and close and covers no page. `mt-auto` pins
-         * it, and the toggle under it, to the bottom. A member without Ask
+         * moves as panes open and close and covers no page. In the rail it is
+         * the crest alone above the expand toggle; with a toggle in the
+         * column it shares the toggle's row (below). A member without Ask
          * gets no box at all, so their toggle sits where it always did.
          */
         <div
@@ -312,11 +315,7 @@ export function AppNav({
             isCollapsed ? "items-center" : "w-full",
           )}
         >
-          <AskBar
-            compact
-            rail={isCollapsed}
-            className={isCollapsed ? undefined : "h-10"}
-          />
+          <AskBar compact rail={isCollapsed} />
         </div>
       )}
       {isDrawer || !onToggleCollapsed ? null : (
@@ -329,13 +328,19 @@ export function AppNav({
          * `text-muted` glyph in the corner, which members missed. The rail
          * has no room for a label, so there the name is the accessible name
          * and the tooltip.
+         *
+         * Changed in #5560 (Paul's pick, 2026-11-19): for a member with Ask
+         * the expanded column's foot is one row, Ask Frapp's bar filling it
+         * and the toggle a 34px glyph at its end, named by its label and
+         * tooltip. A second row cost the 48px a full sidebar doesn't have at
+         * 1024x768 (`tests/visual/nav-fit.spec.ts`).
          */
         <div
           data-nav-toggle=""
           className={cn(
             "flex shrink-0 flex-col pt-2",
             // With no Ask block above it, the toggle pins itself down.
-            !hasAsk && "mt-auto",
+            (!hasAsk || sharedFoot) && "mt-auto",
             isCollapsed ? "items-center" : "w-full",
           )}
         >
@@ -347,23 +352,41 @@ export function AppNav({
               isCollapsed ? "w-6" : "w-full",
             )}
           />
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label={isCollapsed ? TOGGLE_LABEL.expand : undefined}
-            aria-expanded={!isCollapsed}
-            title={isCollapsed ? TOGGLE_LABEL.expand : TOGGLE_LABEL.collapse}
+          <div
             className={cn(
-              "flex h-[34px] shrink-0 items-center rounded-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground",
-              isCollapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
-              FOCUS_RING_SHELL,
+              "flex items-center gap-1.5",
+              !isCollapsed && "w-full",
             )}
           >
-            <CollapseIcon className={navIconClassName} aria-hidden="true" />
-            {isCollapsed ? null : (
-              <span className="truncate">{TOGGLE_LABEL.collapse}</span>
-            )}
-          </button>
+            {sharedFoot ? (
+              <AskBar compact className="h-[34px] min-w-0 flex-1" />
+            ) : null}
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={
+                isCollapsed
+                  ? TOGGLE_LABEL.expand
+                  : sharedFoot
+                    ? TOGGLE_LABEL.collapse
+                    : undefined
+              }
+              aria-expanded={!isCollapsed}
+              title={isCollapsed ? TOGGLE_LABEL.expand : TOGGLE_LABEL.collapse}
+              className={cn(
+                "flex h-[34px] shrink-0 items-center rounded-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground",
+                isCollapsed || sharedFoot
+                  ? "w-[34px] justify-center"
+                  : "w-full gap-2.5 px-2.5",
+                FOCUS_RING_SHELL,
+              )}
+            >
+              <CollapseIcon className={navIconClassName} aria-hidden="true" />
+              {isCollapsed || sharedFoot ? null : (
+                <span className="truncate">{TOGGLE_LABEL.collapse}</span>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>
