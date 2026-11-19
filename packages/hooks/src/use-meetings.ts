@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
+import { minutesDraftElapsed } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { aiSuggestionKeys } from "./use-ai-suggestions";
 
@@ -81,6 +83,23 @@ export function useCachedMeetingRow(
     if (row) return row;
   }
   return null;
+}
+
+/**
+ * How long a draft has been written, "0:42", ticking each second while it
+ * is: the clock beside "Writing the minutes" on web and phone alike. Null
+ * when the request time is unknown.
+ */
+export function useMinutesDraftClock(
+  requestedAt: string | null | undefined,
+): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!requestedAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [requestedAt]);
+  return minutesDraftElapsed(requestedAt ?? null, now);
 }
 
 /** One meeting's minutes. A 404 means they are not there for this viewer. */

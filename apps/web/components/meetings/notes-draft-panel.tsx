@@ -11,6 +11,7 @@ import {
   useRequestMeetingDraft,
   useUseMeetingDraft,
   useRemoveMeetingRecording,
+  useMinutesDraftClock,
   type MeetingDraftState,
   type MeetingNotesState,
   type MeetingRecordingState,
@@ -24,7 +25,6 @@ import {
   MINUTES_READ_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
-  minutesDraftElapsed,
   minutesDraftSource,
   minutesDraftSteps,
   notesLookLikeTranscript,
@@ -819,12 +819,7 @@ function DraftingSteps({
   source: MinutesDraftSource;
   requestedAt: string | null;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const clock = minutesDraftElapsed(requestedAt, now);
+  const clock = useMinutesDraftClock(requestedAt);
   return (
     <div className="space-y-3">
       <h3 id={headingId} className="text-lg font-semibold">

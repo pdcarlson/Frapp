@@ -13,6 +13,7 @@ import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
 import {
   useAiSuggestions,
+  useCachedMeetingRow,
   useCurrentUser,
   useDeleteMeeting,
   useMeeting,
@@ -20,24 +21,27 @@ import {
   useMeetingDraft,
   useMeetingRecording,
   useMemberDisplayNames,
+  useMinutesDraftClock,
   usePermissionList,
   usePostMeeting,
   type MeetingMinutes,
+  type MeetingSummary,
 } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   MEETING_COPY,
   MEETING_LIST_COPY,
-  MEETING_NOTE_TAKERS_COPY,
   MEETING_NOTES_COPY,
   MEETING_RECORDER_COPY,
+  MINUTES_FLOW_COPY,
   MINUTES_READ_COPY,
   can,
   isMeetingContentEmpty,
   meetingDayLabel,
   meetingTypeLabel,
   meetingWhenLabel,
+  minutesDraftSource,
   minutesJumps,
   minutesReadSections,
   readMeetingContent,
@@ -62,6 +66,7 @@ import {
   useItemMenu,
   type ItemMenuAction,
 } from "@/components/item-actions-menu";
+import { DraftingSteps } from "@/components/minutes/drafting-steps";
 import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
@@ -152,6 +157,9 @@ function MinutesDetailsScreenBody() {
   const record =
     (Array.isArray(params.record) ? params.record[0] : params.record) === "1";
   const meetingQuery = useMeeting(id || null);
+  // Named from the Minutes list while the minutes load, so a tap from the
+  // list never opens on a blank screen (Paul, 2026-11-19).
+  const cached = useCachedMeetingRow(id || null);
 
   if (!id) {
     return (
@@ -162,8 +170,14 @@ function MinutesDetailsScreenBody() {
   }
   if (meetingQuery.isPending) {
     return (
-      <ScreenShell back={BACK_TO_MINUTES} title={MEETING_LIST_COPY.title}>
-        <MinutesSkeleton />
+      <ScreenShell
+        back={BACK_TO_MINUTES}
+        title={cached?.event_name ?? MEETING_LIST_COPY.title}
+        subtitle={
+          cached ? meetingWhenLabel(cached.event_start_time) : undefined
+        }
+      >
+        <MinutesSkeleton row={cached} />
       </ScreenShell>
     );
   }
@@ -283,7 +297,21 @@ function LoadedMinutes({
   const steps = recordingPipeline(meeting.id, recorderState, recordingState, {
     drafting,
   });
-  const { othersWrote } = useOtherSources(meeting.id, recordingState);
+  const { takersWrote, transcriptReady } = useOtherSources(
+    meeting.id,
+    recordingState,
+  );
+  // What the draft reads, for its first step and the review banner, in
+  // web's words (`MINUTES_FLOW_COPY`).
+  const source = minutesDraftSource({
+    notes: draftState?.notes ?? "",
+    othersWrote: takersWrote,
+    recordingReady: transcriptReady,
+  });
+  const clock = useMinutesDraftClock(
+    drafting ? (draftState?.requested_at ?? null) : null,
+  );
+  const notesY = useRef(0);
 
   // The tasks suggested from these minutes, for someone who could accept
   // them. Read only once the minutes are posted, which is what makes them.
@@ -424,6 +452,16 @@ function LoadedMinutes({
           },
         ]
       : []),
+    ...(finishing && !empty && !drafting && !!draftState
+      ? [
+          {
+            key: "notes",
+            label: MINUTES_FLOW_COPY.review.notes,
+            glyph: (color: string) => <ListGlyph color={color} />,
+            run: scrollToNotes,
+          },
+        ]
+      : []),
     ...(canBackfill
       ? [
           {
@@ -504,12 +542,12 @@ function LoadedMinutes({
         <View style={styles.draftingBar}>
           <ActivityIndicator color={tokens.color.text.mutedForeground} />
           <Text accessibilityLiveRegion="polite" style={[styles.draftingText]}>
-            {othersWrote
-              ? MEETING_NOTE_TAKERS_COPY.draftingAll
-              : MEETING_NOTES_COPY.drafting}
+            {clock
+              ? `${MINUTES_FLOW_COPY.drafting.badge} · ${clock}`
+              : MINUTES_FLOW_COPY.drafting.badge}
           </Text>
           <TextAction
-            label={MEETING_NOTES_COPY.stop}
+            label={MINUTES_FLOW_COPY.drafting.stop}
             color={tokens.color.text.foreground}
             disabled={stopping}
             onPress={() => {
@@ -542,6 +580,15 @@ function LoadedMinutes({
     } else if (recorderFooter) footer = recorderFooter;
   }
 
+  // A draft in the minutes: one line above them says so, with the notes a
+  // tap away, as web's banner (Paul, 2026-11-19).
+  const reviewing =
+    finishing && !empty && !drafting && draftState?.status === "applied";
+  const scrollToNotes = () =>
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, notesY.current - tokens.spacing.md),
+      animated: true,
+    });
   const notes =
     finishing && draftState ? (
       <NotesPanel
@@ -556,6 +603,7 @@ function LoadedMinutes({
         autoDraft={!!transcript && empty}
         onDraftable={setDraftable}
         stopInFooter
+        bannerAbove={reviewing}
       />
     ) : null;
   // The minutes to review. While the recorder works and nothing is written
@@ -670,6 +718,38 @@ function LoadedMinutes({
 
         {recorderShown ? <RecorderStage row={recorder} steps={steps} /> : null}
 
+        {/* A draft from notes or a paste: its steps and clock. A recording's
+            draft shows the recorder's four steps above instead. */}
+        {finishing && drafting && !steps ? (
+          <DraftingSteps
+            source={source}
+            requestedAt={draftState?.requested_at ?? null}
+          />
+        ) : null}
+
+        {/* The start box's question, as on web: nothing is written yet. */}
+        {finishing && empty && !drafting && !steps && notes && !busy ? (
+          <View style={styles.start}>
+            <Text accessibilityRole="header" style={styles.startTitle}>
+              {MINUTES_FLOW_COPY.start.heading}
+            </Text>
+            <Text style={styles.meta}>{MINUTES_FLOW_COPY.start.hint}</Text>
+          </View>
+        ) : null}
+
+        {reviewing ? (
+          <View style={styles.banner}>
+            <Text style={styles.bannerText}>
+              {MINUTES_FLOW_COPY.review.banner(source)}
+            </Text>
+            <TextAction
+              label={MINUTES_FLOW_COPY.review.notes}
+              color={accent}
+              onPress={scrollToNotes}
+            />
+          </View>
+        ) : null}
+
         {summaryShown ? (
           <SummaryNote
             ref={summaryRef}
@@ -684,7 +764,15 @@ function LoadedMinutes({
             keep one slot, so the minutes arriving never remounts the box
             being typed in. */}
         {empty ? null : body}
-        {notes}
+        {notes ? (
+          <View
+            onLayout={(event) => {
+              notesY.current = event.nativeEvent.layout.y;
+            }}
+          >
+            {notes}
+          </View>
+        ) : null}
         {empty ? body : null}
 
         {transcript && recordingState ? (
@@ -769,12 +857,23 @@ function LoadedMinutes({
   );
 }
 
-function MinutesSkeleton() {
+/**
+ * The minutes while they load: shaped like the sections they will fill. The
+ * screen's title already names the meeting when the list had it (`row`).
+ */
+function MinutesSkeleton({
+  row = null,
+}: {
+  row?: Pick<MeetingSummary, "event_name"> | null;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const { body, caption } = tokens.typography.role;
   return (
-    <SkeletonRegion label="Loading minutes" style={styles.skeleton}>
+    <SkeletonRegion
+      label={row ? `Loading ${row.event_name}` : "Loading minutes"}
+      style={styles.skeleton}
+    >
       <SkeletonText role={caption} width="30%" />
       <SkeletonText role={body} width="92%" />
       <SkeletonText role={body} width="84%" />
@@ -811,6 +910,23 @@ function createStyles(tokens: SignetTokens) {
     },
     skeleton: {
       gap: tokens.spacing.md,
+    },
+    start: {
+      gap: tokens.spacing.xs,
+    },
+    startTitle: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    banner: {
+      gap: tokens.spacing.sm,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      backgroundColor: tokens.color.surface.card,
+    },
+    bannerText: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
     },
   });
 }

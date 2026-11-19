@@ -116,7 +116,12 @@ export function useOtherSources(
   const otherWriters = (notesState?.takers ?? []).filter(
     (taker) => taker.notes.trim() !== "" && taker.held === null,
   );
-  return { othersWrote: otherWriters.length > 0 || transcriptReady };
+  return {
+    othersWrote: otherWriters.length > 0 || transcriptReady,
+    /** Another note-taker's notes are in (not counting the transcript). */
+    takersWrote: otherWriters.length > 0,
+    transcriptReady,
+  };
 }
 
 export interface NotesPanelHandle {
@@ -155,6 +160,11 @@ export interface NotesPanelProps {
    * with Record still pinned), so the panel leaves both out.
    */
   stopInFooter?: boolean;
+  /**
+   * The screen says "Drafted from …" in a banner above the minutes, so the
+   * panel doesn't say it again under them.
+   */
+  bannerAbove?: boolean;
 }
 
 export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
@@ -170,6 +180,7 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
       autoDraft = false,
       onDraftable,
       stopInFooter = false,
+      bannerAbove = false,
     },
     ref,
   ) {
@@ -513,14 +524,16 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
                   }
                 : waiting
                   ? { problem: false, text: MEETING_NOTES_COPY.waiting }
-                  : state.status === "applied"
-                    ? {
-                        problem: false,
-                        text: othersWrote
-                          ? MEETING_NOTE_TAKERS_COPY.appliedAll
-                          : MEETING_NOTES_COPY.applied,
-                      }
-                    : { problem: false, text: "" };
+                  : state.status === "applied" && bannerAbove
+                    ? { problem: false, text: "" }
+                    : state.status === "applied"
+                      ? {
+                          problem: false,
+                          text: othersWrote
+                            ? MEETING_NOTE_TAKERS_COPY.appliedAll
+                            : MEETING_NOTES_COPY.applied,
+                        }
+                      : { problem: false, text: "" };
 
     const reviewed = state.status === "applied" || state.status === "ready";
     const { gaps, left_out: leftOut } = state.review;
@@ -587,7 +600,9 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
               />
             ) : null}
           </View>
-        ) : (
+        ) : drafting && stopInFooter ? null : (
+          // While the draft is written the screen's steps say what was
+          // saved, so the box steps aside there, as on web.
           <TextInput
             multiline
             value={notes}

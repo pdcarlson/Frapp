@@ -1,3 +1,4 @@
+import { minutesDraftElapsed } from "@repo/validation";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingMinutes } from "@repo/hooks";
@@ -61,6 +62,9 @@ vi.mock("@repo/hooks", () => ({
   }),
   useMeeting: () => mocks.meeting.current,
   useCachedMeetingRow: () => null,
+  // The real clock's arithmetic, read once: the spec has no timers to tick.
+  useMinutesDraftClock: (at: string | null) =>
+    minutesDraftElapsed(at ?? null, Date.now()),
   useMeetingActionItemTasks: () => ({ data: mocks.actionItemTasks.current }),
   useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
   usePostMeeting: () => ({ mutateAsync: mocks.post, isPending: false }),
