@@ -1,3 +1,4 @@
+import { formatPoints } from '@repo/formatting';
 import {
   describeRepeatPattern,
   ordinal,
@@ -222,7 +223,7 @@ const SUBMITTED_REPLY_MAX = 60;
 /**
  * A task a member's group follows was marked done (#5473): what they hear
  * when they can't confirm it. It tells them, and asks nothing: "Sam
- * finished: Book the venue" / "From Exec board · An officer confirms it".
+ * finished: Book the venue" / "From Exec board · Waiting on an officer".
  */
 export function taskFollowedFinishedCopy(
   name: string,
@@ -237,7 +238,7 @@ export function taskFollowedFinishedCopy(
     title: `${name} finished: ${task.title}`,
     body: joinFacts(
       followerName && `From ${followerName}`,
-      taskNeedsSignOff(task) ? 'An officer confirms it' : 'Done',
+      taskNeedsSignOff(task) ? 'Waiting on an officer' : 'Done',
     ),
   };
 }
@@ -245,12 +246,15 @@ export function taskFollowedFinishedCopy(
 /**
  * What the officer who assigned a task reads when it is marked done (#4635
  * proof): the person and the action lead, because their action is the news,
- * then what came with it and what is asked. "Shawn Klein submitted: Clean his
- * room" / "1 photo · Confirm to award 10 points".
+ * then what came with it. "Shawn Klein submitted: Clean his room" / "1 photo ·
+ * 10 points".
  *
- * A task with no points and no proof was Done as marked, so it "finished"
- * and asks for nothing; a send-back's second try "resubmitted" and quotes the
- * reply, the thing that changed.
+ * Facts only, never an instruction (Paul, 2026-11-20, #5732: "Please stop
+ * narrating like directions"): the verb already says whether it waits on
+ * them, "submitted" for one that does and "finished" for one that was Done
+ * as marked, so the body names no next step. A send-back's second try
+ * "resubmitted" and quotes the reply, the thing that changed. A finished one
+ * ends in "Done", its state, so the body is never blank (#3846).
  */
 export function taskSubmittedCopy(
   name: string,
@@ -284,11 +288,6 @@ export function taskSubmittedCopy(
       }"`
     : null;
   const points = task.point_reward ?? 0;
-  const ask = !needsSignOff
-    ? "Done · send it back if something's off"
-    : points > 0
-      ? `Confirm to award ${points} ${points === 1 ? 'point' : 'points'}`
-      : 'Check it and confirm';
   return {
     title: `${name} ${verb}: ${task.title}`,
     body: joinFacts(
@@ -296,7 +295,10 @@ export function taskSubmittedCopy(
       submitted.photoCount > 0 &&
         `${submitted.photoCount} ${submitted.photoCount === 1 ? 'photo' : 'photos'}`,
       task.proof_link && 'Link attached',
-      ask,
+      points > 0 && formatPoints(points),
+      // A completion with nothing else to say still says its state: the
+      // push never goes out blank (#3846).
+      !needsSignOff && 'Done',
     ),
   };
 }

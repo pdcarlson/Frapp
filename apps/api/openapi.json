@@ -31189,6 +31189,12 @@
             "nullable": true,
             "description": "The assignee's reply sent with Mark done, or null. Cleared with the completion."
           },
+          "completed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who marked it done (#5732): the assignee, or an officer marking it done for them. Null while it is open, and on a completion from before this was kept."
+          },
           "series_id": {
             "type": "string",
             "format": "uuid",
@@ -31261,6 +31267,7 @@
           "proof_link",
           "sent_back_reason",
           "completion_note",
+          "completed_by",
           "series_id",
           "occurrence_date",
           "group_id",

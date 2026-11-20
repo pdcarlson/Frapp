@@ -212,6 +212,28 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     return data?.length ?? 0;
   }
 
+  async deleteTaskCompletionRows(
+    chapterId: string,
+    taskId: string,
+  ): Promise<number> {
+    // Every member's completion rows for this task: the creator's and a
+    // follower's alike, any round's. No time bound: the task is open now,
+    // so none of them is true, and the database's clock never meets the
+    // API's. `notifications_chapter_task_idx` serves the lookup. The
+    // statement-level delete trigger pings each member's `notif:<user>`, so
+    // their lists refetch.
+    const { data, error } = await this.supabase
+      .from('notifications')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('data->target->>taskId', taskId)
+      .or('data->target->>view.eq.review,data->>about.eq.task-completed')
+      .select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
   async deleteConversation(
     userId: string,
     chapterId: string,
