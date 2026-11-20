@@ -422,18 +422,27 @@ function AddPicker({
                 </p>
                 {section.rows.map((row) => {
                   const pending = pendingKey === `${row.kind}:${row.id}`;
-                  const disabled =
-                    row.disabledReason !== null || pendingKey !== null;
+                  // While a tick saves, the rows wait with `aria-disabled`,
+                  // not `disabled`: disabling the focused row drops focus to
+                  // the page, which the profile panel takes back, and that
+                  // focus outside closed the list after every pick (#5752).
+                  // The list stays open for the next tick, as Linear's and
+                  // GitHub's label menus do.
+                  const busy = pendingKey !== null;
                   return (
                     <button
                       key={row.id}
                       type="button"
                       role="menuitemcheckbox"
                       aria-checked={row.held}
-                      disabled={disabled}
-                      onClick={() => onToggle(row, !row.held)}
+                      disabled={row.disabledReason !== null}
+                      aria-disabled={busy || undefined}
+                      onClick={() => {
+                        if (busy) return;
+                        onToggle(row, !row.held);
+                      }}
                       className={cn(
-                        "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-card-hover disabled:hover:bg-transparent",
+                        "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-card-hover disabled:hover:bg-transparent aria-disabled:cursor-wait aria-disabled:hover:bg-transparent",
                         row.disabledReason !== null && "cursor-default",
                         FOCUS_RING_OFFSET,
                       )}

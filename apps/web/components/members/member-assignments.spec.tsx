@@ -208,6 +208,63 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     ).toBeDisabled();
   });
 
+  // #5752: a tick used to disable every row while it saved, which dropped
+  // focus to the page; the profile panel took it back, and that closed the
+  // list after each pick.
+  it("stays open with focus on the row while a tick saves, for the next tick", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    setMembership.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({});
+        }),
+    );
+    renderIt();
+    await user.click(screen.getByRole("button", { name: "Add to group" }));
+    const list = screen.getByRole("dialog", {
+      name: "Roles and groups for Jimmy Mitchell",
+    });
+    const campus = within(list).getByRole("menuitemcheckbox", {
+      name: /On campus/,
+    });
+    await user.click(campus);
+
+    // Saving: the row keeps focus, and the rows wait without being disabled.
+    expect(campus).toHaveFocus();
+    expect(campus).not.toBeDisabled();
+    expect(campus).toHaveAttribute("aria-disabled", "true");
+    const secretary = within(list).getByRole("menuitemcheckbox", {
+      name: /Corresponding Secretary/,
+    });
+    await user.click(secretary);
+    expect(updateRoles).not.toHaveBeenCalled();
+
+    finish();
+    await waitFor(() =>
+      expect(campus).not.toHaveAttribute("aria-disabled"),
+    );
+    // Same opening of the list: a second tick saves too.
+    await user.click(
+      within(list).getByRole("menuitemcheckbox", { name: /In house/ }),
+    );
+    expect(setMembership).toHaveBeenLastCalledWith({
+      groupId: "g-house",
+      userId: "u1",
+      in: false,
+    });
+    expect(list).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Roles and groups for Jimmy Mitchell",
+        }),
+      ).toBeNull(),
+    );
+  });
+
   it("builds a second quick tick on the first, before the profile re-reads", async () => {
     const user = userEvent.setup();
     renderIt(["r-sec", "r-everyone"]);
