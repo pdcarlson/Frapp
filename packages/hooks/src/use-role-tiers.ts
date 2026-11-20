@@ -49,6 +49,10 @@ function useInvalidateAfterTierWrite() {
     void queryClient.invalidateQueries({
       queryKey: ["members", chapterId, "channel"],
     });
+    // The roster's name colors rank by tier too.
+    void queryClient.invalidateQueries({
+      queryKey: ["members", chapterId, "roster"],
+    });
   };
 }
 

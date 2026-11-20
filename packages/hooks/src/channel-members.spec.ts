@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  NO_ROLE_GROUP_LABEL,
+  OUTSIDE_TIERS_GROUP_KEY,
+  channelMemberTitle,
   compareChannelMembers,
   filterChannelMembers,
-  groupChannelMembersByRole,
+  groupChannelMembersByTier,
 } from "./channel-members";
 
 describe("compareChannelMembers", () => {
@@ -23,50 +24,93 @@ describe("compareChannelMembers", () => {
   });
 });
 
-describe("groupChannelMembersByRole", () => {
+describe("groupChannelMembersByTier", () => {
   const row = (
     id: string,
     name: string,
     roleRank: number | null,
-    roleId: string | null,
-    roleName: string | null,
-  ) => ({ id, name, roleRank, roleId, roleName });
+    tierId: string | null,
+    tierName: string | null,
+    tierRank: number | null,
+    title: string | null = null,
+  ) => ({ id, name, roleRank, tierId, tierName, tierRank, title });
 
-  it("groups by highest role in role order, names A to Z, no role last", () => {
-    const groups = groupChannelMembersByRole([
-      row("a", "Zoe", 5, "member", "Member"),
-      row("b", "aaron", 5, "member", "Member"),
-      row("c", "Yves", 1, "pres", "President"),
-      row("d", "Bob", null, null, null),
-      row("e", "Cal", 2, "treas", "Treasurer"),
+  it("runs tier by tier, by title inside each, everyone outside the tiers last", () => {
+    // Paul, 2026-11-20: Cabinet first with the President leading, then the
+    // chairs, then the brothers; an untiered "First Floor" never heads it.
+    const groups = groupChannelMembersByTier([
+      row(
+        "gabe",
+        "Gabe",
+        3,
+        "chairs",
+        "Committee Chairs",
+        2,
+        "Recruitment Chair",
+      ),
+      row("zoe", "Zoe", 9, "brothers", "Brothers", 4),
+      row("aaron", "aaron", 9, "brothers", "Brothers", 4),
+      row("paul", "Paul", 0, "cabinet", "Cabinet", 1, "President"),
+      row("bob", "Bob", null, null, null, null),
+      row("cal", "Cal", 1, "cabinet", "Cabinet", 1, "Treasurer"),
+      row("floor", "Fred", 12, null, null, null, "First Floor"),
     ]);
     expect(groups.map((g) => [g.label, g.rows.map((r) => r.id)])).toEqual([
-      ["President", ["c"]],
-      ["Treasurer", ["e"]],
-      ["Member", ["b", "a"]],
-      [NO_ROLE_GROUP_LABEL, ["d"]],
+      ["Cabinet", ["paul", "cal"]],
+      ["Committee Chairs", ["gabe"]],
+      ["Brothers", ["aaron", "zoe"]],
+      ["Members", ["floor", "bob"]],
     ]);
+    expect(groups.at(-1)!.key).toBe(OUTSIDE_TIERS_GROUP_KEY);
   });
 
-  it("keeps two same-named roles apart by id", () => {
-    const groups = groupChannelMembersByRole([
-      row("a", "A", 8, "r1", "Chair"),
-      row("b", "B", 9, "r2", "Chair"),
+  it("heads the outside group apart when a tier is already called Members", () => {
+    const groups = groupChannelMembersByTier([
+      row("a", "Al", 5, "t-mem", "Members", 3),
+      row("b", "Bo", 9, null, null, null, "Alumni"),
     ]);
-    expect(groups.map((g) => g.key)).toEqual(["r1", "r2"]);
+    expect(groups.map((g) => g.label)).toEqual(["Members", "Everyone else"]);
+    // A search that hides the tier keeps the heading the full list gives.
+    const all = [
+      row("a", "Al", 5, "t-mem", "Members", 3),
+      row("b", "Bo", 9, null, null, null, "Alumni"),
+    ];
+    expect(
+      groupChannelMembersByTier([all[1]!], all).map((g) => g.label),
+    ).toEqual(["Everyone else"]);
   });
 
-  it("falls back to one list when the API sends no role ids", () => {
-    const groups = groupChannelMembersByRole([
+  it("falls back to one ranked list when the API sends no tiers", () => {
+    const groups = groupChannelMembersByTier([
       { id: "a", name: "Zed", roleRank: 5 } as never,
       { id: "b", name: "Al", roleRank: 1 } as never,
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.label).toBe("Members");
+    expect(groups[0]!.rows.map((r: { id: string }) => r.id)).toEqual([
+      "b",
+      "a",
+    ]);
   });
 
   it("returns nothing for no rows", () => {
-    expect(groupChannelMembersByRole([])).toEqual([]);
+    expect(groupChannelMembersByTier([])).toEqual([]);
+  });
+});
+
+describe("channelMemberTitle", () => {
+  it("shows the title unless it only repeats the heading", () => {
+    expect(channelMemberTitle({ title: "President" }, "Cabinet")).toBe(
+      "President",
+    );
+    expect(
+      channelMemberTitle({ title: "Frapp Development" }, "Frapp development"),
+    ).toBeNull();
+    expect(
+      channelMemberTitle({ title: "New Member" }, "New members"),
+    ).toBeNull();
+    expect(channelMemberTitle({ title: null }, "Brothers")).toBeNull();
+    expect(channelMemberTitle({ title: "  " }, "Brothers")).toBeNull();
   });
 });
 
