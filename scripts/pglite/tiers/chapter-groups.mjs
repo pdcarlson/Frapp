@@ -352,8 +352,10 @@ console.log("\n=== Functional: groups and pingable tiers (20261113040007) ===");
       (await rows(`select 1 from chapter_groups where id = $1`, [alpha]))
         .length === 0;
     check(
-      "a deleted group, or its pledge class, leaves every channel list",
-      same(listAfter, []) && alphaGone,
+      // Not empty: a list its last entry leaves falls to the top tier
+      // (20261120051720), so the officers still see the channel.
+      "a deleted group, or its pledge class, leaves every channel list, which falls to the top tier",
+      same(listAfter, [`tier:${T_EXEC}`]) && alphaGone,
       { listAfter, alphaGone },
     );
 
