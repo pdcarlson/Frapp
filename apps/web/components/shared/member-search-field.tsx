@@ -2,7 +2,6 @@
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Command as CommandPrimitive } from "cmdk";
-import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import { Command, CommandItem, CommandList } from "@/components/ui/command";
 import { INPUT_CLASSES } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,8 +20,10 @@ import {
  * Escape clears a search, then closes the list. Comparable: Linear's assignee
  * picker and Notion's person property.
  *
- * The search matches the start of any word in a name (`matchesWordStarts`),
- * as `SearchablePicker` does. The field is cmdk's own input, drawn as the
+ * The search matches anywhere in a name, as it did before the list opened on
+ * click. Unlike `SearchablePicker` (a button whose popover holds its own
+ * search and closes on a pick), the field on the page is the search and the
+ * list hangs from it. The field is cmdk's own input, drawn as the
  * `Input` primitive, so it carries the combobox roles a screen reader needs.
  * cmdk names that input from its own label and sets its own id, so the field
  * draws its visible label too, and a `<Label htmlFor>` outside can't reach it.
@@ -56,9 +57,12 @@ export function MemberSearchField<T>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const searching = normalizeWords(query).length > 0;
+  // Anywhere in the name, as the app's other member searches match
+  // (attendance), so "son" finds Johnson.
+  const needle = query.trim().toLowerCase();
+  const searching = needle.length > 0;
   const shown = searching
-    ? items.filter((item) => matchesWordStarts(nameOf(item), query))
+    ? items.filter((item) => nameOf(item).toLowerCase().includes(needle))
     : items;
 
   /** Escape clears a search first, then closes; it never reaches the panel. */
@@ -72,7 +76,12 @@ export function MemberSearchField<T>({
       event.preventDefault();
       event.stopPropagation();
       handleEscape();
-    } else if (!open && event.key !== "Tab" && event.key !== "Shift") {
+    } else if (
+      !open &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp")
+    ) {
+      // Typing opens it through `onValueChange`; the arrows reopen a list
+      // Escape closed. Nothing else does, so a closed list stays closed.
       setOpen(true);
     }
   }

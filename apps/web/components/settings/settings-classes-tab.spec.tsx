@@ -344,6 +344,22 @@ describe("SettingsClassesTab", () => {
       ).toEqual(["CalMoves from Beta"]);
     });
 
+    it("clears a search on Escape, then closes the list until an arrow key", async () => {
+      await openAlpha();
+      const field = screen.getByLabelText("Add a member");
+      await userEvent.type(field, "de");
+      await userEvent.keyboard("{Escape}");
+      expect(field).toHaveValue("");
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      // Only the arrows (or typing) bring it back.
+      await userEvent.keyboard("{Shift}");
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      await userEvent.keyboard("{ArrowDown}");
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+    });
+
     it("says so when nobody matches", async () => {
       await openAlpha();
       await userEvent.type(screen.getByLabelText("Add a member"), "zed");

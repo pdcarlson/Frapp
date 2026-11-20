@@ -54,13 +54,21 @@ describe("addRow", () => {
     ).toEqual(["41", "42", "43"]);
   });
 
-  it("numbers a class with no numbers yet from 1", () => {
+  it("leaves everyone else's number alone, blank ones included", () => {
+    expect(
+      addRow([row("a", "1"), row("b", "")], { memberId: "c", name: "c" }).map(
+        (entry) => entry.number,
+      ),
+    ).toEqual(["1", "", "2"]);
+  });
+
+  it("gives no number in a class that has none (#3967)", () => {
     expect(
       addRow([row("a", "")], { memberId: "b", name: "b" }).map(
         (entry) => entry.number,
       ),
-    ).toEqual(["1", "2"]);
-    expect(addRow([], { memberId: "a", name: "a" })[0]?.number).toBe("1");
+    ).toEqual(["", ""]);
+    expect(addRow([], { memberId: "a", name: "a" })[0]?.number).toBe("");
   });
 });
 

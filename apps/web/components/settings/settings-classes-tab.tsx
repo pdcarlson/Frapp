@@ -27,7 +27,6 @@ import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import {
   PLEDGE_CLASS_ASSIGNMENTS_MAX,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
-  ORDER_NUMBER_INVALID_MESSAGE,
   PLEDGE_CLASSES_MAX,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -724,11 +723,6 @@ function ClassMembersEditor({
               )}
             />
           )}
-          {invalid ? (
-            <p role="alert" className="text-caption text-destructive-text">
-              {ORDER_NUMBER_INVALID_MESSAGE}
-            </p>
-          ) : null}
           {tooMany ? (
             <p role="alert" className="text-caption text-destructive-text">
               That is more than {PLEDGE_CLASS_ASSIGNMENTS_MAX} changes at once.

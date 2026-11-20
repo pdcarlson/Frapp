@@ -1,7 +1,7 @@
 import { MEMBER_ORDER_NUMBER_MAX, parseOrderNumber } from "@repo/validation";
 import type { PledgeClassAssignment } from "@repo/hooks";
 
-/** One member in the class editor: who, and the number as it is being typed. */
+/** One member in the class editor: who, and the number their place gives them. */
 export type ClassEditorRow = {
   memberId: string;
   name: string;
@@ -10,16 +10,16 @@ export type ClassEditorRow = {
 };
 
 /**
- * The rows' numbers after the rows were put in a new order, or one was added.
- * The numbers follow the list (#5738): there is no number to type in the
- * class editor.
+ * The rows' numbers after the rows were put in a new order. The numbers
+ * follow the list (#5738): there is no number to type in the class editor.
  *
- * The numbers the rows already hold are kept and dealt back out lowest first,
- * and a row without one takes the next number after the highest. A chapter
- * that numbers everyone chapter-wide (a roll or bond number) keeps the numbers
- * this class holds, 41 to 52 say, and only who holds which changes; a class
- * with no numbers yet is numbered 1 to n. A row past `MEMBER_ORDER_NUMBER_MAX`
- * is left without one.
+ * The pool dealt out, lowest first down the list, is the numbers the rows
+ * already hold plus, for each row without one, the next number after the
+ * highest. A chapter that numbers everyone chapter-wide (a roll or bond
+ * number) keeps the numbers this class holds, 41 to 52 say, and only who holds
+ * which changes; a class with no numbers yet is numbered 1 to n, since an
+ * order the officer chose can only be saved as numbers. A number past
+ * `MEMBER_ORDER_NUMBER_MAX` is left out, so its row gets none.
  */
 export function renumberRows(
   rows: readonly ClassEditorRow[],
@@ -38,12 +38,25 @@ export function renumberRows(
   }));
 }
 
-/** The rows with a member added at the end, as the newest of the class. */
+/**
+ * The rows with a member added at the end, as the newest of the class. The
+ * other rows are left as they are, so adding someone never writes anyone
+ * else's number (which a member ranked above the officer would refuse). The
+ * added member takes the next number after the highest when the class has
+ * numbers, and none when it has none: a chapter that doesn't number its
+ * members (#3967) never gets numbers from an add.
+ */
 export function addRow(
   rows: readonly ClassEditorRow[],
   added: Omit<ClassEditorRow, "number">,
 ): ClassEditorRow[] {
-  return renumberRows([...rows, { ...added, number: "" }]);
+  const held = rows
+    .map((row) => parseOrderNumber(row.number))
+    .filter((value): value is number => typeof value === "number");
+  const next = held.length > 0 ? Math.max(...held) + 1 : null;
+  const number =
+    next !== null && next <= MEMBER_ORDER_NUMBER_MAX ? String(next) : "";
+  return [...rows, { ...added, number }];
 }
 
 type SavedMember = {
