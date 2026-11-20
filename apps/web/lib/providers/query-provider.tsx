@@ -2,7 +2,12 @@
 
 import React, { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { isRetryableFailure } from "@repo/api-sdk";
+import {
+  BUSY_READ_RETRIES,
+  busyRetryDelayMs,
+  isRetryableFailure,
+  isServerBusy,
+} from "@repo/api-sdk";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /** How many times a failed query is retried, when it is worth retrying. */
@@ -18,7 +23,7 @@ const MUTATION_RETRIES = 2;
  * only holds the error state back by the 1s, 2s and 4s of backoff before
  * showing what the first answer already said.
  *
- * The 429 is no exception for a read. Once a caller is over the limit, the
+ * The throttler's 429 is no exception for a read. Once a caller is over the limit, the
  * API's throttler blocks it for `blockDuration`, which defaults to the
  * window's 60-second `ttl` (`apps/api/src/app.module.ts`), so every attempt
  * inside the 7 seconds of backoff is refused again, and each one counts.
@@ -32,8 +37,20 @@ const MUTATION_RETRIES = 2;
  * `spec/ui/resilience/api-retry.md` § Reads.
  */
 function retryQuery(failureCount: number, error: unknown): boolean {
+  if (isServerBusy(error)) return failureCount < BUSY_READ_RETRIES;
   if (failureCount >= QUERY_RETRIES) return false;
   return isRetryableFailure(error);
+}
+
+/**
+ * The wait before a query's next attempt. A busy server's 429
+ * (`isServerBusy`) waits longer and keeps trying for about a minute and a half
+ * (`BUSY_READ_RETRIES`), so a short overload shows as loading, not as a
+ * "Couldn't load" state; anything else backs off 2, 4, 8 s up to 30 s.
+ */
+export function queryRetryDelay(attempt: number, error: unknown): number {
+  if (isServerBusy(error)) return busyRetryDelayMs(attempt);
+  return Math.min(1000 * 2 ** attempt, 30_000);
 }
 
 /**
@@ -63,7 +80,7 @@ export function makeQueryClient() {
         staleTime: 30_000,
         gcTime: 10 * 60_000,
         retry: retryQuery,
-        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
+        retryDelay: queryRetryDelay,
         refetchOnWindowFocus: true,
         refetchOnReconnect: "always",
       },

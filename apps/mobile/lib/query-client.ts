@@ -1,5 +1,11 @@
 import { QueryClient, type Query } from "@tanstack/react-query";
-import { isRetryableFailure, statusOf } from "@repo/api-sdk";
+import {
+  BUSY_READ_RETRIES,
+  busyRetryDelayMs,
+  isRetryableFailure,
+  isServerBusy,
+  statusOf,
+} from "@repo/api-sdk";
 import {
   markChannelReadMutationKey,
   markNotificationReadOnOpenMutationKey,
@@ -60,7 +66,8 @@ export const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: true,
       networkMode: "offlineFirst",
-      retry: 1,
+      retry: retryQuery,
+      retryDelay: queryRetryDelay,
       staleTime: 60_000,
     },
     mutations: {
@@ -69,6 +76,25 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * A query's retry: one more attempt whatever failed, except a busy server's
+ * 429 (`isServerBusy`: Cloud Run's `Rate exceeded.` when every copy of the API
+ * is full), which keeps trying for about a minute and a half
+ * (`BUSY_READ_RETRIES`). A short overload then shows as loading under the
+ * connection pill, not as a "Couldn't load" state with a 429's "too many
+ * requests" (staging, 2026-11-20). `spec/ui/resilience/api-retry.md` § Reads.
+ */
+export function retryQuery(failureCount: number, error: unknown): boolean {
+  if (isServerBusy(error)) return failureCount < BUSY_READ_RETRIES;
+  return failureCount < 1;
+}
+
+/** TanStack's default backoff, and the longer one for a busy server. */
+export function queryRetryDelay(attempt: number, error: unknown): number {
+  if (isServerBusy(error)) return busyRetryDelayMs(attempt);
+  return Math.min(1000 * 2 ** attempt, 30_000);
+}
 
 /**
  * One more attempt for a failure that may pass next time (a dropped

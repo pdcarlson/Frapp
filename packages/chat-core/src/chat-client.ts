@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import {
   isDefinitiveClientError,
+  isServerBusy,
   randomClientId,
   serverMessageOf,
   statusOf,
@@ -78,6 +79,7 @@ import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import {
   OFFLINE_COPY,
   refusalCopy,
+  SERVER_BUSY_COPY,
   STATUS_ERROR_COPY,
   TRY_AGAIN,
   type AnalyticsProperties,
@@ -324,7 +326,9 @@ export const RATE_LIMITED_COPY =
 export function definitiveRefusalMessage(error: unknown): string | null {
   if (error instanceof Error) return null;
   const { terminal, status } = classifyChatError(error);
-  if (status === 429) return RATE_LIMITED_COPY;
+  if (status === 429) {
+    return isServerBusy(error) ? SERVER_BUSY_COPY : RATE_LIMITED_COPY;
+  }
   if (!terminal) return null;
   const reason = serverReasonOf(error);
   return reason === null ? null : chatRefusalCopy(reason, status);
@@ -598,10 +602,17 @@ export async function sendMessage(
   } catch (err) {
     const classified = classifyChatError(err);
     const { terminal, status } = classified;
-    // Any 429 reads as the one-minute sentence: an intermediary's carries its
-    // own text, and the row's Retry is the remedy either way.
+    // A 429 reads as the one-minute sentence, unless it is a busy server's
+    // (`isServerBusy`: Cloud Run's `Rate exceeded.` when every copy of the API
+    // is full), which nothing the member did caused. The row's Retry is the
+    // remedy either way.
     const throttled = status === 429;
-    const message = throttled ? RATE_LIMITED_COPY : classified.message;
+    const busy = throttled && isServerBusy(err);
+    const message = busy
+      ? SERVER_BUSY_COPY
+      : throttled
+        ? RATE_LIMITED_COPY
+        : classified.message;
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),

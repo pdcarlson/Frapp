@@ -1,12 +1,14 @@
 import {
   codeOf,
   isDefinitiveClientError,
+  isServerBusy,
   serverMessageOf,
   statusOf,
 } from "@repo/api-sdk";
 import {
   OFFLINE_COPY,
   refusalCopy,
+  SERVER_BUSY_COPY,
   STATUS_ERROR_COPY,
   TRY_AGAIN,
 } from "@repo/validation";
@@ -50,6 +52,8 @@ export function errorCopy(
   if (error instanceof SignedUploadError) {
     return error.status === 413 ? STATUS_ERROR_COPY[413]! : error.message;
   }
+
+  if (isServerBusy(error)) return SERVER_BUSY_COPY;
 
   const known = serverCopyOf(error);
   if (known) return known;
@@ -164,7 +168,8 @@ export { TRY_AGAIN };
  * reads it), a 5xx, and an intermediary's 408, 460 or 499; false for any
  * other statusless failure (location denied, a client bug, an abort), for a
  * refusal the API decided (any other 4xx, the throttler's 429 included), which
- * would only be refused again, and for an error the client wrote for members. It is the API retry policy's one predicate
+ * would only be refused again (a busy server's 429 is not one: `isServerBusy`),
+ * and for an error the client wrote for members. It is the API retry policy's one predicate
  * (`isDefinitiveClientError`, `spec/ui/resilience/api-retry.md`), read through
  * chat-core's wrapped status too.
  *
@@ -178,6 +183,7 @@ export function canTryAgain(error: unknown): boolean {
   ) {
     return false;
   }
+  if (isServerBusy(error)) return true;
   const status = statusOf(error) ?? wrappedStatusOf(error);
   if (status !== undefined) return !isDefinitiveClientError(status);
   // No status: only a request that got no answer. A device refusal (location

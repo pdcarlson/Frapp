@@ -37,6 +37,7 @@ import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import {
   assertContentFreeProperties,
   moduleDisabledMessage,
+  SERVER_BUSY_COPY,
 } from "@repo/validation";
 import { memberFacingRefusal, POLLS_OFF_COPY } from "./polls";
 import {
@@ -2264,6 +2265,12 @@ describe("definitiveRefusalMessage", () => {
       );
     },
   );
+
+  it("reads Cloud Run's full-service 429 as busy, not as the member's pace", () => {
+    expect(
+      definitiveRefusalMessage({ statusCode: 429, message: "Rate exceeded." }),
+    ).toBe(SERVER_BUSY_COPY);
+  });
 
   it.each([
     ["a 5xx", { statusCode: 500, message: "Internal server error" }],

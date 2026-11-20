@@ -255,6 +255,7 @@ Behaviour is [README.md](README.md) §4.
 | State | Title | Description |
 |---|---|---|
 | Any API request the throttler refuses with a 429 (the body's `message`) | the surface's own | `Too many requests in a short time. Wait a minute, then try again.` |
+| A 429 sent from in front of the API because every copy of it was full (`isServerBusy`, Cloud Run's `Rate exceeded.`; [api-retry.md § Server busy](../resilience/api-retry.md#server-busy)) | the surface's own | `Frapp is busy right now. Try again in a moment.` |
 | A points adjustment past the per-chapter hourly cap (429, the body's `message`) | the surface's own | `You've made {N} point adjustments in this chapter in the last hour, the most allowed. Try again later.` |
 | An emailed-invite batch past the chapter's daily ceiling (429, `invite.email_daily_limit`, the body's `message`) | the surface's own | `Your chapter can email up to {limit} invites in 24 hours and has {left} left. You can send these {N} in {wait}, or share an invite link now.` (`this one` for a batch of one; `none` when nothing is left) |
 | The same, past the sender's own daily ceiling across their chapters | the surface's own | `You can email up to {limit} invites in 24 hours and have {left} left. You can send these {N} in {wait}, or share an invite link now.` |

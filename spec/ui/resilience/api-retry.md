@@ -10,7 +10,7 @@ const RETRY_CONFIG = {
   baseDelay: 1000,         // 1 second
   maxDelay: 30_000,        // 30 seconds
   backoffMultiplier: 2,    // exponential: 1s, 2s, 4s
-  retryableStatusCodes: [408, 500, 502, 503, 504], // reads and writes never retry a 429 (§ Reads, § Writes)
+  retryableStatusCodes: [408, 500, 502, 503, 504], // reads and writes never retry the API's 429; a busy server's 429 is retried (§ Reads, § Server busy)
   nonRetryableStatusCodes: [400, 401, 403, 404, 409, 422, 429],
 };
 ```
@@ -18,6 +18,16 @@ const RETRY_CONFIG = {
 ## Reads
 
 A read is retried when it failed in a way that may pass next time: a 5xx, a failure with no status (a dropped connection, a timeout), or an intermediary's 408, 499 or 460. A definitive client refusal (a 400, 401, 403, 404, 409, 422 or 429) is never retried: the same request gets the same answer, and the backoff only holds the error state back, by about 7 s for three retries. That holds for the throttler's 429 too, though a read is safe to repeat: once a caller is over the limit the throttler blocks it for `blockDuration`, which defaults to the window's 60 s `ttl` (`apps/api/src/app.module.ts`), so every attempt inside the backoff is refused again and counted. The SDK keeps no `Retry-After` to wait on instead. A 401 is not retried because the web client reads the Supabase session on every request (`apps/web/lib/providers/frapp-client-provider.tsx`) and `getSession` refreshes a token within 90 s of its expiry before returning it, so a retry would carry the same token. When that refresh can't reach Auth (a tab waking from sleep), `getSession` answers with no session and a retryable fetch error; web then fails the read before sending it, as a dropped connection, so it is worded and reported like one instead of going out with no token and coming back 401 (`readRequestToken`, `apps/web/lib/auth/request-token.ts`, FRAPP-API-E, 2026-11-17, #5360). supabase-js serves that same failure without asking Auth for 60 s after it (`REFRESH_FAILURE_COOLDOWN_MS`), longer than the read's own retries, so web refetches the reads in an error state when the session next refreshes (`TOKEN_REFRESHED`). Mobile reads a mirrored token and asks Auth only when it is near expiry (`apps/mobile/lib/fresh-auth-token.ts`), so a read can be refused for a token that lapsed while the app was suspended; mobile retries such a read once when a new token for the same member and chapter arrives, and only a 401 answering a request sent under an earlier token (`noteRefreshedSignInToken`, `apps/mobile/lib/query-client.ts`, FRAPP-API-E). Web's default query retry is three more attempts through `isRetryableFailure` (`retryQuery`, `apps/web/lib/providers/query-provider.tsx`, #3141); mobile's default query retry is one more attempt whatever the status (`apps/mobile/lib/query-client.ts`). The rule assumes the API's status is honest, as § Writes does; a guard that could not finish its lookup answers 503, so that failure is retried (#3143).
+
+
+### Server busy
+
+A 429 does not always come from the API. When every copy of the API is full, Cloud Run turns the request away itself, with a plain-text `Rate exceeded.`, before the API sees it. That refusal is shared by everyone using the server, says nothing about the member's own pace, and passes as soon as the load does. It happened on staging on 2026-11-20, when a load test filled the one API instance and members' phones showed "Couldn't load messages" with the throttler's "Too many requests" sentence.
+
+`isServerBusy` in `@repo/api-sdk` (`packages/api-sdk/src/api-error.ts`) reads such a 429 by its text. The API's own 429s always carry their own sentence, so it never matches them. A busy 429 is:
+
+- **Retried.** `isRetryableFailure` treats it like a 5xx, for reads and writes. A read keeps trying six more times, at 2, 4, 8, 16, 30 and 30 s (`BUSY_READ_RETRIES`, `busyRetryDelayMs`), on web (`queryRetryDelay`, `apps/web/lib/providers/query-provider.tsx`) and on mobile (`retryQuery`, `apps/mobile/lib/query-client.ts`). For about a minute and a half, a screen shows its loading state, not an error.
+- **Worded as busy.** A load or action that still fails reads `SERVER_BUSY_COPY` ([writing.md § Rate limited (global)](../design-system/writing.md#rate-limited-global)), with Try again (`canTryAgain`). A chat send refused this way fails its row as the throttler's 429 does (§ Writes, #3061), worded as busy.
 
 ## Writes
 
@@ -63,7 +73,7 @@ async function fetchWithRetry(fn, config = RETRY_CONFIG) {
 
 | Endpoint Category | Timeout | Retry | Notes |
 |-------------------|---------|-------|-------|
-| Read (GET) | 15s | Web 3x, transient failures only; mobile 1x (§ Reads) | Stale cache shown while retrying |
+| Read (GET) | 15s | Web 3x, transient failures only; mobile 1x; both 6x for a busy server's 429 (§ Reads, § Server busy) | Stale cache shown while retrying |
 | Write (POST/PATCH) | 20s | Web 2x, transient failures only; mobile 0x, 1x for the read stamps it sends on open (§ Writes) | Optimistic UI + rollback |
 | File upload (signed URL) | Backwork bulk upload: 60s plus 1s per 32 KB; none elsewhere yet ([Uploads](uploads.md)) | 0x; the member retries | Large payloads |
 | Webhook (POST /webhooks) | 30s | 0x | Server-initiated, not user-facing |

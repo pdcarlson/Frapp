@@ -8,7 +8,11 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import { makeQueryClient, QueryProvider } from "./query-provider";
+import {
+  makeQueryClient,
+  QueryProvider,
+  queryRetryDelay,
+} from "./query-provider";
 
 /**
  * The one behaviour this file exists to pin: **a dashboard write attempted
@@ -291,5 +295,19 @@ describe("QueryProvider — which failed queries retry", () => {
     ["a failure with no status", new TypeError("Failed to fetch")],
   ])("retries %s three times", async (_label, failWith) => {
     expect(await attemptsFor(failWith)).toBe(4);
+  });
+
+  it("keeps retrying a busy server's 429 six times", async () => {
+    expect(
+      await attemptsFor({ statusCode: 429, message: "Rate exceeded." }),
+    ).toBe(7);
+  });
+
+  it("waits longer between a busy server's retries", () => {
+    const busy = { statusCode: 429, message: "Rate exceeded." };
+    expect([0, 1, 2, 3, 4, 5].map((n) => queryRetryDelay(n, busy))).toEqual([
+      2000, 4000, 8000, 16000, 30000, 30000,
+    ]);
+    expect(queryRetryDelay(0, { statusCode: 500 })).toBe(1000);
   });
 });

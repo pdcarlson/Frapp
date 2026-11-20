@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   codeOf,
+  failureOf,
   isDefinitiveClientError,
   isRetryableFailure,
+  isServerBusy,
   serverMessageOf,
   statusOf,
   throwUnlessOk,
@@ -170,5 +172,45 @@ describe("isRetryableFailure", () => {
     expect(isRetryableFailure({ statusCode: 408 })).toBe(true);
     expect(isRetryableFailure(new TypeError("Failed to fetch"))).toBe(true);
     expect(isRetryableFailure(undefined)).toBe(true);
+  });
+
+  it("repeats a busy server's 429, which passes when the load does", () => {
+    expect(
+      isRetryableFailure({ statusCode: 429, message: "Rate exceeded." }),
+    ).toBe(true);
+  });
+});
+
+describe("isServerBusy", () => {
+  it("reads Cloud Run's full-service refusal as busy", () => {
+    const edge = failureOf({
+      error: "Rate exceeded.",
+      response: { status: 429 },
+    });
+    expect(isServerBusy(edge)).toBe(true);
+    expect(
+      isServerBusy(failureOf({ error: "", response: { status: 429 } })),
+    ).toBe(false);
+  });
+
+  it("reads the status chat-core wraps a refusal in", () => {
+    const wrapped = Object.assign(new Error("Rate exceeded."), {
+      response: { status: 429 },
+    });
+    expect(isServerBusy(wrapped)).toBe(true);
+  });
+
+  it("never reads the API's own 429s as busy", () => {
+    expect(
+      isServerBusy({
+        statusCode: 429,
+        error: "Too Many Requests",
+        message:
+          "Too many requests in a short time. Wait a minute, then try again.",
+        requestId: "r",
+      }),
+    ).toBe(false);
+    expect(isServerBusy({ statusCode: 503 })).toBe(false);
+    expect(isServerBusy(new TypeError("Failed to fetch"))).toBe(false);
   });
 });
