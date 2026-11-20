@@ -319,10 +319,11 @@ describe("ChatAdminPage — the category tree (#5727)", () => {
   });
 
   it("orders a category's channels by the chapter's drag order first", () => {
+    // A to Z would be exec, general, officers.
     reads.channels = settled([
       { ...CHANNELS[0], display_order: 1 },
-      { ...CHANNELS[1], display_order: 0 },
-      CHANNELS[2],
+      { ...CHANNELS[1], display_order: 2 },
+      { ...CHANNELS[2], display_order: 0 },
     ]);
     render(<ChatAdminPage />);
     fireEvent.click(toggle("Chapter"));
@@ -330,7 +331,7 @@ describe("ChatAdminPage — the category tree (#5727)", () => {
       within(categoriesRegion())
         .getAllByRole("link")
         .map(channelName),
-    ).toEqual(["exec", "general", "officers"]);
+    ).toEqual(["officers", "general", "exec"]);
   });
 
   it("keeps the categories in the server's order", () => {
@@ -357,16 +358,20 @@ describe("ChatAdminPage — the category tree (#5727)", () => {
     ).toBeInTheDocument();
   });
 
-  it("puts channels in no category, or a deleted one, in a last No category group", () => {
+  it("puts channels in no category, or a deleted one, in an Uncategorized group first, as the rail does", () => {
     reads.channels = settled([
       CHANNELS[0],
       { ...CHANNELS[1], category_id: null },
       { ...CHANNELS[2], category_id: "cat-gone" },
     ]);
     render(<ChatAdminPage />);
-    const none = toggle("No category");
+    const none = toggle("Uncategorized");
     expect(none).toHaveAttribute("aria-expanded", "false");
     expect(none).toHaveTextContent("2 channels");
+    expect(
+      none.compareDocumentPosition(toggle("Chapter")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     // No rename, access or delete on a group that isn't a category.
     expect(
       within(none.closest("li") as HTMLElement).getAllByRole("button"),
@@ -376,14 +381,65 @@ describe("ChatAdminPage — the category tree (#5727)", () => {
     expect(screen.getByRole("link", { name: "officers" })).toBeInTheDocument();
   });
 
-  it("opens the No category group by default when the chapter has no categories", () => {
+  it("puts the audit log in a System group last, as the rail does", () => {
+    reads.channels = settled([
+      ...CHANNELS,
+      {
+        ...channel("ch-audit", "chapter-audit", "PUBLIC"),
+        category_id: null,
+        is_audit_log: true,
+      },
+    ]);
+    render(<ChatAdminPage />);
+    const system = toggle("System");
+    expect(system).toHaveTextContent("1 channel");
+    expect(
+      toggle("Chapter").compareDocumentPosition(system) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The audit log is the only channel outside a category, so there is
+    // no Uncategorized group.
+    expect(
+      within(categoriesRegion()).queryByRole("button", {
+        name: /^Uncategorized/,
+      }),
+    ).toBeNull();
+    fireEvent.click(system);
+    expect(
+      screen.getByRole("link", { name: "chapter-audit" }),
+    ).toHaveAttribute("href", "/settings?tab=chat&channel=ch-audit");
+  });
+
+  it("opens the Uncategorized group by default when the chapter has no categories, and closes it on a click", () => {
     reads.categories = settled([]);
     render(<ChatAdminPage />);
-    expect(toggle("No category")).toHaveAttribute("aria-expanded", "true");
+    const none = toggle("Uncategorized");
+    expect(none).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: "general" })).toHaveAttribute(
       "href",
       "/settings?tab=chat&channel=ch-1",
     );
+    fireEvent.click(none);
+    expect(none).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "general" })).toBeNull();
+  });
+
+  it("keeps the officer's open or closed choice when the first category is created or the last deleted", () => {
+    reads.categories = settled([]);
+    reads.channels = settled(
+      CHANNELS.map((c) => ({ ...c, category_id: null })),
+    );
+    const { rerender } = render(<ChatAdminPage />);
+    // Closed by hand, then the first category arrives: it stays closed.
+    fireEvent.click(toggle("Uncategorized"));
+    reads.categories = settled(CATEGORIES);
+    rerender(<ChatAdminPage />);
+    expect(toggle("Uncategorized")).toHaveAttribute("aria-expanded", "false");
+    // Opened by hand, then the last category goes: it stays open.
+    fireEvent.click(toggle("Uncategorized"));
+    reads.categories = settled([]);
+    rerender(<ChatAdminPage />);
+    expect(toggle("Uncategorized")).toHaveAttribute("aria-expanded", "true");
   });
 });
 

@@ -75,6 +75,7 @@ import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "@/components/chat/use-delete-channel-flow";
 import { ChannelMark } from "@/components/chat/channel-start";
+import { isSystemChannel } from "@repo/hooks/channel-start";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -175,6 +176,8 @@ const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
+/** The category tree's key for the System group (the audit log), as the rail splits it. */
+const SYSTEM_GROUP = "__system__";
 
 /** The live row's fields the editor seeds from, in the editor's own terms. */
 interface LiveChannelFields {
@@ -338,38 +341,44 @@ function ChatAdminBody({
   const accessOptionsState = channelAccessOptionsState(accessOptionsQuery);
 
   // ── Category tree (#5727) ───────────────────────────────────────────────
-  // Every channel under its category, in the order the chat rail draws them:
+  // Every channel under its category, sectioned the way the chat rail
+  // sections them: the audit log split off into a System group first, then
   // the shared grouping (categories in the server's order, an unknown
   // category falling back to none), then the chapter's drag order inside
-  // each, then A to Z. Channels in no category get their own group last.
+  // each group, then A to Z. Like the rail, channels in no category come
+  // first (the rail calls that group "Channels"; here it reads
+  // "Uncategorized", the word the channel form and the delete warning on
+  // this page use) and System last.
   const channelTree = useMemo(() => {
-    const grouped = groupChannelsByCategory(channels, categories);
+    const system = channels.filter((c) => isSystemChannel(c));
+    const rest = channels.filter((c) => !isSystemChannel(c));
+    const grouped = groupChannelsByCategory(rest, categories);
     const byOrder = compareChannelOrder<AdminChannel>((c) => c.name);
     return {
+      uncategorized: [...grouped.uncategorized].sort(byOrder),
       categories: grouped.categories.map(({ category, channels: inIt }) => ({
         category,
         channels: [...inIt].sort(byOrder),
       })),
-      uncategorized: [...grouped.uncategorized].sort(byOrder),
+      system: [...system].sort(byOrder),
     };
   }, [channels, categories]);
-  // Which groups the officer opened or closed. Everything starts closed but
-  // the "No category" group of a chapter with no categories, which is then
-  // the only group and the only way to a channel.
-  const [toggledGroups, setToggledGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  // What the officer chose for each group, open or closed. A group they
+  // haven't touched starts closed, except Uncategorized in a chapter with no
+  // categories, which is then the only way to a channel. The choice is kept
+  // as the answer itself, not a flip of that default, so creating the first
+  // category or deleting the last one never reverses it.
+  const [groupChoices, setGroupChoices] = useState<
+    ReadonlyMap<string, boolean>
+  >(() => new Map());
   function isGroupOpen(key: string) {
-    const openByDefault = key === NO_CATEGORY && categories.length === 0;
-    return toggledGroups.has(key) !== openByDefault;
+    return (
+      groupChoices.get(key) ?? (key === NO_CATEGORY && categories.length === 0)
+    );
   }
   function toggleGroup(key: string) {
-    setToggledGroups((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    const open = isGroupOpen(key);
+    setGroupChoices((current) => new Map(current).set(key, !open));
   }
 
   // ── Category drafts ─────────────────────────────────────────────────────
@@ -1184,12 +1193,21 @@ function ChatAdminBody({
             </SectionLabel>
             {categories.length === 0 ? (
               <InlineNote>
-                No categories yet. Channels without one are listed under No
-                category.
+                No categories yet. Channels without one are listed under
+                Uncategorized.
               </InlineNote>
             ) : null}
-            {categories.length > 0 || channelTree.uncategorized.length > 0 ? (
+            {categories.length > 0 || channels.length > 0 ? (
               <ul className={denseListClassName}>
+                {channelTree.uncategorized.length > 0 ? (
+                  <PlainChannelGroup
+                    groupKey={NO_CATEGORY}
+                    name="Uncategorized"
+                    channels={channelTree.uncategorized}
+                    open={isGroupOpen(NO_CATEGORY)}
+                    onToggle={() => toggleGroup(NO_CATEGORY)}
+                  />
+                ) : null}
                 {/*
                   The server's order (display_order, then created_at), which
                   is the order the chat rail draws; the re-sort that stood
@@ -1304,24 +1322,14 @@ function ChatAdminBody({
                     </li>
                   ),
                 )}
-                {channelTree.uncategorized.length > 0 ? (
-                  <li>
-                    <div className="flex min-h-11 items-center gap-2">
-                      <CategoryToggle
-                        groupKey={NO_CATEGORY}
-                        name="No category"
-                        channelCount={channelTree.uncategorized.length}
-                        open={isGroupOpen(NO_CATEGORY)}
-                        onToggle={() => toggleGroup(NO_CATEGORY)}
-                      />
-                    </div>
-                    {isGroupOpen(NO_CATEGORY) ? (
-                      <CategoryChannelList
-                        groupKey={NO_CATEGORY}
-                        channels={channelTree.uncategorized}
-                      />
-                    ) : null}
-                  </li>
+                {channelTree.system.length > 0 ? (
+                  <PlainChannelGroup
+                    groupKey={SYSTEM_GROUP}
+                    name="System"
+                    channels={channelTree.system}
+                    open={isGroupOpen(SYSTEM_GROUP)}
+                    onToggle={() => toggleGroup(SYSTEM_GROUP)}
+                  />
                 ) : null}
               </ul>
             ) : null}
@@ -1537,6 +1545,42 @@ function CategoryToggle({
         </span>
       </span>
     </button>
+  );
+}
+
+/**
+ * A group in the category tree that isn't a category (Uncategorized,
+ * System): the same toggle and channel rows, with no rename, access or
+ * delete, since there is nothing to rename or delete.
+ */
+function PlainChannelGroup({
+  groupKey,
+  name,
+  channels,
+  open,
+  onToggle,
+}: {
+  groupKey: string;
+  name: string;
+  channels: readonly AdminChannel[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li>
+      <div className="flex min-h-11 items-center gap-2">
+        <CategoryToggle
+          groupKey={groupKey}
+          name={name}
+          channelCount={channels.length}
+          open={open}
+          onToggle={onToggle}
+        />
+      </div>
+      {open ? (
+        <CategoryChannelList groupKey={groupKey} channels={channels} />
+      ) : null}
+    </li>
   );
 }
 
