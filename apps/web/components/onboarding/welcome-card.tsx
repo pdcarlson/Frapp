@@ -112,7 +112,7 @@ export function WelcomeCard({ channelOpen }: { channelOpen: boolean }) {
           onClick={close}
           aria-label={WELCOME_CARD_COPY.close}
           className={cn(
-            "-mr-2 -mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11",
+            "-mr-2 -mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11",
             FOCUS_RING,
           )}
         >
@@ -125,7 +125,7 @@ export function WelcomeCard({ channelOpen }: { channelOpen: boolean }) {
             <Link
               href={`/events?event=${event.id}`}
               className={cn(
-                "-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-accent",
+                "-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-card-hover",
                 FOCUS_RING,
               )}
             >
@@ -143,7 +143,7 @@ export function WelcomeCard({ channelOpen }: { channelOpen: boolean }) {
             type="button"
             onClick={() => setFinishOpen(true)}
             className={cn(
-              "-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left text-sm transition-colors hover:bg-accent",
+              "-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left text-sm transition-colors hover:bg-card-hover",
               FOCUS_RING,
             )}
           >
