@@ -10,10 +10,8 @@ import { MeetingController } from './meeting.controller';
  */
 describe('MeetingController permissions', () => {
   const routePermissions = (name: keyof MeetingController) =>
-    Reflect.getMetadata(
-      PERMISSIONS_KEY,
-      MeetingController.prototype[name] as object,
-    ) as string[] | undefined;
+    Reflect.getMetadata(PERMISSIONS_KEY, MeetingController.prototype[name]) as
+      string[] | undefined;
 
   it('asks nothing extra to link minutes to a meeting', () => {
     expect(routePermissions('linkEvent')).toBeUndefined();
