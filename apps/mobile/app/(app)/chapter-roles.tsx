@@ -1,12 +1,18 @@
 import { Fragment, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { groupFollowsLabel, useGroups, usePermissionList } from "@repo/hooks";
+import {
+  groupFollowsLabel,
+  useGroups,
+  useIsPermissionHidden,
+  usePermissionList,
+} from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
   byDisplayOrder,
   isWildcardRole,
+  shownPermissionCount,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
 import {
@@ -78,6 +84,7 @@ export default function ChapterRolesScreen() {
   const [query, setQuery] = useState("");
   const filtering = normalizeWords(query).length > 0;
   const permissions = usePermissionList();
+  const isHidden = useIsPermissionHidden();
   const canSeeRoles = canAny(
     ["roles:manage", "chapter-config:view"],
     permissions,
@@ -202,7 +209,7 @@ export default function ChapterRolesScreen() {
               {section.tier && !filtering ? (
                 <ListRow
                   label="Permissions"
-                  value={`${section.tier.permissions.length} on`}
+                  value={`${shownPermissionCount(section.tier.permissions, isHidden)} on`}
                   accessibilityHint={`Opens what every role in ${section.tier.name} can do.`}
                   onPress={() =>
                     router.push({

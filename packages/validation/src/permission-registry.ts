@@ -361,11 +361,11 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
 ];
 
 /**
- * Permissions that no longer decide anything a role switch could change, so
- * no permission list a person sees shows them (#5728): the role and tier
- * pages through `isPermissionHidden` in `@repo/hooks`, and a module page's
- * "Who can" through `modulePermissions`. Before, both showed as switches
- * captioned "No longer used".
+ * Permissions left off the role and tier pages, web and phone (through
+ * `isPermissionHidden` in `@repo/hooks`), and off a module page's "Who can"
+ * (`modulePermissions`), where both showed as switches captioned "No longer
+ * used" (#5728). They decide no channel's posters since #3722. The Discord
+ * import's read-gate picker, fed by the API catalog, still lists them.
  *
  * They stay in the registry, the API catalog and stored role data until
  * #4286 retires them, because two readers remain: the Discord importer starts
