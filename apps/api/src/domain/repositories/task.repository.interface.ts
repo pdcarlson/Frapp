@@ -50,6 +50,12 @@ export interface TaskListFilter {
   confirmed?: boolean;
   /** Only tasks marked done at or after this instant (`completed_at`). */
   completedSince?: string;
+  /**
+   * Only tasks not yet confirmed, or marked done at or after this instant
+   * (`completed_at`), confirmed or not: one read that holds a member's open
+   * tasks and what they finished since, for Activity (#5746). Not with `after`.
+   */
+  unconfirmedOrCompletedSince?: string;
 }
 
 /**
@@ -80,6 +86,18 @@ export interface ITaskRepository {
   findByChapter(chapterId: string, query?: TaskListQuery): Promise<Task[]>;
   /** How many of the chapter's tasks match `query`, counted in SQL. */
   countByChapter(chapterId: string, query?: TaskListFilter): Promise<number>;
+  /**
+   * {@link findByChapter}, and with `withTotal` how many rows match before
+   * `limit` (#5746), counted by the request that reads the first page, so a
+   * capped list and its total cost one round trip. An uncapped read is
+   * counted too, which ends it without an empty page. `total` is null when
+   * the read was not counted.
+   */
+  findByChapterCounted(
+    chapterId: string,
+    query?: TaskListQuery,
+    options?: { withTotal?: boolean },
+  ): Promise<{ tasks: Task[]; total: number | null }>;
   /**
    * The chapter's tasks due on or after `dueFrom` (`YYYY-MM-DD`), or made at
    * or after `createdFrom`, every row of them: read in pages, so a chapter
