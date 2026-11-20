@@ -1,8 +1,7 @@
 /** @vitest-environment jsdom */
 import React, { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS } from "react-native";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ActResponse,
   AskCardEnd,
@@ -18,6 +17,10 @@ import {
   actPointsDoneLine,
   actPointsHeadline,
 } from "@repo/validation";
+import {
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -168,28 +171,21 @@ const CONFIRM = /^(Give|Take away) \d+ points?$|^Create (event|task)$/;
 const MORE = /^More: /;
 
 /**
- * Picks a row from a card's ··· menu (#5148): the iOS action sheet, as the
- * suite runs, read from its call instead of drawn.
+ * Picks a row from a card's ··· menu (#5148): the app's glass menu, read from
+ * what it holds instead of drawn.
  */
 async function fromMenu(
   tree: ReactTestRenderer,
   row: string,
   index = 0,
 ): Promise<void> {
-  const sheet = vi
-    .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-    .mockImplementation(() => undefined);
   const more = tree.root.findAll(
     (node) =>
       (node.type as unknown) === "Pressable" &&
       labelMatches(node.props.accessibilityLabel, MORE),
   )[index]!;
   act(() => more.props.onPress());
-  const [options, pick] = sheet.mock.calls.at(-1) ?? [];
-  sheet.mockRestore();
-  const at = (options?.options ?? []).indexOf(row);
-  if (at < 0 || !pick) throw new Error(`No "${row}" in the card's menu`);
-  await act(async () => pick(at));
+  await act(async () => pickItemMenuAction(row));
 }
 
 const BASE = {
@@ -238,6 +234,10 @@ const TASK = {
     new_event: null,
   },
 };
+
+afterEach(() => {
+  dismissItemMenu();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

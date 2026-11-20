@@ -2,10 +2,10 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS, Alert, Platform, Share } from "react-native";
+import { Alert, Platform, Share } from "react-native";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams } from "expo-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -106,6 +106,11 @@ vi.mock("@/lib/chapter-branding", async (importOriginal) => {
 
 import InviteScreen, { backTargetFor } from "@/app/(app)/invite";
 import { inviteActions } from "@/components/more/invited-list";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -166,6 +171,21 @@ function linkRow(tree: ReactTestRenderer, label: string) {
   );
 }
 
+/** Taps a row, opening its glass menu. */
+function openRow(tree: ReactTestRenderer, label: string) {
+  act(() => rowFor(tree, label).props.onPress());
+}
+
+/** The open menu's rows, as label and whether it is destructive. */
+const menuRows = () =>
+  currentItemMenu()!.actions.map((action) => [
+    action.label,
+    !!action.destructive,
+  ]);
+
+/** Picks a row off the open menu, as a tap does. */
+const pickMenu = (label: string) => act(async () => pickItemMenuAction(label));
+
 function rerender(tree: ReactTestRenderer) {
   act(() =>
     tree.update(
@@ -184,6 +204,10 @@ function shareButton(tree: ReactTestRenderer) {
         "Makes a new link and opens the share sheet.",
   );
 }
+
+afterEach(() => {
+  dismissItemMenu();
+});
 
 beforeEach(() => {
   state.permissions = ["members:invite"];
@@ -350,9 +374,6 @@ describe("Invite members", () => {
     inviteRows = [
       { ...ROW, id: "i-1", email: "pledge@school.edu", status: "pending" },
     ];
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
     const row = tree.root.find(
       (node) =>
@@ -361,17 +382,14 @@ describe("Invite members", () => {
     );
 
     act(() => row.props.onPress());
-    const [options, pick] = sheet.mock.calls[0];
-    expect(options.options).toEqual([
-      "Share link",
-      "Send again",
-      "Revoke invite",
-      "Cancel",
+    expect(currentItemMenu()!.title).toBe("pledge@school.edu");
+    expect(menuRows()).toEqual([
+      ["Share link", false],
+      ["Send again", false],
+      ["Revoke invite", true],
     ]);
-    expect(options.destructiveButtonIndex).toBe(2);
-    expect(options.userInterfaceStyle).toBe("dark");
 
-    await act(async () => pick(1));
+    await pickMenu("Send again");
     expect(emailInvites).toHaveBeenCalledWith({
       role: "Member",
       emails: ["pledge@school.edu"],
@@ -380,18 +398,18 @@ describe("Invite members", () => {
       "Invite sent again to pledge@school.edu",
     );
 
-    await act(async () => pick(2));
+    openRow(tree, "pledge@school.edu");
+    await pickMenu("Revoke invite");
     expect(revokeInvite).toHaveBeenCalledWith("i-1");
     expect(screenText(tree)).toContain("Invite revoked.");
 
-    await act(async () => pick(0));
+    openRow(tree, "pledge@school.edu");
+    await pickMenu("Share link");
     const [content] = vi.mocked(Share.share).mock.calls[0];
     expect(content.message).toContain("tok-row");
-    sheet.mockRestore();
     tree.unmount();
   });
 
-  // #3353, Paul 2026-11-19: "One chapter link, 7 days"; #5633: one per role.
   it("makes a chapter link at the chapter's default role and shares it", async () => {
     const tree = render();
     expect(screenText(tree)).toContain("Post a link in your group chat");
@@ -498,24 +516,19 @@ describe("Invite members", () => {
         expires_at: "2026-11-26T12:00:00.000Z",
       },
     ];
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
 
     act(() => linkRow(tree, "Brother").props.onPress());
-    expect(sheet.mock.calls[0][0].options).toEqual([
-      "Make a new link",
-      "Turn off link",
-      "Cancel",
+    expect(menuRows()).toEqual([
+      ["Make a new link", false],
+      ["Turn off link", true],
     ]);
+    act(() => dismissItemMenu());
     act(() => linkRow(tree, "Rush chair").props.onPress());
-    expect(sheet.mock.calls[1][0].options).toEqual([
-      "Share link",
-      "Turn off link",
-      "Cancel",
+    expect(menuRows()).toEqual([
+      ["Share link", false],
+      ["Turn off link", true],
     ]);
-    sheet.mockRestore();
     tree.unmount();
   });
 
@@ -532,29 +545,28 @@ describe("Invite members", () => {
         expires_at: "2026-11-26T12:00:00.000Z",
       },
     ];
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
 
     act(() => linkRow(tree, "Brother").props.onPress());
-    const [options, pick] = sheet.mock.calls[0];
-    expect(options.title).toBe("Brother link");
-    expect(options.options).toEqual([
-      "Share link",
-      "Make a new link",
-      "Turn off link",
-      "Cancel",
+    expect(currentItemMenu()!.title).toBe("Brother link");
+    expect(menuRows()).toEqual([
+      ["Share link", false],
+      ["Make a new link", false],
+      ["Turn off link", true],
     ]);
-    expect(options.destructiveButtonIndex).toBe(2);
 
-    await act(async () => pick(2));
+    await pickMenu("Turn off link");
     expect(revokeInvite).toHaveBeenCalledWith("link-1");
     expect(screenText(tree)).toContain("Brother link turned off.");
 
-    await act(async () => pick(1));
+    act(() => linkRow(tree, "Brother").props.onPress());
+    await pickMenu("Make a new link");
     expect(createChapterLink).toHaveBeenCalledWith({ role: "Brother" });
-    sheet.mockRestore();
+
+    act(() => linkRow(tree, "Brother").props.onPress());
+    await pickMenu("Share link");
+    const [content] = vi.mocked(Share.share).mock.calls.at(-1)!;
+    expect(content.message).toContain("tok-chapter");
     tree.unmount();
   });
 
@@ -600,37 +612,35 @@ describe("Invite members", () => {
     tree.unmount();
   });
 
-  it("keeps Revoke on Android, whose dialog draws at most three buttons", () => {
+  it("draws a row's menu the same on Android, Revoke and all", () => {
     inviteRows = [
       { ...ROW, id: "i-1", email: "pledge@school.edu", status: "pending" },
     ];
-    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    vi.mocked(Alert.alert).mockClear();
     const os = Platform.OS;
-    (Platform as { OS: string }).OS = "android";
+    const seen: unknown[] = [];
     try {
-      const tree = render();
-      act(() => rowFor(tree, "pledge@school.edu").props.onPress());
-      const buttons = alert.mock.calls[0][2] as {
-        text: string;
-        style?: string;
-      }[];
-      expect(buttons.map((b) => b.text)).toEqual([
-        "Share link",
-        "Send again",
-        "Revoke invite",
-      ]);
-      expect(alert.mock.calls[0][0]).toBe("pledge@school.edu");
-      expect(buttons.map((b) => b.style)).toEqual([
-        "default",
-        "default",
-        "destructive",
-      ]);
-      expect(alert.mock.calls[0][3]).toEqual({ cancelable: true });
-      tree.unmount();
+      for (const platform of ["ios", "android"]) {
+        (Platform as { OS: string }).OS = platform;
+        const tree = render();
+        openRow(tree, "pledge@school.edu");
+        seen.push({ title: currentItemMenu()!.title, rows: menuRows() });
+        act(() => dismissItemMenu());
+        tree.unmount();
+      }
     } finally {
       (Platform as { OS: string }).OS = os;
-      alert.mockRestore();
     }
+    expect(seen[1]).toEqual(seen[0]);
+    expect(seen[1]).toEqual({
+      title: "pledge@school.edu",
+      rows: [
+        ["Share link", false],
+        ["Send again", false],
+        ["Revoke invite", true],
+      ],
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it("says when Send again couldn't email the address", async () => {
@@ -641,14 +651,10 @@ describe("Invite members", () => {
       invites: [],
       failed: ["pledge@school.edu"],
     });
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
-    act(() => rowFor(tree, "pledge@school.edu").props.onPress());
-    const [options, pick] = sheet.mock.calls[0];
-    expect(options.options).toEqual(["Send again", "Cancel"]);
-    await act(async () => pick(0));
+    openRow(tree, "pledge@school.edu");
+    expect(menuRows()).toEqual([["Send again", false]]);
+    await pickMenu("Send again");
     expect(screenText(tree)).toContain("Couldn't email pledge@school.edu.");
     expect(screenText(tree)).not.toContain("Invite sent again");
     // The failed send still made an invite, so the refetched list grows;
@@ -659,7 +665,6 @@ describe("Invite members", () => {
     ];
     rerender(tree);
     expect(screenText(tree)).toContain("Couldn't email pledge@school.edu.");
-    sheet.mockRestore();
     tree.unmount();
   });
 
@@ -674,20 +679,16 @@ describe("Invite members", () => {
         finish = resolve;
       }),
     );
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
-    act(() => rowFor(tree, "a@school.edu").props.onPress());
-    act(() => sheet.mock.calls[0][1](1));
+    openRow(tree, "a@school.edu");
+    act(() => pickItemMenuAction("Send again"));
     // Row A is still sending: no other menu opens, so nothing goes twice.
-    act(() => rowFor(tree, "b@school.edu").props.onPress());
-    expect(sheet).toHaveBeenCalledTimes(1);
+    openRow(tree, "b@school.edu");
+    expect(currentItemMenu()).toBeNull();
     await act(async () => finish({ invites: [], failed: [] }));
-    act(() => rowFor(tree, "b@school.edu").props.onPress());
-    expect(sheet).toHaveBeenCalledTimes(2);
+    openRow(tree, "b@school.edu");
+    expect(currentItemMenu()!.title).toBe("b@school.edu");
     expect(emailInvites).toHaveBeenCalledTimes(1);
-    sheet.mockRestore();
     tree.unmount();
   });
 
@@ -695,12 +696,9 @@ describe("Invite members", () => {
     inviteRows = [
       { ...ROW, id: "i-1", email: "pledge@school.edu", status: "pending" },
     ];
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
-    act(() => rowFor(tree, "pledge@school.edu").props.onPress());
-    await act(async () => sheet.mock.calls[0][1](2));
+    openRow(tree, "pledge@school.edu");
+    await pickMenu("Revoke invite");
     inviteRows = [{ ...inviteRows[0], status: "revoked" }];
     rerender(tree);
     expect(screenText(tree)).toContain("Invite revoked.");
@@ -708,7 +706,6 @@ describe("Invite members", () => {
     act(() => emailField(tree).props.onChangeText("next@school.edu"));
     await act(async () => sendButton(tree).props.onPress());
     expect(screenText(tree)).not.toContain("Invite revoked.");
-    sheet.mockRestore();
     tree.unmount();
   });
 
@@ -717,24 +714,20 @@ describe("Invite members", () => {
     vi.mocked(Share.share).mockResolvedValueOnce({
       action: "dismissedAction",
     });
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
     await act(async () => shareButton(tree)[0].props.onPress());
     inviteRows = [
       { ...ROW, id: "i-k", token: "tok123", email: null, status: "pending" },
     ];
     rerender(tree);
-    act(() => rowFor(tree, "Invite link").props.onPress());
-    await act(async () => sheet.mock.calls[0][1](1));
+    openRow(tree, "Invite link");
+    await pickMenu("Revoke invite");
     expect(revokeInvite).toHaveBeenCalledWith("i-k");
     createInvite.mockResolvedValueOnce({ token: "tok-fresh" });
     await act(async () => shareButton(tree)[0].props.onPress());
     expect(createInvite).toHaveBeenCalledTimes(2);
     const [content] = vi.mocked(Share.share).mock.calls[1];
     expect(content.message).toContain("tok-fresh");
-    sheet.mockRestore();
     tree.unmount();
   });
 
@@ -742,25 +735,21 @@ describe("Invite members", () => {
     vi.mocked(Share.share).mockResolvedValueOnce({
       action: "dismissedAction",
     });
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
     await act(async () => shareButton(tree)[0].props.onPress());
     inviteRows = [
       { ...ROW, id: "i-k", token: "tok123", email: null, status: "pending" },
     ];
     rerender(tree);
-    act(() => rowFor(tree, "Invite link").props.onPress());
+    openRow(tree, "Invite link");
     // Share link, to the first person.
-    await act(async () => sheet.mock.calls[0][1](0));
+    await pickMenu("Share link");
     expect(vi.mocked(Share.share).mock.calls[1][0].message).toContain("tok123");
     createInvite.mockResolvedValueOnce({ token: "tok-fresh" });
     await act(async () => shareButton(tree)[0].props.onPress());
     expect(vi.mocked(Share.share).mock.calls[2][0].message).toContain(
       "tok-fresh",
     );
-    sheet.mockRestore();
     tree.unmount();
   });
 
@@ -790,15 +779,11 @@ describe("Invite members", () => {
     ];
     // iOS: a target cancelled inside the sheet never resolves it.
     vi.mocked(Share.share).mockReturnValueOnce(new Promise(() => undefined));
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => undefined);
     const tree = render();
-    act(() => rowFor(tree, "a@school.edu").props.onPress());
-    await act(async () => sheet.mock.calls[0][1](0));
-    act(() => rowFor(tree, "a@school.edu").props.onPress());
-    expect(sheet).toHaveBeenCalledTimes(2);
-    sheet.mockRestore();
+    openRow(tree, "a@school.edu");
+    await pickMenu("Share link");
+    openRow(tree, "a@school.edu");
+    expect(currentItemMenu()!.title).toBe("a@school.edu");
     tree.unmount();
   });
 

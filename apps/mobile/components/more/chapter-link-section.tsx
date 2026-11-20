@@ -15,7 +15,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { OptionSheet } from "@/components/option-sheet";
-import { showActionMenu } from "@/lib/action-menu";
+import { openItemMenu } from "@/components/item-actions-menu";
 import {
   inviteShareContent,
   inviteShareOptions,
@@ -129,27 +129,34 @@ export function ChapterLinkSection({
 
   function openMenu(invite: InviteListItem) {
     if (running.current) return;
-    showActionMenu({
+    openItemMenu({
       title: `${label(invite.role)} link`,
-      rows: [
+      actions: [
         ...(chapterName && invite.status === "pending"
-          ? [{ label: SHARE_CHAPTER_LINK, onPress: () => void share(invite) }]
+          ? [
+              {
+                key: "share",
+                label: SHARE_CHAPTER_LINK,
+                run: () => void share(invite),
+              },
+            ]
           : []),
         ...(canRemake(invite.role)
           ? [
               {
+                key: "remake",
                 label: MAKE_NEW_LINK,
-                onPress: () => makeLink(invite.id, invite.role),
+                run: () => makeLink(invite.id, invite.role),
               },
             ]
           : []),
         {
+          key: "turn-off",
           label: TURN_OFF_LINK,
-          style: "destructive" as const,
-          onPress: () => turnOff(invite),
+          destructive: true,
+          run: () => turnOff(invite),
         },
       ],
-      userInterfaceStyle: "dark",
     });
   }
 

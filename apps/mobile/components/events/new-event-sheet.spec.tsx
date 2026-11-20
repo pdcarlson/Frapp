@@ -107,6 +107,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 const successHaptic = vi.fn();
 vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
+  // The glass menu taps one as it opens (`openItemMenu`).
+  pressHaptic: vi.fn(),
 }));
 
 import { NewEventSheet } from "./new-event-sheet";
@@ -117,6 +119,11 @@ import { emptyEventDraft } from "@/lib/events/create-event";
 import type { EventEditTarget } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
 import { expectHostDismissGuarded } from "@/test/wedging-sheet";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 
 /** A Thursday afternoon, local time. */
 const NOW = new Date(2026, 10, 5, 14, 0);
@@ -228,6 +235,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  dismissItemMenu();
 });
 
 describe("New event", () => {
@@ -722,7 +730,9 @@ describe("the When row on Android", () => {
         typeof node.props.onPress === "function",
     );
     // The pill says its day: it used to be blank, the label too.
-    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Saturday, November 7");
+    expect(dayPill!.props.accessibilityLabel).toBe(
+      "Ends day, Saturday, November 7",
+    );
     expect(screenText(tree)).toContain("Saturday, November 7");
     act(() => dayPill!.props.onPress());
 
@@ -794,8 +804,7 @@ describe("Edit event", () => {
     });
     return tree;
   }
-  const saveButton = (tree: ReactTestRenderer) =>
-    byLabel(tree, "Save changes");
+  const saveButton = (tree: ReactTestRenderer) => byLabel(tree, "Save changes");
 
   it("opens filled in from the event", () => {
     const tree = renderEdit(single);
@@ -862,9 +871,6 @@ describe("Edit event", () => {
   });
 
   it("asks this event or all upcoming for a repeating event", async () => {
-    alert.mockImplementation((_title, _message, buttons) => {
-      buttons?.find((b) => b.text === "All upcoming events")?.onPress?.();
-    });
     const occurrence: EventEditTarget = {
       event: { ...EVENT, parent_event_id: "evt-parent" },
       seriesRule: "WEEKLY",
@@ -877,12 +883,17 @@ describe("Edit event", () => {
     const tree = renderEdit(occurrence);
     type(tree, "Event name", "Chapter meeting");
     await act(async () => saveButton(tree).props.onPress());
-    expect(alert.mock.calls[0]?.[0]).toBe("This is a repeating event");
-    expect(alert.mock.calls[0]?.[2]?.map((b) => b.text)).toEqual([
-      "This event only",
-      "All upcoming events",
-      "Cancel",
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe("This is a repeating event");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["This event only", false],
+      ["All upcoming events", false],
     ]);
+    expect(alert).not.toHaveBeenCalled();
+    expect(updateMutate).not.toHaveBeenCalled();
+    await act(async () => pickItemMenuAction("All upcoming events"));
     expect(updateMutate).toHaveBeenCalledWith(
       {
         id: "evt-parent",
@@ -892,10 +903,7 @@ describe("Edit event", () => {
     );
   });
 
-  it("saves nothing when the officer cancels the question", async () => {
-    alert.mockImplementation((_title, _message, buttons) => {
-      buttons?.find((b) => b.text === "Cancel")?.onPress?.();
-    });
+  it("saves nothing when the officer dismisses the question", async () => {
     const tree = renderEdit({
       ...single,
       event: { ...EVENT, recurrence_rule: "WEEKLY" },
@@ -903,7 +911,12 @@ describe("Edit event", () => {
     });
     type(tree, "Event name", "Chapter meeting");
     await act(async () => saveButton(tree).props.onPress());
+    expect(currentItemMenu()?.title).toBe("This is a repeating event");
+    await act(async () => dismissItemMenu());
+    expect(currentItemMenu()).toBeNull();
     expect(updateMutate).not.toHaveBeenCalled();
+    // Save is still there to try again.
+    expect(saveButton(tree).props.disabled).toBeFalsy();
   });
 
   it("offers Delete only with events:delete, and confirms first", async () => {

@@ -28,9 +28,13 @@ export const reactNativeStub = {
   Alert: {
     alert: vi.fn(),
   },
-  // s15's photo choices are iOS's own action sheet (Android takes an Alert).
-  ActionSheetIOS: {
-    showActionSheetWithOptions: vi.fn(),
+  // The app's own glass menu (`openItemMenu` in
+  // `components/item-actions-menu.tsx`) opens a third of the way down the
+  // window when a press gives it no point: the same iPhone 17 window as
+  // `useWindowDimensions` below.
+  Dimensions: {
+    get: vi.fn(() => ({ width: 402, height: 874, scale: 3, fontScale: 1 })),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
   // Outcomes a sighted member reads off the screen are announced to VoiceOver
   // through this, because `accessibilityLiveRegion` is Android-only. A spec

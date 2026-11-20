@@ -9,6 +9,12 @@ import {
   writeKeptDraft,
 } from "@repo/hooks/kept-drafts";
 import type { LiveTaskPhoto } from "@repo/hooks";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  openItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { toTaskRow, type TaskRowModel } from "./board";
 import { taskRepeatDraftFromRule } from "@repo/validation";
 import { TASK_EDIT_COPY } from "./task-edit";
@@ -35,6 +41,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateTask: () => ({ mutateAsync: updateTask }),
   useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
 }));
+// The scope question opens the glass menu; counting its openings shows saves
+// asking at once share one question.
+vi.mock("@/components/item-actions-menu", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/item-actions-menu")>();
+  return { ...actual, openItemMenu: vi.fn(actual.openItemMenu) };
+});
 vi.mock("@/lib/tasks/task-photos", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/tasks/task-photos")>()),
   pickTaskPhotos: photos.pick,
@@ -111,6 +124,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  dismissItemMenu();
   dropAllKeptDrafts();
 });
 
@@ -342,12 +356,8 @@ describe("a copy of a repeating task (#5119)", () => {
         ended: false,
       },
     });
-  /** The scope alert's buttons, from its last showing. */
-  const answer = (label: string) => {
-    const call = vi.mocked(Alert.alert).mock.calls.at(-1)!;
-    const buttons = call[2] as { text: string; onPress?: () => void }[];
-    buttons.find((button) => button.text === label)!.onPress!();
-  };
+  /** Answers the scope question the glass menu holds. */
+  const answer = (label: string) => pickItemMenuAction(label);
 
   it("asks first, and All upcoming tasks sends the series scope", async () => {
     const tree = mount(live());
@@ -357,9 +367,15 @@ describe("a copy of a repeating task (#5119)", () => {
       saved = hook.edit!.commit("title");
     });
     expect(updateTask).not.toHaveBeenCalled();
-    expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[0]).toBe(
-      "This is a repeating task",
-    );
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe("This is a repeating task");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["This task only", false],
+      ["All upcoming tasks", false],
+    ]);
+    expect(Alert.alert).not.toHaveBeenCalled();
     await act(async () => {
       answer("All upcoming tasks");
       await saved;
@@ -371,7 +387,7 @@ describe("a copy of a repeating task (#5119)", () => {
     act(() => tree.unmount());
   });
 
-  it("This task only sends no scope; Cancel sends nothing and keeps the draft", async () => {
+  it("This task only sends no scope; a dismiss sends nothing and keeps the draft", async () => {
     const tree = mount(live());
     act(() => hook.edit!.type("points", "3"));
     let saved!: Promise<boolean>;
@@ -379,7 +395,7 @@ describe("a copy of a repeating task (#5119)", () => {
       saved = hook.edit!.commit("points");
     });
     await act(async () => {
-      answer("Cancel");
+      dismissItemMenu();
       expect(await saved).toBe(false);
     });
     expect(updateTask).not.toHaveBeenCalled();
@@ -412,7 +428,7 @@ describe("a copy of a repeating task (#5119)", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(openItemMenu).toHaveBeenCalledTimes(1);
     await act(async () => {
       answer("All upcoming tasks");
       expect(await saved).toBe(true);
@@ -466,7 +482,7 @@ describe("a copy of a repeating task (#5119)", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(openItemMenu).not.toHaveBeenCalled();
     expect(updateTask).toHaveBeenLastCalledWith({
       id: "t1",
       body: { title: "Mop" },
@@ -487,7 +503,7 @@ describe("a copy of a repeating task (#5119)", () => {
     await act(async () => {
       await hook.edit!.commit("repeat");
     });
-    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(openItemMenu).not.toHaveBeenCalled();
     expect(updateTask).toHaveBeenLastCalledWith({
       id: "t1",
       body: { recurrence_rule: null, scope: "series" },

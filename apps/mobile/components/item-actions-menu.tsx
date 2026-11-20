@@ -1,6 +1,13 @@
-import { type ReactNode, useCallback, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   type AccessibilityActionEvent,
+  Dimensions,
   type GestureResponderEvent,
   Pressable,
   StyleSheet,
@@ -35,8 +42,8 @@ export interface ItemMenuAction {
   /** Unique in its menu; the accessibility action is named after it. */
   key: string;
   label: string;
-  /** The glyph, drawn in the row's colour. */
-  glyph: (color: string) => ReactNode;
+  /** The glyph, drawn in the row's colour. A row may go without one. */
+  glyph?: (color: string) => ReactNode;
   /** Red, last, under the break. */
   destructive?: boolean;
   run: () => void;
@@ -45,6 +52,8 @@ export interface ItemMenuAction {
 export interface ItemMenu {
   /** What was pressed, as the row names it: the menu's caption. */
   title: string;
+  /** A second muted line under the caption (a phone number, a note). */
+  message?: string;
   actions: ItemMenuAction[];
 }
 
@@ -151,6 +160,91 @@ export function useItemMenu(): {
   };
 }
 
+/**
+ * The same glass menu, opened from a handler rather than a row's hook: a ⋯
+ * button, a profile row's Phone, a photo's tap, a repeating item's "this one
+ * or all upcoming" question (owner, 2026-11-20: the system's own sheets
+ * "take up almost the whole screen"; one menu system answers every press).
+ * `ItemMenuHost`, mounted once in the root layout, draws it. `onDismiss`
+ * runs when it closes with no pick (a tap outside, back, the escape gesture).
+ */
+export function openItemMenu(
+  menu: ItemMenu & { onDismiss?: () => void },
+  at: { pageY?: number; trigger?: FocusReturn | null } = {},
+): void {
+  if (menu.actions.length === 0) return;
+  pressHaptic();
+  opened = {
+    ...menu,
+    pageY: at.pageY ?? Dimensions.get("window").height / 3,
+    key: ++openings,
+    trigger: at.trigger ?? null,
+  };
+  hostListeners.forEach((listener) => listener());
+}
+
+type HostedMenu = ItemMenu & {
+  pageY: number;
+  key: number;
+  trigger: FocusReturn | null;
+  onDismiss?: () => void;
+};
+
+let opened: HostedMenu | null = null;
+let openings = 0;
+const hostListeners = new Set<() => void>();
+const subscribeHost = (listener: () => void) => {
+  hostListeners.add(listener);
+  return () => hostListeners.delete(listener);
+};
+const hostSnapshot = () => opened;
+
+function closeHosted(picked: boolean) {
+  const was = opened;
+  if (!was) return;
+  opened = null;
+  hostListeners.forEach((listener) => listener());
+  if (!picked) was.onDismiss?.();
+}
+
+/** Draws `openItemMenu`'s menu. Mount once, inside the overlay layer. */
+export function ItemMenuHost() {
+  const target = useSyncExternalStore(subscribeHost, hostSnapshot, hostSnapshot);
+  const dismiss = useCallback(() => closeHosted(false), []);
+  const picked = useCallback(() => closeHosted(true), []);
+  return (
+    <GlassMenu
+      visible={target !== null}
+      pageY={target?.pageY ?? 0}
+      onClose={dismiss}
+      returnFocusTo={target?.trigger}
+      backdropTestID="item-actions-backdrop"
+    >
+      {target ? (
+        <MenuBody key={target.key} menu={target} onClose={picked} />
+      ) : null}
+    </GlassMenu>
+  );
+}
+
+/** The menu `openItemMenu` has up, or `null`; for specs. */
+export function currentItemMenu(): ItemMenu | null {
+  return opened;
+}
+
+/** Picks the open menu's row by its label, as a tap does; for specs. */
+export function pickItemMenuAction(label: string): void {
+  const action = opened?.actions.find((row) => row.label === label);
+  if (!action) throw new Error(`No "${label}" in the open menu`);
+  closeHosted(true);
+  action.run();
+}
+
+/** Closes `openItemMenu`'s menu as a dismiss does; for specs. */
+export function dismissItemMenu(): void {
+  closeHosted(false);
+}
+
 export function ItemActionsMenu({
   target,
   onClose,
@@ -192,6 +286,11 @@ function MenuBody({ menu, onClose }: { menu: ItemMenu; onClose: () => void }) {
       <Text ref={titleRef} numberOfLines={1} style={styles.caption}>
         {menu.title}
       </Text>
+      {menu.message ? (
+        <Text numberOfLines={2} style={styles.message}>
+          {menu.message}
+        </Text>
+      ) : null}
       {actions.map((action, index) => {
         const color = action.destructive
           ? tokens.color.semantic.destructiveText
@@ -228,7 +327,7 @@ function MenuBody({ menu, onClose }: { menu: ItemMenu; onClose: () => void }) {
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants"
             >
-              {action.glyph(color)}
+              {action.glyph?.(color)}
             </View>
           </Pressable>
         );
@@ -238,5 +337,13 @@ function MenuBody({ menu, onClose }: { menu: ItemMenu; onClose: () => void }) {
 }
 
 function createStyles(tokens: SignetTokens) {
-  return StyleSheet.create(glassMenuRowStyles(tokens));
+  const rows = glassMenuRowStyles(tokens);
+  return StyleSheet.create({
+    ...rows,
+    message: {
+      ...rows.caption,
+      paddingTop: 0,
+      paddingBottom: tokens.spacing.sm,
+    },
+  });
 }

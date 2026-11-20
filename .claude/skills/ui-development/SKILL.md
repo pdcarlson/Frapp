@@ -49,7 +49,8 @@ Reach for these before writing markup. A screen that hand-builds one of these jo
 | Date and time | `ui/date-field.tsx`, `ui/time-field.tsx` | the platform picker (see `components/tasks/due-date-field.tsx`) |
 | Grouped list | `ui/table.tsx`, `shared/section-label.tsx` | `list-section.tsx` |
 | Loading, empty, error | `shared/page-skeletons.tsx`, `shared/async-states.tsx`, `shared/nested-states.tsx` | `state-block.tsx`, `card-list-skeleton.tsx` (each route's own skeleton, pinned by `screen-skeletons.spec.tsx`) |
-| Destructive confirm | `shared/confirm-dialog.tsx` `useConfirmDialog` | `lib/action-menu.ts` |
+| Destructive confirm | `shared/confirm-dialog.tsx` `useConfirmDialog` | `Alert.alert` with Cancel and the verb (two buttons) |
+| Action menu | `shared/row-menu.tsx` `RowMenu`, `ActionMenuButton` | `item-actions-menu.tsx` `useItemMenu`, `openItemMenu` |
 | Kept form drafts | `useKeptFormDraft` (`@repo/hooks`) | `useKeptSheetDraft` (`lib/kept-sheet-draft.ts`) |
 | Segmented switch, filter chips | `ui/segmented.tsx`, `shared/filter-chip.tsx` | `segmented.tsx`, `filter-chips.tsx` |
 

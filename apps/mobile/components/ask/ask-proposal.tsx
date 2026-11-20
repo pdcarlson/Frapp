@@ -7,9 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import {
-  ActionSheetIOS,
-  Alert,
-  Platform,
+  type GestureResponderEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -64,6 +62,8 @@ import {
 import type { useAiReport } from "@/components/ai/report-ai-sheet";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
+import { openItemMenu } from "@/components/item-actions-menu";
+import { focusReturnOf } from "@/lib/overlay";
 import { AskCardGlyph, type AskCardGlyphName } from "./ask-card-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import {
@@ -467,36 +467,27 @@ function EventFacts({
 
 /**
  * The ··· in a card's corner (Paul, 2026-11-16, #5148: Cancel goes into the
- * menu): Dismiss, and Report this when it is offered. The iOS action sheet,
- * or Android's dialog, as the member profile's menu (`member-menu.ts`).
+ * menu): Dismiss, and Report this when it is offered, in the glass menu
+ * every ··· opens (`openItemMenu`).
  */
 function openCardMenu(
   title: string,
   reportable: boolean,
   onDismiss: () => void,
   onReport: () => void,
+  event?: GestureResponderEvent,
 ) {
-  const options = [
-    { label: ACT_COPY.dismiss, run: onDismiss },
-    ...(reportable ? [{ label: AI_REPORT_COPY.action, run: onReport }] : []),
-  ];
-  if (Platform.OS === "ios") {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title,
-        options: [...options.map((option) => option.label), ACT_COPY.cancel],
-        cancelButtonIndex: options.length,
-        userInterfaceStyle: "dark",
-      },
-      (index) => options[index]?.run(),
-    );
-    return;
-  }
-  Alert.alert(
-    title,
-    undefined,
-    options.map((option) => ({ text: option.label, onPress: option.run })),
-    { cancelable: true },
+  openItemMenu(
+    {
+      title,
+      actions: [
+        { key: "dismiss", label: ACT_COPY.dismiss, run: onDismiss },
+        ...(reportable
+          ? [{ key: "report", label: AI_REPORT_COPY.action, run: onReport }]
+          : []),
+      ],
+    },
+    { pageY: event?.nativeEvent?.pageY, trigger: focusReturnOf(event) },
   );
 }
 
@@ -1207,12 +1198,13 @@ function ActCard({
           accessibilityState={{ disabled: busy }}
           disabled={busy}
           hitSlop={10}
-          onPress={() =>
+          onPress={(event) =>
             openCardMenu(
               title,
               report.offered && !reported,
               () => void cancel(),
               () => report.report(reportTarget),
+              event,
             )
           }
           style={({ pressed }) => [

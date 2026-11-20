@@ -13,7 +13,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { formatSentLabel } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { showActionMenu } from "@/lib/action-menu";
+import { openItemMenu } from "@/components/item-actions-menu";
 import {
   inviteShareContent,
   inviteShareOptions,
@@ -200,17 +200,14 @@ export function InvitedList({
     if (running.current) return;
     const actions = inviteActions(invite, !!chapterName);
     const title = invite.email ?? "Invite link";
-    // Android's dialog draws at most three buttons and drops the rest, and
-    // an emailed pending invite has three actions, so it has no Cancel
-    // button: back or a tap outside closes it.
-    showActionMenu({
+    openItemMenu({
       title,
-      rows: actions.map((action) => ({
+      actions: actions.map((action) => ({
+        key: action,
         label: action,
-        style: action === REVOKE_INVITE ? "destructive" : "default",
-        onPress: () => void run(invite, action),
+        destructive: action === REVOKE_INVITE,
+        run: () => void run(invite, action),
       })),
-      userInterfaceStyle: "dark",
     });
   }
 
