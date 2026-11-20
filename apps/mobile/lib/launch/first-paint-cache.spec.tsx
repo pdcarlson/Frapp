@@ -5,14 +5,19 @@
  */
 import type { ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyCache, mergeServerRows } from "@repo/chat-core/cache";
 import {
-  emptyCache,
-  mergeServerRows,
-  upsertOptimistic,
-} from "@repo/chat-core/cache";
+  FIRST_CHUNK_CHANNEL_LIMIT,
+  FIRST_CHUNK_MAX_AGE_MS,
+  TAIL_ROW_FORMAT,
+} from "@repo/chat-core/first-chunk";
 import {
   chatMessagesKey,
   type ChannelCache,
@@ -32,18 +37,35 @@ vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => session.value,
 }));
 
+/** The keychain: the session's chunked SecureStore adapter, in memory. */
+const keychain = vi.hoisted(() => new Map<string, string>());
+vi.mock("@/lib/supabase", () => ({
+  sessionStorageAdapter: {
+    getItem: async (key: string) => keychain.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      keychain.set(key, value);
+    },
+    removeItem: async (key: string) => {
+      keychain.delete(key);
+    },
+  },
+}));
+
 import {
   FIRST_PAINT_FORMAT,
-  FIRST_PAINT_MAX_AGE_MS,
-  TAIL_CHANNEL_LIMIT,
-  TAIL_MESSAGE_LIMIT,
+  ME_KEY,
+  firstPaintGeneration,
   firstPaintKey,
   forgetFirstPaint,
   readFirstPaint,
   seedFirstPaint,
-  toCacheableRows,
   withTail,
+  withoutTail,
+  writeKeptChannels,
+  type FirstPaint,
+  type KeptTail,
 } from "./first-paint-cache";
+import { useKeptBlockFloor } from "./kept-block-floor";
 import {
   TAIL_WRITE_TIMING,
   useFirstPaintCacheRuntime,
@@ -53,9 +75,16 @@ const store = new Map<string, string>();
 const storage = vi.mocked(AsyncStorage) as unknown as {
   getItem: ReturnType<typeof vi.fn>;
   setItem: ReturnType<typeof vi.fn>;
+  removeItem: ReturnType<typeof vi.fn>;
   getAllKeys: ReturnType<typeof vi.fn>;
   multiGet: ReturnType<typeof vi.fn>;
-  multiRemove?: ReturnType<typeof vi.fn>;
+};
+
+const NOTHING: FirstPaint = {
+  me: null,
+  channels: null,
+  blockFloor: null,
+  tails: [],
 };
 
 function row(id: string, channelId = "c1", minute = 0): RawChatMessage {
@@ -69,13 +98,29 @@ function row(id: string, channelId = "c1", minute = 0): RawChatMessage {
   } as RawChatMessage;
 }
 
+function tail(channelId: string, rows: RawChatMessage[] = []): KeptTail {
+  return {
+    channelId,
+    rows,
+    cachedAt: Date.now() - 60_000,
+    rowFormat: TAIL_ROW_FORMAT,
+  };
+}
+
 function put(
-  part: string,
+  part: "channels" | "blocks" | "tails",
   value: unknown,
   user = "auth-1",
   chapter: string | null = "chapter-1",
 ) {
-  store.set(firstPaintKey(user, chapter, part as "me"), JSON.stringify(value));
+  store.set(firstPaintKey(user, chapter, part), JSON.stringify(value));
+}
+
+function putMe(data: object, authUid = "auth-1", cachedAt = Date.now()) {
+  keychain.set(
+    ME_KEY,
+    JSON.stringify({ format: FIRST_PAINT_FORMAT, authUid, cachedAt, data }),
+  );
 }
 
 function answer<T>(data: T, cachedAt = Date.now() - 60_000) {
@@ -90,6 +135,7 @@ async function settled() {
 beforeEach(() => {
   vi.clearAllMocks();
   store.clear();
+  keychain.clear();
   session.value = {
     status: "authenticated",
     userId: "auth-1",
@@ -102,13 +148,13 @@ beforeEach(() => {
   storage.setItem.mockImplementation(async (key: string, value: string) => {
     store.set(key, value);
   });
+  storage.removeItem.mockImplementation(async (key: string) => {
+    store.delete(key);
+  });
   storage.getAllKeys.mockImplementation(async () => [...store.keys()]);
   storage.multiGet.mockImplementation(async (keys: string[]) =>
     keys.map((key) => [key, store.get(key) ?? null]),
   );
-  storage.multiRemove = vi.fn(async (keys: string[]) => {
-    for (const key of keys) store.delete(key);
-  });
 });
 
 afterEach(() => {
@@ -126,67 +172,55 @@ describe("readFirstPaint", () => {
     expect(kept.channels?.data).toEqual([{ id: "mine" }]);
   });
 
-  it("keeps a token that names no chapter under its own scope", async () => {
-    put("me", answer({ id: "user-row-1" }), "auth-1", null);
+  it("keeps the profile in the keychain, for its own member only", async () => {
+    putMe({ id: "user-row-1" });
 
     expect((await readFirstPaint("auth-1", null)).me?.data).toEqual({
       id: "user-row-1",
     });
-    expect((await readFirstPaint("auth-1", "chapter-1")).me).toBeNull();
+    expect((await readFirstPaint("auth-2", null)).me).toBeNull();
+    expect([...store.keys()].some((key) => key.endsWith(".me"))).toBe(false);
   });
 
   it("ignores a copy past its age, in another format, or unreadable", async () => {
-    put("me", answer({ id: "u" }, Date.now() - FIRST_PAINT_MAX_AGE_MS - 1));
+    putMe({ id: "u" }, "auth-1", Date.now() - FIRST_CHUNK_MAX_AGE_MS - 1);
     put("channels", {
       format: FIRST_PAINT_FORMAT + 1,
       cachedAt: Date.now(),
       data: [],
     });
     store.set(firstPaintKey("auth-1", "chapter-1", "blocks"), "{not json");
+    put("tails", {
+      format: FIRST_PAINT_FORMAT,
+      tails: [{ ...tail("c1"), rowFormat: TAIL_ROW_FORMAT - 1 }],
+    });
 
-    const kept = await readFirstPaint("auth-1", "chapter-1");
+    expect(await readFirstPaint("auth-1", "chapter-1")).toEqual(NOTHING);
+  });
 
-    expect(kept).toEqual({ me: null, channels: null, blocks: null, tails: [] });
+  it("keeps the block floor however old it is", async () => {
+    put("blocks", { format: FIRST_PAINT_FORMAT, ids: ["blocked-1"] });
+
+    expect(
+      (await readFirstPaint("auth-1", "chapter-1", Date.now() + 365 * 864e5))
+        .blockFloor,
+    ).toEqual(["blocked-1"]);
   });
 
   it("reads as nothing when storage fails", async () => {
     storage.multiGet.mockRejectedValueOnce(new Error("disk"));
-    expect(await readFirstPaint("auth-1", "chapter-1")).toEqual({
-      me: null,
-      channels: null,
-      blocks: null,
-      tails: [],
-    });
+    expect(await readFirstPaint("auth-1", "chapter-1")).toEqual(NOTHING);
   });
 });
 
 describe("tails", () => {
-  it("keeps the newest confirmed rows only", () => {
-    let cache = mergeServerRows(
-      emptyCache(),
-      Array.from({ length: TAIL_MESSAGE_LIMIT + 5 }, (_, i) =>
-        row(`m${i}`, "c1", i),
-      ),
-    );
-    cache = upsertOptimistic(cache, {
-      ...cache.byId.m0!,
-      id: "pending-1",
-      client_message_id: "pending-1",
-      _status: "pending",
-    } as never);
-    const rows = toCacheableRows(cache.order.map((key) => cache.byId[key]!));
-    expect(rows).toHaveLength(TAIL_MESSAGE_LIMIT);
-    expect(rows.map((r) => r.id)).not.toContain("pending-1");
-    expect(rows.at(-1)?.id).toBe(`m${TAIL_MESSAGE_LIMIT + 4}`);
-  });
-
   it("puts the channel loaded last first and keeps a few", () => {
-    let tails = [] as ReturnType<typeof withTail>;
-    for (const id of ["a", "b", "c", "d", "b"]) {
-      tails = withTail(tails, { channelId: id, rows: [], cachedAt: 1 });
-    }
+    let tails: KeptTail[] = [];
+    for (const id of ["a", "b", "c", "d", "b"])
+      tails = withTail(tails, tail(id));
     expect(tails.map((t) => t.channelId)).toEqual(["b", "d", "c"]);
-    expect(tails).toHaveLength(TAIL_CHANNEL_LIMIT);
+    expect(tails).toHaveLength(FIRST_CHUNK_CHANNEL_LIMIT);
+    expect(withoutTail(tails, "d").map((t) => t.channelId)).toEqual(["b", "c"]);
   });
 });
 
@@ -194,11 +228,11 @@ describe("seedFirstPaint", () => {
   it("fills empty keys with the copy's own age and marks them stale", () => {
     const client = new QueryClient();
     const cachedAt = Date.now() - 60_000;
-    seedFirstPaint(client, "chapter-1", {
+    seedFirstPaint(client, {
       me: answer({ id: "user-row-1" }, cachedAt),
       channels: answer([{ id: "c1" }], cachedAt),
-      blocks: answer({ ids: ["blocked-1"] }, cachedAt),
-      tails: [{ channelId: "c1", cachedAt, rows: [row("m1")] }],
+      blockFloor: ["blocked-1"],
+      tails: [{ ...tail("c1", [row("m1")]), cachedAt }],
     });
 
     expect(client.getQueryData(["user", "me"])).toEqual({ id: "user-row-1" });
@@ -206,12 +240,16 @@ describe("seedFirstPaint", () => {
       cachedAt,
     );
     expect(client.getQueryState(CHANNEL_LIST_KEY)?.isInvalidated).toBe(true);
-    expect(client.getQueryData(chatBlockKeys.list("chapter-1"))).toEqual({
-      ids: ["blocked-1"],
-      readSeq: 0,
-    });
-    const tail = client.getQueryData<ChannelCache>(chatMessagesKey("c1"));
-    expect(Object.keys(tail?.byId ?? {})).toEqual(["m1"]);
+    const seeded = client.getQueryData<ChannelCache>(chatMessagesKey("c1"));
+    expect(Object.keys(seeded?.byId ?? {})).toEqual(["m1"]);
+  });
+
+  it("never seeds the block list, which would read as a ready list nobody read", () => {
+    const client = new QueryClient();
+    seedFirstPaint(client, { ...NOTHING, blockFloor: ["blocked-1"] });
+    expect(
+      client.getQueryData(chatBlockKeys.list("chapter-1")),
+    ).toBeUndefined();
   });
 
   it("never replaces what the server already answered", () => {
@@ -222,16 +260,15 @@ describe("seedFirstPaint", () => {
       mergeServerRows(emptyCache(), [row("live")]),
     );
 
-    seedFirstPaint(client, "chapter-1", {
-      me: null,
+    seedFirstPaint(client, {
+      ...NOTHING,
       channels: answer([{ id: "kept" }]),
-      blocks: null,
-      tails: [{ channelId: "c1", cachedAt: Date.now(), rows: [row("kept")] }],
+      tails: [tail("c1", [row("kept")])],
     });
 
     expect(client.getQueryData(CHANNEL_LIST_KEY)).toEqual([{ id: "live" }]);
-    const tail = client.getQueryData<ChannelCache>(chatMessagesKey("c1"));
-    expect(Object.keys(tail?.byId ?? {})).toEqual(["live"]);
+    const kept = client.getQueryData<ChannelCache>(chatMessagesKey("c1"));
+    expect(Object.keys(kept?.byId ?? {})).toEqual(["live"]);
   });
 
   it("doesn't cancel a fetch already on its way", async () => {
@@ -243,12 +280,7 @@ describe("seedFirstPaint", () => {
       queryFn,
     });
 
-    seedFirstPaint(client, "chapter-1", {
-      me: null,
-      channels: answer([{ id: "kept" }]),
-      blocks: null,
-      tails: [],
-    });
+    seedFirstPaint(client, { ...NOTHING, channels: answer([{ id: "kept" }]) });
     resolve([{ id: "live" }]);
     await observerFetch;
 
@@ -258,15 +290,38 @@ describe("seedFirstPaint", () => {
 });
 
 describe("forgetFirstPaint", () => {
-  it("drops every member's copy and nothing else", async () => {
-    put("me", answer({ id: "u" }));
-    put("me", answer({ id: "v" }), "auth-2");
+  it("drops every member's copy, the keychain's included, and nothing else", async () => {
+    putMe({ id: "u" });
+    put("channels", answer([]));
+    put("channels", answer([]), "auth-2");
     store.set("frapp.chat.unread.auth-1.chapter-1", "[]");
 
     forgetFirstPaint();
     await settled();
 
+    expect(keychain.size).toBe(0);
     expect([...store.keys()]).toEqual(["frapp.chat.unread.auth-1.chapter-1"]);
+  });
+
+  it("drops a write the outgoing scope still had pending", async () => {
+    const generation = firstPaintGeneration();
+    forgetFirstPaint();
+    await settled();
+
+    writeKeptChannels(generation, "auth-1", "chapter-1", [{ id: "c1" }], 1);
+    await settled();
+
+    expect(store.size).toBe(0);
+  });
+
+  it("runs with every sign-out and account swap", async () => {
+    const { clearProductQueryCache } = await import("@/lib/query-client");
+    putMe({ id: "u" });
+
+    clearProductQueryCache();
+    await settled();
+
+    expect(keychain.size).toBe(0);
   });
 });
 
@@ -275,19 +330,52 @@ describe("useFirstPaintCacheRuntime", () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
-    return renderHook(() => useFirstPaintCacheRuntime(), { wrapper });
+    return renderHook(
+      () => {
+        useFirstPaintCacheRuntime();
+        return useKeptBlockFloor();
+      },
+      { wrapper },
+    );
   }
 
-  it("seeds the launch from the kept copy", async () => {
+  /** A timeline on screen: an observer, as the thread's `useQuery` is. */
+  function watch(
+    client: QueryClient,
+    channelId: string,
+    rows: RawChatMessage[],
+  ) {
+    const observer = new QueryObserver(client, {
+      queryKey: chatMessagesKey(channelId),
+      queryFn: async () => mergeServerRows(emptyCache(), rows),
+    });
+    return observer.subscribe(() => undefined);
+  }
+
+  async function writesSettle() {
+    await act(async () => {
+      vi.advanceTimersByTime(TAIL_WRITE_TIMING.maxWaitMs);
+      await settled();
+    });
+  }
+
+  it("seeds the launch from the kept copy and holds the block floor", async () => {
     put("channels", answer([{ id: "c1" }]));
-    put("me", answer({ id: "user-row-1" }));
+    put("blocks", { format: FIRST_PAINT_FORMAT, ids: ["blocked-1"] });
+    putMe({ id: "user-row-1" });
     const client = new QueryClient();
 
-    mount(client);
+    const { result, unmount } = mount(client);
     await act(settled);
 
     expect(client.getQueryData(CHANNEL_LIST_KEY)).toEqual([{ id: "c1" }]);
     expect(client.getQueryData(["user", "me"])).toEqual({ id: "user-row-1" });
+    expect([...result.current]).toEqual(["blocked-1"]);
+
+    // The scope ending (a sign-out, a chapter switch) lets the floor go.
+    const floor = renderHook(() => useKeptBlockFloor());
+    unmount();
+    expect(floor.result.current.size).toBe(0);
   });
 
   it("waits for a session before reading anything", async () => {
@@ -302,6 +390,13 @@ describe("useFirstPaintCacheRuntime", () => {
     expect(client.getQueryData(CHANNEL_LIST_KEY)).toBeUndefined();
   });
 
+  it("waits while the chapter is still being settled", async () => {
+    session.value = { ...session.value, isChapterResolving: true };
+    mount(new QueryClient());
+    await act(settled);
+    expect(storage.multiGet).not.toHaveBeenCalled();
+  });
+
   it("keeps what the server answers under this scope", async () => {
     const client = new QueryClient();
     mount(client);
@@ -313,29 +408,37 @@ describe("useFirstPaintCacheRuntime", () => {
         queryFn: async () => [{ id: "live" }],
       });
       await client.fetchQuery({
+        queryKey: ["user", "me"],
+        queryFn: async () => ({ id: "user-row-1" }),
+      });
+      await client.fetchQuery({
         queryKey: chatBlockKeys.list("chapter-1"),
         queryFn: async () => ({ ids: ["blocked-1"], readSeq: 3 }),
       });
+      await settled();
     });
 
     const kept = await readFirstPaint("auth-1", "chapter-1");
     expect(kept.channels?.data).toEqual([{ id: "live" }]);
-    expect(kept.blocks?.data).toEqual({ ids: ["blocked-1"] });
+    expect(kept.me?.data).toEqual({ id: "user-row-1" });
+    expect(kept.blockFloor).toEqual(["blocked-1"]);
   });
 
-  it("never files a seed, or an answer fetched before this scope, under it", async () => {
+  it("never files an answer fetched before this scope under it", async () => {
     const client = new QueryClient();
-    // Fetched before the scope: the outgoing member's answer, still cached
-    // for a moment before the clear.
-    await client.fetchQuery({
+    // Started before the scope: the outgoing member's read, answering just
+    // after the new scope begins and before the cache is cleared.
+    let resolve: (value: unknown) => void = () => {};
+    const outgoing = client.fetchQuery({
       queryKey: CHANNEL_LIST_KEY,
-      queryFn: async () => [{ id: "outgoing" }],
+      queryFn: () => new Promise((r) => (resolve = r)),
     });
     mount(client);
     await act(settled);
 
     await act(async () => {
-      client.setQueryData(CHANNEL_LIST_KEY, [{ id: "written by hand" }]);
+      resolve([{ id: "outgoing" }]);
+      await outgoing;
       await settled();
     });
 
@@ -344,17 +447,43 @@ describe("useFirstPaintCacheRuntime", () => {
     );
   });
 
-  it("writes a timeline's tail once it settles", async () => {
+  it("never writes a seed back as if it were fresh", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const keptAt = Date.now() - 60_000;
+    put("tails", {
+      format: FIRST_PAINT_FORMAT,
+      tails: [{ ...tail("c1", [row("m1")]), cachedAt: keptAt }],
+    });
+    const client = new QueryClient();
+    mount(client);
+    // The thread mounts before the disk answers, its fetch hangs, and the
+    // seed lands on it meanwhile.
+    const observer = new QueryObserver(client, {
+      queryKey: chatMessagesKey("c1"),
+      queryFn: () => new Promise<ChannelCache>(() => undefined),
+    });
+    const stop = observer.subscribe(() => undefined);
+    await act(settled);
+    expect(
+      client.getQueryData<ChannelCache>(chatMessagesKey("c1"))?.byId.m1,
+    ).toBeDefined();
+    await writesSettle();
+
+    const kept = await readFirstPaint("auth-1", "chapter-1");
+    expect(kept.tails[0]?.cachedAt).toBe(keptAt);
+    stop();
+  });
+
+  it("writes a timeline on screen once it settles", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const client = new QueryClient();
     mount(client);
     await act(settled);
 
+    let stop = () => {};
     await act(async () => {
-      await client.fetchQuery({
-        queryKey: chatMessagesKey("c1"),
-        queryFn: async () => mergeServerRows(emptyCache(), [row("m1")]),
-      });
+      stop = watch(client, "c1", [row("m1")]);
+      await settled();
     });
     expect(store.has(firstPaintKey("auth-1", "chapter-1", "tails"))).toBe(
       false,
@@ -368,5 +497,55 @@ describe("useFirstPaintCacheRuntime", () => {
     const kept = await readFirstPaint("auth-1", "chapter-1");
     expect(kept.tails.map((t) => t.channelId)).toEqual(["c1"]);
     expect(kept.tails[0]?.rows.map((r) => r.id)).toEqual(["m1"]);
+    stop();
+  });
+
+  it("doesn't let a read-ahead push out the channel the member opened", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const client = new QueryClient();
+    mount(client);
+    await act(settled);
+
+    await act(async () => {
+      await client.prefetchQuery({
+        queryKey: chatMessagesKey("ahead"),
+        queryFn: async () =>
+          mergeServerRows(emptyCache(), [row("a1", "ahead")]),
+      });
+      await settled();
+    });
+    await writesSettle();
+
+    const kept = await readFirstPaint("auth-1", "chapter-1");
+    expect(kept.tails).toEqual([]);
+  });
+
+  it("forgets a timeline the member can no longer read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    put("tails", {
+      format: FIRST_PAINT_FORMAT,
+      tails: [tail("gone", [row("g1", "gone")])],
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    mount(client);
+    await act(settled);
+
+    await act(async () => {
+      await client
+        .fetchQuery({
+          queryKey: chatMessagesKey("gone"),
+          queryFn: async () => {
+            throw Object.assign(new Error("gone"), { statusCode: 404 });
+          },
+        })
+        .catch(() => undefined);
+      await settled();
+    });
+    await writesSettle();
+
+    const kept = await readFirstPaint("auth-1", "chapter-1");
+    expect(kept.tails).toEqual([]);
   });
 });

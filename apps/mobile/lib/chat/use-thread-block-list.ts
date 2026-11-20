@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { blockIdsWithFloor } from "@repo/chat-core/first-chunk";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   applyBlockList,
@@ -10,6 +11,7 @@ import {
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { useBlockedUserIds, type BlockedUserIds } from "@repo/hooks";
+import { useKeptBlockFloor } from "@/lib/launch/kept-block-floor";
 import { useBlockClearance } from "./block-clearance";
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -46,24 +48,31 @@ export interface ThreadBlockList {
  * While the list is not ready a recording does re-classify once, and changes
  * nothing: the rows it adds were already visible, and `record` stays silent
  * when nothing is new, so the effect settles after one pass.
+ *
+ * Until the live list has been read, the ids include the floor kept from the
+ * last launch's ready read (`useKeptBlockFloor`, `blockIdsWithFloor`, #5768),
+ * because a kept tail paints before the list answers and its rows carry their
+ * old verdicts.
  */
 export function useThreadBlockList(
   messages: readonly ChatMessage[],
   viewerId: string | null,
 ): ThreadBlockList {
   const blockList = useBlockedUserIds();
+  const floor = useKeptBlockFloor();
   const clearance = useBlockClearance(viewerId);
   const isReady = blockList.status === "ready";
   const cleared = isReady ? NO_IDS : clearance;
 
+  const { ids: liveIds, unblocked, readAt } = blockList;
+  const ids = useMemo(
+    () => blockIdsWithFloor({ ids: liveIds, unblocked, readAt }, floor),
+    [liveIds, unblocked, readAt, floor],
+  );
+
   const blockState = useMemo<BlockState>(
-    () => ({
-      status: blockList.status,
-      ids: blockList.ids,
-      unblocked: blockList.unblocked,
-      cleared,
-    }),
-    [blockList.status, blockList.ids, blockList.unblocked, cleared],
+    () => ({ status: blockList.status, ids, unblocked, cleared }),
+    [blockList.status, ids, unblocked, cleared],
   );
 
   const thread = useMemo(

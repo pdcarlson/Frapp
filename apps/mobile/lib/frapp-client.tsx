@@ -59,12 +59,11 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * (`["user","me"]`, `["settings"]`) are dropped in `auth-session.tsx`
    * `applySession` when the auth uid changes.
    *
-   * Skipped when there was no previous chapter (first paint, the claim read
-   * settling, a first selection from the picker): nothing chapter-scoped can be
-   * cached under a chapter yet, and clearing there would only cancel in-flight
-   * bootstrap queries for no benefit. Note `chapterId` does *not* flap to null
-   * on a failed claim read — `auth-session.tsx` retains the last known chapter,
-   * tagged by user id — so a network blip cannot trigger a spurious clear.
+   * Skipped when there was no previous chapter (first paint, a session with
+   * no token yet, a first selection from the picker): nothing chapter-scoped
+   * can be cached under a chapter yet, and clearing there would only cancel
+   * in-flight bootstrap queries for no benefit. `chapterId` is decoded from
+   * the token in hand (#5768), so no network read can make it flap to null.
    */
   const previousChapterId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
