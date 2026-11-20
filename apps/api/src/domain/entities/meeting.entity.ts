@@ -184,3 +184,16 @@ export interface MeetingRecording {
   created_at: string;
   finished_at: string | null;
 }
+
+/**
+ * A phone recording a meeting right now (`meeting_live_recordings`): the
+ * minutes, who, and when it was last heard from. A row not seen for
+ * `LIVE_RECORDING_STALE_MS` counts as not recording.
+ */
+export interface MeetingLiveRecording {
+  meeting_id: string;
+  chapter_id: string;
+  user_id: string;
+  started_at: string;
+  seen_at: string;
+}

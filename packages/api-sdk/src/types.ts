@@ -2506,7 +2506,7 @@ export interface paths {
         /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
         get: operations["MeetingController_list_v1"];
         put?: never;
-        /** Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist */
+        /** Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist */
         post: operations["MeetingController_start_v1"];
         delete?: never;
         options?: never;
@@ -2580,6 +2580,24 @@ export interface paths {
         /** Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
         post: operations["MeetingController_linkEvent_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/live-recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording */
+        put: operations["MeetingController_markLiveRecording_v1"];
+        post?: never;
+        /** The caller’s phone stopped recording these minutes */
+        delete: operations["MeetingController_clearLiveRecording_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9051,6 +9069,13 @@ export interface components {
             recorded: boolean;
             /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
             gist: string | null;
+            /** @description Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted. */
+            started: boolean;
+            /**
+             * Format: uuid
+             * @description Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.
+             */
+            recording_by: string | null;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -9181,7 +9206,7 @@ export interface components {
             other_label?: string | null;
             /**
              * Format: uuid
-             * @description The meeting’s event. Send this or new_event.
+             * @description The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted.
              */
             event_id?: string;
             /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
@@ -19051,6 +19076,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_markLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_clearLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -75,6 +75,8 @@ const NO_FACTS = {
   action_item_count: 0,
   recorded: false,
   gist: null,
+  started: false,
+  recording_by: null,
 };
 
 function dtoOf(view: MeetingView): MeetingDto {
@@ -173,7 +175,7 @@ export class MeetingController {
   @RequirePermissions(SystemPermissions.MEETINGS_RECORD)
   @ApiOperation({
     summary:
-      'Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist',
+      'Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist',
   })
   @ApiCreatedResponse({ type: MeetingDto })
   @FeatureEvent(
@@ -247,6 +249,35 @@ export class MeetingController {
     @Body() dto: LinkMeetingEventDto,
   ): Promise<MeetingDto> {
     return dtoOf(await this.meetings.linkEvent(chapterId, id, userId, dto));
+  }
+
+  @Put(':id/live-recording')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      'The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording',
+  })
+  @ApiNoContentResponse()
+  async markLiveRecording(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.meetings.markLiveRecording(chapterId, id, userId);
+  }
+
+  @Delete(':id/live-recording')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'The caller’s phone stopped recording these minutes',
+  })
+  @ApiNoContentResponse()
+  async clearLiveRecording(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.meetings.clearLiveRecording(chapterId, id, userId);
   }
 
   @Delete(':id')

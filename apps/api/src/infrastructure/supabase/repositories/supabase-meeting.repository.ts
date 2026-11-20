@@ -73,6 +73,78 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
     return new Set((data ?? []).map((row) => row.meeting_id));
   }
 
+  async findWithNotesIds(
+    chapterId: string,
+    meetingIds: readonly string[],
+  ): Promise<Set<string>> {
+    if (meetingIds.length === 0) return new Set();
+    const { data, error } = await this.supabase
+      .from('meeting_notes')
+      .select('meeting_id')
+      .eq('chapter_id', chapterId)
+      .in('meeting_id', [...meetingIds])
+      .neq('notes', '');
+    if (error) throw new SupabaseQueryError(error);
+    return new Set((data ?? []).map((row) => row.meeting_id));
+  }
+
+  async findLiveRecorders(
+    chapterId: string,
+    meetingIds: readonly string[],
+    seenSince: string,
+  ): Promise<Map<string, string>> {
+    if (meetingIds.length === 0) return new Map();
+    const { data, error } = await this.supabase
+      .from('meeting_live_recordings')
+      .select('meeting_id, user_id')
+      .eq('chapter_id', chapterId)
+      .in('meeting_id', [...meetingIds])
+      .gte('seen_at', seenSince);
+    if (error) throw new SupabaseQueryError(error);
+    return new Map((data ?? []).map((row) => [row.meeting_id, row.user_id]));
+  }
+
+  async markLiveRecording(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    now: string,
+  ): Promise<void> {
+    const { error } = await this.supabase.from('meeting_live_recordings').upsert(
+      {
+        meeting_id: meetingId,
+        chapter_id: chapterId,
+        user_id: userId,
+        started_at: now,
+        seen_at: now,
+      },
+      { onConflict: 'meeting_id', ignoreDuplicates: true },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    // A row already there (this phone's last beat, or another member's):
+    // the newest phone to say so is the one recording, and its start stays.
+    const { error: refreshError } = await this.supabase
+      .from('meeting_live_recordings')
+      .update({ user_id: userId, seen_at: now })
+      .eq('chapter_id', chapterId)
+      .eq('meeting_id', meetingId);
+    if (refreshError) throw new SupabaseQueryError(refreshError);
+  }
+
+  async clearLiveRecording(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('meeting_live_recordings')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('meeting_id', meetingId)
+      .eq('user_id', userId);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async findPostedSince(
     chapterId: string,
     since: string,
