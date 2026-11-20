@@ -75,6 +75,8 @@ describe('Mass assignment — privileged fields never come from the client (e2e)
   };
 
   const eventServiceMock = {
+    // Add to next meeting's agenda listens for created events (#5790).
+    onCreated: jest.fn(),
     create: jest.fn().mockResolvedValue({ id: 'evt-1' }),
     findByChapter: jest.fn().mockResolvedValue([]),
   };
