@@ -417,7 +417,7 @@ publishing status In production, user type External:
    `https://api.frapp.live/v1/google-calendar/callback`. Each also lists its
    web app under Authorized JavaScript origins (`https://app.staging.frapp.live`,
    `https://app.frapp.live`), for Drive's folder picker, which signs in with
-   the same client (§ 7C, #5583; added by the owner 2026-11-19). The redirect is the API's origin plus that path:
+   the same client (§ 7C, #5583; added by the owner 2026-11-20). The redirect is the API's origin plus that path:
    `API_URL` less any trailing `/v1`, as for Discord. Both are separate from
    the sign-in Web clients ("Frapp Web (staging)" and "Frapp Web (production)"), whose secrets live in Supabase: these live in
    Infisical.
@@ -498,8 +498,9 @@ For each environment, staging first:
    apps' addresses. That key goes in Infisical as `GOOGLE_PICKER_API_KEY`
    in each environment; it is public by design (the browser loads the
    picker with it), and the API serves it from `GET /v1/google-drive`, so
-   the web build needs no copy. Done for staging by the owner 2026-11-19
-   (names read back from Infisical staging); production unread. Without
+   the web build needs no copy. Done by the owner 2026-11-20 for both environments
+   (staging's names read back from Infisical; production's from the session
+   notes). Without
    `GOOGLE_PICKER_API_KEY` the panel keeps the share-and-paste-link flow.
 
 `GOOGLE_DRIVE_CREDENTIALS_JSON` (a key file) still works, for a laptop or a
