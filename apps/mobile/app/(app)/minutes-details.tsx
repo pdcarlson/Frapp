@@ -57,6 +57,7 @@ import {
   meetingTypeLabel,
   meetingWhenLabel,
   minutesMetaHead,
+  MEETING_NOTE_TAKERS_COPY,
   minutesDraftSource,
   minutesJumps,
   minutesReadSections,
@@ -92,6 +93,7 @@ import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet"
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
 import { ComingUpDates } from "@/components/minutes/coming-up-dates";
 import { ComingUpPostReview } from "@/components/minutes/coming-up-post-review";
+import { LinkMeetingSheet } from "@/components/minutes/link-meeting-sheet";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
 import { MinutesEditor } from "@/components/minutes/minutes-editor";
 import {
@@ -280,6 +282,7 @@ function LoadedMinutes({
   const remove = useDeleteMeeting();
   const detailsSheetRef = useRef<BottomSheetModal>(null);
   const attendanceSheetRef = useRef<BottomSheetModal>(null);
+  const linkSheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ScrollView>(null);
   // Where the body and each of its sections sit, for the jump bar.
   const bodyY = useRef(0);
@@ -660,6 +663,17 @@ function LoadedMinutes({
           },
         ]
       : []),
+    // Minutes with no meeting yet (Paul, 2026-11-20): linked here, as on web.
+    ...(meeting.can_edit && !meeting.event_id
+      ? [
+          {
+            key: "link",
+            label: MEETING_NOTE_TAKERS_COPY.linkEvent,
+            glyph: (color: string) => <CalendarPlusGlyph color={color} />,
+            run: () => linkSheetRef.current?.present(),
+          },
+        ]
+      : []),
     {
       key: "copy",
       label: words.copyLink,
@@ -777,6 +791,23 @@ function LoadedMinutes({
             }}
           />
         </View>
+      );
+    } else if (
+      finishing &&
+      !busy &&
+      !drafting &&
+      postable &&
+      !meeting.event_id
+    ) {
+      // Minutes with no meeting post once they have one: the meeting gives
+      // them their readers (§ Linking a meeting later).
+      footer = (
+        <SheetPrimaryButton
+          label={MEETING_NOTE_TAKERS_COPY.linkEvent}
+          onPress={() => linkSheetRef.current?.present()}
+          accent={accent}
+          onAccent={accentOnPrimary}
+        />
       );
     } else if (finishing && !busy && !drafting && postable) {
       footer = (
@@ -1141,6 +1172,16 @@ function LoadedMinutes({
           viewerId={viewerId}
           onDone={endDatesReview}
           onTracked={say}
+        />
+      ) : null}
+      {meeting.can_edit && !meeting.event_id ? (
+        <LinkMeetingSheet
+          ref={linkSheetRef}
+          meetingId={meeting.id}
+          startedAt={meeting.event_start_time}
+          onLinked={() => {
+            void refetch();
+          }}
         />
       ) : null}
       {canBackfill && meeting.event_id ? (
