@@ -16,7 +16,7 @@ export interface CalendarMeeting {
   end_time?: string | null;
 }
 
-/** How far back "Needs minutes" reaches: a month, past which it is history. */
+/** How far back the list asks for minutes (Write minutes rows) or shows a No minutes mark: a month, past which it is history. */
 export const NEEDS_MINUTES_DAYS = 30;
 /** How far ahead "Next up" looks. */
 export const NEXT_UP_DAYS = 7;

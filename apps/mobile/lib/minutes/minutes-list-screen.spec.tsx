@@ -128,6 +128,14 @@ function render(): ReactTestRenderer {
   });
   return tree;
 }
+/** The row as drawn (the host element a finger or screen reader reaches). */
+const drawnRow = (tree: ReactTestRenderer, label: string) =>
+  tree.root.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      node.props.accessibilityLabel === label &&
+      Array.isArray(node.props.accessibilityActions),
+  )[0]!;
 const tabs = (tree: ReactTestRenderer) =>
   tree.root.findAll(
     (node) =>
@@ -263,11 +271,7 @@ describe("Minutes, tied to the calendar", () => {
   it("marks a meeting as having no minutes from its long-press", async () => {
     state.setNoMinutes.mockResolvedValue(undefined);
     const tree = render();
-    const needs = tree.root.findAll(
-      (node) =>
-        typeof node.props.onLongPress === "function" &&
-        node.props.label === "Exec Meeting",
-    )[0]!;
+    const needs = drawnRow(tree, "Exec Meeting");
     const action = needs.props.accessibilityActions.find(
       (entry: { label: string }) =>
         entry.label === MEETING_LIST_COPY.markNoMinutes,
@@ -286,11 +290,37 @@ describe("Minutes, tied to the calendar", () => {
     );
   });
 
-  it("shows a meeting marked so as settled", () => {
+  it("shows a meeting marked so as settled, and takes the mark back from its menu", async () => {
     state.noMinutes = ["e-needs"];
-    const text = screenText(render());
+    state.setNoMinutes.mockResolvedValue(undefined);
+    const tree = render();
+    const text = screenText(tree);
     expect(text).toContain(MEETING_LIST_COPY.noMinutes);
     expect(text).not.toContain(MEETING_LIST_COPY.writeMinutes);
+    // Drawn as a pressable row (a tap opens its menu), with named actions.
+    const settled = drawnRow(tree, "Exec Meeting");
+    const listRow = tree.root.findAll(
+      (node) =>
+        typeof node.type !== "string" && node.props.label === "Exec Meeting",
+    )[0]!;
+    expect(typeof listRow.props.onPress).toBe("function");
+    const labels = settled.props.accessibilityActions.map(
+      (entry: { label: string }) => entry.label,
+    );
+    expect(labels).toEqual([
+      MEETING_LIST_COPY.writeMinutes,
+      MEETING_LIST_COPY.undoNoMinutes,
+    ]);
+    const undo = settled.props.accessibilityActions[1];
+    await act(async () =>
+      settled.props.onAccessibilityAction({
+        nativeEvent: { actionName: undo.name },
+      }),
+    );
+    expect(state.setNoMinutes).toHaveBeenCalledWith({
+      eventId: "e-needs",
+      noMinutes: false,
+    });
   });
 
   it("asks nothing of a member who doesn't record minutes", () => {

@@ -25,10 +25,19 @@ export class MeetingNoMinutesService {
     private readonly meetings: MeetingService,
   ) {}
 
-  /** The event ids marked "No minutes". */
-  async list(chapterId: string): Promise<string[]> {
+  /**
+   * The event ids marked "No minutes" among the events this officer can
+   * see: a role-targeted meeting they aren't cleared for stays unconfirmed,
+   * as `EventService.findById` keeps it.
+   */
+  async list(chapterId: string, userId: string): Promise<string[]> {
     const rows = await this.marks.list(chapterId);
-    return rows.map((row) => row.event_id);
+    const visible = await this.events.findVisibleByIds(
+      rows.map((row) => row.event_id),
+      chapterId,
+      userId,
+    );
+    return visible.map((event) => event.id);
   }
 
   async mark(
@@ -52,6 +61,15 @@ export class MeetingNoMinutesService {
       });
     }
     await this.marks.mark(chapterId, event.id, userId);
+    // Minutes that started between the check and the mark fired the trigger
+    // before the mark existed, so drop it here: minutes always win.
+    if (await this.meetings.hasMinutesFor(chapterId, event.id)) {
+      await this.marks.unmark(chapterId, event.id);
+      throw new ConflictException({
+        code: 'meeting.already_started',
+        message: 'This meeting already has minutes.',
+      });
+    }
   }
 
   async unmark(

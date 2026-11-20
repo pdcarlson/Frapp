@@ -962,10 +962,19 @@ export function useSetMeetingNoMinutes() {
         key,
         noMinutes ? [...rest, eventId] : rest,
       );
-      return { before };
+      return { had: (before ?? []).includes(eventId) };
     },
-    onError: (_error, _input, context) => {
-      queryClient.setQueryData(key, context?.before);
+    onError: (_error, { eventId }, context) => {
+      // Undo this one event only, so a mark made meanwhile keeps its place.
+      queryClient.setQueryData<string[]>(key, (current) => {
+        const rest = (current ?? []).filter((id) => id !== eventId);
+        return context?.had ? [...rest, eventId] : rest;
+      });
+      // A refusal can mean minutes started meanwhile: read the list again.
+      void queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+        exact: true,
+      });
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });

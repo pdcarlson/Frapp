@@ -12,6 +12,7 @@ import {
   useSetMeetingNoMinutes,
   useViewerUserId,
 } from "@repo/hooks";
+import { errorCopy } from "@repo/hooks/error-copy";
 import {
   MEETING_COPY,
   MEETING_LIST_COPY,
@@ -183,7 +184,9 @@ function MinutesScreenBody() {
     eventsQuery.isSuccess &&
     meetingsQuery.isSuccess &&
     takingQuery.isSuccess &&
-    noMinutesQuery.isSuccess &&
+    // The marks only settle rows: if their read fails, ask for every meeting
+    // rather than hiding Next up and the rest.
+    (noMinutesQuery.isSuccess || noMinutesQuery.isError) &&
     !query.trim() &&
     type === null;
   const view = minutesListView(rows, {
@@ -205,7 +208,8 @@ function MinutesScreenBody() {
       () => {
         if (noMinutes) say(MEETING_LIST_COPY.markedNoMinutes(event.name));
       },
-      () => say(MEETING_LIST_COPY.noMinutesFailed),
+      (error: unknown) =>
+        say(errorCopy(error, MEETING_LIST_COPY.noMinutesFailed)),
     );
   }
 
@@ -314,7 +318,10 @@ function MinutesScreenBody() {
         muted={skipped}
         accessibilityHint={skipped ? undefined : MEETING_LIST_COPY.writeMinutes}
         busy={startingId === entry.event.id}
-        onPress={skipped ? undefined : () => void startFor(entry.event)}
+        // A settled row has nothing to start, so a tap opens its menu
+        // (Write minutes, Ask for minutes again), in place: no chevron.
+        onPress={skipped ? longPressOf(menu) : () => void startFor(entry.event)}
+        action={skipped}
         onLongPress={longPressOf(menu)}
         {...itemMenuAccessibility(menu)}
       />

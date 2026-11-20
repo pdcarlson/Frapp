@@ -16,7 +16,8 @@ import {
  * event ... It just seems like a very dull interface").
  *
  * The list grows with the chapter, the way Granola's notes list does: a few
- * minutes are your drafts and then day groups, and nothing to filter; past
+ * minutes sit in week groups at their dates, drafts and meetings that need
+ * minutes among them, and nothing to filter; past
  * {@link MINUTES_MANY} it gains a search, type chips with their counts, a
  * Series section (a repeating event with two or more minutes folds into one
  * row, as Fireflies files recurring meetings into one channel) and month
@@ -110,9 +111,6 @@ export function matchesQuery(row: MinutesListRow, query: string): boolean {
   return words.every((word) => haystack.includes(word));
 }
 
-/** Midnight starting this calendar week (Sunday), on this phone's clock. */
-export const weekStart = minutesWeekStart;
-
 export function minutesListView(
   rows: readonly MinutesListRow[],
   {
@@ -174,7 +172,7 @@ export function minutesRowTime(start: string, now: number): string {
   const at = new Date(start);
   if (Number.isNaN(at.getTime())) return "";
   // A weekday names one day only inside this calendar week.
-  const week = weekStart(now);
+  const week = minutesWeekStart(now);
   if (at.getTime() >= week && at.getTime() < week + 7 * DAY_MS) {
     return at.toLocaleString("en-US", {
       weekday: "short",

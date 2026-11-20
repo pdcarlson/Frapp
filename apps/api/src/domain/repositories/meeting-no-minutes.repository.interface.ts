@@ -7,7 +7,7 @@ export const MEETING_NO_MINUTES_REPOSITORY = 'MEETING_NO_MINUTES_REPOSITORY';
  * the service role; who may mark one is `MeetingNoMinutesService`'s rule.
  */
 export interface IMeetingNoMinutesRepository {
-  /** The chapter's marks. Few: one per meeting that had none. */
+  /** The chapter's marks, one per meeting that ended with none. A mark leaves with its event, its minutes, or an undo. */
   list(chapterId: string): Promise<MeetingNoMinutes[]>;
   /** Marks the event; marking it again keeps the first mark. */
   mark(chapterId: string, eventId: string, userId: string): Promise<void>;

@@ -86,7 +86,7 @@ describe("StartMinutesPanel, a meeting not on the calendar", () => {
   it("takes the day in words and starts the minutes for it", async () => {
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
     fillNewMeeting("yesterday");
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     const sent = mocks.start.mock.calls[0]![0];
     expect(sent.new_event.name).toBe("Exec meeting");
@@ -109,7 +109,7 @@ describe("StartMinutesPanel, a meeting not on the calendar", () => {
     });
     const date = screen.getByLabelText("When did it meet?");
     fireEvent.change(date, { target: { value: "yesterday" } });
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     const sent = mocks.start.mock.calls[0]![0];
     expect(sent.new_event.name).toBe("Chapter meeting");
@@ -120,7 +120,7 @@ describe("StartMinutesPanel, a meeting not on the calendar", () => {
   it("asks for the day, not the time, when the day can't be read", () => {
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
     fillNewMeeting("soonish");
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     expect(
       screen.getByText("Add the day it met, like Tuesday or Nov 4."),
     ).toBeInTheDocument();
@@ -206,7 +206,7 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
   it("drops the draft once the minutes start", async () => {
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
     fillNewMeeting("yesterday");
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1));
     first.unmount();
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
@@ -225,7 +225,7 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
       <StartMinutesPanel open onOpenChange={onOpenChange} />,
     );
     fillNewMeeting("yesterday");
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     first.unmount();
     // Back before it lands: nothing to start a second time.
@@ -250,7 +250,7 @@ describe("StartMinutesPanel keeps a draft whose start failed (#4593)", () => {
     );
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
     fillNewMeeting("yesterday");
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     first.unmount();
     fail(new Error("offline"));
@@ -295,7 +295,7 @@ describe("StartMinutesPanel picks the meeting", () => {
       screen.getByRole("button", { name: /Chapter meeting/, pressed: true }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Filed as Chapter/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     expect(mocks.start.mock.calls[0]![0]).toMatchObject({
       event_id: "e-now",
@@ -436,7 +436,7 @@ describe("StartMinutesPanel picks the meeting", () => {
         Object.assign(new Error("taken"), { code: "meeting.already_started" }),
       );
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() =>
       expect(
         screen.getByRole("button", { name: /Exec meeting/, pressed: true }),

@@ -7,7 +7,7 @@ export class MeetingNoMinutesListDto {
     type: [String],
     format: 'uuid',
     description:
-      'Events in the last 30 days an officer marked "No minutes", so the Meetings list stops asking for them.',
+      'Events this officer can see that an officer marked "No minutes", so the Meetings list stops asking for them.',
   })
   event_ids: string[];
 }

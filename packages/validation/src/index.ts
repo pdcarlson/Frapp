@@ -158,6 +158,7 @@ export * from "./minutes-request-copy";
 // Which meetings on the calendar need minutes, and the next one coming.
 export * from "./minutes-to-write";
 export * from "./minutes-timeline";
+export * from "./week-start";
 export * from "./module-enablement";
 export * from "./module-refusal";
 // The native app's identifiers, store listings and invite hand-off (#4002),

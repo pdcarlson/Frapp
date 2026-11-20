@@ -45,13 +45,14 @@ export class MeetingNoMinutesController {
   @Get('meetings-no-minutes')
   @ApiOperation({
     summary:
-      'The events of the last 30 days marked "No minutes", so the Meetings list stops asking for them',
+      'The events this officer can see that are marked "No minutes", so the Meetings list stops asking for them',
   })
   @ApiOkResponse({ type: MeetingNoMinutesListDto })
   async list(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
   ): Promise<MeetingNoMinutesListDto> {
-    return { event_ids: await this.noMinutes.list(chapterId) };
+    return { event_ids: await this.noMinutes.list(chapterId, userId) };
   }
 
   @Put('events/:id/no-minutes')

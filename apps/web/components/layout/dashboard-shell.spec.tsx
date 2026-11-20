@@ -339,6 +339,18 @@ describe("DashboardShell", () => {
     expect(main.className).not.toContain("overflow-hidden");
   });
 
+  it("clips the chat panel too, rather than letting it scroll", () => {
+    mockPathname.value = "/chat";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const chat = document.getElementById("chat-panel");
+    expect(chat?.className).toContain("overflow-clip");
+    expect(chat?.className).not.toContain("overflow-hidden");
+  });
+
   it("titles the open route in the top bar, as its only h1", () => {
     // 2026-11-05: the title moved from each page's toolbar row into the top
     // bar, derived from the route so every path (loading, offline, error) has

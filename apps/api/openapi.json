@@ -22082,7 +22082,7 @@
             "bearer": []
           }
         ],
-        "summary": "The events of the last 30 days marked \"No minutes\", so the Meetings list stops asking for them",
+        "summary": "The events this officer can see that are marked \"No minutes\", so the Meetings list stops asking for them",
         "tags": [
           "Meetings"
         ]
@@ -39957,7 +39957,7 @@
         "type": "object",
         "properties": {
           "event_ids": {
-            "description": "Events in the last 30 days an officer marked \"No minutes\", so the Meetings list stops asking for them.",
+            "description": "Events this officer can see that an officer marked \"No minutes\", so the Meetings list stops asking for them.",
             "type": "array",
             "items": {
               "type": "string",

@@ -8,7 +8,8 @@ const NOW = Date.parse('2026-11-20T06:00:00Z');
 
 function setup(
   event: { id: string; start_time: string; end_time: string } | null,
-  hasMinutes = false,
+  hasMinutes: boolean | boolean[] = false,
+  visible: string[] = ['e1'],
 ) {
   const marks: jest.Mocked<IMeetingNoMinutesRepository> = {
     list: jest.fn().mockResolvedValue([
@@ -28,9 +29,17 @@ function setup(
         ? Promise.resolve(event)
         : Promise.reject(new NotFoundException('Event not found')),
     ),
+    findVisibleByIds: jest.fn((ids: string[]) =>
+      Promise.resolve(
+        ids.filter((id) => visible.includes(id)).map((id) => ({ id })),
+      ),
+    ),
   } as unknown as EventService;
+  const answers = Array.isArray(hasMinutes) ? [...hasMinutes] : null;
   const meetings = {
-    hasMinutesFor: jest.fn().mockResolvedValue(hasMinutes),
+    hasMinutesFor: jest.fn(() =>
+      Promise.resolve(answers ? (answers.shift() ?? false) : hasMinutes),
+    ),
   } as unknown as MeetingService;
   return {
     marks,
@@ -46,9 +55,24 @@ const ended = {
 };
 
 describe('MeetingNoMinutesService', () => {
-  it('lists the marked event ids', async () => {
-    const { service } = setup(ended);
-    await expect(service.list('c')).resolves.toEqual(['e1']);
+  it('lists the marked event ids the caller can see', async () => {
+    const { service, events } = setup(ended);
+    await expect(service.list('c', 'u')).resolves.toEqual(['e1']);
+    expect(events.findVisibleByIds).toHaveBeenCalledWith(['e1'], 'c', 'u');
+  });
+
+  it('leaves out a marked event the caller is not cleared to see', async () => {
+    const { service } = setup(ended, false, []);
+    await expect(service.list('c', 'u')).resolves.toEqual([]);
+  });
+
+  it('drops its own mark when minutes started while it was being made', async () => {
+    const { service, marks } = setup(ended, [false, true]);
+    await expect(service.mark('c', 'u', 'e1', NOW)).rejects.toMatchObject({
+      response: { code: 'meeting.already_started' },
+    });
+    expect(marks.mark).toHaveBeenCalledWith('c', 'e1', 'u');
+    expect(marks.unmark).toHaveBeenCalledWith('c', 'e1');
   });
 
   it('marks a meeting that ended with no minutes, read as the caller', async () => {

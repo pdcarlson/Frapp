@@ -100,7 +100,7 @@ function ChapterMeetingsPage() {
   const noMinutesQuery = useMeetingsNoMinutes({ enabled: canRecord });
   const setNoMinutes = useSetMeetingNoMinutes();
   // Moves on each minute, so a meeting that ends while the page is open
-  // leaves Next up for Needs minutes without a reload.
+  // leaves Next up for its Write minutes row without a reload.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -127,12 +127,14 @@ function ChapterMeetingsPage() {
     now,
   ]);
   // Unknown is not "none written": wait for every read before listing any.
+  // The No minutes marks only settle rows, so if their read fails the list
+  // still asks for every meeting rather than hiding Next up and the rest.
   const showToWrite =
     canRecord &&
     eventsQuery.isSuccess &&
     meetingsQuery.isSuccess &&
     takingQuery.isSuccess &&
-    noMinutesQuery.isSuccess;
+    (noMinutesQuery.isSuccess || noMinutesQuery.isError);
   const router = useRouter();
   const { toast } = useToast();
   const start = useStartMeeting();
@@ -176,32 +178,30 @@ function ChapterMeetingsPage() {
    * once, with Undo, as Gmail's archive is.
    */
   function markNoMinutes(event: CalendarMeeting, noMinutes: boolean) {
-    setNoMinutes.mutateAsync({ eventId: event.id, noMinutes }).then(
-      () => {
-        if (!noMinutes) return;
-        toast({
-          title: MEETING_LIST_COPY.markedNoMinutes(event.name),
-          action: (
-            <ToastAction
-              altText={`${MEETING_LIST_COPY.undo}: ${MEETING_LIST_COPY.markedNoMinutes(event.name)}`}
-              onClick={() =>
-                void setNoMinutes
-                  .mutateAsync({ eventId: event.id, noMinutes: false })
-                  .catch(() => undefined)
-              }
-            >
-              {MEETING_LIST_COPY.undo}
-            </ToastAction>
-          ),
-        });
-      },
-      (error: unknown) =>
-        toast({
-          title: MEETING_LIST_COPY.noMinutesFailed,
-          description: getErrorMessage(error, "Try again in a moment."),
-          variant: "destructive",
-        }),
-    );
+    const failed = (error: unknown) =>
+      toast({
+        title: MEETING_LIST_COPY.noMinutesFailed,
+        description: getErrorMessage(error, "Try again in a moment."),
+        variant: "destructive",
+      });
+    setNoMinutes.mutateAsync({ eventId: event.id, noMinutes }).then(() => {
+      if (!noMinutes) return;
+      toast({
+        title: MEETING_LIST_COPY.markedNoMinutes(event.name),
+        action: (
+          <ToastAction
+            altText={`${MEETING_LIST_COPY.undo}: ${MEETING_LIST_COPY.markedNoMinutes(event.name)}`}
+            onClick={() =>
+              void setNoMinutes
+                .mutateAsync({ eventId: event.id, noMinutes: false })
+                .catch(failed)
+            }
+          >
+            {MEETING_LIST_COPY.undo}
+          </ToastAction>
+        ),
+      });
+    }, failed);
   }
 
   const groups = useMemo(

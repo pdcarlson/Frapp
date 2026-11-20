@@ -27,6 +27,36 @@ describe("minutesTimeline", () => {
     ]);
   });
 
+  it("files minutes started ahead for a later week under their month", () => {
+    const groups = minutesTimeline(
+      [
+        { id: "ahead", event_start_time: new Date(2026, 11, 10).toISOString() },
+        { id: "m1", event_start_time: daysAgo(1) },
+      ],
+      { now: NOW },
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      "December",
+      "This week",
+    ]);
+  });
+
+  it("starts Last week at last Sunday's midnight across a clock change", () => {
+    // Sunday Nov 1 2026 is when US daylight time ends; a week later, a
+    // meeting just after that midnight is still last week.
+    const now = new Date(2026, 10, 9, 12).getTime();
+    const groups = minutesTimeline(
+      [
+        {
+          id: "m",
+          event_start_time: new Date(2026, 10, 1, 0, 30).toISOString(),
+        },
+      ],
+      { now },
+    );
+    expect(groups.map((group) => group.label)).toEqual(["Last week"]);
+  });
+
   it("groups a long list by month alone", () => {
     const rows = Array.from({ length: 9 }, (_, i) => ({
       id: `m${i}`,

@@ -1,4 +1,5 @@
 import type { CalendarMeeting } from "./minutes-to-write";
+import { localWeekStart } from "./week-start";
 
 /**
  * The Meetings list as one timeline (Paul, 2026-11-20: "should this go in
@@ -20,8 +21,6 @@ import type { CalendarMeeting } from "./minutes-to-write";
 /** Past this many minutes the list groups by month (and the phone gains search). */
 export const MINUTES_MANY = 8;
 
-const DAY_MS = 86_400_000;
-
 /** One row of the timeline. */
 export type MinutesTimelineItem<M> =
   | { kind: "minutes"; key: string; start: string; minutes: M }
@@ -38,9 +37,13 @@ export interface MinutesTimelineGroup<M> {
 
 /** Midnight starting this calendar week (Sunday), on this device's clock. */
 export function minutesWeekStart(now: number): number {
-  const at = new Date(now);
-  at.setHours(0, 0, 0, 0);
-  at.setDate(at.getDate() - at.getDay());
+  return localWeekStart(new Date(now)).getTime();
+}
+
+/** `weeks` calendar weeks after the week starting at `week` (DST-safe). */
+function weeksFrom(week: number, weeks: number): number {
+  const at = new Date(week);
+  at.setDate(at.getDate() + 7 * weeks);
   return at.getTime();
 }
 
@@ -60,15 +63,19 @@ export function minutesMonthGroup(
   };
 }
 
-/** This week and last week by the calendar, then the month. */
+/**
+ * This week and last week by the calendar, then the month. Minutes started
+ * ahead for a meeting past this week sit under its month, not This week.
+ */
 export function minutesWeekGroup(
   start: string,
   now: number,
 ): { key: string; label: string } {
   const at = Date.parse(start);
   const week = minutesWeekStart(now);
+  if (at >= weeksFrom(week, 1)) return minutesMonthGroup(start, now);
   if (at >= week) return { key: "week", label: "This week" };
-  if (at >= week - 7 * DAY_MS) return { key: "last", label: "Last week" };
+  if (at >= weeksFrom(week, -1)) return { key: "last", label: "Last week" };
   return minutesMonthGroup(start, now);
 }
 

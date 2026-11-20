@@ -6628,7 +6628,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The events of the last 30 days marked "No minutes", so the Meetings list stops asking for them */
+        /** The events this officer can see that are marked "No minutes", so the Meetings list stops asking for them */
         get: operations["MeetingNoMinutesController_list_v1"];
         put?: never;
         post?: never;
@@ -13063,7 +13063,7 @@ export interface components {
             pinged: boolean;
         };
         MeetingNoMinutesListDto: {
-            /** @description Events in the last 30 days an officer marked "No minutes", so the Meetings list stops asking for them. */
+            /** @description Events this officer can see that an officer marked "No minutes", so the Meetings list stops asking for them. */
             event_ids: string[];
         };
         MeetingDateReminderDto: {

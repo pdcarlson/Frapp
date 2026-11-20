@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   takingReady: true,
   permissions: ["meetings:record"] as string[],
   noMinutes: [] as string[],
+  noMinutesFailed: false,
   setNoMinutes: vi.fn(),
   start: vi.fn(),
   push: vi.fn(),
@@ -35,7 +36,9 @@ vi.mock("@repo/hooks", () => ({
   useMeetingsNoMinutes: (options?: { enabled?: boolean }) =>
     options?.enabled === false
       ? { data: undefined, isSuccess: false }
-      : { data: mocks.noMinutes, isSuccess: true },
+      : mocks.noMinutesFailed
+        ? { data: undefined, isSuccess: false, isError: true }
+        : { data: mocks.noMinutes, isSuccess: true },
   useSetMeetingNoMinutes: () => ({ mutateAsync: mocks.setNoMinutes }),
   useMemberDisplayNames: () => ({ nameFor: () => "Shawn Klein" }),
   useMyPermissions: () => ({ data: { permissions: mocks.permissions } }),
@@ -67,6 +70,7 @@ const { MeetingsPage } = await import("./meetings-page");
 const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
 
 beforeEach(() => {
+  mocks.noMinutesFailed = false;
   mocks.permissions = ["meetings:record"];
   mocks.taking = [];
   mocks.takingReady = true;
@@ -144,6 +148,56 @@ describe("Meetings, tied to their events", () => {
         }),
       ),
     );
+    // Undo takes the mark back; a failed undo says so.
+    mocks.setNoMinutes.mockRejectedValueOnce(new Error("offline"));
+    const undo = mocks.toast.mock.calls[0]![0].action;
+    undo.props.onClick();
+    expect(mocks.setNoMinutes).toHaveBeenLastCalledWith({
+      eventId: "e-needs",
+      noMinutes: false,
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          title: MEETING_LIST_COPY.noMinutesFailed,
+          variant: "destructive",
+        }),
+      ),
+    );
+  });
+
+  it("asks for minutes again from a settled meeting's menu", async () => {
+    mocks.noMinutes = ["e-needs"];
+    mocks.setNoMinutes.mockResolvedValue(undefined);
+    render(<MeetingsPage />);
+    fireEvent.pointerDown(
+      screen.getByRole("button", {
+        name: MEETING_LIST_COPY.rowActions("Chapter Meeting"),
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: MEETING_LIST_COPY.undoNoMinutes,
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.setNoMinutes).toHaveBeenCalledWith({
+        eventId: "e-needs",
+        noMinutes: false,
+      }),
+    );
+  });
+
+  it("still lists the calendar when the No minutes read fails", () => {
+    mocks.noMinutesFailed = true;
+    render(<MeetingsPage />);
+    expect(screen.getByText(MEETING_LIST_COPY.nextUp)).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeTruthy();
   });
 
   it("shows a meeting marked so as settled: No minutes, and no Write minutes", () => {
