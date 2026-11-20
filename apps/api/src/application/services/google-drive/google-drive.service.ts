@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -22,6 +23,10 @@ import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { normalizeManualCode } from '#domain/utils/check-in-token';
 import { ChapterDocumentService } from '../chapter-document.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
+import {
+  googleDrivePicker,
+  type GoogleDrivePicker,
+} from '../../../config/google-drive-config';
 
 /**
  * Folders read up the tree from the one being connected: Drive's own nesting
@@ -29,9 +34,32 @@ import { toReportableError } from '../../../infrastructure/observability/reporta
  */
 const MAX_ANCESTORS = 100;
 
+/** The one scope a picked folder's sign-in asks for (#5583). */
+const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+/**
+ * Google's reasons for refusing to share outside a Google Workspace (a
+ * school's or a company's): the folder's owner can't fix that, the admin can.
+ */
+const SHARE_OUT_BLOCKED = new Set([
+  'publishOutNotPermitted',
+  'shareOutNotPermitted',
+  'shareOutNotPermittedToUser',
+  'cannotShareTeamDriveWithNonGoogleAccounts',
+  'shareOutWarning',
+]);
+
+const RESHARE_MESSAGE =
+  'Couldn’t open that folder with your Google account. Pick it again.';
+
 export interface GoogleDriveStatus {
   available: boolean;
   service_account_email: string | null;
+  /**
+   * Google's folder picker for this server (#5583), or null when it isn't
+   * set up and the folder is connected by its link.
+   */
+  picker: { client_id: string; api_key: string; app_id: string } | null;
   connection: {
     folder_id: string;
     folder_name: string;
@@ -60,15 +88,28 @@ export class GoogleDriveService {
     private readonly documents: ChapterDocumentService,
   ) {}
 
+  /** Read per call, as the rest of the Google config is, so tests can set it. */
+  private picker(): GoogleDrivePicker | null {
+    return googleDrivePicker();
+  }
+
   async status(
     chapterId: string,
     now = new Date(),
   ): Promise<GoogleDriveStatus> {
     const available = this.drive.isConfigured();
     const live = await this.connections.findLive(chapterId);
+    const picker = available ? this.picker() : null;
     return {
       available,
       service_account_email: this.drive.serviceAccountEmail(),
+      picker: picker
+        ? {
+            client_id: picker.clientId,
+            api_key: picker.apiKey,
+            app_id: picker.appId,
+          }
+        : null,
       connection: live ? toStatus(live, now) : null,
     };
   }
@@ -107,6 +148,182 @@ export class GoogleDriveService {
     // before being asked to rename it (which that chapter would then see).
     await this.refuseIfTaken(chapterId, folder);
     await this.requireProof(chapterId, folder);
+    await this.save(chapterId, userId, folder, list);
+    return this.status(chapterId);
+  }
+
+  /**
+   * Connects the folder the officer picked in Google's own picker (#5583),
+   * with the access token their Google sign-in gave the picker. The token
+   * is used here, once, and never kept: Frapp reads Drive as its service
+   * account, so the folder is shared with it as a Viewer, as the officer.
+   *
+   * Picking is the proof the link flow's code was (#5185): Google shows the
+   * picker only the officer's own Drive, and Frapp refuses a folder they
+   * can't edit, as the code did. A folder already connected and now
+   * unshared (`no_access`) is shared again the same way, and syncs at once.
+   */
+  async connectPicked(
+    chapterId: string,
+    userId: string,
+    folderId: string,
+    accessToken: string,
+    whoCanSee: string[] | null = null,
+  ): Promise<GoogleDriveStatus> {
+    this.requireAvailable();
+    const picker = this.picker();
+    if (!picker) {
+      throw new ServiceUnavailableException(
+        'Picking a Google Drive folder isn’t available on this server yet.',
+      );
+    }
+    await this.requireOwnSignIn(accessToken, picker);
+    const existing = await this.connections.findAny(chapterId);
+    const reshare =
+      existing?.status === 'no_access' && existing.folder_id === folderId;
+    if (!reshare) await this.refuseIfConnected(chapterId);
+    const list = reshare
+      ? null
+      : ((await this.documents.checkedList(chapterId, userId, whoCanSee)) ??
+        null);
+    const folder = await this.asMember(() =>
+      this.drive.getItemAs(accessToken, folderId),
+    );
+    if (folder.mimeType !== GOOGLE_DRIVE_FOLDER_MIME) {
+      throw new BadRequestException(
+        'That’s a file, not a folder. Pick the folder that holds it.',
+      );
+    }
+    if (folder.trashed) {
+      throw new BadRequestException(
+        'That folder is in the trash in Google Drive. Restore it, then pick it again.',
+      );
+    }
+    if (folder.canEdit !== true) {
+      throw new ForbiddenException(
+        'Only someone who can edit the folder in Google Drive can connect it. Ask its owner to connect it, or to make you an editor.',
+      );
+    }
+    if (!reshare) await this.refuseIfTaken(chapterId, folder);
+    const permissionId = await this.shareIfUnseen(accessToken, folder.id);
+    if (reshare) {
+      await this.connections.markDue(chapterId, new Date());
+      return this.status(chapterId);
+    }
+    try {
+      await this.save(chapterId, userId, folder, list);
+    } catch (error) {
+      // Refused after sharing: take the share back, so a folder Frapp
+      // won't sync isn't left shared with it.
+      if (permissionId) {
+        await this.drive
+          .unshare(accessToken, folder.id, permissionId)
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+    return this.status(chapterId);
+  }
+
+  /**
+   * The token is from this server's own Google sign-in, with `drive.file`:
+   * not a token some other app was given for the same person.
+   */
+  private async requireOwnSignIn(
+    accessToken: string,
+    picker: GoogleDrivePicker,
+  ): Promise<void> {
+    let info: Awaited<ReturnType<IGoogleDriveApi['userTokenInfo']>>;
+    try {
+      info = await this.drive.userTokenInfo(accessToken);
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        'Couldn’t reach Google. Try again in a moment.',
+        { cause: toReportableError(error) },
+      );
+    }
+    if (
+      !info ||
+      info.clientId !== picker.clientId ||
+      !info.scopes.includes(DRIVE_FILE_SCOPE)
+    ) {
+      throw new BadRequestException(
+        'Your Google sign-in didn’t go through. Pick the folder again.',
+      );
+    }
+  }
+
+  /**
+   * Shares the folder with the service account, unless it already sees it
+   * (shared by hand before, or sitting in a folder that was): then nothing
+   * is added, and nothing is taken back if connecting fails. Returns the
+   * permission made, or null.
+   */
+  private async shareIfUnseen(
+    accessToken: string,
+    folderId: string,
+  ): Promise<string | null> {
+    const seen = await this.fromDrive(() => this.drive.getItem(folderId), {
+      unseen: null,
+    });
+    if (seen) return null;
+    try {
+      return await this.drive.shareWithServiceAccount(accessToken, folderId);
+    } catch (error) {
+      if (
+        error instanceof GoogleDriveApiError &&
+        error.kind === 'forbidden' &&
+        SHARE_OUT_BLOCKED.has(error.reason)
+      ) {
+        throw new ForbiddenException(
+          'Your Google account’s organization (a school or a company) doesn’t let its folders be shared outside it. Use a folder in a personal Google account, or ask its admin to allow sharing.',
+        );
+      }
+      if (
+        error instanceof GoogleDriveApiError &&
+        (error.kind === 'forbidden' || error.kind === 'not_found')
+      ) {
+        throw new ForbiddenException(
+          'Google didn’t let you share that folder. Ask its owner to connect it, or to let editors share it.',
+        );
+      }
+      throw new ServiceUnavailableException(
+        'Couldn’t reach Google Drive. Try again in a moment.',
+        { cause: toReportableError(error) },
+      );
+    }
+  }
+
+  /**
+   * One Drive call made as the officer. A folder their sign-in can't open
+   * (expired, or not the one they picked) asks them to pick it again.
+   */
+  private async asMember<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      if (
+        error instanceof GoogleDriveApiError &&
+        (error.kind === 'not_found' ||
+          error.kind === 'forbidden' ||
+          error.status === 401)
+      ) {
+        throw new BadRequestException(RESHARE_MESSAGE);
+      }
+      throw new ServiceUnavailableException(
+        'Couldn’t reach Google Drive. Try again in a moment.',
+        { cause: toReportableError(error) },
+      );
+    }
+  }
+
+  /** Records the connection; a race to the same folder answers 409. */
+  private async save(
+    chapterId: string,
+    userId: string,
+    folder: GoogleDriveItem,
+    list: string[] | null,
+  ): Promise<void> {
     try {
       await this.connections.create({
         chapter_id: chapterId,
@@ -124,7 +341,6 @@ export class GoogleDriveService {
       }
       throw error;
     }
-    return this.status(chapterId);
   }
 
   /**

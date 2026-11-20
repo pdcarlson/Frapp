@@ -6465,6 +6465,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive/picked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect the folder the officer picked in Google's picker: Frapp shares it with itself using their Google sign-in, once, then copies its files into Documents and keeps them in sync. Picking the connected folder again after it was unshared shares it again. */
+        post: operations["GoogleDriveController_connectPicked_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/google-drive/copies/{id}/open-up": {
         parameters: {
             query?: never;
@@ -12925,6 +12942,14 @@ export interface components {
             /** @description The `gcal_code` the sign-in returned with. */
             code: string;
         };
+        GoogleDrivePickerDto: {
+            /** @description The Web OAuth client the picker's Google sign-in uses (this environment's Google Calendar client) */
+            client_id: string;
+            /** @description The browser API key the picker loads with: public, restricted to the Picker API and the web app */
+            api_key: string;
+            /** @description The Google Cloud project's number, the picker's app id */
+            app_id: string;
+        };
         GoogleDriveConnectionDto: {
             folder_id: string;
             /** @description The folder's name in Drive */
@@ -12957,6 +12982,8 @@ export interface components {
             available: boolean;
             /** @description The address a chapter shares its folder with */
             service_account_email: string | null;
+            /** @description Google's folder picker, when this server offers it: the officer signs in with Google and picks the folder, and Frapp shares it with itself. Null, the folder is connected by its link. */
+            picker: components["schemas"]["GoogleDrivePickerDto"] | null;
             connection: components["schemas"]["GoogleDriveConnectionDto"] | null;
         };
         ConnectGoogleDriveDto: {
@@ -12966,6 +12993,17 @@ export interface components {
              */
             folder_link: string;
             /** @description Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
+        };
+        ConnectPickedGoogleDriveDto: {
+            /**
+             * @description The picked folder's Drive id
+             * @example 1AbCdEfGhIjKlMnOp
+             */
+            folder_id: string;
+            /** @description The access token the officer's Google sign-in gave the picker (drive.file). Used once to share the folder with Frapp, never stored. */
+            access_token: string;
+            /** @description Who sees what the folder brings in (#5220), as when connecting by link. Ignored when the folder is the one already connected, picked again to share it with Frapp again. */
             who_can_see?: string[] | null;
         };
         GoogleDriveLinkInfoDto: {
@@ -27805,6 +27843,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connectPicked_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectPickedGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
             };
             /** @description Error */
             default: {

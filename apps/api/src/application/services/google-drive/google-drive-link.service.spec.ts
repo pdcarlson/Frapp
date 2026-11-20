@@ -144,6 +144,10 @@ describe('GoogleDriveLinkService', () => {
       listChildren: jest.fn(),
       download: jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
       exportAs: jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4])),
+      userTokenInfo: jest.fn(),
+      getItemAs: jest.fn(),
+      shareWithServiceAccount: jest.fn(),
+      unshare: jest.fn(),
     };
     links = {
       create: jest.fn().mockResolvedValue(link()),

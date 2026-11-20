@@ -21511,6 +21511,53 @@
         ]
       }
     },
+    "/v1/google-drive/picked": {
+      "post": {
+        "operationId": "GoogleDriveController_connectPicked_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectPickedGoogleDriveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connect the folder the officer picked in Google's picker: Frapp shares it with itself using their Google sign-in, once, then copies its files into Documents and keeps them in sync. Picking the connected folder again after it was unshared shares it again.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/google-drive/copies/{id}/open-up": {
       "post": {
         "operationId": "GoogleDriveController_openUp_v1",
@@ -39548,6 +39595,28 @@
           "code"
         ]
       },
+      "GoogleDrivePickerDto": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "The Web OAuth client the picker's Google sign-in uses (this environment's Google Calendar client)"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "The browser API key the picker loads with: public, restricted to the Picker API and the web app"
+          },
+          "app_id": {
+            "type": "string",
+            "description": "The Google Cloud project's number, the picker's app id"
+          }
+        },
+        "required": [
+          "client_id",
+          "api_key",
+          "app_id"
+        ]
+      },
       "GoogleDriveConnectionDto": {
         "type": "object",
         "properties": {
@@ -39626,6 +39695,16 @@
             "nullable": true,
             "description": "The address a chapter shares its folder with"
           },
+          "picker": {
+            "nullable": true,
+            "description": "Google's folder picker, when this server offers it: the officer signs in with Google and picks the folder, and Frapp shares it with itself. Null, the folder is connected by its link.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoogleDrivePickerDto"
+              }
+            ]
+          },
           "connection": {
             "nullable": true,
             "type": "object",
@@ -39639,6 +39718,7 @@
         "required": [
           "available",
           "service_account_email",
+          "picker",
           "connection"
         ]
       },
@@ -39662,6 +39742,33 @@
         },
         "required": [
           "folder_link"
+        ]
+      },
+      "ConnectPickedGoogleDriveDto": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string",
+            "description": "The picked folder's Drive id",
+            "example": "1AbCdEfGhIjKlMnOp"
+          },
+          "access_token": {
+            "type": "string",
+            "description": "The access token the officer's Google sign-in gave the picker (drive.file). Used once to share the folder with Frapp, never stored."
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who sees what the folder brings in (#5220), as when connecting by link. Ignored when the folder is the one already connected, picked again to share it with Frapp again.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "folder_id",
+          "access_token"
         ]
       },
       "GoogleDriveLinkInfoDto": {

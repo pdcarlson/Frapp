@@ -125,6 +125,10 @@ describe('GoogleDriveSyncService', () => {
       listChildren: jest.fn((id: string) => Promise.resolve(tree[id] ?? [])),
       download: jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
       exportAs: jest.fn().mockResolvedValue(new Uint8Array([4, 5])),
+      userTokenInfo: jest.fn(),
+      getItemAs: jest.fn(),
+      shareWithServiceAccount: jest.fn(),
+      unshare: jest.fn(),
     };
     connections = {
       findLive: jest.fn(),

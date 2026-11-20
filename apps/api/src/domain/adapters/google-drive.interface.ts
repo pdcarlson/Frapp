@@ -36,6 +36,11 @@ export interface GoogleDriveItem {
    * doesn't say.
    */
   permissionIds?: string[];
+  /**
+   * Whether whoever read it may edit it. Only `getItemAs` asks: what the
+   * service account reads is never its to edit.
+   */
+  canEdit?: boolean;
   /** In the owner's trash. Only `getItem` asks; a listing leaves trash out. */
   trashed?: boolean;
   /**
@@ -112,4 +117,22 @@ export interface IGoogleDriveApi {
     maxBytes: number,
     resourceKey?: string | null,
   ): Promise<Uint8Array>;
+
+  /**
+   * What an access token from a member's own Google sign-in is for: the
+   * OAuth client it was issued to and its scopes, from Google's tokeninfo.
+   * Null when Google says it is not a live token.
+   */
+  userTokenInfo(
+    accessToken: string,
+  ): Promise<{ clientId: string; scopes: string[] } | null>;
+  /** One item read as the member whose token this is, with `canEdit`. */
+  getItemAs(accessToken: string, id: string): Promise<GoogleDriveItem>;
+  /**
+   * Shares an item with the service account as a Viewer, as the member whose
+   * token this is, without Google's email. Returns the permission's id.
+   */
+  shareWithServiceAccount(accessToken: string, id: string): Promise<string>;
+  /** Takes back a permission `shareWithServiceAccount` made. */
+  unshare(accessToken: string, id: string, permissionId: string): Promise<void>;
 }

@@ -98,6 +98,40 @@ export function useConnectGoogleDrive() {
   });
 }
 
+/**
+ * Connect the folder the officer picked in Google's picker (#5583), with the
+ * access token their Google sign-in gave it: Frapp shares the folder with
+ * itself, once. Picking the connected folder again after it was unshared
+ * shares it again. Refused with a reason to show.
+ */
+export function useConnectPickedGoogleDrive() {
+  const client = useFrappClient();
+  const write = useStatusWriter();
+  return useMutation({
+    mutationKey: ["google-drive", "connect-picked"],
+    mutationFn: async ({
+      folderId,
+      accessToken,
+      whoCanSee,
+    }: {
+      folderId: string;
+      accessToken: string;
+      whoCanSee: string[] | null;
+    }): Promise<GoogleDriveStatus> => {
+      const result = await client.POST("/v1/google-drive/picked", {
+        body: {
+          folder_id: folderId,
+          access_token: accessToken,
+          ...(whoCanSee !== null ? { who_can_see: whoCanSee } : {}),
+        },
+      });
+      throwUnlessOk(result);
+      return result.data!;
+    },
+    onSuccess: write,
+  });
+}
+
 /** Sync the connected folder now. */
 export function useSyncGoogleDrive() {
   const client = useFrappClient();
@@ -131,6 +165,7 @@ export function useDisconnectGoogleDrive() {
         (current) => ({
           available: current?.available ?? true,
           service_account_email: current?.service_account_email ?? null,
+          picker: current?.picker ?? null,
           connection: null,
         }),
       );

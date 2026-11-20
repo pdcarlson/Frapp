@@ -1,9 +1,23 @@
 "use client";
 
-import { useId, useLayoutEffect, useState, type RefObject } from "react";
-import { Copy, ExternalLink, FolderSync, Loader2 } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useState,
+  type RefObject,
+} from "react";
+import {
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Folder,
+  FolderSync,
+  Loader2,
+} from "lucide-react";
 import {
   useConnectGoogleDrive,
+  useConnectPickedGoogleDrive,
   useDisconnectGoogleDrive,
   useGoogleDriveStatus,
   useOpenUpDriveCopy,
@@ -38,6 +52,13 @@ import type {
 } from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import {
+  DrivePickerError,
+  pickDriveFolder,
+  preloadDrivePicker,
+  type DrivePickerConfig,
+  type PickedFolder,
+} from "@/lib/google-drive-picker";
 
 /**
  * Connect the chapter's Google Drive folder to Documents, and see and manage
@@ -45,8 +66,11 @@ import { getErrorMessage } from "@/lib/utils";
  * folder). For officers with Manage documents; hidden while this server has
  * no service account and nothing is connected.
  *
- * Comparable: Notion's and Slack's Google Drive connections, which also ask
- * for the folder and then show its last sync with a Sync now control.
+ * Comparable: Notion's, Slack's and Dropbox Sign's Google Drive connections:
+ * sign in with Google, pick the folder in Google's own picker, then see its
+ * last sync with a Sync now control. Where this server offers the picker
+ * (#5583) that is the way in; otherwise the folder is shared by hand and
+ * connected by its link.
  */
 /**
  * Whether the Drive panel, and the Upload menu's item that opens it, show:
@@ -123,6 +147,13 @@ export function DriveFolderPanel({
               gate={gate}
               held={heldCopies(documents, folders)}
               onClose={() => dialog.setOpen(false)}
+            />
+          ) : data.picker ? (
+            <PickerConnectView
+              picker={data.picker}
+              gate={gate}
+              open={dialog.open}
+              onCancel={() => dialog.setOpen(false)}
             />
           ) : (
             <ConnectView
@@ -291,6 +322,253 @@ function ConnectView({
   );
 }
 
+/**
+ * Signs the officer in with Google and opens the picker; the error, worded
+ * for them, or null when they closed it. Shared by connecting and by sharing
+ * an unshared folder again.
+ */
+function usePickFolder(picker: DrivePickerConfig, active: boolean) {
+  const [picking, setPicking] = useState(false);
+  // Loaded as the panel opens, so the sign-in window opens straight from the
+  // press: browsers block a popup opened long after it.
+  useEffect(() => {
+    if (active) void preloadDrivePicker().catch(() => undefined);
+  }, [active]);
+  async function pick(): Promise<
+    { folder: PickedFolder } | { error: string } | null
+  > {
+    if (picking) return null;
+    setPicking(true);
+    try {
+      const folder = await pickDriveFolder(picker);
+      return folder ? { folder } : null;
+    } catch (caught) {
+      return {
+        error:
+          caught instanceof DrivePickerError
+            ? caught.message
+            : "Couldn't open Google's folder picker. Try again.",
+      };
+    } finally {
+      setPicking(false);
+    }
+  }
+  return { pick, picking };
+}
+
+/**
+ * Connect by picking (#5583): the officer signs in with Google and picks the
+ * folder in Google's own picker, and Frapp shares it with itself using that
+ * sign-in. No address to copy, no link to paste, no code to add.
+ */
+function PickerConnectView({
+  picker,
+  gate,
+  open,
+  onCancel,
+}: {
+  picker: DrivePickerConfig;
+  gate: SubscriptionGate;
+  open: boolean;
+  onCancel: () => void;
+}) {
+  const connect = useConnectPickedGoogleDrive();
+  const access = useDocumentAccessChoices(open);
+  const { toast } = useToast();
+  const { pick, picking } = usePickFolder(picker, open);
+  const [folder, setFolder] = useState<PickedFolder | null>(null);
+  const [whoCanSee, setWhoCanSee] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const accessId = useId();
+  const errorId = useId();
+  const hideAccess = access.optionsState === "ready" && !access.canLimit;
+  const accessReady = access.optionsState === "ready";
+  const blocked =
+    !folder ||
+    connect.isPending ||
+    !accessReady ||
+    isEmptyChannelAccessChoice(whoCanSee);
+
+  async function choose() {
+    setError(null);
+    const result = await pick();
+    if (!result) return;
+    if ("error" in result) setError(result.error);
+    else setFolder(result.folder);
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (blocked || !folder) return;
+    setError(null);
+    try {
+      await connect.mutateAsync({
+        folderId: folder.id,
+        accessToken: folder.accessToken,
+        whoCanSee,
+      });
+      toast({
+        title: `${folder.name || "Google Drive"} connected`,
+        description: "Its files show up in Documents in a minute or two.",
+      });
+    } catch (caught) {
+      // The API words each refusal for the officer: a folder they can only
+      // view, a school account that blocks sharing out, a folder another
+      // chapter has, or a sign-in that expired (pick again).
+      setError(
+        getErrorMessage(caught, "Couldn't connect. Try again.", {
+          serverWritesForMembers: true,
+        }),
+      );
+    }
+  }
+
+  return (
+    <form className="contents" onSubmit={(event) => void submit(event)}>
+      <PanelHeader>Connect Google Drive</PanelHeader>
+      <PanelBody className="space-y-6">
+        <p className="text-body text-muted-foreground">
+          Every file in the folder shows up in Documents and stays in sync with
+          Drive. Google Docs and Slides come in as PDFs, and Sheets as Excel
+          files.
+        </p>
+        <div className="space-y-2">
+          <p className="text-body font-medium">Folder</p>
+          <button
+            type="button"
+            onClick={() => void choose()}
+            disabled={picking || connect.isPending}
+            aria-busy={picking}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+            className="flex w-full min-w-0 items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-left text-body transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          >
+            <Folder
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span
+              className={
+                folder
+                  ? "min-w-0 flex-1 truncate"
+                  : "min-w-0 flex-1 truncate text-muted-foreground"
+              }
+            >
+              {folder
+                ? folder.name || "Untitled folder"
+                : "Choose a folder in Google Drive"}
+            </span>
+            {picking ? (
+              <Loader2
+                className="h-4 w-4 shrink-0 animate-spin text-muted-foreground"
+                aria-hidden="true"
+              />
+            ) : (
+              <ChevronRight
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+          </button>
+          {error ? (
+            <p
+              id={errorId}
+              role="alert"
+              className="text-caption text-destructive"
+            >
+              {error}
+            </p>
+          ) : null}
+        </div>
+        {/*
+          Left out only once the choices have loaded and say this member may
+          not set a list (outside every tier), as on the link flow.
+        */}
+        {!hideAccess ? (
+          <div className="space-y-2">
+            <p className="text-body font-medium">Who sees it</p>
+            <ChannelAccessField
+              id={accessId}
+              question="see"
+              value={whoCanSee}
+              onChange={setWhoCanSee}
+              options={access.options}
+              optionsState={access.optionsState}
+              locked={access.locked}
+              alwaysLine={FOLDER_ALWAYS_LINE}
+              canChoose={access.canLimit}
+              disabled={connect.isPending}
+            />
+          </div>
+        ) : null}
+      </PanelBody>
+      <PanelFooter>
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={blocked || !gate.allowed}
+          aria-busy={connect.isPending}
+        >
+          {connect.isPending ? "Connecting…" : "Connect"}
+        </Button>
+      </PanelFooter>
+    </form>
+  );
+}
+
+/**
+ * The connected folder was unshared (`no_access`): picking it again shares
+ * it with Frapp again and syncs it at once (#5583).
+ */
+function ShareAgainButton({ picker }: { picker: DrivePickerConfig }) {
+  const connect = useConnectPickedGoogleDrive();
+  const { pick, picking } = usePickFolder(picker, true);
+  const { toast } = useToast();
+  async function shareAgain() {
+    const result = await pick();
+    if (!result) return;
+    if ("error" in result) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't open Google Drive",
+        description: result.error,
+      });
+      return;
+    }
+    try {
+      await connect.mutateAsync({
+        folderId: result.folder.id,
+        accessToken: result.folder.accessToken,
+        whoCanSee: null,
+      });
+      toast({ title: "Syncing again" });
+    } catch (caught) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't share it again",
+        description: getErrorMessage(caught, "Try again in a moment.", {
+          serverWritesForMembers: true,
+        }),
+      });
+    }
+  }
+  const busy = picking || connect.isPending;
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      onClick={() => void shareAgain()}
+      disabled={busy}
+      aria-busy={busy}
+    >
+      Pick it again
+    </Button>
+  );
+}
+
 function CopyAddress({ email }: { email: string }) {
   const { toast } = useToast();
   async function copy() {
@@ -404,9 +682,11 @@ function ConnectedView({
             </p>
             <p className="text-caption text-muted-foreground">
               It was unshared or deleted. Its files stay in Documents as they
-              were. Share it with Frapp again to keep syncing, or disconnect it.
+              were.
             </p>
-            {status.service_account_email ? (
+            {status.picker ? (
+              <ShareAgainButton picker={status.picker} />
+            ) : status.service_account_email ? (
               <CopyAddress email={status.service_account_email} />
             ) : null}
           </div>
