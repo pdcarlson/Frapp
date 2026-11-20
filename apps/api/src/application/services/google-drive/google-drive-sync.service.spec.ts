@@ -139,6 +139,7 @@ describe('GoogleDriveSyncService', () => {
         .mockResolvedValue(new Set()),
       create: jest.fn(),
       markDue: jest.fn(),
+      restoreAccess: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn(),
       claim: jest.fn(),
       finishSync: jest.fn().mockResolvedValue(undefined),

@@ -42,10 +42,10 @@ const connection = (
   created_at: createdAt,
 });
 
-const seed = () => ({
+const seed = (live = 'active') => ({
   chapter_drive_connections: [
-    inA(connection(CONN_A, 'active', 'folder-a')),
-    inB(connection(CONN_B, 'active', 'folder-b', '2026-11-16T01:00:00.000Z')),
+    inA(connection(CONN_A, live, 'folder-a')),
+    inB(connection(CONN_B, live, 'folder-b', '2026-11-16T01:00:00.000Z')),
     inA(connection(CONN_A_OLD, 'disconnecting', 'folder-old-a')),
     inB(connection(CONN_B_OLD, 'disconnecting', 'folder-old-b')),
   ],
@@ -69,9 +69,9 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
   const row = (id: string) =>
     harness.rows('chapter_drive_connections').find((r) => r.id === id);
 
-  beforeEach(() => {
+  const start = (tables = seed()) => {
     harness = createTenantHarness({
-      tables: seed(),
+      tables,
       // Two chapters may share one Drive folder with Frapp.
       collisionExempt: {
         chapter_drive_connections: ['folder_id', 'created_at'],
@@ -79,7 +79,9 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
       },
     });
     repo = new SupabaseChapterDriveRepository(harness.client);
-  });
+  };
+
+  beforeEach(() => start());
 
   it('findLive reads the chapter’s live connection only', async () => {
     const found = await harness.expectTenantScoped(CHAPTER_A, () =>
@@ -114,6 +116,25 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
     expect(done).toBe(true);
     expect(row(CONN_B)?.status).toBe('disconnecting');
     expect(row(CONN_A)?.status).toBe('active');
+  });
+
+  // #5583: picking an unshared folder again brings it back at once.
+  it('restoreAccess turns only the caller chapter’s no_access connection active and due', async () => {
+    const now = new Date('2026-11-16T01:00:00.000Z');
+    await expect(repo.restoreAccess(CHAPTER_A, now)).resolves.toBe(false);
+    expect(row(CONN_A)?.status).toBe('active');
+
+    start(seed('no_access'));
+    const done = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.restoreAccess(CHAPTER_A, now),
+    );
+    expect(done).toBe(true);
+    expect(row(CONN_A)).toMatchObject({
+      status: 'active',
+      last_error: null,
+      sync_due_at: now.toISOString(),
+    });
+    expect(row(CONN_B)?.status).toBe('no_access');
   });
 
   // #5185: answers only whether a folder is taken elsewhere, never rows.

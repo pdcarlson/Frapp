@@ -54,6 +54,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import {
   DrivePickerError,
+  forgetDrivePickerSignIn,
   pickDriveFolder,
   preloadDrivePicker,
   type DrivePickerConfig,
@@ -109,6 +110,9 @@ export function DriveFolderPanel({
 }) {
   const status = useGoogleDriveStatus();
   const dialog = useGatedDialog(gate);
+  // The link flow stays one press away while the picker is new (#5583): an
+  // officer whose network blocks Google's scripts can still connect.
+  const [byLink, setByLink] = useState(false);
   useLayoutEffect(() => {
     if (openerRef) openerRef.current = () => dialog.setOpen(true);
   });
@@ -148,12 +152,13 @@ export function DriveFolderPanel({
               held={heldCopies(documents, folders)}
               onClose={() => dialog.setOpen(false)}
             />
-          ) : data.picker ? (
+          ) : data.picker && !byLink ? (
             <PickerConnectView
               picker={data.picker}
               gate={gate}
               open={dialog.open}
               onCancel={() => dialog.setOpen(false)}
+              onUseLink={() => setByLink(true)}
             />
           ) : (
             <ConnectView
@@ -366,11 +371,13 @@ function PickerConnectView({
   gate,
   open,
   onCancel,
+  onUseLink,
 }: {
   picker: DrivePickerConfig;
   gate: SubscriptionGate;
   open: boolean;
   onCancel: () => void;
+  onUseLink: () => void;
 }) {
   const connect = useConnectPickedGoogleDrive();
   const access = useDocumentAccessChoices(open);
@@ -414,7 +421,10 @@ function PickerConnectView({
     } catch (caught) {
       // The API words each refusal for the officer: a folder they can only
       // view, a school account that blocks sharing out, a folder another
-      // chapter has, or a sign-in that expired (pick again).
+      // chapter has, or a sign-in that expired (pick again). The next pick
+      // asks Google afresh, with the account chooser, from no folder.
+      forgetDrivePickerSignIn();
+      setFolder(null);
       setError(
         getErrorMessage(caught, "Couldn't connect. Try again.", {
           serverWritesForMembers: true,
@@ -501,6 +511,13 @@ function PickerConnectView({
             />
           </div>
         ) : null}
+        <button
+          type="button"
+          onClick={onUseLink}
+          className="text-caption text-muted-foreground underline-offset-4 hover:underline"
+        >
+          Use a folder link instead
+        </button>
       </PanelBody>
       <PanelFooter>
         <Button type="button" variant="secondary" onClick={onCancel}>
@@ -545,6 +562,7 @@ function ShareAgainButton({ picker }: { picker: DrivePickerConfig }) {
       });
       toast({ title: "Syncing again" });
     } catch (caught) {
+      forgetDrivePickerSignIn();
       toast({
         variant: "destructive",
         title: "Couldn't share it again",
@@ -683,6 +701,9 @@ function ConnectedView({
             <p className="text-caption text-muted-foreground">
               It was unshared or deleted. Its files stay in Documents as they
               were.
+              {status.picker
+                ? null
+                : " Share it with Frapp again to keep syncing, or disconnect it."}
             </p>
             {status.picker ? (
               <ShareAgainButton picker={status.picker} />

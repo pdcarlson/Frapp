@@ -150,6 +150,32 @@ describe('GoogleDriveApiClient', () => {
       });
     });
 
+    it('takes a share back with a DELETE as the member', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+      await client.unshare('member-token', 'f', 'perm-9');
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toBe(
+        'https://www.googleapis.com/drive/v3/files/f/permissions/perm-9?supportsAllDrives=true',
+      );
+      expect(init.method).toBe('DELETE');
+      expect(init.headers.Authorization).toBe('Bearer member-token');
+    });
+
+    it('reports a share Google wouldn’t take back', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(
+        json(403, {
+          error: { errors: [{ reason: 'insufficientFilePermissions' }] },
+        }),
+      );
+      await expect(
+        client.unshare('member-token', 'f', 'perm-9'),
+      ).rejects.toMatchObject({ kind: 'forbidden' });
+    });
+
     it('carries Google’s reason when sharing is refused', async () => {
       const client = new GoogleDriveApiClient(ACCOUNT);
       fetchMock.mockResolvedValueOnce(

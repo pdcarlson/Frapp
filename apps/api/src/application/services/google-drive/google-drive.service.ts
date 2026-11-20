@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -81,6 +82,8 @@ export interface GoogleDriveStatus {
  */
 @Injectable()
 export class GoogleDriveService {
+  private readonly logger = new Logger(GoogleDriveService.name);
+
   constructor(
     @Inject(GOOGLE_DRIVE_API) private readonly drive: IGoogleDriveApi,
     @Inject(CHAPTER_DRIVE_REPOSITORY)
@@ -170,7 +173,7 @@ export class GoogleDriveService {
     accessToken: string,
     whoCanSee: string[] | null = null,
   ): Promise<GoogleDriveStatus> {
-    this.requireAvailable();
+    const email = this.requireAvailable();
     const picker = this.picker();
     if (!picker) {
       throw new ServiceUnavailableException(
@@ -181,13 +184,14 @@ export class GoogleDriveService {
     const existing = await this.connections.findAny(chapterId);
     const reshare =
       existing?.status === 'no_access' && existing.folder_id === folderId;
-    if (!reshare) await this.refuseIfConnected(chapterId);
+    if (!reshare) refuseIfConnected(existing);
     const list = reshare
       ? null
       : ((await this.documents.checkedList(chapterId, userId, whoCanSee)) ??
         null);
-    const folder = await this.asMember(() =>
-      this.drive.getItemAs(accessToken, folderId),
+    const folder = await this.fromDrive(
+      () => this.drive.getItemAs(accessToken, folderId),
+      { unseen: RESHARE_MESSAGE, asMember: true },
     );
     if (folder.mimeType !== GOOGLE_DRIVE_FOLDER_MIME) {
       throw new BadRequestException(
@@ -201,24 +205,39 @@ export class GoogleDriveService {
     }
     if (folder.canEdit !== true) {
       throw new ForbiddenException(
-        'Only someone who can edit the folder in Google Drive can connect it. Ask its owner to connect it, or to make you an editor.',
+        `Only someone who can edit the folder in Google Drive can connect it. Ask its owner to connect it, or to share it with ${email} as a Viewer.`,
       );
     }
     if (!reshare) await this.refuseIfTaken(chapterId, folder);
-    const permissionId = await this.shareIfUnseen(accessToken, folder.id);
+    const permissionId = await this.shareIfUnseen(
+      accessToken,
+      folder.id,
+      email,
+    );
     if (reshare) {
-      await this.connections.markDue(chapterId, new Date());
+      // Active again and due now, so the panel shows it syncing at once; a
+      // pass that still can't see it turns it back.
+      await this.connections.restoreAccess(chapterId, new Date());
       return this.status(chapterId);
     }
     try {
       await this.save(chapterId, userId, folder, list);
     } catch (error) {
-      // Refused after sharing: take the share back, so a folder Frapp
-      // won't sync isn't left shared with it.
-      if (permissionId) {
+      // Refused after sharing: take the share back, so a folder Frapp won't
+      // sync isn't left shared with it. Not on a unique violation: then
+      // another request connected this folder at the same moment, and Drive
+      // gives one permission id per person, so it would be that request's
+      // share taken back.
+      if (permissionId && !isUniqueViolationOrConflict(error)) {
         await this.drive
           .unshare(accessToken, folder.id, permissionId)
-          .catch(() => undefined);
+          .catch((unshareError: unknown) => {
+            this.logger.warn(
+              `Couldn't take back a Drive share after a refused connect: ${
+                unshareError instanceof Error ? unshareError.message : 'unknown'
+              }`,
+            );
+          });
       }
       throw error;
     }
@@ -262,6 +281,7 @@ export class GoogleDriveService {
   private async shareIfUnseen(
     accessToken: string,
     folderId: string,
+    email: string,
   ): Promise<string | null> {
     const seen = await this.fromDrive(() => this.drive.getItem(folderId), {
       unseen: null,
@@ -279,36 +299,21 @@ export class GoogleDriveService {
           'Your Google account’s organization (a school or a company) doesn’t let its folders be shared outside it. Use a folder in a personal Google account, or ask its admin to allow sharing.',
         );
       }
+      if (error instanceof GoogleDriveApiError && error.status === 401) {
+        throw new BadRequestException(RESHARE_MESSAGE);
+      }
+      // A 400 here is Google refusing this share (a sharing setting on the
+      // folder or its drive), not an outage: retrying won't change it.
       if (
         error instanceof GoogleDriveApiError &&
-        (error.kind === 'forbidden' || error.kind === 'not_found')
+        (error.kind === 'forbidden' ||
+          error.kind === 'not_found' ||
+          error.status === 400)
       ) {
         throw new ForbiddenException(
-          'Google didn’t let you share that folder. Ask its owner to connect it, or to let editors share it.',
+          `Google didn’t let you share that folder. Ask its owner to connect it, or to share it with ${email} as a Viewer.`,
+          { cause: toReportableError(error) },
         );
-      }
-      throw new ServiceUnavailableException(
-        'Couldn’t reach Google Drive. Try again in a moment.',
-        { cause: toReportableError(error) },
-      );
-    }
-  }
-
-  /**
-   * One Drive call made as the officer. A folder their sign-in can't open
-   * (expired, or not the one they picked) asks them to pick it again.
-   */
-  private async asMember<T>(call: () => Promise<T>): Promise<T> {
-    try {
-      return await call();
-    } catch (error) {
-      if (
-        error instanceof GoogleDriveApiError &&
-        (error.kind === 'not_found' ||
-          error.kind === 'forbidden' ||
-          error.status === 401)
-      ) {
-        throw new BadRequestException(RESHARE_MESSAGE);
       }
       throw new ServiceUnavailableException(
         'Couldn’t reach Google Drive. Try again in a moment.',
@@ -406,7 +411,7 @@ export class GoogleDriveService {
    */
   private async fromDrive<T>(
     call: () => Promise<T>,
-    options: { unseen: string },
+    options: { unseen: string; asMember?: boolean },
   ): Promise<T>;
   private async fromDrive<T>(
     call: () => Promise<T>,
@@ -414,14 +419,19 @@ export class GoogleDriveService {
   ): Promise<T | null>;
   private async fromDrive<T>(
     call: () => Promise<T>,
-    options: { unseen: string | null },
+    options: { unseen: string | null; asMember?: boolean },
   ): Promise<T | null> {
     try {
       return await call();
     } catch (error) {
       if (
         error instanceof GoogleDriveApiError &&
-        (error.kind === 'not_found' || error.kind === 'forbidden')
+        (error.kind === 'not_found' ||
+          error.kind === 'forbidden' ||
+          // Made with the officer's own sign-in (`asMember`): a 401 is that
+          // sign-in expiring or revoked, which picking again fixes. As the
+          // service account it is a setup fault, for the logs.
+          (options.asMember === true && error.status === 401))
       ) {
         if (options.unseen === null) return null;
         throw new BadRequestException(options.unseen);
@@ -438,13 +448,7 @@ export class GoogleDriveService {
 
   /** One folder per chapter, and none while the last one is still leaving. */
   private async refuseIfConnected(chapterId: string): Promise<void> {
-    const existing = await this.connections.findAny(chapterId);
-    if (!existing) return;
-    throw new ConflictException(
-      existing.status === 'disconnecting'
-        ? 'The last folder is still leaving Documents. Try again in a minute.'
-        : 'A Drive folder is already connected. Disconnect it first.',
-    );
+    refuseIfConnected(await this.connections.findAny(chapterId));
   }
 
   /** Brings the next sync forward to the worker's next pass. */
@@ -477,6 +481,24 @@ export class GoogleDriveService {
     }
     return email;
   }
+}
+
+/** Refuses while `existing` (the chapter's connection, if any) stands. */
+function refuseIfConnected(existing: ChapterDriveConnection | null): void {
+  if (!existing) return;
+  throw new ConflictException(
+    existing.status === 'disconnecting'
+      ? 'The last folder is still leaving Documents. Try again in a minute.'
+      : 'A Drive folder is already connected. Disconnect it first.',
+  );
+}
+
+/**
+ * Whether connecting lost a race for the folder: the unique index itself,
+ * or the 409 `save` answers it with.
+ */
+function isUniqueViolationOrConflict(error: unknown): boolean {
+  return isUniqueViolation(error) || error instanceof ConflictException;
 }
 
 function toStatus(

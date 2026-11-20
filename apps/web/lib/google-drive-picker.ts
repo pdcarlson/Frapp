@@ -15,6 +15,10 @@ const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 /** A token is asked for again this long before Google says it expires. */
 const TOKEN_MARGIN_MS = 60_000;
+/** How long the picker module may take to load before it counts as failed. */
+const LOAD_TIMEOUT_MS = 15_000;
+const LOAD_FAILED =
+  "Couldn't load Google's folder picker. Check your connection and try again.";
 
 export interface DrivePickerConfig {
   client_id: string;
@@ -83,12 +87,24 @@ interface GooglePicker {
 }
 interface GoogleGlobals {
   google?: { accounts?: GoogleAccounts; picker?: GooglePicker };
-  gapi?: { load(name: string, callback: () => void): void };
+  gapi?: {
+    load(
+      name: string,
+      config: {
+        callback: () => void;
+        onerror: () => void;
+        timeout: number;
+        ontimeout: () => void;
+      },
+    ): void;
+  };
 }
 
 const scripts = new Map<string, Promise<void>>();
 let ready: Promise<void> | null = null;
 let token: { value: string; clientId: string; expiresAt: number } | null = null;
+/** Set once a sign-in was refused, so the next one offers the account chooser. */
+let chooseAccount = false;
 
 function globals(): GoogleGlobals {
   return window as unknown as GoogleGlobals;
@@ -105,11 +121,7 @@ function loadScript(src: string): Promise<void> {
     script.onerror = () => {
       scripts.delete(src);
       script.remove();
-      reject(
-        new DrivePickerError(
-          "Couldn't load Google's folder picker. Check your connection and try again.",
-        ),
-      );
+      reject(new DrivePickerError(LOAD_FAILED));
     };
     document.head.appendChild(script);
   });
@@ -127,8 +139,14 @@ export function preloadDrivePicker(): Promise<void> {
     ready = Promise.all([loadScript(GSI_SRC), loadScript(GAPI_SRC)])
       .then(
         () =>
-          new Promise<void>((resolve) => {
-            globals().gapi!.load("picker", () => resolve());
+          new Promise<void>((resolve, reject) => {
+            const fail = () => reject(new DrivePickerError(LOAD_FAILED));
+            globals().gapi!.load("picker", {
+              callback: () => resolve(),
+              onerror: fail,
+              timeout: LOAD_TIMEOUT_MS,
+              ontimeout: fail,
+            });
           }),
       )
       .catch((error: unknown) => {
@@ -193,13 +211,20 @@ function signIn(clientId: string): Promise<string | null> {
           );
       },
     });
-    client.requestAccessToken({ prompt: "" });
+    client.requestAccessToken({
+      prompt: chooseAccount ? "select_account" : "",
+    });
   });
 }
 
-/** Forgets the sign-in, so the next pick asks Google again. */
+/**
+ * Forgets the sign-in, so the next pick asks Google again and offers the
+ * account chooser. Called when Frapp refuses a pick: the sign-in may have
+ * expired or been revoked, or be the wrong Google account.
+ */
 export function forgetDrivePickerSignIn(): void {
   token = null;
+  chooseAccount = true;
 }
 
 /**

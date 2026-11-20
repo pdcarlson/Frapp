@@ -48,6 +48,12 @@ export interface IChapterDriveRepository {
   ): Promise<Set<string>>;
   /** Makes the chapter's live connection due now. False when there is none. */
   markDue(chapterId: string, now: Date): Promise<boolean>;
+  /**
+   * Turns the chapter's `no_access` connection back `active` and due now,
+   * once the officer shared the folder with Frapp again (#5583). False when
+   * it isn't `no_access`.
+   */
+  restoreAccess(chapterId: string, now: Date): Promise<boolean>;
   /** Turns the chapter's live connection `disconnecting`. False when none. */
   disconnect(chapterId: string, now: Date): Promise<boolean>;
   /** Leases due and disconnecting connections to this worker. */

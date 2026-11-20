@@ -452,6 +452,54 @@ describe("DriveFolderPanel", () => {
       );
     });
 
+    it("keeps the link flow one press away", async () => {
+      status = pickerStatus();
+      const user = userEvent.setup();
+      render(<DriveFolderPanel gate={gate} />);
+      await user.click(
+        screen.getByRole("button", { name: "Connect Google Drive" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Use a folder link instead" }),
+      );
+      expect(
+        screen.getByLabelText("2. Paste the folder's link"),
+      ).toBeInTheDocument();
+      expect(screen.getByText(EMAIL)).toBeInTheDocument();
+    });
+
+    it("drops the picked folder after a refusal, so the next pick starts fresh", async () => {
+      status = pickerStatus();
+      pickDriveFolder.mockResolvedValue({
+        id: "folder-9",
+        name: "Chapter Drive",
+        accessToken: "member-token",
+      });
+      connectPicked.mockRejectedValue({
+        statusCode: 400,
+        message:
+          "Your Google sign-in didn’t go through. Pick the folder again.",
+      });
+      const user = userEvent.setup();
+      render(<DriveFolderPanel gate={gate} />);
+      await user.click(
+        screen.getByRole("button", { name: "Connect Google Drive" }),
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: "Choose a folder in Google Drive",
+        }),
+      );
+      await user.click(screen.getByRole("button", { name: "Connect" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /Pick the folder again/,
+      );
+      expect(
+        screen.getByRole("button", { name: /Choose a folder in Google Drive/ }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+    });
+
     it("offers to pick an unshared folder again instead of an address", async () => {
       status = { ...connected({ status: "no_access" }), picker: PICKER };
       pickDriveFolder.mockResolvedValue({

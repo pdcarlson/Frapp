@@ -453,8 +453,10 @@ connect a chapter's Drive folder and Frapp copies its files into Documents and
 keeps them matching it
 ([`chapter-docs.md` § Google Drive folder](../../../spec/behavior/chapter-docs.md#google-drive-folder),
 #5157). Frapp reads only what a chapter shares with its Drive account, or
-what anyone with the link can open, so there is no consent screen, no scope
-review and nothing on the Google sign-in client. Owner-only.
+what anyone with the link can open. Reading needs no consent screen, no scope
+review and nothing on a Google sign-in client; only step 4's folder picker,
+which shares the folder for the officer, uses one (the Calendar client and the
+non-sensitive `drive.file` scope). Owner-only.
 
 **No key file (2026-11-17, #5434).** The frapp.live organization blocks
 service account key files (#5323), so the API signs in to Drive the way it
@@ -526,6 +528,7 @@ Drive folder with that address as a Viewer and connect it by its link.
 | Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | The Google Drive API is off in the project: step 1 |
 | Choosing a folder says the browser blocked Google's sign-in window | Pop-ups are blocked for the web app; allow them |
 | Google's picker says "The API developer key is invalid" | `GOOGLE_PICKER_API_KEY` is restricted to the wrong addresses or APIs, or is another project's key |
+| `GET /v1/google-drive` answers `"picker": null` though `GOOGLE_PICKER_API_KEY` is set | `available` is false too (no Drive account yet: steps 1 and 2), `GOOGLE_CALENDAR_CLIENT_ID` is unset or isn't a Google client id (`<project number>-<id>.apps.googleusercontent.com`), or the deploy pinned the secrets before the sync (step 3) |
 | Google's sign-in shows `redirect_uri_mismatch` or `origin_mismatch` | The web app's address is missing from the Calendar client's Authorized JavaScript origins (§ 7B step 3) |
 | Connecting a picked folder says your organization doesn't let its folders be shared outside it | The officer's school or company Workspace blocks sharing outside it; a personal Google account's folder, or the admin, fixes it |
 | Connecting says Frapp can't see the folder, though it is shared | It was shared with the other environment's `frapp-docs`, or with a person instead of the address |

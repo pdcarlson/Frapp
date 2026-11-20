@@ -79,6 +79,7 @@ describe('GoogleDriveService', () => {
         .mockResolvedValue(new Set()),
       create: jest.fn().mockResolvedValue(live()),
       markDue: jest.fn().mockResolvedValue(true),
+      restoreAccess: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(true),
       claim: jest.fn(),
       finishSync: jest.fn(),
@@ -397,9 +398,10 @@ describe('GoogleDriveService', () => {
 
     it('refuses a folder the officer can only view, a file, or one in the trash', async () => {
       drive.getItemAs.mockResolvedValueOnce(picked({ canEdit: false }));
+      // Names the address, for an owner who isn't in Frapp to share it by hand.
       await expect(
         service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
-      ).rejects.toThrow(/can edit the folder/);
+      ).rejects.toThrow(new RegExp(`can edit the folder.*${EMAIL}`));
 
       drive.getItemAs.mockResolvedValueOnce(
         picked({ mimeType: 'application/pdf' }),
@@ -444,12 +446,37 @@ describe('GoogleDriveService', () => {
     });
 
     it('takes the share back when saving fails after sharing', async () => {
+      repo.create.mockRejectedValue(new Error('connection reset'));
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow('connection reset');
+      expect(drive.unshare).toHaveBeenCalledWith(TOKEN, FOLDER_ID, 'perm-1');
+    });
+
+    // Drive gives one permission id per person, so a twin request that won
+    // the race holds the same share: taking it back would cut that one off.
+    it('keeps the share when another request connected the folder first', async () => {
       repo.create.mockRejectedValue({ code: '23505' });
-      repo.findAny.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
       await expect(
         service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(drive.unshare).toHaveBeenCalledWith(TOKEN, FOLDER_ID, 'perm-1');
+      expect(drive.unshare).not.toHaveBeenCalled();
+    });
+
+    it('treats Google refusing the share as a refusal, and an expired sign-in as pick again', async () => {
+      drive.shareWithServiceAccount.mockRejectedValueOnce(
+        new GoogleDriveApiError('failed', 400, 'invalidSharingRequest'),
+      );
+      const refused = service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN);
+      await expect(refused).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(refused).rejects.toThrow(EMAIL);
+
+      drive.shareWithServiceAccount.mockRejectedValueOnce(
+        new GoogleDriveApiError('failed', 401, 'authError'),
+      );
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow(/Pick it again/);
     });
 
     it('shares an unshared connected folder again and syncs it at once', async () => {
@@ -459,7 +486,7 @@ describe('GoogleDriveService', () => {
         TOKEN,
         FOLDER_ID,
       );
-      expect(repo.markDue).toHaveBeenCalledWith('ch-1', expect.any(Date));
+      expect(repo.restoreAccess).toHaveBeenCalledWith('ch-1', expect.any(Date));
       expect(repo.create).not.toHaveBeenCalled();
     });
 

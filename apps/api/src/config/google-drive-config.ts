@@ -126,7 +126,9 @@ const OAUTH_CLIENT_ID = /^(\d+)-[a-z0-9]+\.apps\.googleusercontent\.com$/;
  * - `appId`: the Cloud project's number, the client id's prefix, so the
  *   folder picked is granted to this app.
  *
- * Null while either setting is unset; then only the link flow is offered.
+ * Null while either setting is unset, or the client id isn't a Google client
+ * id; `GET /v1/google-drive` also offers none while Drive itself isn't
+ * (no service account). Then only the link flow is offered.
  */
 export interface GoogleDrivePicker {
   clientId: string;
