@@ -334,15 +334,41 @@ export class InviteListItemDto implements InviteListItem {
   reusable: boolean;
 }
 
-/** `GET /v1/invites/chapter-link` (#3353). */
+/** `GET /v1/invites/chapter-link` (#3353; a link per role since #5633). */
 export class ChapterLinkResponseDto {
   @ApiProperty({
     type: InviteListItemDto,
     nullable: true,
     description:
-      "The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into.",
+      "For builds from before #5633, which showed one link and replaced it with a body-less POST: the link that POST turns off, the default role's (`default_role`). Null when that role has none.",
   })
   link: InviteListItemDto | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The role a POST with no role makes a link for: the chapter default invite role, or the caller's own rank's member role when the default is above them. The role picker starts on it. Null when the caller can invite into neither.",
+  })
+  default_role: string | null;
+
+  @ApiProperty({
+    type: InviteListItemDto,
+    isArray: true,
+    description:
+      "The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into.",
+  })
+  links: InviteListItemDto[];
+}
+
+/** `POST /v1/invites/chapter-link`'s body (#5633). */
+export class CreateChapterLinkDto {
+  @ApiPropertyOptional({
+    description: `The role the link grants. ${ROLE_DESCRIPTION} Making a link for a role turns off that role's old link only.`,
+  })
+  @IsOptional()
+  @IsString()
+  role?: string;
 }
 
 /** `GET /v1/invites/roles` (#4546). */

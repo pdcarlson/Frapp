@@ -60,18 +60,16 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data || [];
   }
 
-  async findChapterLink(chapterId: string): Promise<Invite | null> {
+  async findChapterLinks(chapterId: string): Promise<Invite[]> {
     const { data, error } = await this.supabase
       .from('invites')
       .select('*')
       .eq('chapter_id', chapterId)
       .eq('reusable', true)
       .is('revoked_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order('created_at', { ascending: false });
     if (error) throw new SupabaseQueryError(error);
-    return data;
+    return data || [];
   }
 
   async findPendingByEmail(email: string, now: Date): Promise<Invite[]> {

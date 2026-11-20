@@ -1,23 +1,16 @@
 import type { AuthGateDestination } from "@/lib/auth-gate";
-import { webJoinUrl } from "@/lib/onboarding/chapter-wizard/invite-link";
 
 /**
  * An invite link opened in the app by a member who already has a chapter
- * (#4002).
+ * (#4002, #4341).
  *
  * Since the app claims `app.frapp.live/join` (universal links and App Links),
- * every invite link a member taps opens here, not on the web. s02 is the
- * zero-membership screen: it has no way back to a chapter, and the gate keeps
- * a member with one on their tabs, the Terms prompt or s03. Before the app
- * claimed the links, the same tap opened web `/join`, where joining a second
- * chapter works. So the app hands such an invite to web `/join` in an in-app
- * browser and the member stays where the gate put them. `web=1` is web
- * `/join`'s "continue in the browser" mark (`apps/web/lib/auth/join-visit.ts`),
- * so the page shows its form rather than offering this app again.
- *
- * The cost: the in-app browser has no app session, so the member signs in
- * there (on iOS always; on Android only if Chrome isn't signed in to Frapp).
- * Joining a second chapter inside the app is its own piece of work.
+ * every invite link a member taps opens here. s02 is the zero-membership
+ * screen and the gate keeps a member with a chapter off it, so their invite
+ * goes to the second-chapter card instead (`app/(auth)/join-another.tsx`),
+ * where they join with the session they have. Until #4341 it went to web
+ * `/join` in an in-app browser, which had no app session, so the member
+ * signed in a second time.
  */
 
 /** Gate destinations that mean "this account has a chapter". */
@@ -42,9 +35,4 @@ export function isMemberInviteMoment(
     chapterCount !== null &&
     chapterCount > 0
   );
-}
-
-/** The web `/join` page for `token`, marked as chosen in the browser. */
-export function memberInviteWebUrl(token: string, origin?: string): string {
-  return `${webJoinUrl(token, origin)}&web=1`;
 }

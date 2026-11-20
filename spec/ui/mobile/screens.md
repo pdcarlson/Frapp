@@ -63,7 +63,7 @@ It normally has no route of its own — s17 is the single exception, and honestl
 | s22 | [Host check-in (admin)](#s22-host-check-in-admin)             | `(app)/host-check-in.tsx`                                                                                                                                           |
 | s23 | [Adjust points sheet (admin)](#s23-adjust-points-sheet-admin) | _sheet_ on `you.tsx`                                                                                                                                                |
 
-Supporting routes with no drawn Canvas screen: `(app)/invite.tsx` — Invite members: invite by email, setup's share-first link, and the chapter's invites with resend and revoke, as web's panel has them;
+Supporting routes with no drawn Canvas screen: `(auth)/join-another.tsx` — an invite to another chapter for a member who has one (#4341): s02's invite card with Back to their chapter ([`navigation.md` § Deep links](navigation.md#deep-links)) — and `(app)/invite.tsx` — Invite members: invite by email, setup's share-first link, and the chapter's invites with resend and revoke, as web's panel has them;
 Live since 2026-11-06, email and the list since 2026-11-09 (#3828) ([`navigation.md` § Inviting members](navigation.md#inviting-members))
 — and `(auth)/chapter-picker.tsx` — chapter selection, reached from Switch chapter in Chat home's chapter menu ([`navigation.md` § Chapter menu](navigation.md#chapter-menu)) or a `frapp://chapter-picker` link, reusing s02's visual language;
 it marks the open chapter `Current`, and a tap on that row selects it again like any other, since the mark reads the token's claim and the server's active chapter can differ;

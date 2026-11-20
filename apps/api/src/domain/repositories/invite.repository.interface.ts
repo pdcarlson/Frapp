@@ -21,10 +21,11 @@ export interface IInviteRepository {
   findByToken(token: string): Promise<Invite | null>;
   findByChapter(chapterId: string): Promise<Invite[]>;
   /**
-   * The chapter's link (#3353) that no officer has turned off, expired or
-   * not, or null. At most one: `invites_one_chapter_link`.
+   * The chapter's links (#3353) that no officer has turned off, expired or
+   * not, newest first. At most one per role since #5633:
+   * `invites_one_chapter_link_per_role`.
    */
-  findChapterLink(chapterId: string): Promise<Invite | null>;
+  findChapterLinks(chapterId: string): Promise<Invite[]>;
   /**
    * Invites emailed to `email` (matched case-insensitively, exactly) that are
    * still joinable at `now`: not used, not revoked, not expired. Newest first.

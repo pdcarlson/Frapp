@@ -511,49 +511,78 @@ export class InviteService {
   }
 
   /**
-   * The chapter link (#3353): one link an officer posts where the whole
-   * chapter will see it, such as its Discord. Anyone who opens it joins at the
-   * chapter's default invite role (`resolveInviteRole` with no role named)
-   * until it expires after {@link CHAPTER_LINK_DAYS} days or an officer turns
-   * it off. Null when there is none, or when the one there grants a role the
-   * caller couldn't invite someone into ({@link inviteVisibility}): its link
-   * is not theirs to copy. An expired one is returned, so the screen can say
-   * it expired.
+   * The chapter links (#3353): links an officer posts where the chapter will
+   * see them, such as its Discord. Anyone who opens one joins at the role the
+   * officer picked for it (#5633, Paul 2026-11-19: "Officer picks it per
+   * link"), until it expires after {@link CHAPTER_LINK_DAYS} days or an
+   * officer turns it off; a chapter has at most one live link per role, so a
+   * pledge class link and a brothers link can be out at once. Newest first,
+   * and only those granting a role the caller could invite someone into
+   * ({@link inviteVisibility}): a higher officer's link is not theirs to
+   * copy. Expired ones are returned, so the screen can say they expired.
    */
-  async findChapterLink(
+  async findChapterLinks(
     chapterId: string,
     userId: string,
-  ): Promise<InviteListItem | null> {
-    const [link, visible] = await Promise.all([
-      this.inviteRepo.findChapterLink(chapterId),
+  ): Promise<InviteListItem[]> {
+    const [links, visible] = await Promise.all([
+      this.inviteRepo.findChapterLinks(chapterId),
       this.inviteVisibility(chapterId, userId),
     ]);
-    if (!link || !visible(link)) return null;
-    return toListItem(link, new Date());
+    const now = new Date();
+    return links.filter(visible).map((link) => toListItem(link, now));
   }
 
   /**
-   * A new chapter link, replacing the current one: the old link stops working
-   * the moment the new one exists, so an officer who thinks a link spread too
-   * far makes a new one. A link granting a role above the caller's reach is
-   * not theirs to replace (403), as it is not theirs to revoke.
+   * Every visible chapter link, plus the role a body-less POST makes a link
+   * for (`defaultRole`, which the pickers start on) and that role's link
+   * (`link`). Phone builds from before #5633 show only `link` and post no
+   * body to "Make a new link", so `link` has to be the link that post turns
+   * off, never another role's. Both are null when the caller can't invite
+   * into the default role.
+   */
+  async findChapterLinkView(
+    chapterId: string,
+    userId: string,
+  ): Promise<{
+    link: InviteListItem | null;
+    links: InviteListItem[];
+    defaultRole: string | null;
+  }> {
+    const [links, defaultRole] = await Promise.all([
+      this.findChapterLinks(chapterId, userId),
+      this.resolveInviteRole(chapterId, undefined, userId).then(
+        ({ role }) => role,
+        () => null,
+      ),
+    ]);
+    const link =
+      defaultRole === null
+        ? null
+        : (links.find((item) => item.role === defaultRole) ?? null);
+    return { link, links, defaultRole };
+  }
+
+  /**
+   * A new chapter link for `requestedRole` (the chapter's default invite role
+   * when none is named, as before #5633), replacing that role's current one:
+   * the old link stops working the moment the new one exists, so an officer
+   * who thinks a link spread too far makes a new one. Other roles' links are
+   * untouched. The role must be one the caller could invite someone into
+   * (`resolveInviteRole`, 403 otherwise), as for a personal invite.
    */
   async createChapterLink(
     chapterId: string,
     createdBy: string,
+    requestedRole?: string,
   ): Promise<InviteListItem> {
-    const [{ role }, current, visible] = await Promise.all([
-      this.resolveInviteRole(chapterId, undefined, createdBy),
-      this.inviteRepo.findChapterLink(chapterId),
-      this.inviteVisibility(chapterId, createdBy),
+    // `resolveInviteRole` refuses a role above the caller, and the link it
+    // replaces grants that same role, so it is always one they may stop.
+    const [{ role }, links] = await Promise.all([
+      this.resolveInviteRole(chapterId, requestedRole, createdBy),
+      this.inviteRepo.findChapterLinks(chapterId),
     ]);
-    if (current && !visible(current)) {
-      throw new ForbiddenException({
-        code: 'invite.chapter_link_out_of_reach',
-        message:
-          "An officer above you made this chapter's link, so only they can replace it.",
-      });
-    }
+    const current = links.find((link) => link.role === role);
     if (current) await this.inviteRepo.markRevoked(current.id);
     let invite: Invite;
     try {
@@ -561,12 +590,13 @@ export class InviteService {
         this.prepareInviteData(chapterId, createdBy, role, null, true),
       );
     } catch (error) {
-      // Another officer made one at the same moment (`invites_one_chapter_link`).
+      // Another officer made one for this role at the same moment
+      // (`invites_one_chapter_link_per_role`).
       if (isUniqueViolation(error)) {
         throw new ConflictException({
           code: 'invite.chapter_link_conflict',
           message:
-            'Another officer just made a chapter link. Reload to see it.',
+            'Another officer just made a chapter link for this role. Reload to see it.',
         });
       }
       throw error;
