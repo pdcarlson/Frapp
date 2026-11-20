@@ -21,6 +21,7 @@ import { Member } from '#domain/entities/member.entity';
 import { Role } from '#domain/entities/role.entity';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import {
+  canAssignAt,
   canReach,
   holderRank,
   permissionsNotHeld,
@@ -362,17 +363,17 @@ export class MemberService {
    * Set a member's roles, behind the rank rules (#4071) for `actorUserId`
    * unless they hold `*`:
    *
-   * - every role added or taken away must rank below the caller's own,
-   *   whoever the member is: a peer or someone ranked above the caller
-   *   included (Paul, 2026-11-20). A cabinet officer can make another
-   *   cabinet officer Stewardship Chair, as Discord lets anyone with Manage
-   *   Roles hand out any role below their highest. Their cabinet roles stay
-   *   out of reach, because those rank at the caller's own level;
-   * - every role added must carry only permissions the caller holds, so
-   *   nobody, themselves included, collects through a lower role more than
-   *   the caller has.
+   * - every role added or taken away must rank below the caller's own;
+   * - the member must rank below the caller too, unless it is the caller
+   *   themselves, so a chair cannot strip an officer's roles;
+   * - a caller holding `roles:assign_own_level` also reaches their own rank
+   *   on both counts (`canAssignAt`, #5725), so a cabinet officer can make
+   *   another cabinet officer Stewardship Chair;
+   * - on their own row, the caller may not end up holding a permission they
+   *   did not already hold, so nobody hands themselves a lower role that
+   *   carries more than they have.
    *
-   * So a chair holding `roles:manage` can give anyone the roles below the
+   * So a chair holding `roles:manage` can give members the roles below the
    * chairs' tier, and cannot give anyone, least of all themselves, a chair's
    * or officer's role.
    *
@@ -498,46 +499,13 @@ export class MemberService {
     ].filter((role) => role.system_key !== SystemRoleKeys.MEMBER);
     if (changed.length === 0) return;
 
-    // Only the roles that move are ranked, not the member (Paul,
-    // 2026-11-20): the rule is about what you hand out, so a role you could
-    // give anyone you can give a peer or a superior too.
-    if (changed.some((role) => !canReach(reach, roleRank(role, positions)))) {
+    const isSelf = reach.memberId === member.id;
+    if (
+      changed.some((role) => !canAssignAt(reach, roleRank(role, positions))) ||
+      (!isSelf && !canAssignAt(reach, holderRank(before, positions)))
+    ) {
       throw new ForbiddenException(
-        'You can only give or take away roles ranked below your own.',
-      );
-    }
-    // Except a save that takes the Everyone role away: making someone a New
-    // Member or Alumni does (`rolesAfterSave`), and that narrows what they
-    // can open and where they can post. That is a demotion, not a role
-    // handed out, so it still needs the member ranked below the caller.
-    const memberBelow =
-      reach.memberId === member.id ||
-      canReach(reach, holderRank(before, positions));
-    const losesEveryone =
-      before.some((role) => role.system_key === SystemRoleKeys.MEMBER) &&
-      !after.some((role) => role.system_key === SystemRoleKeys.MEMBER);
-    if (losesEveryone && !memberBelow) {
-      throw new ForbiddenException(
-        'You can only make members ranked below you a new member or an alum.',
-      );
-    }
-    // And taking a role from a peer or a superior needs what giving it
-    // would: its permissions held. Otherwise a chair could strip an
-    // officer's lower role that carries more than the chair has, and the
-    // officer, no longer holding it, couldn't give it back to themselves.
-    const takenOutOfHand = memberBelow
-      ? []
-      : permissionsNotHeld(
-          reach,
-          flattenPermissionSets(
-            before
-              .filter((role) => !afterIds.has(role.id))
-              .map((role) => role.permissions),
-          ),
-        );
-    if (takenOutOfHand.length > 0) {
-      throw new ForbiddenException(
-        `You can only take roles away from members ranked at or above you when you hold their permissions: ${takenOutOfHand.join(', ')}.`,
+        'You can only give or take away roles ranked below your own, and only from members ranked below you.',
       );
     }
     // Nobody hands out a permission they don't hold, to anyone: a lower role
