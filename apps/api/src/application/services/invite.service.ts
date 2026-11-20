@@ -677,6 +677,9 @@ export class InviteService {
       this.userRepo.findById(createdBy).catch(() => null),
     ]);
 
+    // The email names the role as the invite card does (#5628).
+    const emailedRole = shownInviteRole(namedRole(context, role));
+
     // Correlate by token rather than by array position: each token was
     // generated here, before the insert, so it is a stable key regardless of
     // what order the repository happens to return rows in — `createEmailed`'s
@@ -700,7 +703,8 @@ export class InviteService {
           .sendInviteEmail({
             to,
             joinUrl: buildJoinUrl(invite.token, origin),
-            role,
+            role: emailedRole,
+            validDays: INVITE_DAYS,
             chapterName: chapter?.name ?? null,
             inviterName: inviter?.display_name ?? null,
           })
@@ -1076,10 +1080,7 @@ export class InviteService {
       mark_text: chapterTextMark(branding)?.text ?? null,
       accent_color: chapter.accent_color,
       invited_by: inviter?.display_name ?? null,
-      // Joining with only the Everyone role (#4191) joins as nobody in
-      // particular: the card says no role, as it does for none.
-      role:
-        role && role.system_key !== SystemRoleKeys.MEMBER ? role.name : null,
+      role: shownInviteRole(role),
       expires_at: invite.expires_at,
     };
     return { preview, refused, locked: isSubscriptionHardLocked(chapter) };
@@ -1461,6 +1462,15 @@ function assertInviteRoleExists(context: RankContext, roleName: string): void {
  * default can reach the fallback (`resolveInviteRole`), since a named role
  * must exist (`assertInviteRoleExists`).
  */
+/**
+ * The role an invite card or email names for an invite granting `role`.
+ * Joining with only the Everyone role (#4191) joins as nobody in particular,
+ * so it, like no role at all, is named as none.
+ */
+function shownInviteRole(role: Role | null | undefined): string | null {
+  return role && role.system_key !== SystemRoleKeys.MEMBER ? role.name : null;
+}
+
 function namedRole(context: RankContext, roleName: string): Role | undefined {
   return (
     context.roles.find((candidate) => candidate.name === roleName) ??

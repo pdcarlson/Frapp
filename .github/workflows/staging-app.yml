@@ -8,11 +8,10 @@ name: Staging app
 # Deploy staging is itself a `workflow_run` run, so its `head_sha` is `main`'s
 # tip when it started, not the commit it deployed; its run title is the one
 # place that names that commit (`staging <sha>`, #3114), and `plan` reads it
-# from there. An automatic run publishes the update and builds iOS when the
-# runtime has no uploaded binary. It never builds Android (`AUTO_PLATFORMS`):
-# Google Play takes a new app's first bundle by hand, so until that upload is
-# done an automatic Android build could only fail its upload (#4917). Build
-# Android by dispatch until then.
+# from there. An automatic run publishes the update and builds each platform
+# whose runtime has no uploaded binary: iOS to TestFlight, Android to the Play
+# internal track. (Play took the app's first bundle by hand in Play Console,
+# 2026-11-20; every later one goes through the API.)
 #
 # ── What a run does ─────────────────────────────────────────────────────────
 #   1. `plan` computes the tree's staging runtime (version plus a hash of its
@@ -93,10 +92,6 @@ on:
           - android
           - all
           - none
-      save_android_bundle:
-        description: "First Android upload only: keep the .aab as a one-day artifact to upload in Play Console by hand, and skip the store upload."
-        type: boolean
-        default: false
 
 concurrency:
   group: staging-app
@@ -174,7 +169,6 @@ jobs:
         env:
           # A run after a staging deploy has no inputs.
           BUILD: ${{ inputs.build || 'auto' }}
-          AUTO_PLATFORMS: ${{ github.event_name == 'workflow_run' && 'ios' || 'ios,android' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -386,6 +380,43 @@ jobs:
       - name: Install the pinned EAS CLI
         run: node scripts/eas.mjs --version
 
+      # Push on Android needs Firebase's client config (`android.googleServicesFile`,
+      # `app.config.js`), the File variable `GOOGLE_SERVICES_JSON` in EAS's
+      # `preview` environment, which the `staging` profile binds to. `eas build
+      # --local` reads variables without File contents, so this step fetches it
+      # as `_mobile-build.yml` does, and deletes everything else it pulled
+      # unread. Google's Gradle plugin fails the build when the file doesn't
+      # list this app's package, so the file is used only when it lists
+      # `live.frapp.mobile.staging`; otherwise the build goes ahead without
+      # push and says so.
+      - name: Fetch the Firebase config from EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          PULLED="$RUNNER_TEMP/eas-preview.env"
+          STATUS=0
+          node scripts/eas.mjs env:pull --environment preview --non-interactive --path "$PULLED" || STATUS=$?
+          rm -f "$PULLED"
+          FILE="apps/mobile/.eas/.env/GOOGLE_SERVICES_JSON"
+          if [ -s "$FILE" ]; then
+            mv "$FILE" "$RUNNER_TEMP/google-services.json"
+          fi
+          rm -rf apps/mobile/.eas/.env
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::eas env:pull exited $STATUS, so the Firebase config couldn't be fetched. Nothing was built; run it again."
+            exit "$STATUS"
+          fi
+          if [ ! -s "$RUNNER_TEMP/google-services.json" ]; then
+            echo "::warning::No readable GOOGLE_SERVICES_JSON in EAS's preview environment, so this build has no push."
+            echo "- Android push: off. EAS's \`preview\` environment has no readable \`GOOGLE_SERVICES_JSON\`." >> "$GITHUB_STEP_SUMMARY"
+          elif ! grep -q '"package_name": *"live.frapp.mobile.staging"' "$RUNNER_TEMP/google-services.json"; then
+            echo "::warning::GOOGLE_SERVICES_JSON doesn't list live.frapp.mobile.staging, so this build has no push. Add that Android app in Firebase and replace the file variable with the new download."
+            echo "- Android push: off. \`GOOGLE_SERVICES_JSON\` has no client for \`live.frapp.mobile.staging\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+          fi
+
       - name: Export the staging runtime
         env:
           PLAN_RUNTIME: ${{ needs.plan.outputs.runtime }}
@@ -407,22 +438,8 @@ jobs:
           npm run eas -- build --local --platform android --profile staging --non-interactive \
             --output "$RUNNER_TEMP/frapp-staging.aab"
 
-      # Google Play takes a new app's first bundle only through Play Console,
-      # never the API, so that one run keeps the bundle for a person to upload
-      # and records nothing. The artifact is the same signed bundle testers
-      # install; it lives one day.
-      - name: Keep the bundle for a first upload by hand
-        if: ${{ inputs.save_android_bundle }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: frapp-staging-first-upload
-          path: ${{ runner.temp }}/frapp-staging.aab
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Send it to the Play internal track
         id: upload
-        if: ${{ !inputs.save_android_bundle }}
         timeout-minutes: 15
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

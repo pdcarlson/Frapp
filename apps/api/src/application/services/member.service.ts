@@ -21,6 +21,7 @@ import { Member } from '#domain/entities/member.entity';
 import { Role } from '#domain/entities/role.entity';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import {
+  canAssignAt,
   canReach,
   holderRank,
   permissionsNotHeld,
@@ -365,6 +366,9 @@ export class MemberService {
    * - every role added or taken away must rank below the caller's own;
    * - the member must rank below the caller too, unless it is the caller
    *   themselves, so a chair cannot strip an officer's roles;
+   * - a caller holding `roles:assign_own_level` also reaches their own rank
+   *   on both counts (`canAssignAt`, #5725), so a cabinet officer can make
+   *   another cabinet officer Stewardship Chair;
    * - on their own row, the caller may not end up holding a permission they
    *   did not already hold, so nobody hands themselves a lower role that
    *   carries more than they have.
@@ -497,8 +501,8 @@ export class MemberService {
 
     const isSelf = reach.memberId === member.id;
     if (
-      changed.some((role) => !canReach(reach, roleRank(role, positions))) ||
-      (!isSelf && !canReach(reach, holderRank(before, positions)))
+      changed.some((role) => !canAssignAt(reach, roleRank(role, positions))) ||
+      (!isSelf && !canAssignAt(reach, holderRank(before, positions)))
     ) {
       throw new ForbiddenException(
         'You can only give or take away roles ranked below your own, and only from members ranked below you.',

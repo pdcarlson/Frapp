@@ -42,10 +42,15 @@ export default [
     },
   },
   {
-    // Specs use emoji as members' own content; every other UI rule applies.
+    // Specs use emoji as members' own content, and quote bare-variable
+    // Tailwind classes as rendered markup or as what a guard rejects; every
+    // other UI rule applies.
     files: TEST_FILES,
     rules: {
-      "no-restricted-syntax": ["error", ...webUiSyntaxExcept(["emoji"])],
+      "no-restricted-syntax": [
+        "error",
+        ...webUiSyntaxExcept(["emoji", "tailwindBareVar"]),
+      ],
     },
   },
   // Files that predate a rule, grandfathered from that rule alone until the

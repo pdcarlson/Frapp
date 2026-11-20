@@ -166,6 +166,54 @@ describe("memberAssignmentSections", () => {
     );
   });
 
+  // #5725: the member's rank counts too, and roles:assign_own_level lets a
+  // viewer reach their own level as well as below it.
+  it("disables every role on a member ranked at the viewer's level, unless they can assign at their own level", () => {
+    const peer = (reach: Reach) =>
+      sections({ reach, heldRoleIds: ["r-vp"], userId: "u-peer" }).flatMap(
+        (s) => s.rows,
+      );
+    const reason = (rows: ReturnType<typeof peer>, name: string) =>
+      rows.find((r) => r.name === name)?.disabledReason;
+
+    const plain = peer(VP_REACH);
+    expect(reason(plain, "Rush Chair")).toBe(ASSIGN_CAPTIONS.memberAbove);
+
+    const ownLevel = peer({
+      ...VP_REACH,
+      held: new Set([...VP_REACH.held, "roles:assign_own_level"]),
+    });
+    expect(reason(ownLevel, "Rush Chair")).toBeNull();
+    expect(reason(ownLevel, "Vice President")).toBeNull();
+    expect(reason(ownLevel, "President")).toBe(ASSIGN_CAPTIONS.presidency);
+  });
+
+  it("never lets the viewer reach a member ranked above them", () => {
+    const rows = sections({
+      reach: {
+        ...VP_REACH,
+        rank: 2,
+        held: new Set([...VP_REACH.held, "roles:assign_own_level"]),
+      },
+      heldRoleIds: ["r-vp"],
+      userId: "u-vp",
+    }).flatMap((s) => s.rows);
+    expect(rows.find((r) => r.name === "Rush Chair")?.disabledReason).toBe(
+      ASSIGN_CAPTIONS.memberAbove,
+    );
+  });
+
+  it("treats the viewer's own profile as reachable", () => {
+    const rows = sections({
+      reach: { ...VP_REACH, userId: "u-me" },
+      heldRoleIds: ["r-vp"],
+      userId: "u-me",
+    }).flatMap((s) => s.rows);
+    expect(
+      rows.find((r) => r.name === "Rush Chair")?.disabledReason,
+    ).toBeNull();
+  });
+
   it("searches roles and groups alike, and drops sections it empties", () => {
     expect(sections({ query: "  CAMP" }).map((s) => s.title)).toEqual([
       "Groups",

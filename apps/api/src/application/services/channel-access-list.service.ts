@@ -338,9 +338,9 @@ export class ChannelAccessListService {
    * stays `undefined` (leave it alone) and `null` stays `null` (everyone).
    *
    * An empty list is refused: it would admit nobody but `*`, which is never
-   * what an officer means by picking nobody. A list can still end up empty
-   * when the last role or tier on it is deleted; it then admits only `*`
-   * until an officer picks again.
+   * what an officer means by picking nobody. Deleting the last role, tier or
+   * group on a list hands it to the chapter's top tier instead of emptying
+   * it (`chat_access_strip_entry`, migration `20261120051720`).
    */
   async normalize(
     chapterId: string,
