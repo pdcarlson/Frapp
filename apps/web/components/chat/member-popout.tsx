@@ -96,8 +96,12 @@ export function MemberPopout({
   /** The roster's name and photo, drawn until the profile read lands. */
   identity: { name: string | null; avatarUrl: string | null } | null;
   onViewProfile: (userId: string) => void;
-  /** Which side of the anchor it opens on; it flips when there is no room. */
-  side?: "left" | "right";
+  /**
+   * Which side of the anchor it opens on; it flips when there is no room.
+   * Beside suits a name or a tile. An anchor as wide as the page (a Directory
+   * row) leaves no room on either side, so it opens below instead (#5749).
+   */
+  side?: "left" | "right" | "bottom";
 }) {
   const memberQuery = useMemberByUserId(userId ?? "");
   const { avatarTintFor, roleColorFor } = useMemberDisplayNames();
