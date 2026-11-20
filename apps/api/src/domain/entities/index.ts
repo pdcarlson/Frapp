@@ -15,6 +15,7 @@ export * from './chapter-audit-log.entity';
 export * from './chapter-custom-field.entity';
 export * from './chapter-directory.entity';
 export * from './chapter-document.entity';
+export * from './gif-favorite.entity';
 export * from './chapter-drive-connection.entity';
 export * from './chapter-drive-link.entity';
 export * from './chapter-dues-config.entity';

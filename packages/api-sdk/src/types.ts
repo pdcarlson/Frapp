@@ -2443,6 +2443,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/gifs/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The member's favorite GIFs, newest first (#5772) */
+        get: operations["GifController_favorites_v1"];
+        put?: never;
+        /** Star a GIF from the picker (#5772) */
+        post: operations["GifController_addFavorite_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/favorites/{gifId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unstar a GIF (#5772) */
+        delete: operations["GifController_removeFavorite_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/scheduled-messages": {
         parameters: {
             query?: never;
@@ -8980,6 +9015,18 @@ export interface components {
         GifPageDto: {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
+        };
+        GifFavoriteRenditionDto: {
+            url: string;
+            width: number;
+            height: number;
+        };
+        AddGifFavoriteDto: {
+            id: string;
+            title?: string;
+            preview: components["schemas"]["GifFavoriteRenditionDto"];
+            full: components["schemas"]["GifFavoriteRenditionDto"];
+            token: string;
         };
         ScheduledAttachmentDto: {
             filename: string;
@@ -18687,6 +18734,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GifPageDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_favorites_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_addFavorite_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddGifFavoriteDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_removeFavorite_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gifId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

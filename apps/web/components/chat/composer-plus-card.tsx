@@ -25,6 +25,7 @@ import {
   MENU_SEPARATOR_CLASS,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { GifGlyph } from "./gif-picker";
 import {
   AttachGlyph,
   EventsGlyph,
@@ -82,6 +83,11 @@ export interface ComposerPlusCardProps {
   /** The form on show, or `null` for the menu. */
   view: PlusMenuCommand | null;
   onAttach: () => void;
+  /**
+   * Opens the GIF picker (#5772, the phone's + sheet's GIF row); omitted
+   * when the server has no GIF search set up, which leaves the row out.
+   */
+  onGif?: () => void;
   /** A row was picked. The host decides whether its form opens. */
   onPick: (command: PlusMenuCommand) => void;
   onBack: () => void;
@@ -102,6 +108,7 @@ export function ComposerPlusCard({
   onOpenChange,
   view,
   onAttach,
+  onGif,
   onPick,
   onBack,
   form,
@@ -189,6 +196,14 @@ export function ComposerPlusCard({
               onOpenChange(false);
               onAttach();
             }}
+            onGif={
+              onGif
+                ? () => {
+                    onOpenChange(false);
+                    onGif();
+                  }
+                : undefined
+            }
             onPick={(command) => {
               lastPicked.current = command;
               onPick(command);
@@ -229,11 +244,13 @@ function PlusMenu({
   model,
   drafts,
   onAttach,
+  onGif,
   onPick,
 }: {
   model: PlusMenuModel;
   drafts?: ReadonlySet<PlusMenuCommand>;
   onAttach: () => void;
+  onGif?: () => void;
   onPick: (command: PlusMenuCommand) => void;
 }) {
   return (
@@ -249,6 +266,12 @@ function PlusMenu({
             <span className="text-xs">{model.attachDisabledReason}</span>
           ) : null}
         </MenuRow>
+        {onGif ? (
+          <MenuRow disabledReason={null} onSelect={onGif}>
+            <GifGlyph />
+            <span className="flex-1">GIF</span>
+          </MenuRow>
+        ) : null}
         {model.rows.length > 0 ? (
           <div role="separator" className={MENU_SEPARATOR_CLASS} />
         ) : null}

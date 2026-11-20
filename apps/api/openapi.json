@@ -7985,6 +7985,120 @@
         ]
       }
     },
+    "/v1/gifs/favorites": {
+      "get": {
+        "operationId": "GifController_favorites_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The member's favorite GIFs, newest first (#5772)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "GifController_addFavorite_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGifFavoriteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Star a GIF from the picker (#5772)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/favorites/{gifId}": {
+      "delete": {
+        "operationId": "GifController_removeFavorite_v1",
+        "parameters": [
+          {
+            "name": "gifId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unstar a GIF (#5772)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/scheduled-messages": {
       "get": {
         "operationId": "ChatScheduledMessageController_list_v1",
@@ -28770,6 +28884,60 @@
         "required": [
           "results",
           "next_page"
+        ]
+      },
+      "GifFavoriteRenditionDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "AddGifFavoriteDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "preview": {
+            "$ref": "#/components/schemas/GifFavoriteRenditionDto"
+          },
+          "full": {
+            "$ref": "#/components/schemas/GifFavoriteRenditionDto"
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "id",
+          "preview",
+          "full",
+          "token"
         ]
       },
       "ScheduledAttachmentDto": {

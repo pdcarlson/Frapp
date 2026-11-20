@@ -1,6 +1,17 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -12,7 +23,9 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { CurrentUser } from '../decorators/current-user.decorator';
 import {
+  AddGifFavoriteDto,
   GifAvailabilityDto,
   GifPageDto,
   GifPageQueryDto,
@@ -53,5 +66,36 @@ export class GifController {
   @ApiOkResponse({ type: GifPageDto })
   search(@Query() query: GifSearchQueryDto): Promise<GifPageDto> {
     return this.gifs.search(query.q, query.page ?? 1);
+  }
+
+  @Get('favorites')
+  @ApiOperation({
+    summary: "The member's favorite GIFs, newest first (#5772)",
+  })
+  @ApiOkResponse({ type: GifPageDto })
+  favorites(@CurrentUser('id') userId: string): Promise<GifPageDto> {
+    return this.gifs.listFavorites(userId);
+  }
+
+  @Post('favorites')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Star a GIF from the picker (#5772)' })
+  @ApiNoContentResponse()
+  addFavorite(
+    @CurrentUser('id') userId: string,
+    @Body() dto: AddGifFavoriteDto,
+  ): Promise<void> {
+    return this.gifs.addFavorite(userId, dto);
+  }
+
+  @Delete('favorites/:gifId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Unstar a GIF (#5772)' })
+  @ApiNoContentResponse()
+  removeFavorite(
+    @CurrentUser('id') userId: string,
+    @Param('gifId') gifId: string,
+  ): Promise<void> {
+    return this.gifs.removeFavorite(userId, gifId);
   }
 }

@@ -10,7 +10,9 @@ import type {
   IGifSearch,
 } from '#domain/adapters/gif-search.interface';
 import { isKlipyMediaUrl } from '../../infrastructure/gifs/klipy-gif-search';
-import { GifService } from './gif.service';
+import type { GifFavorite } from '#domain/entities';
+import type { IGifFavoriteRepository } from '#domain/repositories/gif-favorite.repository.interface';
+import { GIF_FAVORITES_MAX, GifService } from './gif.service';
 
 const dance: GifResult = {
   id: 'dance',
@@ -47,16 +49,27 @@ function fakeSearch(configured = true) {
   } satisfies IGifSearch;
 }
 
+function fakeFavorites(rows: GifFavorite[] = [], count = rows.length) {
+  return {
+    listByUser: jest.fn(() => Promise.resolve(rows)),
+    countByUser: jest.fn(() => Promise.resolve(count)),
+    add: jest.fn(() => Promise.resolve()),
+    remove: jest.fn(() => Promise.resolve()),
+  } satisfies IGifFavoriteRepository;
+}
+
 describe('GifService', () => {
   it('says whether GIFs are set up, and by whom', () => {
-    expect(new GifService(fakeSearch(false)).availability()).toEqual({
+    expect(
+      new GifService(fakeSearch(false), fakeFavorites()).availability(),
+    ).toEqual({
       available: false,
       provider: 'KLIPY',
     });
   });
 
   it('answers 503, not an empty list, when no key is set', async () => {
-    const service = new GifService(fakeSearch(false));
+    const service = new GifService(fakeSearch(false), fakeFavorites());
     await expect(service.trending(1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
@@ -66,13 +79,13 @@ describe('GifService', () => {
     const search = fakeSearch();
     search.search.mockResolvedValue({ outcome: 'unavailable' });
     await expect(
-      new GifService(search).search('party', 1),
+      new GifService(search, fakeFavorites()).search('party', 1),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('caches trending and repeated searches', async () => {
     const search = fakeSearch();
-    const service = new GifService(search);
+    const service = new GifService(search, fakeFavorites());
     await service.trending(1);
     await service.trending(1);
     await service.search('Party ', 1);
@@ -84,13 +97,15 @@ describe('GifService', () => {
 
   it('serves trending for a blank search', async () => {
     const search = fakeSearch();
-    await new GifService(search).search('   ', 1);
+    await new GifService(search, fakeFavorites()).search('   ', 1);
     expect(search.trending).toHaveBeenCalled();
     expect(search.search).not.toHaveBeenCalled();
   });
 
   it('signs every result it hands out', async () => {
-    const page = await new GifService(fakeSearch()).trending(1);
+    const page = await new GifService(fakeSearch(), fakeFavorites()).trending(
+      1,
+    );
     expect(page.results).toHaveLength(1);
     expect(page.results[0]?.token).toMatch(/^[\w-]{43}$/);
   });
@@ -103,27 +118,29 @@ describe('GifService', () => {
       full: { ...dance.full, width: 4000, height: 10 },
     };
     search.trending.mockResolvedValue(okOutcome(pageOf([sliver, dance])));
-    const page = await new GifService(search).trending(1);
+    const page = await new GifService(search, fakeFavorites()).trending(1);
     expect(page.results.map((gif) => gif.id)).toEqual(['dance']);
   });
 
   it('ends the list at the last page a client may ask for', async () => {
     const search = fakeSearch();
     search.trending.mockResolvedValue(okOutcome(pageOf([dance], 51)));
-    expect((await new GifService(search).trending(50)).next_page).toBeNull();
+    expect(
+      (await new GifService(search, fakeFavorites()).trending(50)).next_page,
+    ).toBeNull();
   });
 
   it('tells the provider about a share only when set up', () => {
     const on = fakeSearch();
-    new GifService(on).recordShare('dance');
+    new GifService(on, fakeFavorites()).recordShare('dance');
     expect(on.recordShare).toHaveBeenCalledWith('dance');
     const off = fakeSearch(false);
-    new GifService(off).recordShare('dance');
+    new GifService(off, fakeFavorites()).recordShare('dance');
     expect(off.recordShare).not.toHaveBeenCalled();
   });
 
   describe('messageGif', () => {
-    const service = new GifService(fakeSearch());
+    const service = new GifService(fakeSearch(), fakeFavorites());
     let sent: {
       id: string;
       title: string;
@@ -194,9 +211,96 @@ describe('GifService', () => {
     });
 
     it('answers 503 when GIFs are not set up', () => {
-      expect(() => new GifService(fakeSearch(false)).messageGif(sent)).toThrow(
-        ServiceUnavailableException,
+      expect(() =>
+        new GifService(fakeSearch(false), fakeFavorites()).messageGif(sent),
+      ).toThrow(ServiceUnavailableException);
+    });
+  });
+
+  describe('favorites (#5772)', () => {
+    const starred: GifFavorite = {
+      id: 'f1',
+      user_id: 'u1',
+      provider: 'klipy',
+      gif_id: dance.id,
+      title: dance.title,
+      full_url: dance.full.url,
+      full_width: dance.full.width,
+      full_height: dance.full.height,
+      preview_url: dance.preview.url,
+      preview_width: dance.preview.width,
+      preview_height: dance.preview.height,
+      created_at: '2026-11-20T00:00:00Z',
+    };
+
+    it('lists them signed, so a send from Favorites passes the check', async () => {
+      const service = new GifService(fakeSearch(), fakeFavorites([starred]));
+      const page = await service.listFavorites('u1');
+      expect(page.next_page).toBeNull();
+      expect(page.results).toHaveLength(1);
+      const [gif] = page.results;
+      expect(gif!.preview).toEqual(dance.preview);
+      expect(() =>
+        service.messageGif({
+          id: gif!.id,
+          url: gif!.full.url,
+          width: gif!.full.width,
+          height: gif!.full.height,
+          token: gif!.token,
+        }),
+      ).not.toThrow();
+    });
+
+    it("leaves out another provider's favorites", async () => {
+      const service = new GifService(
+        fakeSearch(),
+        fakeFavorites([{ ...starred, provider: 'tenor' }]),
       );
+      expect((await service.listFavorites('u1')).results).toEqual([]);
+    });
+
+    it('stars only a GIF this server handed out', async () => {
+      const favorites = fakeFavorites();
+      const service = new GifService(fakeSearch(), favorites);
+      const [signed] = (await service.trending(1)).results;
+      await service.addFavorite('u1', signed!);
+      expect(favorites.add).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({
+          provider: 'klipy',
+          gif_id: 'dance',
+          full_url: dance.full.url,
+          preview_url: dance.preview.url,
+        }),
+      );
+      await expect(
+        service.addFavorite('u1', { ...signed!, token: 'forged' }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.addFavorite('u1', {
+          ...signed!,
+          preview: { ...signed!.preview, url: 'https://evil.test/s.webp' },
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses a star past the limit, with the reason', async () => {
+      const favorites = fakeFavorites([], GIF_FAVORITES_MAX);
+      const service = new GifService(fakeSearch(), favorites);
+      const [signed] = (await service.trending(1)).results;
+      await expect(service.addFavorite('u1', signed!)).rejects.toThrow(
+        /up to 200 favorite GIFs/,
+      );
+      expect(favorites.add).not.toHaveBeenCalled();
+    });
+
+    it("unstars by this server's provider", async () => {
+      const favorites = fakeFavorites();
+      await new GifService(fakeSearch(), favorites).removeFavorite(
+        'u1',
+        'dance',
+      );
+      expect(favorites.remove).toHaveBeenCalledWith('u1', 'klipy', 'dance');
     });
   });
 });

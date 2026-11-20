@@ -1195,11 +1195,18 @@ A member can send a GIF (#4631, Paul picked KLIPY on 2026-11-12).
 Tenor, which most apps used, shut its API down on 2026-06-30; Discord moved to KLIPY.
 
 - **Where it starts.**
-  On web, a "GIF" button beside the emoji button opens a picker the emoji panel's size, the way Discord and Slack place theirs: two columns of GIFs at their own heights.
+  On web, a "GIF" button beside the emoji button opens a picker the emoji panel's size, the way Discord and Slack place theirs: two columns of GIFs at their own heights. The + card's GIF row, under Attach a file, opens the same picker (#5772), so the + offers what the phone's does.
   On the phone, the + sheet's GIF row, under Photo, opens a tall sheet, as iMessage's keyboard app does: two GIFs to a row, in tiles of one height.
   Each shows trending GIFs until the member types, then search results, and loads more on scroll; a failed load of more offers a retry rather than retrying on its own.
   One click or tap sends; there is no preview step and no caption.
   The search field reads "Search KLIPY", which is the attribution KLIPY's terms ask for.
+- **Favorites** ([#5772](https://github.com/pdcarlson/Frapp/issues/5772), Paul, 2026-11-20).
+  The picker has two tabs, Search and Favorites, on web and the phone.
+  A star on each GIF adds it to Favorites or takes it off: on web it shows on hover or keyboard focus and stays once starred; on the phone it is always on the tile, as Discord's phone picker draws it.
+  Favorites are the member's own, the same in every chapter, newest first, up to 200 (`GIF_FAVORITES_MAX`; a star past that is refused with "You can keep up to 200 favorite GIFs. Remove one to add another.").
+  They live in `gif_favorites`, one row per member and GIF, which only the API reads, and account deletion removes them.
+  A star must carry the result's token, as a send must, so only a GIF this server's search returned can be starred; `GET /v1/gifs/favorites` signs each again, so a GIF sent from Favorites passes the same check. A favorite from a provider the server no longer uses is left out.
+  The star turns at once and turns back with the reason if the server refuses.
 - **When it is offered.**
   Only when the server has a provider key (`KLIPY_API_KEY`), which `GET /v1/gifs/availability` reports, so a server without one shows no button or row rather than a broken picker.
   The phone greys the row offline ("Reconnect first") and while a reply is staged ("Not while replying").

@@ -1078,6 +1078,8 @@ export function Composer({
   // The + card (#3983): open or closed, and the form it shows (`null` is
   // the menu). Reset by the composer's per-channel key, so a channel switch
   // closes it; the drafts it shows live with the host, per channel.
+  // The GIF picker's popover, held here so the + card's GIF row can open it.
+  const [gifOpen, setGifOpen] = useState(false);
   const [plusCard, setPlusCard] = useState<{
     open: boolean;
     view: PlusMenuCommand | null;
@@ -1886,6 +1888,13 @@ export function Composer({
               }
               view={plusCard.view}
               onAttach={() => fileInput.current?.click()}
+              // After the card has closed, so the picker's popover doesn't
+              // open under the card's own dismissal.
+              onGif={
+                onSendGif
+                  ? () => setTimeout(() => setGifOpen(true), 0)
+                  : undefined
+              }
               onPick={openPlusMenuForm}
               onBack={plusCardControls.back}
               form={
@@ -1926,6 +1935,8 @@ export function Composer({
               <GifPickerButton
                 provider={gifProvider ?? ""}
                 onPick={onSendGif}
+                open={gifOpen}
+                onOpenChange={setGifOpen}
               />
             ) : null}
             <ComposerHelp />

@@ -51,6 +51,7 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  GifFavorite,
   ChatMessageImportantSeen,
   ChatMessageLink,
   ChatMessageReminder,
@@ -253,6 +254,7 @@ export interface Database {
       events: TableDefinition<Event>;
       financial_invoices: TableDefinition<FinancialInvoice>;
       financial_transactions: TableDefinition<FinancialTransaction>;
+      gif_favorites: TableDefinition<GifFavorite>;
       google_calendar_connections: TableDefinition<GoogleCalendarConnection>;
       google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
