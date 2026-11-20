@@ -129,10 +129,19 @@ export const FIRST_SCREEN_COMPANION_TTL_MS = 3_000;
 
 /**
  * How long a batch waits for the bootstrap before its reads go out on their
- * own routes instead. A batch holds every read in it, so one stalled call
- * must not hold the first screen.
+ * own routes instead: the same limit any single read gets
+ * (`REQUEST_TIMEOUT_MS.read` in `client.ts`, not imported here because
+ * `client.ts` imports this file).
+ *
+ * It was 5 s. A bootstrap that slow is almost always a database stall, not a
+ * lost request, and the server keeps working on it after the client gives
+ * up. Re-sending its dozen sections as their own requests then ran a dozen
+ * more guard chains onto the jammed pool and made the stall longer for
+ * everyone (staging, 2026-11-20: the Events page sat on its skeleton for
+ * about 10 s). Waiting as long as the reads themselves would costs a stalled
+ * open nothing it wouldn't have waited anyway.
  */
-export const FIRST_SCREEN_BATCH_TIMEOUT_MS = 5_000;
+export const FIRST_SCREEN_BATCH_TIMEOUT_MS = 15_000;
 
 interface Stashed {
   value: unknown;

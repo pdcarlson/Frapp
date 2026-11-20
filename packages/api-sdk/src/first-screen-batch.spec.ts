@@ -425,6 +425,45 @@ describe("first-screen batching", () => {
     expect(urlsOf(fetchMock).at(-1)).toBe("/v1/documents");
   });
 
+  it("waits for a slow bootstrap instead of re-sending its reads", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        (input: RequestInfo | URL, init?: RequestInit) => {
+          const request =
+            input instanceof Request ? input : new Request(String(input), init);
+          const url = new URL(request.url);
+          if (url.pathname === "/v1/bootstrap") {
+            // A database stall: the answer comes, but late.
+            return new Promise<Response>((resolve) =>
+              setTimeout(
+                () => resolve(json({ user: { id: "me" }, settings: {} })),
+                10_000,
+              ),
+            );
+          }
+          return Promise.resolve(json({ route: url.pathname }));
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const api = client({ token: "token-slow" });
+
+      const reads = Promise.all([
+        api.GET("/v1/users/me"),
+        api.GET("/v1/settings"),
+      ]);
+      await vi.advanceTimersByTimeAsync(10_050);
+      const [me] = await reads;
+
+      expect(me.data).toEqual({ id: "me" });
+      expect(urlsOf(fetchMock).map((u) => u.split("?")[0])).toEqual([
+        "/v1/bootstrap",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("sends the reads on their routes when the bootstrap stalls", async () => {
     vi.useFakeTimers();
     try {
