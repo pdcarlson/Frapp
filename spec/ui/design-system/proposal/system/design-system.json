@@ -60,7 +60,8 @@
     "member-record-phone-today.png",
     "event-record-web-today.png",
     "task-record-web-today.png",
-    "member-record-web-today.png"
+    "member-record-web-today.png",
+    "attendance-web-today.png"
    ],
    "files": {
     "events-web-today.png": {
@@ -146,6 +147,12 @@
      "blob": "caea6d925b3a397d4f1ffe5f28079a00",
      "size": 289136,
      "type": "image/png"
+    },
+    "attendance-web-today.png": {
+     "name": "attendance-web-today.png",
+     "blob": "ea3c639bf96416030f2721ba261c0edc",
+     "size": 34349,
+     "type": "image/png"
     }
    }
   }
@@ -156,8 +163,8 @@
  },
  "lastChange": {
   "by": "Paul Carlson",
-  "at": "2026-11-20T23:41:49Z",
+  "at": "2026-11-20T23:59:42Z",
   "via": "Claude Code",
-  "note": "Rebuilt from the proposal snapshot (main@bb0805b + 248bc35) with fresh captures; added a task and a member redrawn as records."
+  "note": "Added Record states: who sees which button on a task, an event and a member, and attendance rows with one status each."
  }
 }

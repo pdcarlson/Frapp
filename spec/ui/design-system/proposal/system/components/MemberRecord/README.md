@@ -20,4 +20,4 @@ A member, today and redrawn on the Record page template: Directory opens the mem
 
 - **A member looking at another member:** Message; no add row; no menu entries beyond Copy link.
 - **An officer who can assign roles:** the add row and each role's Remove.
-- **The member themselves:** Edit profile replaces Message.
+- **The member themselves:** no button; every value edits where it is.
