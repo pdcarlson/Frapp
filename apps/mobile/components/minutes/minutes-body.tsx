@@ -59,6 +59,7 @@ export function MinutesBody({
   viewerId = null,
   tasks,
   onSectionLayout,
+  renderDates,
 }: {
   meeting: MeetingMinutes;
   content: MeetingContent;
@@ -69,6 +70,11 @@ export function MinutesBody({
   tasks?: ReadonlyMap<number, MeetingActionItemTask>;
   /** Where each section sits in the body, for the jump bar. */
   onSectionLayout?: (key: MeetingSectionKey, y: number) => void;
+  /**
+   * Coming up, drawn by the host: the minutes screen tracks each date
+   * (`ComingUpDates`, #5672). Plain tiles without it.
+   */
+  renderDates?: (dates: MeetingContent["dates"]) => ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -106,6 +112,7 @@ export function MinutesBody({
             nameFor={nameFor}
             viewerId={viewerId}
             tasks={tasks ?? EMPTY_TASKS}
+            renderDates={renderDates}
           />
         </View>
       ))}
@@ -294,12 +301,14 @@ function Section({
   nameFor,
   viewerId,
   tasks,
+  renderDates,
 }: {
   sectionKey: MeetingSectionKey;
   content: MeetingContent;
   nameFor: (userId: string) => string | null;
   viewerId: string | null;
   tasks: ReadonlyMap<number, MeetingActionItemTask>;
+  renderDates?: (dates: MeetingContent["dates"]) => ReactNode;
 }) {
   switch (sectionKey) {
     case "tldr":
@@ -307,7 +316,11 @@ function Section({
     case "summary":
       return <Paragraph text={content.summary} />;
     case "dates":
-      return <Dates dates={content.dates} />;
+      return renderDates ? (
+        renderDates(content.dates)
+      ) : (
+        <MinutesDates dates={content.dates} />
+      );
     case "decisions":
       return <Decisions decisions={content.decisions} />;
     case "action_items":
@@ -375,8 +388,23 @@ function TldrCard({ tldr, summary }: { tldr: string; summary: string }) {
   );
 }
 
-/** Coming up: each day the meeting named as a calendar tile. */
-function Dates({ dates }: { dates: MeetingContent["dates"] }) {
+/**
+ * Coming up: each day the meeting named as a calendar tile. `below` draws
+ * under a date's words (what tracks it, #5672) and `trailing` at its edge
+ * (its ⋯), as web's `DatesView` takes them.
+ */
+export function MinutesDates({
+  dates,
+  below,
+  trailing,
+}: {
+  dates: MeetingContent["dates"];
+  below?: (item: MeetingContent["dates"][number], index: number) => ReactNode;
+  trailing?: (
+    item: MeetingContent["dates"][number],
+    index: number,
+  ) => ReactNode;
+}) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -385,13 +413,11 @@ function Dates({ dates }: { dates: MeetingContent["dates"] }) {
       {dates.map((item, index) => {
         const tile = minutesDateTile(item.date);
         return (
-          <View
-            key={`${item.date}-${index}`}
-            accessible
-            accessibilityLabel={`${item.text}, ${meetingDueLabel(item.date)}`}
-            style={styles.dateRow}
-          >
+          <View key={`${item.date}-${index}`} style={styles.dateRow}>
+            {/* Said by the words' label, so a reader hears it once. */}
             <View
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
               style={[styles.tile, { backgroundColor: tint(accent, 0.16) }]}
             >
               <Text style={[styles.tileMonth, { color: accent }]}>
@@ -402,10 +428,17 @@ function Dates({ dates }: { dates: MeetingContent["dates"] }) {
               </Text>
             </View>
             <View style={styles.flex}>
-              <Text style={styles.strong}>{item.text}</Text>
-              {/* The tile says the month and day; the line, the weekday. */}
-              <Text style={styles.meta}>{tile.line}</Text>
+              <View
+                accessible
+                accessibilityLabel={`${item.text}, ${meetingDueLabel(item.date)}`}
+              >
+                <Text style={styles.strong}>{item.text}</Text>
+                {/* The tile says the month and day; the line, the weekday. */}
+                <Text style={styles.meta}>{tile.line}</Text>
+              </View>
+              {below?.(item, index)}
             </View>
+            {trailing?.(item, index)}
           </View>
         );
       })}

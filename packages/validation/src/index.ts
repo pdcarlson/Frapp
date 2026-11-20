@@ -67,6 +67,8 @@ export * from "./check-in-window";
 export * from "./check-in-zone-copy";
 // The request headers the SDK sets and the API reads (time zone, client version).
 export * from "./client-headers";
+// What already tracks each Coming up date: its event and its tasks (#5672).
+export * from "./coming-up-tracking";
 // Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
 // the effects that feed it; this package owns the rule.

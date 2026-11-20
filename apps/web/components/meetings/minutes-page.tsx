@@ -123,6 +123,7 @@ import { LinkEventPanel } from "@/components/meetings/link-event";
 import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
 import { AttendanceBackfill } from "@/components/meetings/attendance-backfill";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
+import { ComingUpDates } from "@/components/meetings/coming-up-dates";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -132,7 +133,6 @@ import {
 import {
   ActionChecklist,
   Attendees,
-  DatesView,
   DecisionsView,
   LinesView,
   MinutesJumpBar,
@@ -1031,7 +1031,10 @@ function Minutes({
                     {view.content.summary}
                   </p>
                 ) : key === "dates" ? (
-                  <DatesView dates={view.content.dates} />
+                  <ComingUpDates
+                    dates={view.content.dates}
+                    viewerId={viewer?.id ?? null}
+                  />
                 ) : key === "decisions" ? (
                   <DecisionsView decisions={view.content.decisions} />
                 ) : key === "action_items" ? (
