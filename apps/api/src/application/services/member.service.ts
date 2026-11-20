@@ -22,6 +22,7 @@ import { Role } from '#domain/entities/role.entity';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import {
   canReach,
+  holderRank,
   permissionsNotHeld,
   roleRank,
 } from '#domain/utils/role-rank';
@@ -503,6 +504,40 @@ export class MemberService {
     if (changed.some((role) => !canReach(reach, roleRank(role, positions)))) {
       throw new ForbiddenException(
         'You can only give or take away roles ranked below your own.',
+      );
+    }
+    // Except a save that takes the Everyone role away: making someone a New
+    // Member or Alumni does (`rolesAfterSave`), and that narrows what they
+    // can open and where they can post. That is a demotion, not a role
+    // handed out, so it still needs the member ranked below the caller.
+    const memberBelow =
+      reach.memberId === member.id ||
+      canReach(reach, holderRank(before, positions));
+    const losesEveryone =
+      before.some((role) => role.system_key === SystemRoleKeys.MEMBER) &&
+      !after.some((role) => role.system_key === SystemRoleKeys.MEMBER);
+    if (losesEveryone && !memberBelow) {
+      throw new ForbiddenException(
+        'You can only make members ranked below you a new member or an alum.',
+      );
+    }
+    // And taking a role from a peer or a superior needs what giving it
+    // would: its permissions held. Otherwise a chair could strip an
+    // officer's lower role that carries more than the chair has, and the
+    // officer, no longer holding it, couldn't give it back to themselves.
+    const takenOutOfHand = memberBelow
+      ? []
+      : permissionsNotHeld(
+          reach,
+          flattenPermissionSets(
+            before
+              .filter((role) => !afterIds.has(role.id))
+              .map((role) => role.permissions),
+          ),
+        );
+    if (takenOutOfHand.length > 0) {
+      throw new ForbiddenException(
+        `You can only take roles away from members ranked at or above you when you hold their permissions: ${takenOutOfHand.join(', ')}.`,
       );
     }
     // Nobody hands out a permission they don't hold, to anyone: a lower role

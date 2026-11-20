@@ -35,7 +35,7 @@ import { RbacService } from './rbac.service';
  * Every route needs `roles:manage` (the controller). Assigning members, and
  * deleting a class (which takes it off every member in it), also keep two
  * rules: an officer changes the class only of members ranked below them (or
- * their own), as for roles; and a class whose group a channel list names
+ * their own), as for removing a member; and a class whose group a channel list names
  * decides who reads that channel, so changing who is in it, or deleting it
  * (which takes the group off those lists), needs `channels:manage`, as a
  * manual group does (`assertMayChangeGroupAccess`).

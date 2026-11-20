@@ -21,6 +21,7 @@ import { RbacService } from './rbac.service';
 import {
   CHAPTER_ID,
   MEMBER as TIERED_MEMBER,
+  TIER,
   ROLE,
   USER,
   tieredChapterMembers,
@@ -1119,6 +1120,65 @@ describe('MemberService', () => {
         USER.riskChair,
       );
       expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops a chair taking from an officer a lower role that carries more than the chair holds', async () => {
+      const vp = {
+        ...memberRow(TIERED_MEMBER.vicePresident),
+        role_ids: [ROLE.vicePresident, ROLE.treasuryAssistant],
+      };
+      mockRepo.findById.mockResolvedValue(vp);
+      mockRoleRepo.findByChapter.mockResolvedValue(roles);
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await expect(
+        service.updateRoles(
+          vp.id,
+          [ROLE.vicePresident],
+          CHAPTER_ID,
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/billing:view/);
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+    });
+
+    it('stops a chair making an officer a new member, which takes Everyone away', async () => {
+      const everyone = {
+        ...roles.find((role) => role.id === ROLE.brother)!,
+        id: 'role-everyone',
+        name: 'Everyone',
+        system_key: SystemRoleKeys.MEMBER,
+        tier_id: TIER.pledges,
+      };
+      const newMember = {
+        ...everyone,
+        id: 'role-new-member',
+        name: 'New Member',
+        system_key: SystemRoleKeys.NEW_MEMBER,
+      };
+      const vp = {
+        ...memberRow(TIERED_MEMBER.vicePresident),
+        role_ids: [ROLE.vicePresident, everyone.id],
+      };
+      mockRepo.findById.mockResolvedValue(vp);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        ...roles,
+        everyone,
+        newMember,
+      ]);
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await expect(
+        service.updateRoles(
+          vp.id,
+          [ROLE.vicePresident, newMember.id],
+          CHAPTER_ID,
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/ranked below you/);
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it("still stops a chair changing a fellow chair's or an officer's own roles", async () => {
