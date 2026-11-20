@@ -24,6 +24,7 @@ import {
   guessMeetingType,
   meetingTypeLabel,
   minutesRowTags,
+  minutesStateWho,
   minutesTimeline,
   minutesToWrite,
   startedEventIds,
@@ -214,9 +215,7 @@ function ChapterMeetingsPage() {
     [meetingsQuery.data, showToWrite, toWrite, now],
   );
   const authorOf = (row: MeetingSummary) =>
-    row.status === "draft" && row.created_by && row.created_by !== viewerId
-      ? names.nameFor(row.created_by)
-      : null;
+    minutesStateWho(row, viewerId, names.nameFor);
 
   return (
     <div className="space-y-6">
@@ -440,7 +439,10 @@ function MinutesRow({
   author,
 }: {
   row: MeetingSummary;
-  /** Whose draft it is, named only when it isn't the viewer's own. */
+  /**
+   * Whom the draft's state names (`minutesStateWho`): who is recording it,
+   * else whose it is, only when that isn't the viewer.
+   */
   author: string | null;
 }) {
   // What the minutes hold, worked out from them, as the phone's row says it
@@ -470,9 +472,10 @@ function MinutesRow({
                 <Badge
                   key={tag.key}
                   variant={
-                    tag.key === "draft"
+                    // The phone's colours (`minutes-row.tsx` tagHue).
+                    tag.key === "drafting"
                       ? "warning"
-                      : tag.key === "recorded"
+                      : tag.key === "recording" || tag.key === "recorded"
                         ? "destructive"
                         : "outline"
                   }

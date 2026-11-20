@@ -1,5 +1,9 @@
 import type { MeetingType } from '@repo/validation';
-import { Meeting, MeetingTemplate } from '../entities/meeting.entity';
+import {
+  Meeting,
+  MeetingLiveRecording,
+  MeetingTemplate,
+} from '../entities/meeting.entity';
 
 export const MEETING_REPOSITORY = 'MEETING_REPOSITORY';
 
@@ -70,6 +74,11 @@ export interface IMeetingRepository {
     meetingIds: readonly string[],
     seenSince: string,
   ): Promise<Map<string, string>>;
+  /** Every recording in the chapter heard from at or after `seenSince`. */
+  findLiveRecordings(
+    chapterId: string,
+    seenSince: string,
+  ): Promise<MeetingLiveRecording[]>;
   /** Marks `userId` as recording the minutes now (insert or refresh). */
   markLiveRecording(
     chapterId: string,

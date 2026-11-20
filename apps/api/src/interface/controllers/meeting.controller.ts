@@ -44,6 +44,7 @@ import {
   ListMeetingsQueryDto,
   MeetingDto,
   MeetingListItemDto,
+  MeetingLiveRecordingDto,
   MeetingSummaryDto,
   MeetingTemplateDto,
   PostMeetingDto,
@@ -130,6 +131,20 @@ export class MeetingController {
       ...summaryOf(row),
       ...(facts.get(row.id) ?? NO_FACTS),
     }));
+  }
+
+  @Get('live-recordings')
+  @VerifySessionLocally()
+  @ApiOperation({
+    summary:
+      'Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event',
+  })
+  @ApiOkResponse({ type: MeetingLiveRecordingDto, isArray: true })
+  async liveRecordings(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<MeetingLiveRecordingDto[]> {
+    return this.meetings.liveRecordingsVisibleTo(chapterId, userId);
   }
 
   @Get('template')

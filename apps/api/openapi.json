@@ -8316,6 +8316,46 @@
         ]
       }
     },
+    "/v1/meetings/live-recordings": {
+      "get": {
+        "operationId": "MeetingController_liveRecordings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingLiveRecordingDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/meetings/template": {
       "get": {
         "operationId": "MeetingController_getTemplate_v1",
@@ -29028,6 +29068,34 @@
           "gist",
           "started",
           "recording_by"
+        ]
+      },
+      "MeetingLiveRecordingDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who is recording."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "event_id",
+          "user_id",
+          "started_at"
         ]
       },
       "MeetingTemplateDto": {

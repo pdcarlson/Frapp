@@ -528,6 +528,15 @@ export class MeetingListItemDto extends MeetingSummaryDto {
   recording_by: string | null;
 }
 
+/** A meeting being recorded right now (`GET /v1/meetings/live-recordings`). */
+export class MeetingLiveRecordingDto {
+  @ApiProperty({ format: 'uuid' }) meeting_id: string;
+  @ApiProperty({ format: 'uuid' }) event_id: string;
+  @ApiProperty({ format: 'uuid', description: 'Who is recording.' })
+  user_id: string;
+  @ApiProperty({ format: 'date-time' }) started_at: string;
+}
+
 /** A meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */
 export class MeetingDto extends MeetingSummaryDto {
   @ApiProperty({ type: String, format: 'date-time', nullable: true })

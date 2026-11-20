@@ -24,6 +24,10 @@ vi.mock("@repo/hooks", () => ({
   useMeetingNoteTaking: () => mocks.taking.current,
   useMinutesRequest: () => mocks.request.current,
   useRequestMinutes: () => ({ mutateAsync: mocks.ask, isPending: false }),
+  useViewerUserId: () => "u-viewer",
+  useMemberDisplayNames: () => ({
+    nameFor: (id: string) => (id === "u-winston" ? "Winston Hewitt" : null),
+  }),
 }));
 
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
@@ -128,6 +132,29 @@ describe("EventMinutes", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText("Dues are due Friday.")).toBeTruthy();
+  });
+
+  it("says who is recording a draft, and never just 'a draft' (Paul, 2026-11-20)", () => {
+    mocks.meetings.current = {
+      isPending: false,
+      isError: false,
+      data: [
+        {
+          id: "m-1",
+          status: "draft",
+          event_id: "e-1",
+          created_by: "u-winston",
+          posted_at: null,
+          decision_count: 0,
+          action_item_count: 0,
+          gist: null,
+          started: false,
+          recording_by: "u-winston",
+        },
+      ],
+    };
+    render(<EventMinutes eventId="e-1" eventName="Recruitment Meetings" />);
+    expect(screen.getByText("Winston Hewitt is recording")).toBeTruthy();
   });
 
   it("offers no Write minutes when the read failed", () => {

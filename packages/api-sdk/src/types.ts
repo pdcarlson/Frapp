@@ -2514,6 +2514,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/live-recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event */
+        get: operations["MeetingController_liveRecordings_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/template": {
         parameters: {
             query?: never;
@@ -9076,6 +9093,19 @@ export interface components {
              * @description Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.
              */
             recording_by: string | null;
+        };
+        MeetingLiveRecordingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /**
+             * Format: uuid
+             * @description Who is recording.
+             */
+            user_id: string;
+            /** Format: date-time */
+            started_at: string;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -18855,6 +18885,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_liveRecordings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingLiveRecordingDto"][];
                 };
             };
             /** @description Error */

@@ -212,12 +212,24 @@ describe('MeetingService', () => {
       ),
       findLiveRecorders: jest.fn(
         async (_chapterId: string, ids: readonly string[], _since: string) =>
-          new Map(
-            [...liveRecorders].filter(([id]) => ids.includes(id)),
-          ),
+          new Map([...liveRecorders].filter(([id]) => ids.includes(id))),
+      ),
+      findLiveRecordings: jest.fn(async (_chapterId: string, _since: string) =>
+        [...liveRecorders].map(([meetingId, userId]) => ({
+          meeting_id: meetingId,
+          chapter_id: CHAPTER,
+          user_id: userId,
+          started_at: '2026-11-20T21:00:00.000Z',
+          seen_at: '2026-11-20T21:00:00.000Z',
+        })),
       ),
       markLiveRecording: jest.fn(
-        async (_chapterId: string, id: string, userId: string, _now: string) => {
+        async (
+          _chapterId: string,
+          id: string,
+          userId: string,
+          _now: string,
+        ) => {
           liveRecorders.set(id, userId);
         },
       ),
@@ -1299,9 +1311,7 @@ describe('MeetingService', () => {
       const id = view.meeting.id;
       await expect(service.canRead(CHAPTER, id, SECRETARY)).resolves.toBe(true);
       await expect(service.canRead(CHAPTER, id, VP)).resolves.toBe(false);
-      await expect(service.canRead(CHAPTER, id, PRESIDENT)).resolves.toBe(
-        true,
-      );
+      await expect(service.canRead(CHAPTER, id, PRESIDENT)).resolves.toBe(true);
       const { rows: listed } = await service.listWithFacts(CHAPTER, SECRETARY);
       expect(listed.map((row) => row.id)).toEqual([id]);
     });
@@ -1386,6 +1396,28 @@ describe('MeetingService', () => {
       await service.clearLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
       ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
       expect(facts.get('mtg-1')?.recording_by).toBeNull();
+    });
+
+    it('tells anyone the meeting invites who is recording it, but not someone it leaves out', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      rows.set(
+        'mtg-2',
+        meeting({
+          id: 'mtg-2',
+          event_id: EXEC_EVENT.id,
+          created_by: PRESIDENT,
+        }),
+      );
+      await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      await service.markLiveRecording(CHAPTER, 'mtg-2', PRESIDENT);
+      const forJake = await service.liveRecordingsVisibleTo(CHAPTER, JAKE);
+      expect(forJake).toEqual([
+        expect.objectContaining({
+          meeting_id: 'mtg-1',
+          event_id: CHAPTER_EVENT.id,
+          user_id: SECRETARY,
+        }),
+      ]);
     });
 
     it('lets only someone who may edit the minutes say they are recording them', async () => {

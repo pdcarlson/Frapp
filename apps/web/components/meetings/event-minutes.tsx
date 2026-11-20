@@ -7,15 +7,18 @@ import { codeOf } from "@repo/api-sdk";
 import {
   useMeetingNoteTaking,
   useMeetings,
+  useMemberDisplayNames,
   useMinutesRequest,
   useMyPermissions,
   useStartMeeting,
+  useViewerUserId,
 } from "@repo/hooks";
 import {
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   MINUTES_REQUEST_COPY,
   can,
+  minutesStateWho,
   eventMinutesLines,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -63,6 +66,8 @@ export function EventMinutes({
   const router = useRouter();
   const { toast } = useToast();
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
+  const viewerId = useViewerUserId();
+  const names = useMemberDisplayNames();
   const takingQuery = useMeetingNoteTaking({
     enabled: on && !!eventId,
     eventId,
@@ -90,7 +95,7 @@ export function EventMinutes({
   if (taking) {
     return (
       <MinutesRowFrame
-        status={`${MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}, ${MEETING_ENTRY_COPY.draft.toLowerCase()}`}
+        status={MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}
       >
         <Link
           href={`/meetings/${taking.meeting_id}/notes`}
@@ -150,7 +155,12 @@ export function EventMinutes({
     }
   }
 
-  const lines = minutes ? eventMinutesLines(minutes) : null;
+  const lines = minutes
+    ? eventMinutesLines(
+        minutes,
+        minutesStateWho(minutes, viewerId, names.nameFor),
+      )
+    : null;
   return (
     <MinutesRowFrame
       status={lines ? lines.status : MEETING_ENTRY_COPY.none}

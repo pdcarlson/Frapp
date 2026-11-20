@@ -4,8 +4,10 @@ import { useRouter } from "expo-router";
 import {
   useMeetingNoteTaking,
   useMeetings,
+  useMemberDisplayNames,
   useMinutesRequest,
   usePermissionList,
+  useViewerUserId,
 } from "@repo/hooks";
 import {
   MEETING_COPY,
@@ -13,6 +15,7 @@ import {
   MEETING_NOTE_TAKERS_COPY,
   can,
   eventMinutesLines,
+  minutesStateWho,
 } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
@@ -61,6 +64,8 @@ export function EventMinutesRow({
   const on = useMeetingsOn();
   const router = useRouter();
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
+  const viewerId = useViewerUserId();
+  const names = useMemberDisplayNames();
   const canRecord = can("meetings:record", usePermissionList());
   const canDraft = useAiSurfaces().meetingNotes;
   const start = useStartMinutesFor();
@@ -140,7 +145,12 @@ export function EventMinutesRow({
     }
   }
 
-  const lines = minutes ? eventMinutesLines(minutes) : null;
+  const lines = minutes
+    ? eventMinutesLines(
+        minutes,
+        minutesStateWho(minutes, viewerId, names.nameFor),
+      )
+    : null;
   return (
     <>
       <ListSection>

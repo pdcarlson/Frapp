@@ -10,7 +10,11 @@ import type {
   IMeetingRepository,
   MeetingWrite,
 } from '#domain/repositories/meeting.repository.interface';
-import type { Meeting, MeetingTemplate } from '#domain/entities/meeting.entity';
+import type {
+  Meeting,
+  MeetingLiveRecording,
+  MeetingTemplate,
+} from '#domain/entities/meeting.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
@@ -104,22 +108,37 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
     return new Map((data ?? []).map((row) => [row.meeting_id, row.user_id]));
   }
 
+  async findLiveRecordings(
+    chapterId: string,
+    seenSince: string,
+  ): Promise<MeetingLiveRecording[]> {
+    const { data, error } = await this.supabase
+      .from('meeting_live_recordings')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .gte('seen_at', seenSince);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async markLiveRecording(
     chapterId: string,
     meetingId: string,
     userId: string,
     now: string,
   ): Promise<void> {
-    const { error } = await this.supabase.from('meeting_live_recordings').upsert(
-      {
-        meeting_id: meetingId,
-        chapter_id: chapterId,
-        user_id: userId,
-        started_at: now,
-        seen_at: now,
-      },
-      { onConflict: 'meeting_id', ignoreDuplicates: true },
-    );
+    const { error } = await this.supabase
+      .from('meeting_live_recordings')
+      .upsert(
+        {
+          meeting_id: meetingId,
+          chapter_id: chapterId,
+          user_id: userId,
+          started_at: now,
+          seen_at: now,
+        },
+        { onConflict: 'meeting_id', ignoreDuplicates: true },
+      );
     if (error) throw new SupabaseQueryError(error);
     // A row already there (this phone's last beat, or another member's):
     // the newest phone to say so is the one recording, and its start stays.

@@ -934,8 +934,7 @@ export class MeetingService {
     const eventVisible = await this.eventShowsTo(chapterId, meeting, userId);
     // The author of a draft with no meeting yet edits it too (§ Who can
     // read minutes), as `readable` lets them read it.
-    const ownUnlinkedDraft =
-      !meeting.event_id && meeting.status === 'draft';
+    const ownUnlinkedDraft = !meeting.event_id && meeting.status === 'draft';
     const canEdit =
       access.canEditAny ||
       (meeting.created_by === userId && (eventVisible || ownUnlinkedDraft));
@@ -1011,6 +1010,63 @@ export class MeetingService {
       userId,
       new Date().toISOString(),
     );
+  }
+
+  /**
+   * The meetings being recorded right now whose events the viewer can see,
+   * for anyone the meeting invites (the Activity page's Now card, the event
+   * screen): who, since when, and which event. A recording is announced to
+   * the room before it starts (§ Recording notice), so saying who is
+   * recording shows nothing of the draft itself, which stays its author's.
+   * Minutes with no meeting have no audience and are left out.
+   */
+  async liveRecordingsVisibleTo(
+    chapterId: string,
+    viewerId: string,
+  ): Promise<
+    {
+      meeting_id: string;
+      event_id: string;
+      user_id: string;
+      started_at: string;
+    }[]
+  > {
+    const live = await this.meetingRepo.findLiveRecordings(
+      chapterId,
+      new Date(Date.now() - LIVE_RECORDING_STALE_MS).toISOString(),
+    );
+    if (live.length === 0) return [];
+    const meetings = (
+      await Promise.all(
+        live.map((row) => this.meetingRepo.findById(chapterId, row.meeting_id)),
+      )
+    ).filter(
+      (row): row is Meeting =>
+        row !== null && row.status === 'draft' && row.event_id !== null,
+    );
+    const visible = new Set(
+      (
+        await this.visibleEvents(
+          chapterId,
+          viewerId,
+          meetings.map((row) => row.event_id!),
+        )
+      ).map((event) => event.id),
+    );
+    const eventOf = new Map(meetings.map((row) => [row.id, row.event_id!]));
+    return live.flatMap((row) => {
+      const eventId = eventOf.get(row.meeting_id);
+      return eventId && visible.has(eventId)
+        ? [
+            {
+              meeting_id: row.meeting_id,
+              event_id: eventId,
+              user_id: row.user_id,
+              started_at: row.started_at,
+            },
+          ]
+        : [];
+    });
   }
 
   /** The phone stopped recording, or never started: nobody is, by it. */
