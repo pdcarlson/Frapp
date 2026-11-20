@@ -3,6 +3,7 @@ import {
   escapeLikePattern,
   fetchAllById,
   fetchAllPages,
+  fetchCountedPages,
   omitColumns,
   type PagedQueryResult,
 } from './supabase.utils';
@@ -177,6 +178,77 @@ describe('fetchAllPages', () => {
       expect(result).toHaveLength(50);
       expect(ranges).toEqual([[0, 49]]);
     });
+  });
+});
+
+describe('fetchCountedPages', () => {
+  /** Answers like `pager`, with the total on whichever call asked for it. */
+  function countedPager<T>(total: number, pages: T[][]) {
+    const calls: Array<[number, number, boolean]> = [];
+    let index = 0;
+    const page = (from: number, to: number, withCount: boolean) => {
+      calls.push([from, to, withCount]);
+      return Promise.resolve({
+        data: pages[index++] ?? [],
+        error: null,
+        count: withCount ? total : null,
+      });
+    };
+    return { page, calls };
+  }
+
+  it('reads a list shorter than a page in one request, with its total', async () => {
+    const { page, calls } = countedPager(5, [rows(5)]);
+
+    const result = await fetchCountedPages(page, { pageSize: 1000 });
+
+    expect(result).toEqual({ rows: rows(5), total: 5 });
+    expect(calls).toEqual([[0, 999, true]]);
+  });
+
+  it('keeps reading past short pages until it holds every counted row', async () => {
+    // A server capping pages at 40, below the page asked for.
+    const { page, calls } = countedPager(85, [rows(40), rows(40), rows(5)]);
+
+    const result = await fetchCountedPages(page, { pageSize: 100 });
+
+    expect(result.rows).toHaveLength(85);
+    expect(result.total).toBe(85);
+    expect(calls).toEqual([
+      [0, 99, true],
+      [40, 139, false],
+      [80, 179, false],
+    ]);
+  });
+
+  it('stops at the limit and still counts every matching row', async () => {
+    const { page, calls } = countedPager(300, [rows(25)]);
+
+    const result = await fetchCountedPages(page, { pageSize: 25, limit: 25 });
+
+    expect(result.rows).toHaveLength(25);
+    expect(result.total).toBe(300);
+    expect(calls).toEqual([[0, 24, true]]);
+  });
+
+  it('ends on an empty page when rows vanish between pages', async () => {
+    const { page, calls } = countedPager(10, [rows(4), []]);
+
+    const result = await fetchCountedPages(page, { pageSize: 4 });
+
+    expect(result).toEqual({ rows: rows(4), total: 10 });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('throws a failed page rather than returning part of the rows', async () => {
+    const page = () =>
+      Promise.resolve({
+        data: null,
+        error: { message: 'boom' },
+        count: null,
+      });
+
+    await expect(fetchCountedPages(page, { pageSize: 10 })).rejects.toThrow();
   });
 });
 

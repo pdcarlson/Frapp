@@ -128,6 +128,57 @@ export async function fetchAllPages<T>(
 }
 
 /**
+ * {@link fetchAllPages} for a read that also wants its total, which saves the
+ * empty round trip that ends every other paged read (#5746). The first page
+ * asks PostgREST for the exact count of the matching rows (`withCount`), so
+ * the loop knows how many rows there are to read and stops once it holds them
+ * all, or `limit` of them, however short the server's cap makes each page. The
+ * second rule of `fetchAllPages` holds: it advances by what arrived. A page
+ * that comes back empty still ends the read, as when rows were deleted between
+ * pages.
+ *
+ * `total` is how many rows matched when the first page was read, before
+ * `limit`. A backend that sends no count (none here does) falls back to
+ * reading until an empty page, with `total` the rows read.
+ */
+export async function fetchCountedPages<T>(
+  page: (
+    from: number,
+    to: number,
+    withCount: boolean,
+  ) => PromiseLike<PagedQueryResult<T> & { count?: number | null }>,
+  { pageSize, limit }: { pageSize: number; limit?: number },
+): Promise<{ rows: T[]; total: number }> {
+  const rows: T[] = [];
+  let total: number | null = null;
+  const ceiling = () =>
+    Math.min(
+      limit ?? Number.POSITIVE_INFINITY,
+      total ?? Number.POSITIVE_INFINITY,
+    );
+
+  for (let from = 0; from < ceiling();) {
+    if (rows.length > MAX_PAGED_ROWS) {
+      throw new Error(
+        `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,
+      );
+    }
+    const first = from === 0;
+    const to = Math.min(from + pageSize, limit ?? Number.POSITIVE_INFINITY) - 1;
+    const { data, error, count } = await page(from, to, first);
+    if (error) throw new SupabaseQueryError(error);
+    if (first && typeof count === 'number') total = count;
+
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length === 0) break;
+    from += batch.length;
+  }
+
+  return { rows, total: total ?? rows.length };
+}
+
+/**
  * Read a query's full result set by its `id`, one page at a time: each page is
  * the rows after the last id read (`id > last`, ordered by id, see `page`'s
  * `after`), until a page comes back empty. Prefer it to `fetchAllPages` for a

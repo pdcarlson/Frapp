@@ -1636,16 +1636,18 @@ export class ActivityService {
       userId,
     );
     const completedSince = new Date(since).toISOString();
+    const none = Promise.resolve({ tasks: [] as TaskView[], total: 0 });
     const [own, assigned] = await Promise.all([
       // Each read capped, newest made first, so a busy month never reads
-      // (with every task's subtasks and photos) hundreds of rows to keep 25.
-      this.taskService.list(chapterId, userId, false, {
+      // hundreds of rows to keep 25. The task's own columns only, as the
+      // page reads them (#5746).
+      this.taskService.listRows(chapterId, userId, false, {
         status: TaskStatus.COMPLETED,
         completedSince,
         limit: ARCHIVE_TASK_SCAN_LIMIT,
       }),
       can(SystemPermissions.TASKS_MANAGE, permissions)
-        ? this.taskService.list(chapterId, userId, true, {
+        ? this.taskService.listRows(chapterId, userId, true, {
             createdBy: userId,
             status: TaskStatus.COMPLETED,
             confirmed: true,
@@ -1653,18 +1655,24 @@ export class ActivityService {
             // days ago leaves Tasks you assigned today, so it lands here.
             limit: ARCHIVE_TASK_SCAN_LIMIT,
           })
-        : Promise.resolve([]),
+        : none,
     ]);
     const byId = new Map<string, TaskView>();
-    for (const task of [...own, ...assigned]) byId.set(task.id, task);
+    for (const task of [...own.tasks, ...assigned.tasks]) {
+      byId.set(task.id, task);
+    }
     // When it last finished: confirmed, or marked done.
     const doneAt = (task: TaskView) =>
       new Date(
         latest(task.completed_at ?? task.created_at, task.confirmed_at),
       ).getTime() || 0;
-    const finished = [...byId.values()]
-      .sort((a, b) => doneAt(b) - doneAt(a))
-      .slice(0, LIST_LIMIT);
+    // Only the 25 kept get their groups read.
+    const finished = await this.taskService.withGroupSummaries(
+      chapterId,
+      [...byId.values()]
+        .sort((a, b) => doneAt(b) - doneAt(a))
+        .slice(0, LIST_LIMIT),
+    );
     const names = await this.namesOf(
       finished.flatMap((task) => [task.assignee_id, task.created_by]),
     );
@@ -1800,63 +1808,77 @@ export class ActivityService {
   }> {
     const canManage = can(SystemPermissions.TASKS_MANAGE, permissions);
     // Each list is its own read, filtered in SQL, so none depends on reading
-    // the chapter's whole task history (#4037).
+    // the chapter's whole task history (#4037). Each reads the task's own
+    // columns only (`TaskService.listRows`): a row draws no subtask, photo or
+    // series, so the page doesn't read them (#5746).
     // Finished tasks waiting on a confirm: the 25 waiting longest, and how
-    // many wait in all, for `needs_you_count`. Confirming your own completion
-    // is refused (`TaskService.confirmCompletion`, the no-self-award rule), so
-    // yours are not offered as waiting on you.
-    const waitingFilter = {
-      status: TaskStatus.COMPLETED,
-      confirmed: false,
-      notAssigneeId: userId,
-    };
-    const [own, waiting, waitingCount, made, madeItems, doneThisWeek] =
-      await Promise.all([
-        this.taskService.list(chapterId, userId, false, { confirmed: false }),
-        canManage
-          ? this.taskService.list(chapterId, userId, true, {
-              ...waitingFilter,
-              order: 'longest_waiting',
-              limit: LIST_LIMIT,
-            })
-          : Promise.resolve([]),
-        canManage
-          ? this.taskService.count(chapterId, userId, true, waitingFilter)
-          : Promise.resolve(0),
-        // Only while the caller can still read tasks they don't hold: a creator
-        // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
-        // row that opens to a refusal is worse than no row.
-        canManage
-          ? this.taskService.list(chapterId, userId, true, {
-              createdBy: userId,
-              limit: LIST_LIMIT,
-            })
-          : Promise.resolve([]),
-        // The same, a task for everyone once (#5492), under the same rule.
-        canManage
-          ? this.taskService.listAssignedItems(
-              chapterId,
-              userId,
-              LIST_LIMIT,
-              now,
-            )
-          : Promise.resolve([]),
-        // Done this week, confirmed or not: marking it done was the member's
-        // part. One sent back since is open again and is not counted here.
-        this.taskService.count(chapterId, userId, false, {
-          status: TaskStatus.COMPLETED,
-          completedSince: new Date(weekStart).toISOString(),
-        }),
-      ]);
+    // many wait in all, for `needs_you_count`, counted by the same request.
+    // Confirming your own completion is refused
+    // (`TaskService.confirmCompletion`, the no-self-award rule), so yours are
+    // not offered as waiting on you.
+    const none = Promise.resolve({ tasks: [] as TaskView[], total: 0 });
+    const [own, waiting, made, madeItems] = await Promise.all([
+      // The caller's tasks not yet confirmed and, in the same read, those
+      // they marked done since the week began, confirmed or not: marking it
+      // done was the member's part. One sent back since is open again and is
+      // not counted as done.
+      this.taskService.listRows(chapterId, userId, false, {
+        unconfirmedOrCompletedSince: new Date(weekStart).toISOString(),
+      }),
+      canManage
+        ? this.taskService.listRows(chapterId, userId, true, {
+            status: TaskStatus.COMPLETED,
+            confirmed: false,
+            notAssigneeId: userId,
+            order: 'longest_waiting',
+            limit: LIST_LIMIT,
+          })
+        : none,
+      // Only while the caller can still read tasks they don't hold: a creator
+      // who has lost `tasks:manage` gets a 403 from `GET /v1/tasks/:id`, and a
+      // row that opens to a refusal is worse than no row.
+      canManage
+        ? this.taskService.listRows(chapterId, userId, true, {
+            createdBy: userId,
+            limit: LIST_LIMIT,
+          })
+        : none,
+      // The same, a task for everyone once (#5492), under the same rule.
+      canManage
+        ? this.taskService.listAssignedItems(chapterId, userId, LIST_LIMIT, now)
+        : Promise.resolve([]),
+    ]);
+    // Every list's groups in one read.
+    const withGroups = await this.taskService.withGroupSummaries(chapterId, [
+      ...own.tasks,
+      ...waiting.tasks,
+      ...made.tasks,
+    ]);
+    const ownTasks = withGroups.slice(0, own.tasks.length);
+    const waitingTasks = withGroups.slice(
+      own.tasks.length,
+      own.tasks.length + waiting.tasks.length,
+    );
+    const madeTasks = withGroups.slice(own.tasks.length + waiting.tasks.length);
+    const doneThisWeek = ownTasks.filter(
+      (task) =>
+        task.stored_status === TaskStatus.COMPLETED &&
+        task.completed_at !== null &&
+        since(task.completed_at, weekStart),
+    ).length;
 
-    const mine = own
-      .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
+    const mine = ownTasks
+      .filter(
+        (task) =>
+          task.confirmed_at === null &&
+          task.stored_status !== TaskStatus.COMPLETED,
+      )
       // By day, and within a day by time, a task with no time last: it is
       // due by the end of the day.
       .sort(byAscending((task) => `${task.due_date} ${task.due_at ?? '~'}`));
     // Already oldest first from the database.
-    const confirmations = waiting;
-    const assigned = made.sort(byNewest);
+    const confirmations = waitingTasks;
+    const assigned = madeTasks.sort(byNewest);
 
     const singles = madeItems.flatMap((item) =>
       item.kind === 'task' ? [item.task] : [],
@@ -1871,7 +1893,7 @@ export class ActivityService {
     return {
       mine: mine.map(toRow),
       confirmations: confirmations.map(toRow),
-      confirmationsWaiting: waitingCount,
+      confirmationsWaiting: waiting.total,
       assigned: assigned.map(toRow),
       assignedItems: madeItems.map((item): ActivityTaskItem =>
         item.kind === 'task'

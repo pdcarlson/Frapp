@@ -10,6 +10,7 @@ import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface'
 import type {
   ITaskRepository,
   TaskListCursor,
+  TaskListFilter,
 } from '#domain/repositories/task.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
@@ -167,6 +168,14 @@ export interface TaskListOptions {
   /** At most this many rows. */
   limit?: number;
 }
+
+/**
+ * {@link TaskListOptions} for {@link TaskService.listRows}, which can also read
+ * a member's unconfirmed tasks together with what they finished since
+ * (`TaskListFilter.unconfirmedOrCompletedSince`, #5746).
+ */
+export type TaskRowListOptions = TaskListOptions &
+  Pick<TaskListFilter, 'unconfirmedOrCompletedSince'>;
 
 /** A copy's state with its display status, as a group row reads it (#5492). */
 export type TaskGroupCopyView = TaskGroupCopyState & {
@@ -814,6 +823,49 @@ export class TaskService {
     return this.withSubtasks(chapterId, toDisplayStatusList(tasks));
   }
 
+  /**
+   * {@link list}'s tasks as bare rows, with how many match before `limit`
+   * (#5746): one request for a list that fits a page, where `list` makes an
+   * empty one after it and reads each task's subtasks, photos, series, group
+   * and the open task it was claimed from. For a reader that draws only the
+   * task's own columns, such as Activity; add {@link withGroupSummaries} for
+   * `group`. The same rule as `list`: without `tasks:manage`, only the
+   * caller's own tasks.
+   */
+  async listRows(
+    chapterId: string,
+    userId: string,
+    isAdmin: boolean,
+    options: TaskRowListOptions = {},
+  ): Promise<{ tasks: TaskView[]; total: number }> {
+    instantOrThrow('before', options.after?.created_at);
+    const { tasks, total } = await this.taskRepo.findByChapterCounted(
+      chapterId,
+      {
+        ...options,
+        // Last, so no option widens a member's read past their own tasks.
+        ...(isAdmin ? {} : { assigneeId: userId }),
+      },
+    );
+    return { tasks: toDisplayStatusList(tasks), total };
+  }
+
+  /**
+   * Each task with its group's progress as `group` (null for a one-person
+   * task), as {@link list} gives it, from one read of the groups and their
+   * copies for every task passed, whichever list it came from (#5746).
+   */
+  async withGroupSummaries(
+    chapterId: string,
+    tasks: TaskView[],
+  ): Promise<TaskView[]> {
+    const groups = await this.groupSummaries(chapterId, tasks);
+    return tasks.map((task) => ({
+      ...task,
+      group: task.group_id ? (groups.get(task.group_id) ?? null) : null,
+    }));
+  }
+
   /** How many tasks {@link list} would return with no `limit`, counted in SQL. */
   async count(
     chapterId: string,
@@ -849,12 +901,15 @@ export class TaskService {
     now: Date = new Date(),
   ): Promise<AssignedTaskItem[]> {
     const [singles, groups] = await Promise.all([
-      this.taskRepo.findByChapter(chapterId, {
-        createdBy,
-        groupless: true,
-        confirmed: false,
-        limit,
-      }),
+      // Counted, which ends the read without an empty page (#5746).
+      this.taskRepo
+        .findByChapterCounted(chapterId, {
+          createdBy,
+          groupless: true,
+          confirmed: false,
+          limit,
+        })
+        .then(({ tasks }) => tasks),
       this.taskRepo.findUnfinishedGroupsByCreator(chapterId, createdBy, limit),
     ]);
     type Entry =

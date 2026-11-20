@@ -114,6 +114,7 @@ describe('TaskService', () => {
       findById: jest.fn(),
       findByIds: jest.fn().mockResolvedValue([]),
       findByChapter: jest.fn(),
+      findByChapterCounted: jest.fn(),
       findSince: jest.fn(),
       countByChapter: jest.fn(),
       create: jest.fn(),
@@ -837,8 +838,12 @@ describe('TaskService', () => {
       }));
     /** The repository's one-person read: newest first, at most `limit`. */
     const serveSingles = (rows: Task[]) =>
-      mockTaskRepo.findByChapter.mockImplementation((_chapterId, query) =>
-        Promise.resolve(rows.slice(0, query?.limit ?? rows.length)),
+      mockTaskRepo.findByChapterCounted.mockImplementation(
+        (_chapterId, query) =>
+          Promise.resolve({
+            tasks: rows.slice(0, query?.limit ?? rows.length),
+            total: rows.length,
+          }),
       );
     /**
      * The copies as the two reads give them: their states (the narrow read)
@@ -916,7 +921,7 @@ describe('TaskService', () => {
       );
       expect(group.kind === 'group' && group.copies).toHaveLength(30);
       // Both lists are narrowed and capped in SQL.
-      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
+      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith('ch-1', {
         createdBy: 'admin-1',
         groupless: true,
         confirmed: false,
@@ -2328,6 +2333,100 @@ describe('TaskService', () => {
         limit: 50,
         assigneeId: 'user-1',
       });
+    });
+
+    it('listRows: bare rows and their total in one read, a member only their own (#5746)', async () => {
+      mockTaskRepo.findByChapterCounted.mockResolvedValue({
+        tasks: [baseTask],
+        total: 7,
+      });
+
+      const result = await service.listRows('ch-1', 'user-1', false, {
+        // A member's option can't widen the read past their own tasks.
+        unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
+        limit: 25,
+      });
+
+      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith('ch-1', {
+        unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
+        limit: 25,
+        assigneeId: 'user-1',
+      });
+      // None of what `list` adds to a task: no subtask, photo, series or
+      // open-task read.
+      expect(result).toEqual({ tasks: [asView(baseTask)], total: 7 });
+      expect(mockTaskRepo.findSubtasks).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findPhotos).not.toHaveBeenCalled();
+      expect(mockTaskRepo.findSeries).not.toHaveBeenCalled();
+      expect(mockOpenTaskRepo.findClaimedFrom).not.toHaveBeenCalled();
+    });
+
+    it('listRows: a tasks:manage holder reads the chapter as asked', async () => {
+      mockTaskRepo.findByChapterCounted.mockResolvedValue({
+        tasks: [],
+        total: 0,
+      });
+
+      await service.listRows('ch-1', 'user-1', true, { createdBy: 'user-1' });
+
+      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith('ch-1', {
+        createdBy: 'user-1',
+      });
+    });
+
+    it("withGroupSummaries: every task's group from one read, null for one-person tasks", async () => {
+      mockTaskRepo.findGroups.mockResolvedValue([
+        {
+          id: 'group-1',
+          chapter_id: 'ch-1',
+          created_by: 'admin-1',
+          audience: 'everyone',
+          target_id: null,
+          target_name: null,
+          created_at: '2026-11-01T00:00:00.000Z',
+        },
+      ]);
+      mockTaskRepo.findGroupCopyStates.mockResolvedValue([
+        {
+          id: 'copy-1',
+          group_id: 'group-1',
+          assignee_id: 'user-1',
+          status: TaskStatus.COMPLETED,
+          points_awarded: true,
+          due_date: '2026-11-20',
+          due_at: null,
+        },
+        {
+          id: 'copy-2',
+          group_id: 'group-1',
+          assignee_id: 'user-2',
+          status: TaskStatus.TODO,
+          points_awarded: false,
+          due_date: '2026-11-20',
+          due_at: null,
+        },
+      ]);
+      const copy = asView({ ...baseTask, id: 'copy-1', group_id: 'group-1' });
+      const twin = asView({ ...baseTask, id: 'copy-2', group_id: 'group-1' });
+
+      const result = await service.withGroupSummaries('ch-1', [
+        copy,
+        asView(baseTask),
+        twin,
+      ]);
+
+      expect(result.map((task) => task.group)).toEqual([
+        expect.objectContaining({
+          id: 'group-1',
+          total: 2,
+          done: 1,
+          confirmed: 1,
+        }),
+        null,
+        expect.objectContaining({ id: 'group-1', total: 2 }),
+      ]);
+      expect(mockTaskRepo.findGroups).toHaveBeenCalledTimes(1);
+      expect(mockTaskRepo.findGroupCopyStates).toHaveBeenCalledTimes(1);
     });
 
     it('refuses a calendar-invalid cursor with a 400, not a database 500', async () => {

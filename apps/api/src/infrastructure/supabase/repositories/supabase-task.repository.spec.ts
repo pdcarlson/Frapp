@@ -98,6 +98,21 @@ describe('SupabaseTaskRepository — tenant scope', () => {
     },
   );
 
+  it('findByChapterCounted keeps the chapter predicate and counts only that chapter (#5746)', async () => {
+    const { tasks, total } = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByChapterCounted(CHAPTER_B, {
+        assigneeId: USER_SHARED,
+        unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
+        limit: 10,
+      }),
+    );
+
+    expect(tasks.map((t) => t.id)).toEqual([TASK_B]);
+    expect(total).toBe(1);
+    // A list shorter than its page is one request, with no empty page after.
+    expect(harness.ops).toHaveLength(1);
+  });
+
   describe('findByChapter filters narrow in SQL (#4037)', () => {
     const OTHER = '0c000000-0000-4000-8000-000000000060';
     const GROUP = '0c000000-0000-4000-8000-000000000061';

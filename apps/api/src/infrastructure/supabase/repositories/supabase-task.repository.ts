@@ -25,7 +25,11 @@ import {
 } from '#domain/entities/task.entity';
 import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { SupabaseQueryError } from '../supabase-query-error';
-import { escapeFilterValue, fetchAllPages } from '../supabase.utils';
+import {
+  escapeFilterValue,
+  fetchAllPages,
+  fetchCountedPages,
+} from '../supabase.utils';
 
 /** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
 const SUBTASK_READ_BATCH = 100;
@@ -118,6 +122,38 @@ export class SupabaseTaskRepository implements ITaskRepository {
     );
   }
 
+  async findByChapterCounted(
+    chapterId: string,
+    query: TaskListQuery = {},
+  ): Promise<{ tasks: Task[]; total: number }> {
+    const { rows, total } = await fetchCountedPages<Task>(
+      (from, to, withCount) => {
+        const q = this.filtered(
+          this.supabase
+            .from('tasks')
+            .select('*', withCount ? { count: 'exact' } : undefined),
+          chapterId,
+          query,
+        );
+        return (
+          query.order === 'longest_waiting'
+            ? q
+                .order('completed_at', { ascending: true, nullsFirst: false })
+                .order('created_at', { ascending: true })
+                .order('id', { ascending: true })
+            : q
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: false })
+        ).range(from, to);
+      },
+      {
+        pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+        limit: query.limit,
+      },
+    );
+    return { tasks: rows, total };
+  }
+
   async countByChapter(
     chapterId: string,
     query: TaskListFilter = {},
@@ -152,6 +188,11 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
     if (query.confirmed === false) q = q.is('confirmed_at', null);
     if (query.completedSince) q = q.gte('completed_at', query.completedSince);
+    if (query.unconfirmedOrCompletedSince) {
+      q = q.or(
+        `confirmed_at.is.null,completed_at.gte.${escapeFilterValue(query.unconfirmedOrCompletedSince)}`,
+      );
+    }
     if (query.after) {
       // Strictly after the cursor in (created_at desc, id desc): an earlier
       // `created_at`, or the same one and a lower `id`. Spelled without a
