@@ -156,9 +156,8 @@ export * from "./minutes-flow";
 export * from "./minutes-read";
 export * from "./minutes-request-copy";
 // Which meetings on the calendar need minutes, and the next one coming.
-export * from "./minutes-to-write";
 export * from "./minutes-timeline";
-export * from "./week-start";
+export * from "./minutes-to-write";
 export * from "./module-enablement";
 export * from "./module-refusal";
 // The native app's identifiers, store listings and invite hand-off (#4002),
@@ -286,6 +285,7 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
+export * from "./week-start";
 export * from "./welcome-card";
 // Point-in-polygon, shared by the API's geofence check and the phone's s10 screen.
 export * from "./zone-geometry";
