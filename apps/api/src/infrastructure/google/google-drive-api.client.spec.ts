@@ -81,6 +81,115 @@ describe('GoogleDriveApiClient', () => {
     });
   });
 
+  // #5583: calls made with the officer's own token from the picker.
+  describe('as the member who picked the folder', () => {
+    it('asks Google what the token is for by POST, never in a URL', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(
+        json(200, {
+          azp: 'c.apps.googleusercontent.com',
+          aud: 'c.apps.googleusercontent.com',
+          scope: 'https://www.googleapis.com/auth/drive.file openid',
+        }),
+      );
+
+      const info = await client.userTokenInfo('member-token');
+
+      expect(info).toEqual({
+        clientId: 'c.apps.googleusercontent.com',
+        scopes: ['https://www.googleapis.com/auth/drive.file', 'openid'],
+      });
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://oauth2.googleapis.com/tokeninfo');
+      expect(init.method).toBe('POST');
+      expect(String(init.body)).toBe('access_token=member-token');
+    });
+
+    it('answers null for a token Google says is dead', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(json(400, { error: 'invalid_token' }));
+      expect(await client.userTokenInfo('expired')).toBeNull();
+    });
+
+    it('reads the folder with the member’s token and whether they can edit it', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(
+        json(200, {
+          id: 'f',
+          name: 'Folder',
+          mimeType: 'application/vnd.google-apps.folder',
+          capabilities: { canEdit: true },
+        }),
+      );
+
+      const item = await client.getItemAs('member-token', 'f');
+
+      expect(item.canEdit).toBe(true);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain('capabilities%2FcanEdit');
+      expect(init.headers.Authorization).toBe('Bearer member-token');
+    });
+
+    it('shares with the service account as a Viewer, with no email from Google', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(json(200, { id: 'perm-9' }));
+
+      expect(await client.shareWithServiceAccount('member-token', 'f')).toBe(
+        'perm-9',
+      );
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain('/files/f/permissions?');
+      expect(String(url)).toContain('sendNotificationEmail=false');
+      expect(String(url)).toContain('supportsAllDrives=true');
+      expect(init.method).toBe('POST');
+      expect(init.headers.Authorization).toBe('Bearer member-token');
+      expect(JSON.parse(init.body)).toEqual({
+        type: 'user',
+        role: 'reader',
+        emailAddress: ACCOUNT.clientEmail,
+      });
+    });
+
+    it('takes a share back with a DELETE as the member', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+      await client.unshare('member-token', 'f', 'perm-9');
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toBe(
+        'https://www.googleapis.com/drive/v3/files/f/permissions/perm-9?supportsAllDrives=true',
+      );
+      expect(init.method).toBe('DELETE');
+      expect(init.headers.Authorization).toBe('Bearer member-token');
+    });
+
+    it('reports a share Google wouldn’t take back', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(
+        json(403, {
+          error: { errors: [{ reason: 'insufficientFilePermissions' }] },
+        }),
+      );
+      await expect(
+        client.unshare('member-token', 'f', 'perm-9'),
+      ).rejects.toMatchObject({ kind: 'forbidden' });
+    });
+
+    it('carries Google’s reason when sharing is refused', async () => {
+      const client = new GoogleDriveApiClient(ACCOUNT);
+      fetchMock.mockResolvedValueOnce(
+        json(403, { error: { errors: [{ reason: 'shareOutNotPermitted' }] } }),
+      );
+      await expect(
+        client.shareWithServiceAccount('member-token', 'f'),
+      ).rejects.toMatchObject({
+        kind: 'forbidden',
+        reason: 'shareOutNotPermitted',
+      });
+    });
+  });
+
   it('reads one item with its Description and parents', async () => {
     const client = new GoogleDriveApiClient(ACCOUNT);
     withToken();

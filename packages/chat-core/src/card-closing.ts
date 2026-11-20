@@ -1,5 +1,4 @@
 import { closesAtHasPassed } from "@repo/formatting";
-import { SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS } from "@repo/validation";
 import { canActOnMessage, isOwnMessage } from "./message-actions";
 import type { ChatMessage } from "./types";
 
@@ -66,32 +65,6 @@ export function canCloseCard(
     isCardOrganizer(message, viewerId, canManageChannels) &&
     !isCardClosed(card, now)
   );
-}
-
-/** What a draft with an end time already behind it is told, on any card. */
-export const CARD_END_PASSED_PROBLEM =
-  "That end time has passed. Pick a later one, or none.";
-
-/** The API's furthest end time (`normalizeClosesAt`), less a day of slack. */
-const CARD_END_MAX_AHEAD_MS =
-  (SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS - 1) * 24 * 60 * 60 * 1000;
-
-/**
- * What is wrong with a draft's end time, or `null` when it is fine (or there
- * is none). `tooFarProblem` is the card's own words for an end time too far
- * ahead ("Sign-ups can end…", "A form can close…").
- */
-export function checkCardEnd(
-  closesAt: Date | null | undefined,
-  now: number,
-  tooFarProblem: string,
-): string | null {
-  if (!closesAt) return null;
-  if (Number.isNaN(closesAt.getTime()) || closesAt.getTime() <= now) {
-    return CARD_END_PASSED_PROBLEM;
-  }
-  if (closesAt.getTime() > now + CARD_END_MAX_AHEAD_MS) return tooFarProblem;
-  return null;
 }
 
 /**

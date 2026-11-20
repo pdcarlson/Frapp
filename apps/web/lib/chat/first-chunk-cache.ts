@@ -135,10 +135,12 @@
 
 import Dexie, { type Table } from "dexie";
 import {
-  toRawRow,
-  type ChatMessage,
-  type RawChatMessage,
-} from "@repo/chat-core/types";
+  FIRST_CHUNK_CHANNEL_LIMIT,
+  FIRST_CHUNK_MAX_AGE_MS,
+  TAIL_ROW_FORMAT,
+  toCacheableRows,
+} from "@repo/chat-core/first-chunk";
+import type { ChatMessage, RawChatMessage } from "@repo/chat-core/types";
 // Type-only: erased at compile time, so the channel rail's component graph is
 // not on this module's runtime import graph.
 import type { ChatChannel } from "@/components/chat/channel-list";
@@ -149,37 +151,16 @@ import { FIRST_CHUNK_DB_NAME } from "./first-chunk-wipe";
 // Type-only: the shared scope definition, erased at compile time.
 import type { ChatScope } from "./chat-scope";
 
-/**
- * How many messages a tail holds. `1s` says "last ~30 messages"; the live
- * backfill asks for 50 and the extra 20 buy a cache row nobody sees — the
- * window a cold load paints is shorter than either number.
- */
-export const FIRST_CHUNK_MESSAGE_LIMIT = 30;
-
-/**
- * How many channels keep a tail per scope.
- *
- * One would be enough if the channel a cold load lands on were always the one
- * the member last read — it is not. `chat-shell.tsx` resolves the active
- * channel from `?channel=`, then this browser's last channel, then the
- * chapter default, then `#general`, then the first row, so another tab, a
- * deleted channel or a deep link can each send a load somewhere other than the
- * last tail written. Keeping the few most
- * recent tails means the cache is warm for whichever of those the shell picks;
- * eviction pins the landing channel on top (`evictOldestTails`).
- */
-export const FIRST_CHUNK_CHANNEL_LIMIT = 3;
-
-/**
- * How old a row may be and still paint.
- *
- * The reconciling fetch makes any age *correct* eventually, so this is not
- * about staleness — it is about what a member sees for the few hundred
- * milliseconds before it lands. A week-old timeline painting as real is a lie
- * worth avoiding, and an abandoned profile stops holding chat content on disk
- * indefinitely.
- */
-export const FIRST_CHUNK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// The limits, the tail encoding and the tail filter are shared with the
+// phone's first-paint copy (`apps/mobile/lib/launch/first-paint-cache.ts`,
+// #5768), so both clients refuse the same old encodings.
+export {
+  FIRST_CHUNK_CHANNEL_LIMIT,
+  FIRST_CHUNK_MAX_AGE_MS,
+  FIRST_CHUNK_MESSAGE_LIMIT,
+  TAIL_ROW_FORMAT,
+  toCacheableRows,
+} from "@repo/chat-core/first-chunk";
 
 /**
  * The tenant a cached row belongs to. Both halves are required; see the header.
@@ -202,35 +183,6 @@ interface CachedChannelTailRow extends FirstChunkScope {
   /** The encoding `rows` were written in; see {@link TAIL_ROW_FORMAT}. */
   rowFormat?: number;
 }
-
-/**
- * The encoding a tail's rows are written in. `readFirstChunk` serves only a
- * tail stamped with this value, and nothing else is ever upgraded in place.
- *
- * `2` is the encoding in which `sender_blocked` means what the block list
- * needs it to (#2313). Before #2493, `toRawRow` wrote the flag on **every**
- * row, Realtime echoes included, so an unmarked tail rehydrates echo rows with
- * `sender_blocked: false`, and `normalizeRow` then reads them as rows the
- * server evaluated and cleared. The web timeline shows a server-cleared row
- * even while the block list is unavailable, which is the one place that claim
- * is load-bearing, so a pre-#2493 tail would paint a blocked member's echoed
- * message on any cold load until the list read lands, and for a whole session
- * with the list unreadable. Refusing the tail costs a cold load of that channel
- * (see the header for a tab still on the old bundle).
- *
- * **What the marker does not close.** A REST row's cleared verdict is kept on
- * purpose, so a warm load paints other members' cached rows at once (the rank-1
- * "render real" clause, `spec/ui/resilience/performance-budgets.md`). That
- * verdict is only as old as the REST read that produced it, not the tail write:
- * `toRawRow` carries it through every rewrite, and each Realtime merge
- * rewrites the tail, so it can outlive a block made after that read, and the
- * week `FIRST_CHUNK_MAX_AGE_MS` allows. The persisted block-list floor
- * ({@link CachedBlockFloor}) is what hides such a row on a cold load, for any
- * block a ready read here has seen.
- *
- * Bump it whenever the meaning of a persisted row changes.
- */
-export const TAIL_ROW_FORMAT = 2;
 
 /**
  * The ids the viewer's last ready block-list read named, written by
@@ -805,24 +757,4 @@ export async function pruneForeignScopes(
   } catch {
     /* Best-effort — see `writeChannelList`. */
   }
-}
-
-/**
- * The confirmed tail of a timeline, in the wire shape, newest {@link
- * FIRST_CHUNK_MESSAGE_LIMIT} rows.
- *
- * Only `confirmed` rows survive the filter. Every other `_status` is the
- * outbox's to replay (`pending`, `failed`) or a locally persisted notice's
- * (`unconfirmed`, `recorded`, `heavy-command-notices.ts`), and both of those
- * sources run on top of whatever this seeds — so a copy here would be a
- * second, staler writer for a row somebody else owns.
- *
- * Exported for the spec, which asserts the round trip through
- * `normalizeRow` rather than trusting this list of fields to stay in step.
- */
-export function toCacheableRows(messages: ChatMessage[]): RawChatMessage[] {
-  return messages
-    .filter((message) => message._status === "confirmed")
-    .slice(-FIRST_CHUNK_MESSAGE_LIMIT)
-    .map(toRawRow);
 }

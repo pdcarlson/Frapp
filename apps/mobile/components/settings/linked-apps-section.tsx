@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
-import { Alert, Linking, StyleSheet, View } from "react-native";
+import {
+  Alert,
+  type GestureResponderEvent,
+  Linking,
+  StyleSheet,
+  View,
+} from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +23,7 @@ import {
 import type { SignetTokens } from "@repo/theme/signet";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-sheet";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
   GOOGLE_CALENDAR_WEB,
@@ -66,37 +73,41 @@ export function LinkedAppsSection() {
   const calendarSheetRef = useRef<BottomSheetModal>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
-  function pressGoogle(state: LinkedAppState) {
+  function pressGoogle(state: LinkedAppState, event?: GestureResponderEvent) {
     if (state.tone === "off") {
       void google.connect();
       return;
     }
-    if (state.tone === "expired") {
-      // Reconnect, or remove it instead, as web's row offers both.
-      Alert.alert("Google Calendar", state.detail, [
-        { text: "Reconnect", onPress: () => void google.connect() },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: google.confirmDisconnect,
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-      return;
-    }
-    Alert.alert("Google Calendar", state.detail, [
+    // Reconnect, or remove it instead, as web's row offers both; once
+    // connected, open it or remove it. The glass menu every row opens.
+    const disconnect = {
+      key: "disconnect",
+      label: "Disconnect",
+      destructive: true,
+      run: google.confirmDisconnect,
+    };
+    openItemMenu(
       {
-        text: "Open Google Calendar",
-        onPress: () =>
-          void Linking.openURL(GOOGLE_CALENDAR_WEB).catch(() => {}),
+        title: "Google Calendar",
+        message: state.detail,
+        actions: [
+          state.tone === "expired"
+            ? {
+                key: "reconnect",
+                label: "Reconnect",
+                run: () => void google.connect(),
+              }
+            : {
+                key: "open",
+                label: "Open Google Calendar",
+                run: () =>
+                  void Linking.openURL(GOOGLE_CALENDAR_WEB).catch(() => {}),
+              },
+          disconnect,
+        ],
       },
-      {
-        text: "Disconnect",
-        style: "destructive",
-        onPress: google.confirmDisconnect,
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+      pressAt(event),
+    );
   }
 
   return (
@@ -133,7 +144,7 @@ export function LinkedAppsSection() {
             }
             busy={google.connecting || google.disconnecting}
             action
-            onPress={() => pressGoogle(googleState)}
+            onPress={(event) => pressGoogle(googleState, event)}
           />
         ) : null}
         <ListRow

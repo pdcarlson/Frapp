@@ -6,8 +6,7 @@ import {
   postHours,
   postPointsAdjustment,
   postPoll,
-  postForm,
-  postSignup,
+  linkTask,
   postTask,
   retryPointsDispatch,
   trackEventCard,
@@ -1247,80 +1246,48 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
   );
 });
 
-describe("postSignup — the New sign-up sheet's send (#3926)", () => {
-  const SIGNUP = {
-    content: "Sober drivers",
-    payload: {
-      title: "Sober drivers",
-      slots: [{ id: "fri", label: "Friday", capacity: 2 }],
-    },
+describe("linkTask — the + sheet's Task row (#5772)", () => {
+  const TASK = {
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "Fix the door",
   };
-
-  it("queues a signup card with its title as the text, leaving the draft alone", async () => {
-    const post = postingApi();
-    const clearDraft = vi.fn();
-    const ctx = buildSimpleCtx(post, stubOutbox({ clearDraft }));
-
-    expect(await postSignup(ctx, CHANNEL_ID, SIGNUP)).toEqual({ ok: true });
-    expect(onlyRow(ctx).kind).toBe("signup");
-    expect(onlyRow(ctx).content).toBe("Sober drivers");
-    expect(clearDraft).not.toHaveBeenCalled();
-  });
-
-  it("says what failed, in its own words, when the outbox refuses it", async () => {
-    const ctx = buildSimpleCtx(
-      postingApi(),
-      stubOutbox({
-        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
-      }),
+  const rows = (ctx: ChatActionContext) =>
+    selectMessages(
+      ctx.queryClient.getQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID)),
     );
-    expect(await postSignup(ctx, CHANNEL_ID, SIGNUP)).toEqual({
-      ok: false,
-      error: "Couldn't post that sign-up sheet. Try again.",
-      cause: expect.any(Error),
+
+  it("posts the share and leaves the placeholder for the card's echo", async () => {
+    const post = posted201(true);
+    const ctx = buildCtx(post);
+    expect(await linkTask(ctx, CHANNEL_ID, TASK)).toEqual({ ok: true });
+    expect(post).toHaveBeenCalledWith("/v1/tasks/{id}/share", {
+      params: { path: { id: TASK.id } },
+      body: {
+        channel_id: CHANNEL_ID,
+        client_message_id: expect.any(String),
+      },
     });
-  });
-});
-
-describe("postForm — the New form builder's send (#3926 step 3)", () => {
-  const FORM = {
-    content: "Formal housing",
-    payload: {
-      title: "Formal housing",
-      questions: [
-        {
-          id: "q1",
-          type: "multiple_choice" as const,
-          title: "What room do you want?",
-          required: true,
-          options: [{ id: "o1", label: "Single" }],
-        },
-      ],
-    },
-  };
-
-  it("queues a form card with its title as the text, leaving the draft alone", async () => {
-    const clearDraft = vi.fn();
-    const ctx = buildSimpleCtx(postingApi(), stubOutbox({ clearDraft }));
-
-    expect(await postForm(ctx, CHANNEL_ID, FORM)).toEqual({ ok: true });
-    expect(onlyRow(ctx).kind).toBe("form");
-    expect(onlyRow(ctx).content).toBe("Formal housing");
-    expect(clearDraft).not.toHaveBeenCalled();
+    expect(rows(ctx).map((row) => row.kind)).toEqual(["loading"]);
   });
 
-  it("says what failed, in its own words, when the outbox refuses it", async () => {
-    const ctx = buildSimpleCtx(
-      postingApi(),
-      stubOutbox({
-        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
-      }),
-    );
-    expect(await postForm(ctx, CHANNEL_ID, FORM)).toEqual({
-      ok: false,
-      error: "Couldn't post that form. Try again.",
-      cause: expect.any(Error),
+  it("drops the placeholder and says why on a refusal", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Access denied to this task" },
+      response: { status: 403 },
     });
+    const ctx = buildCtx(post);
+    const result = await linkTask(ctx, CHANNEL_ID, TASK);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Access denied to this task");
+    expect(rows(ctx)).toEqual([]);
+  });
+
+  it("reads a lost answer as unconfirmed, not failed", async () => {
+    const ctx = buildCtx(vi.fn().mockRejectedValue(new TypeError("offline")));
+    const result = await linkTask(ctx, CHANNEL_ID, TASK);
+    expect(result).toMatchObject({ ok: true, unconfirmed: true });
+    expect(result.warning).toMatch(/before you link it again/);
   });
 });
 

@@ -135,6 +135,10 @@ vi.mock("@/components/minutes/coming-up-post-review", () => ({
     return null;
   },
 }));
+vi.mock("@/components/minutes/link-meeting-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return { LinkMeetingSheet: forwardRef(() => null) };
+});
 vi.mock("@/components/minutes/mark-attendance-sheet", async () => {
   const { forwardRef } = await import("react");
   return { MarkAttendanceSheet: forwardRef(() => null) };
@@ -392,6 +396,14 @@ describe("Recording on the minutes screen", () => {
     expect(state.controls).toBeGreaterThan(0);
     // And the notes are handed the same record, for its transcript.
     expect(state.notesProps).toMatchObject({ recording: available });
+  });
+
+  it("puts Link a meeting at the bottom, not Post, on minutes with no meeting (Paul, 2026-11-20)", () => {
+    state.recording = available;
+    state.meeting = meeting({ event_id: null, event_name: "Minutes" });
+    const tree = render();
+    expect(button(tree, MEETING_COPY.post)).toBeUndefined();
+    expect(button(tree, "Link a meeting")).toBeDefined();
   });
 
   it("puts Post at the bottom, not Record, once the minutes have words", () => {

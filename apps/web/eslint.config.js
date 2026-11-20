@@ -91,7 +91,6 @@ export default [
         "components/chat/message-reminder-menu.tsx",
         "components/chat/schedule-send.tsx",
         "components/chat/event-quick-form.tsx",
-        "components/chat/signup-form.tsx",
         "components/events/event-editor-dialog.tsx",
         "components/personal-settings/quiet-hours-section.tsx",
       ],

@@ -2506,8 +2506,25 @@ export interface paths {
         /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
         get: operations["MeetingController_list_v1"];
         put?: never;
-        /** Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist */
+        /** Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist */
         post: operations["MeetingController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/live-recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event */
+        get: operations["MeetingController_liveRecordings_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2577,9 +2594,27 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
+        /** Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
         post: operations["MeetingController_linkEvent_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/live-recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording */
+        put: operations["MeetingController_markLiveRecording_v1"];
+        post?: never;
+        /** The caller’s phone stopped recording these minutes */
+        delete: operations["MeetingController_clearLiveRecording_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3555,6 +3590,26 @@ export interface paths {
         get: operations["TaskController_getPhotoUrl_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an existing task's card into a chat channel
+         * @description The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.
+         */
+        post: operations["TaskController_share_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6465,6 +6520,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive/picked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect the folder the officer picked in Google's picker: Frapp shares it with itself using their Google sign-in, once, then copies its files into Documents and keeps them in sync. Picking the connected folder again after it was unshared shares it again. */
+        post: operations["GoogleDriveController_connectPicked_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/google-drive/copies/{id}/open-up": {
         parameters: {
             query?: never;
@@ -9051,6 +9123,26 @@ export interface components {
             recorded: boolean;
             /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
             gist: string | null;
+            /** @description Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted. */
+            started: boolean;
+            /**
+             * Format: uuid
+             * @description Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.
+             */
+            recording_by: string | null;
+        };
+        MeetingLiveRecordingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /**
+             * Format: uuid
+             * @description Who is recording.
+             */
+            user_id: string;
+            /** Format: date-time */
+            started_at: string;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -9181,7 +9273,7 @@ export interface components {
             other_label?: string | null;
             /**
              * Format: uuid
-             * @description The meeting’s event. Send this or new_event.
+             * @description The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted.
              */
             event_id?: string;
             /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
@@ -9889,6 +9981,22 @@ export interface components {
             photos: components["schemas"]["TaskPhotoDto"][];
             /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
             group?: components["schemas"]["TaskGroupSummaryDto"];
+        };
+        ShareTaskToChatDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post the card in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, reconciling the optimistic placeholder.
+             */
+            client_message_id: string;
+        };
+        ShareTaskToChatResponseDto: {
+            /** @description True once the card is in the channel. The route answers 4xx instead of `false` when it could not post. */
+            card_posted: boolean;
         };
         UpdateTaskDto: {
             title?: string;
@@ -12927,6 +13035,14 @@ export interface components {
             /** @description The `gcal_code` the sign-in returned with. */
             code: string;
         };
+        GoogleDrivePickerDto: {
+            /** @description The Web OAuth client the picker's Google sign-in uses (this environment's Google Calendar client) */
+            client_id: string;
+            /** @description The browser API key the picker loads with: public, restricted to the Picker API and the web app */
+            api_key: string;
+            /** @description The Google Cloud project's number, the picker's app id */
+            app_id: string;
+        };
         GoogleDriveConnectionDto: {
             folder_id: string;
             /** @description The folder's name in Drive */
@@ -12959,6 +13075,8 @@ export interface components {
             available: boolean;
             /** @description The address a chapter shares its folder with */
             service_account_email: string | null;
+            /** @description Google's folder picker, when this server offers it: the officer signs in with Google and picks the folder, and Frapp shares it with itself. Null, the folder is connected by its link. */
+            picker: components["schemas"]["GoogleDrivePickerDto"] | null;
             connection: components["schemas"]["GoogleDriveConnectionDto"] | null;
         };
         ConnectGoogleDriveDto: {
@@ -12968,6 +13086,17 @@ export interface components {
              */
             folder_link: string;
             /** @description Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
+        };
+        ConnectPickedGoogleDriveDto: {
+            /**
+             * @description The picked folder's Drive id
+             * @example 1AbCdEfGhIjKlMnOp
+             */
+            folder_id: string;
+            /** @description The access token the officer's Google sign-in gave the picker (drive.file). Used once to share the folder with Frapp, never stored. */
+            access_token: string;
+            /** @description Who sees what the folder brings in (#5220), as when connecting by link. Ignored when the folder is the one already connected, picked again to share it with Frapp again. */
             who_can_see?: string[] | null;
         };
         GoogleDriveLinkInfoDto: {
@@ -18845,6 +18974,34 @@ export interface operations {
             };
         };
     };
+    MeetingController_liveRecordings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingLiveRecordingDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     MeetingController_getTemplate_v1: {
         parameters: {
             query?: never;
@@ -19053,6 +19210,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_markLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_clearLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -21196,6 +21409,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_share_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareTaskToChatDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareTaskToChatResponseDto"];
                 };
             };
             /** @description Error */
@@ -27807,6 +28054,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connectPicked_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectPickedGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
             };
             /** @description Error */
             default: {

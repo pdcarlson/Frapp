@@ -11,8 +11,7 @@ import { DisclosureGlyph } from "@/components/control-glyphs";
 /**
  * The two controls the phone's forms share (#3926 step 3): a choice row, a
  * radio or a checkbox, and an inline picker, a row that opens its choices in
- * place. The New form sheet picks a question's type with the picker; the
- * form page draws multiple choice, checkboxes and yes/no as choice rows and a
+ * place. The form page draws multiple choice, checkboxes and yes/no as choice rows and a
  * dropdown as the picker, as Google Forms' phone page opens a dropdown's
  * list over the question rather than on a page of its own.
  */

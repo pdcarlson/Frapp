@@ -152,9 +152,7 @@ describe("RecordingPlayer", () => {
     vi.useFakeTimers();
     try {
       const tree = render();
-      act(() =>
-        control(tree, MEETING_RECORDER_COPY.playAudio).props.onPress(),
-      );
+      act(() => control(tree, MEETING_RECORDER_COPY.playAudio).props.onPress());
       act(() => vi.advanceTimersByTime(15_000));
       expect(native.player.remove).toHaveBeenCalledTimes(1);
       expect(screenText(tree)).toContain(MEETING_RECORDER_COPY.audioGone);

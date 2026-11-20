@@ -6,17 +6,22 @@ import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
 import {
   useMeetingNoteTaking,
+  useLiveMeetingRecordings,
   useMeetings,
+  useMemberDisplayNames,
   useMinutesRequest,
   useMyPermissions,
   useStartMeeting,
+  useViewerUserId,
 } from "@repo/hooks";
 import {
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   MINUTES_REQUEST_COPY,
   can,
+  minutesStateWho,
   eventMinutesLines,
+  liveRecordingLine,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { RequestMinutesButton } from "@/components/meetings/request-minutes-button";
@@ -63,6 +68,8 @@ export function EventMinutes({
   const router = useRouter();
   const { toast } = useToast();
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
+  const viewerId = useViewerUserId();
+  const names = useMemberDisplayNames();
   const takingQuery = useMeetingNoteTaking({
     enabled: on && !!eventId,
     eventId,
@@ -71,6 +78,10 @@ export function EventMinutes({
   const requestQuery = useMinutesRequest({
     enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
     eventId,
+  });
+  // Who is recording, for a member the minutes don't show to yet.
+  const liveQuery = useLiveMeetingRecordings({
+    enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
   });
   const permissions = useMyPermissions().data?.permissions ?? [];
   const start = useStartMeeting();
@@ -86,11 +97,14 @@ export function EventMinutes({
   // read would only meet a 409.
   if (meetingsQuery.isError) return null;
   const minutes = meetingsQuery.data?.[0];
+  const live = minutes
+    ? null
+    : liveRecordingLine(liveQuery.data, eventId, names.nameFor);
   const taking = minutes ? undefined : takingQuery.data?.[0];
   if (taking) {
     return (
       <MinutesRowFrame
-        status={`${MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}, ${MEETING_ENTRY_COPY.draft.toLowerCase()}`}
+        status={live ?? MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}
       >
         <Link
           href={`/meetings/${taking.meeting_id}/notes`}
@@ -103,6 +117,9 @@ export function EventMinutes({
       </MinutesRowFrame>
     );
   }
+  // Someone is recording minutes this member can't open yet: say who, and
+  // offer nothing, as the meeting is still on.
+  if (live && !takingQuery.isPending) return <MinutesRowFrame status={live} />;
   // Take notes wins: Request waits until the note-taking read has answered.
   const askable = minutes || takingQuery.isPending ? null : requestQuery.data;
   if (askable) {
@@ -150,7 +167,12 @@ export function EventMinutes({
     }
   }
 
-  const lines = minutes ? eventMinutesLines(minutes) : null;
+  const lines = minutes
+    ? eventMinutesLines(
+        minutes,
+        minutesStateWho(minutes, viewerId, names.nameFor),
+      )
+    : null;
   return (
     <MinutesRowFrame
       status={lines ? lines.status : MEETING_ENTRY_COPY.none}

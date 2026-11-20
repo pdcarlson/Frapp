@@ -34,6 +34,7 @@ import {
   EVENT_NAME_MAX_LENGTH,
   EVENT_NOTES_MAX_LENGTH,
   eventLimitsAudience,
+  eventTypeFromForm,
   isEmptyEventPatch,
   leavesAfterSave,
   parseCheckInOpens,
@@ -350,8 +351,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const setsRequirements = grants.edit;
     const attendanceRef = useRef<BottomSheetModal>(null);
     const rolesQuery = useRoles();
-    // The chapter's event types (#3730), in the Type row's sheet. Managing
-    // them is on web; here they only fill the form.
+    // The chapter's event types (#3730), in the Type row's sheet. Someone who
+    // can make them makes one there from what is typed (Paul 2026-11-20);
+    // editing and deleting them is on web.
     const typesQuery = useEventTypes();
     const eventTypes = useMemo(() => typesQuery.data ?? [], [typesQuery.data]);
     const typeRef = useRef<BottomSheetModal>(null);
@@ -790,7 +792,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 saying what it is set to (#5561, Paul 2026-11-19: "make sure
                 we keep the MOBILE AND WEB UIs in sync"). */}
             <View style={styles.group}>
-              {eventTypes.length > 0 ? (
+              {eventTypes.length > 0 || setsRequirements ? (
                 <>
                   <PropertyRow
                     glyph="type"
@@ -864,7 +866,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               ) : null}
               <RowDivider />
 
-              <PropertyRow glyph="location" label={EVENT_FORM_ROW_LABELS.location}>
+              <PropertyRow
+                glyph="location"
+                label={EVENT_FORM_ROW_LABELS.location}
+              >
                 <BottomSheetTextInput
                   value={draft.location}
                   onChangeText={(location) => update({ location }, [])}
@@ -902,7 +907,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               {setsRequirements ? (
                 <>
                   <RowDivider />
-                  <PropertyRow glyph="points" label={EVENT_FORM_ROW_LABELS.points}>
+                  <PropertyRow
+                    glyph="points"
+                    label={EVENT_FORM_ROW_LABELS.points}
+                  >
                     <BottomSheetTextInput
                       value={draft.pointsInput}
                       onChangeText={(pointsInput) =>
@@ -1069,7 +1077,6 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               </Text>
             ) : null}
 
-
             {editing && grants.delete ? (
               // Quiet, and last: a couple of taps away and never next to Save.
               <Pressable
@@ -1093,9 +1100,34 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           types={eventTypes}
           value={draft.eventTypeId}
           showSets={setsRequirements}
-          onPick={(type) => {
+          typeFromForm={
+            setsRequirements
+              ? (typeName) =>
+                  eventTypeFromForm(
+                    typeName,
+                    draft.pointsInput,
+                    draft.attendance.everyone === "required",
+                  )
+              : undefined
+          }
+          onPick={(type, made) => {
             if (!type) {
               update({ eventTypeId: null }, []);
+              return;
+            }
+            // A type just made from this form took its values from it: the
+            // form keeps what it holds, and only a blank name takes its name.
+            if (made) {
+              update(
+                draft.name.trim() === ""
+                  ? {
+                      eventTypeId: type.id,
+                      name: type.name,
+                      typeFilledName: type.name,
+                    }
+                  : { eventTypeId: type.id },
+                ["name"],
+              );
               return;
             }
             // Picking the held one again keeps it: the list's No type is

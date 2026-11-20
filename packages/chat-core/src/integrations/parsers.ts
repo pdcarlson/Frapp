@@ -92,7 +92,7 @@ const POLL_DEFAULT_CLOSE_MINUTES = 60 * 24;
 /**
  * The longest `closes=` a `/poll` takes, in minutes. The API refuses a poll
  * that ends more than {@link SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS} days out; this
- * stops a day short of that, as the card forms do (`checkCardEnd`), so a
+ * stops a day short of that, so a
  * clock a little ahead on the server can't refuse what the parser passed.
  */
 export const POLL_CLOSES_MAX_MINUTES =

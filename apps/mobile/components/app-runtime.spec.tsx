@@ -13,6 +13,9 @@ const calls = vi.hoisted(() => [] as string[]);
 vi.mock("@/lib/chat/use-unread-first-paint-runtime", () => ({
   useUnreadFirstPaintRuntime: () => calls.push("unread-first-paint"),
 }));
+vi.mock("@/lib/launch/use-first-paint-cache-runtime", () => ({
+  useFirstPaintCacheRuntime: () => calls.push("first-paint-cache"),
+}));
 vi.mock("@/lib/chat/use-chat-runtime", () => ({
   useChatRealtimeBinding: () => calls.push("chat"),
 }));
@@ -66,6 +69,7 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("unread-first-paint");
+    expect(calls).toContain("first-paint-cache");
   });
 
   it("runs chapter presence app-wide, so the dots mean online (#3917)", () => {

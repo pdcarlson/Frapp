@@ -650,7 +650,11 @@ vi.mock("@repo/hooks", async () => ({
         deleteChannelTypeLabel,
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
+        memberFallbackLabel,
+        taskLinkChoices,
       }) => ({
+        memberFallbackLabel,
+        taskLinkChoices,
         deleteChannelTypeLabel,
         canSetChannelBackground,
         catchUpFirstRange,
@@ -674,6 +678,8 @@ vi.mock("@repo/hooks", async () => ({
       }),
     )),
   useBlockedUserIds: () => blockListState.value,
+  // The + card's Task picker (#5772): no tasks to link here.
+  useTasks: () => ({ data: [], isPending: false, isError: false }),
   // Chat backgrounds (#3973): decoration, read and written elsewhere's specs.
   useChatBackground: () => ({ data: undefined }),
   useChapterChatBackground: () => ({ data: undefined }),
@@ -1746,9 +1752,6 @@ vi.mock("./message-timeline", async () => {
 vi.mock("./deferred-panels", async () => ({
   Composer: (await import("./composer")).Composer,
   PollForm: (await import("./poll-form")).PollForm,
-  SignupForm: (await import("./signup-form")).SignupForm,
-  RolePickerForm: (await import("./role-picker-form")).RolePickerForm,
-  FormBuilder: (await import("./form-builder")).FormBuilder,
   EventQuickForm: (await import("./event-quick-form")).EventQuickForm,
   TaskForm: (await import("@/components/tasks/task-form")).TaskForm,
   LogHoursForm: (await import("@/components/service/log-hours-form"))
@@ -6733,7 +6736,9 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     });
     mockNotifyOutcome.mockClear();
     render(<ChatShell />);
+    // A bare /task opens the picker (#5772); New task turns it into the form.
     click("composer-task:");
+    fireEvent.click(screen.getByRole("button", { name: "New task" }));
     fireEvent.click(screen.getByTestId("task-form-post"));
     await waitFor(() => expect(mockPostTask).toHaveBeenCalled());
     const [channelId] = mockPostTask.mock.calls[0] as unknown as [string];
@@ -6842,11 +6847,17 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     mockToast.mockClear();
     render(<ChatShell />);
     expect(click("composer-points:")).toBe("refused");
-    expect(click("composer-task:")).toBe("refused");
+    // Linking a task needs only the read (#5772); typed details, which make
+    // a new one, still need the create grant.
+    expect(click("composer-task:Sweep the porch @bobby 2026-11-12")).toBe(
+      "refused",
+    );
     expect(click("composer-hours:")).toBe("refused");
     expect(screen.queryByTestId("points-form")).toBeNull();
     expect(screen.queryByTestId("task-form")).toBeNull();
     expect(screen.queryByTestId("hours-form")).toBeNull();
+    expect(click("composer-task:")).toBe("opened");
+    expect(screen.queryByRole("button", { name: "New task" })).toBeNull();
     for (const title of [
       "You can't adjust points",
       "You can't create tasks",
@@ -6874,16 +6885,14 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
 
   it("maps polls:create and the event grants", () => {
     expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
-      "poll:true,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:false",
+      "poll:true,event:false,task:false,hours:false,points:false",
     );
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
-    ).toBe(
-      "poll:false,signup:true,form:true,event:true,task:false,hours:false,points:false,roles:false",
-    );
+    ).toBe("poll:false,event:true,task:true,hours:false,points:false");
     // Both event grants, not `events:create` alone: the form needs the roster.
     expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:false",
+      "poll:false,event:false,task:false,hours:false,points:false",
     );
   });
 
@@ -6899,36 +6908,27 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
           ],
         },
       }),
-    ).toBe(
-      "poll:false,signup:true,form:true,event:false,task:true,hours:true,points:true,roles:false",
-    );
-    // Without `members:view` the task and points forms can't list anyone;
+    ).toBe("poll:false,event:false,task:true,hours:true,points:true");
+    // Without `members:view` no task can be read to link, and the points form
+    // can't list anyone;
     // logging your own hours needs no roster.
     expect(
       formsFor({
         data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
       }),
-    ).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:true,points:false,roles:false",
-    );
-  });
-
-  it("maps roles:manage to the Role picker (#4958)", () => {
-    expect(formsFor({ data: { permissions: ["roles:manage"] } })).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:true",
-    );
+    ).toBe("poll:false,event:false,task:false,hours:true,points:false");
   });
 
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
     expect(formsFor({ data: undefined })).toBe(
-      "poll:loading,signup:true,form:true,event:loading,task:loading,hours:loading,points:loading,roles:loading",
+      "poll:loading,event:loading,task:loading,hours:loading,points:loading",
     );
     expect(formsFor({ data: undefined, isError: true })).toBe(
-      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown,roles:unknown",
+      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
     // Paused offline before it ever landed: it can't answer either.
     expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
-      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown,roles:unknown",
+      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
   });
 });

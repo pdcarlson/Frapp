@@ -61,6 +61,30 @@ export function useMeetings(options?: { enabled?: boolean; eventId?: string }) {
 }
 
 /**
+ * The meetings a phone is recording right now whose events this member can
+ * see (`GET /v1/meetings/live-recordings`): who is recording, since when,
+ * and which event, for a line such as "Winston Hewitt is recording" (Paul,
+ * 2026-11-20). Read again every minute, as the recording phone beats.
+ */
+export function useLiveMeetingRecordings(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [...meetingsKey(chapterId), "live-recordings"] as const,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/live-recordings",
+        { signal },
+      );
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
  * A meeting's row from a Minutes list already loaded, or null: what the
  * minutes page names itself with while the minutes load, so a tap from the
  * list never opens on a blank page (Paul, 2026-11-19: "slow and poor

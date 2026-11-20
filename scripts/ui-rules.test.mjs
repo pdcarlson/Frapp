@@ -172,34 +172,16 @@ test("mobile: one action menu, never the system's", async () => {
     ),
     [],
   );
-  // A grandfathered file (#5739) keeps the native-module guard.
+  // The system-menu grandfathering is gone (owner, 2026-11-20): the files
+  // that held it fire like any other.
   assert.ok(
     has(
       await uiHits(
         "mobile",
-        "lib/action-menu.ts",
-        'export const load = () => import("expo-audio");',
+        "lib/series-scope.ts",
+        'import { Alert } from "react-native";\nexport const f = () => Alert.alert("Pick", "", [{ text: "A" }, { text: "B" }, { text: "Cancel" }]);',
       ),
-      "non-Expo-Go native module",
-    ),
-  ); // and is excused from the system-menu rule only: emoji still fires there.
-  const grandfathered = "lib/action-menu.ts";
-  assert.deepEqual(
-    await uiHits(
-      "mobile",
-      grandfathered,
-      'import { ActionSheetIOS } from "react-native";\nexport const a = ActionSheetIOS;',
-    ),
-    [],
-  );
-  assert.ok(
-    has(
-      await uiHits(
-        "mobile",
-        grandfathered,
-        'export const label = "Live \u{26A1}";',
-      ),
-      "No emoji",
+      "One action menu",
     ),
   );
 });

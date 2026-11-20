@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 import {
   useCreateEventType,
   useDeleteEventType,
@@ -10,12 +10,16 @@ import {
   type EventType,
 } from "@repo/hooks";
 import {
+  addEventTypeLabel,
   describeEventTypeSets,
   EVENT_FORM_PLACEHOLDERS,
+  EVENT_TYPE_FIND_OR_ADD,
+  eventTypeToAdd,
   EVENT_FORM_ROW_LABELS,
   EVENT_TYPE_NAME_MAX_LENGTH,
   EVENT_TYPE_SEARCH_FROM,
   EVENT_TYPES_MAX,
+  type EventTypeDraft,
 } from "@repo/validation";
 import {
   TypeListEditor,
@@ -43,7 +47,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { FOCUS_RING } from "@/components/ui/focus";
-import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import {
+  cn,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 
 /**
  * The Type row of the event form (`spec/behavior/events.md` § Event types,
@@ -52,12 +61,19 @@ import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
  * the form fills in the type's points and attendance and the officer can
  * still change either. "No type" lets the held one go.
  *
- * A menu rather than the row of chips it replaced: seven seeded types
+ * A menu rather than the row of chips it replaced: seven types
  * already wrapped to two lines and a chapter may keep 30, pushing the name
  * down the form. Comparable: Linear's label and status menus, which search,
  * and Google Calendar's event-type tabs. Each type says what it sets ("10
  * points · Required", `describeEventTypeSets`, the words the phone's Type
  * sheet shows); a member, whose event carries neither, sees the names alone.
+ *
+ * `canManage` (`events:update`) also makes a type in place (Paul
+ * 2026-11-20, "add a type in the moment"): the menu's search always shows,
+ * as "Find or add a type", and a name no type has yet offers
+ * "Create “Work party”", which makes the type from the form's points and
+ * attendance (`typeFromForm`) and holds it. Linear's and Notion's label menus
+ * create what was typed the same way.
  *
  * `canManage` (`events:update`) adds "Edit types" at the row's end, the list
  * with inline edit, add and delete, so an officer who finds the list wrong
@@ -69,22 +85,52 @@ export function EventTypeRow({
   onPick,
   canManage,
   showSets,
+  typeFromForm,
   disabled = false,
 }: {
   value: string | null;
-  /** `null` when the officer picks No type. */
-  onPick: (type: EventType | null) => void;
+  /**
+   * `null` when the officer picks No type. `made` is true for a type just
+   * made from the form, which the form holds without refilling from it.
+   */
+  onPick: (type: EventType | null, made?: boolean) => void;
   canManage: boolean;
+  /** The type "Create “…”" makes, from the form as it stands. */
+  typeFromForm: (name: string) => EventTypeDraft;
   /** Whether each type says what it sets: not for a member (#3709). */
   showSets: boolean;
   disabled?: boolean;
 }) {
   const typesQuery = useEventTypes();
   const types = typesQuery.data ?? [];
+  const createType = useCreateEventType();
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
   // A chapter with no types and nobody to make them sees no row at all.
   if (!canManage && types.length === 0) return null;
   const held = types.find((type) => type.id === value) ?? null;
+  const showSearch = canManage || types.length > EVENT_TYPE_SEARCH_FROM;
+  const toAdd = canManage ? eventTypeToAdd(search, types) : null;
+
+  function setMenuOpen(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      setSearch("");
+      setAddError(null);
+    }
+  }
+
+  async function addType(name: string) {
+    setAddError(null);
+    try {
+      const created = await createType.mutateAsync(typeFromForm(name));
+      onPick(created, true);
+      setMenuOpen(false);
+    } catch (error) {
+      setAddError(getErrorMessage(error, "Couldn't make the type. Try again."));
+    }
+  }
 
   return (
     <PropertyRow
@@ -96,7 +142,7 @@ export function EventTypeRow({
         ) : undefined
       }
     >
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setMenuOpen}>
         <PopoverTrigger asChild>
           <RowValueButton
             empty={!held}
@@ -110,17 +156,27 @@ export function EventTypeRow({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[22rem] p-0">
           <Command label="Event type">
-            {types.length > EVENT_TYPE_SEARCH_FROM ? (
-              <CommandInput placeholder="Find a type" />
+            {showSearch ? (
+              <CommandInput
+                placeholder={canManage ? EVENT_TYPE_FIND_OR_ADD : "Find a type"}
+                value={search}
+                onValueChange={(next) => {
+                  setSearch(next);
+                  setAddError(null);
+                }}
+                maxLength={EVENT_TYPE_NAME_MAX_LENGTH}
+              />
             ) : null}
             <CommandList className="max-h-72">
-              <CommandEmpty>No type by that name.</CommandEmpty>
+              {toAdd ? null : (
+                <CommandEmpty>No type by that name.</CommandEmpty>
+              )}
               <CommandGroup>
                 <CommandItem
                   value="No type"
                   onSelect={() => {
                     onPick(null);
-                    setOpen(false);
+                    setMenuOpen(false);
                   }}
                   className="min-h-9 text-sm text-muted-foreground pointer-coarse:min-h-11"
                 >
@@ -135,7 +191,7 @@ export function EventTypeRow({
                     value={type.name}
                     onSelect={() => {
                       onPick(type);
-                      setOpen(false);
+                      setMenuOpen(false);
                     }}
                     className="min-h-9 text-sm pointer-coarse:min-h-11"
                   >
@@ -151,15 +207,42 @@ export function EventTypeRow({
                   </CommandItem>
                 ))}
               </CommandGroup>
+              {toAdd ? (
+                // Its own group, drawn whatever the search: cmdk hides a
+                // group, and an item, that matches nothing typed.
+                <CommandGroup forceMount>
+                  <CommandItem
+                    forceMount
+                    value={`create ${toAdd}`}
+                    disabled={createType.isPending}
+                    onSelect={() => void addType(toAdd)}
+                    className="min-h-9 text-sm pointer-coarse:min-h-11"
+                  >
+                    <Plus
+                      className="h-4 w-4 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {addEventTypeLabel(toAdd)}
+                    </span>
+                  </CommandItem>
+                </CommandGroup>
+              ) : null}
             </CommandList>
+            {addError ? (
+              <p
+                role="alert"
+                className="border-t border-border px-3 py-2 text-caption text-destructive-text"
+              >
+                {addError}
+              </p>
+            ) : null}
           </Command>
         </PopoverContent>
       </Popover>
     </PropertyRow>
   );
 }
-
-
 
 type Draft = { name: string; points: string; required: boolean };
 

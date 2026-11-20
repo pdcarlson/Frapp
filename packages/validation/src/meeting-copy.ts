@@ -108,7 +108,6 @@ export const MEETING_ENTRY_COPY = {
   label: "Minutes",
   checking: "Checking",
   none: "Nobody has written them yet",
-  draft: "A draft, not posted yet",
   posted: "Posted",
   open: "Open minutes",
   write: "Write minutes",
@@ -119,6 +118,112 @@ export const MEETING_ENTRY_COPY = {
   startFailed: "Couldn't start the minutes",
 } as const;
 
+/**
+ * What minutes started with no meeting are called until they are linked to
+ * one (Paul, 2026-11-20). The row says "No meeting" beside it.
+ */
+export const MINUTES_WITHOUT_MEETING_NAME = "Minutes";
+
+/**
+ * Where a draft stands, in one word on the list row and the event card
+ * (Paul, 2026-11-20: an untouched draft isn't started; "Drafting" only once
+ * something is in it, and say who is recording). Posted minutes have none.
+ */
+export type MinutesDraftState = "recording" | "drafting" | "notStarted";
+
+export function minutesDraftState(minutes: {
+  status: string;
+  started?: boolean;
+  recording_by?: string | null;
+}): MinutesDraftState | null {
+  if (minutes.status !== "draft") return null;
+  if (minutes.recording_by) return "recording";
+  return minutes.started === false ? "notStarted" : "drafting";
+}
+
+/**
+ * The draft's state in words. `who` is the person it is about, named when
+ * it isn't the reader: the recorder while recording, else the author.
+ */
+export function minutesDraftStateLabel(
+  state: MinutesDraftState,
+  who: string | null,
+): string {
+  switch (state) {
+    case "recording":
+      return who ? `${who} is recording` : "Recording";
+    case "drafting":
+      return who ? `${who} is drafting` : "Drafting";
+    case "notStarted":
+      return who ? `Not started · ${who}` : "Not started";
+  }
+}
+
+/**
+ * Whom a draft's state names for this reader: the member recording it, else
+ * its author, and nobody when that is the reader (their own reads "Drafting",
+ * "Recording"). Posted minutes name nobody.
+ */
+export function minutesStateWho(
+  minutes: {
+    status: string;
+    created_by: string | null;
+    recording_by?: string | null;
+  },
+  viewerId: string | null | undefined,
+  nameFor: (userId: string) => string | null | undefined,
+): string | null {
+  if (minutes.status !== "draft") return null;
+  const about = minutes.recording_by ?? minutes.created_by;
+  if (!about || about === viewerId) return null;
+  return nameFor(about) ?? null;
+}
+
+/**
+ * The event row's line for a member who can't open the minutes while
+ * someone records them ("Winston Hewitt is recording"; Paul, 2026-11-20),
+ * from `GET /v1/meetings/live-recordings`, or null when nobody is.
+ */
+export function liveRecordingLine(
+  live: readonly { event_id: string; user_id: string }[] | null | undefined,
+  eventId: string,
+  nameFor: (userId: string) => string | null | undefined,
+): string | null {
+  const row = live?.find((entry) => entry.event_id === eventId);
+  if (!row) return null;
+  return minutesDraftStateLabel("recording", nameFor(row.user_id) ?? null);
+}
+
+/**
+ * New minutes, the same on web and phone (Paul, 2026-11-20: the sheet "says
+ * meeting like 13 times, and it's narrating instead of indicating"): one
+ * list of meetings, each row saying where it stands, and No meeting to
+ * write or record now and link one later.
+ */
+export const MINUTES_START_COPY = {
+  heading: "New minutes",
+  pick: "Which meeting?",
+  onNow: "On now",
+  /** A meeting someone else already has minutes for, shown but not picked. */
+  hasMinutes: "Has minutes",
+  noMeeting: "No meeting",
+  noMeetingDetail: "Link one later",
+} as const;
+
+/**
+ * The minutes page's first meta line: "Chapter meeting, Tuesday, November
+ * 10 at 11:21 PM", or "No meeting, ..." for minutes not yet linked to one.
+ */
+export function minutesMetaHead(
+  minutes: { event_id: string | null; event_start_time: string },
+  typeLabel: string,
+): string {
+  const when = meetingWhenLabel(minutes.event_start_time);
+  return minutes.event_id
+    ? `${typeLabel} meeting, ${when}`
+    : `${MINUTES_START_COPY.noMeeting}, ${when}`;
+}
+
 /** The longest the event card's gist runs before it is cut. */
 const MINUTES_GIST_MAX = 140;
 
@@ -127,19 +232,25 @@ const MINUTES_GIST_MAX = 140;
  * where they stand and what they hold, then the TL;DR's first line, which
  * the list row carries as `gist`.
  */
-export function eventMinutesLines(minutes: {
-  status: "draft" | "posted";
-  posted_at: string | null;
-  decision_count: number;
-  action_item_count: number;
-  gist?: string | null;
-}): { status: string; gist: string | null } {
-  const stand =
-    minutes.status === "posted"
-      ? minutes.posted_at
-        ? `${MEETING_ENTRY_COPY.posted} ${meetingDayLabel(minutes.posted_at)}`
-        : MEETING_ENTRY_COPY.posted
-      : MEETING_ENTRY_COPY.draft;
+export function eventMinutesLines(
+  minutes: {
+    status: "draft" | "posted";
+    posted_at: string | null;
+    decision_count: number;
+    action_item_count: number;
+    gist?: string | null;
+    started?: boolean;
+    recording_by?: string | null;
+  },
+  /** Whom a draft's state names (`minutesDraftStateLabel`); null for the reader. */
+  who: string | null = null,
+): { status: string; gist: string | null } {
+  const draftState = minutesDraftState(minutes);
+  const stand = draftState
+    ? minutesDraftStateLabel(draftState, who)
+    : minutes.posted_at
+      ? `${MEETING_ENTRY_COPY.posted} ${meetingDayLabel(minutes.posted_at)}`
+      : MEETING_ENTRY_COPY.posted;
   const status = [
     stand,
     minutes.decision_count
@@ -156,28 +267,44 @@ export function eventMinutesLines(minutes: {
 
 /** One tag on a Minutes list row, and which kind of chip draws it. */
 export interface MinutesRowTag {
-  key: "draft" | "recorded" | "decisions" | "actionItems" | "byline";
+  key:
+    | MinutesDraftState
+    | "noMeeting"
+    | "recorded"
+    | "decisions"
+    | "actionItems";
   label: string;
 }
 
 /**
  * A Minutes list row's tags, worked out from the minutes and never typed,
- * in the order both apps draw them (#5680): Draft, Recorded, how many
- * decisions and action items, and whose draft it is when it isn't the
- * viewer's own.
+ * in the order both apps draw them (#5680): where a draft stands, in one
+ * tag that names whose it is when it isn't the reader's ("Shawn Klein is
+ * drafting", "Winston Hewitt is recording", "Not started"; Paul,
+ * 2026-11-20, changing "Draft" plus a second "Shawn Klein's draft" tag),
+ * No meeting for minutes not linked to one yet, Recorded, then how many
+ * decisions and action items.
  */
 export function minutesRowTags(
   row: {
     status: string;
+    event_id?: string | null;
+    started?: boolean;
+    recording_by?: string | null;
     recorded: boolean;
     decision_count: number;
     action_item_count: number;
   },
-  byline?: string | null,
+  /** Whom the draft's state names; null when it is the reader. */
+  who?: string | null,
 ): MinutesRowTag[] {
+  const state = minutesDraftState(row);
   const tags: (MinutesRowTag | null)[] = [
-    row.status === "draft"
-      ? { key: "draft", label: MEETING_COPY.draftBadge }
+    state
+      ? { key: state, label: minutesDraftStateLabel(state, who ?? null) }
+      : null,
+    row.status === "draft" && row.event_id === null
+      ? { key: "noMeeting", label: MEETING_LIST_COPY.noMeeting }
       : null,
     row.recorded
       ? { key: "recorded", label: MEETING_LIST_COPY.recorded }
@@ -194,7 +321,6 @@ export function minutesRowTags(
           label: MEETING_LIST_COPY.actionItems(row.action_item_count),
         }
       : null,
-    byline ? { key: "byline", label: byline } : null,
   ];
   return tags.filter((tag): tag is MinutesRowTag => tag !== null);
 }
@@ -237,8 +363,8 @@ export const MEETING_LIST_COPY = {
   none: "Minutes show here once a secretary posts them.",
   loadFailedTitle: "Couldn't load the minutes",
   loadFailedBody: "Check your connection and try again.",
-  /** A draft that isn't the reader's own names whose it is. */
-  draftOf: (name: string) => `${name}'s draft`,
+  /** Minutes started with no meeting, until they are linked to one. */
+  noMeeting: "No meeting",
   /** The list's grouping and finding (#5290). */
   search: "Search minutes",
   allTypes: "All",
@@ -482,15 +608,17 @@ export const MEETING_NOTE_TAKERS_COPY = {
       : from === "Recording"
         ? "From the recording"
         : `From ${from}'s notes`,
-  /** Linking an event (#4935). */
-  noEvent:
-    "These minutes aren't linked to an event, so nobody but editors can read them.",
-  linkEvent: "Link an event",
-  linkTitle: "Link these minutes to an event",
-  linkHint:
-    "The event decides who reads the minutes. Pick the meeting's event, or make one for it.",
+  /**
+   * Linking a meeting (#4935; Paul, 2026-11-20: minutes can start with no
+   * meeting and be linked later). A state, not an explanation: the minutes
+   * say they have no meeting and offer the link; Post is dimmed until then.
+   */
+  noEvent: "No meeting",
+  linkEvent: "Link a meeting",
   linkPick: "Which meeting?",
-  linkNone: "No recent events without minutes.",
-  linkMake: "It isn't on the calendar",
-  linkFailed: "Couldn't link the event. Try again.",
+  linkNone: "No recent meetings without minutes.",
+  linkMake: "Add it to the calendar",
+  linkFailed: "Couldn't link the meeting. Try again.",
+  /** Why Post is dimmed on minutes with no meeting. */
+  postNeedsMeeting: "Link a meeting first",
 } as const;

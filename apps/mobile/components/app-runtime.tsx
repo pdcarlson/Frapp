@@ -1,4 +1,5 @@
 import { useUnreadFirstPaintRuntime } from "@/lib/chat/use-unread-first-paint-runtime";
+import { useFirstPaintCacheRuntime } from "@/lib/launch/use-first-paint-cache-runtime";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-runtime";
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
@@ -68,6 +69,11 @@ import { useResumeUpdates } from "@/lib/updates/use-resume-updates";
  * for days.
  */
 export function AppRuntime(): null {
+  // Chat as the member last saw it, so launch paints before the network
+  // answers (`lib/launch/first-paint-cache.ts`, #5768). First, so its query
+  // cache listener is in place before any runtime here or any screen starts a
+  // fetch in the same commit: it keeps only answers whose fetch it saw start.
+  useFirstPaintCacheRuntime();
   useConnectionRuntime();
   useChatRealtimeBinding();
   usePushRuntime();

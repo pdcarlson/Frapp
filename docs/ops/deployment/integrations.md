@@ -413,9 +413,11 @@ publishing status In production, user type External:
    members see the brand), one authorized redirect URI, exactly
    `https://api-staging.frapp.live/v1/google-calendar/callback` (add
    `http://localhost:3001/v1/google-calendar/callback` to try it locally,
-   on this client only). Then again, **Frapp Calendar**, with only
-   `https://api.frapp.live/v1/google-calendar/callback`. No JavaScript
-   origins on either. The redirect is the API's origin plus that path:
+   on this client only). Then again, **Frapp Calendar (production)**, with only
+   `https://api.frapp.live/v1/google-calendar/callback`. Each also lists its
+   web app under Authorized JavaScript origins (`https://app.staging.frapp.live`,
+   `https://app.frapp.live`), for Drive's folder picker, which signs in with
+   the same client (§ 7C, #5583; added by the owner 2026-11-20). The redirect is the API's origin plus that path:
    `API_URL` less any trailing `/v1`, as for Discord. Both are separate from
    the sign-in Web clients ("Frapp Web (staging)" and "Frapp Web (production)"), whose secrets live in Supabase: these live in
    Infisical.
@@ -451,8 +453,10 @@ connect a chapter's Drive folder and Frapp copies its files into Documents and
 keeps them matching it
 ([`chapter-docs.md` § Google Drive folder](../../../spec/behavior/chapter-docs.md#google-drive-folder),
 #5157). Frapp reads only what a chapter shares with its Drive account, or
-what anyone with the link can open, so there is no consent screen, no scope
-review and nothing on the Google sign-in client. Owner-only.
+what anyone with the link can open. Reading needs no consent screen, no scope
+review and nothing on a Google sign-in client; only step 4's folder picker,
+which shares the folder for the officer, uses one (the Calendar client and the
+non-sensitive `drive.file` scope). Owner-only.
 
 **No key file (2026-11-17, #5434).** The frapp.live organization blocks
 service account key files (#5323), so the API signs in to Drive the way it
@@ -485,14 +489,33 @@ For each environment, staging first:
 3. **Redeploy the API** once the sync has reached Secret Manager: each deploy
    pins the secret versions it finds.
 
+4. **Google's folder picker** (#5583), so an officer signs in with Google and
+   picks the folder instead of sharing it with `frapp-docs` by hand. It
+   reuses that environment's Google Calendar client (§ 7B, with its web app
+   among the client's Authorized JavaScript origins), so it needs § 7B done
+   first, plus, in the `signet-frapp` project: the **Google Picker API**
+   and **Google Drive API** enabled, the `drive.file` scope added under
+   Google Auth Platform → Data Access (non-sensitive: no review), and one
+   browser **API key** restricted to the Google Picker API and the web
+   apps' addresses. That key goes in Infisical as `GOOGLE_PICKER_API_KEY`
+   in each environment; it is public by design (the browser loads the
+   picker with it), and the API serves it from `GET /v1/google-drive`, so
+   the web build needs no copy. Done by the owner 2026-11-20 for both environments
+   (staging's names read back from Infisical; production's from the session
+   notes). Without
+   `GOOGLE_PICKER_API_KEY` the panel keeps the share-and-paste-link flow.
+
 `GOOGLE_DRIVE_CREDENTIALS_JSON` (a key file) still works, for a laptop or a
 project the policy doesn't cover; leave it unset in staging and prod. Setting
 it beside `GOOGLE_DRIVE_SERVICE_ACCOUNT` fails boot.
 
 **Verify after setup.** `GET /v1/google-drive` (signed in as an officer with
 Manage documents) answers `"available": true` with the `frapp-docs` address.
-In a test chapter, share a Drive folder with that address as a Viewer and
-connect it from Documents: within a minute its files appear there.
+With step 4 done it also carries `"picker"`; in a test chapter, Connect
+Google Drive → Choose a folder in Google Drive, sign in, pick a folder you can
+edit, and Connect: within a minute its files appear there, and the folder's
+Share list in Drive shows `frapp-docs` as a Viewer. Without step 4, share a
+Drive folder with that address as a Viewer and connect it by its link.
 
 **What goes wrong.**
 
@@ -503,4 +526,9 @@ connect it from Documents: within a minute its files appear there.
 | `available` stays `false` after the deploy | The deploy pinned the secrets before the sync reached Secret Manager: step 3 again |
 | Connecting says it couldn't reach Google Drive, and the API logs `Google Drive: failed (403): act_as_PERMISSION_DENIED` (or `failed (404): act_as_NOT_FOUND`, or `no_runtime_token`) | Step 1 didn't finish, or step 2's address is wrong: `frapp-api-runtime` can't act as `frapp-docs`. Run step 1 again and check the address |
 | Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | The Google Drive API is off in the project: step 1 |
+| Choosing a folder says the browser blocked Google's sign-in window | Pop-ups are blocked for the web app; allow them |
+| Google's picker says "The API developer key is invalid" | `GOOGLE_PICKER_API_KEY` is restricted to the wrong addresses or APIs, or is another project's key |
+| `GET /v1/google-drive` answers `"picker": null` though `GOOGLE_PICKER_API_KEY` is set | `available` is false too (no Drive account yet: steps 1 and 2), `GOOGLE_CALENDAR_CLIENT_ID` is unset or isn't a Google client id (`<project number>-<id>.apps.googleusercontent.com`), or the deploy pinned the secrets before the sync (step 3) |
+| Google's sign-in shows `redirect_uri_mismatch` or `origin_mismatch` | The web app's address is missing from the Calendar client's Authorized JavaScript origins (§ 7B step 3) |
+| Connecting a picked folder says your organization doesn't let its folders be shared outside it | The officer's school or company Workspace blocks sharing outside it; a personal Google account's folder, or the admin, fixes it |
 | Connecting says Frapp can't see the folder, though it is shared | It was shared with the other environment's `frapp-docs`, or with a person instead of the address |

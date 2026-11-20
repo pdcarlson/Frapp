@@ -2385,6 +2385,7 @@ describe("DocumentsPage wiring across its split components (#3273)", () => {
         available: true,
         connection: null,
         service_account_email: "drive@example.com",
+        picker: null,
       },
     });
     try {

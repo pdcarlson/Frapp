@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -64,6 +65,10 @@ describe('GoogleDriveService', () => {
       listChildren: jest.fn().mockResolvedValue([]),
       download: jest.fn(),
       exportAs: jest.fn(),
+      userTokenInfo: jest.fn(),
+      getItemAs: jest.fn(),
+      shareWithServiceAccount: jest.fn(),
+      unshare: jest.fn(),
     };
     repo = {
       findLive: jest.fn().mockResolvedValue(null),
@@ -74,6 +79,7 @@ describe('GoogleDriveService', () => {
         .mockResolvedValue(new Set()),
       create: jest.fn().mockResolvedValue(live()),
       markDue: jest.fn().mockResolvedValue(true),
+      restoreAccess: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(true),
       claim: jest.fn(),
       finishSync: jest.fn(),
@@ -97,6 +103,7 @@ describe('GoogleDriveService', () => {
     expect(status).toEqual({
       available: true,
       service_account_email: EMAIL,
+      picker: null,
       connection: {
         folder_id: FOLDER_ID,
         folder_name: 'Chapter files',
@@ -279,6 +286,217 @@ describe('GoogleDriveService', () => {
       await expect(
         service.connect('ch-1', 'user-1', FOLDER_ID),
       ).rejects.toThrow(ServiceUnavailableException);
+    });
+  });
+
+  // #5583: the officer signs in with Google and picks the folder; Frapp
+  // shares it with itself using that sign-in, once.
+  describe('connecting a picked folder', () => {
+    const CLIENT_ID = '661618060468-abc123def.apps.googleusercontent.com';
+    const TOKEN = 'ya29.member-token-from-the-picker';
+    const saved = { ...process.env };
+    const picked = (over: Partial<GoogleDriveItem> = {}): GoogleDriveItem => ({
+      id: FOLDER_ID,
+      name: 'Chapter files',
+      mimeType: GOOGLE_DRIVE_FOLDER_MIME,
+      modifiedTime: '',
+      size: null,
+      webViewLink: null,
+      parents: ['parent-1'],
+      trashed: false,
+      canEdit: true,
+      ...over,
+    });
+
+    beforeEach(() => {
+      process.env.GOOGLE_CALENDAR_CLIENT_ID = CLIENT_ID;
+      process.env.GOOGLE_PICKER_API_KEY = 'AIza-picker-key';
+      drive.userTokenInfo.mockResolvedValue({
+        clientId: CLIENT_ID,
+        scopes: ['https://www.googleapis.com/auth/drive.file'],
+      });
+      drive.getItemAs.mockResolvedValue(picked());
+      // The service account can't see it yet, nor anything above it.
+      drive.getItem.mockRejectedValue(
+        new GoogleDriveApiError('not_found', 404, 'notFound'),
+      );
+      drive.shareWithServiceAccount.mockResolvedValue('perm-1');
+      drive.unshare.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      process.env = { ...saved };
+    });
+
+    it('offers the picker in the status, with the project number as its app id', async () => {
+      const status = await service.status('ch-1');
+      expect(status.picker).toEqual({
+        client_id: CLIENT_ID,
+        api_key: 'AIza-picker-key',
+        app_id: '661618060468',
+      });
+    });
+
+    it('offers no picker without its API key, so the link flow stays', async () => {
+      delete process.env.GOOGLE_PICKER_API_KEY;
+      expect((await service.status('ch-1')).picker).toBeNull();
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('shares the folder with Frapp as the officer, then connects it with no code', async () => {
+      await service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN, [
+        'tier:exec',
+      ]);
+
+      expect(drive.getItemAs).toHaveBeenCalledWith(TOKEN, FOLDER_ID);
+      expect(drive.shareWithServiceAccount).toHaveBeenCalledWith(
+        TOKEN,
+        FOLDER_ID,
+      );
+      expect(drive.proofCode).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        folder_id: FOLDER_ID,
+        folder_name: 'Chapter files',
+        connected_by: 'user-1',
+        who_can_see: ['tier:exec'],
+      });
+    });
+
+    it('adds no share when Frapp already sees the folder', async () => {
+      drive.getItem.mockResolvedValue(picked({ parents: [] }));
+      await service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN);
+      expect(drive.shareWithServiceAccount).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalled();
+    });
+
+    it('refuses a token another app was given, or one without drive.file', async () => {
+      drive.userTokenInfo.mockResolvedValueOnce({
+        clientId: 'someone-else.apps.googleusercontent.com',
+        scopes: ['https://www.googleapis.com/auth/drive.file'],
+      });
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      drive.userTokenInfo.mockResolvedValueOnce({
+        clientId: CLIENT_ID,
+        scopes: ['openid'],
+      });
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      drive.userTokenInfo.mockResolvedValueOnce(null);
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(drive.shareWithServiceAccount).not.toHaveBeenCalled();
+    });
+
+    it('refuses a folder the officer can only view, a file, or one in the trash', async () => {
+      drive.getItemAs.mockResolvedValueOnce(picked({ canEdit: false }));
+      // Names the address, for an owner who isn't in Frapp to share it by hand.
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow(new RegExp(`can edit the folder.*${EMAIL}`));
+
+      drive.getItemAs.mockResolvedValueOnce(
+        picked({ mimeType: 'application/pdf' }),
+      );
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow(/not a folder/);
+
+      drive.getItemAs.mockResolvedValueOnce(picked({ trashed: true }));
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow(/trash/);
+      expect(drive.shareWithServiceAccount).not.toHaveBeenCalled();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('asks to pick again when the sign-in can’t open the folder', async () => {
+      drive.getItemAs.mockRejectedValue(
+        new GoogleDriveApiError('failed', 401, 'authError'),
+      );
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow(/Pick it again/);
+    });
+
+    it('says plainly when a school or company account blocks sharing outside it', async () => {
+      drive.shareWithServiceAccount.mockRejectedValue(
+        new GoogleDriveApiError('forbidden', 403, 'shareOutNotPermitted'),
+      );
+      const refusal = service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN);
+      await expect(refusal).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(refusal).rejects.toThrow(/personal Google account/);
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a folder inside another chapter’s before sharing it', async () => {
+      repo.folderTakenElsewhere.mockResolvedValue(true);
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(drive.shareWithServiceAccount).not.toHaveBeenCalled();
+    });
+
+    it('takes the share back when saving fails after sharing', async () => {
+      repo.create.mockRejectedValue(new Error('connection reset'));
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow('connection reset');
+      expect(drive.unshare).toHaveBeenCalledWith(TOKEN, FOLDER_ID, 'perm-1');
+    });
+
+    // Drive gives one permission id per person, so a twin request that won
+    // the race holds the same share: taking it back would cut that one off.
+    it('keeps the share when another request connected the folder first', async () => {
+      repo.create.mockRejectedValue({ code: '23505' });
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(drive.unshare).not.toHaveBeenCalled();
+    });
+
+    it('treats Google refusing the share as a refusal, and an expired sign-in as pick again', async () => {
+      drive.shareWithServiceAccount.mockRejectedValueOnce(
+        new GoogleDriveApiError('failed', 400, 'invalidSharingRequest'),
+      );
+      const refused = service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN);
+      await expect(refused).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(refused).rejects.toThrow(EMAIL);
+
+      drive.shareWithServiceAccount.mockRejectedValueOnce(
+        new GoogleDriveApiError('failed', 401, 'authError'),
+      );
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toThrow(/Pick it again/);
+    });
+
+    it('shares an unshared connected folder again and syncs it at once', async () => {
+      repo.findAny.mockResolvedValue(live({ status: 'no_access' }));
+      await service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN);
+      expect(drive.shareWithServiceAccount).toHaveBeenCalledWith(
+        TOKEN,
+        FOLDER_ID,
+      );
+      expect(repo.restoreAccess).toHaveBeenCalledWith('ch-1', expect.any(Date));
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a different folder while one is connected', async () => {
+      repo.findAny.mockResolvedValue(
+        live({ status: 'no_access', folder_id: 'another-folder-id' }),
+      );
+      await expect(
+        service.connectPicked('ch-1', 'user-1', FOLDER_ID, TOKEN),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

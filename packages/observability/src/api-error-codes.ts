@@ -177,6 +177,10 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "meeting.not_in_audience",
   "meeting.notes_too_long",
   "meeting.event_linked",
+  // Posting minutes started with no meeting before one is linked (Paul,
+  // 2026-11-20). Current clients hold Post until then; an older phone build
+  // that can open such minutes doesn't.
+  "meeting.no_event",
   // Asking for minutes (#5471): they were posted meanwhile, or the meeting
   // hasn't ended yet. The third is a 503 (the reminder couldn't be sent and
   // nothing was recorded), so its status reports it as a server fault.

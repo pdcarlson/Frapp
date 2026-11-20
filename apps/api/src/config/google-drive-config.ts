@@ -107,3 +107,41 @@ export function validateGoogleDriveEnv(env: Env): string[] {
   }
   return problems;
 }
+
+/** A Google OAuth client id: the Cloud project's number, a dash, then the rest. */
+const OAUTH_CLIENT_ID = /^(\d+)-[a-z0-9]+\.apps\.googleusercontent\.com$/;
+
+/**
+ * What a browser needs to open Google's own folder picker (#5583): the
+ * officer signs in with Google, picks the chapter's folder, and the API
+ * shares it with the service account using that sign-in, once. Served by
+ * `GET /v1/google-drive` rather than baked into the web build, so each
+ * environment's values come from its own API.
+ *
+ * - `clientId`: the Google Calendar sign-in's Web OAuth client
+ *   (`GOOGLE_CALENDAR_CLIENT_ID`), one per environment, whose Authorized
+ *   JavaScript origins list the web app. Picking asks for `drive.file` only.
+ * - `apiKey`: `GOOGLE_PICKER_API_KEY`, a browser key restricted to the
+ *   Picker API and the web app's addresses. Public by design.
+ * - `appId`: the Cloud project's number, the client id's prefix, so the
+ *   folder picked is granted to this app.
+ *
+ * Null while either setting is unset, or the client id isn't a Google client
+ * id; `GET /v1/google-drive` also offers none while Drive itself isn't
+ * (no service account). Then only the link flow is offered.
+ */
+export interface GoogleDrivePicker {
+  clientId: string;
+  apiKey: string;
+  appId: string;
+}
+
+export function googleDrivePicker(
+  env: Env = process.env,
+): GoogleDrivePicker | null {
+  const clientId = envSetting(env, 'GOOGLE_CALENDAR_CLIENT_ID');
+  const apiKey = envSetting(env, 'GOOGLE_PICKER_API_KEY');
+  const project = clientId ? OAUTH_CLIENT_ID.exec(clientId) : null;
+  if (!clientId || !apiKey || !project) return null;
+  return { clientId, apiKey, appId: project[1] };
+}

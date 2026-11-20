@@ -80,6 +80,7 @@ import {
   agendaWithPending,
   EVENT_LENGTH_CHOICES,
   eventLengthLabel,
+  eventTypeFromForm,
   type EventAgendaItem,
   type EventAttendanceDraft,
   type EventEditScope,
@@ -1032,12 +1033,22 @@ export function EventEditorDialog({
    * the name is blank or still the one the last pick wrote. Letting the type
    * go leaves the form as it is.
    */
-  function handlePickType(type: EventType | null) {
+  function handlePickType(type: EventType | null, made = false) {
     // The held type picked again keeps it and what was changed since, as
     // the phone's Type sheet does: it never resets the points or attendance.
     if (type && type.id === eventTypeId) return;
     setEventTypeId(type?.id ?? null);
     if (!type) return;
+    // A type just made from this form (`eventTypeFromForm`) took its values
+    // from it: the form keeps what it holds, refused points included, and
+    // only a blank name takes the type's.
+    if (made) {
+      if (name.trim() === "") {
+        setName(type.name);
+        setTypeFilledName(type.name);
+      }
+      return;
+    }
     // A member's event carries no points and requires nobody, whatever the
     // type says: the type still names it.
     if (canSetRequirements) {
@@ -1612,6 +1623,13 @@ export function EventEditorDialog({
               onPick={handlePickType}
               canManage={canManageTypes && !usingPreviewData}
               showSets={canSetRequirements}
+              typeFromForm={(typeName) =>
+                eventTypeFromForm(
+                  typeName,
+                  canSetRequirements ? pointValue : null,
+                  canSetRequirements && attendance.everyone === "required",
+                )
+              }
               disabled={usingPreviewData}
             />
 

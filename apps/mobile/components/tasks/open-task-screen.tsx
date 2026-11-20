@@ -17,7 +17,7 @@ import {
   TASK_PROOF_KIND_HINTS,
   canAll,
 } from "@repo/validation";
-import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
+import { TASK_CREATE_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_TASKS } from "@/components/back-row";
@@ -104,7 +104,7 @@ export function OpenTaskScreen({ postingId }: { postingId: string }) {
   if (found !== null && found !== held) setHeld(found);
   const [leaving, setLeaving] = useState(false);
   const permissions = usePermissionList();
-  const canManage = canAll(PLUS_MENU_PERMISSIONS.task, permissions);
+  const canManage = canAll(TASK_CREATE_PERMISSIONS, permissions);
 
   const nameOf = useMemberLabel();
   const viewerUserId = useViewerUserId();

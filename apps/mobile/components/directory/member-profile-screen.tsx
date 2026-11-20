@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  type GestureResponderEvent,
   Linking,
   Pressable,
   StyleSheet,
@@ -56,6 +57,7 @@ import { ChatGlyph } from "@/components/tab-glyphs";
 import { pageSurfaces } from "@/lib/surfaces";
 import { IconButton, ICON_BUTTON_SIZE } from "@/components/icon-button";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
+import { pressAt } from "@/components/item-actions-menu";
 import {
   MemberRolesSheet,
   type MemberRolesSession,
@@ -312,55 +314,61 @@ export function MemberProfile({
     rolesSheetRef.current?.present();
   }
 
-  function openMenu() {
+  function openMenu(event?: GestureResponderEvent) {
     if (!detail) return;
     const target = detail;
-    showMemberMenu(target.displayName, menuActions, (action) => {
-      if (action === "edit" && target.memberId) {
-        setCorrectionSession({
-          memberId: target.memberId,
-          label: target.displayName,
-          name: target.storedName,
-          graduationYear: target.graduationYear,
-        });
-        correctionSheetRef.current?.present();
-      } else if (action === "block") {
-        confirmBlockMember({
-          name: target.displayName,
-          // Listed in the directory: that is where this is.
-          inDirectory: true,
-          run: () => blockActions.block(target.userId),
-        });
-      } else if (action === "unblock") {
-        confirmUnblockMember({
-          name: target.displayName,
-          run: () => blockActions.unblock(target.userId),
-        });
-      } else if (action === "remove" && target.memberId) {
-        const memberId = target.memberId;
-        confirmRemoveMember({
-          name: target.displayName,
-          run: () => {
-            removeMutation.mutate(memberId, {
-              // They are no longer a member, so their page goes; only while
-              // it is still the one on screen (#3405).
-              onSuccess: () => {
-                if (isShown()) leave();
-              },
-              onError: (error) =>
-                Alert.alert(
-                  removeFailedTitle(target.displayName),
-                  errorCopy(error, "Try again in a moment.", {
-                    // The route's refusals are sentences for members ("You
-                    // can only remove members ranked below you.").
-                    serverWritesForMembers: true,
-                  }),
-                ),
-            });
-          },
-        });
-      }
-    });
+    const at = pressAt(event);
+    showMemberMenu(
+      target.displayName,
+      menuActions,
+      (action) => {
+        if (action === "edit" && target.memberId) {
+          setCorrectionSession({
+            memberId: target.memberId,
+            label: target.displayName,
+            name: target.storedName,
+            graduationYear: target.graduationYear,
+          });
+          correctionSheetRef.current?.present();
+        } else if (action === "block") {
+          confirmBlockMember({
+            name: target.displayName,
+            // Listed in the directory: that is where this is.
+            inDirectory: true,
+            run: () => blockActions.block(target.userId),
+          });
+        } else if (action === "unblock") {
+          confirmUnblockMember({
+            name: target.displayName,
+            run: () => blockActions.unblock(target.userId),
+          });
+        } else if (action === "remove" && target.memberId) {
+          const memberId = target.memberId;
+          confirmRemoveMember({
+            name: target.displayName,
+            run: () => {
+              removeMutation.mutate(memberId, {
+                // They are no longer a member, so their page goes; only while
+                // it is still the one on screen (#3405).
+                onSuccess: () => {
+                  if (isShown()) leave();
+                },
+                onError: (error) =>
+                  Alert.alert(
+                    removeFailedTitle(target.displayName),
+                    errorCopy(error, "Try again in a moment.", {
+                      // The route's refusals are sentences for members ("You
+                      // can only remove members ranked below you.").
+                      serverWritesForMembers: true,
+                    }),
+                  ),
+              });
+            },
+          });
+        }
+      },
+      at,
+    );
   }
 
   // Not waiting on the channel-list refetch: chat home observes it and picks
@@ -585,8 +593,12 @@ export function MemberProfile({
                 label="Phone"
                 value={detail.phone}
                 accessibilityHint="Offers to call or text them"
-                onPress={() =>
-                  showPhoneActions(detail.displayName, detail.phone ?? "")
+                onPress={(event) =>
+                  showPhoneActions(
+                    detail.displayName,
+                    detail.phone ?? "",
+                    event,
+                  )
                 }
               />
             ) : null}
