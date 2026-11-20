@@ -139,7 +139,7 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       // Only groups that can open a channel (`groupKindOpensChannels`).
-      .neq('kind', 'class_year');
+      .in('kind', ['manual', 'pledge_class']);
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map((row) => row.group_id);
   }

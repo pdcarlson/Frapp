@@ -398,15 +398,21 @@ export class ChannelAccessListService {
           .filter((group) => group.chapter_id === chapterId)
           .map((group) => channelAccessEntry('group', group.id)),
       ]);
-      const yearIds = new Set(
+      // Class years and majors: members set their own (#4076, #5778).
+      const selfSet = new Map(
         groups
           .filter((group) => !groupKindOpensChannels(group.kind))
-          .map((group) => group.id),
+          .map((group) => [group.id, group.kind] as const),
       );
       for (const { kind, id } of parsed) {
-        if (kind === 'group' && yearIds.has(id)) {
+        const selfSetKind = kind === 'group' ? selfSet.get(id) : undefined;
+        if (selfSetKind) {
+          const [what, theirs] =
+            selfSetKind === 'major'
+              ? ['A major', 'major']
+              : ['A class year', 'graduation year'];
           throw new BadRequestException(
-            "A class year can't decide who sees a channel, because members set their own graduation year. Make a group and pick its members instead.",
+            `${what} can't decide who sees a channel, because members set their own ${theirs}. Make a group and pick its members instead.`,
           );
         }
         if (!known.has(channelAccessEntry(kind, id))) {

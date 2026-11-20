@@ -62,6 +62,7 @@ const classGroup = (classId: string): ChapterGroup => ({
   mentionable: true,
   pledge_class_id: classId,
   class_year: null,
+  major_key: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 });

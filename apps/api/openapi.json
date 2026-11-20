@@ -33172,13 +33172,14 @@
             "enum": [
               "manual",
               "pledge_class",
-              "class_year"
+              "class_year",
+              "major"
             ],
-            "description": "`manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change."
+            "description": "`manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own."
           },
           "name": {
             "type": "string",
-            "description": "The group's name, which `@` mentions it. An automatic group's is its pledge class's, or \"Class of\" and the year."
+            "description": "The group's name, which `@` mentions it. An automatic group's is its pledge class's, \"Class of\" and the year, or the major as most of its members write it."
           },
           "color": {
             "type": "string",
@@ -33199,6 +33200,11 @@
             "type": "number",
             "nullable": true,
             "description": "The graduation year a `class_year` group follows."
+          },
+          "major_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "The major a `major` group follows, folded: trimmed, spacing collapsed, lower case."
           },
           "member_ids": {
             "description": "The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers.",
@@ -33226,6 +33232,7 @@
           "mentionable",
           "pledge_class_id",
           "class_year",
+          "major_key",
           "member_ids",
           "created_at",
           "updated_at"
@@ -33280,7 +33287,7 @@
           "name": {
             "type": "string",
             "maxLength": 80,
-            "description": "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here."
+            "description": "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here."
           },
           "color": {
             "type": "string",

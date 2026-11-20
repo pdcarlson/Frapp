@@ -6,6 +6,7 @@ import { useGroups } from "@repo/hooks";
 import { allRoles } from "@repo/hooks/task-who-picker";
 import {
   TASK_FOLLOWER_COPY,
+  groupKindOpensChannels,
   taskFollowerEntry,
   type TaskFollowerKind,
 } from "@repo/validation";
@@ -43,7 +44,8 @@ const JUST_YOU = "none";
 /**
  * The tiers, roles and groups the viewer is in, which a task they make or
  * edit can be from (#5473): the API takes only one its sender is in, so "From
- * Exec board" is true. Not a class year, which opens nothing either.
+ * Exec board" is true. Not a class year or a major, which open nothing
+ * either.
  */
 export function useFollowerChoices(
   options: { enabled?: boolean } = {},
@@ -55,9 +57,9 @@ export function useFollowerChoices(
   return useMemo(() => {
     const viewer = directory.people.find((person) => person.isViewer)?.userId;
     if (!viewer) return [];
-    const classYears = new Set(
+    const selfSet = new Set(
       (groups.data ?? [])
-        .filter((group) => group.kind === "class_year")
+        .filter((group) => !groupKindOpensChannels(group.kind))
         .map((group) => group.id),
     );
     const choices: FollowerChoice[] = [];
@@ -86,7 +88,7 @@ export function useFollowerChoices(
       add("role", role.id, role.name, role.memberIds);
     }
     for (const group of directory.groups) {
-      if (!classYears.has(group.id)) {
+      if (!selfSet.has(group.id)) {
         add("group", group.id, group.name, group.memberIds);
       }
     }

@@ -50,6 +50,7 @@ const GROUP_KIND_WORDS: Record<ChapterGroupView['kind'], string> = {
   manual: 'group',
   pledge_class: 'class',
   class_year: 'class year',
+  major: 'major',
 };
 
 /** "Fall 2024 (class)": a group's name with what kind of group it is. */

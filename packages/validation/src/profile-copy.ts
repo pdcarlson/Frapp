@@ -12,7 +12,13 @@ import { GRADUATION_YEAR_MIN } from "./field-limits";
  */
 export const PROFILE_FIELD_COPY = {
   displayName: { label: "Name", placeholder: "First and last name" },
-  major: { label: "Major", placeholder: "e.g. Mechanical Engineering" },
+  major: {
+    label: "Major",
+    placeholder: "e.g. Mechanical Engineering",
+    // The chapter's majors offered under the field (#5778), so a member
+    // picks the spelling the chapter already pings instead of a near twin.
+    suggestionsLabel: "Majors in your chapter",
+  },
   // Optional, and the member's alone (#3711): leaving it empty keeps it off
   // their profile, which the hint under the field says.
   phone: {

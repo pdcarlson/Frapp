@@ -167,6 +167,7 @@ describe('mentionRoleViews', () => {
       mentionable: true,
       pledge_class_id: kind === 'pledge_class' ? 'pc-1' : null,
       class_year: kind === 'class_year' ? 2027 : null,
+      major_key: null,
       created_at: '2026-11-06T00:00:00Z',
       updated_at: '2026-11-06T00:00:00Z',
     });
@@ -408,6 +409,7 @@ describe('ChatMentionService.resolveForSend', () => {
       mentionable: true,
       pledge_class_id: null,
       class_year: null,
+      major_key: null,
       created_at: '2026-11-06T00:00:00Z',
       updated_at: '2026-11-06T00:00:00Z',
     };

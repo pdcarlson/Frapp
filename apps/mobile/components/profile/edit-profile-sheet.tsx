@@ -14,11 +14,18 @@ import {
   type TextInput,
 } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
-import { useFieldReveal, useUpdateUser } from "@repo/hooks";
+import {
+  useChapterMajors,
+  useFieldReveal,
+  usePermissionList,
+  useUpdateUser,
+} from "@repo/hooks";
 import {
   BIRTHDAY_COPY,
+  can,
   DISPLAY_NAME_MAX_LENGTH,
   MAJOR_MAX_LENGTH,
+  majorSuggestions,
   parseBirthdayVisibility,
   PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
@@ -43,6 +50,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { Toggle } from "@/components/toggle";
+import { ListRow, ListSection } from "@/components/list-section";
 import {
   applyEdit,
   draftFromProfile,
@@ -170,6 +178,12 @@ export const EditProfileSheet = forwardRef<
   const styles = createStyles(tokens, accent);
   const backgroundStyle = useSheetBackgroundStyle();
   const updateUser = useUpdateUser();
+  // The chapter's majors, offered under Major while it has focus (#5778), so
+  // a member picks the spelling the chapter already pings. The groups read
+  // needs `members:view`, as on web.
+  const chapterMajors = useChapterMajors({
+    enabled: can("members:view", usePermissionList()),
+  });
 
   const original = useMemo(() => draftFromProfile(profile), [profile]);
   const [edits, setEdits] = useState<ProfileEdits | null>(null);
@@ -222,6 +236,9 @@ export const EditProfileSheet = forwardRef<
   const birthdayVisibility = parseBirthdayVisibility(shown.birthdayVisibility);
   const birthdayTyped =
     shown.birthdayMonth.trim() !== "" && shown.birthdayDay.trim() !== "";
+
+  // At most four, so the list under Major stays above the keyboard.
+  const majorOptions = majorSuggestions(chapterMajors, shown.major, 4);
 
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
@@ -505,6 +522,26 @@ export const EditProfileSheet = forwardRef<
           })}
         </View>
         {rowError(["major", "graduationYear"])}
+        {/* The chapter's majors matching what is typed (#5778), as Mail's
+            and Contacts' fields suggest under themselves: a tap takes its
+            exact spelling, and typing on keeps a new one. */}
+        {focused === "major" && majorOptions.length > 0 ? (
+          <View
+            accessibilityRole="list"
+            accessibilityLabel={copy.major.suggestionsLabel}
+          >
+            <ListSection>
+              {majorOptions.map((major) => (
+                <ListRow
+                  key={major}
+                  label={major}
+                  action
+                  onPress={() => edit("major")(major)}
+                />
+              ))}
+            </ListSection>
+          </View>
+        ) : null}
         {/* The birthday (#4959): month, day and an optional year as digits,
             then the switch that shares it with the chapter (#5282). */}
         <View

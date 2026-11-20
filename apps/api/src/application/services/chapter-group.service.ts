@@ -72,11 +72,12 @@ export type ChapterGroupView = ChapterGroup & { member_ids: string[] };
  * can do is let them see a channel listing it, so once a channel or category
  * list names a group, changing its members or deleting it also needs
  * `channels:manage` ({@link ChapterGroupService.assertMayChangeAccess}). A
- * class year can't go on a list at all (members set their own year).
+ * class year or a major can't go on a list at all (members set their own).
  *
  * Only a manual group's name and members are written here. An automatic
- * group (a pledge class's, a graduation year's) follows the members' data,
- * which the database keeps (`20261113040007_chapter_groups.sql`); its color
+ * group (a pledge class's, a graduation year's, a major's) follows the
+ * members' data, which the database keeps (`20261113040007_chapter_groups.sql`,
+ * `20261120215726_major_groups.sql`); its color
  * and ping switch are the chapter's.
  *
  * Every change writes a `chapter_audit_log` row mirrored to `#chapter-audit`,
@@ -96,8 +97,9 @@ export class ChapterGroupService {
 
   /**
    * Every group with its members: manual ones first, in the order they were
-   * made, then pledge classes and class years. An automatic group nobody is
-   * in is left out (a class with no members yet, a year everyone left).
+   * made, then pledge classes, class years and majors. An automatic group
+   * nobody is in is left out (a class with no members yet, a year everyone
+   * left, a major nobody has any more).
    */
   async list(chapterId: string): Promise<ChapterGroupView[]> {
     const [groups, memberships] = await Promise.all([
@@ -174,7 +176,7 @@ export class ChapterGroupService {
 
   /**
    * Rename, recolor or switch pinging. Only a manual group may be renamed; an
-   * automatic one's name is its class's or year's.
+   * automatic one's name is its class's, year's or major's.
    */
   async update(
     id: string,
@@ -196,7 +198,7 @@ export class ChapterGroupService {
       if (group.kind !== 'manual') {
         if (name !== group.name) {
           throw new BadRequestException(
-            "This group's name follows its pledge class or graduation year",
+            "This group's name follows its pledge class, graduation year or major",
           );
         }
       } else if (name !== group.name) {
@@ -434,7 +436,7 @@ const NOT_A_MEMBER =
   'Someone you picked is no longer in the chapter. Reload and pick again.';
 const GROUP_FULL = `A group can hold ${GROUP_MEMBERS_MAX.toLocaleString('en-US')} members.`;
 const AUTOMATIC =
-  "This group follows pledge classes or graduation years, so who's in it changes with them.";
+  "This group follows pledge classes, graduation years or majors, so who's in it changes with them.";
 
 /** Each group with the `users.id` of every member in it, sorted. */
 export function withMembers(
@@ -451,6 +453,7 @@ export function withMembers(
     manual: 0,
     pledge_class: 1,
     class_year: 2,
+    major: 3,
   };
   return [...groups]
     .sort(
@@ -458,7 +461,9 @@ export function withMembers(
         order[a.kind] - order[b.kind] ||
         (a.kind === 'class_year'
           ? (a.class_year ?? 0) - (b.class_year ?? 0)
-          : a.created_at.localeCompare(b.created_at)),
+          : a.kind === 'major'
+            ? a.name.localeCompare(b.name)
+            : a.created_at.localeCompare(b.created_at)),
     )
     .map((group) => ({
       ...group,

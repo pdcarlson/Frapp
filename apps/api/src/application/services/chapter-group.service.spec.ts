@@ -35,6 +35,7 @@ function group(
     mentionable: true,
     pledge_class_id: null,
     class_year: null,
+    major_key: null,
     created_at: '2026-11-01T00:00:00Z',
     updated_at: '2026-11-01T00:00:00Z',
     ...extra,
@@ -443,5 +444,20 @@ describe('withMembers', () => {
       [],
     );
     expect(views.map((v) => v.id)).toEqual(['a', 'b']);
+  });
+
+  it('puts majors after class years, alphabetically (#5778)', () => {
+    const views = withMembers(
+      [
+        group('m2', 'Music', { kind: 'major', major_key: 'music' }),
+        group('m1', 'Computer Science', {
+          kind: 'major',
+          major_key: 'computer science',
+        }),
+        group('y', 'Class of 2027', { kind: 'class_year', class_year: 2027 }),
+      ],
+      [],
+    );
+    expect(views.map((v) => v.id)).toEqual(['y', 'm1', 'm2']);
   });
 });

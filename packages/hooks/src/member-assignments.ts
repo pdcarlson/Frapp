@@ -60,6 +60,7 @@ export function groupFollowsLabel(
 ): string | null {
   if (group.kind === "pledge_class") return "Follows pledge class";
   if (group.kind === "class_year") return "Follows graduation year";
+  if (group.kind === "major") return "Follows major";
   return null;
 }
 
