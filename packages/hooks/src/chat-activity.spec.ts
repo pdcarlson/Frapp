@@ -91,6 +91,17 @@ describe("createChatActivityHandler (#3698)", () => {
     expect(markRead).not.toHaveBeenCalled();
   });
 
+  test("a channel Realtime refused re-reads the channel list at once, and stamps nothing (#5765)", async () => {
+    viewing = "gone";
+    const { handle } = handler();
+    handle({ type: "unavailable", channelId: "gone" });
+
+    // Not held for the coalescing window: the open thread is waiting on it.
+    expect(invalidatedKeys()).toContainEqual(CHANNEL_LIST_KEY);
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
   test("a stamp queued for a channel Mark unread then holds is never sent (#3723)", async () => {
     viewing = "c1";
     const { handle } = handler();

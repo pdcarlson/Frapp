@@ -77,6 +77,7 @@ const mocks = vi.hoisted(() => {
     clearAfterSend,
     noTypingUsers,
     getTypingUsers: vi.fn((): readonly string[] => noTypingUsers),
+    isUnavailable: vi.fn((_channelId: string) => false),
     subscribeStatus: vi.fn((cb: (status: "live") => void) => {
       statusListeners.add(cb);
       return () => {
@@ -130,6 +131,7 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
     unsubscribe: vi.fn(),
     subscribeStatus: mocks.subscribeStatus,
     getTypingUsers: mocks.getTypingUsers,
+    isUnavailable: mocks.isUnavailable,
     emitTyping: vi.fn(),
   },
 }));
@@ -952,6 +954,38 @@ describe("useChatChannel — a send the outbox refuses rejects (#1728)", () => {
     expect(mocks.clearAfterSend).not.toHaveBeenCalled();
     // `sendMessage` took its optimistic card back out.
     expect(result.current.messages).toHaveLength(0);
+  });
+});
+
+describe("useChatChannel — a channel Realtime refused (#5765)", () => {
+  beforeEach(() => {
+    mocks.GET.mockReset();
+    mocks.GET.mockResolvedValue({ data: [], error: undefined });
+    mocks.isUnavailable.mockReset();
+    mocks.isUnavailable.mockImplementation(() => false);
+  });
+
+  afterEach(() => {
+    client?.clear();
+  });
+
+  it("reports it once the manager says so, and only for that channel", async () => {
+    const view = renderHook(
+      ({ id }: { id: string }) => {
+        client = useQueryClient();
+        return useChatChannel(id);
+      },
+      { wrapper, initialProps: { id: CHANNEL_ID } },
+    );
+    expect(view.result.current.unavailable).toBe(false);
+
+    mocks.isUnavailable.mockImplementation((id) => id === CHANNEL_ID);
+    act(() => mocks.pingStatus());
+    expect(view.result.current.unavailable).toBe(true);
+
+    // Never carried to the next channel, not even for a render.
+    view.rerender({ id: "another-channel" });
+    expect(view.result.current.unavailable).toBe(false);
   });
 });
 

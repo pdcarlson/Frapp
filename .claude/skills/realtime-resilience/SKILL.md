@@ -98,6 +98,16 @@ link, not on `isOffline`, because Realtime is a different service from `/health`
 If a rule here is wrong, change the shared function and the spec together, never the spec alone to
 match a local fork.
 
+## 8. A refused join is not a drop
+
+A private channel's join refused for RLS (`Unauthorized: You do not have permissions to read from
+this Channel topic`) never passes by retrying, and phoenix rejoins an errored channel every 10 s for
+as long as it stays registered, so leaving it registered is a retry loop even with no timer of
+ours (#5765). `isJoinDenied` (`packages/chat-core/src/join-denied.ts`) tells it apart: release the
+channel, keep it out of the backoff, polling and Reconnecting, and ask again only on a token change
+(`TOKEN_REFRESHED` / `SIGNED_IN`) or a new viewer. Every other failure keeps its backoff. Spec:
+[`realtime-connection.md` § A refused join is not a drop](../../../spec/ui/resilience/realtime-connection.md#a-refused-join-is-not-a-drop).
+
 ## Before you change realtime or connection code
 
 1. Read the spec leaf the change touches: `connection-state.md`, `message-delivery.md`, or

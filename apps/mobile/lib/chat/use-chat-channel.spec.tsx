@@ -105,6 +105,7 @@ const mocks = vi.hoisted(() => {
     emitTyping: vi.fn(),
     noTypingUsers: Object.freeze([]) as readonly string[],
     getTypingUsers: vi.fn((): readonly string[] => []),
+    isUnavailable: vi.fn((_channelId: string) => false),
     // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`
     // (its `.order().range()` tail is passed through in the module mock below).
     // Deliberately NOT `null`: mocking the client away skips that branch entirely,
@@ -159,6 +160,7 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
     unsubscribe: mocks.unsubscribe,
     subscribeStatus: mocks.subscribeStatus,
     getTypingUsers: mocks.getTypingUsers,
+    isUnavailable: mocks.isUnavailable,
     emitTyping: mocks.emitTyping,
   },
 }));
@@ -257,6 +259,7 @@ beforeEach(() => {
     };
   });
   mocks.getTypingUsers.mockImplementation(() => mocks.noTypingUsers);
+  mocks.isUnavailable.mockImplementation(() => false);
   mocks.listForChannel.mockImplementation(async () => []);
   mocks.supabaseIn.mockImplementation(async () => ({ data: [] }));
 });
@@ -714,6 +717,18 @@ describe("realtime attach", () => {
 });
 
 describe("status subscription", () => {
+  it("reports a channel Realtime refused once the manager says so (#5765)", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.unavailable).toBe(false);
+
+    mocks.isUnavailable.mockImplementation((id) => id === CHANNEL);
+    act(() => {
+      mocks.statusListeners.forEach((cb) => cb("live"));
+    });
+    expect(result.current.unavailable).toBe(true);
+  });
+
   it("hands on the manager's own typing array, re-read on each status ping", async () => {
     // The manager keeps that array's identity while the typists are unchanged
     // (`packages/chat-core/src/realtime-manager.spec.ts`, #1004), so a ping

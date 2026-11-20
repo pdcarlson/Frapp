@@ -15,6 +15,10 @@ import {
   channelsRoleRefusalBody,
   isRoleRefusal,
 } from "@repo/chat-core/channels-refused-copy";
+import {
+  CHANNEL_UNAVAILABLE_BODY,
+  CHANNEL_UNAVAILABLE_TITLE,
+} from "@repo/chat-core/join-denied";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
@@ -1042,6 +1046,19 @@ export function ChatShell({
   // A caller can pass a channel *name* (onboarding's completion redirect
   // uses the literal `general`) as well as an id, and `activeChannelId`
   // resolves either, so "missing" means neither matches.
+  /*
+    The open channel Realtime refused once it was open: deleted, or the
+    member's access went (#5765). Held against the selection it happened
+    under, so picking any channel from the rail moves on from it, and the
+    thread says it is gone instead of quietly landing on another channel when
+    the re-read list drops it. Set below, once the channel's hook reports it.
+  */
+  const [lostChannel, setLostChannel] = useState<{
+    id: string;
+    selected: string | null;
+  } | null>(null);
+  const channelLost =
+    lostChannel !== null && lostChannel.selected === selectedChannelId;
   const requestedChannelMissing =
     !channelTargetDismissed &&
     initialChannelId !== null &&
@@ -1059,7 +1076,7 @@ export function ChatShell({
   */
   const lastChannelChapter = activeChapterId ?? "sole";
   const activeChannelId = useMemo(() => {
-    if (requestedChannelMissing) return null;
+    if (requestedChannelMissing || channelLost) return null;
     if (selectedChannelId) {
       const selected =
         channels.find((ch) => ch.id === selectedChannelId) ??
@@ -1098,6 +1115,7 @@ export function ChatShell({
     channels,
     railChannels,
     requestedChannelMissing,
+    channelLost,
     userId,
     lastChannelChapter,
     view,
@@ -1297,6 +1315,16 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // Adjusted while rendering, as React's "storing information from previous
+  // renders" does, rather than in an effect: the next render resolves no
+  // active channel, so this runs once per channel lost.
+  if (
+    channel.unavailable &&
+    activeChannelId !== null &&
+    lostChannel?.id !== activeChannelId
+  ) {
+    setLostChannel({ id: activeChannelId, selected: selectedChannelId });
+  }
   // Whether this server has GIF search set up (#4631); the composer's GIF
   // button waits on it.
   const gifs = useGifAvailability();
@@ -3336,6 +3364,7 @@ export function ChatShell({
     directView &&
     channelsPaneState === "ready" &&
     !requestedChannelMissing &&
+    !channelLost &&
     !selectionPending &&
     userId !== null &&
     activeChannelId === null;
@@ -3344,6 +3373,7 @@ export function ChatShell({
   const timelineReady =
     channelsPaneState === "ready" &&
     !requestedChannelMissing &&
+    !channelLost &&
     !directNoneOpen;
   const memberColumnMounted =
     !membersHidden &&
@@ -4093,6 +4123,28 @@ export function ChatShell({
                   // "Browse channels" has to actually show it. Dismissing alone
                   // resolved the #general fallback and painted a timeline, which
                   // is a different channel rather than a list.
+                  setNarrowPane("channels");
+                }}
+              >
+                Browse channels
+              </InlineNoteAction>
+            </InlineNote>
+          </div>
+        ) : null}
+        {channelsPaneState === "ready" &&
+        channelLost &&
+        !requestedChannelMissing ? (
+          <div
+            className="min-h-0 flex-1 overflow-y-auto p-4"
+            data-testid="chat-channel-unavailable"
+          >
+            <InlineNote>
+              {`${CHANNEL_UNAVAILABLE_TITLE}. ${CHANNEL_UNAVAILABLE_BODY} `}
+              <InlineNoteAction
+                onClick={() => {
+                  setLostChannel(null);
+                  // As the link-target line's: below `lg` the list is its
+                  // own pane, so Browse channels has to show it.
                   setNarrowPane("channels");
                 }}
               >

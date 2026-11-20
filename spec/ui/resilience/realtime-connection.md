@@ -59,6 +59,19 @@ class RealtimeManager {
 }
 ```
 
+## A refused join is not a drop
+
+A private channel's join is authorised by RLS on `realtime.messages`. When a member may not read the topic (the channel was deleted, or their access went), Realtime answers the join with `Unauthorized: You do not have permissions to read from this Channel topic: <topic>`, which realtime-js reports as `CHANNEL_ERROR`. Asking again gets the same answer, and phoenix asks anyway: it rejoins an errored channel on its own timer (1, 2, 5, then every 10 s) for as long as the channel stays registered. On staging on 2026-11-20 one phone asked about 385 times in 80 minutes for a channel deleted while it was open, each attempt one more RLS check (#5765).
+
+So a refused join (`isJoinDenied`, `packages/chat-core/src/join-denied.ts`) is handled apart from every other failure:
+
+- **The channel is released** through `releaseTopic`, which stops phoenix's timer with it, and nothing schedules a retry. It is not polled, and it doesn't count toward Reconnecting or the polling fallback.
+- **It is asked for again only when something could change the answer:** the session's token is refreshed or a member signs in (`TOKEN_REFRESHED` / `SIGNED_IN`, a second later so Realtime has the new token), a different viewer is configured, or the thread opens it afresh. Coming back to the app and the network returning are not reasons.
+- **Chat threads say so.** The manager reports `unavailable`, the clients read the channel list again (`invalidateChannelSet`), and the open thread shows `This channel is no longer available` on both clients ([`writing.md` § Chat (dashboard)](../design-system/writing.md#chat-dashboard)).
+- **The other private topics** (`notif:`, `events:`, `attendance:`, `presence:chapter:`) go through `attachTopicChannel`, which logs the refusal once, reports it through `onDisconnected`, releases the channel and asks again on the next token change.
+
+A timeout, a dropped socket, a `postgres_changes` stream that couldn't start, and any other `CHANNEL_ERROR` keep the backoff above.
+
 ## Channel Subscriptions
 
 For each open chat channel, subscribe to Postgres changes. This sketch and the one under Cleanup below show the pattern only and are not code to copy: the implementation is `RealtimeManager` (`packages/chat-core/src/realtime-manager.ts`), which owns the `chat:channel:<id>` topic as a private channel and writes a normalized `ChannelCache` under `chatMessagesKey(channelId)`, not an array.

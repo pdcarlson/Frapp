@@ -212,6 +212,11 @@ export interface UseChatChannelResult {
   typingUsers: readonly string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
+  /**
+   * Realtime refused this channel because the member may not read it any more
+   * (#5765): deleted, or access taken away. Nothing retries it on a timer.
+   */
+  unavailable: boolean;
   retry: (clientMessageId: string) => Promise<void>;
   discard: (clientMessageId: string) => Promise<void>;
   /**
@@ -595,6 +600,25 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const typingUsers = channelId ? typingUsersState : NO_TYPING_USERS;
 
   /*
+    Realtime refused this channel's join because the member may not read it
+    (#5765): it was deleted, or their access went. The manager has stopped
+    asking for it and the channel list is being read again; the thread shows
+    `CHANNEL_UNAVAILABLE_TITLE` in place of its timeline. Held with the channel
+    it is about, so a switch never carries it to the next one for a render.
+  */
+  const [unavailableFor, setUnavailableFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!channelId) return;
+    const refresh = () =>
+      setUnavailableFor(
+        chatRealtime.isUnavailable(channelId) ? channelId : null,
+      );
+    refresh();
+    return chatRealtime.subscribeStatus(refresh);
+  }, [channelId]);
+  const unavailable = channelId !== null && unavailableFor === channelId;
+
+  /*
     Draft persistence lives in its own hook (#2176).
 
     It was inline here until the composer shell needed it to survive a channel
@@ -965,6 +989,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     typingUsers,
     emitTyping,
     connection,
+    unavailable,
     retry,
     discard,
     retryUnconfirmed,

@@ -149,7 +149,7 @@ export function invalidateChannelSummaries(queryClient: QueryClient): void {
  * to cover this, so the channel-set mutations name it explicitly.
  * Message-level and read-receipt mutations deliberately do NOT.
  */
-function invalidateChannelSet(queryClient: QueryClient): void {
+export function invalidateChannelSet(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ["channels"] });
   void queryClient.invalidateQueries({
     queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,

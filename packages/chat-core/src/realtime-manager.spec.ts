@@ -20,6 +20,7 @@ import {
   createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
   POLL_INTERVAL_MS,
+  UNAVAILABLE_RETRY_AFTER_AUTH_MS,
   type BackfillFetcher,
   type ConnectionStatus,
   type MessageActivity,
@@ -61,7 +62,8 @@ interface FakeChannel {
   /** Prefixed `realtime:` exactly as the real client does. */
   topic: string;
   state: FakeChannelState;
-  trigger: (status: SubscribeStatus) => void;
+  /** `error` is what realtime-js hands a `CHANNEL_ERROR` (#5765). */
+  trigger: (status: SubscribeStatus, error?: Error) => void;
   /** Delivers a `postgres_changes` frame to whatever the manager registered. */
   emitPostgresChange: (payload: {
     eventType?: "INSERT" | "UPDATE" | "DELETE";
@@ -83,7 +85,8 @@ interface FakeChannel {
  * ten tests never noticed the manager was recreating channels unsafely.
  */
 function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
-  let captured: ((status: SubscribeStatus) => void) | null = null;
+  let captured: ((status: SubscribeStatus, error?: Error) => void) | null =
+    null;
   /** `chat_messages` handlers by the event they were bound for (`*` included). */
   const onChange = new Map<
     string,
@@ -124,11 +127,13 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
         return channel;
       },
     ),
-    subscribe: vi.fn((cb?: (status: SubscribeStatus) => void) => {
-      if (cb) captured = cb;
-      channel.state = "joining";
-      return channel;
-    }),
+    subscribe: vi.fn(
+      (cb?: (status: SubscribeStatus, error?: Error) => void) => {
+        if (cb) captured = cb;
+        channel.state = "joining";
+        return channel;
+      },
+    ),
     send: vi.fn(),
     track: vi.fn(),
     unsubscribe: vi.fn(async () => {
@@ -140,10 +145,10 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
       channel.state = "closed";
       onTeardown();
     }),
-    trigger: (status) => {
+    trigger: (status, error) => {
       if (!captured) throw new Error("subscribe callback not captured");
       channel.state = status === "SUBSCRIBED" ? "joined" : "errored";
-      captured(status);
+      captured(status, error);
     },
     // Delivered as Realtime does: to the `*` binding, or to the one bound for
     // this frame's event. A frame with no event is an INSERT. A frame no
@@ -175,7 +180,10 @@ function makeFakeSupabase(): {
   supabase: SupabaseClient;
   /** Newest channel created per bare topic, including superseded ones. */
   channels: Map<string, FakeChannel>;
+  /** Hands every auth listener `event`, as supabase-js does (#5765). */
+  emitAuth: (event: string) => void;
 } {
+  const authListeners = new Set<(event: string) => void>();
   const channels = new Map<string, FakeChannel>();
   /** Live registry, mirroring `RealtimeClient.channels`. */
   const registry = new Map<string, FakeChannel>();
@@ -196,8 +204,27 @@ function makeFakeSupabase(): {
       if (status === "ok") ch.teardown();
       return status;
     }),
+    auth: {
+      onAuthStateChange: vi.fn((listener: (event: string) => void) => {
+        authListeners.add(listener);
+        return {
+          data: {
+            subscription: { unsubscribe: () => authListeners.delete(listener) },
+          },
+        };
+      }),
+    },
   } as unknown as SupabaseClient;
-  return { supabase, channels };
+  const emitAuth = (event: string) => {
+    for (const listener of [...authListeners]) listener(event);
+  };
+  return { supabase, channels, emitAuth };
+}
+
+/** The error realtime-js hands a join Realtime refused for RLS (#5765). */
+function deniedJoin(topic: string): Error {
+  const reason = `Unauthorized: You do not have permissions to read from this Channel topic: ${topic}`;
+  return new Error(reason, { cause: { reason } });
 }
 
 describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
@@ -2652,5 +2679,199 @@ describe("createBackfillFetcher (#2807)", () => {
     await expect(
       createBackfillFetcher(client)("c1", { limit: 100 }),
     ).resolves.toEqual([]);
+  });
+});
+
+describe("ChatRealtimeManager — a channel the member can't read (#5765)", () => {
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+  let emitAuth: (event: string) => void;
+  let activity: MessageActivity[];
+  let status: ConnectionStatus;
+  let unsubStatus: () => void;
+
+  const TOPIC = "chat:channel:gone";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.localStorage.clear();
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    ({ supabase, channels, emitAuth } = makeFakeSupabase());
+    activity = [];
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      onMessageActivity: (a) => activity.push(a),
+    });
+    status = "live";
+    unsubStatus = chatRealtime.subscribeStatus((s) => {
+      status = s;
+    });
+  });
+
+  afterEach(() => {
+    unsubStatus();
+    chatRealtime.destroy();
+    queryClient.clear();
+    window.localStorage.clear();
+    vi.useRealTimers();
+  });
+
+  function current(): FakeChannel {
+    const ch = channels.get(TOPIC);
+    if (!ch) throw new Error("no fake channel");
+    return ch;
+  }
+
+  /** How many channels the manager has minted on the refused topic. */
+  function joins(): number {
+    return (supabase.channel as unknown as Mock).mock.calls.filter(
+      ([topic]) => topic === TOPIC,
+    ).length;
+  }
+
+  function unavailableReports(): number {
+    return activity.filter((a) => a.type === "unavailable").length;
+  }
+
+  test("a refused join is let go and never asked for again on a timer", async () => {
+    chatRealtime.subscribe("gone");
+    const refused = current();
+    refused.trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Freed, so phoenix's own rejoin timer dies with it.
+    expect(refused.unsubscribe).toHaveBeenCalled();
+    expect(refused.teardown).toHaveBeenCalled();
+    expect(chatRealtime.isUnavailable("gone")).toBe(true);
+
+    // Well past every backoff step and the degrade window: no rejoin, no poll.
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(joins()).toBe(1);
+    expect(backfill).not.toHaveBeenCalled();
+    // Not a drop: the pill doesn't say Reconnecting or Polling for it.
+    expect(status).toBe("live");
+  });
+
+  test("the client is told once, so it can read the channel list again", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    // A rejoin phoenix already had in flight reports again; it is ignored.
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(activity).toContainEqual({ type: "unavailable", channelId: "gone" });
+    expect(unavailableReports()).toBe(1);
+  });
+
+  test("a timeout or any other channel error still reconnects on the backoff", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("TIMED_OUT");
+    expect(status).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(joins()).toBe(2);
+
+    current().trigger(
+      "CHANNEL_ERROR",
+      new Error("PostgresChangesSubscribeTimeout"),
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(joins()).toBe(3);
+
+    current().trigger("SUBSCRIBED");
+    expect(status).toBe("live");
+    expect(chatRealtime.isUnavailable("gone")).toBe(false);
+    expect(unavailableReports()).toBe(0);
+  });
+
+  test("a socket drop with no error still reconnects", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("SUBSCRIBED");
+    current().trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(joins()).toBe(2);
+    expect(chatRealtime.isUnavailable("gone")).toBe(false);
+  });
+
+  test("coming back to the app or the network doesn't ask again", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(0);
+
+    chatRealtime.resume();
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(joins()).toBe(1);
+    expect(chatRealtime.isUnavailable("gone")).toBe(true);
+  });
+
+  test("a refreshed token asks once more, and a join let through goes live", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The session every listener is handed at once is not a change.
+    emitAuth("INITIAL_SESSION");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joins()).toBe(1);
+
+    emitAuth("TOKEN_REFRESHED");
+    // Waits for supabase-js to hand Realtime the new token first.
+    await vi.advanceTimersByTimeAsync(UNAVAILABLE_RETRY_AFTER_AUTH_MS - 1);
+    expect(joins()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(joins()).toBe(2);
+    expect(chatRealtime.isUnavailable("gone")).toBe(false);
+
+    current().trigger("SUBSCRIBED");
+    expect(status).toBe("live");
+    expect(backfill).toHaveBeenCalledTimes(1);
+  });
+
+  test("a channel still refused after a new token goes straight back to resting", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(0);
+
+    emitAuth("TOKEN_REFRESHED");
+    await vi.advanceTimersByTimeAsync(UNAVAILABLE_RETRY_AFTER_AUTH_MS);
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(joins()).toBe(2);
+    expect(chatRealtime.isUnavailable("gone")).toBe(true);
+  });
+
+  test("closing the thread forgets it, and opening it again asks once", async () => {
+    chatRealtime.subscribe("gone");
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    await vi.advanceTimersByTimeAsync(0);
+    chatRealtime.unsubscribe("gone");
+    expect(chatRealtime.isUnavailable("gone")).toBe(false);
+
+    chatRealtime.subscribe("gone");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joins()).toBe(2);
+  });
+
+  test("other channels keep their backoff and polling while one rests", async () => {
+    chatRealtime.subscribe("gone");
+    chatRealtime.subscribe("ok");
+    current().trigger("CHANNEL_ERROR", deniedJoin(TOPIC));
+    channels.get("chat:channel:ok")!.trigger("TIMED_OUT");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS + 1);
+
+    expect(status).toBe("polling");
+    const polled = backfill.mock.calls.map(([id]) => id);
+    expect(polled).toContain("ok");
+    expect(polled).not.toContain("gone");
   });
 });
