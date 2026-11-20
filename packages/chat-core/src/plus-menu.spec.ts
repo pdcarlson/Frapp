@@ -226,7 +226,7 @@ describe("plusMenuForms", () => {
     ]);
   });
 
-  it("never holds back a form that needs no grant", () => {
+  it("allows a form once its grants are read and held", () => {
     const forms = plusMenuForms(["poll"], ["polls:create"], false);
     expect(forms[0]!.roleAllows).toBe(true);
   });

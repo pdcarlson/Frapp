@@ -1,4 +1,5 @@
 import { formatDueLabel } from "@repo/formatting";
+import type { TaskProofKind } from "@repo/validation";
 import { taskStatusLabel } from "./task-card";
 import { compareTasksByDue } from "./task-views";
 import type { TaskStatus } from "./use-tasks";
@@ -12,6 +13,10 @@ export interface TaskLinkSource {
   due_at?: string | null;
   assignee_id: string;
   points_awarded?: boolean;
+  /** Read by the Done-or-Confirmed label (`taskStatusLabel`). */
+  stored_status?: TaskStatus;
+  point_reward?: number | null;
+  proof_kind?: TaskProofKind | null;
   sent_back_at?: string | null;
   completed_at?: string | null;
 }

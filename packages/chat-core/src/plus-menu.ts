@@ -120,15 +120,11 @@ export function plusMenuForms(
 ): PlusMenuForm[] {
   return commands.map((command) => ({
     command,
-    // A form that needs no grant waits on nothing.
-    roleAllows:
-      PLUS_MENU_PERMISSIONS[command].length === 0
-        ? true
-        : granted
-          ? canAll(PLUS_MENU_PERMISSIONS[command], granted)
-          : failed
-            ? "unknown"
-            : "loading",
+    roleAllows: granted
+      ? canAll(PLUS_MENU_PERMISSIONS[command], granted)
+      : failed
+        ? "unknown"
+        : "loading",
   }));
 }
 

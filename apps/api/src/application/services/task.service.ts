@@ -1939,6 +1939,7 @@ export class TaskService {
       ...input,
       assigner_id: task.created_by,
       status: task.status,
+      linked: true,
     });
   }
 
@@ -1951,6 +1952,11 @@ export class TaskService {
       client_message_id: string;
       assigner_id: string;
       status: string;
+      /**
+       * A link, not a create: the text the preview, search and a push read
+       * names the task without saying the sender assigned it.
+       */
+      linked?: boolean;
     },
   ): Promise<void> {
     const users = await this.userRepo.findByIds([
@@ -1976,7 +1982,9 @@ export class TaskService {
       created_at: task.created_at,
     };
 
-    const content = `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
+    const content = card.linked
+      ? `"${task.title}" for ${assigneeName} (due ${task.due_date})`
+      : `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
 
     await this.chatService.sendMessage({
       chapter_id: card.chapter_id,

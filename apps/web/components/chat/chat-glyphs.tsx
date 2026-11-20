@@ -15,9 +15,9 @@
  *   a channel as a **text `#`** at 17px/700 and a DM as an initials avatar, not
  *   as icons. The reference wins over a tidier all-icons row.
  *
- * The seven silhouettes chat shares with the shell's nav intents (events, tasks,
- * points, polls, service hours, the directory as the member list toggle, and
- * roles as the + menu's Role picker) are re-exported rather than redrawn — a second
+ * The six silhouettes chat shares with the shell's nav intents (events, tasks,
+ * points, polls, service hours, and the directory as the member list toggle)
+ * are re-exported rather than redrawn — a second
  * copy of the same path data is exactly the drift §1 rule 1 bans.
  */
 

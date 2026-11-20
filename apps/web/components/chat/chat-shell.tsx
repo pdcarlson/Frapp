@@ -260,7 +260,10 @@ import {
   taskFormPrefill,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
-import type { DispatchResult } from "@repo/chat-core/dispatch";
+import {
+  TASK_LINK_UNCONFIRMED_WARNING,
+  type DispatchResult,
+} from "@repo/chat-core/dispatch";
 import { taskDraftFrom, type TaskDraft } from "@/components/tasks/task-draft";
 import type { HoursDraft } from "@/components/service/log-hours-form";
 import type { PointsDraft } from "@/components/points/points-adjustment-form";
@@ -307,6 +310,7 @@ const FORM_UNCONFIRMED_WARNING = {
     "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
   points:
     "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+  link: TASK_LINK_UNCONFIRMED_WARNING,
 } as const;
 
 /**
@@ -319,6 +323,7 @@ const FORM_SUBJECT = {
   task: "Task",
   hours: "Service hours",
   points: "Points",
+  link: "Task link",
 } as const;
 
 interface DirectoryMember {
@@ -1769,7 +1774,7 @@ export function ChatShell({
   // resubmit under a fresh key, which would write it twice.
   const postFromForm = useCallback(
     async (
-      commandName: "event" | "task" | "hours" | "points",
+      commandName: "event" | "task" | "hours" | "points" | "link",
       post: () => Promise<DispatchResult>,
     ): Promise<DispatchResult> => {
       let result: DispatchResult;
@@ -1880,7 +1885,9 @@ export function ChatShell({
                 )
               }
               nameOf={(id) => nameFor(id) ?? memberFallbackLabel(id)}
-              onLink={(task) => channel.linkTask(channelId, task)}
+              onLink={(task) =>
+                postFromForm("link", () => channel.linkTask(channelId, task))
+              }
               onDone={card.close}
               renderForm={() => (
                 <TaskForm

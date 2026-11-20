@@ -56,8 +56,14 @@ export function TaskLinkPicker({
     if (linking) return;
     setLinking(choice.id);
     setFailure(null);
-    const result = await onLink({ id: choice.id, title: choice.title });
-    setLinking(null);
+    let result: DispatchResult;
+    try {
+      result = await onLink({ id: choice.id, title: choice.title });
+    } catch {
+      result = { ok: false, error: "Couldn't link that task." };
+    } finally {
+      setLinking(null);
+    }
     if (result.ok) {
       onDone();
       return;
@@ -179,15 +185,16 @@ export function TaskPlusView({
   startNew: boolean;
   renderForm: () => ReactNode;
 }) {
-  const [mode, setMode] = useState<"link" | "new">(
-    startNew && canCreate ? "new" : "link",
-  );
+  // Until the member picks, a waiting draft decides, read on every render so
+  // permissions that answer after the view opens still land on the form.
+  const [picked, setPicked] = useState<"link" | "new" | null>(null);
+  const mode = picked ?? (startNew && canCreate ? "new" : "link");
   if (mode === "new") return renderForm();
   return (
     <TaskLinkPicker
       {...picker}
       canCreate={canCreate}
-      onNew={() => setMode("new")}
+      onNew={() => setPicked("new")}
     />
   );
 }

@@ -962,7 +962,7 @@ export async function postTask(
   return { ok: true };
 }
 
-const TASK_LINK_UNCONFIRMED_WARNING =
+export const TASK_LINK_UNCONFIRMED_WARNING =
   "Couldn't confirm the task was linked. Check the channel before you link it again.";
 
 /**

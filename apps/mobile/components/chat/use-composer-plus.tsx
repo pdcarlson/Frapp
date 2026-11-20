@@ -27,6 +27,7 @@ import {
 } from "@repo/chat-core/plus-menu";
 import {
   eventCardOutcomeCopy,
+  TASK_LINK_UNCONFIRMED_WARNING,
   type DispatchResult,
 } from "@repo/chat-core/dispatch";
 import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
@@ -316,7 +317,18 @@ export function useComposerPlus({
   );
   const linkTaskHere = useCallback(
     async (task: { id: string; title: string }) => {
-      const result = await linkTask(task);
+      let result: DispatchResult;
+      try {
+        result = await linkTask(task);
+      } catch {
+        // A throw is chat-core's cache bookkeeping, after the request went
+        // out: the card may be posted, so it reads as unconfirmed, as web's.
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: TASK_LINK_UNCONFIRMED_WARNING,
+        };
+      }
       if (result.ok) presentPostOutcome("link", result);
       return result;
     },

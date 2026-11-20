@@ -62,6 +62,25 @@ describe("taskLinkChoices (#5772)", () => {
     });
   });
 
+  it("labels a finished task as the board does, Done when it needed no sign-off", () => {
+    const [row] = taskLinkChoices(
+      [
+        task({
+          title: "Sweep",
+          status: "COMPLETED",
+          points_awarded: true,
+          point_reward: null,
+          proof_kind: "none",
+          completed_at: "2026-11-19T10:00:00Z",
+        }),
+      ],
+      "",
+      nameOf,
+      NOW,
+    );
+    expect(row?.detail).toBe("Moiz Khan · Done");
+  });
+
   it("matches every typed word in the title, in any case or order", () => {
     const rows = taskLinkChoices(
       [

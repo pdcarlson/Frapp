@@ -50,7 +50,7 @@ Errors omit a hardcoded `/rush` so a chapter whose term is Intake is not toasted
 
 Every slash command also has a button and a visual form; typing the command stays the shortcut (Shawn's rule, [#3865](https://github.com/pdcarlson/Frapp/issues/3865), layout A picked 2026-11-09).
 The web composer's toolbar is **+ · emoji · help**: one **+** replaced the paperclip and the slash-palette button, and typing `/` in the message box (or Cmd/Ctrl+/) still opens the palette.
-The **+** opens one card (`apps/web/components/chat/composer-plus-card.tsx`, [#3983](https://github.com/pdcarlson/Frapp/issues/3983)) whose first view is a menu: Attach a file, then one row per command that has a form, each showing its shortcut in mono.
+The **+** opens one card (`apps/web/components/chat/composer-plus-card.tsx`, [#3983](https://github.com/pdcarlson/Frapp/issues/3983)) whose first view is a menu: Attach a file, then a row each for Poll, Event and Task, each showing its shortcut in mono.
 The rows are Poll (`/poll`), Event (`/event`) and Task (`/task`), and nothing else (Paul, 2026-11-20, [#5772](https://github.com/pdcarlson/Frapp/issues/5772): photos and GIFs are what members post, and every further row made the menu read half-built). GIF stays the toolbar's own button on web.
 Sign-up sheet, Form and Role picker can no longer be made from chat; the cards already posted still draw and answer as before ([§ Sign-up sheet cards](#sign-up-sheet-cards), [§ Form cards](#form-cards), [§ Role picker cards](#role-picker-cards)).
 Service hours and Points left the menu too; on web, `/hours` and `/points` typed bare still open their forms in the card.
@@ -276,7 +276,7 @@ Comparable apps: Google Forms, Microsoft Forms, Typeform and Slack Workflow form
 **No longer made from chat** (Paul, 2026-11-20, [#5772](https://github.com/pdcarlson/Frapp/issues/5772)): the + menu has no Form row and the apps hold no form for one. Cards already posted keep working as below; the passages on building one record how they were made.
 - **Where it stands.**
   This step shipped in three PRs: the API, data and shared `@repo/chat-core/forms` helpers first, then web, then the phone.
-  Both surfaces build, draw and answer a form as below.
+  Both surfaces draw and answer a form as below; neither builds one since #5772.
   Activity's Needs you is step 4's first part.
   Step 4 also adds the creator's responses view and its export, on web and then the phone (below).
 - **The card.**
@@ -350,7 +350,7 @@ An officer who manages roles posted a role picker into a channel from the **+** 
 It lists some of the chapter's Non-chapter business roles ([`../rbac.md` § Self-assignable roles](../rbac.md#self-assignable-roles)), and every member who reads it gets a **Join** or **Leave** button beside each, as Discord's button-role bots (Carl-bot) and Slack's interactive messages hand out roles: buttons rather than emoji reactions, so what a tap does is written on it.
 
 - **The card** is `kind: 'role_picker'` with `payload: { title, role_ids }` and the title as `content`, so previews and quotes read it. The form's title is optional and defaults to "Pick your roles" (`ROLE_PICKER_DEFAULT_TITLE`); it lists 1 to 25 roles (`ROLE_PICKER_ROLES_MAX`), checked and rebuilt by `normalizeRolePickerCard` (`apps/api/src/domain/utils/role-picker-card-rules.ts`) on send.
-- **Who may post one.** The send route (`ChatController.sendMessage`) refuses the kind with `403` to a member without `roles:manage`, the grant that marks a role, since the card hands roles out; Every role it lists must be marked Non-chapter business in the chapter when it is posted (`400` otherwise; `RbacService.assertMayPostRolePicker`). Like any card, it can't be edited.
+- **Who may post one.** The send route (`ChatController.sendMessage`) refuses the kind with `403` to a member without `roles:manage`, the grant that marks a role, since the card hands roles out. Every role it lists must be marked Non-chapter business in the chapter when it is posted (`400` otherwise; `RbacService.assertMayPostRolePicker`). Like any card, it can't be edited.
 - **A tap** is the member's own `POST /v1/roles/:id/join` or `/leave`, the same call as Add roles and Your roles (`useSetPickedRole`), with all its rules: joining and leaving need the role still marked (leaving since #5650), and joining is refused to alumni. The card stores nothing per member, so each viewer's buttons read their own roles (`rolePickerRows` in `@repo/chat-core/role-pickers`): Join for a role they may join, Leave for one they hold, and "Closed. An officer can add or remove it." with no button for a role still in the chapter they can't join or leave now, held or not. A role deleted since the post drops off the card.
 - **Where it's drawn:** `apps/web/components/chat/renderers/role-picker-card.tsx` on web and `apps/mobile/components/chat/role-picker-card.tsx` on the phone.
 

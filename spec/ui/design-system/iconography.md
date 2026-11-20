@@ -409,11 +409,8 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Bookmarked message (personal), solid while bookmarked (#4292) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
-| The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
+| The composer's **+**, which opens Attach a file, Poll, Event and Task (#3865; cut to those in #5772): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
 | Poll, in the composer's **+** menu | `PollsGlyph` (shared with the nav intent) |
-| Sign-up sheet, in the composer's **+** menu (#3926): a clipboard, the board filled, the clip and a ticked line stroke-only | `SignupGlyph` |
-| Form, in the composer's **+** menu (#3926 step 3): a page of questions, each a choice dot and a line (the phone's + sheet draws the same path data) | `FormGlyph` |
-| Role picker, in the composer's **+** menu (#4958): the Roles shield, as the phone's + sheet draws it (web's card eyebrow is text, as its other cards' are) | `RolesGlyph` (shared with the in-screen Roles intent) |
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Jump to latest, on the round control over the thread's bottom-right corner: a down arrow, `SendArrowGlyph` turned over, the web face of mobile's `↓` (2026-11-12) | `JumpToLatestGlyph` |
 | Announcement | `AnnouncementGlyph` |

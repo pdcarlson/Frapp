@@ -119,4 +119,20 @@ describe("TaskLinkSheet (#5772)", () => {
     expect(header(false)).not.toContain("New task");
     expect(header(true)).toContain("New task");
   });
+
+  it("opens the New task form only once the sheet is down", () => {
+    tasksState.value = { data: [], isPending: false, isError: false };
+    const { tree, props } = render({ canCreate: true });
+    const header = draw(list(tree).props.ListHeaderComponent);
+    const action = header.root.find(
+      (node) => node.props.action?.label === "New task",
+    ).props.action as { onPress: () => void };
+    act(() => action.onPress());
+    expect(props.onNew).not.toHaveBeenCalled();
+    const modal = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetModal",
+    );
+    act(() => modal.props.onDismiss());
+    expect(props.onNew).toHaveBeenCalledTimes(1);
+  });
 });

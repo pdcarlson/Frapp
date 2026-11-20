@@ -93,8 +93,14 @@ export const TaskLinkSheet = forwardRef<BottomSheetModal, TaskLinkSheetProps>(
         if (linking) return;
         setLinking(choice.id);
         setFailure(null);
-        const result = await onLink({ id: choice.id, title: choice.title });
-        setLinking(null);
+        let result: DispatchResult;
+        try {
+          result = await onLink({ id: choice.id, title: choice.title });
+        } catch {
+          result = { ok: false, error: "Couldn't link that task." };
+        } finally {
+          setLinking(null);
+        }
         if (result.ok) {
           close();
           return;
