@@ -92,17 +92,33 @@ export function SettingsRow(
     label: ReactNode;
     /** One short line, only when the label alone can't say it. */
     description?: ReactNode;
+    /** A setting that only matters under the row above it: drawn indented. */
+    nested?: boolean;
+    /** Its label greys while the setting it waits on is off. */
+    muted?: boolean;
   } & Trailing,
 ) {
-  const { label, description } = props;
+  const { label, description, nested = false, muted = false } = props;
+  const row = cn(ROW, nested && "pl-10");
   const labelId = useId();
   const descriptionId = useId();
+  const switchId = useId();
+  const isSwitch = "onCheckedChange" in props && !!props.onCheckedChange;
+  // A switch row's label is a real <label>, so clicking the words flips it.
+  const LabelTag = isSwitch ? "label" : "span";
 
   const text = (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-      <span id={labelId} className="text-sm font-medium text-foreground">
+      <LabelTag
+        id={labelId}
+        htmlFor={isSwitch ? switchId : undefined}
+        className={cn(
+          "text-sm font-medium",
+          muted ? "text-muted-foreground" : "text-foreground",
+        )}
+      >
         {label}
-      </span>
+      </LabelTag>
       {description ? (
         <span id={descriptionId} className="text-caption text-muted-foreground">
           {description}
@@ -116,7 +132,7 @@ export function SettingsRow(
       <li className="group">
         <Link
           href={props.href}
-          className={cn(ROW, "transition hover:bg-card-hover", FOCUS_RING)}
+          className={cn(row, "transition hover:bg-card-hover", FOCUS_RING)}
         >
           {text}
           {props.value ? (
@@ -139,7 +155,7 @@ export function SettingsRow(
           onClick={props.onClick}
           disabled={props.disabled}
           className={cn(
-            ROW,
+            row,
             "w-full text-left transition hover:bg-card-hover disabled:opacity-50",
             FOCUS_RING,
           )}
@@ -158,9 +174,10 @@ export function SettingsRow(
   if ("onCheckedChange" in props && props.onCheckedChange) {
     return (
       <li className="group">
-        <div className={ROW}>
+        <div className={row}>
           {text}
           <Switch
+            id={switchId}
             checked={props.checked}
             disabled={props.disabled}
             onCheckedChange={props.onCheckedChange}
@@ -174,7 +191,7 @@ export function SettingsRow(
 
   return (
     <li className="group">
-      <div className={ROW}>
+      <div className={row}>
         {text}
         <div className="shrink-0">{props.control}</div>
       </div>

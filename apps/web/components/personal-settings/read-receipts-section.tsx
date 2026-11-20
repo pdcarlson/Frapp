@@ -34,14 +34,13 @@ export function ReadReceiptsSection() {
   return (
     <ProfileSection id="read-receipts" title={READ_RECEIPTS_COPY.label}>
       <SettingsGroup>
-        {" "}
         <SettingsRow
           label={READ_RECEIPTS_COPY.label}
           description={READ_RECEIPTS_COPY.description}
           checked={setting.enabled}
           disabled={isOffline || setting.pending}
           onCheckedChange={setting.setEnabled}
-        />{" "}
+        />
       </SettingsGroup>
     </ProfileSection>
   );

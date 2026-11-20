@@ -99,6 +99,8 @@ These cause most of the iterations, so they come first.
 - **Create forms are a borderless title plus property rows** (Type, When, Repeat, Location, Who's coming,
   Points, Description, Notes, Check-in for an event), each opening its menu in place, identical on web
   and phone. Create is small in the header. No "More options", no big Cancel/Create footer. (11-19)
+  *Changed 11-20 by Paul: the phone commit is the floating glass action bar and the web one names the
+  thing; see § 9.*
 - **Record pages read top-down in the order people use them.** An event is details, then agenda, then
   attendance; a series is one Repeat row and a "Next Friday" link, never a list. (11-19)
 - **Long content is scannable:** one meta line, a short summary (3 bullets or fewer), collapsible topic
@@ -200,7 +202,8 @@ These cause most of the iterations, so they come first.
   stretched across a profile, card, panel or page body. A person's profile puts Message beside the other
   actions as a compact button (iMessage, Slack and Linear profiles), not a bar under the name. Web and phone
   alike. Full width stays only on single-column sign-in and setup forms (Linear, Notion, Slack sign-in);
-  sheet commit buttons wait on Paul's call. "Not a big huge button guy." (11-20, #5708)
+  sheet commits are the floating glass action bar since Paul's call of 11-20 (§ 9). "Not a big huge
+  button guy." (11-20, #5708)
 - **Near-black neutral surfaces**, no warm yellow. On the phone every card sits one surface step down;
   tinted tiles only on You. (11-05, 11-11, 11-13)
 - **The accent goes only where `foundations.md` § Where the accent goes allows it.** Scrollbars, mention
@@ -246,13 +249,15 @@ the plan and the screens still to migrate are #5739. A site not yet migrated is 
   field shows its current value; search appears past 8 options; no Save or Cancel. `SegmentedChoice` /
   `Segmented` only for 2 to 4 short choices that stay visible; swatches only for a look (accent,
   background, density). Never a hand-drawn radio list, and never filter chips used as a form picker.
-- **lint** **Acting on a thing:** one action menu. Web: `RowMenu` (right-click plus the row's ⋯) and
+- **lint** (partly) **Acting on a thing:** one action menu. Web: `RowMenu` (right-click plus the row's ⋯) and
   `ActionMenuButton` (a header's ⋯), the same entries. Phone: the glass menu through `useItemMenu`, from
   long-press and every ⋯. Most used first, at most three groups, Delete red and last and confirmed.
   Right-click and long-press are shortcuts, never the only way in; the screen's main action is a visible
   button, and a menu of one or two items becomes buttons. Never the iOS system action sheet, an Alert
   with three or more buttons, or a bottom sheet of actions. A chat message's long-press sheet with its
-  reaction row is the one exception.
+  reaction row is the one exception. Lint catches only a hand-drawn ⋯ icon or a `ui/context-menu`
+  import on web, and the iOS action sheet, `lib/action-menu` or an inline Alert of three or more buttons
+  on the phone; the rest of this rule is checked in review.
 - **Settings:** web `SettingsGroup` and `SettingsRow` (`components/shared/settings-row.tsx`), phone
   `ListSection` and `ListRow`. A row is a label, at most one muted line, and one trailing thing: a switch,
   a value that opens the picker, or a chevron. **Settings save on their own** (Paul's pick, 11-20): a
@@ -260,9 +265,10 @@ the plan and the screens still to migrate are #5739. A site not yet migrated is 
   and Escape puts the old text back. No Save button on a settings page.
 - **Filtering a list:** web `FilterMenu` and `ActiveFilterChips` (`components/shared/filter-menu.tsx`):
   search, one Filter button with its count, and the view switch, in the page header; the filters that are
-  on show as removable chips under the header, with Clear all. Sort is a row in the menu. Phone: the
-  search field, one Filters chip, and a sheet with the same rows in the same order ending in "Show 23
-  members". A list that splits into two or three named sets people switch between all day (Actives /
+  on show as removable chips under the header, with Clear all once two or more are on (the menu always
+  has it). Sort is a row in the menu. Phone: the search field, one Filters chip, and a sheet with the
+  same rows in the same order ending in "Show 23 members"; the shared phone sheet doesn't exist yet and
+  is built from the Directory's in the filters PR (#5739). A list that splits into two or three named sets people switch between all day (Actives /
   Alumni, All / Unread) is a segmented view switch, not a filter.
 - **Creating and editing:** a borderless title plus property rows (§ 2), on the record itself when
   editing, saved per row. **Phone commit is the floating glass action bar** from task approval

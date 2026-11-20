@@ -169,5 +169,24 @@ test("mobile: one action menu, never the system's", async () => {
       ),
       "non-Expo-Go native module",
     ),
+  ); // and is excused from the system-menu rule only: emoji still fires there.
+  const grandfathered = "lib/action-menu.ts";
+  assert.deepEqual(
+    await uiHits(
+      "mobile",
+      grandfathered,
+      'import { ActionSheetIOS } from "react-native";\nexport const a = ActionSheetIOS;',
+    ),
+    [],
+  );
+  assert.ok(
+    has(
+      await uiHits(
+        "mobile",
+        grandfathered,
+        'export const label = "Live \u{26A1}";',
+      ),
+      "No emoji",
+    ),
   );
 });

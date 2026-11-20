@@ -73,7 +73,6 @@ export function AiSection() {
   return (
     <ProfileSection id="ai" title={FRAPP_AI_COPY.settingsTitle}>
       <SettingsGroup>
-        {" "}
         <SettingsRow
           label={FRAPP_AI_COPY.settingsSwitch}
           description={FRAPP_AI_COPY.settingsCaption}
@@ -83,7 +82,7 @@ export function AiSection() {
             if (next) setMeetOpen(true);
             else void turnOff();
           }}
-        />{" "}
+        />
       </SettingsGroup>
       <MeetFrappAiDialog
         open={meetOpen}
