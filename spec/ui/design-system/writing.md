@@ -721,14 +721,15 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 
 ### Chat Admin — channels and categories (dashboard)
 
-The channel structure below the report queue on `/chat-admin`.
-Its states stand where both of its sections would be, so they name channels, not the page: the report queue above them reads and fails on its own.
+The channel structure in Settings → Chat (`/settings?tab=chat`), above the report queue.
+Its states stand where both of its sections would be, so they name channels, not the page: the report queue below them reads and fails on its own.
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading channels...` |
 | Empty (channels) | — | `No channels yet. Create the first one above.` (one line) |
-| Empty (categories) | — | `No categories yet. Channels without one show as uncategorized.` (one line) |
+| Empty (categories) | — | `No categories yet. Channels without one are listed under Uncategorized.` (one line) |
+| Empty (a category opened out) | — | `No channels in this category.` (one line, under the category's row) |
 | Nothing selected (edit pane) | — | `Pick a channel to edit it.` (one line) |
 | Loading (pins) | — | `Loading pins...` |
 | Empty (pins) | — | `Nothing pinned. Pin a message from the channel.` (one line) |
