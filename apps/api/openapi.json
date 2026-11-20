@@ -17223,6 +17223,44 @@
         ]
       }
     },
+    "/v1/activity/now": {
+      "get": {
+        "description": "The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it, and every event on for a holder of `events:update`; never one the caller is excused from. The one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.",
+        "operationId": "ActivityController_getNow_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityNowDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the events on right now for the caller",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/archive": {
       "get": {
         "description": "The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `events` leaves out any that started before they joined. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.",
@@ -35824,6 +35862,12 @@
             "nullable": true,
             "description": "Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed."
           },
+          "checked_in_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time."
+          },
           "created_by": {
             "type": "string",
             "format": "uuid",
@@ -35868,6 +35912,7 @@
           "check_in_needs_location",
           "check_in_needs_code",
           "checked_in",
+          "checked_in_at",
           "created_by",
           "progress",
           "created_at",
@@ -36315,6 +36360,21 @@
           "unavailable",
           "week",
           "unread_since"
+        ]
+      },
+      "ActivityNowDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "description": "Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
         ]
       },
       "ActivityArchiveDto": {

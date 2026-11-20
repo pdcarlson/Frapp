@@ -98,6 +98,8 @@ export * from "./event-edit";
 export * from "./event-excuse";
 // The event form's rows: order, words and values both apps draw (#5561).
 export * from "./event-form-rows";
+// What is on right now, and the Now card's words (#5777).
+export * from "./event-now";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,

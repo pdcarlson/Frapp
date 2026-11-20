@@ -108,6 +108,7 @@ export * from "./use-event-agenda";
 export * from "./use-event-excuses";
 export * from "./use-event-types";
 export * from "./use-events";
+export * from "./use-events-now";
 export * from "./use-frapp-client";
 export * from "./use-gifs";
 export * from "./use-google-calendar";

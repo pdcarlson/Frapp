@@ -624,7 +624,15 @@ vi.mock("./all-threads-popover", () => ({
 vi.mock("@/components/onboarding/welcome-card", () => ({
   WelcomeCard: () => null,
 }));
+const chatEventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 vi.mock("@repo/hooks", async () => ({
+  // The Now card's read (#5777): nothing on unless a test says so.
+  useEventsOnNow: () => chatEventsNow.value,
+  eventNowState: (
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
+  ).eventNowState,
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
@@ -7480,5 +7488,35 @@ describe("ChatShell All threads (#4960)", () => {
     } finally {
       channelsQueryState.value = before;
     }
+  });
+});
+
+describe("ChatShell Now card (#5777)", () => {
+  afterEach(() => {
+    chatEventsNow.value = { events: [], now: Date.now() };
+  });
+
+  it("puts the event on now at the top of the channel rail", () => {
+    chatEventsNow.value = {
+      events: [
+        {
+          id: "recruitment",
+          name: "Recruitment Meetings",
+          location: "Chapter room",
+          start_time: new Date(Date.now() - 40 * 60_000).toISOString(),
+          end_time: new Date(Date.now() + 20 * 60_000).toISOString(),
+          check_in_opens_minutes: 10,
+          check_in_open: true,
+          checked_in: false,
+          checked_in_at: null,
+        },
+      ],
+      now: Date.now(),
+    };
+    render(<ChatShell />);
+
+    const now = screen.getByRole("region", { name: "On now" });
+    expect(now).toHaveTextContent("Recruitment Meetings");
+    expect(now).toHaveTextContent("Check-in is open");
   });
 });
