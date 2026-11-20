@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   similarTask: null as unknown as typeof import("@repo/validation").similarTask,
   accept: vi.fn(),
   dismiss: vi.fn(),
+  toNextAgenda: vi.fn(),
+  eventsOn: true,
   decide: vi.fn(),
   toast: vi.fn(),
   meetingsEnabled: [] as boolean[],
@@ -32,6 +34,7 @@ vi.mock("@repo/hooks", () => ({
   useAiSuggestions: () => ({ data: { items: mocks.items.current } }),
   useAcceptAiSuggestion: () => ({ mutateAsync: mocks.accept }),
   useDismissAiSuggestion: () => ({ mutateAsync: mocks.dismiss }),
+  useSendAiSuggestionToNextAgenda: () => ({ mutateAsync: mocks.toNextAgenda }),
   useDecideAiSuggestions: () => ({
     mutateAsync: mocks.decide,
     isPending: false,
@@ -87,6 +90,13 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
     selector({ activeChapterId: "chap-1" }),
+}));
+
+vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
+  useChapterModuleGateState: () => ({
+    status: "ready",
+    isModuleEnabled: (key: string) => key !== "events" || mocks.eventsOn,
+  }),
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -154,6 +164,7 @@ describe("SuggestedTasks (#4313)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.permissions = ["ai:use"];
+    mocks.eventsOn = true;
     mocks.meetingsEnabled.length = 0;
     mocks.tasks.current = [];
     mocks.accept.mockResolvedValue({});
@@ -357,6 +368,40 @@ describe("SuggestedTasks (#4313)", () => {
     });
     expect(screen.getByRole("menuitem", { name: "Dismiss" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Report this" })).toBeNull();
+  });
+
+  it("sends a suggestion to the next meeting's agenda instead of a task (#5790)", async () => {
+    mocks.items.current = [suggestion("1")];
+    mocks.toNextAgenda.mockResolvedValue({ id: "n-1" });
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    menuItem("Task 1", "Add to next meeting's agenda");
+    await waitFor(() => expect(mocks.toNextAgenda).toHaveBeenCalledWith("1"));
+    expect(mocks.accept).not.toHaveBeenCalled();
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Offered for the next meeting's agenda",
+        }),
+      ),
+    );
+  });
+
+  it("doesn't offer the next meeting's agenda with Events off (#5790)", () => {
+    mocks.eventsOn = false;
+    mocks.items.current = [suggestion("1")];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "More: Task 1" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Dismiss" })).toBeTruthy();
+    expect(
+      screen.queryByRole("menuitem", { name: "Add to next meeting's agenda" }),
+    ).toBeNull();
   });
 
   it("dismisses without asking for anything", async () => {

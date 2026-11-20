@@ -21,6 +21,7 @@ import {
   AiSuggestionService,
   type AiSuggestionEdits,
 } from '../../application/services/ai-suggestion.service';
+import { MeetingTaskSuggestionsService } from '../../application/services/meeting-task-suggestions.service';
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -41,6 +42,8 @@ import {
   DecideAiSuggestionsDto,
   DismissAiSuggestionDto,
   ListAiSuggestionsQueryDto,
+  NextAgendaItemDto,
+  SendToNextAgendaResponseDto,
   type EventSuggestionAcceptDto,
   type NewEventSuggestionAcceptDto,
   type PointsSuggestionEditsDto,
@@ -79,7 +82,10 @@ function editsOf(dto: {
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('ai/suggestions')
 export class AiSuggestionController {
-  constructor(private readonly suggestions: AiSuggestionService) {}
+  constructor(
+    private readonly suggestions: AiSuggestionService,
+    private readonly minutesTasks: MeetingTaskSuggestionsService,
+  ) {}
 
   @Get()
   @VerifySessionLocally()
@@ -148,6 +154,28 @@ export class AiSuggestionController {
     return AiSuggestionDecisionDto.from(
       await this.suggestions.dismiss(chapterId, userId, id, dto?.reason),
     );
+  }
+
+  @Post(':id/next-agenda')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). Closes the suggestion; the next upcoming meetings with the same audience offer the item under Suggested. No meeting is picked.',
+  })
+  @ApiOkResponse({ type: SendToNextAgendaResponseDto })
+  async sendToNextAgenda(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SendToNextAgendaResponseDto> {
+    const item = await this.minutesTasks.sendToNextAgenda(
+      chapterId,
+      userId,
+      id,
+      enabledModules,
+    );
+    return { item: NextAgendaItemDto.from(item) };
   }
 
   @Post('decide')

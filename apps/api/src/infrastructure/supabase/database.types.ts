@@ -88,6 +88,7 @@ import type {
   MeetingDateReminder,
   MeetingDraft,
   MeetingMinutesRequest,
+  MeetingNextAgendaItem,
   MeetingNoMinutes,
   MeetingNote,
   MeetingRecording,
@@ -259,6 +260,7 @@ export interface Database {
       meeting_date_reminders: TableDefinition<MeetingDateReminder>;
       meeting_drafts: TableDefinition<MeetingDraft>;
       meeting_minutes_requests: TableDefinition<MeetingMinutesRequest>;
+      meeting_next_agenda_items: TableDefinition<MeetingNextAgendaItem>;
       meeting_no_minutes: TableDefinition<MeetingNoMinutes>;
       meeting_notes: TableDefinition<MeetingNote>;
       meeting_recordings: TableDefinition<MeetingRecording>;

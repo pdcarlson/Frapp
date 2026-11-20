@@ -3817,6 +3817,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/suggestions/{id}/next-agenda": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). Closes the suggestion; the next upcoming meetings with the same audience offer the item under Suggested. No meeting is picked. */
+        post: operations["AiSuggestionController_sendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/suggestions/decide": {
         parameters: {
             query?: never;
@@ -10339,6 +10356,20 @@ export interface components {
              */
             reason?: "already_doing";
         };
+        NextAgendaItemDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The posted minutes it was sent from.
+             */
+            meeting_id: string;
+            /** @description The words, as the agenda will hold them. */
+            text: string;
+        };
+        SendToNextAgendaResponseDto: {
+            item: components["schemas"]["NextAgendaItemDto"];
+        };
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
@@ -12848,18 +12879,29 @@ export interface components {
              */
             user_id: string;
         };
+        AgendaSuggestionFromMinutesDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /**
+             * Format: date-time
+             * @description When that meeting started.
+             */
+            start_time: string;
+        };
         AgendaSuggestionDto: {
             /** Format: uuid */
             id: string;
             /**
-             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested.
+             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested.
              * @enum {string}
              */
-            kind: "tabled" | "ai";
+            kind: "tabled" | "minutes" | "ai";
             /** @description The item as it would go on the agenda. */
             text: string;
-            /** @description Where a tabled matter was first tabled; null for `ai`. */
+            /** @description Where a tabled matter was first tabled; null for any other kind. */
             tabled_from: components["schemas"]["EventAgendaTabledFromDto"] | null;
+            /** @description The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind. */
+            from_minutes: components["schemas"]["AgendaSuggestionFromMinutesDto"] | null;
             /**
              * Format: uuid
              * @description The posted minutes it was drawn from (for a tabled matter, the minutes that tabled it most recently), for the link under it.
@@ -21768,6 +21810,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_sendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendToNextAgendaResponseDto"];
                 };
             };
             /** @description Error */

@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
+  ListPlus,
   MoreHorizontal,
   Pencil,
   X,
@@ -26,6 +27,7 @@ import {
   useMeetings,
   useMembers,
   useMyPermissions,
+  useSendAiSuggestionToNextAgenda,
   existingTaskLine,
   useSimilarTasks,
   type AiSuggestion,
@@ -65,6 +67,7 @@ import {
   meetingHref,
 } from "@/components/meetings/meeting-copy";
 import { useToast } from "@/lib/hooks/use-toast";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { ReportAiDialog } from "@/components/ai/report-ai";
 import {
   DropdownMenu,
@@ -225,6 +228,11 @@ export function SuggestedTasks({
   );
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
+  const toNextAgenda = useSendAiSuggestionToNextAgenda();
+  const moduleGate = useChapterModuleGateState();
+  // The next meeting's Suggested list lives on events (#5790).
+  const eventsOn =
+    moduleGate.status === "ready" && moduleGate.isModuleEnabled("events");
   const decide = useDecideAiSuggestions();
   const { toast } = useToast();
   const [edits, setEdits] = useState<Record<string, RowEdits>>({});
@@ -372,6 +380,30 @@ export function SuggestedTasks({
     }
   }
 
+  /**
+   * Add to next meeting's agenda (#5790): instead of a task, the action item
+   * is offered under Suggested on the next meetings with the same people.
+   * No meeting is picked; an officer adds it there.
+   */
+  async function sendToNextAgenda(item: WaitingSuggestion) {
+    setBusyId(item.id);
+    try {
+      await toNextAgenda.mutateAsync(item.id);
+      toast({
+        title: AI_SUGGESTION_COPY.toAgendaDone,
+        description: AI_SUGGESTION_COPY.toAgendaDoneBody,
+      });
+    } catch (error) {
+      toast({
+        title: AI_SUGGESTION_COPY.toAgendaFailed,
+        description: suggestionRefusalLine(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function acceptAllReady() {
     try {
       const decisions = ready.map((item) => ({
@@ -496,6 +528,13 @@ export function SuggestedTasks({
         onEdit={(patch) => editRow(current.id, patch)}
         onAccept={() => void acceptRow(current)}
         onDismiss={() => void dismissRow(current)}
+        onToAgenda={
+          eventsOn &&
+          current.source.type === "meeting" &&
+          !current.task.last_year_on
+            ? () => void sendToNextAgenda(current)
+            : undefined
+        }
         onAlreadyDoing={
           current.task.last_year_on
             ? () => void dismissRow(current, "already_doing")
@@ -549,6 +588,7 @@ function SuggestedTaskRow({
   onEdit,
   onAccept,
   onDismiss,
+  onToAgenda,
   onAlreadyDoing,
   existing,
   onSameTask,
@@ -570,6 +610,8 @@ function SuggestedTaskRow({
   onEdit: (patch: RowEdits) => void;
   onAccept: () => void;
   onDismiss: () => void;
+  /** From minutes: offer it on the next meeting's agenda instead (#5790). */
+  onToAgenda?: () => void;
   /** Only on a "this time last year" row: the chapter is already on it. */
   onAlreadyDoing?: () => void;
   /** The open task this suggestion reads like, until the officer says. */
@@ -698,6 +740,7 @@ function SuggestedTaskRow({
             item={item}
             disabled={disabled}
             onChange={onOpenForm}
+            onToAgenda={onToAgenda}
             onDismiss={onDismiss}
           />
         </div>
@@ -767,11 +810,13 @@ function SuggestionMenu({
   item,
   disabled,
   onChange,
+  onToAgenda,
   onDismiss,
 }: {
   item: WaitingSuggestion;
   disabled: boolean;
   onChange?: () => void;
+  onToAgenda?: () => void;
   onDismiss: () => void;
 }) {
   const [reporting, setReporting] = useState(false);
@@ -797,6 +842,12 @@ function SuggestionMenu({
             <DropdownMenuItem onSelect={onChange}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
               {AI_SUGGESTION_COPY.change}
+            </DropdownMenuItem>
+          ) : null}
+          {onToAgenda ? (
+            <DropdownMenuItem onSelect={onToAgenda}>
+              <ListPlus className="h-4 w-4" aria-hidden="true" />
+              {AI_SUGGESTION_COPY.toAgenda}
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onSelect={onDismiss}>

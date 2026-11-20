@@ -261,6 +261,39 @@ export function useDismissAiSuggestion() {
 }
 
 /**
+ * Add to next meeting's agenda (#5790): a suggested task from minutes goes
+ * to the next same-audience meetings' Suggested agenda items instead of
+ * becoming a task. It leaves the lists like a dismissal, and the events'
+ * Suggested lists are read again so the next meeting offers it.
+ */
+export function useSendAiSuggestionToNextAgenda() {
+  const client = useFrappClient();
+  const drop = useDropFromLists();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["ai-suggestions", "next-agenda"],
+    mutationFn: async (id: string) => {
+      const result = await client.POST("/v1/ai/suggestions/{id}/next-agenda", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+      return bodyOf(result.data).item;
+    },
+    onSuccess: (_item, id) => {
+      drop([id], false);
+      void queryClient.invalidateQueries({
+        queryKey: ["agenda-suggestions", chapterId],
+      });
+    },
+    onError: () =>
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      }),
+  });
+}
+
+/**
  * Several decisions in one request (Accept all). Each has its own outcome:
  * the ones that went through leave the lists, the rest stay to be seen.
  */

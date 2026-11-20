@@ -837,6 +837,74 @@ export class AiSuggestionService {
   }
 
   /**
+   * Closes a waiting suggestion as handled another way rather than accepted
+   * (#5790: a suggested task sent to the next meeting's agenda instead of
+   * made a task). It is decided as dismissed, so it is never proposed again,
+   * and counted as a dismissal with `reason`.
+   *
+   * `make` runs first, with the row's text intact (deciding empties it), and
+   * `findMade` answers a repeat: a suggestion already handled this way gives
+   * back what it made, whoever sent it. When the decision then loses to an
+   * accept, or the suggestion expired meanwhile, what `make` made is taken
+   * back with `unmake` and the refusal says what happened. One that lost to a
+   * dismiss at the same moment keeps it: the two answers agree that it is
+   * not a task, and a send racing a send made the same thing.
+   */
+  async handleElsewhere<T>(
+    chapterId: string,
+    userId: string,
+    id: string,
+    handling: {
+      reason: 'to_agenda';
+      /** Whether this suggestion can be handled this way at all. */
+      accepts: (row: AiSuggestion) => boolean;
+      findMade: (row: AiSuggestion) => Promise<T | null>;
+      make: (row: AiSuggestion) => Promise<T>;
+      unmake: (made: T) => Promise<void>;
+    },
+  ): Promise<T> {
+    const { row } = await this.loadForDecision(chapterId, userId, id);
+    if (!handling.accepts(row)) {
+      throw new BadRequestException({
+        code: 'ai.suggestion.not_handled_here',
+        message: 'This suggestion can’t be handled that way.',
+      });
+    }
+    const already = await handling.findMade(row);
+    if (already) return already;
+    if (!this.isWaiting(row)) throw this.refusal(row);
+
+    const made = await handling.make(row);
+    let claimed: AiSuggestion | null;
+    try {
+      claimed = await this.repo.claim(chapterId, id, {
+        status: 'dismissed',
+        decidedBy: userId,
+        edited: false,
+        now: this.now().toISOString(),
+      });
+    } catch (error) {
+      await handling.unmake(made);
+      throw error;
+    }
+    if (!claimed) {
+      const now = await this.reread(chapterId, id);
+      if (now.status !== 'dismissed') {
+        await handling.unmake(made);
+        throw this.refusal(now);
+      }
+      return made;
+    }
+    this.emit(
+      this.analytics.track('ai-suggestion-dismissed', userId, {
+        chapterId,
+        properties: { kind: row.kind, reason: handling.reason },
+      }),
+    );
+    return made;
+  }
+
+  /**
    * Several decisions in one request, in order, for the review screen's
    * Confirm. Each is decided on its own: one refused doesn't stop the rest,
    * and each outcome says what happened.
@@ -935,22 +1003,27 @@ export class AiSuggestionService {
             : null,
       };
     }
+    throw this.refusal(row);
+  }
+
+  /** The 409 for a suggestion that is no longer waiting, saying why. */
+  private refusal(row: AiSuggestion): ConflictException {
     // Mid-accept, or (re-read after a lost claim) put back by an accept that
     // failed: either way it may be waiting again in a moment.
     if (row.status === 'accepting' || this.isWaiting(row)) {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'ai.suggestion.accepting',
         message:
           'Someone is already accepting this suggestion. Try again in a moment.',
       });
     }
     if (row.status === 'pending' || row.status === 'expired') {
-      throw new ConflictException({
+      return new ConflictException({
         code: 'ai.suggestion.expired',
         message: 'This suggestion has expired.',
       });
     }
-    throw new ConflictException({
+    return new ConflictException({
       code: 'ai.suggestion.decided',
       message:
         row.status === 'accepted'

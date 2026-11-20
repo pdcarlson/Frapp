@@ -35,6 +35,7 @@ import {
   type AiSuggestionSourceType,
   type AiSuggestionStatus,
 } from '#domain/entities/ai-suggestion.entity';
+import type { MeetingNextAgendaItem } from '#domain/entities/meeting-next-agenda-item.entity';
 import { AI_SUGGESTION_DECIDE_MAX } from '../../application/services/ai-suggestion.service';
 import type {
   AiSuggestionDecideOutcome,
@@ -740,4 +741,31 @@ export class AiSuggestionDecideOutcomeDto {
 export class AiSuggestionDecideResponseDto {
   @ApiProperty({ type: [AiSuggestionDecideOutcomeDto] })
   outcomes: AiSuggestionDecideOutcomeDto[];
+}
+
+/**
+ * What Add to next meeting's agenda returns (#5790): the item as the next
+ * meetings with the same audience will offer it.
+ */
+export class NextAgendaItemDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The posted minutes it was sent from.',
+  })
+  meeting_id: string;
+
+  @ApiProperty({ description: 'The words, as the agenda will hold them.' })
+  text: string;
+
+  static from(row: MeetingNextAgendaItem): NextAgendaItemDto {
+    return { id: row.id, meeting_id: row.meeting_id, text: row.text };
+  }
+}
+
+export class SendToNextAgendaResponseDto {
+  @ApiProperty({ type: NextAgendaItemDto })
+  item: NextAgendaItemDto;
 }

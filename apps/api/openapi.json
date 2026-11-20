@@ -12798,6 +12798,52 @@
         ]
       }
     },
+    "/v1/ai/suggestions/{id}/next-agenda": {
+      "post": {
+        "operationId": "AiSuggestionController_sendToNextAgenda_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendToNextAgendaResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). Closes the suggestion; the next upcoming meetings with the same audience offer the item under Suggested. No meeting is picked.",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
     "/v1/ai/suggestions/decide": {
       "post": {
         "operationId": "AiSuggestionController_decide_v1",
@@ -32572,6 +32618,40 @@
           }
         }
       },
+      "NextAgendaItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The posted minutes it was sent from."
+          },
+          "text": {
+            "type": "string",
+            "description": "The words, as the agenda will hold them."
+          }
+        },
+        "required": [
+          "id",
+          "meeting_id",
+          "text"
+        ]
+      },
+      "SendToNextAgendaResponseDto": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/NextAgendaItemDto"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
       "AiSuggestionDecideItemDto": {
         "type": "object",
         "properties": {
@@ -39385,6 +39465,24 @@
           "user_id"
         ]
       },
+      "AgendaSuggestionFromMinutesDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When that meeting started."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "start_time"
+        ]
+      },
       "AgendaSuggestionDto": {
         "type": "object",
         "properties": {
@@ -39396,9 +39494,10 @@
             "type": "string",
             "enum": [
               "tabled",
+              "minutes",
               "ai"
             ],
-            "description": "`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested."
+            "description": "`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested."
           },
           "text": {
             "type": "string",
@@ -39406,11 +39505,21 @@
           },
           "tabled_from": {
             "nullable": true,
-            "description": "Where a tabled matter was first tabled; null for `ai`.",
+            "description": "Where a tabled matter was first tabled; null for any other kind.",
             "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/EventAgendaTabledFromDto"
+              }
+            ]
+          },
+          "from_minutes": {
+            "nullable": true,
+            "description": "The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgendaSuggestionFromMinutesDto"
               }
             ]
           },
@@ -39431,6 +39540,7 @@
           "kind",
           "text",
           "tabled_from",
+          "from_minutes",
           "source_meeting_id",
           "reason"
         ]

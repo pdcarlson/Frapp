@@ -18,6 +18,8 @@ import {
   useFrappClient,
   useMeetings,
   useMemberDisplayNames,
+  useCurrentChapter,
+  useSendAiSuggestionToNextAgenda,
   existingTaskLine,
   useSimilarTasks,
   type AiSuggestion,
@@ -35,6 +37,7 @@ import {
   SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
   lastYearEventLine,
+  isModuleEnabled,
   lastYearTaskLine,
 } from "@repo/validation";
 import {
@@ -47,6 +50,7 @@ import {
   CloseGlyph,
   FlagGlyph,
   ForwardGlyph,
+  ListGlyph,
   MoreGlyph,
   PencilGlyph,
   PersonGlyph,
@@ -209,6 +213,13 @@ function SuggestedTasks() {
   const { directory } = useWhoDirectory();
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
+  const toNextAgenda = useSendAiSuggestionToNextAgenda();
+  // The next meeting's Suggested list lives on events (#5790): offered only
+  // once the chapter is read and has Events on.
+  const chapterQuery = useCurrentChapter();
+  const eventsOn =
+    chapterQuery.data !== undefined &&
+    isModuleEnabled(chapterQuery.data?.enabled_modules, "events");
   const refresh = useRefetchAll([suggestionsQuery]);
   const reporting = useAiReport();
   const itemMenu = useItemMenu();
@@ -237,6 +248,8 @@ function SuggestedTasks() {
   }, [planFor]);
   // Said once an event was added from a suggestion, where the row was.
   const [added, setAdded] = useState(false);
+  // Said once a suggestion went to the next meeting's agenda (#5790).
+  const [sentOn, setSentOn] = useState(false);
   // The open task each suggestion reads like, from the tasks this officer
   // can see (#5562).
   const similar = useSimilarTasks(tasks);
@@ -314,12 +327,33 @@ function SuggestedTasks() {
     }
   }
 
+  /**
+   * Add to next meeting's agenda (#5790): instead of a task, the action item
+   * is offered under Suggested on the next meetings with the same people.
+   * No meeting is picked; an officer adds it there.
+   */
+  async function sendToNextAgenda(item: Waiting) {
+    setGone(null);
+    setAdded(false);
+    setSentOn(false);
+    setBusy({ id: item.id, doing: "dismiss" });
+    try {
+      await toNextAgenda.mutateAsync(item.id);
+      setSentOn(true);
+    } catch (error) {
+      fail(item, error);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function dismissRow(
     item: Waiting | WaitingEvent,
     reason?: AiSuggestionDismissReason,
   ) {
     setGone(null);
     setAdded(false);
+    setSentOn(false);
     setBusy({ id: item.id, doing: reason ? "already" : "dismiss" });
     try {
       await dismiss.mutateAsync({ id: item.id, reason });
@@ -395,8 +429,9 @@ function SuggestedTasks() {
   }
 
   /**
-   * A card's ⋯ menu, worded as web's is: Change before creating (a card that
-   * isn't asking about a twin), Dismiss, and Report this until it is sent.
+   * A card's ⋯ menu, worded as web's is: Change before creating and, for one
+   * from minutes, Add to next meeting's agenda (a card that isn't asking
+   * about a twin), Dismiss, and Report this until it is sent.
    */
   function menuFor(item: Waiting, twin: boolean): ItemMenuHandle | null {
     const report = reportFor(item, reporting);
@@ -407,6 +442,20 @@ function SuggestedTasks() {
         label: AI_SUGGESTION_COPY.change,
         glyph: (color) => <PencilGlyph color={color} />,
         run: () => setFormFor(item),
+      });
+    }
+    // As on web, not while the card asks whether it is an existing task.
+    if (
+      !twin &&
+      eventsOn &&
+      item.source.type === "meeting" &&
+      !isFromLastYear(item)
+    ) {
+      actions.push({
+        key: "next-agenda",
+        label: AI_SUGGESTION_COPY.toAgenda,
+        glyph: (color) => <ListGlyph color={color} />,
+        run: () => void sendToNextAgenda(item),
       });
     }
     actions.push({
@@ -463,6 +512,11 @@ function SuggestedTasks() {
       >
         {gone ? <InlineNote tone="warning">{gone}</InlineNote> : null}
         {added ? <InlineNote>{LAST_YEAR_COPY.eventAdded}</InlineNote> : null}
+        {sentOn ? (
+          <InlineNote>
+            {`${AI_SUGGESTION_COPY.toAgendaDone}. ${AI_SUGGESTION_COPY.toAgendaDoneBody}`}
+          </InlineNote>
+        ) : null}
         {suggestionsQuery.isPending ? (
           <SuggestionsSkeleton />
         ) : suggestionsQuery.isError && !suggestionsQuery.data ? (

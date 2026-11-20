@@ -1029,6 +1029,128 @@ describe('AiSuggestionService (#4309)', () => {
     });
   });
 
+  describe('handleElsewhere (#5790)', () => {
+    function handling() {
+      const made: { id: string; text: string }[] = [];
+      return {
+        made,
+        options: {
+          reason: 'to_agenda' as const,
+          accepts: (row: AiSuggestion) => row.kind === 'task',
+          findMade: jest.fn(
+            async (row: AiSuggestion) =>
+              made.find((entry) => entry.id === `made-${row.id}`) ?? null,
+          ),
+          make: jest.fn(async (row: AiSuggestion) => {
+            const entry = {
+              id: `made-${row.id}`,
+              text: String(row.payload.title),
+            };
+            made.push(entry);
+            return entry;
+          }),
+          unmake: jest.fn(async (entry: { id: string }) => {
+            made.splice(
+              made.findIndex((m) => m.id === entry.id),
+              1,
+            );
+          }),
+        },
+      };
+    }
+
+    it('makes the thing from the text, then closes the suggestion as dismissed, not a task', async () => {
+      const { service, tasks, repo, analytics } = build();
+      const { created } = await proposeTen(service);
+      const { made, options } = handling();
+      const result = await service.handleElsewhere(
+        CHAPTER,
+        OFFICER,
+        created[0].id,
+        options,
+      );
+      expect(result).toEqual({ id: `made-${created[0].id}`, text: 'Task 1' });
+      expect(made).toHaveLength(1);
+      expect(tasks.create).not.toHaveBeenCalled();
+      expect(repo.rows[0]).toMatchObject({ status: 'dismissed', payload: {} });
+      expect(analytics.track).toHaveBeenCalledWith(
+        'ai-suggestion-dismissed',
+        OFFICER,
+        {
+          chapterId: CHAPTER,
+          properties: { kind: 'task', reason: 'to_agenda' },
+        },
+      );
+    });
+
+    it('answers a repeat with what was made, once', async () => {
+      const { service } = build();
+      const { created } = await proposeTen(service);
+      const { made, options } = handling();
+      await service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options);
+      const again = await service.handleElsewhere(
+        CHAPTER,
+        OFFICER,
+        created[0].id,
+        options,
+      );
+      expect(again.id).toBe(`made-${created[0].id}`);
+      expect(made).toHaveLength(1);
+      expect(options.make).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a suggestion already made a task, and makes nothing', async () => {
+      const { service } = build();
+      const { created } = await proposeTen(service);
+      await service.accept(CHAPTER, OFFICER, created[0].id, { enabledModules });
+      const { made, options } = handling();
+      await expect(
+        service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options),
+      ).rejects.toMatchObject({
+        response: { code: 'ai.suggestion.decided' },
+      });
+      expect(made).toHaveLength(0);
+    });
+
+    it('takes back what it made when an accept wins the race', async () => {
+      const { service, repo } = build();
+      const { created } = await proposeTen(service);
+      const { made, options } = handling();
+      repo.claim.mockImplementationOnce(async (_c, id) => {
+        const row = repo.rows.find((r) => r.id === id)!;
+        Object.assign(row, { status: 'accepting', decided_by: MEMBER });
+        return null;
+      });
+      await expect(
+        service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options),
+      ).rejects.toMatchObject({
+        response: { code: 'ai.suggestion.accepting' },
+      });
+      expect(options.unmake).toHaveBeenCalledTimes(1);
+      expect(made).toHaveLength(0);
+    });
+
+    it('refuses a kind it can’t handle, and a member who may not decide it', async () => {
+      const { service } = build();
+      const { created } = await proposeTen(service);
+      const { options } = handling();
+      await expect(
+        service.handleElsewhere(CHAPTER, OFFICER, created[0].id, {
+          ...options,
+          accepts: () => false,
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'ai.suggestion.not_handled_here' },
+      });
+      await expect(
+        service.handleElsewhere(CHAPTER, MEMBER, created[0].id, options),
+      ).rejects.toMatchObject({
+        response: { code: 'ai.suggestion.forbidden' },
+      });
+      expect(options.make).not.toHaveBeenCalled();
+    });
+  });
+
   describe('expireDue', () => {
     it('expires what nobody decided, empties its text, and counts it without text', async () => {
       const { service, repo, analytics } = build();

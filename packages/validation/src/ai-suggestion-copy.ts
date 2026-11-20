@@ -30,8 +30,21 @@ export const AI_SUGGESTION_COPY = {
   accept: "Create task",
   dismiss: "Dismiss",
   change: "Change before creating",
-  /** The card's ⋯ menu: Change before creating, Dismiss, Report this. */
+  /**
+   * The card's ⋯ menu: Change before creating, Add to next meeting's agenda,
+   * Dismiss, Report this.
+   */
   more: "More",
+  /**
+   * Instead of a task, the action item is offered under the agenda of the
+   * next meetings with the same people (#5790; Shawn, 2026-11-20). No meeting
+   * is picked: an officer adds it there (Paul, 2026-11-18).
+   */
+  toAgenda: "Add to next meeting's agenda",
+  toAgendaDone: "Offered for the next meeting's agenda",
+  toAgendaDoneBody:
+    "It shows under Suggested on the next meetings with the same people, for an officer to add.",
+  toAgendaFailed: "Couldn't send that to the next meeting's agenda",
   accepting: "Creating…",
   acceptAll: (count: number) => `Create all ${count}`,
   acceptReady: (count: number) => `Create the ${count} that say who and when`,

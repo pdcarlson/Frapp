@@ -30,6 +30,8 @@ const state = vi.hoisted(() => ({
   source: undefined as unknown,
   accept: vi.fn(),
   dismiss: vi.fn(),
+  toNextAgenda: vi.fn(),
+  eventsOn: true,
   seed: undefined as unknown,
   canCreateEvents: true,
   readEvent: vi.fn(),
@@ -91,6 +93,12 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useFrappClient: () => ({ GET: vi.fn() }),
     useAcceptAiSuggestion: () => ({ mutateAsync: state.accept }),
     useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
+    useSendAiSuggestionToNextAgenda: () => ({
+      mutateAsync: state.toNextAgenda,
+    }),
+    useCurrentChapter: () => ({
+      data: { enabled_modules: state.eventsOn ? {} : { events: false } },
+    }),
   };
 });
 const ai = vi.hoisted(() => ({ available: true as boolean | undefined }));
@@ -283,6 +291,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.items = [READY, UNFINISHED];
   state.tasks = [];
+  state.eventsOn = true;
   state.isPending = false;
   state.isError = false;
   state.seed = undefined;
@@ -439,11 +448,31 @@ describe("Suggested tasks", () => {
     // Dismiss is worded in the card's ⋯ menu, as web's is.
     expect(menuOf(tree, "Book the hall").map((action) => action.key)).toEqual([
       "change",
+      "next-agenda",
       "dismiss",
       "report",
     ]);
     await act(async () => menuAction(tree, "Book the hall", "dismiss")!.run());
     expect(state.dismiss).toHaveBeenCalledWith({ id: "s1", reason: undefined });
+  });
+
+  it("sends one to the next meeting's agenda instead of a task, and says where it went (#5790)", async () => {
+    state.toNextAgenda.mockResolvedValue({ id: "n1" });
+    const tree = render();
+    await act(async () =>
+      menuAction(tree, "Book the hall", "next-agenda")!.run(),
+    );
+    expect(state.toNextAgenda).toHaveBeenCalledWith("s1");
+    expect(state.accept).not.toHaveBeenCalled();
+    expect(state.dismiss).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain(AI_SUGGESTION_COPY.toAgendaDone);
+  });
+
+  it("doesn't offer the next meeting's agenda with Events off (#5790)", () => {
+    state.eventsOn = false;
+    expect(
+      menuAction(render(), "Book the hall", "next-agenda"),
+    ).toBeUndefined();
   });
 
   it("reports a suggestion by its id, and offers that only to a member who can send it", () => {

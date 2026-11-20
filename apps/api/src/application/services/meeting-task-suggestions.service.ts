@@ -1,10 +1,20 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import { readMeetingContent } from '@repo/validation';
+import {
+  EVENT_AGENDA_ITEM_MAX,
+  normalizeAgendaText,
+  readMeetingContent,
+} from '@repo/validation';
+import type { AiSuggestion } from '#domain/entities/ai-suggestion.entity';
 import type { Meeting } from '#domain/entities/meeting.entity';
+import type { MeetingNextAgendaItem } from '#domain/entities/meeting-next-agenda-item.entity';
 import {
   AI_SUGGESTION_REPOSITORY,
   type IAiSuggestionRepository,
 } from '#domain/repositories/ai-suggestion.repository.interface';
+import {
+  MEETING_NEXT_AGENDA_ITEM_REPOSITORY,
+  type IMeetingNextAgendaItemRepository,
+} from '#domain/repositories/meeting-next-agenda-item.repository.interface';
 import { isAiEnabled } from '#domain/utils/ai-enabled';
 import {
   actionItemKey,
@@ -12,6 +22,7 @@ import {
   taskProposalsFromMinutes,
 } from '#domain/utils/minutes-task-proposals';
 import { AiConsentService } from './ai/ai-consent.service';
+import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import {
   AiSuggestionService,
   type ReconcileAiSuggestionsResult,
@@ -77,7 +88,45 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
     private readonly tasks: TaskService,
     @Inject(AI_SUGGESTION_REPOSITORY)
     private readonly suggestionRepo: IAiSuggestionRepository,
+    @Inject(MEETING_NEXT_AGENDA_ITEM_REPOSITORY)
+    private readonly nextAgenda: IMeetingNextAgendaItemRepository,
   ) {}
+
+  /**
+   * Add to next meeting's agenda (#5790; Shawn, 2026-11-20): a suggested
+   * task from posted minutes is sent on as an agenda item instead of made a
+   * task. No meeting is picked (Paul, 2026-11-18, `meetings.md` "Where it
+   * goes next"): the item is kept with the minutes, and every upcoming
+   * meeting with their audience offers it under Suggested, as it offers what
+   * they tabled, until an agenda adds it. The suggestion is closed, never a
+   * task. Whoever may decide the suggestion may send it, in a chapter with
+   * Events on, where Suggested lives. Sending it twice is one item.
+   */
+  async sendToNextAgenda(
+    chapterId: string,
+    userId: string,
+    suggestionId: string,
+    enabledModules: EnabledModules,
+  ): Promise<MeetingNextAgendaItem> {
+    assertModuleEnabled(enabledModules, 'events');
+    return this.suggestions.handleElsewhere(chapterId, userId, suggestionId, {
+      reason: 'to_agenda',
+      accepts: (row) =>
+        row.kind === 'task' &&
+        row.source_type === 'meeting' &&
+        agendaTextOf(row) !== '',
+      findMade: (row) => this.nextAgenda.findBySuggestion(chapterId, row.id),
+      make: (row) =>
+        this.nextAgenda.insert({
+          chapter_id: chapterId,
+          meeting_id: row.source_id,
+          text: agendaTextOf(row),
+          ai_suggestion_id: row.id,
+          created_by: userId,
+        }),
+      unmake: (item) => this.nextAgenda.delete(chapterId, item.id),
+    });
+  }
 
   /**
    * The tasks the action items of these minutes became: one entry per item
@@ -234,4 +283,17 @@ export class MeetingTaskSuggestionsService implements OnModuleInit {
       notify: on && change.reason === 'posted' ? [change.actorId] : [],
     });
   }
+}
+
+/**
+ * The words a suggested task goes on an agenda with: the whole action item
+ * when its title had to be cut from it, else the title, as an agenda item
+ * holds them.
+ */
+export function agendaTextOf(row: AiSuggestion): string {
+  const title = typeof row.payload.title === 'string' ? row.payload.title : '';
+  return normalizeAgendaText(row.quote ?? title).slice(
+    0,
+    EVENT_AGENDA_ITEM_MAX,
+  );
 }

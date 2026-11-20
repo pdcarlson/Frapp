@@ -39,6 +39,8 @@ import { SupabaseMemberRepository } from '../../infrastructure/supabase/reposito
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { MEETING_NEXT_AGENDA_ITEM_REPOSITORY } from '#domain/repositories/meeting-next-agenda-item.repository.interface';
+import { SupabaseMeetingNextAgendaItemRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-next-agenda-item.repository';
 
 /**
  * AI suggestions (#4309). A new kind is a handler added to the kinds list; a
@@ -115,6 +117,11 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
     {
       provide: AI_SUGGESTION_REPOSITORY,
       useClass: SupabaseAiSuggestionRepository,
+    },
+    // What earlier minutes sent to the next meeting's agenda (#5790).
+    {
+      provide: MEETING_NEXT_AGENDA_ITEM_REPOSITORY,
+      useClass: SupabaseMeetingNextAgendaItemRepository,
     },
     // The batch push reads the chapter's modules (a kind's module off means
     // nobody is told).
