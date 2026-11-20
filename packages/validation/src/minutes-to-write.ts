@@ -100,17 +100,34 @@ function endOf(event: CalendarMeeting): number {
   return Number.isFinite(end) ? end : start + ASSUMED_LENGTH_MS;
 }
 
+/** What `minutesToWrite` finds on the calendar. */
+export interface MinutesToWrite {
+  /** Ended in the last 30 days with no minutes, newest first. */
+  needs: CalendarMeeting[];
+  /**
+   * Ended in the last 30 days and marked "No minutes" by an officer
+   * (`skipped`), newest first: settled, so they ask for nothing.
+   */
+  skipped: CalendarMeeting[];
+  /** The soonest meeting in the coming week with none yet. */
+  next: CalendarMeeting | null;
+}
+
 /**
  * The meetings that ended in the last 30 days with no minutes the reader can
- * see or take notes on, newest first, and the next meeting in the coming
- * week that has none yet. `started` holds the event ids that already have
- * minutes (posted or a draft) or notes the reader was added to.
+ * see or take notes on, newest first, the ones of those an officer marked
+ * "No minutes", and the next meeting in the coming week that has none yet.
+ * `started` holds the event ids that already have minutes (posted or a
+ * draft) or notes the reader was added to; `skipped` the event ids marked
+ * "No minutes" (Paul, 2026-11-20: "can I say we don't have minutes? should
+ * be a valid option"). Minutes started on a skipped meeting win.
  */
 export function minutesToWrite(
   events: readonly CalendarMeeting[],
   started: ReadonlySet<string>,
   now: number,
-): { needs: CalendarMeeting[]; next: CalendarMeeting | null } {
+  skipped: ReadonlySet<string> = new Set(),
+): MinutesToWrite {
   const meetings = events.filter(
     (event) =>
       !!event?.id &&
@@ -118,7 +135,7 @@ export function minutesToWrite(
       isMeetingLikeName(event.name ?? "") &&
       !started.has(event.id),
   );
-  const needs = meetings
+  const ended = meetings
     .filter((event) => {
       const start = Date.parse(event.start_time);
       return endOf(event) <= now && start >= now - NEEDS_MINUTES_DAYS * DAY_MS;
@@ -128,9 +145,17 @@ export function minutesToWrite(
     meetings
       .filter((event) => {
         const start = Date.parse(event.start_time);
-        return start > now && start <= now + NEXT_UP_DAYS * DAY_MS;
+        return (
+          !skipped.has(event.id) &&
+          start > now &&
+          start <= now + NEXT_UP_DAYS * DAY_MS
+        );
       })
       .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))[0] ??
     null;
-  return { needs, next };
+  return {
+    needs: ended.filter((event) => !skipped.has(event.id)),
+    skipped: ended.filter((event) => skipped.has(event.id)),
+    next,
+  };
 }

@@ -5,11 +5,12 @@ import {
   minutesListView,
   minutesRowTime,
   minutesSeries,
+  type MinutesGroup,
   type MinutesListRow,
 } from "./minutes-list";
 
 /**
- * The Minutes list's grouping (#5290): a few minutes read as drafts and day
+ * The Minutes list's grouping (#5290; one timeline since 2026-11-20): a few minutes read as day
  * groups; a long list gains type counts, a Series section and month groups,
  * and narrows by type and by what is typed.
  */
@@ -42,8 +43,13 @@ function row(over: Partial<MinutesListRow> = {}): MinutesListRow {
   };
 }
 
+const ids = (group: MinutesGroup) =>
+  group.items.map((item) =>
+    item.kind === "minutes" ? item.minutes.id : item.event.id,
+  );
+
 describe("minutesListView", () => {
-  it("shows a few minutes as drafts, then this calendar week, last week and months, with no filters", () => {
+  it("shows a few minutes in one timeline, a draft at its date, by this calendar week, last week and months, with no filters", () => {
     const rows = [
       row({ id: "draft", status: "draft", event_start_time: daysAgo(0) }),
       row({ id: "sun", event_start_time: daysAgo(2) }),
@@ -54,10 +60,9 @@ describe("minutesListView", () => {
     expect(view.many).toBe(false);
     // A short list doesn't narrow, whatever is asked.
     expect(view.narrowed).toBe(false);
-    expect(view.drafts.map((r) => r.id)).toEqual(["draft"]);
     expect(view.series).toEqual([]);
-    expect(view.groups.map((g) => [g.label, g.rows.map((r) => r.id)])).toEqual([
-      ["This week", ["sun"]],
+    expect(view.groups.map((g) => [g.label, ids(g)])).toEqual([
+      ["This week", ["draft", "sun"]],
       ["Last week", ["prev"]],
       ["October", ["old"]],
     ]);
@@ -95,8 +100,29 @@ describe("minutesListView", () => {
       last: daysAgo(1),
     });
     // Every minute stays in its month too; the series is a way to browse.
-    expect(view.groups.flatMap((g) => g.rows)).toHaveLength(rows.length);
+    expect(view.groups.flatMap((g) => g.items)).toHaveLength(rows.length);
     expect(view.groups[0].label).toBe("November");
+  });
+
+  it("puts a meeting with no minutes and one marked so at their dates, and leaves them out while narrowed", () => {
+    const rows = [
+      row({ id: "sun", event_start_time: daysAgo(2) }),
+      row({ id: "old", event_start_time: daysAgo(40) }),
+    ];
+    const write = [
+      { id: "e-write", name: "Exec Meeting", start_time: daysAgo(1) },
+    ];
+    const skipped = [
+      { id: "e-skip", name: "Committee", start_time: daysAgo(9) },
+    ];
+    const view = minutesListView(rows, { now: NOW, write, skipped });
+    expect(view.groups.map((g) => [g.label, ids(g)])).toEqual([
+      ["This week", ["e-write", "sun"]],
+      ["Last week", ["e-skip"]],
+      ["October", ["old"]],
+    ]);
+    expect(view.groups[0].items[0].kind).toBe("write");
+    expect(view.groups[1].items[0].kind).toBe("skipped");
   });
 
   it("narrows by type and by what is typed, and drops the series while it does", () => {
@@ -112,11 +138,11 @@ describe("minutesListView", () => {
     const byType = minutesListView(rows, { now: NOW, type: "exec" });
     expect(byType.narrowed).toBe(true);
     expect(byType.series).toEqual([]);
-    expect(byType.groups.flatMap((g) => g.rows).map((r) => r.id)).toEqual([
+    expect(byType.groups.flatMap(ids)).toEqual([
       "exec",
     ]);
     const byQuery = minutesListView(rows, { now: NOW, query: "formal" });
-    expect(byQuery.groups.flatMap((g) => g.rows).map((r) => r.id)).toEqual([
+    expect(byQuery.groups.flatMap(ids)).toEqual([
       "formal",
     ]);
   });

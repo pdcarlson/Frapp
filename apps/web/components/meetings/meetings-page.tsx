@@ -8,8 +8,10 @@ import {
   useEvents,
   useMeetingNoteTaking,
   useMeetings,
+  useMeetingsNoMinutes,
   useMemberDisplayNames,
   useMyPermissions,
+  useSetMeetingNoMinutes,
   useStartMeeting,
   useViewerUserId,
   type MeetingSummary,
@@ -22,6 +24,7 @@ import {
   guessMeetingType,
   meetingTypeLabel,
   minutesRowTags,
+  minutesTimeline,
   minutesToWrite,
   startedEventIds,
   type CalendarMeeting,
@@ -34,6 +37,8 @@ import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ToastAction } from "@/components/ui/toast";
+import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
 import { NewButton } from "@/components/ui/new-button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -59,15 +64,16 @@ export function MeetingsPage() {
 
 /**
  * `/meetings` (`spec/behavior/meetings.md`): the minutes this member may
- * read, newest meeting first, tied to the calendar (Paul, 2026-11-19). For
- * someone who records minutes it opens on Needs minutes: the meetings that
- * ended in the last 30 days with none, each started in one press, as Granola lists
- * the calendar's meetings with no notes. Then In progress, the unposted
- * drafts, the way a mail client keeps Drafts apart from what was sent: the
- * viewer's own, and for an officer who can edit any minutes, other
- * officers' too, each named. Other officers' drafts the viewer may take
- * notes on sit under Taking notes (#4935), opening the viewer's own notes on
- * them. Then the posted minutes, and Next up, the coming meeting.
+ * read, tied to the calendar (Paul, 2026-11-19), as one timeline (Paul,
+ * 2026-11-20: "should this go in chronological order?"; `minutesTimeline`).
+ * For someone who records minutes, the next meeting sits on top, then
+ * Taking notes (other officers' drafts the viewer was added to, #4935),
+ * then every past meeting at its date, newest first, grouped This week,
+ * Last week, then by month, as Granola lists the calendar's meetings with
+ * their notes: posted minutes, drafts (tagged Draft, named when another
+ * officer's), and a meeting that ended in the last 30 days with none, with
+ * Write minutes and, in its menu, No minutes for this meeting, which settles
+ * it. The same order and words as the phone's Minutes list.
  */
 function ChapterMeetingsPage() {
   const meetingsQuery = useMeetings();
@@ -88,8 +94,11 @@ function ChapterMeetingsPage() {
     setOpen: setStarting,
     ready: canRecord,
   });
-  // The calendar, read only by someone who can start minutes from it.
+  // The calendar and its "No minutes" marks, read only by someone who can
+  // start minutes from it.
   const eventsQuery = useEvents({ enabled: canRecord });
+  const noMinutesQuery = useMeetingsNoMinutes({ enabled: canRecord });
+  const setNoMinutes = useSetMeetingNoMinutes();
   // Moves on each minute, so a meeting that ends while the page is open
   // leaves Next up for Needs minutes without a reload.
   const [now, setNow] = useState(() => Date.now());
@@ -107,14 +116,23 @@ function ChapterMeetingsPage() {
       asArray<CalendarMeeting>(eventsQuery.data),
       started,
       now,
+      new Set(noMinutesQuery.data ?? []),
     );
-  }, [eventsQuery.data, meetingsQuery.data, takingQuery.data, taken, now]);
+  }, [
+    eventsQuery.data,
+    meetingsQuery.data,
+    takingQuery.data,
+    noMinutesQuery.data,
+    taken,
+    now,
+  ]);
   // Unknown is not "none written": wait for every read before listing any.
   const showToWrite =
     canRecord &&
     eventsQuery.isSuccess &&
     meetingsQuery.isSuccess &&
-    takingQuery.isSuccess;
+    takingQuery.isSuccess &&
+    noMinutesQuery.isSuccess;
   const router = useRouter();
   const { toast } = useToast();
   const start = useStartMeeting();
@@ -153,13 +171,52 @@ function ChapterMeetingsPage() {
       setStartingId(null);
     }
   }
-  const { drafts, posted } = useMemo(() => {
-    const rows = meetingsQuery.data ?? [];
-    return {
-      drafts: rows.filter((row) => row.status === "draft"),
-      posted: rows.filter((row) => row.status === "posted"),
-    };
-  }, [meetingsQuery.data]);
+  /**
+   * Settles a meeting that had no minutes, or takes that back. Shown at
+   * once, with Undo, as Gmail's archive is.
+   */
+  function markNoMinutes(event: CalendarMeeting, noMinutes: boolean) {
+    setNoMinutes.mutateAsync({ eventId: event.id, noMinutes }).then(
+      () => {
+        if (!noMinutes) return;
+        toast({
+          title: MEETING_LIST_COPY.markedNoMinutes(event.name),
+          action: (
+            <ToastAction
+              altText={`${MEETING_LIST_COPY.undo}: ${MEETING_LIST_COPY.markedNoMinutes(event.name)}`}
+              onClick={() =>
+                void setNoMinutes
+                  .mutateAsync({ eventId: event.id, noMinutes: false })
+                  .catch(() => undefined)
+              }
+            >
+              {MEETING_LIST_COPY.undo}
+            </ToastAction>
+          ),
+        });
+      },
+      (error: unknown) =>
+        toast({
+          title: MEETING_LIST_COPY.noMinutesFailed,
+          description: getErrorMessage(error, "Try again in a moment."),
+          variant: "destructive",
+        }),
+    );
+  }
+
+  const groups = useMemo(
+    () =>
+      minutesTimeline(meetingsQuery.data ?? [], {
+        write: showToWrite ? toWrite.needs : [],
+        skipped: showToWrite ? toWrite.skipped : [],
+        now,
+      }),
+    [meetingsQuery.data, showToWrite, toWrite, now],
+  );
+  const authorOf = (row: MeetingSummary) =>
+    row.status === "draft" && row.created_by && row.created_by !== viewerId
+      ? names.nameFor(row.created_by)
+      : null;
 
   return (
     <div className="space-y-6">
@@ -179,36 +236,32 @@ function ChapterMeetingsPage() {
         />
       ) : (
         <>
-          {showToWrite && toWrite.needs.length > 0 ? (
-            <section aria-labelledby="meetings-needs" className="space-y-2">
-              <SectionLabel id="meetings-needs" count={toWrite.needs.length}>
-                {MEETING_LIST_COPY.needsMinutes}
+          {showToWrite && toWrite.next ? (
+            <section aria-labelledby="meetings-next" className="space-y-2">
+              <SectionLabel id="meetings-next">
+                {MEETING_LIST_COPY.nextUp}
               </SectionLabel>
-              <ul role="list" className="divide-y divide-border">
-                {toWrite.needs.map((event) => (
-                  <NeedsMinutesRow
-                    key={event.id}
-                    event={event}
-                    starting={startingId === event.id}
-                    onStart={() => void startFor(event)}
-                  />
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {drafts.length > 0 ? (
-            <section aria-labelledby="meetings-drafts" className="space-y-2">
-              <SectionLabel id="meetings-drafts" count={drafts.length}>
-                {MEETING_LIST_COPY.drafts}
-              </SectionLabel>
-              <MeetingList
-                rows={drafts}
-                authorOf={(row) =>
-                  row.created_by && row.created_by !== viewerId
-                    ? names.nameFor(row.created_by)
-                    : null
-                }
-              />
+              <Link
+                href={`/events?event=${toWrite.next.id}`}
+                className={cn(
+                  "flex min-h-14 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-card-hover",
+                  FOCUS_RING_OFFSET,
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">
+                    {toWrite.next.name}
+                  </span>
+                  <span className="block truncate text-caption text-muted-foreground">
+                    {meetingTypeLabel(guessMeetingType(toWrite.next.name))}
+                    {" · "}
+                    {meetingWhenLabel(toWrite.next.start_time)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-caption text-muted-foreground">
+                  {MEETING_LIST_COPY.openEvent}
+                </span>
+              </Link>
             </section>
           ) : null}
           {(takingQuery.data ?? []).length > 0 ? (
@@ -250,44 +303,43 @@ function ChapterMeetingsPage() {
               </ul>
             </section>
           ) : null}
-          <section aria-labelledby="meetings-posted" className="space-y-2">
-            <SectionLabel id="meetings-posted" count={posted.length}>
-              {MEETING_LIST_COPY.posted}
-            </SectionLabel>
-            {posted.length === 0 ? (
-              <InlineNote>{MEETING_LIST_COPY.none}</InlineNote>
-            ) : (
-              <MeetingList rows={posted} />
-            )}
-          </section>
-          {showToWrite && toWrite.next ? (
-            <section aria-labelledby="meetings-next" className="space-y-2">
-              <SectionLabel id="meetings-next">
-                {MEETING_LIST_COPY.nextUp}
-              </SectionLabel>
-              <Link
-                href={`/events?event=${toWrite.next.id}`}
-                className={cn(
-                  "flex min-h-14 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-card-hover",
-                  FOCUS_RING_OFFSET,
-                )}
+          {groups.length === 0 ? (
+            <InlineNote>{MEETING_LIST_COPY.none}</InlineNote>
+          ) : (
+            groups.map((group) => (
+              <section
+                key={group.key}
+                aria-labelledby={`meetings-${group.key}`}
+                className="space-y-2"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">
-                    {toWrite.next.name}
-                  </span>
-                  <span className="block truncate text-caption text-muted-foreground">
-                    {meetingTypeLabel(guessMeetingType(toWrite.next.name))}
-                    {" · "}
-                    {meetingWhenLabel(toWrite.next.start_time)}
-                  </span>
-                </span>
-                <span className="shrink-0 text-caption text-muted-foreground">
-                  {MEETING_LIST_COPY.openEvent}
-                </span>
-              </Link>
-            </section>
-          ) : null}
+                <SectionLabel id={`meetings-${group.key}`}>
+                  {group.label}
+                </SectionLabel>
+                <ul role="list" className="divide-y divide-border">
+                  {group.items.map((item) =>
+                    item.kind === "minutes" ? (
+                      <MinutesRow
+                        key={item.key}
+                        row={item.minutes}
+                        author={authorOf(item.minutes)}
+                      />
+                    ) : (
+                      <CalendarMeetingRow
+                        key={item.key}
+                        event={item.event}
+                        skipped={item.kind === "skipped"}
+                        starting={startingId === item.event.id}
+                        onStart={() => void startFor(item.event)}
+                        onNoMinutes={(noMinutes) =>
+                          markNoMinutes(item.event, noMinutes)
+                        }
+                      />
+                    ),
+                  )}
+                </ul>
+              </section>
+            ))
+          )}
         </>
       )}
 
@@ -298,107 +350,148 @@ function ChapterMeetingsPage() {
 
 /**
  * A meeting on the calendar that ended with no minutes: its name, type and
- * day, and Start minutes.
+ * day, Write minutes, and in its menu "No minutes for this meeting". Once
+ * marked, it reads "No minutes", and its menu offers Write minutes.
  */
-function NeedsMinutesRow({
+function CalendarMeetingRow({
   event,
+  skipped,
   starting,
   onStart,
+  onNoMinutes,
 }: {
   event: CalendarMeeting;
+  skipped: boolean;
   starting: boolean;
   onStart: () => void;
+  onNoMinutes: (noMinutes: boolean) => void;
 }) {
+  const entries: RowMenuEntry[] = skipped
+    ? [
+        {
+          type: "item",
+          key: "write",
+          label: MEETING_LIST_COPY.writeMinutes,
+          disabled: starting,
+          // Starting minutes drops the mark (`meeting_no_minutes`).
+          onSelect: onStart,
+        },
+        {
+          type: "item",
+          key: "undo",
+          label: MEETING_LIST_COPY.undoNoMinutes,
+          onSelect: () => onNoMinutes(false),
+        },
+      ]
+    : [
+        {
+          type: "item",
+          key: "no-minutes",
+          label: MEETING_LIST_COPY.markNoMinutes,
+          onSelect: () => onNoMinutes(true),
+        },
+      ];
   return (
-    <li className="flex min-h-14 items-center gap-3 px-2 py-2">
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold">
-          {event.name}
-        </span>
-        <span className="block truncate text-caption text-muted-foreground">
-          {meetingTypeLabel(guessMeetingType(event.name))}
-          {" · "}
-          {meetingWhenLabel(event.start_time)}
-        </span>
-      </span>
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={starting}
-        aria-busy={starting || undefined}
-        aria-label={`${MEETING_LIST_COPY.startMinutes}: ${event.name}`}
-        onClick={onStart}
-      >
-        {MEETING_LIST_COPY.startMinutes}
-      </Button>
-    </li>
+    <RowMenu
+      entries={entries}
+      label={MEETING_LIST_COPY.rowActions(event.name)}
+    >
+      {(menuButton) => (
+        <li className="group flex min-h-14 items-center gap-3 px-2 py-2">
+          <span className="min-w-0 flex-1">
+            <span
+              className={cn(
+                "block truncate text-sm font-semibold",
+                skipped && "text-muted-foreground",
+              )}
+            >
+              {event.name}
+            </span>
+            <span className="block truncate text-caption text-muted-foreground">
+              {meetingTypeLabel(guessMeetingType(event.name))}
+              {" · "}
+              {meetingWhenLabel(event.start_time)}
+            </span>
+            {skipped ? (
+              <span className="mt-1.5 flex">
+                <Badge variant="outline">{MEETING_LIST_COPY.noMinutes}</Badge>
+              </span>
+            ) : null}
+          </span>
+          {skipped ? null : (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={starting}
+              aria-busy={starting || undefined}
+              aria-label={`${MEETING_LIST_COPY.writeMinutes}: ${event.name}`}
+              onClick={onStart}
+            >
+              {MEETING_LIST_COPY.writeMinutes}
+            </Button>
+          )}
+          {menuButton}
+        </li>
+      )}
+    </RowMenu>
   );
 }
 
-function MeetingList({
-  rows,
-  authorOf,
+/** Minutes, posted or a draft, with what they hold. */
+function MinutesRow({
+  row,
+  author,
 }: {
-  rows: MeetingSummary[];
+  row: MeetingSummary;
   /** Whose draft it is, named only when it isn't the viewer's own. */
-  authorOf?: (row: MeetingSummary) => string | null;
+  author: string | null;
 }) {
+  // What the minutes hold, worked out from them, as the phone's row says it
+  // (`minutesRowTags`).
+  const tags = minutesRowTags(row, author);
   return (
-    <ul role="list" className="divide-y divide-border">
-      {rows.map((row) => {
-        const author = authorOf?.(row);
-        // What the minutes hold, worked out from them, as the phone's row
-        // says it (`minutesRowTags`).
-        const tags = minutesRowTags(row, author);
-        return (
-          <li key={row.id}>
-            <Link
-              href={meetingHref(row.id)}
-              className={cn(
-                "flex min-h-14 items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-card-hover",
-                FOCUS_RING_OFFSET,
-              )}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">
-                  {row.event_name}
-                </span>
-                <span className="block truncate text-caption text-muted-foreground">
-                  {meetingTypeLabel(
-                    row.meeting_type as MeetingType,
-                    row.other_label,
-                  )}
-                  {" · "}
-                  {meetingDayLabel(row.event_start_time)}
-                </span>
-                {tags.length > 0 ? (
-                  <span className="mt-1.5 flex flex-wrap gap-1.5">
-                    {tags.map((tag) => (
-                      <Badge
-                        key={tag.key}
-                        variant={
-                          tag.key === "draft"
-                            ? "warning"
-                            : tag.key === "recorded"
-                              ? "destructive"
-                              : "outline"
-                        }
-                      >
-                        {tag.label}
-                      </Badge>
-                    ))}
-                  </span>
-                ) : null}
-                {row.gist ? (
-                  <span className="mt-1.5 line-clamp-2 block text-caption text-muted-foreground">
-                    {row.gist}
-                  </span>
-                ) : null}
-              </span>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+    <li>
+      <Link
+        href={meetingHref(row.id)}
+        className={cn(
+          "flex min-h-14 items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-card-hover",
+          FOCUS_RING_OFFSET,
+        )}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">
+            {row.event_name}
+          </span>
+          <span className="block truncate text-caption text-muted-foreground">
+            {meetingTypeLabel(row.meeting_type as MeetingType, row.other_label)}
+            {" · "}
+            {meetingDayLabel(row.event_start_time)}
+          </span>
+          {tags.length > 0 ? (
+            <span className="mt-1.5 flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <Badge
+                  key={tag.key}
+                  variant={
+                    tag.key === "draft"
+                      ? "warning"
+                      : tag.key === "recorded"
+                        ? "destructive"
+                        : "outline"
+                  }
+                >
+                  {tag.label}
+                </Badge>
+              ))}
+            </span>
+          ) : null}
+          {row.gist ? (
+            <span className="mt-1.5 line-clamp-2 block text-caption text-muted-foreground">
+              {row.gist}
+            </span>
+          ) : null}
+        </span>
+      </Link>
+    </li>
   );
 }

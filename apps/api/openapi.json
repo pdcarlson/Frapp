@@ -22051,6 +22051,119 @@
         ]
       }
     },
+    "/v1/meetings-no-minutes": {
+      "get": {
+        "operationId": "MeetingNoMinutesController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingNoMinutesListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The events of the last 30 days marked \"No minutes\", so the Meetings list stops asking for them",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/events/{id}/no-minutes": {
+      "put": {
+        "operationId": "MeetingNoMinutesController_mark_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a meeting that ended as having no minutes. Marking it again changes nothing. 409 `meeting.not_over`, 409 `meeting.already_started`",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingNoMinutesController_unmark_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a meeting’s \"No minutes\" mark off, so it asks for minutes again",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/meetings/{id}/date-reminders": {
       "get": {
         "operationId": "MeetingDateReminderController_list_v1",
@@ -39838,6 +39951,22 @@
           "event_id",
           "requested",
           "pinged"
+        ]
+      },
+      "MeetingNoMinutesListDto": {
+        "type": "object",
+        "properties": {
+          "event_ids": {
+            "description": "Events in the last 30 days an officer marked \"No minutes\", so the Meetings list stops asking for them.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "event_ids"
         ]
       },
       "MeetingDateReminderDto": {

@@ -903,3 +903,70 @@ export function useRemoveMeetingRecording() {
       ]),
   });
 }
+
+const noMinutesKey = (chapterId: string | null | undefined) =>
+  ["meetings", chapterId, "no-minutes"] as const;
+
+/**
+ * The events marked "No minutes" (Paul, 2026-11-20): meetings an officer
+ * settled as having none, so the Meetings list stops asking. Read only by
+ * someone who can start minutes; anyone else gets an empty set.
+ */
+export function useMeetingsNoMinutes(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: noMinutesKey(chapterId),
+    queryFn: async ({ signal }): Promise<string[]> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings-no-minutes",
+        { signal },
+      );
+      if (response.status === 404 || response.status === 403) return [];
+      if (error) throw error;
+      return data?.event_ids ?? [];
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * Mark a meeting that ended as "No minutes", or take the mark off
+ * (`noMinutes: false`). Shown at once; a refusal puts the list back.
+ */
+export function useSetMeetingNoMinutes() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  const key = noMinutesKey(chapterId);
+  return useMutation({
+    mutationKey: ["meetings", "no-minutes"],
+    mutationFn: async ({
+      eventId,
+      noMinutes,
+    }: {
+      eventId: string;
+      noMinutes: boolean;
+    }) => {
+      const params = { path: { id: eventId } };
+      const { error } = noMinutes
+        ? await client.PUT("/v1/events/{id}/no-minutes", { params })
+        : await client.DELETE("/v1/events/{id}/no-minutes", { params });
+      if (error) throw error;
+    },
+    onMutate: async ({ eventId, noMinutes }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<string[]>(key);
+      const rest = (before ?? []).filter((id) => id !== eventId);
+      queryClient.setQueryData<string[]>(
+        key,
+        noMinutes ? [...rest, eventId] : rest,
+      );
+      return { before };
+    },
+    onError: (_error, _input, context) => {
+      queryClient.setQueryData(key, context?.before);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+}
