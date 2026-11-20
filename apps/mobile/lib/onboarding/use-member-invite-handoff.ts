@@ -40,23 +40,23 @@ export function useMemberInviteHandoff(): void {
       : null;
   const url = Linking.useURL();
   const memberMoment = isMemberInviteMoment(destination, chapterCount);
-  // The invite last sent to the card, until the card is reached: a re-run
-  // before the push lands (a new URL, a chapters refetch) doesn't push twice.
+  // The invite last sent to the card: a re-run before the push lands (a new
+  // URL, a chapters refetch) doesn't push twice, and one the member swiped
+  // away isn't pushed again. A link opened again sends it afresh.
   const sent = useRef<string | null>(null);
 
   useEffect(() => {
     if (!memberMoment) return;
     const fromLink = takeInviteTokenFromLink(url);
-    if (fromLink && fromLink !== peekRememberedInviteToken()) {
-      rememberInviteToken(fromLink);
+    if (fromLink) {
+      if (fromLink !== peekRememberedInviteToken()) {
+        rememberInviteToken(fromLink);
+      }
+      sent.current = null;
     }
     if (destination !== "tabs") return;
     // On the card already, or on the way there from `/join`.
-    if (pathname === JOIN_ANOTHER_PATH) {
-      sent.current = null;
-      return;
-    }
-    if (pathname === "/join") return;
+    if (pathname === JOIN_ANOTHER_PATH || pathname === "/join") return;
     const token = peekRememberedInviteToken();
     if (!token || sent.current === token) return;
     sent.current = token;

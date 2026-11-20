@@ -7408,8 +7408,10 @@ export interface components {
             reusable: boolean;
         };
         ChapterLinkResponseDto: {
-            /** @description The newest of `links`, for builds from before #5633, which showed one link. Null when `links` is empty. */
+            /** @description For builds from before #5633, which showed one link and replaced it with a body-less POST: the link that POST turns off, the default role's (`default_role`). Null when that role has none. */
             link: components["schemas"]["InviteListItemDto"] | null;
+            /** @description The role a POST with no role makes a link for: the chapter default invite role, or the caller's own rank's member role when the default is above them. The role picker starts on it. Null when the caller can invite into neither. */
+            default_role: string | null;
             /** @description The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into. */
             links: components["schemas"]["InviteListItemDto"][];
         };
@@ -15012,7 +15014,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["CreateChapterLinkDto"];
             };

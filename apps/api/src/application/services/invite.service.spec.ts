@@ -2366,7 +2366,44 @@ describe('InviteService', () => {
       expect(rows.map((row) => row.id)).toEqual(['inv-1']);
     });
 
-    it('reads back every role\'s link, expired ones included', async () => {
+    // Phone builds from before #5633 show only `link` and post no body to
+    // replace it, which turns off the default role's link: `link` must be that one.
+    it("answers `link` as the default role's link, not the newest (#5633)", async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
+        inviteRow({ id: 'link-1', reusable: true }),
+      ]);
+
+      const view = await service.findChapterLinkView('ch-1', 'user-1');
+
+      expect(view.links.map((link) => link.id)).toEqual([
+        'link-pledge',
+        'link-1',
+      ]);
+      expect(view.link).toEqual(expect.objectContaining({ id: 'link-1' }));
+      expect(view.defaultRole).toBe('Member');
+    });
+
+    it('answers no `link` when the default role has none (#5633)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
+      ]);
+
+      const view = await service.findChapterLinkView('ch-1', 'user-1');
+
+      expect(view.links).toHaveLength(1);
+      expect(view.link).toBeNull();
+    });
+
+    it("reads back every role's link, expired ones included", async () => {
       mockInviteRepo.findChapterLinks.mockResolvedValue([
         inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
         inviteRow({
@@ -2376,12 +2413,12 @@ describe('InviteService', () => {
         }),
       ]);
 
-      await expect(
-        service.findChapterLinks('ch-1', 'user-1'),
-      ).resolves.toEqual([
-        expect.objectContaining({ id: 'link-pledge', status: 'pending' }),
-        expect.objectContaining({ id: 'link-1', status: 'expired' }),
-      ]);
+      await expect(service.findChapterLinks('ch-1', 'user-1')).resolves.toEqual(
+        [
+          expect.objectContaining({ id: 'link-pledge', status: 'pending' }),
+          expect.objectContaining({ id: 'link-1', status: 'expired' }),
+        ],
+      );
     });
 
     it('lets many people join without using it up', async () => {

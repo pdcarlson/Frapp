@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Redirect,
   useFocusEffect,
@@ -53,12 +53,25 @@ export default function JoinAnotherChapter() {
     }, []),
   );
 
-  // A new link opened while this screen is up replaces the invite it shows.
+  // A new link opened while this screen is up replaces the invite it shows,
+  // once: a join that ends (busy back to false) doesn't put the link's invite
+  // back over one pasted since.
   const fromParams = inviteFromParams(params);
+  const shownParam = useRef(fromParams);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a route param that changed under a mounted screen is a new invite to show
-    if (fromParams && !busy) setToken(fromParams);
+    if (!fromParams || busy || fromParams === shownParam.current) return;
+    shownParam.current = fromParams;
+    setToken(fromParams);
   }, [busy, fromParams]);
+
+  // However the card closes (Back, iOS's edge swipe, a join), the invite is
+  // done with: nothing reopens it now or on the next launch.
+  useEffect(
+    () => () => {
+      consumeRememberedInviteToken();
+    },
+    [],
+  );
 
   const leave = useCallback(() => {
     if (busy) return;

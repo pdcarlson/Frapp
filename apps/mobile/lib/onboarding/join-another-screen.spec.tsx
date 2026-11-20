@@ -106,4 +106,24 @@ describe("Join another chapter (#4341)", () => {
     expect(peekRememberedInviteToken()).toBe("token-cccc");
     tree.unmount();
   });
+
+  it("keeps a pasted invite when its join fails", () => {
+    const tree = render();
+    act(() =>
+      (card.props?.onOtherInvite as (token: string) => void)("token-cccc"),
+    );
+    const setBusy = card.props?.onBusyChange as (busy: boolean) => void;
+    act(() => setBusy(true));
+    act(() => setBusy(false));
+    expect(card.props?.token).toBe("token-cccc");
+    tree.unmount();
+  });
+
+  it("forgets the invite however the card closes, so it doesn't come back", () => {
+    // iOS's edge swipe pops the screen without its Back row.
+    const tree = render();
+    rememberInviteToken("token-bbbb");
+    act(() => tree.unmount());
+    expect(peekRememberedInviteToken()).toBeNull();
+  });
 });

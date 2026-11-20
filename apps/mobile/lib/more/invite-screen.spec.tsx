@@ -34,6 +34,7 @@ let invitesOptions:
   { enabled?: boolean; refetchInterval?: number | false } | undefined;
 let inviteRows: Record<string, unknown>[] = [];
 let chapterLinks: Record<string, unknown>[] = [];
+let chapterLinkDefault: string | null = null;
 const createChapterLink = vi.fn();
 let invitesFailed = false;
 const ROLE_CHOICES = [
@@ -55,7 +56,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateInvite: () => ({ isPending: false, mutateAsync: createInvite }),
   useEmailInvites: () => ({ isPending: false, mutateAsync: emailInvites }),
   useRevokeInvite: () => ({ isPending: false, mutateAsync: revokeInvite }),
-  useChapterLinks: () => ({ data: chapterLinks }),
+  useChapterLinks: () => ({
+    data: { links: chapterLinks, defaultRole: chapterLinkDefault },
+  }),
   useInviteRoleChoices: () => ({
     choices: ROLE_CHOICES,
     defaultRole: "Everyone",
@@ -195,6 +198,7 @@ beforeEach(() => {
   inviteRows = [];
   invitesFailed = false;
   chapterLinks = [];
+  chapterLinkDefault = null;
   createChapterLink.mockReset().mockResolvedValue({
     ...ROW,
     id: "link-1",
@@ -431,11 +435,12 @@ describe("Invite members", () => {
     const tree = render();
     expect(linkRow(tree, "Pledge")).toBeTruthy();
     expect(screenText(tree)).toContain("Works until Thursday, November 26");
-    // An expired link isn't listed.
-    expect(screenText(tree)).not.toContain("Expired");
+    // An expired link stays listed, so the officer sees why it's dead.
+    expect(linkRow(tree, "Brother")).toBeTruthy();
+    expect(screenText(tree)).toContain("Expired Tuesday, November 10");
 
-    // Picking Pledge, which has a live link, turns the button into a
-    // replacement; Brother has none, so it's a plain New link.
+    // Picking Pledge, which has a link, turns the button into a replacement;
+    // Everyone has none, so it's a plain New link.
     const sheet = tree.root.find(
       (node) =>
         typeof node.props.onSelect === "function" &&
@@ -447,14 +452,70 @@ describe("Invite members", () => {
       "Makes a new link for this role, turns off its old one, and opens the share sheet.",
     )[0];
     expect(replace).toBeTruthy();
-    act(() => sheet.props.onSelect("Brother"));
+    act(() => sheet.props.onSelect("Everyone"));
     await act(async () =>
       pressables(
         tree,
         "Makes the link and opens the share sheet.",
       )[0].props.onPress(),
     );
-    expect(createChapterLink).toHaveBeenCalledWith({ role: "Brother" });
+    expect(createChapterLink).toHaveBeenCalledWith({ role: "Everyone" });
+    tree.unmount();
+  });
+
+  it("starts Joins as on the role the API says a link gets", () => {
+    chapterLinkDefault = "Brother";
+    const tree = render();
+    const sheet = tree.root.find(
+      (node) =>
+        typeof node.props.onSelect === "function" &&
+        node.props.title === "Joins as",
+    );
+    expect(sheet.props.selected).toBe("Brother");
+    tree.unmount();
+  });
+
+  it("offers no Share link on an expired link, and no new link for a role no longer offered", () => {
+    chapterLinks = [
+      {
+        ...ROW,
+        id: "link-old",
+        token: "tok-old",
+        role: "Brother",
+        email: null,
+        status: "expired",
+        reusable: true,
+        expires_at: "2026-11-10T12:00:00.000Z",
+      },
+      {
+        ...ROW,
+        id: "link-gone",
+        token: "tok-gone",
+        role: "Rush chair",
+        email: null,
+        status: "pending",
+        reusable: true,
+        expires_at: "2026-11-26T12:00:00.000Z",
+      },
+    ];
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+
+    act(() => linkRow(tree, "Brother").props.onPress());
+    expect(sheet.mock.calls[0][0].options).toEqual([
+      "Make a new link",
+      "Turn off link",
+      "Cancel",
+    ]);
+    act(() => linkRow(tree, "Rush chair").props.onPress());
+    expect(sheet.mock.calls[1][0].options).toEqual([
+      "Share link",
+      "Turn off link",
+      "Cancel",
+    ]);
+    sheet.mockRestore();
     tree.unmount();
   });
 

@@ -23,10 +23,12 @@ const {
   mockRefetchInvites,
   mockInvitableRoleIds,
   mockChapterLinks,
+  mockChapterLinkDefault,
   mockCreateChapterLink,
   activeChapterId,
 } = vi.hoisted(() => ({
   mockChapterLinks: vi.fn((): unknown[] => []),
+  mockChapterLinkDefault: vi.fn((): string | null => null),
   mockCreateChapterLink: vi.fn(),
   activeChapterId: { current: "chapter-1" as string | null },
   mockRefetchRoles: vi.fn(),
@@ -75,7 +77,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateInvite: () => ({ mutateAsync: mockCreateInvite, isPending: false }),
   useEmailInvites: () => ({ mutateAsync: mockEmailInvites, isPending: false }),
   useRevokeInvite: () => ({ mutateAsync: mockRevoke, isPending: false }),
-  useChapterLinks: () => ({ data: mockChapterLinks() }),
+  useChapterLinks: () => ({
+    data: { links: mockChapterLinks(), defaultRole: mockChapterLinkDefault() },
+  }),
   useCreateChapterLink: () => ({
     mutateAsync: mockCreateChapterLink,
     isPending: false,
@@ -147,6 +151,7 @@ function primeHooks() {
   mockOrgConfig.mockReturnValue({ data: {}, isError: false });
   mockInvites.mockReturnValue([INVITE]);
   mockChapterLinks.mockReturnValue([]);
+  mockChapterLinkDefault.mockReturnValue(null);
 }
 
 /**
@@ -875,20 +880,32 @@ describe("InviteMemberDialog chapter links", () => {
     ).toHaveTextContent("Pledge");
   });
 
-  it("lists each role's live link, and a pick for a role with one replaces it", async () => {
+  it("lists each role's link, expired ones too, and a pick for a role with one replaces it", async () => {
     mockChapterLinks.mockReturnValue([
       LINK,
-      { ...LINK, id: "link-2", role: "Pledge", token: "pledge-token" },
-      { ...LINK, id: "link-3", role: "Everyone", status: "expired" },
+      {
+        ...LINK,
+        id: "link-2",
+        role: "Pledge",
+        token: "pledge-token",
+        status: "expired",
+        expires_at: "2026-11-10T12:00:00.000Z",
+      },
     ]);
     await openDialog();
 
     expect(section().getByText("Brother")).toBeInTheDocument();
     expect(
-      section().getAllByText(/works until thursday, november 26/i),
-    ).toHaveLength(2);
-    // The expired one isn't listed.
-    expect(section().queryByText(/expired/i)).toBeNull();
+      section().getByText(/works until thursday, november 26/i),
+    ).toBeInTheDocument();
+    // The expired one stays listed, so the officer sees why it's dead, and
+    // has nothing to copy.
+    expect(
+      section().getByText(/expired tuesday, november 10/i),
+    ).toBeInTheDocument();
+    expect(
+      section().getAllByRole("button", { name: "Copy link" }),
+    ).toHaveLength(1);
 
     await pickRole("Pledge");
     expect(
@@ -896,6 +913,33 @@ describe("InviteMemberDialog chapter links", () => {
     ).toBeInTheDocument();
     await pickRole("No role");
     expect(section().getByRole("button", { name: "New link" })).toBeEnabled();
+  });
+
+  it("starts on the role the API says a link gets, when it can't read the config", async () => {
+    // An officer without `chapter-config:view`: the configured default is
+    // unknown to the client, but the links read names it.
+    mockOrgConfig.mockReturnValue({ data: undefined, isError: true });
+    mockChapterLinkDefault.mockReturnValue("Brother");
+    await openDialog();
+
+    expect(
+      section().getByRole("combobox", { name: "Role the new link joins at" }),
+    ).toHaveTextContent("Brother");
+  });
+
+  it("offers only Turn off for a link whose role is no longer offered", async () => {
+    mockChapterLinks.mockReturnValue([{ ...LINK, role: "Rush chair" }]);
+    await openDialog();
+
+    await userEvent.click(
+      section().getByRole("button", { name: "More for the Rush chair link" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: /turn off link/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /make a new link/i }),
+    ).toBeNull();
   });
 
   it("copies, replaces or turns off a live link from its row", async () => {

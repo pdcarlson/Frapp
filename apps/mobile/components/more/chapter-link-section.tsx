@@ -4,7 +4,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   CHAPTER_LINK_HINT,
   chapterLinkExpiryLabel,
-  inviteRoleLabel,
+  useChapterLinkPicker,
   useChapterLinks,
   useCreateChapterLink,
   useInviteRoleChoices,
@@ -38,9 +38,10 @@ export const JOINS_AS = "Joins as";
  * ("Officer picks it per link") each link joins at the role the officer
  * picked, one live link per role.
  *
- * Each live link is a row named for its role, captioned with when it stops
- * working, whose menu shares it, makes a new one (that role's old link stops
- * working) or turns it off. Under them, Joins as picks the role for the next
+ * Each link is a row named for its role, captioned with when it stops (or
+ * stopped) working, whose menu shares it while it works, makes a new one
+ * (that role's old link stops working) or turns it off. An expired link
+ * stays listed, so the officer sees why the link they posted is dead. Under them, Joins as picks the role for the next
  * link (the chapter's default to start) and New link makes it and opens the
  * share sheet. Where web copies, the phone shares, as the Invited list's rows
  * do.
@@ -65,20 +66,8 @@ export function ChapterLinkSection({
     text: string;
     tone: "done" | "problem";
   } | null>(null);
-  const live = (linksQuery.data ?? []).filter(
-    (link) => link.status === "pending",
-  );
-  // `null` until the officer picks: the chapter's default, once it loads. A
-  // pick that has since left the list (a role deleted or ranked up) falls
-  // back to the default too.
-  const [picked, setPicked] = useState<string | null>(null);
-  const newRole =
-    (picked && roles.choices.some((choice) => choice.name === picked)
-      ? picked
-      : roles.defaultRole) ?? null;
-  const label = (role: string) => inviteRoleLabel(role, roles.choices);
-  // Making a link for a role that has one replaces it, so the row says so.
-  const replaces = live.some((link) => link.role === newRole);
+  const { links, newRole, pick, label, replaces, canRemake } =
+    useChapterLinkPicker(linksQuery.data, roles);
 
   async function share(invite: InviteListItem) {
     if (!chapterName) return;
@@ -143,13 +132,17 @@ export function ChapterLinkSection({
     showActionMenu({
       title: `${label(invite.role)} link`,
       rows: [
-        ...(chapterName
+        ...(chapterName && invite.status === "pending"
           ? [{ label: SHARE_CHAPTER_LINK, onPress: () => void share(invite) }]
           : []),
-        {
-          label: MAKE_NEW_LINK,
-          onPress: () => makeLink(invite.id, invite.role),
-        },
+        ...(canRemake(invite.role)
+          ? [
+              {
+                label: MAKE_NEW_LINK,
+                onPress: () => makeLink(invite.id, invite.role),
+              },
+            ]
+          : []),
         {
           label: TURN_OFF_LINK,
           style: "destructive" as const,
@@ -173,7 +166,7 @@ export function ChapterLinkSection({
         </Text>
       ) : null}
       <ListSection>
-        {live.map((link) => (
+        {links.map((link) => (
           <ListRow
             key={link.id}
             label={label(link.role)}
@@ -214,7 +207,7 @@ export function ChapterLinkSection({
         }))}
         selected={newRole}
         onSelect={(next) => {
-          if (next) setPicked(next);
+          if (next) pick(next);
         }}
       />
     </View>

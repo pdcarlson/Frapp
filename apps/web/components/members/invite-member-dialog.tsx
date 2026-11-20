@@ -7,6 +7,7 @@ import {
   useEmailInvites,
   useInvitableRoleIds,
   useInvites,
+  LEGACY_MEMBER_ROLE_NAME,
   useInviteRoleChoices,
   useRevokeInvite,
   useRoles,
@@ -52,11 +53,11 @@ import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { buildJoinUrl } from "@/lib/invite-link";
 
 /**
- * The role the picker holds before the catalog loads: the Everyone role's
- * seeded name, which the API also reads as Everyone (#4191). The default once
- * roles load is `useInviteRoleChoices`'s.
+ * The role the picker holds before the catalog loads: Everyone's name before
+ * #4191, which the API still reads as Everyone. The default once roles load
+ * is `useInviteRoleChoices`'s.
  */
-const SEEDED_MEMBER_ROLE_NAME = "Member";
+const PRELOAD_ROLE_NAME = LEGACY_MEMBER_ROLE_NAME;
 
 /** The kept draft's name (#4593). */
 const INVITE_DRAFT = "invite-members";
@@ -84,7 +85,7 @@ type InviteMemberDialogProps = {
  */
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
-  const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
+  const [roleName, setRoleName] = useState(PRELOAD_ROLE_NAME);
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
   const [hasPickedRole, setHasPickedRole] = useState(false);
@@ -160,7 +161,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         !roleOptions.some((role) => role.name === roleName)
       ) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
-        setRoleName(defaultRoleName ?? SEEDED_MEMBER_ROLE_NAME);
+        setRoleName(defaultRoleName ?? PRELOAD_ROLE_NAME);
       }
       return;
     }
@@ -168,7 +169,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     // when no default is configured: seeding off the sorted list would
     // pre-select **Alumni** on every chapter that has not set one
     // (`useInviteRoleChoices`).
-    const preferred = defaultRoleName ?? SEEDED_MEMBER_ROLE_NAME;
+    const preferred = defaultRoleName ?? PRELOAD_ROLE_NAME;
     // No disable directive needed here: the rule reports once per effect, and
     // the branch above already carries it.
     if (preferred !== roleName) {

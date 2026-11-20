@@ -534,6 +534,36 @@ export class InviteService {
   }
 
   /**
+   * Every visible chapter link, plus the role a body-less POST makes a link
+   * for (`defaultRole`, which the pickers start on) and that role's link
+   * (`link`). Phone builds from before #5633 show only `link` and post no
+   * body to "Make a new link", so `link` has to be the link that post turns
+   * off, never another role's. Both are null when the caller can't invite
+   * into the default role.
+   */
+  async findChapterLinkView(
+    chapterId: string,
+    userId: string,
+  ): Promise<{
+    link: InviteListItem | null;
+    links: InviteListItem[];
+    defaultRole: string | null;
+  }> {
+    const [links, defaultRole] = await Promise.all([
+      this.findChapterLinks(chapterId, userId),
+      this.resolveInviteRole(chapterId, undefined, userId).then(
+        ({ role }) => role,
+        () => null,
+      ),
+    ]);
+    const link =
+      defaultRole === null
+        ? null
+        : (links.find((item) => item.role === defaultRole) ?? null);
+    return { link, links, defaultRole };
+  }
+
+  /**
    * A new chapter link for `requestedRole` (the chapter's default invite role
    * when none is named, as before #5633), replacing that role's current one:
    * the old link stops working the moment the new one exists, so an officer
@@ -546,19 +576,13 @@ export class InviteService {
     createdBy: string,
     requestedRole?: string,
   ): Promise<InviteListItem> {
-    const [{ role }, links, visible] = await Promise.all([
+    // `resolveInviteRole` refuses a role above the caller, and the link it
+    // replaces grants that same role, so it is always one they may stop.
+    const [{ role }, links] = await Promise.all([
       this.resolveInviteRole(chapterId, requestedRole, createdBy),
       this.inviteRepo.findChapterLinks(chapterId),
-      this.inviteVisibility(chapterId, createdBy),
     ]);
     const current = links.find((link) => link.role === role);
-    if (current && !visible(current)) {
-      throw new ForbiddenException({
-        code: 'invite.chapter_link_out_of_reach',
-        message:
-          "An officer above you made this chapter's link, so only they can replace it.",
-      });
-    }
     if (current) await this.inviteRepo.markRevoked(current.id);
     let invite: Invite;
     try {

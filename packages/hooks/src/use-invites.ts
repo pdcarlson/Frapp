@@ -143,6 +143,17 @@ export function useCreateInvite() {
   });
 }
 
+/** What `useChapterLinks` reads (#5633). */
+export type ChapterLinkView = {
+  /** Live and expired, at most one per role, newest first. */
+  links: InviteListItem[];
+  /**
+   * The role a link made with no role gets, as the API resolves it for the
+   * caller; null when they can invite into none. The pickers start on it.
+   */
+  defaultRole: string | null;
+};
+
 /**
  * The chapter links (#3353, Paul 2026-11-19: "One chapter link, 7 days"):
  * links an officer posts where the chapter will see them, such as its
@@ -162,7 +173,10 @@ export function useChapterLinks(options?: { enabled?: boolean }) {
         signal,
       });
       if (error) throw error;
-      return data.links;
+      return {
+        links: data.links,
+        defaultRole: data.default_role,
+      } satisfies ChapterLinkView;
     },
     staleTime: 60_000,
     enabled: (options?.enabled ?? true) && !!chapterId,
@@ -170,7 +184,7 @@ export function useChapterLinks(options?: { enabled?: boolean }) {
 }
 
 /**
- * The line under the Chapter link label, on web's Invite members panel and
+ * The line under the Chapter links label, on web's Invite members panel and
  * the phone's Invite members screen alike.
  */
 export const CHAPTER_LINK_HINT =

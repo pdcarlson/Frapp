@@ -52,6 +52,24 @@ describe("useMemberInviteHandoff (#4002, #4341)", () => {
     expect(peekRememberedInviteToken()).toBe(`tok${n}`);
   });
 
+  it("doesn't reopen the card a member swiped away, until a link opens it again", () => {
+    const view = renderHook(() => useMemberInviteHandoff());
+    state.pathname = "/join-another";
+    view.rerender();
+    // iOS's edge swipe back to the tabs, the invite still remembered.
+    state.pathname = "/";
+    view.rerender();
+    expect(state.pushed).toHaveLength(1);
+    // The same link tapped again is a fresh ask.
+    n += 1;
+    state.url = `https://app.frapp.live/join?token=tok${n}`;
+    view.rerender();
+    expect(state.pushed).toEqual([
+      { pathname: "/join-another", params: { token: `tok${n - 1}` } },
+      { pathname: "/join-another", params: { token: `tok${n}` } },
+    ]);
+  });
+
   it("holds the invite while the Terms prompt or s03 is up, then opens it", () => {
     state.destination = "terms";
     const view = renderHook(() => useMemberInviteHandoff());

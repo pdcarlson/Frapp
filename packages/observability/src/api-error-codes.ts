@@ -92,9 +92,8 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // President invite minted before the rule, or a sender demoted since
   // (#1830).
   "invite.role_out_of_reach",
-  // An officer replacing a chapter link made by an officer above them
-  // (#3353), or two officers making one at the same moment.
-  "invite.chapter_link_out_of_reach",
+  // Two officers making a chapter link for the same role at the same
+  // moment (#3353, #5633).
   "invite.chapter_link_conflict",
   // Ask for a new link on an invite that still works (another tab saw it
   // revived), or from someone already in its chapter (#5625). The card

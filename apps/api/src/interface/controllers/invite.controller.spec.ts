@@ -28,6 +28,8 @@ describe('InviteController', () => {
       findPendingForVerifiedEmail: jest.fn(),
       revoke: jest.fn(),
       findInvitableRoleIds: jest.fn(),
+      findChapterLinkView: jest.fn(),
+      createChapterLink: jest.fn(),
     };
 
     const mockAuthService = {
@@ -76,6 +78,60 @@ describe('InviteController', () => {
         dto.role,
       );
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('chapter links (#5633)', () => {
+    it('answers every link, the default role, and its link', async () => {
+      const brothers = { id: 'link-1', role: 'Brother' };
+      const pledges = { id: 'link-2', role: 'Pledge' };
+      jest.spyOn(inviteService, 'findChapterLinkView').mockResolvedValue({
+        link: brothers,
+        links: [pledges, brothers],
+        defaultRole: 'Brother',
+      } as any);
+
+      await expect(
+        controller.getChapterLink('chapter-1', 'user-1'),
+      ).resolves.toEqual({
+        link: brothers,
+        links: [pledges, brothers],
+        default_role: 'Brother',
+      });
+      expect(inviteService.findChapterLinkView).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+    });
+
+    it('makes a link at the role the officer picked', async () => {
+      jest
+        .spyOn(inviteService, 'createChapterLink')
+        .mockResolvedValue({ id: 'link-2' } as any);
+
+      await controller.createChapterLink('chapter-1', 'user-1', {
+        role: 'Pledge',
+      });
+
+      expect(inviteService.createChapterLink).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        'Pledge',
+      );
+    });
+
+    it('makes one at the default role for a build that posts no body', async () => {
+      jest
+        .spyOn(inviteService, 'createChapterLink')
+        .mockResolvedValue({ id: 'link-1' } as any);
+
+      await controller.createChapterLink('chapter-1', 'user-1', undefined);
+
+      expect(inviteService.createChapterLink).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        undefined,
+      );
     });
   });
 

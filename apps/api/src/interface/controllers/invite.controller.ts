@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
@@ -86,7 +87,8 @@ export class InviteController {
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @ApiOperation({
-    summary: "The chapter's shareable invite links, one per role (#3353, #5633)",
+    summary:
+      "The chapter's shareable invite links, one per role (#3353, #5633)",
     description:
       'Links many people join with, each at the role an officer picked, for 7 days. Turn one off with DELETE /v1/invites/:id.',
   })
@@ -95,8 +97,9 @@ export class InviteController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<ChapterLinkResponseDto> {
-    const links = await this.inviteService.findChapterLinks(chapterId, userId);
-    return { link: links[0] ?? null, links };
+    const { link, links, defaultRole } =
+      await this.inviteService.findChapterLinkView(chapterId, userId);
+    return { link, links, default_role: defaultRole };
   }
 
   @Post('chapter-link')
@@ -109,6 +112,8 @@ export class InviteController {
     description:
       'The role defaults to the chapter default invite role. 403 when the role is above the caller; 409 when another officer made a link for the same role at the same moment.',
   })
+  // Optional: phone builds from before #5633 post no body and get the default role.
+  @ApiBody({ type: CreateChapterLinkDto, required: false })
   @ApiCreatedResponse({ type: InviteListItemDto })
   @FeatureEvent('invite-created', () => ({
     invite_method: 'chapter-link',
